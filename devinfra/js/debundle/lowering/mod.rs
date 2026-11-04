@@ -42,6 +42,7 @@ mod lower;
 mod materialize;
 mod module_output;
 mod naturalize;
+pub mod ownership_subset;
 mod placement;
 mod plans;
 mod rebind_fold;
@@ -59,6 +60,7 @@ pub use loader_surface::{
     ExportReentryLoaderDerivation, ExportReentryLoaderFailure, ExportReentryLoaderRequest,
     LoaderRequestReportTarget, LoaderSite, LoaderSiteWitness,
 };
+use ownership_subset::OwnershipSubset;
 
 use imports::VendorReimportOracle;
 use io::{
@@ -106,6 +108,10 @@ pub struct MaterializeLogicalModulesResult {
 #[derive(Debug, Clone, Serialize)]
 pub struct ChunkModulesReport {
     pub chunk_id: String,
+    /// Present only for an ownership-subset run; selectors and contracts
+    /// still come from the complete authored spec.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ownership_subset: Option<BTreeSet<spec::ModulePath>>,
     pub counts: ChunkModulesCounts,
     pub final_module_contents: Vec<FinalModuleContent>,
     pub requested_logical_modules: Vec<RequestedLogicalModule>,
@@ -329,6 +335,7 @@ pub enum GateRejectionPolicy {
 
 #[derive(Debug, Clone)]
 pub struct MaterializeLogicalModulesOptions {
+    pub ownership_subset: Option<OwnershipSubset>,
     pub graph_provenance: Option<graph_provenance::GraphProvenance>,
     pub config: spec::MaterializeLogicalModulesConfig,
     pub chunk_ids: Vec<String>,
@@ -406,6 +413,16 @@ pub fn materialize_logical_modules(
     }
     let target_dir = normalize_optional_relative_dir(&options.config.target_dir)?;
     let selected_chunk_ids = normalized_chunk_ids(&options.chunk_ids)?;
+    if let Some(subset) = &options.ownership_subset {
+        ensure!(
+            !options.graph_reports.enabled(),
+            "full graph export for ownership subsets is unsupported"
+        );
+        subset.validate(logical_modules, unassigned_mode, &selected_chunk_ids)?;
+        eprintln!(
+            "Ownership subset: validating the selected assignment with full spec context; the canonical assignment is not being validated."
+        );
+    }
     let seen: BTreeSet<&str> = selected_chunk_ids.iter().map(String::as_str).collect();
 
     // A chunk's `commuting_statements` are resolved only when its dependency
@@ -523,6 +540,7 @@ pub fn materialize_logical_modules(
                     GLOBALS.set(globals, || {
                         prepare_logical_chunk(MaterializeLogicalChunkInputs {
                             context: ChunkContext {
+                                ownership_subset: options.ownership_subset.as_ref(),
                                 artifact: artifact_ref,
                                 artifact_indexes: &artifact_indexes,
                                 chunk_id,

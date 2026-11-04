@@ -24,6 +24,7 @@ use crate::lower::{
     LoweredChunk, lower_chunk,
 };
 use crate::naturalize::collect_plan_export_rename_intents;
+use crate::ownership_subset::OwnershipSubset;
 use crate::placement::EmissionPlacement;
 use crate::plans::ModulePlan;
 use crate::rebind_fold::compute_rebind_folds;
@@ -93,6 +94,7 @@ fn emit_debundle_progress(chunk_id: &str, phase: &str, state: &str) {
 /// Per-chunk inputs that identify the chunk and where its outputs
 /// should land. Bundled into `MaterializeLogicalChunkInputs::context`.
 pub(super) struct ChunkContext<'a> {
+    pub(super) ownership_subset: Option<&'a OwnershipSubset>,
     pub(super) artifact: &'a ChunkBundle,
     pub(super) artifact_indexes: &'a ArtifactIndexes,
     pub(super) chunk_id: &'a str,
@@ -527,6 +529,7 @@ pub(super) fn finish_logical_chunk(
         artifact_indexes,
         chunk_id,
         target_dir,
+        ownership_subset,
         report_emission,
         graph_reports,
         effect_conflicts_jsonl,
@@ -610,6 +613,12 @@ pub(super) fn finish_logical_chunk(
             }
         };
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
+    // Selector outcomes, resolved-member anchors, and analysis assumptions
+    // have already been collected from the complete authored ownership.
+    let ownership_subset = ownership_subset.map(|subset| subset.module_paths(chunk_id));
+    if let Some(selected) = &ownership_subset {
+        builder.retain_modules(selected)?;
+    }
     apply_rebind_folds_from_chunk_analysis(&mut builder, &precomputed);
     if matches!(chunk_unassigned_mode, UnassignedMode::PerAtomicGroup) {
         builder.synthesize_per_atomic_group(&precomputed, &runtime_ast.module.body, target_dir)?;
@@ -680,6 +689,7 @@ pub(super) fn finish_logical_chunk(
     let gate_outcome = validate_and_emit_reports(
         ChunkReportContext {
             chunk_id,
+            ownership_subset: ownership_subset.as_ref(),
             report_emission,
             graph_reports,
             policy: gate_rejection_policy,
@@ -805,6 +815,7 @@ pub(super) fn finish_logical_chunk(
     );
     let validation = ChunkValidationSummary { linker_order };
     let report = ChunkModulesReport {
+        ownership_subset,
         chunk_id: chunk_id.to_string(),
         counts: ChunkModulesCounts {
             applied: applied.len(),
@@ -1556,6 +1567,7 @@ fn write_selector_diagnostics(
 
 /// The selected chunk's output policy, independent of its analysis facts.
 struct ChunkReportContext<'a> {
+    ownership_subset: Option<&'a BTreeSet<spec::ModulePath>>,
     chunk_id: &'a str,
     report_emission: &'a ReportEmission,
     graph_reports: GraphReportSelection,
@@ -1569,6 +1581,8 @@ struct ChunkReportContext<'a> {
 #[derive(serde::Serialize)]
 struct GraphSummary<'a> {
     chunk_id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ownership_subset: Option<&'a BTreeSet<spec::ModulePath>>,
     source_units: usize,
     edges: usize,
     edge_kinds: std::collections::BTreeMap<analysis::DepKind, usize>,
@@ -1584,7 +1598,11 @@ fn graph_export_guidance(
     dir: &std::path::Path,
     chunk_id: &str,
     selection: GraphReportSelection,
+    ownership_subset: bool,
 ) -> String {
+    if ownership_subset {
+        return " Bounded reports describe this ownership subset; full graph export for subsets is unsupported.".to_string();
+    }
     if selection.enabled() {
         format!(
             " Dependency graph at {}.",
@@ -1604,6 +1622,7 @@ fn validate_and_emit_reports<'a>(
 ) -> Result<GateOutcome<'a>> {
     let ChunkReportContext {
         chunk_id,
+        ownership_subset,
         report_emission,
         graph_reports,
         policy,
@@ -1673,6 +1692,7 @@ fn validate_and_emit_reports<'a>(
             output_layout::GRAPH_SUMMARY_REPORT,
             &GraphSummary {
                 chunk_id,
+                ownership_subset,
                 source_units: graph.num_nodes(),
                 edges: graph.num_edges(),
                 edge_kinds,
@@ -1782,7 +1802,7 @@ fn validate_and_emit_reports<'a>(
             format!(
                 " Full evidence written to {}.{}",
                 chunk_report_path(dir, chunk_id, ATOMIC_GROUP_CONFLICTS_REPORT).display(),
-                graph_export_guidance(dir, chunk_id, graph_reports),
+                graph_export_guidance(dir, chunk_id, graph_reports, ownership_subset.is_some()),
             )
         });
         Some((
@@ -1811,7 +1831,7 @@ fn validate_and_emit_reports<'a>(
             format!(
                 " Full per-cycle evidence at {}.{}",
                 chunk_report_path(dir, chunk_id, CYCLES_REPORT).display(),
-                graph_export_guidance(dir, chunk_id, graph_reports),
+                graph_export_guidance(dir, chunk_id, graph_reports, ownership_subset.is_some()),
             )
         });
         Some((

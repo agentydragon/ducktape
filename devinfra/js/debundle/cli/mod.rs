@@ -350,6 +350,13 @@ impl InvocationArgs {
 pub(crate) struct RunArgs {
     #[command(flatten)]
     pub(crate) transform: TransformArgs,
+    /// JSON {"modules":[{"chunk":"app","module":"features/view"}]}:
+    /// retain only these modules after resolving the complete spec and its
+    /// contracts. An empty list retains no named modules. Requires
+    /// inline_in_entry for every materialized chunk. Omitted members keep
+    /// their source names in entry; normal gates and emission still run.
+    #[arg(long, conflicts_with = "graphs", value_name = "JSON")]
+    pub(crate) ownership_subset: Option<std::path::PathBuf>,
     /// Take the cross-module summaries and per-chunk facts from this analysis
     /// artifact (`debundle analyze`) instead of recomputing them. The run
     /// refuses an artifact computed by another engine, from other sources,
@@ -527,6 +534,7 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
     let result = match args.command {
         DebundleCommand::Run(RunArgs {
             transform: mut args,
+            ownership_subset,
             analysis,
             graphs,
             reports_only,
@@ -553,6 +561,10 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
             run_transform_with_analysis(
                 &cli,
                 TransformRunOptions {
+                    ownership_subset: ownership_subset
+                        .as_deref()
+                        .map(lowering::ownership_subset::OwnershipSubset::read)
+                        .transpose()?,
                     output,
                     artifacts,
                     graph_reports: if graphs {

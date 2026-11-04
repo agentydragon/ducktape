@@ -21,6 +21,8 @@ load("@bazel_skylib//lib:shell.bzl", "shell")
 _GATE_REJECTED_EXIT_CODE = 3
 
 def _debundle_pipeline_impl(ctx):
+    if ctx.file.ownership_subset and ctx.attr.split_dependency_graphs:
+        fail("ownership_subset does not support split_dependency_graphs")
     out_dir = ctx.actions.declare_directory(ctx.label.name + ".out")
     plan = _debundle_pipeline_plan(ctx, out_dir.short_path)
 
@@ -66,7 +68,7 @@ def _debundle_pipeline_impl(ctx):
     }
     _run_debundler(
         ctx,
-        inputs = depset([analysis], transitive = [plan.inputs]),
+        inputs = depset([analysis] + ctx.files.ownership_subset, transitive = [plan.inputs]),
         outputs = [out_dir],
         command = _pipeline_command(ctx, plan, analysis, []),
         mnemonic = "DebundlePipeline",
@@ -94,6 +96,8 @@ def _debundle_pipeline_impl(ctx):
 
 def _pipeline_command(ctx, plan, analysis, extra_flags, allow_gate_rejection = False):
     run_flags = plan.run_flags
+    if ctx.file.ownership_subset:
+        run_flags = run_flags + ["--ownership-subset", _shell_source_path(ctx.file.ownership_subset.path)]
     if allow_gate_rejection and not ctx.attr.emit_on_rejection:
         run_flags = run_flags + ["--emit-on-rejection"]
     command = plan.debundler + " " + " ".join(
@@ -267,6 +271,10 @@ def _shell_execroot_path(execroot_relative):
     return "\"${{OLDPWD}}/{}\"".format(execroot_relative)
 
 _DEBUNDLE_PIPELINE_ATTRS = {
+    "ownership_subset": attr.label(
+        allow_single_file = [".json"],
+        doc = "Optional retained chunk/module list for normal emission with full spec context. Only the Pipeline action reads it; requires inline_in_entry and conflicts with split_dependency_graphs.",
+    ),
     "spec": attr.label(
         allow_single_file = True,
         doc = "Optional flat transform spec YAML. Mutually exclusive with the tree_* attrs.",

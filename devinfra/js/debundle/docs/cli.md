@@ -570,6 +570,46 @@ a complete export while the command exits nonzero. The gate and
 coverage assumptions are unchanged. Format:
 <wire_format.md#translation-validation>.
 
+### Ownership subsets with full selector context
+
+Use `run --ownership-subset retained.json` for ownership-only reduction and
+restoration. Keep the complete canonical module tree and its contracts:
+
+```json
+{ "modules": [{ "chunk": "app", "module": "features/view" }] }
+```
+
+Each entry names an exact chunk ID and a chunk-local module path, as recorded
+in `modules.json`'s `requested_logical_modules[].target_path`. Paths are not
+physical YAML filenames or chunk-prefixed IDs. `{"modules": []}` retains no
+named modules. Unknown chunks/modules, duplicates and unknown fields fail.
+
+```sh
+debundle run <full tree args> --analysis analysis.dba \
+  --ownership-subset retained.json
+```
+
+The full joint selector solve and all analysis assertions remain unchanged;
+only resolved output ownership is reduced. Every materialized chunk must use
+`inline_in_entry`. Selected module names and explicit entry renames stay intact.
+Omitted members keep their source names in entry, avoiding collisions between
+names originally scoped to separate modules. Their authored names remain in
+the complete spec. Invalid full-spec selectors or duplicate/unmatched claims
+still fail even when their modules are omitted.
+
+Normal gates, translation validation, reconstruction and emission run on the
+selected assignment. `graph_summary.json` and `modules.json` carry its
+`ownership_subset` paths, including empty selections. This is partial output;
+it does not validate the full canonical assignment. Full graph export and
+other residual policies are unsupported with this option. Use the same full
+projection and matching analysis artifact across selection edits; an engine,
+source or analysis-contract change still requires a matching fresh analysis.
+
+Bazel's `debundle_pipeline` accepts `ownership_subset = "retained.json"`.
+Keep `tree_modules` and its declared inputs complete. Only the Pipeline action
+reads this manifest; changing it leaves the projection and Analyze inputs
+unchanged. The attribute cannot be combined with `split_dependency_graphs`.
+
 ### Reusing analysis across runs
 
 Analysis dominates a run, and module assignment edits do not change it. Compute

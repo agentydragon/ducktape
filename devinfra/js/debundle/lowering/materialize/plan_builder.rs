@@ -17,7 +17,7 @@ use analysis::{
     BindingCatalogue, BindingKind, ChunkId, DependencyGraphAndAtomicGroups, ModuleId, ModuleRole,
     SourceUnitClass, SourceUnitId, top_level_id,
 };
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use js_ast::statement_for_source_unit_ordinal;
 use selector_outcome::{
     Declaration, Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
@@ -215,7 +215,7 @@ impl ChunkPlanBuilder {
             })
         };
 
-        let mut bindings_catalogue = HashMap::with_capacity(self.bindings_catalogue.len());
+        let mut bindings_catalogue = HashMap::new();
         for (binding, kind) in &self.bindings_catalogue {
             let mut retained_kind = kind.clone();
             let referenced_module = match &mut retained_kind {

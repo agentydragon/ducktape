@@ -81,6 +81,33 @@ unchanged. Successful batches retain exact physical filenames and all claim and
 metadata fields, write every target before deleting sources, and use atomic
 per-file replacement rather than a crash-atomic multi-file transaction.
 
+## Ownership subsets
+
+`run --ownership-subset <json>` changes the output ownership assignment while
+resolving the complete authored spec and retaining all its analysis contracts.
+The JSON is `{"modules":[{"chunk":"app","module":"features/view"}]}`;
+`{"modules":[]}` selects no named modules. Chunk IDs and chunk-local module
+paths must name existing materialized chunks and explicit modules. Duplicate
+entries and unknown JSON fields are errors.
+
+Full selector outcomes, relational anchors, duplicate/unmatched claims and
+annotations are checked before ownership is reduced. The selection does not
+change the analysis projection or source graph. Retained bindings, imported
+re-exports, destructuring companions and anonymous statements use the same
+normal assignment assembly, gate, translation validation and emission.
+Omitted claims return to entry. Selected module names and explicit
+`chunk_renames` remain intact; omitted members retain original source names,
+since recovered names from separate modules can collide in entry scope.
+The authored spec is unchanged.
+
+Ownership subsets require `inline_in_entry` for every materialized chunk.
+Other residual policies and full graph export are unsupported with this option.
+Each chunk's graph summary and module report records its retained module paths
+in `ownership_subset`, including an empty list. Acceptance is for that selected
+assignment only; it does not establish acceptance of the full canonical
+assignment or complete effect coverage. Reusing analysis still requires the
+normal matching engine, source and full-projection checks.
+
 ## Accepted output
 
 Unresolved claims prevent acceptance. A run may write diagnostic reports for a

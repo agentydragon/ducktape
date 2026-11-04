@@ -11,6 +11,7 @@ use artifact::reports::{ArtifactChunkRecord, ChunkDecompositionOutput};
 use artifact::{ChunkId, EmissionFiles};
 use emit_harness::emit_browser_harness;
 use graph_provenance::{CurrentRoots, GraphProvenance, InputCapture, ProvenanceRoots};
+use lowering::ownership_subset::OwnershipSubset;
 use lowering::{
     AnalysisMode, AnalysisSpec, AnalyzeProgramInputs, FullReportKind, GateRejectionPolicy,
     GraphReportSelection, MaterializeLogicalModulesOptions, MaterializeSpecInputs, Materialized,
@@ -95,6 +96,8 @@ impl RunArtifacts {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransformRunOptions {
+    /// Retain only these ownership claims after resolving the complete spec.
+    pub ownership_subset: Option<OwnershipSubset>,
     pub output: RunOutput,
     pub artifacts: RunArtifacts,
     pub graph_reports: GraphReportSelection,
@@ -545,6 +548,7 @@ fn validate_report_chunk_selection(
 
 fn audit_options() -> TransformRunOptions {
     TransformRunOptions {
+        ownership_subset: None,
         output: RunOutput::DryRun,
         artifacts: RunArtifacts::Program,
         graph_reports: GraphReportSelection::None,
@@ -666,6 +670,10 @@ fn run_prepared_transform(
         chunk_records,
     } = source;
     let materialise_chunk_ids: Vec<String> = spec.materialize_chunk_ids().into_iter().collect();
+    anyhow::ensure!(
+        options.ownership_subset.is_none() || !materialise_chunk_ids.is_empty(),
+        "ownership subsets require at least one materialized chunk"
+    );
     let dry_run = options.output == RunOutput::DryRun;
     validate_report_chunk_selection(
         "--effect-conflicts-chunk",
@@ -753,6 +761,7 @@ fn run_prepared_transform(
             },
             &vendor_plan,
             MaterializeLogicalModulesOptions {
+                ownership_subset: options.ownership_subset.clone(),
                 graph_provenance: Some(provenance),
                 config: spec.materialize_logical_modules.clone(),
                 chunk_ids: materialise_chunk_ids,
@@ -1263,6 +1272,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     const KEEP_GOING_RUN: TransformRunOptions = TransformRunOptions {
+        ownership_subset: None,
         output: RunOutput::Accepted,
         artifacts: RunArtifacts::Program,
         graph_reports: GraphReportSelection::None,
@@ -1622,6 +1632,7 @@ mod tests {
                     packages_root: None,
                 },
                 TransformRunOptions {
+                    ownership_subset: None,
                     output: RunOutput::DryRun,
                     artifacts: RunArtifacts::Program,
                     graph_reports: GraphReportSelection::None,
