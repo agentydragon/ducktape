@@ -11548,11 +11548,11 @@ metadata:
   name: quest-read
   namespace: agentplane-staging
 spec:
-  description: Quest scheduling, account, and insurance lookup API. Use https://platform-sessions.allegedly.works/quest/openapi.json to discover the available routes. The bearer is substituted only for the listed lookup paths.
+  description: Quest scheduling, account, and insurance lookup API. The upstream paths are exposed under https://platform-sessions.allegedly.works/proxy/quest. The bearer is substituted only for the listed lookup paths.
   source:
     secretRef:
       key: token
-      name: quest-agent-token
+      name: platform-sessions-quest-bearer
   targets:
     - header: Authorization
       method: schemeToken
@@ -11572,17 +11572,16 @@ spec:
       methods:
         - GET
       paths:
-        - /quest/openapi.json
-        - /quest/guest/getReasons/*
-        - /quest/guest/getPscDetails/*
-        - /quest/api/getInsuranceProfile
-        - /quest/guest/getTokenBasicInfoAPI/*
-        - /quest/guest/getEncounterInfo/appointment
-        - /quest/guest/getEncounterInfo/demographics
-        - /quest/guest/getEncounterInfo/insurance
-        - /quest/guest/getEncounterInfo/secondaryInsurance
-        - /quest/guest/getPayorList/*
-        - /quest/guest/getAppointment/*
+        - /proxy/quest/guest/getReasons/*
+        - /proxy/quest/guest/getPscDetails/*
+        - /proxy/quest/api/getInsuranceProfile
+        - /proxy/quest/guest/getTokenBasicInfoAPI/*
+        - /proxy/quest/guest/getEncounterInfo/appointment
+        - /proxy/quest/guest/getEncounterInfo/demographics
+        - /proxy/quest/guest/getEncounterInfo/insurance
+        - /proxy/quest/guest/getEncounterInfo/secondaryInsurance
+        - /proxy/quest/guest/getPayorList/*
+        - /proxy/quest/guest/getAppointment/*
       type: egress
     - credentialRef:
         name: quest-read
@@ -11591,12 +11590,12 @@ spec:
       methods:
         - POST
       paths:
-        - /quest/guest/getPscsWithAvailability
-        - /quest/api/getOpenEorders
-        - /quest/api/getUserDemographics
-        - /quest/guest/examoneEligibility
-        - /quest/guest/verifyInsurance/V2
-        - /quest/guest/getPricing
+        - /proxy/quest/guest/getPscsWithAvailability
+        - /proxy/quest/api/getOpenEorders
+        - /proxy/quest/api/getUserDemographics
+        - /proxy/quest/guest/examoneEligibility
+        - /proxy/quest/guest/verifyInsurance/V2
+        - /proxy/quest/guest/getPricing
       type: egress
 ---
 apiVersion: rbac.authorization.k8s.io/v1

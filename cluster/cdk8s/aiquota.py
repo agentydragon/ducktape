@@ -78,7 +78,7 @@ BEARER_SECRET_NAME = "aiquota-api-bearer"  # the SOPS-managed Secret; every mirr
 # The API reads its config at the Settings default; nothing sets AIQUOTA_CONFIG.
 _CONFIG_PATH: Path = Settings.model_fields["config_path"].default
 _PLATFORM_SESSIONS_URL = "http://platform-sessions.platform-sessions.svc:8080"
-_PLATFORM_SESSIONS_READ_TOKEN = "platform-sessions-read-token"
+_PLATFORM_SESSIONS_READ_TOKEN = "platform-sessions-aiquota-bearer"
 # The CLIProxyAPI integration keeps the Claude and Codex OAuth credentials and performs
 # authenticated usage requests. Haku's existing egress proxy still owns the legacy Claude
 # setup token.
@@ -86,8 +86,8 @@ _CONFIG = Config(
     cli_proxy_api=CLIProxyAPISettings(url=f"{cli_proxy_api_app.SERVICE.url}/v0/management"),
     claude=ClaudeSettings(enabled=True),
     codex=CodexSettings(enabled=True),
-    openai_platform=OpenAIPlatformSettings(enabled=True, url=f"{_PLATFORM_SESSIONS_URL}/openai"),
-    anthropic_platform=AnthropicPlatformSettings(enabled=True, url=f"{_PLATFORM_SESSIONS_URL}/anthropic"),
+    openai_platform=OpenAIPlatformSettings(enabled=True, url=f"{_PLATFORM_SESSIONS_URL}/proxy/openai"),
+    anthropic_platform=AnthropicPlatformSettings(enabled=True, url=f"{_PLATFORM_SESSIONS_URL}/proxy/anthropic"),
     zai=ZaiSettings(enabled=False),
 )
 CONFIG_CONFIG_MAP = ConfigMapArgs(

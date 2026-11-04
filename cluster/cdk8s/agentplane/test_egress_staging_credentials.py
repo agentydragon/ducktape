@@ -102,14 +102,14 @@ def test_quest_bearer_has_its_own_secret_and_network_access(scratch_chart: Chart
     credential = next(
         obj for obj in objects if obj["kind"] == "EgressCredential" and obj["metadata"]["name"] == "quest-read"
     )
-    assert credential["spec"]["source"] == {"secretRef": {"name": "quest-agent-token", "key": "token"}}
+    assert credential["spec"]["source"] == {"secretRef": {"name": "platform-sessions-quest-bearer", "key": "token"}}
     assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}]
     policy = next(obj for obj in objects if obj["kind"] == "PolicySet" and obj["metadata"]["name"] == "quest-read")
     rules = policy["spec"]["rules"]
     assert [rule["methods"] for rule in rules] == [["GET"], ["POST"]]
     assert all(rule["hosts"] == ["platform-sessions.allegedly.works"] for rule in rules)
     assert all(rule["paths"] for rule in rules)
-    assert all(path.startswith("/quest/") for rule in rules for path in rule["paths"])
+    assert all(path.startswith("/proxy/quest/") for rule in rules for path in rule["paths"])
     network = next(
         obj
         for obj in objects

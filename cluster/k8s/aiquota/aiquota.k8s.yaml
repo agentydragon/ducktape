@@ -78,7 +78,7 @@ kind: Deployment
 metadata:
   annotations:
     description: AI subscription quotas and OpenAI Platform credits.
-    secret.reloader.stakater.com/reload: platform-sessions-read-token
+    secret.reloader.stakater.com/reload: platform-sessions-aiquota-bearer
   labels:
     app.kubernetes.io/name: aiquota
   name: aiquota-api
@@ -119,13 +119,13 @@ spec:
               valueFrom:
                 secretKeyRef:
                   key: token
-                  name: platform-sessions-read-token
+                  name: platform-sessions-aiquota-bearer
                   optional: true
             - name: AIQUOTA_ANTHROPIC_PLATFORM_TOKEN
               valueFrom:
                 secretKeyRef:
                   key: token
-                  name: platform-sessions-read-token
+                  name: platform-sessions-aiquota-bearer
                   optional: true
             - name: AIQUOTA_CLICKHOUSE_URL
               value: http://clickhouse.clickhouse.svc:8123

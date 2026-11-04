@@ -170,14 +170,7 @@ class AnthropicPlatformProvider(Provider):
 
 
 def _error_message(exc: Exception) -> str:
-    """Surface the original status wrapped by the session proxy's generic 502."""
+    """Report the upstream status without displaying its potentially sensitive body."""
     if isinstance(exc, httpx.HTTPStatusError):
-        try:
-            body = exc.response.json()
-        except ValueError:
-            body = None
-        if isinstance(body, dict) and body.get("error") == "upstream_rejected":
-            upstream_status = body.get("upstream_status")
-            if isinstance(upstream_status, int):
-                return f"upstream rejected request (HTTP {upstream_status})"
+        return f"upstream rejected request (HTTP {exc.response.status_code})"
     return str(exc).strip() or type(exc).__name__
