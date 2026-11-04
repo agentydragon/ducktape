@@ -648,6 +648,13 @@ Ordinary simple parameters initialize from already evaluated arguments in
 source order; supported selected defaults execute once in the same kernel.
 All parameter cells exist in TDZ before defaults run, and each successful
 initialization and noncaptured parameter read has its own lexical receipt.
+Ordinary noncaptured local `let`/`const` declarations likewise compose receipts
+for actual TDZ-cell creation, successful initialization and subsequent reads.
+Initializer effects compose separately; an abrupt initializer never marks its
+binding initialized. Prebound values do not establish these receipts. Local
+declaration receipts do not certify captured cells, `var`/function hoisting,
+later assignments, or global/heap/host coverage, and cannot manufacture callable
+selection evidence from a stored value.
 Default-bearing bodies with body `var` or function declarations retain the
 compatibility path until separate parameter and body environments are modeled.
 Live captured-cell, rest/destructuring, `arguments`, async and generator

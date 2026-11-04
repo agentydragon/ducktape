@@ -23,7 +23,9 @@ pub(super) struct LocalFrame {
     /// Present only when the caller delegates the actual parameter prologue
     /// to this kernel. Provider/compatibility frames are already bound.
     pub(super) parameter_inputs: Option<Vec<SelectedValue>>,
-    pub(super) initialized_parameters: BTreeSet<Id>,
+    /// Bindings initialized by an actual operation in this activation.
+    /// Prebound values alone do not establish a declarative-cell receipt.
+    pub(super) initialized_bindings: BTreeSet<Id>,
     effect_coverage: EffectCoverageFragment,
     /// Entry arguments/captures and external values read while executing.
     /// Retained for a truncated remainder even after local aliases change.
@@ -44,7 +46,7 @@ impl LocalFrame {
             binding_selections: BTreeMap::new(),
             return_selection: None,
             parameter_inputs: None,
-            initialized_parameters: BTreeSet::new(),
+            initialized_bindings: BTreeSet::new(),
             effect_coverage: EffectCoverageFragment::no_effects(),
             borrowed_records: BTreeSet::new(),
             fresh_records: BTreeSet::new(),
@@ -138,7 +140,9 @@ pub(super) struct LocalTransferResult {
 pub(super) trait LocalContext: OwnDataContext {
     fn array_created(&mut self, _allocation: u32, _sparse: bool) {}
     fn instantiate_parameter_bindings(&mut self, _frame: &mut LocalFrame) {}
-    fn parameter_initialization(
+    /// Effects of actual declarative-cell creation or initialization. This
+    /// excludes evaluating an initializer and stores through captured cells.
+    fn declarative_binding_operation(
         &self,
         _binding: &Id,
         _frame: &LocalFrame,
@@ -586,7 +590,7 @@ fn expression(
             if matches!(kind, LocalBinding::Const | LocalBinding::NamedSelf(_))
                 || (*kind == LocalBinding::Parameter
                     && frame.parameter_inputs.is_some()
-                    && !frame.initialized_parameters.contains(binding))
+                    && !frame.initialized_bindings.contains(binding))
                 || (*kind == LocalBinding::Let
                     && frame
                         .environment
@@ -851,12 +855,10 @@ pub(super) fn execute(
                 frame.binding_selections.remove(&parameter.binding);
             }
             context.local_binding_stored(&parameter.binding, frame);
-            frame
-                .initialized_parameters
-                .insert(parameter.binding.clone());
+            frame.initialized_bindings.insert(parameter.binding.clone());
             frame
                 .effect_coverage
-                .compose(&context.parameter_initialization(&parameter.binding, frame));
+                .compose(&context.declarative_binding_operation(&parameter.binding, frame));
         }
     }
     for (binding, kind) in &body.bindings {
@@ -901,22 +903,23 @@ pub(super) fn execute(
             }
         }
     }
-    if body.bindings.iter().any(|(binding, kind)| {
-        *kind != LocalBinding::Parameter || !frame.initialized_parameters.contains(binding)
-    }) {
-        // Only actually initialized parameters have prologue receipts here.
-        // Other activation declarations retain their conservative boundary.
-        frame
-            .effect_coverage
-            .compose(&EffectCoverageFragment::default());
-    }
     context.instantiate_bindings(frame);
+    for (binding, kind) in &body.bindings {
+        if *kind == LocalBinding::Parameter && frame.initialized_bindings.contains(binding) {
+            continue;
+        }
+        // Let/const cells have actually been created in TDZ above. Hoisted
+        // values and compatibility parameters retain their separate boundary.
+        let effects = if matches!(kind, LocalBinding::Let | LocalBinding::Const) {
+            context.declarative_binding_operation(binding, frame)
+        } else {
+            EffectCoverageFragment::default()
+        };
+        frame.effect_coverage.compose(&effects);
+    }
     for operation in body.operations.iter() {
         match operation {
             LocalOperation::Initialize(binding, node) => {
-                frame
-                    .effect_coverage
-                    .compose(&EffectCoverageFragment::default());
                 let selected = match node {
                     Some(node) => expression(context, node, body, frame, &mut judgment)?,
                     None if matches!(
@@ -942,6 +945,10 @@ pub(super) fn execute(
                     frame.binding_selections.remove(binding);
                 }
                 context.local_binding_stored(binding, frame);
+                frame.initialized_bindings.insert(binding.clone());
+                frame
+                    .effect_coverage
+                    .compose(&context.declarative_binding_operation(binding, frame));
             }
             LocalOperation::Evaluate(node) => {
                 if expression(context, node, body, frame, &mut judgment)?

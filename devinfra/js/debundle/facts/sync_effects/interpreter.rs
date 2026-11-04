@@ -1527,13 +1527,23 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 self.executor.state.prefix_revision.wrapping_add(1);
         }
     }
-    fn parameter_initialization(
+    fn declarative_binding_operation(
         &self,
         binding: &Id,
         _frame: &LocalFrame,
     ) -> EffectCoverageFragment {
-        if self.executor.state.active_cells.contains_key(binding) {
-            // Live captured-cell initialization needs its own receipt family.
+        if !matches!(
+            self.body.bindings.get(binding),
+            Some(LocalBinding::Parameter | LocalBinding::Let | LocalBinding::Const)
+        ) || self.executor.state.active_cells.contains_key(binding)
+            || self
+                .executor
+                .inputs
+                .captured_local_bindings
+                .contains(binding)
+        {
+            // Live captured cells and other activation kinds need their own
+            // receipt families, independently of a stored value.
             EffectCoverageFragment::default()
         } else {
             EffectCoverageFragment::lexical_operation()
@@ -1765,7 +1775,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         let effects = if normal && self.executor.initialized_local_binding(binding) {
             EffectCoverageFragment::initialized_module_read()
         } else if normal
-            && frame.initialized_parameters.contains(binding)
+            && frame.initialized_bindings.contains(binding)
             && !self.executor.state.active_cells.contains_key(binding)
         {
             EffectCoverageFragment::no_effects()
