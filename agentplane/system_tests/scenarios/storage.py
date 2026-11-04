@@ -9,7 +9,6 @@ import shlex
 from collections.abc import Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
-from enum import StrEnum
 from uuid import uuid4
 
 import yaml
@@ -27,11 +26,6 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 BOUND_SECONDS = 300
 RECORD = "agentplane.allegedly.works/workspace-record"
-
-
-class StorageLayout(StrEnum):
-    POD_DIRECTORY = "pod-directory"
-    VM_RAW = "vm-raw"
 
 
 @dataclass(frozen=True)
@@ -263,15 +257,12 @@ async def fresh_workspace_storage_survives_replacement(
     client: Client,
     dispatcher: SessionDispatcherClient,
     executor: Executor,
-    storage_layout: StorageLayout,
     *,
     vm_storage: VmStorage | None,
 ) -> None:
-    vm = storage_layout is StorageLayout.VM_RAW
-    if vm != (vm_storage is not None):
-        raise ValueError("VM storage layout and its readiness/storage configuration must be supplied together")
+    vm = vm_storage is not None
     check_boot = vm_storage.check_boot if vm_storage is not None else None
-    case = storage_layout.value
+    case = "vm-raw" if vm else "pod-directory"
     controller = await _object(cluster, "deployment", "sandbox-controller")
     assert controller["status"].get("readyReplicas") == 1
     controller_image = controller["spec"]["template"]["spec"]["containers"][0]["image"]

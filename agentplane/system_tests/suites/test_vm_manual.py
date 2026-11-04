@@ -19,18 +19,13 @@ pytestmark = pytest.mark.vm_sandboxes
 
 
 async def test_fresh_workspace_storage_survives_replacement(
-    cluster: Cluster,
-    client: Client,
-    dispatcher: SessionDispatcherClient,
-    executor: Executor,
-    storage_layout: storage.StorageLayout,
+    cluster: Cluster, client: Client, dispatcher: SessionDispatcherClient, executor: Executor
 ) -> None:
     await storage.fresh_workspace_storage_survives_replacement(
         cluster,
         client,
         dispatcher,
         executor,
-        storage_layout,
         vm_storage=storage.VmStorage(storage_class=STORAGE_CLASS, check_boot=guest_logs.check_boot),
     )
 
@@ -38,11 +33,6 @@ async def test_fresh_workspace_storage_survives_replacement(
 @pytest.fixture
 def executor() -> Executor:
     return Executor(template="environment-vm", cwd="/state/workspaces/accept")
-
-
-@pytest.fixture
-def storage_layout() -> storage.StorageLayout:
-    return storage.StorageLayout.VM_RAW
 
 
 @pytest.mark.scripted_model
