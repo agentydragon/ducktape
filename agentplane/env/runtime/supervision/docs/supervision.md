@@ -138,7 +138,7 @@ second Runtime from owning the state concurrently, but does not replace either o
 select `pid1`, invoke Environment Runtime directly and disable shared process namespaces. The PID1
 backend rejects a Runtime whose PID is not 1. Runtime's process domains share one PID1 reaper.
 The Execution API is embedded; its Pod companion runs separately as PID1 and owns the native
-exec-server namespace. Non-PID1 integration fixtures select Runtime's `subprocess` backend. VM
+exec-server namespace. Remaining non-PID1 Go test fixtures select Runtime's `subprocess` backend. VM
 systemd supervision does not fall back to a Pod backend.
 
 PID1 launches each child in its own process group without an environment owner descriptor.

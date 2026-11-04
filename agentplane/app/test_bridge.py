@@ -104,8 +104,8 @@ async def _runner_session(runner: SandboxRunner, thread_id: str | UUID) -> sessi
     return next(session for session in status.sessions if session.session_id == str(thread_id))
 
 
-async def _kill_harness(runner: SandboxRunner, thread_id: str | UUID) -> None:
-    await kill_harness(await runner.status(), str(thread_id))
+async def _kill_harness(runner: RunningRunner, sandbox_runner: SandboxRunner, thread_id: str | UUID) -> None:
+    await kill_harness(runner, await sandbox_runner.status(), str(thread_id))
 
 
 @dataclass(frozen=True)
@@ -356,7 +356,7 @@ async def _interrupt_and_recover(
     existing = await runner.history_entries(thread_id)
     before = existing[-1].cursor if existing else 0
     if mode == "kill":
-        await _kill_harness(sandbox_runner, thread_id)
+        await _kill_harness(runner, sandbox_runner, thread_id)
     elif mode == "interrupt":
         response = await http.post(
             f"/upstream/dispatcher/v1/sessions/{thread_id}:interruptTurn",
@@ -767,6 +767,7 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
 
 
 async def test_open_and_inputs_reach_the_runner_while_history_lags(
+    runner: RunningRunner,
     sandbox: SandboxCluster,
     sandbox_runner: SandboxRunner,
     event_logs: SessionHistory,
@@ -808,7 +809,7 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
                 assert summary.last_cursor > seed.admission.cursor
                 assert not summary.active_turn_id
 
-        await _kill_harness(sandbox_runner, thread_id)
+        await _kill_harness(runner, sandbox_runner, thread_id)
         # The native process exited while History stayed behind; later input prepares it again.
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)

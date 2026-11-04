@@ -7,17 +7,15 @@ import os
 import signal
 from pathlib import Path
 from typing import Self
-from uuid import uuid4
 
 from agentplane.env.config import Endpoint, EnvironmentRuntimeControl
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.gateway import Gateway
-from agentplane.env.e2e.testing.process_fixtures import wait_for_exit, wait_for_owner_release
+from agentplane.env.e2e.testing.process_fixtures import RunnerProcess, pid1_container, wait_for_exit
 from agentplane.env.runtime.control import environment_runtime_pb2_grpc
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_log_pb2, session_pb2
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 class RunningRunner:
@@ -37,8 +35,7 @@ class RunningRunner:
         self.control_endpoint = control_endpoint or gateway.endpoint
         self.observe_control = observe_control
         self.ingress_endpoint = ingress_endpoint
-        self.process: asyncio.subprocess.Process
-        self.log_path = undeclared_outputs_dir() / f"go-runner-{uuid4().hex}.log"
+        self.process: RunnerProcess
 
     @property
     def state_dir(self) -> Path:
@@ -64,20 +61,15 @@ class RunningRunner:
             {key: os.environ[key] for key in ("RUNFILES_DIR", "RUNFILES_MANIFEST_FILE") if key in os.environ}
         )
         environment["OTEL_SDK_DISABLED"] = "true"
+        environment["PATH"] = "/usr/bin:/bin"
         if self.config.claude is not None:
             environment["ANTHROPIC_AUTH_TOKEN"] = self.config.claude.token
         if self.config.codex is not None:
             environment["OPENAI_API_KEY"] = self.config.codex.token
-        self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.log_path.open("ab") as log:
-            self.process = await asyncio.create_subprocess_exec(
-                *launches.command(self.config, control=self.control_endpoint, ingress=self.ingress_endpoint),
-                env=environment,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=log,
-                stderr=log,
-                start_new_session=True,
-            )
+        command = launches.command(self.config, control=self.control_endpoint, ingress=self.ingress_endpoint)
+        container = await asyncio.to_thread(pid1_container, command, self.state_dir.parent, environment)
+        await asyncio.to_thread(container.__enter__)
+        self.process = RunnerProcess(container)
         if not self.observe_control:
             return
         connected = asyncio.create_task(
@@ -87,7 +79,7 @@ class RunningRunner:
         try:
             done, _ = await asyncio.wait((connected, exited), return_when=asyncio.FIRST_COMPLETED)
             if exited in done:
-                raise RuntimeError(f"Go runner exited with {exited.result()}; see {self.log_path}")
+                raise RuntimeError(f"Go runner exited with {exited.result()}; see container logs")
             await connected
         except BaseException:
             await self.stop()
@@ -98,18 +90,10 @@ class RunningRunner:
             await asyncio.gather(connected, exited, return_exceptions=True)
 
     async def stop(self) -> None:
-        if self.process.returncode is not None:
-            return
-        self.process.send_signal(signal.SIGTERM)
         try:
-            async with asyncio.timeout(20):
-                await self.process.wait()
-        except TimeoutError:
-            os.killpg(self.process.pid, signal.SIGKILL)
-            await self.process.wait()
-            raise TimeoutError(f"Go runner did not stop; see {self.log_path}") from None
-        if self.process.returncode:
-            raise RuntimeError(f"Go runner exited with {self.process.returncode}; see {self.log_path}")
+            await self.process.stop()
+        finally:
+            await self.process.close()
         if self.observe_control:
             await self.gateway.control.disconnect()
 
@@ -141,18 +125,17 @@ class RunningRunner:
 
     async def crash(self) -> None:
         status = await (await self.control()).GetStatus(session_pb2.GetStatusRequest())
-        os.killpg(self.process.pid, signal.SIGKILL)
-        await self.process.wait()
-        for process in status.processes:
-            if not process.HasField("pid"):
-                continue
-            await asyncio.wait_for(wait_for_exit(process.pid), timeout=10)
-        await wait_for_owner_release(self.state_dir)
+        await self.process.crash([process.pid for process in status.processes if process.HasField("pid")])
+        await self.process.close()
+
+    async def host_pid(self, pid: int) -> int:
+        return await self.process.host_pid(pid)
 
 
-async def kill_harness(status: session_pb2.EnvironmentRuntimeStatus, session_id: str) -> None:
+async def kill_harness(runner: RunningRunner, status: session_pb2.EnvironmentRuntimeStatus, session_id: str) -> None:
     """SIGKILL the harness process `status` assigns `session_id` to, and wait until it is gone."""
     process = next(row for row in status.processes if session_id in row.assigned_session_ids)
     assert process.HasField("pid")
-    os.kill(process.pid, signal.SIGKILL)
-    await asyncio.wait_for(wait_for_exit(process.pid), timeout=10)
+    pid = await runner.host_pid(process.pid)
+    os.kill(pid, signal.SIGKILL)
+    await asyncio.wait_for(wait_for_exit(pid), timeout=10)

@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import ctypes
 import errno
-import fcntl
 import json
 import os
 import shlex
@@ -34,6 +33,7 @@ from util.testing.container_logs import LoggedContainer
 class RunnerProcess:
     container: LoggedContainer
     exit_code: int | None = None
+    closed: bool = False
 
     def _host_pids(self, namespace_pids: list[int]) -> list[int]:
         """Translate Runtime's PID-namespace IDs before its container exits."""
@@ -85,23 +85,51 @@ class RunnerProcess:
                 await self.wait()
                 raise TimeoutError("Go runner did not stop; a test checkpoint or script may still be held") from None
 
+    async def close(self) -> None:
+        if not self.closed:
+            self.closed = True
+            await asyncio.to_thread(self.container.__exit__, None, None, None)
 
-async def wait_for_owner_release(state_dir: Path) -> None:
-    # A native leader can exit before its supervisor finishes fencing descendants.
-    # Wait for their inherited Runtime fence before a successor acquires ownership.
-    try:
-        async with asyncio.timeout(10):
-            with (state_dir / ".agentplane-environment-runtime-owner").open("rb") as probe:
-                while True:
-                    try:
-                        fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    except BlockingIOError:
-                        await asyncio.sleep(0.02)
-                        continue
-                    fcntl.flock(probe, fcntl.LOCK_UN)
-                    break
-    except TimeoutError:
-        raise TimeoutError("supervised descendants retained the environment owner lock after crash") from None
+
+def pid1_container(
+    command: list[str], directory: Path, environment: dict[str, str], allow_user_namespaces: bool = False
+) -> LoggedContainer:
+    """Run the production Runtime and its pinned harnesses in a private Pod-like PID namespace."""
+    for image in (ryuk.IMAGE, debian_slim.IMAGE):
+        load_oci_image(image)
+    config = json.loads(Path(command[2]).read_text())
+    runtime = Path(command[0]).absolute()
+    container: LoggedContainer = (
+        LoggedContainer(debian_slim.IMAGE.tag, test_name=f"runtime-pid1-{uuid4().hex}")
+        .with_kwargs(
+            network_mode="host",
+            user=f"{os.getuid()}:{os.getgid()}",
+            pids_limit=512,
+            mem_limit="1g",
+            # The sparse-root experiment mounts proc in a nested user namespace.
+            privileged=allow_user_namespaces,
+        )
+        .with_volume_mapping(str(directory), str(directory), mode="rw")
+        .with_volume_mapping(str(runtime.resolve()), str(runtime), mode="ro")
+        .with_command(shlex.join(command))
+    )
+    # Gateway tests may issue certificates outside the Runtime's state directory.
+    # Mount only the configured files, at the paths the Runtime reads.
+    security = config["control"]["security"]
+    if security["mode"] == "mtls":
+        for file in security["tls"].values():
+            path = Path(file)
+            if not path.is_relative_to(directory):
+                container.with_volume_mapping(str(path.resolve()), str(path), mode="ro")
+    for dialect in ("claude", "codex"):
+        if native_config := config.get(dialect):
+            native = Path(native_config["binary"]).absolute()
+            # Codex ships resources next to bin/codex; Claude is a single executable.
+            native_mount = native.parent.parent if dialect == "codex" else native
+            container.with_volume_mapping(str(native_mount.resolve()), str(native_mount), mode="ro")
+    for name, value in environment.items():
+        container.with_env(name, value)
+    return container
 
 
 # Bazel's Python is built without os.pidfd_open; the syscall itself is on every kernel this runs on.
@@ -156,8 +184,6 @@ async def start_runner(
     """Start a runner process on the test's state directory; it returns once the runner is connected."""
     started: list[RunnerProcess] = []
     ingress = Endpoint(target=history_service.ingress_target, bearer=await history_service.writer_token(WRITER))
-    for image in (ryuk.IMAGE, debian_slim.IMAGE):
-        load_oci_image(image)
 
     async def start(
         *,
@@ -183,31 +209,7 @@ async def start_runner(
         )
         env = environment_runtime_environment(home)
         env["PATH"] = "/usr/bin:/bin"
-        config = json.loads(await asyncio.to_thread(Path(command[2]).read_text))
-        runtime = await asyncio.to_thread(Path(command[0]).absolute)
-        native = await asyncio.to_thread(
-            Path(config["claude" if harness == session_pb2.HARNESS_CLAUDE else "codex"]["binary"]).absolute
-        )
-        container = (
-            LoggedContainer(debian_slim.IMAGE.tag, test_name=f"restart-runtime-{uuid4().hex}")
-            .with_kwargs(
-                network_mode="host",
-                user=f"{os.getuid()}:{os.getgid()}",
-                pids_limit=512,
-                mem_limit="1g",
-                # The sparse-root experiment mounts a nested proc filesystem. Docker's
-                # default masked /proc mounts prevent that even in a new user namespace.
-                privileged=allow_user_namespaces,
-            )
-            .with_volume_mapping(str(tmp_path), str(tmp_path), mode="rw")
-            .with_volume_mapping(str(runtime.resolve()), str(runtime), mode="ro")
-            .with_command(shlex.join(command))
-        )
-        # Codex ships resources next to bin/codex; Claude is a single executable.
-        native_mount = native.parent.parent if harness == session_pb2.HARNESS_CODEX else native
-        container.with_volume_mapping(str(native_mount.resolve()), str(native_mount), mode="ro")
-        for name, value in env.items():
-            container.with_env(name, value)
+        container = await asyncio.to_thread(pid1_container, command, tmp_path, env, allow_user_namespaces)
         await asyncio.to_thread(container.__enter__)
         runner = RunnerProcess(container)
         started.append(runner)
@@ -232,5 +234,5 @@ async def start_runner(
         try:
             await runner.stop()
         finally:
-            await asyncio.to_thread(runner.container.__exit__, None, None, None)
+            await runner.close()
     await gateway.control.disconnect()
