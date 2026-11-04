@@ -17,7 +17,7 @@
 use std::collections::BTreeMap;
 
 use analysis::facts::analyze_chunk;
-use analysis::graph::build_dependency_graph_with;
+use analysis::graph::{build_dependency_graph_with, chunk_constraining_module_edges};
 use analysis::ids::ModuleId;
 use analysis::{AnalysisInputs, DependencyGraph, ModuleAssignment};
 use debundle_e2e_support::*;
@@ -162,7 +162,9 @@ fn simulator_post_order_matches_node_evaluation_order_across_fixture_family() {
         // graph + assignment the pipeline derives from the spec.
         let dependency_graph = parse_and_build(case.source);
         let assignment = assignment_for(&dependency_graph, case);
-        let post_order = simulated_evaluation_post_order(&dependency_graph, &assignment);
+        let canonical = chunk_constraining_module_edges(&dependency_graph, &assignment);
+        let post_order =
+            simulated_evaluation_post_order(&canonical, assignment.entry_destination());
         // The simulator's residual node is the ESM DFS root — the
         // emitted entry file (the sweep's residual statements are all
         // anonymous, so no catchall module file materializes).

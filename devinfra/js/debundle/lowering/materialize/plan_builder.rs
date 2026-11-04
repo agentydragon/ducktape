@@ -22,6 +22,7 @@ use analysis::{
     classify_nested_var_placement, top_level_id,
 };
 use anyhow::{Context, Result, bail, ensure};
+use gate::simulated_evaluation_post_order;
 use selector_outcome::{
     Declaration, Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
 };
@@ -1260,7 +1261,8 @@ impl ChunkPlanBuilder {
     }
 
     /// Coarse residual routing merges wholly-unclaimed atomic groups when
-    /// their strict constraining-edge reachability to existing owners agrees.
+    /// their strict constraining-edge reachability to existing owners agrees
+    /// within one interval between fixed owners' fine-plan evaluations.
     /// This only chooses a candidate layout; the ordinary final assignment
     /// analysis still evaluates the complete I-graph and gate.
     pub(super) fn synthesize_coarse_atomic_groups(
@@ -1360,15 +1362,15 @@ impl ChunkPlanBuilder {
         atomic_groups: &[&BTreeSet<SourceUnitId>],
     ) -> Result<Vec<BTreeSet<SourceUnitId>>> {
         let dependency_graph = &precomputed.dependency_graph;
-        let entry_module = ModuleId(self.module_plans.len());
-        // Keep the existing entry ID distinct from every temporary candidate
-        // module. The virtual IDs live strictly above it and never become
-        // output-plan indices.
-        let first_virtual_module = self
-            .module_plans
-            .len()
-            .checked_add(1)
-            .context("temporary residual module IDs overflowed")?;
+        // Match fine lowering's ID domain, including its tie breaks: generated
+        // plans follow explicit plans, and entry follows every generated plan.
+        let first_virtual_module = self.module_plans.len();
+        let entry_module = ModuleId(
+            self.module_plans
+                .len()
+                .checked_add(atomic_groups.len())
+                .context("residual entry module ID overflowed")?,
+        );
         let mut source_unit_claims = Vec::<(SourceUnitId, ModuleId)>::new();
         for (statement, destination) in &self.whole_statement_assignment {
             for location in layout.for_statement(*statement) {
@@ -1400,10 +1402,15 @@ impl ChunkPlanBuilder {
         )?
         .assignment;
         let canonical_edges = chunk_constraining_module_edges(dependency_graph, &assignment);
+        let evaluation_order = simulated_evaluation_post_order(
+            &canonical_edges,
+            EntryDestination::from_module_id(entry_module),
+        );
         let mut successors = BTreeMap::<ModuleId, BTreeSet<ModuleId>>::new();
         for &(from, to) in canonical_edges.edges.keys() {
             successors.entry(from).or_default().insert(to);
         }
+        drop(canonical_edges);
 
         // A destination is fixed when it already owns at least one source
         // unit outside the candidate atomic groups. This includes a retained
@@ -1414,8 +1421,23 @@ impl ChunkPlanBuilder {
             .map(|(_, destination)| destination)
             .filter(|destination| !virtual_modules.contains(destination))
             .collect();
-        let mut groups_by_signature = BTreeMap::<BTreeSet<ModuleId>, BTreeSet<SourceUnitId>>::new();
+        let mut fixed_positions: Vec<usize> = fixed_destinations
+            .iter()
+            .filter_map(|destination| evaluation_order.get(destination).copied())
+            .collect();
+        fixed_positions.sort_unstable();
+        let mut groups_by_signature =
+            BTreeMap::<(usize, BTreeSet<ModuleId>), BTreeSet<SourceUnitId>>::new();
+        let mut groups = Vec::new();
         for (virtual_module, members) in candidate_modules {
+            // The simulator omits isolated modules because they cannot affect
+            // its verdict. Keep those atomic groups intact without inventing
+            // an evaluation position for the coarsening heuristic.
+            let Some(position) = evaluation_order.get(&virtual_module) else {
+                groups.push(members.clone());
+                continue;
+            };
+            let interval = fixed_positions.partition_point(|fixed| fixed < position);
             let mut reachable = BTreeSet::new();
             let mut visited = BTreeSet::from([virtual_module]);
             let mut pending = VecDeque::from([virtual_module]);
@@ -1430,12 +1452,12 @@ impl ChunkPlanBuilder {
                 }
             }
             groups_by_signature
-                .entry(reachable)
+                .entry((interval, reachable))
                 .or_default()
                 .extend(members.iter().copied());
         }
 
-        let mut groups: Vec<BTreeSet<SourceUnitId>> = groups_by_signature.into_values().collect();
+        groups.extend(groups_by_signature.into_values());
         groups.sort_by_key(|members| members.iter().next().copied());
         Ok(groups)
     }

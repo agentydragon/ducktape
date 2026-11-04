@@ -1,5 +1,6 @@
 //! `coarse_atomic_groups` merges wholly-unclaimed atomic groups that share
-//! strict constraining reachability to existing owners. The normal gate and
+//! strict constraining reachability to existing owners within fine evaluation
+//! intervals. The normal gate and
 //! Node execution still decide whether the final placement is valid.
 
 use debundle_e2e_support::*;
@@ -137,6 +138,35 @@ console.log(residualAlias() === readNamed);
 export { readNamed, namedReader, residualAlias };
 "#;
 
+#[test]
+fn coarse_residuals_keep_fixed_evaluations_between_groups() {
+    let source = r#"export const before = 1;
+export const anchor = before + 1;
+export const after = () => anchor;
+console.log([before, anchor, after()].join("|"));
+"#;
+    let fixture = |mode| {
+        run_fixture(
+            FixtureOpts::new(
+                source,
+                vec![logical_module("features/anchor", &[Member::new("anchor")])],
+            )
+            .with_unassigned_mode(mode),
+        )
+    };
+    let fine = fixture(unassigned_mode_per_atomic_group());
+    let coarse = fixture(unassigned_mode_coarse_atomic_groups());
+    assert_preserved_entry_output(&fine, "1|2|2\n");
+    assert_preserved_entry_output(&coarse, "1|2|2\n");
+    let directory = "static/app/modules/__auto/residual_groups";
+    let before = module_containing(&coarse.out_root, directory, "const before");
+    let after = module_containing(&coarse.out_root, directory, "const after");
+    assert_ne!(
+        before, after,
+        "the fixed anchor evaluates between these equal-signature residual groups"
+    );
+}
+
 fn asymmetric_fixture(mode: spec::UnassignedMode) -> FixtureOpts<'static> {
     FixtureOpts::new(
         ASYMMETRIC_SOURCE,
@@ -149,34 +179,40 @@ fn asymmetric_fixture(mode: spec::UnassignedMode) -> FixtureOpts<'static> {
 }
 
 #[test]
-fn strict_signatures_leave_asymmetric_lazy_eager_shape_for_final_gate() {
-    // This actual source shape has a lazy function read and eager initializers.
-    // Strict signatures keep the residual declarations separate; the complete
-    // I-graph still reaches the ordinary gate, which rejects this observed
-    // non-rescued Pass 2 case without inventing a strict Pass 1 cycle.
-    let rejected =
-        run_emit_on_rejection_fixture(asymmetric_fixture(unassigned_mode_coarse_atomic_groups()));
+fn evaluation_intervals_preserve_asymmetric_lazy_eager_execution() {
+    let fine = run_fixture(asymmetric_fixture(unassigned_mode_per_atomic_group()));
+    let coarse = run_fixture(asymmetric_fixture(unassigned_mode_coarse_atomic_groups()));
+    assert_preserved_entry_output(&fine, "true\n");
+    assert_preserved_entry_output(&coarse, "true\n");
+    let directory = "static/app/modules/__auto/residual_groups";
+    let read_named = module_containing(&coarse.out_root, directory, "const readNamed");
+    let residual_alias = module_containing(&coarse.out_root, directory, "const residualAlias");
+    assert_ne!(read_named, residual_alias);
+}
+
+#[test]
+fn coarse_routing_keeps_the_normal_gate_for_incompatible_named_claims() {
+    let source = r#"export const early = 1;
+export const middle = early + 1;
+export const late = middle + 1;
+console.log(late);
+"#;
+    let rejected = run_emit_on_rejection_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "features/endpoints",
+                &[Member::new("early"), Member::new("late")],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_coarse_atomic_groups()),
+    );
     let cycles = rejected.cycles();
     assert!(
         cycles
             .iter()
-            .any(|cycle| cycle["rejection"] == "esm_evaluation_tdz"),
-        "the final normal gate should reject this shape in Pass 2: {cycles:#?}"
-    );
-    assert!(
-        !cycles
-            .iter()
             .any(|cycle| cycle["rejection"] == "mutual_constraining_cycle"),
-        "strict candidate routing must not introduce a Pass 1 constraining cycle: {cycles:#?}"
+        "the final normal gate must reject the incompatible named boundary: {cycles:#?}"
     );
     assert_gate_rejected_banner(&rejected.entry_path(), &rejected.report_path("cycles.json"));
-
-    let directory = "static/app/modules/__auto/residual_groups";
-    let app_root = rejected.app_root();
-    let read_named = module_containing(&app_root, directory, "const readNamed");
-    let residual_alias = module_containing(&app_root, directory, "const residualAlias");
-    assert_ne!(
-        read_named, residual_alias,
-        "strict constraining reachability distinguishes the two candidate groups"
-    );
 }
