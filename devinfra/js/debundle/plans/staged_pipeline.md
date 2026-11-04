@@ -19,26 +19,20 @@ and canonical projection remain identical. Shared artifact/vendor dependencies
 still invalidate analysis conservatively; splitting those further is separate
 work. Saved graphs and snapshots retain their full executable digest.
 
-## Remaining selector-identity decision
+## Source identity of native premises
 
-`resolved_member` premises still carry their logical destination into analysis:
-`AnalysisProjection::new` keys `premise_members` by `(module, name)`, the
-projection retains the authored selector, and
-`resolve_native_operation_inputs` retains `ResolvedMember` selector provenance.
-A module rename therefore changes analysis identity when such a premise is
-present, even if selector resolution reaches the same source declaration.
+The selector solve resolves `resolved_member` native premises to their provider
+chunk, original binding and prepared-body declaration index before projection.
+Analysis carries that source identity, operation and audited parser-input digest;
+logical destinations and public member names are report context. Structural
+`source_match` premises retain their selector.
 
-Decide whether the logical module path is intentionally part of a premise's
-identity or whether analysis should key it by the resolved provider declaration
-and leave the authored path in report-only evidence. The current
-`assignment_edit_keeps_the_projection_and_the_artifact` case does not exercise a
-`resolved_member` premise, so this boundary is not proven either way. No
-canonical gate payoff has been established for changing it.
-
-If the selector is made destination-independent, add a neutral fixture with a
-`resolved_member` premise that renames its module while keeping the same source
-declaration; require identical projection and artifact bytes. Changing the
-selected declaration or premise must still invalidate the artifact.
+Renaming a logical module or its public member while preserving the selected
+source declaration leaves projection and artifact bytes unchanged. Retargeting
+the declaration or changing the premise invalidates saved analysis. Reports
+restore the current authored selector, note and paths at rendering time, including
+when loading an artifact made before a layout edit. Missing, foreign-provider
+and non-unique declarations are refused before projection is written.
 
 ## Deferred
 

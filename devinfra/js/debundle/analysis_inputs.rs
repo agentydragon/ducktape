@@ -614,7 +614,16 @@ pub struct NativeOperationInputEvidence {
 #[serde(rename_all = "snake_case")]
 pub enum NativeOperationSelectorProvenance {
     SourceMatch(SourceMatchClaim),
+    /// Source-only evidence in saved analysis; reports restore the authored selector.
+    Declaration(SourceDeclaration),
     ResolvedMember(spec::ResolvedMemberSelector),
+}
+
+/// One original declaration in the provider's prepared module body.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SourceDeclaration {
+    pub binding: String,
+    pub body_index: usize,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
