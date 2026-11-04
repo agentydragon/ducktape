@@ -19,6 +19,7 @@ go_test(
     srcs = [
         "kvm_test.go",
         "worker_keyring_test.go",
+        "worker_pivot_root_test.go",
     ],
     exec_properties = {
         "test.EstimatedComputeUnits": "1",

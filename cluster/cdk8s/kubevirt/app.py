@@ -18,13 +18,10 @@ from kubevirt_kubevirt_crds.io.kubevirt import (
     KubeVirtSpecCustomizeComponents,
     KubeVirtSpecInfra,
     KubeVirtSpecInfraNodePlacement,
+    KubeVirtSpecInfraNodePlacementTolerations,
     KubeVirtSpecWorkloads,
     KubeVirtSpecWorkloadsNodePlacement,
-    KubeVirtSpecWorkloadsNodePlacementAffinity,
-    KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinity,
-    KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
-    KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
-    KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
+    KubeVirtSpecWorkloadsNodePlacementTolerations,
     KubeVirtSpecWorkloadUpdateStrategy,
 )
 
@@ -81,30 +78,22 @@ def chart(app: App) -> Chart:
             customize_components=KubeVirtSpecCustomizeComponents(),
             image_pull_policy=_IF_NOT_PRESENT,
             infra=KubeVirtSpecInfra(
-                node_placement=KubeVirtSpecInfraNodePlacement(node_selector={"topology.kubernetes.io/region": "hil"})
+                node_placement=KubeVirtSpecInfraNodePlacement(
+                    node_selector={"topology.kubernetes.io/region": "hil"},
+                    tolerations=[
+                        KubeVirtSpecInfraNodePlacementTolerations(
+                            key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
+                        )
+                    ],
+                )
             ),
             workloads=KubeVirtSpecWorkloads(
                 node_placement=KubeVirtSpecWorkloadsNodePlacement(
-                    affinity=KubeVirtSpecWorkloadsNodePlacementAffinity(
-                        node_affinity=KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinity(
-                            required_during_scheduling_ignored_during_execution=KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                                node_selector_terms=[
-                                    KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                                        match_expressions=[
-                                            KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                                key="topology.kubernetes.io/region",
-                                                operator="In",
-                                                values=["hil", "home", "proxmox"],
-                                            ),
-                                            KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                                key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="DoesNotExist"
-                                            ),
-                                        ]
-                                    )
-                                ]
-                            )
+                    tolerations=[
+                        KubeVirtSpecWorkloadsNodePlacementTolerations(
+                            key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
                         )
-                    )
+                    ]
                 )
             ),
             workload_update_strategy=KubeVirtSpecWorkloadUpdateStrategy(),

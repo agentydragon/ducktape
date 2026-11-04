@@ -19,7 +19,9 @@ K3S_PERSISTENCE_PROPERTIES = {
     "test.snapshot-read-policy": "newest",
 }
 
+# Match the dedicated VM worker's four-vCPU budget.
 KVM_EXEC_PROPERTIES = {
+    "test.EstimatedComputeUnits": "4",
     "test.Pool": "wyrm2-kvm-vm",
     "test.init-dockerd": "false",
     "test.recycle-runner": "false",

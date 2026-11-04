@@ -1,8 +1,8 @@
 """The static, VM-isolated BuildBuddy worker for opt-in KVM tests."""
 
 import yaml
-from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import ApiObjectMetadata, App, Chart, Size
+from cdk8s_plus_34 import Cpu, k8s
 from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecAffinity,
     VirtualMachineSpecTemplateSpecAffinityNodeAffinity,
@@ -14,6 +14,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecDomainResources,
     VirtualMachineSpecTemplateSpecDomainResourcesLimits,
     VirtualMachineSpecTemplateSpecDomainResourcesRequests,
+    VirtualMachineSpecTemplateSpecTolerations,
     VirtualMachineSpecTemplateSpecVolumes,
     VirtualMachineSpecTemplateSpecVolumesCloudInitNoCloud,
     VirtualMachineSpecTemplateSpecVolumesConfigMap,
@@ -22,7 +23,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecVolumesSecret,
 )
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
@@ -111,7 +112,7 @@ def chart(app: App) -> Chart:
         namespace=NAMESPACE,
         image=_IMAGE,
         cpu=VirtualMachineSpecTemplateSpecDomainCpu(
-            cores=8,
+            cores=4,
             model="host-passthrough",
             features=[
                 VirtualMachineSpecTemplateSpecDomainCpuFeatures(name=feature, policy="optional")
@@ -120,17 +121,23 @@ def chart(app: App) -> Chart:
         ),
         resources=VirtualMachineSpecTemplateSpecDomainResources(
             requests={
-                "cpu": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string("8"),
-                "memory": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string("24Gi"),
+                "cpu": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string(Cpu.units(4).amount),
+                "memory": VirtualMachineSpecTemplateSpecDomainResourcesRequests.from_string(
+                    Size.gibibytes(16).as_string()
+                ),
             },
             limits={
-                "cpu": VirtualMachineSpecTemplateSpecDomainResourcesLimits.from_string("8"),
-                "memory": VirtualMachineSpecTemplateSpecDomainResourcesLimits.from_string("24Gi"),
+                "cpu": VirtualMachineSpecTemplateSpecDomainResourcesLimits.from_string(Cpu.units(4).amount),
+                "memory": VirtualMachineSpecTemplateSpecDomainResourcesLimits.from_string(
+                    Size.gibibytes(16).as_string()
+                ),
             },
         ),
-        # Keep a nonempty selector: deleting the last key via server-side apply can
-        # present nodeSelector: null to KubeVirt's admission webhook.
-        node_selector={"kubernetes.io/os": "linux"},
+        tolerations=[
+            VirtualMachineSpecTemplateSpecTolerations(
+                key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
+            )
+        ],
         affinity=VirtualMachineSpecTemplateSpecAffinity(
             node_affinity=VirtualMachineSpecTemplateSpecAffinityNodeAffinity(
                 required_during_scheduling_ignored_during_execution=VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
