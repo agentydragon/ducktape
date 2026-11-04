@@ -5,7 +5,7 @@ load("//devinfra/js:ts_library.bzl", "ts_library")
 def data_uri_module(name, consts, tsconfig, isolated_typecheck = False, out = None, visibility = None):
     """Generate one ts_library exporting each `consts` key as a base64 data: URI of its file.
 
-    Runs `//util:data_uri_bin` (base64-encodes each source and guesses its MIME type from the
+    Runs `//devinfra/js:data_uri_bin` (base64-encodes each source and guesses its MIME type from the
     file extension) to produce a single `.ts` file with one `export const` per entry, compiled
     like any other module so importers see its declarations.
 
@@ -33,9 +33,9 @@ def data_uri_module(name, consts, tsconfig, isolated_typecheck = False, out = No
         name = "_" + name + "_generate",
         srcs = consts.values(),
         outs = [out],
-        cmd = "$(location //util:data_uri_bin) -o $@ " +
+        cmd = "$(location //devinfra/js:data_uri_bin) -o $@ " +
               " ".join(["{}=$(location {})".format(const_name, src) for const_name, src in consts.items()]),
-        tools = ["//util:data_uri_bin"],
+        tools = ["//devinfra/js:data_uri_bin"],
     )
 
     ts_library(

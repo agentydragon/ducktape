@@ -67,6 +67,19 @@ js_library(
 )
 
 py_library(
+    name = "data_uri",
+    srcs = ["data_uri.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "data_uri_bin",
+    main_module = "devinfra.js.data_uri",
+    visibility = ["//visibility:public"],
+    deps = [":data_uri"],
+)
+
+py_library(
     name = "spa_fingerprint",
     srcs = ["spa_fingerprint.py"],
 )
