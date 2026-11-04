@@ -18,6 +18,9 @@ from starlette.responses import Response
 
 from props.core.agent_types import AgentType
 from props.core.oci_utils import BUILTIN_TAG
+from props.db.database import Database
+from props.db.models import AgentDefinition
+from props.registry_proxy import routes
 from props.registry_proxy.routes import _is_grader_builtin_push, _proxy_to_upstream
 from util.testing.asgi import serve_app_in_loop
 
@@ -110,6 +113,38 @@ async def test_proxy_forwards_streaming_mutation_body(monkeypatch: pytest.Monkey
 
     assert response.status_code == 202
     assert captured_body == b"first-second"
+
+
+async def test_concurrent_pushes_of_same_manifest_keep_first_record(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first_fetch_started = asyncio.Event()
+    release_first_fetch = asyncio.Event()
+    fetch_count = 0
+
+    async def extract_metadata(manifest_body: bytes, repository: str) -> routes._ImageMetadata:
+        nonlocal fetch_count
+        fetch_count += 1
+        if fetch_count == 1:
+            first_fetch_started.set()
+            await release_first_fetch.wait()
+            return routes._ImageMetadata(base_digest=None, display_name="first")
+        return routes._ImageMetadata(base_digest=None, display_name="second")
+
+    monkeypatch.setattr(routes, "_extract_image_metadata", extract_metadata)
+    digest = "sha256:" + "a" * 64
+    first_push = asyncio.create_task(routes._record_manifest_push("critic", digest, b"{}", None, db))
+    await first_fetch_started.wait()
+    try:
+        await routes._record_manifest_push("critic", digest, b"{}", None, db)
+    finally:
+        release_first_fetch.set()
+    await first_push
+
+    with db.session() as session:
+        definition = session.get(AgentDefinition, digest)
+        assert definition is not None
+        assert definition.display_name == "second"
 
 
 def test_only_grader_builtin_tag_move_notifies_supervisor() -> None:

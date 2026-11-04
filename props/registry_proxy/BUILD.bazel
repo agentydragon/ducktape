@@ -73,6 +73,8 @@ py_test(
         "//props:conftest",
         "//props/core:agent_types",
         "//props/core:oci_utils",
+        "//props/db:database",
+        "//props/db:models",
         "//util/testing:asgi",
         "@pypi//fastapi",
         "@pypi//httpx",
