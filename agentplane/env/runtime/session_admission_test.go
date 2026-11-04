@@ -247,6 +247,7 @@ func TestRunnerRestartDoesNotReplayRetainedSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopenedBacking.Close()
+	config.testBacking = reopenedBacking
 	r := newSessionTestRuntimeWithState(t, config, resources)
 	request := openLifecycleSession(sessionID, filepath.Join(workspace, "project"))
 	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), request); err != nil {
@@ -539,7 +540,7 @@ func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
 	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("failed initial operation launched the native harness: stat err=%v", err)
 	}
-	owner, err := openEnvironmentOwner(r.config.StateDir)
+	owner, err := openTestRuntimeStore(r.config.StateDir)
 	if err != nil {
 		t.Fatalf("settled cleanup retained the environment owner: %v", err)
 	}

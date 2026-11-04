@@ -125,8 +125,7 @@ terminal-turn handling (`test_agent`). They remain standalone tests, create no S
 prove that a deployed IdP, Agentplane, or harness is reachable. Operator login is setup for the MCP
 scenario.
 
-The lower-level `//agentplane/env/e2e:test_pid1_container` runs the direct PID1 and subprocess Pod backends
-as real container PID 1. It checks native exit, TERM, abrupt PID1 death, escaped descendants and
+The lower-level `//agentplane/env/e2e:test_pid1_container` runs the Pod backend as real container PID 1. It checks native exit, TERM, abrupt PID1 death, escaped descendants and
 replacement after observed runtime exit. The shared Sandbox template explicitly selects the direct PID1 backend
 for the Pod system tests. The outer replacement boundary is described in the Environment Runtime's
 [supervision contract](../env/runtime/supervision/docs/supervision.md#pid-1-and-the-outer-fence).

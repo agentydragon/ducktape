@@ -24,12 +24,6 @@ var pid1Children = sync.OnceValue(func() *childReaper {
 	return r
 })
 
-var waitOwnership struct {
-	sync.Mutex
-	pid1       bool
-	subprocess int
-}
-
 // NewPID1Supervisor requires PID 1 in a private container PID namespace whose
 // runtime fences the namespace before replacement. PID 1 owns every wait4,
 // including adopted orphans; exec.Cmd.Wait is never used.
@@ -37,12 +31,6 @@ func NewPID1Supervisor() (*Supervisor, error) {
 	if os.Getpid() != 1 {
 		return nil, errors.New("Pod PID1 supervision requires Runner to be PID 1 in a private container PID namespace")
 	}
-	waitOwnership.Lock()
-	defer waitOwnership.Unlock()
-	if waitOwnership.subprocess != 0 {
-		return nil, errors.New("cannot select PID1 reaping while subprocess supervisors own child waits")
-	}
-	waitOwnership.pid1 = true
 	reaper := pid1Children()
 	return &Supervisor{makeBackend: func(config ProcessConfig) processBackend {
 		return &pid1Backend{config: config, reaper: reaper, exited: make(chan nativeExit, 1)}

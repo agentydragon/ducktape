@@ -2,7 +2,9 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,12 +14,14 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/state"
+	"golang.org/x/sys/unix"
 )
 
 const lifecycleTestTimeout = 10 * time.Second
@@ -25,14 +29,6 @@ const lifecycleTestTimeout = 10 * time.Second
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
-		case ownershipFixtureMode:
-			if err := runOwnershipFixture(os.Args[2:]); err != nil {
-				fmt.Fprintln(os.Stderr, err)
-				os.Exit(1)
-			}
-			os.Exit(0)
-		case supervision.SupervisorMode:
-			os.Exit(supervision.SupervisorMain(os.Args[2:]))
 		case workspace.HelperMode:
 			os.Exit(workspace.Main(os.Args[2:]))
 		}
@@ -44,13 +40,14 @@ type runtimeTestConfig struct {
 	Config
 	deps             runtimeDeps
 	expectCloseError bool
+	testBacking      io.Closer
 }
 
 func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string, binary string) runtimeTestConfig {
 	t.Helper()
 	root := t.TempDir()
 	launch := configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap}
-	config := Config{StateDir: root, Launch: launch, Supervision: "subprocess", InitializationCwd: workspace, Control: insecureControl(), WorkspaceRoot: workspace, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, HTTPClient: http.DefaultClient}
+	config := Config{StateDir: root, Launch: launch, Supervision: "pid1", PodPID1: true, InitializationCwd: workspace, Control: insecureControl(), WorkspaceRoot: workspace, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, HTTPClient: http.DefaultClient}
 	return runtimeTestConfig{Config: config}
 }
 
@@ -69,7 +66,16 @@ func newLifecycleRunnerWithState(t *testing.T, config runtimeTestConfig, store s
 	if config.Config.HistoryIngress.Target == "" {
 		config.Config.HistoryIngress.Target = startAcknowledgingHistory(t)
 	}
-	r, err := newRuntime(config.Config, store, config.deps)
+	var r *Runtime
+	var err error
+	if config.testBacking != nil {
+		r, err = newRuntime(config.Config, store, config.deps)
+		if err == nil {
+			r.lifecycleStore = config.testBacking
+		}
+	} else {
+		r, err = newTestRuntime(t, config.Config, store, config.deps)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,6 +102,22 @@ func newLifecycleRunnerWithState(t *testing.T, config runtimeTestConfig, store s
 			r.lifecycleCancel()
 			<-r.lifecycleDone
 			_ = r.closeSessions(closeCtx)
+			// The real outer container fence runs when a failed Runtime exits. This
+			// suite shares PID 1 across cases, so perform that fence before the next case.
+			if err := unix.Kill(-1, unix.SIGKILL); err != nil && !errors.Is(err, unix.ESRCH) {
+				t.Errorf("kill test namespace: %v", err)
+			}
+			for {
+				if err := r.supervisor.FenceNamespace(closeCtx); err == nil {
+					break
+				}
+				select {
+				case <-closeCtx.Done():
+					t.Errorf("fence test namespace: %v", closeCtx.Err())
+					return
+				case <-time.After(10 * time.Millisecond):
+				}
+			}
 			return
 		}
 		select {
@@ -177,4 +199,40 @@ func waitClose(t *testing.T, done <-chan error) error {
 		t.Fatal("Runtime close did not complete")
 		return nil
 	}
+}
+
+// Injected controller states are ephemeral; hold a separate real COSI database
+// lock so lifecycle tests still exercise the production Runtime ownership barrier.
+func newTestRuntime(t *testing.T, config Config, injected state.State, deps runtimeDeps) (*Runtime, error) {
+	t.Helper()
+	if injected == nil {
+		return newRuntime(config, nil, deps)
+	}
+	if err := ensureDirectory(config.StateDir); err != nil {
+		return nil, err
+	}
+	_, backing, err := cosistate.Open(config.StateDir, lifecycle.Namespace)
+	if err != nil {
+		return nil, err
+	}
+	r, err := newRuntime(config, injected, deps)
+	if err != nil {
+		_ = backing.Close()
+		return nil, err
+	}
+	r.lifecycleStore = backing
+	t.Cleanup(func() { _ = backing.Close() })
+	return r, nil
+}
+
+func openTestRuntimeStore(dir string) (interface{ Close() error }, error) {
+	_, backing, err := cosistate.Open(dir, lifecycle.Namespace)
+	return backing, err
+}
+
+func closeTestRuntimeStore(r *Runtime) error {
+	if r.lifecycleStore == nil {
+		return nil
+	}
+	return r.lifecycleStore.Close()
 }

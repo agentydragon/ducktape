@@ -225,8 +225,8 @@ func (f Configuration) resolveEnvironment() (*supervision.SystemdLauncher, *code
 		if err := decodeStrict(f.Environment, &pod); err != nil {
 			return nil, nil, nil, false, "", err
 		}
-		if pod.Supervision != "pid1" && pod.Supervision != "subprocess" {
-			return nil, nil, nil, false, "", errors.New("Pod supervision must explicitly select pid1 or subprocess")
+		if pod.Supervision != "pid1" {
+			return nil, nil, nil, false, "", errors.New("Pod supervision must explicitly select pid1")
 		}
 		podPID1 = pod.Supervision == "pid1"
 		supervisionMode = pod.Supervision

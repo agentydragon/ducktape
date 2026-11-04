@@ -7,8 +7,7 @@ import os
 import signal
 import time
 import uuid
-from collections.abc import AsyncIterator, Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import override
 
@@ -44,13 +43,9 @@ def _wait_ready(directory: Path) -> None:
         time.sleep(0.01)
 
 
-def _descendant_pids(container: LoggedContainer, backend: str) -> list[int]:
+def _descendant_pids(container: LoggedContainer) -> list[int]:
     table = container.get_wrapped_container().top()
     pid_index, command_index = table["Titles"].index("PID"), table["Titles"].index("CMD")
-    supervisors = [
-        row for row in table["Processes"] if "--agentplane-environment-runtime-supervisor" in row[command_index]
-    ]
-    assert len(supervisors) == (0 if backend == "pid1" else 1)
     rows = [row for row in table["Processes"] if "--pid1-proof-descendant" in row[command_index]]
     pids = [int(row[pid_index]) for row in rows]
     for pid in pids:
@@ -69,8 +64,7 @@ def _host_native_pid(container: LoggedContainer) -> int:
 
 def _clear_generation(directory: Path) -> None:
     for path in directory.iterdir():
-        if path.name != "owner":
-            path.unlink()
+        path.unlink()
 
 
 @pytest.fixture
@@ -113,19 +107,17 @@ async def acknowledging_history() -> AsyncIterator[str]:
 
 
 @pytest.mark.parametrize("mode", ["native-exit", "term", "escalate", "crash"])
-@pytest.mark.parametrize("backend", ["pid1", "subprocess"])
-async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str, backend: str) -> None:
+async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str) -> None:
     _load_images()
     binary = get_required_path(
         "_main/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
     ).resolve()
     container = (
-        LoggedContainer(debian_slim.IMAGE.tag, test_name=f"runner-pid1-{backend}-{mode}")
+        LoggedContainer(debian_slim.IMAGE.tag, test_name=f"runner-pid1-{mode}")
         .with_kwargs(user=f"{os.getuid()}:{os.getgid()}", pids_limit=64, mem_limit="256m")
         .with_volume_mapping(str(tmp_path), "/proof", mode="rw")
         .with_volume_mapping(str(binary), "/pid1-proof", mode="ro")
         .with_env("PID1_PROOF_MODE", mode)
-        .with_env("PID1_PROOF_BACKEND", backend)
         .with_command("/pid1-proof -test.run=^TestPID1ContainerContract$ -test.v")
     )
     with container:
@@ -133,11 +125,8 @@ async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str, b
         generations = []
         for generation in range(2):
             await asyncio.to_thread(_wait_ready, tmp_path)
-            descendants = await asyncio.to_thread(_descendant_pids, container, backend)
-            assert len(descendants) == (1 if mode == "native-exit" and backend == "subprocess" else 2)
-            if backend == "subprocess":
-                with (tmp_path / "owner").open("rb") as probe, pytest.raises(BlockingIOError):
-                    fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            descendants = await asyncio.to_thread(_descendant_pids, container)
+            assert len(descendants) == 2
             if mode == "native-exit":
                 (tmp_path / "exit-native").write_text("exit\n")
             else:
@@ -147,24 +136,13 @@ async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str, b
             for pid in descendants:
                 await asyncio.wait_for(wait_for_exit(pid), timeout=5)
             # Replacement requires observed container exit and descendant death.
-            if backend == "subprocess":
-                with (tmp_path / "owner").open("rb") as probe:
-                    fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    fcntl.flock(probe, fcntl.LOCK_UN)
             generations.append(
                 {"generation": generation, "exit_code": result["StatusCode"], "descendants": descendants}
             )
             if generation == 0:
                 await asyncio.to_thread(_clear_generation, tmp_path)
                 await asyncio.to_thread(wrapped.start)
-        (undeclared_outputs_dir() / f"runner-pid1-{backend}-{mode}.json").write_text(json.dumps(generations, indent=2))
-
-
-@contextmanager
-def _hold_lock(path: Path) -> Iterator[None]:
-    with path.open("a+b") as owner:
-        fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        yield
+        (undeclared_outputs_dir() / f"runner-pid1-{mode}.json").write_text(json.dumps(generations, indent=2))
 
 
 @pytest.mark.parametrize("abrupt", [False, True], ids=["term", "crash"])
@@ -206,14 +184,13 @@ async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, 
     )
     state = tmp_path / "state"
     state.mkdir()
-    # An old independent owner lock must not prevent PID1 startup. The real
-    # COSI database still excludes a competing store while Runtime is alive.
-    with _hold_lock(state / ".agentplane-environment-runtime-owner"), container:
+    # The COSI database excludes a competing store while Runtime is alive.
+    with container:
         wrapped = container.get_wrapped_container()
         await gateway.control.connect(host_control, "pid1-proof-uid")
         if abrupt:
             await asyncio.to_thread(_wait_native_tree, tmp_path)
-            descendants = await asyncio.to_thread(_descendant_pids, container, "pid1")
+            descendants = await asyncio.to_thread(_descendant_pids, container)
             assert len(descendants) == 2
         else:
             descendants = []
@@ -269,7 +246,6 @@ async def test_production_pid1_embedded_host_reaps_setup(
         .with_volume_mapping(str(runner), "/environment-runtime", mode="ro")
         .with_volume_mapping(str(fixture), "/pid1-proof", mode="ro")
         .with_env("OTEL_SDK_DISABLED", "true")
-        .with_env("PID1_PROOF_BACKEND", "pid1")
         .with_env("OPENAI_API_KEY", "test-key")
         .with_command("/environment-runtime --config /proof/environment-runtime.json --launch-file /proof/launch.json")
     )
@@ -290,7 +266,7 @@ async def test_production_pid1_embedded_host_reaps_setup(
             )
         )
         await asyncio.to_thread(_wait_native_group, tmp_path)
-        descendants = await asyncio.to_thread(_descendant_pids, container, "pid1")
+        descendants = await asyncio.to_thread(_descendant_pids, container)
         assert len(descendants) == 1
         os.kill(await asyncio.to_thread(_host_native_pid, container), signal.SIGUSR1)
         for pid in descendants:

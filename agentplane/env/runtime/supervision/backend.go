@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"time"
 )
 
@@ -37,22 +36,6 @@ type Supervisor struct {
 	systemdScope   SystemdScopeID
 	makeBackend    backendFactory
 	fenceNamespace func(context.Context) error
-}
-
-// NewSubprocessSupervisor creates a supervisor that owns native process groups
-// and passes stateOwnerFD through its supervisor process to each native child.
-func NewSubprocessSupervisor(stateOwnerFD *os.File) *Supervisor {
-	return newSubprocessSupervisor(stateOwnerFD, "")
-}
-
-func newSubprocessSupervisor(stateOwnerFD *os.File, executable string) *Supervisor {
-	return &Supervisor{makeBackend: func(config ProcessConfig) processBackend {
-		return &subprocessBackend{
-			config:               config,
-			stateOwnerFD:         stateOwnerFD,
-			supervisorExecutable: executable,
-		}
-	}}
 }
 
 // NewProcess validates config before creating process resources.

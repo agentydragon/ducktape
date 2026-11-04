@@ -21,8 +21,6 @@ import (
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
-		case SupervisorMode:
-			os.Exit(SupervisorMain(os.Args[2:]))
 		case "--pid1-proof-native":
 			os.Exit(pid1ProofNative(os.Args[2]))
 		case "--pid1-proof-fast":
@@ -52,17 +50,8 @@ func TestMain(m *testing.M) {
 }
 
 func pid1ProofNative(mode string) int {
-	// Subprocess containment must survive a native closing its inherited token.
-	// PID1 natives receive no owner descriptor and rely on the namespace fence.
-	if os.Getenv("PID1_PROOF_BACKEND") == "subprocess" {
-		if err := unix.Close(3); err != nil {
-			panic(err)
-		}
-	}
 	roles := []string{"group"}
-	// The PID1 native-exit case exercises FenceNamespace against an escaped
-	// descendant. Keep the subprocess backend's original one-descendant case.
-	if mode != "host-setup" && (mode != "native-exit" || os.Getenv("PID1_PROOF_BACKEND") == "pid1") {
+	if mode != "host-setup" {
 		roles = append(roles, "escaped")
 	}
 	for _, role := range roles {
@@ -112,40 +101,15 @@ func TestPID1ContainerContract(t *testing.T) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGTERM)
 	defer signal.Stop(signals)
-	var supervisor *Supervisor
-	var err error
-	switch os.Getenv("PID1_PROOF_BACKEND") {
-	case "pid1":
-		supervisor, err = NewPID1Supervisor()
-		if err != nil {
-			t.Fatal(err)
-		}
-		mixed, err := NewSubprocessSupervisor(nil).NewProcess(ProcessConfig{Command: []string{os.Args[0], "--pid1-proof-fast"}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := mixed.Start(ctx); err == nil || !strings.Contains(err.Error(), "cannot be mixed") {
-			t.Fatalf("mixed subprocess wait owner was not rejected: %v", err)
-		}
-		if mode == "native-exit" {
-			t.Run("wait-ownership-and-orphan-reaping", func(t *testing.T) { provePID1Waits(t, ctx, supervisor) })
-		}
-	case "subprocess":
-		owner, err := os.OpenFile("/proof/owner", os.O_CREATE|os.O_RDONLY, 0600)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer owner.Close()
-		if err := unix.Flock(int(owner.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-			t.Fatal(err)
-		}
-		supervisor = NewSubprocessSupervisor(owner)
-	default:
-		t.Fatal("PID1_PROOF_BACKEND must explicitly select pid1 or subprocess")
+	supervisor, err := NewPID1Supervisor()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode == "native-exit" {
+		t.Run("wait-ownership-and-orphan-reaping", func(t *testing.T) { provePID1Waits(t, ctx, supervisor) })
 	}
 	p, err := supervisor.NewProcess(ProcessConfig{
 		Command:   []string{os.Args[0], "--pid1-proof-native", mode},
-		Env:       map[string]string{"PID1_PROOF_BACKEND": os.Getenv("PID1_PROOF_BACKEND")},
 		StopGrace: time.Second,
 	})
 	if err != nil {
@@ -154,34 +118,24 @@ func TestPID1ContainerContract(t *testing.T) {
 	if err := p.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if os.Getenv("PID1_PROOF_BACKEND") == "pid1" {
-		if err := supervisor.FenceNamespace(ctx); err == nil || !strings.Contains(err.Error(), "managed child processes") {
-			t.Fatalf("namespace fence accepted a live managed child: %v", err)
-		}
-		if !p.Running() {
-			t.Fatal("rejected namespace fence stopped the managed child")
-		}
+	if err := supervisor.FenceNamespace(ctx); err == nil || !strings.Contains(err.Error(), "managed child processes") {
+		t.Fatalf("namespace fence accepted a live managed child: %v", err)
 	}
-	if os.Getenv("PID1_PROOF_BACKEND") == "subprocess" {
-		if _, err := NewPID1Supervisor(); err == nil || !strings.Contains(err.Error(), "subprocess supervisors own child waits") {
-			t.Fatalf("PID1 reaper displaced an active subprocess wait owner: %v", err)
-		}
+	if !p.Running() {
+		t.Fatal("rejected namespace fence stopped the managed child")
 	}
 	readers := make(chan error, 2)
 	for _, stream := range []io.Reader{p.Stdout(), p.Stderr()} {
 		go func() { _, err := io.Copy(os.Stderr, stream); readers <- err }()
 	}
-	// The subprocess native closes its owner FD before writing its ready record.
 	if err := waitPID1ProofFile(ctx, "/proof/native.pid"); err != nil {
 		t.Fatal(err)
 	}
 	if err := waitPID1ProofFile(ctx, "/proof/group.pid"); err != nil {
 		t.Fatal(err)
 	}
-	if mode != "native-exit" || os.Getenv("PID1_PROOF_BACKEND") == "pid1" {
-		if err := waitPID1ProofFile(ctx, "/proof/escaped.pid"); err != nil {
-			t.Fatal(err)
-		}
+	if err := waitPID1ProofFile(ctx, "/proof/escaped.pid"); err != nil {
+		t.Fatal(err)
 	}
 	if err := os.WriteFile("/proof/ready", []byte("ready\n"), 0600); err != nil {
 		t.Fatal(err)
@@ -207,7 +161,7 @@ func TestPID1ContainerContract(t *testing.T) {
 	if err != nil || mode == "native-exit" && code != 23 || mode == "term" && code != 0 || mode == "escalate" && code != 137 {
 		t.Fatalf("native completion = (%d, %v)", code, err)
 	}
-	if mode == "native-exit" && os.Getenv("PID1_PROOF_BACKEND") == "pid1" {
+	if mode == "native-exit" {
 		data, err := os.ReadFile("/proof/escaped.pid")
 		if err != nil {
 			t.Fatal(err)
@@ -269,6 +223,9 @@ func provePID1Waits(t *testing.T, ctx context.Context, supervisor *Supervisor) {
 	}
 	if err := failedStart.Start(ctx); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("PID1 start did not report an exec failure: %v", err)
+	}
+	if code, err := failedStart.Wait(ctx); code != 125 || !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("wait after failed start = (%d, %v), want exit 125 and exec failure", code, err)
 	}
 	fast, err := supervisor.NewProcess(ProcessConfig{
 		Command: []string{os.Args[0], "--pid1-proof-fast"},

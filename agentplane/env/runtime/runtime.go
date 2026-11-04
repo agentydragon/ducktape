@@ -71,7 +71,7 @@ type childExit struct {
 }
 
 type runtimeDeps struct {
-	prepareSupervisor         func(Config, *os.File) (*supervision.Supervisor, error)
+	prepareSupervisor         func(Config) (*supervision.Supervisor, error)
 	waitBootstrap             func(context.Context) error
 	startExecution            func(context.Context, Config, string) (executionHandle, error)
 	beforeSessionConstruction func()
@@ -98,7 +98,6 @@ type Runtime struct {
 	transitionUnsafe       error
 	activeTransitionCancel context.CancelFunc
 
-	owner                  *environmentOwner
 	state                  *EnvironmentState
 	lifecycleState         state.State
 	lifecycleStore         io.Closer
@@ -176,14 +175,11 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	if err := configuration.ValidateControlIdentity(config.Control, config.Launch.Sandbox); err != nil {
 		return nil, err
 	}
-	if config.Supervision != "pid1" && config.Supervision != "subprocess" && config.Supervision != "systemd" {
-		return nil, errors.New("environment Runtime requires explicit pid1, subprocess or systemd supervision")
+	if config.Supervision != "pid1" && config.Supervision != "systemd" {
+		return nil, errors.New("environment Runtime requires explicit pid1 or systemd supervision")
 	}
 	if config.Supervision == "pid1" && (!config.PodPID1 || config.VMProcessLauncher != nil) {
 		return nil, errors.New("PID1 Runtime supervision requires Pod PID1 configuration")
-	}
-	if config.Supervision == "subprocess" && (config.PodPID1 || config.VMProcessLauncher != nil) {
-		return nil, errors.New("subprocess Runtime supervision requires Pod subprocess configuration")
 	}
 	if config.Supervision == "systemd" && (config.PodPID1 || config.VMProcessLauncher == nil) {
 		return nil, errors.New("systemd Runtime supervision requires VM launcher configuration")
@@ -208,45 +204,28 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 			return nil, fmt.Errorf("open Runtime COSI state: %w", err)
 		}
 	}
-	// Only subprocess helpers need an inherited owner descriptor. PID1 and
-	// systemd use their outer process-domain fence after Runtime death.
-	var owner *environmentOwner
-	var ownerFile *os.File
-	if config.Supervision == "subprocess" {
-		owner, err = openEnvironmentOwner(config.StateDir)
-		if err != nil {
-			if lifecycleStore != nil {
-				err = errors.Join(err, lifecycleStore.Close())
-			}
-			return nil, err
-		}
-		ownerFile = owner.file
-	}
 	supervisor := (*supervision.Supervisor)(nil)
 	if deps.prepareSupervisor != nil {
-		supervisor, err = deps.prepareSupervisor(config, ownerFile)
+		supervisor, err = deps.prepareSupervisor(config)
 	} else if config.Supervision == "pid1" {
 		supervisor, err = supervision.NewPID1Supervisor()
-	} else if config.Supervision == "subprocess" {
-		supervisor = supervision.NewSubprocessSupervisor(ownerFile)
 	}
 	if err != nil {
 		if lifecycleStore != nil {
 			err = errors.Join(err, lifecycleStore.Close())
 		}
-		return nil, errors.Join(err, owner.Close())
+		return nil, err
 	}
 	environmentState, err := NewEnvironmentState(lifecycleState)
 	if err != nil {
 		if lifecycleStore != nil {
 			_ = lifecycleStore.Close()
 		}
-		_ = owner.Close()
 		return nil, err
 	}
 	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
 	r := &Runtime{
-		config: config, deps: deps, owner: owner, state: environmentState, supervisor: supervisor,
+		config: config, deps: deps, state: environmentState, supervisor: supervisor,
 		lifecycleState: lifecycleState, lifecycleStore: lifecycleStore, lifecycleCancel: cancelRuntime, lifecycleDone: make(chan struct{}), lifecycleContext: runtimeCtx,
 		bootID: uuid.NewString(), changes: make(chan struct{}), fatal: make(chan error, 1), bootstrapWait: deps.waitBootstrap,
 		desired: lifecycle.EnvironmentDesired{Mode: lifecycle.Inactive, Generation: 1}, closeDone: make(chan struct{}),
@@ -260,7 +239,6 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 		if lifecycleStore != nil {
 			_ = lifecycleStore.Close()
 		}
-		_ = owner.Close()
 		return nil, err
 	}
 	r.control = control.New(control.Config{
@@ -390,7 +368,7 @@ func (r *Runtime) startLifecycleEngineLocked() {
 	})
 }
 
-// Close stops Runtime-owned bootstrap work and releases the environment-owner lock.
+// Close stops Runtime-owned work, proves its fences, and releases the state store.
 // Canceling ctx only stops this caller's wait; shutdown and worker joining continue.
 func (r *Runtime) Close(ctx context.Context) error {
 	r.mu.Lock()
@@ -519,7 +497,7 @@ func (r *Runtime) joinClose() error {
 	if r.lifecycleStore != nil {
 		sessionLossErr = errors.Join(sessionLossErr, r.lifecycleStore.Close())
 	}
-	return errors.Join(sessionLossErr, r.owner.Close())
+	return sessionLossErr
 }
 
 func (r *Runtime) waitBootstrapSettled(ctx context.Context) error {

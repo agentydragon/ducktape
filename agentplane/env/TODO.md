@@ -1,21 +1,5 @@
 # TODO — Agentplane environment
 
-## Handle subprocess supervisor loss before and after native PID report
-
-The [RBE reproduction](https://app.buildbuddy.io/invocation/717b6862-8bcf-4ea8-97d8-5cc6c0de9cff)
-killed a trusted supervisor after the native PID was reported, after the child closed its inherited
-owner descriptor. The backend now reports this as a failed fence, so COSI retains the finalizer instead
-of treating exit 137 as cleanup success. Normal subprocess cleanup signals the same process group
-while its leader is unreaped, then reaps adopted same-group descendants and waits up to five seconds
-for group disappearance. An unowned process or external reaper that keeps the group visible still
-causes a failed fence rather than a false success or an unbounded wait.
-
-The startup boundary remains unresolved. If the supervisor dies before reporting the native PID,
-`Process.Start` returns an error and `Host.Launch` returns no instance; the host currently treats that
-as already fenced even if a child survived. Fix this with an explicit failed-start fence contract so
-the COSI controller retains ownership on uncertain startup cleanup. Runtime death and replacement
-after loss of the in-memory controller also remain outside this backend-local fix.
-
 ## Prove VM guest boot and console autologin
 
 The VM system suite boots a test guest using shared Runtime units, not the production NixOS guest.
@@ -39,11 +23,9 @@ shell when it is enabled.
 ## Simplify ownership and process fencing with COSI lifecycle primitives
 
 Runtime holds the COSI backing database's process lock through cleanup. Pod PID1 descendants rely
-on the private PID namespace and its outer runtime fence; subprocess natives inherit an additional
-owner descriptor. Execution uses Runtime ownership and the COSI Execution controller's serial,
-joined native fence; its independently supervised Pod companion retains the generation lease and
-namespace fence. Revisit the remaining Runtime owner flock in subprocess supervision while still
-covering children that outlive their parent.
+on the private PID namespace and its outer runtime fence. Execution uses Runtime ownership and the
+COSI Execution controller's serial, joined native fence; its independently supervised Pod companion
+retains the generation lease and namespace fence.
 
 Use COSI's [exclusive controller outputs, strong inputs and finalizers](https://github.com/cosi-project/runtime/blob/v1.16.2/README.md#controllers)
 and teardown phases to express ownership and cleanup barriers where they can replace private
@@ -127,7 +109,7 @@ teardown contracts rather than treating every controller as a simple resource tr
 ## Prove central execution across Pod and VM lifetimes
 
 The central sampler already reaches Runtime's embedded Executor through the Gateway. The Gateway
-integration test exercises that route with subprocess supervision, and the Pod system-test scenario
+integration test exercises that route with PID 1 supervision, and the Pod system-test scenario
 covers suspend and resume. Extend central execution coverage to the production PID1 Pod and VM
 systemd paths, including ownership loss, executor replacement and descendant cleanup; keep the
 Sandbox incarnation and uncertain-effect boundaries in those checks.

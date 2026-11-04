@@ -18,7 +18,7 @@ func configurationFixture(t *testing.T) (map[string]any, string, string) {
 	configPath, launchPath := filepath.Join(directory, "environment-runtime.json"), filepath.Join(directory, "launch.json")
 	writeJSONFixture(t, launchPath, map[string]any{"sandbox": map[string]string{"namespace": "test", "name": "sandbox", "uid": "sandbox-uid"}, "bootstrap": "echo initialized"})
 	value := map[string]any{
-		"environment": map[string]any{"kind": "pod", "supervision": "subprocess"},
+		"environment": map[string]any{"kind": "pod", "supervision": "pid1"},
 		"version":     2, "state_dir": filepath.Join(directory, "state"), "initialization_cwd": directory,
 		"control": map[string]any{"listen_address": "127.0.0.1:8090", "security": map[string]any{"mode": "mtls", "tls": map[string]string{
 			"cert_file": "/run/test/tls.crt", "key_file": "/run/test/tls.key", "ca_file": "/run/test/ca.crt",
@@ -78,7 +78,7 @@ func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T
 			value, path, launchPath := configurationFixture(t)
 			switch kind {
 			case "pod-executor":
-				value["environment"] = map[string]any{"kind": "pod", "supervision": "subprocess", "executor": map[string]any{"url": "ws://127.0.0.1:4501", "socket": "/run/test/executor.sock"}}
+				value["environment"] = map[string]any{"kind": "pod", "supervision": "pid1", "executor": map[string]any{"url": "ws://127.0.0.1:4501", "socket": "/run/test/executor.sock"}}
 			case "vm-local", "vm-executor":
 				environment := configurationVMEnvironment()
 				if kind == "vm-executor" {
@@ -103,7 +103,7 @@ func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T
 					t.Fatal("executor limits differ from VM resource policy")
 				}
 			}
-			wantSupervision := "subprocess"
+			wantSupervision := "pid1"
 			if config.VMProcessLauncher != nil {
 				wantSupervision = "systemd"
 			}
@@ -168,10 +168,10 @@ func TestConfigurationRejectsInvalidPolicyBeforeEnvironmentChanges(t *testing.T)
 		{"missing Pod supervision", func(v map[string]any) { v["environment"] = map[string]any{"kind": "pod"} }},
 		{"unknown Pod supervision", func(v map[string]any) { v["environment"] = map[string]any{"kind": "pod", "supervision": "unknown"} }},
 		{"partial container executor", func(v map[string]any) {
-			v["environment"] = map[string]any{"kind": "pod", "supervision": "subprocess", "executor": map[string]any{"url": "ws://127.0.0.1:4501"}}
+			v["environment"] = map[string]any{"kind": "pod", "supervision": "pid1", "executor": map[string]any{"url": "ws://127.0.0.1:4501"}}
 		}},
 		{"VM launcher in Pod", func(v map[string]any) {
-			v["environment"] = map[string]any{"kind": "pod", "supervision": "subprocess", "resources": validGuestResources()}
+			v["environment"] = map[string]any{"kind": "pod", "supervision": "pid1", "resources": validGuestResources()}
 		}},
 		{"container executor in VM", func(v map[string]any) {
 			env := configurationVMEnvironment()
@@ -277,7 +277,7 @@ func TestConfigurationResolvesIndependentCodexReadinessWindows(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			value, path, launchPath := configurationFixture(t)
 			value["environment"] = map[string]any{
-				"kind": "pod", "supervision": "subprocess",
+				"kind": "pod", "supervision": "pid1",
 				"executor": map[string]any{"url": "ws://127.0.0.1:4501", "socket": "/run/test/executor.sock"},
 			}
 			if test.readiness != nil {

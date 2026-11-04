@@ -12,7 +12,7 @@ from agentplane.env.config import CodexReadiness, Configuration, GuestResources,
 def _configuration() -> dict[str, object]:
     return {
         "version": 2,
-        "environment": {"kind": "pod", "supervision": "subprocess"},
+        "environment": {"kind": "pod", "supervision": "pid1"},
         "state_dir": "/test/state",
         "initialization_cwd": "/test/workspaces",
         "control": {
@@ -164,40 +164,40 @@ def test_runner_control_accepts_explicit_insecure_mode_without_tls_files() -> No
         {"environment": {"kind": "unknown"}},
         {"environment": {"kind": "pod"}},
         {"environment": {"kind": "pod", "supervision": "unknown"}},
-        {"environment": {"kind": "pod", "supervision": "subprocess", "console_autologin": True}},
-        {"environment": {"kind": "pod", "supervision": "subprocess", "executor": {"url": "ws://127.0.0.1:4501"}}},
+        {"environment": {"kind": "pod", "supervision": "pid1", "console_autologin": True}},
+        {"environment": {"kind": "pod", "supervision": "pid1", "executor": {"url": "ws://127.0.0.1:4501"}}},
         {
             "environment": {
                 "kind": "pod",
-                "supervision": "subprocess",
+                "supervision": "pid1",
                 "executor": {"url": "ws://0.0.0.0:4501", "socket": "/test/socket"},
             }
         },
         {
             "environment": {
                 "kind": "pod",
-                "supervision": "subprocess",
+                "supervision": "pid1",
                 "executor": {"url": "ws://127.0.0.1:0", "socket": "/test/socket"},
             }
         },
         {
             "environment": {
                 "kind": "pod",
-                "supervision": "subprocess",
+                "supervision": "pid1",
                 "executor": {"url": "ws://127.0.0.1:4501?", "socket": "/test/socket"},
             }
         },
         {
             "environment": {
                 "kind": "pod",
-                "supervision": "subprocess",
+                "supervision": "pid1",
                 "executor": {"url": "ws://127.0.0.1:4501", "socket": "relative"},
             }
         },
         {
             "environment": {
                 "kind": "pod",
-                "supervision": "subprocess",
+                "supervision": "pid1",
                 "executor": {"url": "ws://127.0.0.1:4501", "socket": "/test/socket", "root": "/test/cgroup"},
             }
         },

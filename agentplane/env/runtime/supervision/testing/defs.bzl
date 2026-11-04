@@ -3,10 +3,11 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 load("//devinfra/python:defs.bzl", "py_test")
 
-def pid1_go_test(name, srcs, embed, deps, git = False, **kwargs):
+def pid1_go_test(name, srcs, embed, deps, git = False, size = "small", **kwargs):
     binary = name + "_binary"
     go_test(
         name = binary,
+        size = size,
         srcs = srcs,
         embed = embed,
         deps = deps,
@@ -15,6 +16,7 @@ def pid1_go_test(name, srcs, embed, deps, git = False, **kwargs):
     )
     py_test(
         name = name,
+        size = size,
         srcs = ["//agentplane/env/runtime/supervision/testing:pid1_go_test.py"],
         data = [":" + binary],
         env = {

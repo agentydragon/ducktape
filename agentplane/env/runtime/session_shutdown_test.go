@@ -67,7 +67,7 @@ func TestCloseReportsExitedLifecycleEngine(t *testing.T) {
 	}
 	proxy := modelConfigServer(t)
 	config := lifecycleConfig(t, proxy.URL, t.TempDir(), nil, "/bin/false")
-	r, err := newRuntime(config.Config, store, config.deps)
+	r, err := newTestRuntime(t, config.Config, store, config.deps)
 	if err != nil {
 		t.Fatal(err)
 	}

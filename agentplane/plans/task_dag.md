@@ -1451,7 +1451,6 @@ flowchart TD
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
     ENVIRONMENT_READINESS_WAIT[Unscheduled: bounded CLI and Action/MCP readiness waits]
     AGENT_EXECUTOR_LOSS_NOTICE[Unscheduled: tell agents when executor restarts or kills lose their processes]
-    RUNTIME_FAILED_START_FENCE[Candidate: fence a native child after supervisor loss during startup]
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
@@ -1465,15 +1464,6 @@ flowchart TD
     IDLE_SUSPEND_UI_DRIVE[Operator: remaining VM idle-suspend/send-to-wake UI drive]
     VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
 ```
-
-### `RUNTIME_FAILED_START_FENCE` — fence uncertain subprocess startup
-
-**Candidate; independent Runtime lifecycle fix.** If a supervisor dies before reporting its native PID,
-`Process.Start` returns an error and `Host.Launch` returns no instance, which the host can treat as already
-fenced even when a child survived. Define a failed-start result that keeps the Process controller's COSI
-finalizer until cleanup is proved; cover supervisor loss before PID report and a surviving child. Preserve
-the existing fence after PID report. Runtime death and replacement require a separate outer-fence analysis.
-See the [Runtime TODO](../env/TODO.md#handle-subprocess-supervisor-loss-before-and-after-native-pid-report).
 
 ### `DECLARATIVE_SESSIONS_DESIGN` — long-running Sessions and managed subscriptions through Flux
 

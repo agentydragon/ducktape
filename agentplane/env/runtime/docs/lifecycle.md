@@ -36,7 +36,6 @@ fences. See [supervision](../supervision/docs/supervision.md).
 | State                                        | Owner and storage                                                                    |
 | -------------------------------------------- | ------------------------------------------------------------------------------------ |
 | Environment ownership                        | Runtime; exclusive lock on `<state_dir>/runtime-resources.db`                        |
-| Pod/subprocess child fence                   | Runtime; `<state_dir>/.agentplane-environment-runtime-owner`                         |
 | Incarnation seal                             | Runtime; `EnvironmentSeals` in `runtime-resources.db`                                |
 | Bootstrap selection and events               | Runtime; `BootstrapSelections` and `BootstrapEvents` in `runtime-resources.db`       |
 | Session records and History acknowledgements | Runtime retained store; `SessionRecords` and `IngressAcks` in `runtime-resources.db` |
@@ -135,8 +134,7 @@ or leader exit alone does not establish that all descendants are gone.
 
 ## Native containment
 
-Production Pod Runtime is PID 1 and owns the shared child reaper. Subprocess fixtures retain the
-inherited owner-descriptor and parent-liveness barriers. In a VM, harness attempts use the `harness`
+Pod Runtime is PID 1 and owns the shared child reaper. In a VM, harness attempts use the `harness`
 scope in the workload slice, while Execution uses `execution-service` in the executor slice. Both
 are bound to `agentplane-environment-runtime.service` and its invocation marker. Sharing one COSI
 process controller does not merge those native containment domains or their worker joins.
