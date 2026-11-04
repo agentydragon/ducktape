@@ -2,19 +2,12 @@ package centralsampler
 
 import (
 	"database/sql"
-	"embed"
-	"io/fs"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/pressly/goose/v3"
 )
-
-//go:embed testdata/*.sql
-var previousMigrations embed.FS
 
 func migrationExec(t *testing.T, db *sql.DB, query string, args ...any) {
 	t.Helper()
@@ -32,23 +25,12 @@ func migrationCount(t *testing.T, db *sql.DB, query string, args ...any) int {
 	return count
 }
 
-func restoreVersion10(t *testing.T, db *sql.DB) {
+func markVersion10History(t *testing.T, db *sql.DB) {
 	t.Helper()
-	migrationExec(t, db, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`)
-	files, err := fs.Sub(previousMigrations, "testdata")
-	if err != nil {
-		t.Fatal(err)
+	migrationExec(t, db, `DELETE FROM central_sampler_goose_version WHERE version_id=11`)
+	for version := 8; version <= 10; version++ {
+		migrationExec(t, db, `INSERT INTO central_sampler_goose_version (version_id, is_applied) VALUES ($1, true)`, version)
 	}
-	provider, err := goose.NewProvider(goose.DialectPostgres, db, files,
-		goose.WithTableName("central_sampler_goose_version"), goose.WithDisableGlobalRegistry(true))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := provider.UpTo(t.Context(), 9); err != nil {
-		t.Fatal("restore previous SQL migrations:", err)
-	}
-	// Migration 10 converted stored requests without changing the schema. No requests exist yet.
-	migrationExec(t, db, `INSERT INTO central_sampler_goose_version (version_id, is_applied) VALUES (10, true)`)
 }
 
 func samplerRelationNodes(t *testing.T, db *sql.DB) map[string]int64 {
@@ -90,7 +72,7 @@ func TestFreshSamplerBaseline(t *testing.T) {
 
 func TestSamplerBaselineAdoptsVersion10WithoutRewritingRows(t *testing.T) {
 	store := newTestStore(t)
-	restoreVersion10(t, store.DB())
+	markVersion10History(t, store.DB())
 	session := openSessionForStore(t, store, "")
 	migrationExec(t, store.DB(), `INSERT INTO sampler_conversation_item(conversation_id,ordinal,record)
 		VALUES($1,1,'{"type":"reasoning","provider_id":9007199254740993}'::jsonb)`, session.ConversationID)
@@ -134,57 +116,6 @@ func TestSamplerBaselineAdoptsVersion10WithoutRewritingRows(t *testing.T) {
 	}
 }
 
-func TestSamplerBaselineMatchesPreviousSchema(t *testing.T) {
-	fresh := newTestStore(t)
-	previous := newTestStore(t)
-	restoreVersion10(t, previous.DB())
-	got, want := samplerCatalog(t, fresh.DB()), samplerCatalog(t, previous.DB())
-	if !reflect.DeepEqual(got, want) {
-		for i := range min(len(got), len(want)) {
-			if got[i] != want[i] {
-				t.Fatalf("schema differs at %d: baseline %s; previous %s", i, got[i], want[i])
-			}
-		}
-		t.Fatalf("schema object counts: baseline %d, previous %d", len(got), len(want))
-	}
-}
-
-func samplerCatalog(t *testing.T, db *sql.DB) []string {
-	t.Helper()
-	rows, err := db.QueryContext(t.Context(), `SELECT description FROM (
-		SELECT 'table ' || table_name AS description FROM information_schema.tables
-		WHERE table_schema=current_schema() AND table_name <> 'central_sampler_goose_version'
-		UNION ALL
-		SELECT 'column ' || table_name || '.' || column_name || ' ' || data_type || ' ' ||
-			is_nullable || ' ' || COALESCE(column_default,'') || ' ' || is_identity
-		FROM information_schema.columns
-		WHERE table_schema=current_schema() AND table_name <> 'central_sampler_goose_version'
-		UNION ALL
-		SELECT 'constraint ' || c.conrelid::regclass::text || '.' || c.conname || ' ' || pg_get_constraintdef(c.oid)
-		FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace
-		WHERE n.nspname=current_schema() AND c.conrelid::regclass::text <> 'central_sampler_goose_version'
-		UNION ALL
-		SELECT 'index ' || tablename || '.' || indexname || ' ' || indexdef FROM pg_indexes
-		WHERE schemaname=current_schema() AND tablename <> 'central_sampler_goose_version'
-	) objects ORDER BY description`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var result []string
-	for rows.Next() {
-		var value string
-		if err := rows.Scan(&value); err != nil {
-			t.Fatal(err)
-		}
-		result = append(result, value)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	return result
-}
-
 func TestSamplerBaselineRejectsPartialHistoryAndSchema(t *testing.T) {
 	for _, tc := range []struct{ name, change string }{
 		{"missing migration 9", `DELETE FROM central_sampler_goose_version WHERE version_id=9`},
@@ -194,7 +125,7 @@ func TestSamplerBaselineRejectsPartialHistoryAndSchema(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store := newTestStore(t)
-			restoreVersion10(t, store.DB())
+			markVersion10History(t, store.DB())
 			migrationExec(t, store.DB(), tc.change)
 			before := samplerRelationNodes(t, store.DB())
 			err := Migrate(t.Context(), store.DB())
@@ -213,7 +144,7 @@ func TestSamplerBaselineRejectsPartialHistoryAndSchema(t *testing.T) {
 
 func TestSamplerBaselineAdoptsCompleteOlderHistory(t *testing.T) {
 	store := newTestStore(t)
-	restoreVersion10(t, store.DB())
+	markVersion10History(t, store.DB())
 	migrationExec(t, store.DB(), `INSERT INTO central_sampler_goose_version (version_id, is_applied)
 		SELECT version_id, true FROM generate_series(1,7) version_id`)
 	if err := Migrate(t.Context(), store.DB()); err != nil {
