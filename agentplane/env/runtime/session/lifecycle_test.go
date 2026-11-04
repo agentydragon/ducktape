@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -267,9 +268,27 @@ func TestPreparationCompletingAfterShutdownCannotMakeSessionReady(t *testing.T) 
 }
 
 func TestPreparationJoinsExitedProcessReadersBeforeReplacingAttachment(t *testing.T) {
-	s, previous, _ := frameTestSession(t, []string{"/bin/true"})
+	s, previous, manager := frameTestSession(t, []string{"/bin/true"})
 	if _, err := previous.Wait(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+	// Wait for the external controller to finish retiring the status before
+	// watching that collection inside a synthetic-time bubble.
+	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
+	defer cancel()
+	for {
+		_, found, err := supervision.ReadStatus(ctx, manager.state, lifecycle.Namespace, previous.ID())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !found {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("process status did not retire")
+		case <-time.After(time.Millisecond):
+		}
 	}
 	synctest.Test(t, func(t *testing.T) {
 		s.connection.readers.Add(1)
