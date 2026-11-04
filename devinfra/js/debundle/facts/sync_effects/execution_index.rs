@@ -13296,10 +13296,10 @@ fn infer_foreign_calls<'f>(
                         .get(&declaration_start)
                         .is_some_and(|callable| {
                             callable.allocation_return.is_some()
-                                || callable
-                                    .local_body
-                                    .as_ref()
-                                    .is_some_and(LocalBody::allocation_only_syntax)
+                                || callable.local_body.as_ref().is_some_and(|body| {
+                                    body.allocation_only_syntax()
+                                        || body.closure_allocation_syntax()
+                                })
                         }) =>
                 {
                     // This migrated slice consumes the central value/operation transfers.
