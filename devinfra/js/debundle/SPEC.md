@@ -482,9 +482,10 @@ transform root and config, then runs after the expected-member and realizability
 gates pass but before YAML writes. The assessment requires a verified staged
 artifact, full-tree context for exactly one materialized graph chunk, and
 explicit auxiliary tree inputs (`modules apply` does not inherit the
-`DEBUNDLE_TREE_SOURCE_ROOT` or `DEBUNDLE_OUT` defaults). It reports
-statement-order commutation only; the ordinary graph gate remains authoritative.
-The same assessment runs before an actual write, so failure leaves YAML untouched.
+`DEBUNDLE_TREE_SOURCE_ROOT` or `DEBUNDLE_OUT` defaults). Its effect commutation
+result remains report-only and the ordinary graph gate remains authoritative.
+When `--analysis` is supplied on an actual write, the canonical placement
+projection must yield emitter maps; otherwise the command leaves YAML untouched.
 Omitting `--analysis` preserves ordinary and scoped apply behavior and explicitly
 reports that the effect assessment was unavailable.
 `bindings assign --analysis <artifact>` uses the same final-candidate placement

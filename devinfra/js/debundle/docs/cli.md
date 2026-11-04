@@ -315,9 +315,9 @@ When requested, `bindings assign`, `bindings unassign`, `modules apply`,
 `modules merge`, and `modules delete` also return
 `effect_relocation_assessment`, a report-only assessment of their exact
 in-memory candidate plan. Most commands require `--dry-run --analysis <artifact>`;
-`bindings assign` and `modules apply` also accept `--analysis` when writing, assessing the final
-candidate before changing YAML. It requires
-`--graph`, and the full tree transform context (`--tree-config`,
+`bindings assign` and `modules apply` also accept `--analysis` when writing,
+assessing the final candidate before changing YAML. This requires `--graph`
+and the full tree transform context (`--tree-config`,
 `--tree-modules`, `--tree-vendor-marks`, `--tree-source-root`, and
 `--out-root`); `--modules` and `--tree-modules` must resolve to the same root.
 `modules apply` and `modules refine` reuse their existing `--modules` root as
@@ -328,10 +328,11 @@ Other existing assessment commands retain their transform environment defaults.
 The current path supports one full-tree graph chunk. It loads complete typed
 facts through the canonical pipeline and verifies source, engine and analysis
 projection identities; diagnostic reports are never decoded as facts. The
-assessment does not replace or change the legacy edit gate, and requested
-assessment failures and canonical placement refusals occur before YAML writes.
-Omitting `--analysis` preserves
-the ordinary graph-backed edit behavior; `modules apply` then reports
+effect commutation result remains report-only; the legacy edit gate still decides
+ordering and rebinding. For writes with `--analysis`, the canonical placement
+projection must yield emitter maps, and a refusal leaves YAML untouched.
+Omitting `--analysis` preserves the ordinary graph-backed edit behavior;
+`bindings assign` and `modules apply` then report
 `effect_assessment_unavailable: analysis_not_supplied`. Gate rejections replace the
 success object with a structured rejection object — see "Rejection
 diagnostics" below.
