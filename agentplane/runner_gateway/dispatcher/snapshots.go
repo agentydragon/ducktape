@@ -95,6 +95,10 @@ func DescribeSession(row *Session) (*dispatcherpb.Session, error) {
 	if row.ExecutionPrincipal != nil && row.ExecutionPrincipal.GetAccount().GetNamespace() != "" && row.ExecutionPrincipal.GetAccount().GetName() != "" && row.ExecutionPrincipal.GetUid() != "" {
 		result.ExecutionIdentity = proto.Clone(row.ExecutionPrincipal).(*ServiceAccountIdentity)
 	}
+	result.Status.RequiredEnvironment = dispatcherpb.SessionStatus_REQUIRED_ENVIRONMENT_AVAILABLE
+	if row.EnvironmentDeletedAt != nil {
+		result.Status.RequiredEnvironment = dispatcherpb.SessionStatus_REQUIRED_ENVIRONMENT_DELETED
+	}
 	if !row.Placement.matchesSpec(row.Spec) {
 		return nil, fmt.Errorf("stored Session placement disagrees with its spec")
 	}

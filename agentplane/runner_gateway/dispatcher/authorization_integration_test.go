@@ -737,26 +737,37 @@ func TestSessionRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 	if _, err := store.EndSandbox(t.Context(), snapshot.UID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.CreateSession(authorityContext(t, "retry-owner"), request); status.Code(err) != codes.Unavailable {
-		t.Fatalf("absent receipt and unavailable inventory: %v", err)
+	retained, err := client.CreateSession(authorityContext(t, "retry-owner"), request)
+	if err != nil || retained.GetSession().GetStatus().GetRequiredEnvironment() != dispatcherpb.SessionStatus_REQUIRED_ENVIRONMENT_DELETED || retained.GetSession().GetStatus().GetMaterialization() != dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_UNKNOWN {
+		t.Fatalf("retained retry with unavailable inventory: %+v %v", retained, err)
 	}
 	inventory.failSandboxRead(nil)
 	inventory.mu.Lock()
 	inventory.sandbox = SandboxSnapshot{}
 	inventory.mu.Unlock()
-	if _, err := client.CreateSession(authorityContext(t, "retry-owner"), request); status.Code(err) != codes.NotFound {
-		t.Fatalf("absent receipt and deleted environment: %v", err)
+	if again, err := client.CreateSession(authorityContext(t, "retry-owner"), request); err != nil || !proto.Equal(retained, again) {
+		t.Fatalf("retained retry with deleted environment: %+v %v", again, err)
 	}
-	// With the merged deletion fence, even a stale live inventory cannot turn a
-	// purged receipt retry into a new admission for the deleted environment UID.
+	// Stale live inventory cannot turn a retained receipt into fresh admission.
 	inventory.mu.Lock()
 	inventory.sandbox, inventory.account, inventory.accountFound = snapshot, owner, true
 	inventory.mu.Unlock()
-	if _, err := client.CreateSession(authorityContext(t, "retry-owner"), request); status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("purged receipt with stale live inventory crossed deletion fence: %v", err)
+	if again, err := client.CreateSession(authorityContext(t, "retry-owner"), request); err != nil || !proto.Equal(retained, again) {
+		t.Fatalf("retained receipt with stale live inventory changed: %+v %v", again, err)
 	}
-	if _, err := store.GetSession(t.Context(), stored.SessionID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("retry recreated cleaned-up opening: %v", err)
+	if _, err := client.SubmitInput(authorityContext(t, "retry-backend"), &dispatcherpb.SubmitInputRequest{
+		SessionId: stored.SessionID, ExpectedSandboxUid: snapshot.UID, CommandId: uuid.NewString(), Text: "must not send",
+	}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("retained Session accepted work for deleted UID: %v", err)
+	}
+	if row, err := store.GetSession(t.Context(), stored.SessionID); err != nil || row.EnvironmentDeletedAt == nil || row.SandboxUID != snapshot.UID {
+		t.Fatalf("retained Session lost its exact placement: %+v %v", row, err)
+	}
+	if _, err := client.GetSession(authorityContext(t, "retry-replaced"), &dispatcherpb.GetSessionRequest{SessionId: stored.SessionID}); status.Code(err) != codes.NotFound {
+		t.Fatalf("replacement ServiceAccount inherited retained Session: %v", err)
+	}
+	if got, err := client.GetSession(authorityContext(t, "retry-backend"), &dispatcherpb.GetSessionRequest{SessionId: stored.SessionID}); err != nil || got.GetSession().GetStatus().GetRequiredEnvironment() != dispatcherpb.SessionStatus_REQUIRED_ENVIRONMENT_DELETED {
+		t.Fatalf("backend could not inspect retained Session: %+v %v", got, err)
 	}
 }
 

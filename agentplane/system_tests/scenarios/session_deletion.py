@@ -423,6 +423,30 @@ async def deployed_session_command_cannot_cross_deletion(
         # Removing the policy lets the unmodified controller finish deleting the old environment.
         await cluster.kubectl("wait", f"sandbox/{name}", "--for=delete", "--timeout=300s")
         await cluster.kubectl("wait", f"pod/{incarnation['name']}", "--for=delete", "--timeout=120s")
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(120), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                retained = await dispatcher.GetSession(
+                    session_dispatcher_pb2.GetSessionRequest(session_id=session), metadata=app.metadata, timeout=15
+                )
+                assert (
+                    retained.session.status.required_environment
+                    == session_dispatcher_pb2.SessionStatus.REQUIRED_ENVIRONMENT_DELETED
+                )
+        assert (
+            retained.session.status.materialization
+            == session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_ACCEPTED
+        )
+        assert retained.session.placement.environment_hosted.environment.uid == uid
+        retry = await dispatcher.CreateSession(
+            session_dispatcher_pb2.CreateSessionRequest(session_id=session, spec=spec),
+            metadata=app.metadata,
+            timeout=15,
+        )
+        assert retry.session == retained.session
+        evidence["retained_session_after_environment_deletion"] = True
+        persist()
         replacement = await stack.enter_async_context(
             _sandbox(cluster, name, config["environment_default_policy_sets"])
         )
@@ -431,7 +455,7 @@ async def deployed_session_command_cannot_cross_deletion(
         replacement_spec = session_pb2.SessionSpec()
         replacement_spec.CopyFrom(spec)
         replacement_spec.placement.environment_hosted.environment.uid = replacement
-        # Use a fresh Session ID: the test imposes no retention policy on old Session UUIDs.
+        # A replacement Environment can host a new Session, but cannot adopt the old one.
         await dispatcher.CreateSession(
             session_dispatcher_pb2.CreateSessionRequest(session_id=replacement_session, spec=replacement_spec),
             metadata=app.metadata,
