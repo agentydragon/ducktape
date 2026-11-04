@@ -202,3 +202,43 @@ reproduce the worker from committed configuration, and demonstrate a substantial
 latency benefit with repeated matched hosted-versus-own-VM runs. Match source,
 coverage, resources, concurrency and cache warmth; account for worker queueing
 separately. No matched comparison or CI speedup is established by this run.
+
+### Nearby hosted runs were faster without KVM
+
+Two nearby physical executions of the same three concurrent VM scenarios passed
+on hosted Firecracker workers. Both retained-infrastructure receipts report a
+**cold** start, so these are not warm-attach timings. The hosted launcher log
+reports `/dev/kvm` absent and software emulation in use.
+
+| Measurement                                             | [Hosted, 06:15 UTC](https://app.buildbuddy.io/invocation/3eb9c543-00f6-54da-95f9-654f9ef5f843) | [Hosted, 06:32 UTC](https://app.buildbuddy.io/invocation/8e258ea7-9a5a-5bc9-960a-06f31f959bea) | [wyrm2 KVM](https://app.buildbuddy.io/invocation/9b8d28ca-acda-448a-9c4f-5c96c3ca287e) |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------: | ---------------------------------------------------------------------------------------------: | -------------------------------------------------------------------------------------: |
+| Worker queue                                            |                                                                                         0.06 s |                                                                                         0.09 s |                                                                               438.06 s |
+| Shared stack setup                                      |                                                                                       111.51 s |                                                                                       104.24 s |                                                                               273.93 s |
+| Concurrent scenario body, including per-sandbox cleanup |                                                                                       155.21 s |                                                                                       148.01 s |                                                                               312.21 s |
+| Final shared stack cleanup                              |                                                                              26.87 s, complete |                                                                              29.44 s, complete |                                                    Interrupted by the overall deadline |
+| Remote action execution                                 |                                                                            **330.12 s (5m30)** |                                                                            **331.75 s (5m32)** |                                                  **611.06 s (10m11), failed teardown** |
+
+The hosted executions started on November 4 at 06:15:22.850533 and
+06:32:27.035790 UTC. Their action platforms requested eight estimated compute
+units, Firecracker isolation and runner recycling. The first execution was PR
+#14226's CI; a subsequent mainline result reused its exact artifacts and is not
+a third independent execution. The second ran at `b227dabb9a`. The VM test,
+scenario, stack and macro sources did not change between the image-protection
+merge and the wyrm2 run at `2eda822716`.
+
+In these observations, the wyrm2 action took about **85% longer**, and its
+scenario phase took **2.0–2.1 times as long**. Its final cleanup did not complete,
+so 611 seconds is not a successful full-suite timing. Queueing adds another
+7m18 on the single-slot worker and is excluded from that execution comparison.
+
+This is an observational comparison of two arrangements, not a controlled
+KVM-versus-software-emulation benchmark. Host CPU scheduling, storage, runtime
+configuration, resources and infrastructure lifetime differ. It does establish
+that access to KVM did not make this worker arrangement faster in these runs.
+Keep adoption deferred; making the target green alone would not demonstrate a
+latency benefit.
+
+Evidence comes from each invocation's TestRunner execution timestamps,
+`test-spans.jsonl`, `persistence-suite.json`, test outcome and launcher log.
+Setup, case and cleanup spans do not sum to the whole action: framework startup,
+other fixture work and artifact finalization also contribute.
