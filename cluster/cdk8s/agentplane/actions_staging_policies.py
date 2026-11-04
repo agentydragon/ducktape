@@ -40,6 +40,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     GOOGLE_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
     QUEST_READ_POLICY,
+    THRIVE_READ_POLICY,
     grocy_sf_read_egress_rules,
     home_assistant_read_egress_rules,
 )
@@ -113,6 +114,7 @@ HAKU_SHARED_CORE_POLICIES = (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
     QUEST_READ_POLICY,
+    THRIVE_READ_POLICY,
     HAKU_MAILBOX_POLICY,
 )
 

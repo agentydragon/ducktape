@@ -3930,6 +3930,7 @@ data:
           - activitywatch-read
           - aiquota-read
           - quest-read
+          - thrive-read
           - haku-mailbox
           - github-clone
           - github-agentydragon-agent
@@ -6447,6 +6448,7 @@ data:
                   - activitywatch-read
                   - aiquota-read
                   - quest-read
+                  - thrive-read
                   - haku-mailbox
                   - github-clone
                   - github-agentydragon-agent
@@ -10393,6 +10395,7 @@ spec:
     - activitywatch-read
     - aiquota-read
     - quest-read
+    - thrive-read
     - haku-mailbox
     - coinbase
     - plaid-diagnostics
@@ -10501,6 +10504,7 @@ spec:
     - activitywatch-read
     - aiquota-read
     - quest-read
+    - thrive-read
     - haku-mailbox
     - coinbase
     - plaid-diagnostics
@@ -11596,6 +11600,44 @@ spec:
         - /proxy/quest/guest/examoneEligibility
         - /proxy/quest/guest/verifyInsurance/V2
         - /proxy/quest/guest/getPricing
+      type: egress
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: EgressCredential
+metadata:
+  name: thrive-read
+  namespace: agentplane-staging
+spec:
+  description: Read Thrive Market catalog, orders, account, cart, and autoship through Platform Sessions.
+  source:
+    secretRef:
+      key: token
+      name: platform-sessions-thrive-read-bearer
+  targets:
+    - header: Authorization
+      method: schemeToken
+      scheme: Bearer
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: thrive-read
+  namespace: agentplane-staging
+spec:
+  rules:
+    - credentialRef:
+        name: thrive-read
+      hosts:
+        - platform-sessions.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /proxy/thrive/products
+        - /proxy/thrive/account/orders
+        - /proxy/thrive/account
+        - /proxy/thrive/carts
+        - /proxy/thrive/autoship/items
+        - /proxy/thrive/autoship/schedule/first
       type: egress
 ---
 apiVersion: rbac.authorization.k8s.io/v1

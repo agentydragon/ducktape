@@ -75,6 +75,42 @@ configMapGenerator:
               }
             ]
           },
+          "thrive-read": {
+            "role": "routes",
+            "token_file": "/var/run/platform-sessions/thrive-read",
+            "allow": [
+              {
+                "instance": "thrive",
+                "method": "GET",
+                "path": "/products"
+              },
+              {
+                "instance": "thrive",
+                "method": "GET",
+                "path": "/account/orders"
+              },
+              {
+                "instance": "thrive",
+                "method": "GET",
+                "path": "/account"
+              },
+              {
+                "instance": "thrive",
+                "method": "GET",
+                "path": "/carts"
+              },
+              {
+                "instance": "thrive",
+                "method": "GET",
+                "path": "/autoship/items"
+              },
+              {
+                "instance": "thrive",
+                "method": "GET",
+                "path": "/autoship/schedule/first"
+              }
+            ]
+          },
           "aiquota": {
             "role": "routes",
             "token_file": "/var/run/platform-sessions/aiquota",

@@ -94,6 +94,20 @@ def test_quest_read_is_granted_to_haku_and_claude_ai(staging_manifests: list[dic
     assert all("quest-read" not in preset["policy_sets"] for name, preset in presets.items() if name != "haku")
 
 
+def test_thrive_read_is_granted_to_haku_and_claude_ai(staging_manifests: list[dict[str, Any]]) -> None:
+    for name in ("haku-agent", "claude-ai"):
+        binding = one(
+            doc for doc in staging_manifests if doc["kind"] == "PolicyBinding" and doc["metadata"]["name"] == name
+        )
+        assert "thrive-read" in binding["spec"]["policySets"]
+    app_config = one(
+        doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config"
+    )
+    presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
+    assert "thrive-read" in presets["haku"]["policy_sets"]
+    assert all("thrive-read" not in preset["policy_sets"] for name, preset in presets.items() if name != "haku")
+
+
 def test_haku_and_claude_account_policy_order(staging_manifests: list[dict[str, Any]]) -> None:
     bindings = {
         doc["metadata"]["name"]: doc["spec"]["policySets"]
