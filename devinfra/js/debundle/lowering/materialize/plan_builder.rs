@@ -64,6 +64,9 @@ pub(super) struct ChunkPlan {
     pub(super) module_plans: Vec<ModulePlan>,
     pub(super) bindings_catalogue: BindingCatalogue,
     pub(super) whole_statement_assignment: BTreeMap<StatementId, usize>,
+    /// Positional IDs of plans constructed specifically by coarse residual
+    /// synthesis. This provenance is never inferred from a module path.
+    pub(super) generated_residual_plans: BTreeSet<usize>,
     pub(super) unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
 }
 
@@ -97,6 +100,8 @@ pub(super) struct ChunkPlanBuilder {
     /// stable: binding destinations and `whole_statement_assignment`
     /// hold positional references.
     module_plans: Vec<ModulePlan>,
+    /// Positional IDs of plans constructed by coarse residual synthesis.
+    generated_residual_plans: BTreeSet<usize>,
     /// Authoritative destination of every claimed binding, including imported
     /// bindings claimed only for re-export. Module plans retain export/name
     /// decisions; syntax placement reads this catalogue.
@@ -150,6 +155,7 @@ impl ChunkPlanBuilder {
             whole_statement_assignment: BTreeMap::new(),
             no_reentry_calls: BTreeMap::new(),
             module_plans: Vec::new(),
+            generated_residual_plans: BTreeSet::new(),
             bindings_catalogue: HashMap::new(),
             residual_plan_index: None,
             unmatched_spec_claims: Vec::new(),
@@ -1257,14 +1263,17 @@ impl ChunkPlanBuilder {
             layout,
             target_dir,
             "__auto/atomic_groups",
+            false,
         )
     }
 
     /// Coarse residual routing merges wholly-unclaimed atomic groups when
     /// their strict constraining-edge reachability to existing owners agrees
-    /// within one interval between fixed owners' fine-plan evaluations.
-    /// This only chooses a candidate layout; the ordinary final assignment
-    /// analysis still evaluates the complete I-graph and gate.
+    /// within one interval between fixed owners' fine-plan evaluations. This
+    /// signature/interval partition is only a candidate heuristic: alternating
+    /// source-order edges across distinct signatures can still form a cycle.
+    /// The materializer checks the resulting actual gate SCCs and may contract
+    /// a whole SCC only when every member has generated-residual provenance.
     pub(super) fn synthesize_coarse_atomic_groups(
         &mut self,
         precomputed: &DependencyGraphAndAtomicGroups,
@@ -1282,6 +1291,7 @@ impl ChunkPlanBuilder {
             layout,
             target_dir,
             "__auto/residual_groups",
+            true,
         )
     }
 
@@ -1469,6 +1479,7 @@ impl ChunkPlanBuilder {
         layout: &SourceUnitLayout,
         target_dir: &str,
         path_prefix: &str,
+        generated_residual: bool,
     ) -> Result<()> {
         let dependency_graph = &precomputed.dependency_graph;
         let mut source_unit_declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
@@ -1538,6 +1549,9 @@ impl ChunkPlanBuilder {
                 binding_comments: BTreeMap::new(),
                 binding_claim_origins: BTreeMap::new(),
             });
+            if generated_residual {
+                self.generated_residual_plans.insert(synthetic_idx);
+            }
         }
         Ok(())
     }
@@ -1610,6 +1624,7 @@ impl ChunkPlanBuilder {
             module_plans: self.module_plans,
             bindings_catalogue: BindingCatalogue::new(chunk_id, self.bindings_catalogue),
             whole_statement_assignment: self.whole_statement_assignment,
+            generated_residual_plans: self.generated_residual_plans,
             unmatched_spec_claims: self.unmatched_spec_claims,
         })
     }

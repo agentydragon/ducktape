@@ -111,7 +111,13 @@ Omitted claims follow the selected residual policy: they return to entry under
 groups with equal reachable fixed-owner sets in the strict constraining
 projection share generated modules within intervals between fixed owners in
 the fine layout's simulated evaluation order. Groups omitted by the simulator
-remain separate. Generated paths use `__auto/residual_groups/NNNN`.
+remain separate initially. The normal complete-assignment gate may then
+co-locate a whole actual mutual-constraining SCC only when every member is a
+generated coarse residual module; this refinement repeats until no eligible
+SCC remains. It does not merge authored modules or mixed SCCs. Conditional
+diagnostic summaries do not authorize merging. Any remaining blocking cycle
+or actual eager TDZ rejection is still rejected by the unchanged gate. Generated paths use
+`__auto/residual_groups/NNNN`.
 Selected module names and explicit `chunk_renames` remain intact; omitted
 members retain original source names. The authored spec is unchanged.
 
@@ -874,19 +880,23 @@ matching section before truncation.
 
 Every configured chunk selects one `unassigned_mode` destination policy:
 
-| `kind`                 | Destination of unclaimed source                                                                                                                        |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `inline_in_entry`      | Keep it in the chunk entry.                                                                                                                            |
-| `catchall_file`        | Collect it in `target`, defaulting to `residual/unhandled`.                                                                                            |
-| `per_atomic_group`     | Emit one module at `__auto/atomic_groups/NNNN` per wholly unclaimed atomic group.                                                                      |
-| `coarse_atomic_groups` | Merge wholly unclaimed atomic groups with equal strict fixed-owner reachability within fine evaluation intervals, under `__auto/residual_groups/NNNN`. |
+| `kind`                 | Destination of unclaimed source                                                                                                                                                                     |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inline_in_entry`      | Keep it in the chunk entry.                                                                                                                                                                         |
+| `catchall_file`        | Collect it in `target`, defaulting to `residual/unhandled`.                                                                                                                                         |
+| `per_atomic_group`     | Emit one module at `__auto/atomic_groups/NNNN` per wholly unclaimed atomic group.                                                                                                                   |
+| `coarse_atomic_groups` | Initially group wholly unclaimed atomic groups by strict fixed-owner reachability and fine evaluation interval; then co-locate complete actual mutual SCCs made only of generated residual modules. |
 
 An atomic group contains source units that must stay together. Explicit claims
 are retained; selecting a destination policy does not relax the complete
 assignment's realizability checks. The generated-module policies preserve
 every binding and anonymous statement in its source unit. Coarse grouping is a
-deterministic placement heuristic; the normal complete-assignment gate remains
-authoritative and can reject the resulting plan.
+deterministic placement heuristic. Its cycle refinement uses the normal
+complete-assignment gate's typed actual mutual-SCC diagnosis and merges only
+whole SCCs whose members all have generated-residual provenance. It preserves
+authored plans, destinations, bindings, anonymous source units, and atomic
+groups. The ordinary gate remains authoritative after refinement and rejects
+authored or mixed SCCs and any remaining actual eager TDZ cycle.
 
 ## Entities
 
