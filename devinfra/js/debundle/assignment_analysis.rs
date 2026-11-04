@@ -101,30 +101,6 @@ impl ValidatedAssignment<'_> {
     pub fn cross_destination_rebinds(&self) -> &[CrossRebindEdge] {
         &self.validation.verdict.cross_rebinds
     }
-
-    pub fn translation_validation<E>(
-        &self,
-        visitor: Option<&mut impl FnMut(&TranslationValidationEvidenceReport) -> Result<(), E>>,
-    ) -> Result<TranslationValidationResult, E> {
-        self.assignment_analysis
-            .translation_validation(&self.validation, visitor)
-    }
-
-    pub fn candidate_relocation_assessment<E>(
-        &self,
-        facts: &[analysis::facts::StatementFacts],
-        legacy: &TranslationValidationResult,
-        projection: &analysis::PlacementProjection<'_>,
-        visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
-    ) -> Result<CandidateRelocationAssessment, E> {
-        self.assignment_analysis.candidate_relocation_assessment(
-            &self.validation,
-            facts,
-            legacy,
-            projection,
-            visitor,
-        )
-    }
 }
 
 /// An immutable assignment the gate rejected. It still projects to syntax
@@ -148,29 +124,102 @@ impl RejectedAssignment<'_> {
     pub fn cross_destination_rebinds(&self) -> &[CrossRebindEdge] {
         &self.validation.verdict.cross_rebinds
     }
+}
 
-    pub fn translation_validation<E>(
-        &self,
-        visitor: Option<&mut impl FnMut(&TranslationValidationEvidenceReport) -> Result<(), E>>,
-    ) -> Result<TranslationValidationResult, E> {
-        self.assignment_analysis
-            .translation_validation(&self.validation, visitor)
+/// Whether the caller selected the optional structural/effect assessment for
+/// this candidate. Mandatory gate and translation validation still run when
+/// the selection omits it.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum CandidateAssessmentSelection {
+    Omit,
+    Include,
+}
+
+/// The gate, legacy translation evidence, and optional same-assignment
+/// candidate assessment, retained from one evaluation of an assignment.
+#[derive(Debug)]
+pub struct CandidateEvaluation<'a> {
+    validation: Result<ValidatedAssignment<'a>, RejectedAssignment<'a>>,
+    translation_validation: TranslationValidationResult,
+    candidate_assessment: Option<CandidateRelocationAssessment>,
+}
+
+impl<'a> CandidateEvaluation<'a> {
+    pub fn assignment_analysis(&self) -> &AssignmentAnalysis {
+        match &self.validation {
+            Ok(validated) => validated.assignment_analysis(),
+            Err(rejected) => rejected.assignment_analysis(),
+        }
     }
 
-    pub fn candidate_relocation_assessment<E>(
-        &self,
+    pub fn validation(&self) -> &Result<ValidatedAssignment<'a>, RejectedAssignment<'a>> {
+        &self.validation
+    }
+
+    pub fn is_rejected(&self) -> bool {
+        self.validation.is_err()
+    }
+
+    pub fn report(&self) -> &AssignmentReport {
+        match &self.validation {
+            Ok(validated) => validated.report(),
+            Err(rejected) => rejected.report(),
+        }
+    }
+
+    pub fn translation_validation(&self) -> &TranslationValidationResult {
+        &self.translation_validation
+    }
+
+    pub fn candidate_assessment(&self) -> Option<&CandidateRelocationAssessment> {
+        self.candidate_assessment.as_ref()
+    }
+
+    pub fn into_validation(self) -> Result<ValidatedAssignment<'a>, RejectedAssignment<'a>> {
+        self.validation
+    }
+
+    /// Evaluate legacy translation validation and, when explicitly selected,
+    /// candidate effects/placement against the same accepted or rejected
+    /// assignment. The visitors stream complete evidence without retaining a
+    /// second copy of its rows.
+    pub fn evaluate<E>(
+        validation: Result<ValidatedAssignment<'a>, RejectedAssignment<'a>>,
         facts: &[analysis::facts::StatementFacts],
-        legacy: &TranslationValidationResult,
         projection: &analysis::PlacementProjection<'_>,
-        visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
-    ) -> Result<CandidateRelocationAssessment, E> {
-        self.assignment_analysis.candidate_relocation_assessment(
-            &self.validation,
-            facts,
-            legacy,
-            projection,
-            visitor,
-        )
+        selection: CandidateAssessmentSelection,
+        translation_validation_visitor: Option<
+            &mut impl FnMut(&TranslationValidationEvidenceReport) -> Result<(), E>,
+        >,
+        effect_visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
+    ) -> Result<Self, E> {
+        let assignment_analysis = match &validation {
+            Ok(assignment) => assignment.assignment_analysis,
+            Err(rejected) => rejected.assignment_analysis,
+        };
+        let assignment_validation = match &validation {
+            Ok(assignment) => &assignment.validation,
+            Err(rejected) => rejected.validation.as_ref(),
+        };
+        let translation_validation = assignment_analysis
+            .translation_validation(assignment_validation, translation_validation_visitor)?;
+        let candidate_assessment = match selection {
+            CandidateAssessmentSelection::Omit => None,
+            CandidateAssessmentSelection::Include => {
+                Some(assignment_analysis.candidate_relocation_assessment(
+                    assignment_validation,
+                    facts,
+                    &translation_validation,
+                    projection,
+                    effect_visitor,
+                )?)
+            }
+        };
+        Ok(Self {
+            validation,
+            translation_validation,
+            candidate_assessment,
+        })
     }
 }
 
