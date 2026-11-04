@@ -33,7 +33,7 @@ def pid1_go_test(name, srcs, embed, deps, **kwargs):
             "//third_party/containers:debian_slim",
             "//third_party/containers:ryuk",
             "//util:oci",
-            "//util/bazel:runfiles",
+            "//devinfra/bazel:runfiles",
             "//util/testing:container_logs",
             "@pypi//pytest_bazel",
         ],

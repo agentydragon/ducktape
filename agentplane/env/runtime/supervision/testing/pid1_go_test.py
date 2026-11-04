@@ -6,7 +6,7 @@ import os
 import pytest_bazel
 
 from third_party.containers import debian_slim, ryuk
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 
