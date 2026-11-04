@@ -101,8 +101,10 @@ reports these single-iteration results on an AMD EPYC RBE worker:
 | Sparse-aware logical hashing |                 4.447 |      1,931.46 MB/s |
 
 This is about 17 times faster in this benchmark, not an end-to-end CI speedup estimate.
-The complete hardware rerun at the candidate uses the same production guest, without profiling:
-[invocation](https://app.buildbuddy.io/invocation/29aedad2-8644-40dd-95f9-e85001fb6b06).
+The [complete hardware rerun](https://app.buildbuddy.io/invocation/29aedad2-8644-40dd-95f9-e85001fb6b06)
+passed at the candidate with the same production guest, without profiling, in 1585.0 seconds.
+Cleanup took 291.652 seconds within the unchanged 300-second budget. The two full runs are
+not a controlled comparison because of the first run's profiler disturbance.
 
 ```sh
 bbr test //agentplane/firecracker:firecracker_test --test_output=all \

@@ -2,9 +2,32 @@
 
 This follows the [launcher proof](2026_11_03_firecracker_environment.md) with an app-integrated,
 disposable k3s acceptance target: `//agentplane/system_tests/suites:test_firecracker`.
-The accepted code is `760367f0aa18437549b073631ca8269ac4502be0`, rebased onto
-`devel` commit `2c86bf3bd1c09c1e3ccc4c1bc38cf323db41caf2`. The runner now lives on
-`ovh-ns104963`; earlier attempts below ran on wyrm2.
+The first complete pass below used `760367f0aa18437549b073631ca8269ac4502be0`, rebased onto
+`devel` commit `2c86bf3bd1c09c1e3ccc4c1bc38cf323db41caf2`, on `ovh-ns104963`.
+After permanent Flux adoption, the unrestricted scheduler selected `wyrm2`, as recorded in
+the final section. The subsequent [storage probe](2026_11_04_firecracker_storage_probe.md)
+records the managed-worker rerun, sparse-aware hashing candidate and its hardware invocation.
+
+## Flux-managed wyrm2 hardware acceptance
+
+[The complete rerun](https://app.buildbuddy.io/invocation/29aedad2-8644-40dd-95f9-e85001fb6b06)
+passed at runtime code `9291cb128cd2d247f397d2a87f0b9fc763493798`, including teardown:
+`PASSED in 1585.0s`. It used the permanent Flux-managed worker on wyrm2 and the unchanged
+production guest, without profiling. Subsequent benchmark/report changes did not change
+the production sources exercised by that run.
+
+The [exact continuation data](2026_11_04_firecracker_system_test_continuation.json) records child
+PID `586`, start ticks `8285`, and marker `d8ee0cd17298f58729cbea5dbd476ec82371e78052120178`
+before and after resume, with counter `2` to `64`. Kernel boot ID
+`b5e81095-e361-43b0-bf78-abe3f095f83a`, Runtime boot ID
+`89a28ad6-3ed5-45ed-8d6e-adc12f20bfe2`, native session and process identities also matched.
+
+The scenario ran from `13:45:59.307089Z` to `13:54:06.289113Z`. Cleanup took 291.652 seconds:
+deletion was accepted at `13:54:06.397407Z` and confirmed at `13:58:57.943697Z`, within the
+unchanged 300-second budget. That leaves only about eight seconds of margin; the storage
+follow-up remains open. The earlier profiled run failed cleanup and is retained as a failure
+in the storage report; its profiler filled the worker root disk, so it is not a controlled
+latency baseline for attributing the difference to sparse-aware hashing.
 
 ## Full hardware acceptance passed
 
@@ -53,8 +76,9 @@ functional passes and failures remain below; this is the first complete target p
 ## Execution path
 
 The existing `buildbuddy-executor/buildbuddy-kvm-worker` KubeVirt VM serves the
-`wyrm2-kvm-vm` self-hosted BuildBuddy pool. Initial attempts ran on wyrm2; the current
-runner is on `ovh-ns104963`, as described below. The pool name is independent of its host. The test action uses Docker inside that VM, starts
+`wyrm2-kvm-vm` self-hosted BuildBuddy pool. The first complete pass ran on `ovh-ns104963`;
+the permanent Flux-managed worker was subsequently scheduled on `wyrm2`. The pool name is
+independent of its host. The test action uses Docker inside that VM, starts
 k3s there, and asks the deployed Agentplane app to create a Firecracker environment. The real
 controller creates the launcher Pod, cert-manager issues its Runtime certificate, and the real
 Gateway connects to its guest Runtime. A real Codex harness executes tools; the upstream model
