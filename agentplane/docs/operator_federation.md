@@ -12,9 +12,9 @@ Neither identity nor OAuth/token material is encoded in the cookie. The row key 
 of the handle.
 
 The table and its expiry index originated in the app's Alembic history. The Go app runs its
-embedded Goose migrations before workers or HTTP serving begin. The baseline adopts the existing
-schema without changing its rows, and migration 2 removes the retired `alembic_version_app`
-marker. The Action schema is unchanged.
+embedded Goose migrations before workers or HTTP serving begin. The baseline creates the current
+schema or adopts a completed version-2 Goose database without changing its rows. Earlier databases
+must first be upgraded with the previous image. The Action schema is unchanged.
 Existing signed-payload cookies are deliberately invalid after rollout: log in again. Replicas
 must use the same app database, OIDC configuration, public origin, and session signing secret.
 

@@ -76,7 +76,9 @@ WITH
     )
 SELECT CASE
     WHEN (SELECT total FROM existing_tables) = 0
-        AND (SELECT tip FROM history) = 0 THEN 1
+        AND (SELECT tip FROM history) = 0
+        AND NOT EXISTS (SELECT 1 FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'
+            AND name <> 'runner_goose_version') THEN 1
     WHEN (SELECT total FROM existing_tables) = 8
         AND (SELECT v1 = 1 AND v2 = 1 AND v3 = 1 AND tip = 3 FROM history)
         AND (SELECT valid FROM valid_schema)
