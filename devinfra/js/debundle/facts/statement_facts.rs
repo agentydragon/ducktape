@@ -237,6 +237,11 @@ pub(crate) struct SynchronousCalls {
     /// conservative paths contributed, each with the first such path.
     pub fallback_only: FallbackOnlyEffects,
     pub complete: bool,
+    /// Engine-owned authority transported with staged `ChunkFactAnalysis`.
+    /// This field intentionally has no serde default: a cache missing its
+    /// typed authority is rejected rather than regaining `.complete` as
+    /// legacy authority. Public report DTOs are separate diagnostics.
+    pub(crate) binding_effect_coverage: super::sync_effects::BindingEffectCoverage,
     /// What each plain-array binding the statement reads holds at its program
     /// point, when its elements are known.
     pub(crate) settled_array_elements: BTreeMap<Id, SettledElements>,
@@ -298,14 +303,24 @@ impl SynchronousCalls {
         }
     }
 
-    /// Coverage of this summary's lexical component, independent of heap,
-    /// host, value and whole-initialization coverage.
-    pub(crate) fn binding_effects_complete(&self) -> bool {
-        self.complete
-            || matches!(
-                self.initializer_binding_effects.as_deref(),
-                Some(crate::reports::schema::InitializerBindingEffectsUse::Applied { .. })
-            )
+    pub(crate) fn binding_effect_authority(&self) -> super::sync_effects::BindingEffectAuthority {
+        let author_source_only = matches!(
+            self.initializer_binding_effects.as_deref(),
+            Some(crate::reports::schema::InitializerBindingEffectsUse::Applied { .. })
+        );
+        self.binding_effect_coverage
+            .authority(self.complete, author_source_only)
+    }
+
+    pub(crate) fn binding_effect_authority_report(
+        &self,
+    ) -> crate::reports::schema::BindingEffectAuthorityReport {
+        let author_source_only = matches!(
+            self.initializer_binding_effects.as_deref(),
+            Some(crate::reports::schema::InitializerBindingEffectsUse::Applied { .. })
+        );
+        self.binding_effect_coverage
+            .authority_report(self.complete, author_source_only)
     }
 
     /// The assumed path when only a conservative path contributed the read

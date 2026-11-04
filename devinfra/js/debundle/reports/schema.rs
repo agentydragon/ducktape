@@ -604,6 +604,10 @@ pub struct SynchronousExecutionReport {
     pub initializer_binding_effects: Option<Box<InitializerBindingEffectsUse>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub purity_disagreement: Option<PurityCompletionDisagreement>,
+    /// Which authority the graph uses to decide whether to skip syntactic
+    /// at-init call fallback. This report is diagnostic output only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binding_effect_authority: Option<BindingEffectAuthorityReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inference_uses: Vec<InferenceUse>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -632,6 +636,64 @@ pub struct SynchronousExecutionReport {
     pub returned_record_uses: Vec<ReturnedRecordUseReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub author_host_contract_uses: Vec<ReentryFreeOperationUse>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "authority", rename_all = "snake_case")]
+pub enum BindingEffectAuthorityReport {
+    /// No runtime-only authority token is present in these facts. This is the
+    /// fail-closed state for deserialized or otherwise unclassified owners.
+    Unclassified,
+    /// Temporary compatibility path for owners outside ordered root-body
+    /// execution. `complete` is not an operation receipt.
+    LegacyExecution { complete: bool },
+    /// The exact source-only initializer assertion was applied.
+    AuthorSourceOnly,
+    /// Ordered root execution started, but did not seal typed lexical proof.
+    OrderedRootInitializerUncovered {
+        owner: SourceUnitOrdinal,
+        binding: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        initializer_span: Option<swc_common::Span>,
+    },
+    /// Typed operation evidence sealed for the exact ordered root owner/body.
+    OperationReceipt {
+        receipt: Box<LexicalBindingEffectReceipt>,
+    },
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LexicalBindingEffectReceipt {
+    pub owner: SourceUnitOrdinal,
+    pub binding: String,
+    pub initializer_span: Option<swc_common::Span>,
+    pub read_dependencies: crate::analysis_inputs::ProofDependencies,
+    pub rebind_dependencies: crate::analysis_inputs::ProofDependencies,
+    /// Flat exact call edges retain each consuming call-site, caller body,
+    /// resolved target body, and merged prerequisites, including memo-reused
+    /// invocations. The analyzer checks connectivity from the root body.
+    pub calls: Vec<LexicalBindingEffectCall>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LexicalBindingEffectBody {
+    RootInitializer {
+        owner: SourceUnitOrdinal,
+        initializer_span: swc_common::Span,
+    },
+    Callable {
+        key: u32,
+        owner: SourceUnitOrdinal,
+    },
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LexicalBindingEffectCall {
+    pub caller: LexicalBindingEffectBody,
+    pub call_span: swc_common::Span,
+    pub target: LexicalBindingEffectBody,
+    pub dependencies: crate::analysis_inputs::ProofDependencies,
 }
 
 /// An exact initializer's author-supplied lexical effect bound. The enclosing

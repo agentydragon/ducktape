@@ -1,7 +1,10 @@
 //! Call-site execution effects distinguish function values from function bodies: returning a closure never executes it.
 
 use super::super::allocation_transfer::AllocationContext;
-use super::super::effect_coverage::EffectCoverageFragment;
+use super::super::effect_coverage::{
+    BindingEffectCoverage, EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt,
+    RootInitializerIdentity,
+};
 use super::super::local_operations::{LocalBinding, LocalBody};
 use super::super::local_transfer::{
     self, EvaluatedCallee, LocalContext, LocalFrame, LocalValueResult,
@@ -106,6 +109,9 @@ pub(super) struct Outcome {
     body_invoked: bool,
     /// Nonterminal operation receipts, never a whole-owner certificate.
     effect_coverage: EffectCoverageFragment,
+    /// Set before executing an ordered root initializer; callable outcomes
+    /// never carry a root identity and cannot seal their parent's effects.
+    root_binding_effect_identity: Option<RootInitializerIdentity>,
     returns: Values,
     complete: bool,
     executed_owners: BTreeSet<SourceUnitOrdinal>,
@@ -1526,7 +1532,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             && !values.is_empty()
             && !values.contains(&AbstractValue::Value(Value::Unavailable))
         {
-            EffectCoverageFragment::no_effects()
+            EffectCoverageFragment::initialized_module_read()
         } else {
             EffectCoverageFragment::default()
         };
@@ -8468,6 +8474,25 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .map(|callable| (*key, callable))
     }
 
+    fn local_body_identity_for_call(&self, call: &Call) -> Option<LocalBodyIdentity> {
+        match call.caller {
+            Some(key) => {
+                let callable = self.inputs.index.callables.get(&key)?;
+                Some(LocalBodyIdentity::Callable {
+                    key,
+                    owner: callable.owner,
+                })
+            }
+            None => {
+                let body = self.inputs.index.ordered_initializers.get(&call.owner)?;
+                Some(LocalBodyIdentity::RootInitializer {
+                    owner: call.owner,
+                    initializer_span: body.initializer_span()?,
+                })
+            }
+        }
+    }
+
     /// Native and imported calls whose proofs still project source operands
     /// retain their established whole-owner path. This chooses a source
     /// family before execution; the ordered call transfer still checks each
@@ -9281,13 +9306,29 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         environment: Context,
         owner: SourceUnitOrdinal,
         scope: LocalExecutionScope,
+        root_binding_effect_identity: Option<RootInitializerIdentity>,
     ) -> Outcome {
         let mut frame = LocalFrame::new(environment);
         frame.borrowed_records = self.reachable_objects(&frame.inputs);
+        let root_binding_effect_identity = match scope {
+            LocalExecutionScope::RootInitializer => Some(
+                root_binding_effect_identity
+                    .expect("root initializer execution carries its exact source identity"),
+            ),
+            LocalExecutionScope::Callable(_) => None,
+        };
         let mut outcome = Outcome {
             complete: true,
+            root_binding_effect_identity,
             ..Outcome::default()
         };
+        if let Some(identity) = &outcome.root_binding_effect_identity {
+            outcome.effects.binding_effect_coverage =
+                BindingEffectCoverage::OrderedRootInitializer {
+                    identity: identity.clone(),
+                    receipt: None,
+                };
+        }
         outcome.executed_owners.insert(owner);
         // The source-covered application consumer supplies access effects and
         // conservative fallback. The shared kernel controls operation order.
@@ -9569,6 +9610,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     env,
                     callable.owner,
                     LocalExecutionScope::Callable(key),
+                    None,
                 );
                 if !covered_prologue {
                     outcome.effect_coverage = EffectCoverageFragment::default();
@@ -10625,10 +10667,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .index
                 .direct_top_level_functions
                 .contains(binding)
-            && let Some((key, _)) = self.local_call_target(&targets)
+            && let Some((key, callable)) = self.local_call_target(&targets)
+            && let Some(caller) = self.local_body_identity_for_call(call)
             && self.inputs.index.hoisted_bindings.get(binding) == Some(&key)
         {
-            Some((key, self.settled_prefix_dependencies()))
+            Some((
+                key,
+                caller,
+                LocalBodyIdentity::Callable {
+                    key,
+                    owner: callable.owner,
+                },
+                self.settled_prefix_dependencies(),
+            ))
         } else {
             None
         };
@@ -10784,11 +10835,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     if call.kind == CallKind::Call =>
                 {
                     let mut nested = self.invoke(key, args.clone(), None, false);
-                    if let Some((expected, prerequisites)) = &coverage_target
+                    if let Some((expected, caller, target, prerequisites)) = &coverage_target
                         && *expected == key
                     {
-                        outcome.effect_coverage = nested.effect_coverage.clone();
-                        outcome.effect_coverage.depend_on(prerequisites);
+                        let mut effect_coverage = nested.effect_coverage.clone();
+                        effect_coverage.depend_on(prerequisites);
+                        effect_coverage.selected_local_call(LocalCallReceipt {
+                            caller: caller.clone(),
+                            call_span: call.span,
+                            target: target.clone(),
+                            dependencies: prerequisites.clone(),
+                        });
+                        outcome.effect_coverage = effect_coverage;
                     }
                     if needs_value {
                         result_values.extend(nested.returns.iter().cloned());
@@ -10802,11 +10860,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 AbstractValue::Closure(key, captured) if call.kind == CallKind::Call => {
                     let mut nested = self.invoke(key, args.clone(), Some(captured), false);
-                    if let Some((expected, prerequisites)) = &coverage_target
+                    if let Some((expected, caller, target, prerequisites)) = &coverage_target
                         && *expected == key
                     {
-                        outcome.effect_coverage = nested.effect_coverage.clone();
-                        outcome.effect_coverage.depend_on(prerequisites);
+                        let mut effect_coverage = nested.effect_coverage.clone();
+                        effect_coverage.depend_on(prerequisites);
+                        effect_coverage.selected_local_call(LocalCallReceipt {
+                            caller: caller.clone(),
+                            call_span: call.span,
+                            target: target.clone(),
+                            dependencies: prerequisites.clone(),
+                        });
+                        outcome.effect_coverage = effect_coverage;
                     }
                     if needs_value {
                         result_values.extend(nested.returns.iter().cloned());
@@ -12341,11 +12406,19 @@ impl Executor<'_, '_> {
         // Keep the selected result in this owner until publication. Operands
         // and calls execute once, at their position in the shared local plan.
         let mut ordered_initializer_result = if let Some(body) = ordered_initializer {
+            let [(binding, _)] = assignments.as_slice() else {
+                unreachable!("ordered root initializer has one assignment");
+            };
             outcome = self.execute_local_body(
                 body,
                 Context::new(),
                 owner,
                 LocalExecutionScope::RootInitializer,
+                Some(RootInitializerIdentity {
+                    owner,
+                    binding: binding.clone(),
+                    initializer_span: body.initializer_span(),
+                }),
             );
             Some(std::mem::take(&mut outcome.returns))
         } else {
@@ -12715,6 +12788,51 @@ impl Executor<'_, '_> {
             outcome.effects.initialization_coverage_refusal = initialization_coverage_refusal;
         }
         self.apply_initializer_binding_effects(fact, &mut outcome.effects);
+        if let Some(identity) = outcome.root_binding_effect_identity.take() {
+            let expected_root_calls: BTreeSet<_> = calls
+                .iter()
+                .filter(|call| call.kind == CallKind::Call)
+                .map(|call| (call.span.lo.0, call.span.hi.0))
+                .collect();
+            let receipt = effect_initializer_source.and_then(|(source, binding, span)| {
+                (identity.owner == owner
+                    && identity.binding == *binding
+                    && identity.initializer_span == Some(span)
+                    && source.matches(owner, binding, span)
+                    && self.state.initialized_bindings.contains(binding)
+                    // A later fallback/precision path may be absorbed after
+                    // the ordered kernel returned an apparently covered
+                    // fragment. Whole-owner lexical authority requires the
+                    // final execution outcome, not just that fragment, to
+                    // remain fully settled.
+                    && outcome.complete
+                    && !outcome.unknown_call
+                    && outcome.effects.precision_losses.is_empty()
+                    && outcome.effects.uninitialized_reads.is_empty()
+                    && outcome.effects.fallback_only.reads.is_empty()
+                    && outcome.effects.fallback_only.rebinds.is_empty())
+                .then(|| {
+                    outcome
+                        .effect_coverage
+                        .seal_lexical_binding_effects(identity.clone(), &expected_root_calls)
+                })
+                .flatten()
+            });
+            outcome.effects.binding_effect_coverage =
+                BindingEffectCoverage::OrderedRootInitializer {
+                    identity,
+                    receipt: receipt.map(Box::new),
+                };
+        } else if matches!(
+            &outcome.effects.binding_effect_coverage,
+            BindingEffectCoverage::Unclassified
+        ) {
+            // All executions outside the selected ordered-root path retain
+            // the explicitly named transitional authority. A selected root
+            // was marked before its first operation and can never regain this
+            // bool-based path if its receipt or identity is lost.
+            outcome.effects.binding_effect_coverage = BindingEffectCoverage::LegacyExecution;
+        }
         outcome.effects
     }
 }

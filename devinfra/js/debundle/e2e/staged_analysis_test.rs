@@ -741,6 +741,107 @@ fn assert_staged_run_matches(opts: FixtureOpts<'_>, run_args: &[&str]) {
     assert_same_trees(&direct_trees.join("out"), &staged.root().join("out"));
 }
 
+fn graph_node_for_binding<'a>(graph: &'a Value, binding: &str) -> &'a Value {
+    graph["nodes"]
+        .as_array()
+        .expect("dependency graph nodes")
+        .iter()
+        .find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|bindings| {
+                    bindings
+                        .iter()
+                        .any(|declared| declared["binding"] == binding)
+                })
+        })
+        .unwrap_or_else(|| panic!("no graph node declares {binding:?}: {graph:#}"))
+}
+
+fn assert_lexical_authority_staged_parity(
+    source: &'static str,
+    members: &[Member],
+    expected_authority: &str,
+) {
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        source,
+        vec![logical_module("all", members)],
+    ));
+    let direct = staged.run(&[]);
+    assert_ok(&direct, "direct lexical-authority run");
+    let direct_trees = staged.set_aside("direct-lexical-authority");
+    let direct_out = direct_trees.join("out");
+    let direct_graph: Value =
+        read_gzip_json(&direct_out.join("reports/tree/static/app/dependency_graph.json.gz"));
+    let direct_result = graph_node_for_binding(&direct_graph, "result");
+    let direct_execution = &direct_result["synchronous_execution"];
+    assert_eq!(direct_execution["complete"], true, "{direct_execution:#}");
+    assert_eq!(
+        direct_execution["binding_effect_authority"]["authority"], expected_authority,
+        "{direct_execution:#}"
+    );
+
+    let seed = graph_node_for_binding(&direct_graph, "seed");
+    assert!(
+        direct_graph["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|edge| {
+                edge["source"] == direct_result["id"]
+                    && edge["target"] == seed["id"]
+                    && edge["edge_kind"] == "eager_use"
+                    && edge["binding"] == "seed"
+            }),
+        "the observed readSeed effect must remain in the graph: {direct_graph:#}"
+    );
+
+    let analysis = path(&staged.artifact).to_owned();
+    let loaded = staged.run(&["--analysis", analysis.as_str()]);
+    assert_ok(&loaded, "run from saved analysis artifact");
+    assert_same_trees(&direct_out, &staged.root().join("out"));
+    assert_node_output(&direct_out.join("app/static/app/entry.js"), "41\n", "");
+    assert_node_output(
+        &staged.root().join("out/app/static/app/entry.js"),
+        "41\n",
+        "",
+    );
+    let loaded_graph: Value = read_gzip_json(
+        &staged
+            .root()
+            .join("out/reports/tree/static/app/dependency_graph.json.gz"),
+    );
+    let loaded_execution =
+        &graph_node_for_binding(&loaded_graph, "result")["synchronous_execution"];
+    assert_eq!(
+        loaded_execution["binding_effect_authority"]["authority"], expected_authority,
+        "the typed authority must survive the validated artifact round-trip: {loaded_execution:#}"
+    );
+}
+
+#[test]
+fn lexical_effect_authority_and_fallback_survive_staged_artifact_round_trip() {
+    assert_lexical_authority_staged_parity(
+        "const seed = 41;\nfunction readSeed() { return seed; }\nvar result = (readSeed(), readSeed());\nconsole.log(result);\n",
+        &[
+            Member::new("seed"),
+            Member::new("readSeed"),
+            Member::new("result"),
+        ],
+        "operation_receipt",
+    );
+    assert_lexical_authority_staged_parity(
+        "const seed = 41;\nfunction readSeed() { return seed; }\nconst alias = readSeed;\nvar result = (alias(), alias());\nconsole.log(result);\n",
+        &[
+            Member::new("seed"),
+            Member::new("readSeed"),
+            Member::new("alias"),
+            Member::new("result"),
+        ],
+        "ordered_root_initializer_uncovered",
+    );
+}
+
 #[test]
 fn accepted_split_matches_a_direct_run() {
     assert_staged_run_matches(split_with_pure_import(), &[]);

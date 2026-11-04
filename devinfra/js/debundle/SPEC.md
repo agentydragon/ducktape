@@ -605,6 +605,37 @@ These three domains do not establish completeness of source binding reads or
 rebinds. Closing them does not discharge unresolved-call closure or authorize
 skipping its binding-effect fallback.
 
+The ordered root can separately seal lexical read and rebind coverage from
+the shared local-operation receipts. A normally completed read of an
+initialized local module cell accounts for that read; each admitted direct
+zero-argument local call carries the operation receipts and exact caller,
+call-site and target-body edge, including memo-reused outcomes. The root checks
+that these flat edges connect back to its exact body without expanding every
+root-to-leaf path.
+Its read and rebind domains retain the conditions used to select those
+operations. Values, `complete`, and the existing three effect domains cannot
+mint lexical coverage. The root identity is installed before ordered
+execution. Sealing additionally requires the exact source owner, binding and
+initializer span, a final initialized binding, complete execution, no unknown
+call, precision loss, uninitialized read, or fallback-only lexical effect.
+Any failed condition leaves the selected root explicitly uncovered and keeps
+the syntactic fallback. Children and memo entries cannot seal a parent.
+
+The graph first emits all existing observed and assumed read/rebind
+contributions, then skips only its remaining syntactic call fallback when an
+ordered-root lexical receipt seals. This migration applies only to source
+owners that actually enter ordered root-initializer execution. Applied
+`initializer_binding_effects: source_only` remains explicit author authority.
+Owners outside the migrated path temporarily retain the named
+`LegacyExecution` decision, where the existing completion boolean is still
+used; that label is transitional compatibility, not operation evidence.
+`Unclassified` owners and selected roots without a receipt retain fallback.
+The engine-owned staged fact stores this authority as a required externally
+tagged `BindingEffectCoverage` value. A missing field is rejected on artifact
+load rather than reconstructed from completion. The public
+`synchronous_execution.binding_effect_authority` report is a separate
+diagnostic DTO and is never an analysis input.
+
 An original simple variable declarator may also close those
 coverage domains for a direct bare `new Map()` or `new Set()` with exactly zero
 arguments. The original AST and lowered `New` site must identify the same

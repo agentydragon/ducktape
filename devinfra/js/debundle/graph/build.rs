@@ -355,6 +355,7 @@ pub fn build_dependency_graph_with(
                 crate::reports::schema::SynchronousExecutionReport {
                     initializer_binding_effects: calls.initializer_binding_effects.clone(),
                     purity_disagreement: calls.purity_disagreement.clone(),
+                    binding_effect_authority: Some(calls.binding_effect_authority_report()),
                     local_record_factory_uses: calls.local_record_factory_uses.clone(),
                     local_record_factory_rejections: calls.local_record_factory_rejections.clone(),
                     complete: calls.complete,
@@ -2140,8 +2141,19 @@ fn promote_at_init_calls(
                         .promoted_at_init(callee_source_unit),
                 ));
             }
-            if synchronous.binding_effects_complete() {
-                continue;
+            match synchronous.binding_effect_authority() {
+                crate::facts::sync_effects::BindingEffectAuthority::Unclassified => {}
+                crate::facts::sync_effects::BindingEffectAuthority::LegacyExecution {
+                    complete: true,
+                }
+                | crate::facts::sync_effects::BindingEffectAuthority::AuthorSourceOnly
+                | crate::facts::sync_effects::BindingEffectAuthority::OperationReceipt => {
+                    continue;
+                }
+                crate::facts::sync_effects::BindingEffectAuthority::LegacyExecution {
+                    complete: false,
+                }
+                | crate::facts::sync_effects::BindingEffectAuthority::OrderedRootInitializerUncovered => {}
             }
         }
         if stmt.calls.eager.is_empty()
