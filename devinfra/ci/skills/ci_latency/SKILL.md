@@ -319,6 +319,30 @@ fixture setup. Propose narrower ownership boundaries that preserve coverage, and
 verify that required tests still run. Rank the benefit by PR change class and the
 remaining critical path rather than the number of dependencies removed.
 
+## Identify costly stress tests before optimizing them
+
+During test-cost review, inspect test bodies and fixture helpers for stress/scale
+workloads with fresh execution time above roughly **10 seconds**, including setup
+and teardown. Classify by purpose: generating many equivalent inputs, large graphs,
+high fanout or repeated operations chiefly to throw volume at a subsystem, rather
+than exercise particular inputs or behaviors. A stress case remains such when it
+asserts a runtime budget or guards an asymptotic performance regression.
+Names, tags, loops and input size are discovery hints, not enough to classify a
+test; a large input may be essential to a specific correctness regression.
+
+For these costly stress tests, recommend **removing them from routine PR/push CI**,
+usually by marking the target `manual` and retaining it for explicit scale or
+performance runs. Make this recommendation before spending effort optimizing the
+stress fixture merely to keep it in CI. Cite the target, source/fixture evidence,
+observed fresh runtime and its stress purpose. Use actual execution and phase
+evidence, not a configured timeout, budget constant or cached summary duration.
+
+Identify the focused behavioral tests that remain automated. If a target mixes
+stress and unique behavioral checks, propose splitting out small behavior cases
+and making the volume workload manual; state any coverage/frequency tradeoff.
+Estimate feedback savings against parallel work and the next required gate,
+rather than claiming the entire removed test duration as a CI speedup.
+
 ## Explain what long build and test paths are doing
 
 For the major contributors selected from fresh cost and critical-path evidence,
