@@ -48,6 +48,7 @@ def test_resolves_multiple_instances_and_type_settings(registry: IntegrationRegi
     "bad",
     [
         {"integrations": [{"id": "../x", "type": "example"}]},
+        {"integrations": [{"id": "example\n", "type": "example"}]},
         {"integrations": [{"id": "a", "type": "example"}, {"id": "a", "type": "example"}]},
         {"integrations": [{"id": "a", "type": "missing"}]},
         {"integrations": [{"id": "a", "type": "example", "enabled": "yes"}]},

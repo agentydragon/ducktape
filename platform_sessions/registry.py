@@ -8,9 +8,9 @@ from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
+_ID_PATTERN = r"[A-Za-z0-9][A-Za-z0-9._-]*"
 
 
 class IntegrationConfigError(ValueError):
@@ -26,20 +26,13 @@ class InstanceConfig(BaseModel):
     """Non-secret inputs for a configured integration instance."""
 
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
-    id: str
+    id: str = Field(pattern=rf"^{_ID_PATTERN}$")
     type: str
     enabled: bool = True
     upstream_base_url: str | None = None
     state_dir: str | None = None
     verification: VerificationConfig = Field(default_factory=VerificationConfig)
     settings: dict[str, Any] = Field(default_factory=dict, repr=False)
-
-    @field_validator("id")
-    @classmethod
-    def validate_id(cls, value: str) -> str:
-        if not _ID.fullmatch(value):
-            raise ValueError("Invalid integration ID")
-        return value
 
 
 class HostConfig(BaseModel):
@@ -94,7 +87,7 @@ class IntegrationRegistry:
     def __init__(self, types: tuple[IntegrationType, ...]):
         self._types: dict[str, IntegrationType] = {}
         for integration_type in types:
-            if not _ID.fullmatch(integration_type.name) or integration_type.name in self._types:
+            if not re.fullmatch(_ID_PATTERN, integration_type.name) or integration_type.name in self._types:
                 raise IntegrationConfigError("Invalid or duplicate integration type")
             _upstream_url(integration_type.default_upstream_base_url)
             self._types[integration_type.name] = integration_type
