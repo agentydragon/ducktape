@@ -37,8 +37,16 @@ It scopes existing Sessions and existing environments; it does not create enviro
 
 ## Session binding
 
+- The committed opening is Dispatcher's live Session reservation and placement authority. It records
+  the selected harness and exact Sandbox identity independently of owner materialization or History.
+  `SessionOpening` exposes the harness and placement under the existing retained-owner read policy.
+  A central opening currently names its required executor Sandbox; it is not yet an environment-free
+  central placement.
 - `OpenSession` requires `session_id` to be a canonical lowercase UUID before reading Sandbox state or recording an
-  opening. Read RPCs remain unchanged and can still address retained rows by their stored IDs.
+  opening. Callers must not deliberately reuse a Session UUID after deletion. Cleanup forgets the
+  Dispatcher record and does not retain a UUID marker: a subsequent request cannot be recognized as
+  an old retry, and retained History can reject a conflicting identity. Read RPCs can still address
+  retained rows by their stored IDs.
 - A new normal `OpenSession` can target only the current Sandbox-owned ServiceAccount whose namespace, name and UID
   equal the authenticated caller's reviewed ServiceAccount. The Sandbox and account are read from Kubernetes;
   callers cannot choose a different principal by supplying strings.
@@ -86,6 +94,10 @@ It scopes existing Sessions and existing environments; it does not create enviro
 - The worker checks the live managed account before binding a pending owner and again
   immediately before Runner delivery. Source errors fail closed; missing pending accounts remain queued, while
   a changed bound account fails queued work instead of delivering it under the replacement identity.
+- The delivery router requires the Session record and checks its stored Sandbox name and UID for
+  native and central Sessions before selecting the backend. A missing record never falls back to
+  a native Runtime. This check is not an atomic fence against deletion after the read; managed
+  quiescence and Runtime's admission barrier remain separate.
 - Automatic wake is attempted only when the live Sandbox has `spec.wakeOnSend: true`. The shared lifecycle service
   rechecks the target UID, the retained effective caller's current ServiceAccount UID, and current `resumePolicy` before
   requesting resume. The existing `wake_caller_accounts` setting is a separate trusted broker grant for automatic

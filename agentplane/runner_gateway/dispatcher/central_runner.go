@@ -2,7 +2,6 @@ package dispatcher
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -115,18 +114,14 @@ func (r *RoutingRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot
 
 func (r *RoutingRunner) Deliver(ctx context.Context, sandbox SandboxSnapshot, id string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
 	opening, err := r.Store.GetOpening(ctx, id)
-	// Existing runner Sessions may predate Dispatcher OpenSession.
-	if errors.Is(err, ErrNotFound) {
-		return r.Native.Deliver(ctx, sandbox, id, command)
-	}
 	if err != nil {
+		return nil, err
+	}
+	if err := validateOpeningExecutor(opening, sandbox); err != nil {
 		return nil, err
 	}
 	if !centralSpec(opening.Spec) {
 		return r.Native.Deliver(ctx, sandbox, id, command)
-	}
-	if err := validateOpeningExecutor(opening, sandbox); err != nil {
-		return nil, err
 	}
 	var admission *eventlogpb.EventEntry
 	err = r.withClient(ctx, func(ctx context.Context, client samplerpb.SamplerClient) error {

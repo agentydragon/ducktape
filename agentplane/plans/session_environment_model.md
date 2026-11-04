@@ -36,8 +36,9 @@ through the operator-authenticated app facade and used by test callers through
 [`SessionDispatcherClient.get_session_opening`](../runner_gateway/dispatcher/testing_client.py).
 The [address inventory](#session-address-inventory) records this completed migration. The
 [Dispatcher outcome contract](../runner_gateway/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands)
-defines native rejection, unconfirmed owner outcomes and dependent-command fencing. Cleanup's
-Session-identity retention and UUID-reuse policy remains a decision; this does not complete the directory.
+defines native rejection, unconfirmed owner outcomes and dependent-command fencing. Cleanup forgets
+the Session in Dispatcher; UUID uniqueness across a deleted record is a caller obligation, not a
+server-enforced lifetime guarantee. This does not complete the directory.
 All Session-targeted commands now require a Dispatcher Session record, including privileged callers and
 immediate interrupts. Gateway permits direct Runtime Session creation and mutation only to the combined
 Gateway/Dispatcher workload; its read-only diagnostics and separate Executor service have their own grants.
@@ -172,7 +173,7 @@ For the first environment-hosted command cutover, keep the existing direct and d
 checks and scoped service trust; wake remains separately authorized. When deletion races accepted
 work, fail commands proven not to have left Dispatcher, report unresolved in-flight outcomes as
 unknown, and never redirect work to a replacement environment. The deletion fence and the location
-and lifetime of outcome evidence still need design; this does not choose UUID-retention policy.
+and lifetime of outcome evidence still need design; Dispatcher does not retain a deleted Session UUID.
 
 Opening reads now target the Session ID through Dispatcher
 [`GET /v1/sessions/{session_id}/opening`](../runner_gateway/dispatcher/session_dispatcher.proto).
@@ -532,7 +533,9 @@ These describe _delivery of the opening request_, not the Session’s active or 
 
 Auto-wake is one possible way to unblock a queued environment-hosted opening: when the Sandbox is suspended, enabled and authorized wake can request startup; a denied or disabled wake leaves the opening queued. Queueing can also reflect delivery scheduling, an unready or unavailable owner, retries, or an identity check. The actual current blocker and latest wake assessment are separate from delivery state. If the owner is already available, delivery can proceed without wake. The current central path bypasses execution-Sandbox readiness and wake, but still requires a Sandbox and incarnation at opening; the proposed central placement removes that prerequisite.
 
-The chosen direction is that the Dispatcher Session record establishes the logical reservation, with owner-side materialization deferred until needed. Keep any needed delivery and error evidence without multiplying user-facing states or requiring an owner call solely to make a Session exist.
+The chosen direction is that the Dispatcher Session record establishes the logical reservation. The
+owner may materialize it eagerly or when work needs it; opening does not wait for materialization.
+Keep delivery and error evidence without multiplying user-facing states or requiring an owner call solely to make a Session exist.
 
 ### Proposed common contract
 
@@ -549,8 +552,8 @@ OpenSession {
 → { session_id, opening_state }  // durable Dispatcher reservation; owner may be unavailable
 ```
 
-1. **Reserve and route.** The Dispatcher validates identity, authorization, immutable creation request and placement and commits the logical Session. Delivery or materialization at the appropriate owner occurs when needed. Exact retries with the same public ID and creation contract return the same opening; conflicting reuse fails. Caller-created UUID is not the harness-native ID.
-1. **Materialize at the owner.** The environment Runtime or central sampler accepts the logical Session through its own implementation when required. The Dispatcher row establishes logical existence; no eager owner reservation is required merely to create it. Current delivery is asynchronous and can be queued while an owner is unavailable; never present Dispatcher acceptance as proof the owner has accepted.
+1. **Reserve and route.** The Dispatcher validates identity, authorization, immutable creation request and placement and commits the logical Session. Delivery or materialization at the appropriate owner may be eager or deferred. Exact retries with the same public ID and creation contract return the same opening; conflicting reuse fails. Caller-created UUID is not the harness-native ID.
+1. **Materialize at the owner.** The environment Runtime or central sampler accepts the logical Session through its own implementation. The Dispatcher row establishes logical existence; no eager owner reservation is required merely to create it. Current delivery is asynchronous and can be queued while an owner is unavailable; never present Dispatcher acceptance as proof the owner has accepted.
 1. **Prepare when needed.** Reuse or start a shared Codex app-server, launch a per-Session Claude process, or create central sampler state as appropriate. The caller need not manage those processes. Report relevant progress and failure separately; opening does not promise native identity, setup, a ready process or provider output. The owner may perform safe work eagerly, but must preserve the same externally visible acknowledgement and idempotency semantics.
 1. **Send a command.** Submitting input is a separate durable operation. Reconcile its admission, execution and any uncertain effects using their own evidence. Do not automatically replay a native create or external action after an unknown result.
 
@@ -558,7 +561,9 @@ OpenSession {
 
 Here the owner is the environment Runtime for an environment-hosted Session or the central sampler for a central Session; it is not the individual harness process. After request shape, placement and the applicable authorization have been validated, the Dispatcher database commit establishes logical existence. A successful opening does not wait for the owner to be reachable, an environment to wake, History to receive its projection, or a harness-native Session to be created. The Dispatcher must let callers find the accepted Session and observe its progress independently of History.
 
-Unavailable owners and suspended environments are wait and retry conditions. When work requires the Session, deliver it to the correct owner and materialize the Session there; wake an environment only under an authorized policy, which must support eligible unattended inbox notices.
+Unavailable owners and suspended environments are wait and retry conditions. Materialize the Session
+at the correct owner before its work requires it, or earlier if useful; wake an environment only
+under an authorized policy, which must support eligible unattended inbox notices.
 
 **Materialization outcomes for the first implementation:**
 
@@ -574,12 +579,12 @@ If the exact required environment UID is deleted, fence pending creation and del
 
 Where callers need progress, expose it through the existing get/watch mechanisms or an equivalent, with clear Dispatcher-accepted versus owner-accepted meaning; do not require a separate visible phase merely because an implementation has one. Show harness/setup readiness separately only where callers need it; avoid inventing a mandatory separate “start harness” API. A future explicit prepare/warm operation can be added if there is a real use case. Before removing the central Sandbox requirement, choose its independent execution principal, prompt context and optional attachment/setup semantics.
 
-### Open decision: forgetting a deleted Session
+### Forgetting a deleted Session
 
-The operator's intended meaning of deleting a Session's Dispatcher record was to forget that the
-Session existed in Dispatcher. This does not select a retention or UUID-reuse policy. Retaining a
-UUID marker is an alternative to discuss, not an agreed requirement. History remains a separate
-retained store; forgetting live state does not imply deleting historical evidence.
+The operator selected complete forgetting in Dispatcher. Callers mint globally unique Session UUIDs
+and must not deliberately reuse them after deletion. This is a caller contract, not a server-enforced
+lifetime uniqueness guarantee. History remains a separate retained store; forgetting live state does
+not delete historical evidence.
 
 **Current behavior, checked at `256a2a7d60`:** [cleanup](../runner_gateway/dispatcher/terminal.go)
 deletes openings and dispatches and retains an environment-UID admission fence. It retains no
@@ -590,16 +595,11 @@ UID can be admitted. [History](../history_service/storage/store.go) retains its 
 rejects conflicting principal, writer or environment attribution; accepting a reused UUID in
 Dispatcher therefore does not make it a fresh historical identity.
 
-| Option              | Dispatcher behavior after deletion                                        | Implications to decide                                                                                                                                                                                                                                                                         |
-| ------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Complete forgetting | Keep no Session record or marker; an absent UUID follows fresh admission. | Rely on callers minting globally unique UUIDs and define deliberate reuse/conflicting retries. Random collisions are unlikely, but a retry can deliberately carry an old UUID. Retained History can still reject the new writer.                                                               |
-| Minimal UUID marker | Keep enough evidence to reject reuse of a retired UUID.                   | Choose marker lifetime, fields and read authority. Existence alone cannot recover the exact creation receipt or authorize its read. Serialize marker creation with admission and cleanup; this is retained Dispatcher knowledge rather than complete forgetting.                               |
-| Consult History     | Check retained historical identity when Dispatcher has no live record.    | History may have no row for an accepted but unmaterialized or unexported Session, and retention may remove evidence. Choose behavior when History is unavailable and how to close the concurrent check/create gap across the two databases; a lookup alone cannot enforce lifetime uniqueness. |
-
-The public UUID remains the Session identity across stores. Decide whether uniqueness is a caller
-contract or a server-enforced lifetime guarantee, what an exact retry observes after deletion,
-and what absence means when Dispatcher and History disagree. Keep deletion races and unavailable
-History explicit under the selected option. No option is selected here.
+An absent record takes the ordinary fresh-admission path: Dispatcher cannot identify an old retry
+after deletion. A request for the deleted environment UID is still fenced. A reused UUID targeting a
+different environment can be admitted by Dispatcher but conflict with retained History. Neither an
+absent History row nor a History lookup can prove lifetime uniqueness across the two databases.
+Do not infer that a missing Dispatcher record means historical evidence was deleted.
 
 <a id="wake"></a>
 
@@ -937,8 +937,19 @@ deleted, report an in-flight outcome as unknown when Runtime admission or effect
 established, and never redirect accepted work to a replacement. They also agreed that the first
 environment-hosted cutover should preserve current direct and delegated caller checks, scoped
 App/Notification/orchestration trust, and separate wake checks including unattended notices.
-The concrete deletion fence, where outcomes remain observable, queued-grant revocation, central
-Session identity and deletion/UUID-retention policy remain open.
+The concrete deletion fence, where outcomes remain observable, queued-grant revocation and central
+Session identity remain open.
+
+**2026-11-03 · Native Session authority and forgetting**
+
+The operator agreed that a Dispatcher commit establishes logical Session existence and selects its
+placement. For native Sessions the existing opening record is the authority; materialization at its
+owner can occur eagerly or on demand. The central placement remains a separate future implementation.
+Dispatcher forgets a Session after deletion; callers must not deliberately reuse its globally unique
+UUID. Dispatcher cannot recognize an old retry after its record is removed, and retained History may
+still reject a conflicting writer. No permanent UUID marker or cross-database uniqueness check is added.
+The operator also wants central agents eventually to learn about zero or more environments and may
+later let them request authorized attach/detach operations. Their tool and authority contracts remain open.
 
 **Still open**
 
