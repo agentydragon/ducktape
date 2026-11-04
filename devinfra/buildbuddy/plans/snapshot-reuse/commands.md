@@ -1,6 +1,6 @@
 # Proposed commands — not executed
 
-Use these only after owner approval of [the plan](README.md) and all three required checks on #14121 head `c61cdca1b09a6d6893c3ffbdd1bb600405e36bc2` are green. A changed head requires renewed review. They authorize no merge, deployment, manual cache invalidation or VM/KVM run. The unchanged lifecycle-error guard can invalidate only the isolated experimental family during these tests. Stop on any failed or unknown submission; no automatic retry. The only behavior under investigation is the existing default save policy on one isolated Pod family.
+Use these only after separate explicit owner approval of the experiment and approval of [the plan](README.md). All three required checks on #14133 final head `ea45f152f642fafb3a779c62edf53a8d043cff08` succeeded; the PR was squash-merged as `52421a86166798d31941a11f988a30759ce51485` at `2026-11-04T01:26:26Z`. Use that exact merged commit as the trial input; any changed input requires renewed review. This preflight refresh does not authorize running these commands. They authorize no merge, deployment, manual cache invalidation or VM/KVM run. The unchanged lifecycle-error guard can invalidate only the isolated experimental family during these tests. Stop on any failed or unknown submission; no automatic retry. The only behavior under investigation is the existing default save policy on one isolated Pod family.
 
 Tools must come from the repository Nix devshell, with normal BuildBuddy credentials. Run setup from a checkout containing these plan files. These commands are instructions, not an automatically executed workflow.
 
@@ -17,7 +17,7 @@ trial_output="$task_root/results"
 mkdir -p "$trial_output"
 git -C "$source_tree" worktree add \
   -b codex/k3s-snapshot-policy-trial-20261103 \
-  "$trial_tree" c61cdca1b09a6d6893c3ffbdd1bb600405e36bc2
+  "$trial_tree" 52421a86166798d31941a11f988a30759ce51485
 git -C "$trial_tree" apply "$review_root/trial.patch"
 cd "$trial_tree"
 pre-commit run \
