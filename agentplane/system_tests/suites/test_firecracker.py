@@ -1,14 +1,14 @@
-"""Hardware-backed Firecracker acceptance on the wyrm2 BuildBuddy VM worker."""
+"""Hardware-backed Firecracker acceptance on the dedicated BuildBuddy KVM worker."""
 
 import pytest
 import pytest_bazel
 
 from agentplane.app.testing.client import Client
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.sandbox import Sandboxes
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.sandbox import Sandboxes
+from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.scenarios.firecracker import preserves_live_guest
-from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 
 
 @pytest.mark.scripted_model

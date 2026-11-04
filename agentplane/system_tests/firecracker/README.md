@@ -1,4 +1,10 @@
-# Firecracker boot layout
+# Firecracker system-test runtime
+
+The pytest plugin supplies the Firecracker lifecycle adapter to the shared deployment stack.
+It waits for KVM and the shared virtualization controllers, without VM-only admission policies
+or a loop-device provisioner. The fixture starts a fresh image store, puts only the disposable
+k3s control database on a bounded tmpfs, and captures guest logs through teardown. Retained
+executor snapshots are rejected.
 
 `boot_layout` exposes the production Firecracker OCI layout as a declared
 Bazel input. The manual K3s Firecracker system test imports it as the boot
@@ -6,12 +12,12 @@ volume, so its bytes are available to the RBE test action through runfiles.
 
 The pinned image comes from
 `.#agentplane-environment-firecracker-image` at source commit
-`ff14e8bd057d51591be67f5d94a085bb5f3f6f91`. The Nix archive SHA-256 is
-`a0334c39979b4766cdd8276ca50c7d6ca4cafac9bf5071099b0493a5e6e872e0`; its
+`57efc97b8c315ababd4046cd40f2bb7f58926dcf`. The Nix archive SHA-256 is
+`c008dc2ec34e17ebf396f15d889e5e1b5646444363e0f916dbcbab512362cdd7`; its
 OCI manifest is pinned as
-`sha256:f1465053413c073aa5aa9c75d4c3e9fa6225021b94f48cc8cceb2a30271a05e1`
+`sha256:79cec82bc56731b75128797df9e9d2ef9fd954b60fbed089c5348493b58d1a97`
 from the experimental tag
-`spike-firecracker-ff14e8bd057d51591be67f5d94a085bb5f3f6f91`.
+`spike-firecracker-57efc97b8c315ababd4046cd40f2bb7f58926dcf`.
 
 The image contains only the built guest kernel, ext4 root filesystem, and init
 path. The guest configuration has no SOPS secrets; runtime TLS credentials and

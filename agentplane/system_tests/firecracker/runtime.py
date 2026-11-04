@@ -10,17 +10,17 @@ from typing import Any
 from kubernetes.utils.quantity import parse_quantity
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.k3s import guest_logs, vm_infrastructure
+from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.k3s.baseline import K3s
+from agentplane.system_tests.vm import guest_logs, infrastructure
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
-class FirecrackerRuntime:
+class Runtime:
     def __init__(self, _work: Path) -> None:
-        self.releases = vm_infrastructure.releases()
+        self.releases = infrastructure.releases()
 
-    def __enter__(self) -> FirecrackerRuntime:
+    def __enter__(self) -> Runtime:
         return self
 
     def __exit__(
@@ -38,13 +38,13 @@ class FirecrackerRuntime:
         return 0
 
     def baseline_objects(self) -> list[dict[str, Any]]:
-        return vm_infrastructure.baseline_objects()
+        return infrastructure.baseline_objects()
 
     def baseline_helpers(self) -> dict[str, Path]:
-        return {"vm_infrastructure.py": Path(vm_infrastructure.__file__)}
+        return {"infrastructure.py": Path(infrastructure.__file__)}
 
     def baseline_identity(self, k3s: K3s) -> dict[str, str]:
-        return vm_infrastructure.baseline_identity(k3s.kubectl)
+        return infrastructure.baseline_identity(k3s.kubectl)
 
     def storage_class_uid(self, k3s: K3s) -> str:
         raise ValueError("the Firecracker fixture does not retain a block-storage baseline")
@@ -54,13 +54,13 @@ class FirecrackerRuntime:
         return None
 
     def install(self, k3s: K3s) -> None:
-        vm_infrastructure.install(k3s.kubectl, self.releases)
+        infrastructure.install(k3s.kubectl, self.releases)
 
     def wait_for_apis(self, k3s: K3s) -> None:
-        vm_infrastructure.wait_for_apis(k3s.kubectl)
+        infrastructure.wait_for_apis(k3s.kubectl)
 
     def wait_until_ready(self, k3s: K3s) -> None:
-        vm_infrastructure.wait_for_infrastructure(k3s.kubectl)
+        infrastructure.wait_for_infrastructure(k3s.kubectl)
         for attempt in Retrying(
             stop=stop_after_delay(60), wait=wait_fixed(1), retry=retry_if_exception_type(AssertionError), reraise=True
         ):
@@ -79,7 +79,7 @@ class FirecrackerRuntime:
             log_root=Path("/var/log/pods"),
             storage_root=k3s.data_dir / "storage",
             namespace=namespace,
-            kubevirt_namespace=vm_infrastructure.KUBEVIRT_NAMESPACE,
+            kubevirt_namespace=infrastructure.KUBEVIRT_NAMESPACE,
             destination=undeclared_outputs_dir() / "vm-artifacts",
             validate_shutdown=validate_shutdown,
             require_shutdown_marker=False,

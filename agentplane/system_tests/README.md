@@ -8,14 +8,15 @@ session's standing instructions reach the model that serves it.
 
 Source ownership follows the part of a test being changed:
 
-| Directory                             | Owns                                                                            |
-| ------------------------------------- | ------------------------------------------------------------------------------- |
-| [`suites/`](suites/)                  | Runnable CI and manual/live entrypoints, pytest selection and suite fixtures    |
-| [`scenarios/`](scenarios/)            | Behaviors and assertions exercised against a deployment                         |
-| [`driver/`](driver/)                  | Sessions, Sandboxes, API clients, scripted models and concurrent case execution |
-| [`deployment/`](deployment/README.md) | Fixture charts, rendering, databases and workload setup/cleanup                 |
-| [`k3s/`](k3s/README.md)               | Retained node, bootstrap, networking, PKI and the `k3s_suite` macro             |
-| [`vm/`](vm/README.md)                 | KubeVirt, storage, guest evidence and the test guest image in `guest/`          |
+| Directory                               | Owns                                                                            |
+| --------------------------------------- | ------------------------------------------------------------------------------- |
+| [`suites/`](suites/)                    | Runnable CI and manual/live entrypoints, pytest selection and suite fixtures    |
+| [`scenarios/`](scenarios/)              | Behaviors and assertions exercised against a deployment                         |
+| [`driver/`](driver/)                    | Sessions, Sandboxes, API clients, scripted models and concurrent case execution |
+| [`deployment/`](deployment/README.md)   | Fixture charts, rendering, databases and workload setup/cleanup                 |
+| [`k3s/`](k3s/README.md)                 | Retained node, bootstrap, networking, PKI and the `k3s_suite` macro             |
+| [`vm/`](vm/README.md)                   | KubeVirt, storage, guest evidence and the test guest image in `guest/`          |
+| [`firecracker/`](firecracker/README.md) | Firecracker lifecycle adapter, production guest input and KVM acceptance        |
 
 Offline tests live beside the helpers they exercise. The root `conftest.py` holds shared pytest
 configuration; deployment-specific fixtures are explicit plugins selected by the suite macro.
@@ -125,8 +126,8 @@ is what a model does are `real_model`. Codex is offered a ChatGPT route there
 too, so it runs in code mode, which the scripted model answers.
 Every request the scripted model receives is kept in the target's `test.outputs/scripted_upstream/`.
 
-The manual [Firecracker suite](k3s/README.md#firecracker-sandboxes) runs on the existing
-`wyrm2-kvm-vm` BuildBuddy worker. It creates an environment through the app API, executes a Codex
+The manual [Firecracker suite](firecracker/README.md) runs in the existing
+`wyrm2-kvm-vm` BuildBuddy pool. It creates an environment through the app API, executes a Codex
 tool through the real Gateway and guest Runtime, then requests suspend/resume through that API.
 It verifies the same Pod, kernel boot, Runtime boot, native harness process and live guest child,
 including an increasing counter and a random marker generated only in that child's memory.

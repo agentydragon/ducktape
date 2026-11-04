@@ -1,8 +1,0 @@
-package(default_testonly = True)
-
-filegroup(
-    name = "boot_layout",
-    srcs = ["@firecracker_boot_linux_amd64"],
-    tags = ["manual"],
-    visibility = ["//agentplane/system_tests:__subpackages__"],
-)
