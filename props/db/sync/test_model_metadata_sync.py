@@ -18,6 +18,10 @@ from props.db.database import Database
 from props.db.models import ModelMetadata
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+
 
 def _make_config(upstream_model: str) -> PropsConfig:
     return PropsConfig(

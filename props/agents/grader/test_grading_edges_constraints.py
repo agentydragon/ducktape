@@ -16,6 +16,17 @@ from props.db.models import AgentRunStatus, GradingEdge, ReportedIssue, Reported
 from props.db.snapshots import LocationAnchor
 from props.testing.fixtures.runs import make_fake_critic_run, make_fake_grader_run, make_reported_issues
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+# gazelle:include_dep //props/testing/fixtures:ground_truth
+# gazelle:include_dep //props/testing/fixtures:runs
+pytest_plugins = (
+    "util.testing.postgres_fixtures",
+    "props.testing.fixtures.db",
+    "props.testing.fixtures.ground_truth",
+    "props.testing.fixtures.runs",
+)
+
 
 @pytest.fixture
 def test_critic_run(session, example_subtract_orm):

@@ -47,8 +47,8 @@ py_test(
     deps = [
         "//:conftest",
         "//agent_core/testing:responses",
+        "//mcp_infra/testing:fixtures",
         "//props:conftest",
-        "//props/agents:conftest",
         "//props/agents/critic/testing:mocks",
         "//props/agents/critic_dev/testing:mocks",
         "//props/agents/critic_dev/testing:orchestration_fixtures",
@@ -60,6 +60,11 @@ py_test(
         "//props/core/models:examples",
         "//props/db:database",
         "//props/db:models",
+        "//props/testing/fixtures:db",
+        "//props/testing/fixtures:e2e_container",
+        "//props/testing/fixtures:e2e_infra",
+        "//props/testing/fixtures:runs",
+        "//util/testing:postgres_fixtures",
         "@pypi//pytest_bazel",
     ],
 )

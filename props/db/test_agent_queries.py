@@ -12,6 +12,10 @@ from props.db.examples import Example
 from props.db.models import Snapshot
 from props.testing.fixtures.runs import make_fake_critic_run, make_fake_grader_run
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+
 
 @pytest.fixture
 def query_test_data(synced_db: Database):

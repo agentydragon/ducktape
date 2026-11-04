@@ -24,6 +24,10 @@ from props.orchestration.agent_registry import BudgetExceededError, ImageResolut
 from props.testing.constants import BUDGET_TEST_MODEL, TRAIN_EXAMPLE
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
 

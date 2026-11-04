@@ -20,6 +20,17 @@ from props.orchestration.agent_registry import AgentRegistry, AgentRunHandle, Re
 from props.orchestration.executor import ContainerExecutor, ContainerHandle, ContainerResult, Exited, PodInfo, TimedOut
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions, make_fake_critic_run
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+# gazelle:include_dep //props/testing/fixtures:runs
+# gazelle:include_dep //props/testing/fixtures:scopes
+pytest_plugins = (
+    "util.testing.postgres_fixtures",
+    "props.testing.fixtures.db",
+    "props.testing.fixtures.runs",
+    "props.testing.fixtures.scopes",
+)
+
 
 @dataclass
 class _FakeHandle:

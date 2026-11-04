@@ -51,16 +51,6 @@ def test_specimens_base() -> Path:
     return TEST_FIXTURES_PATH
 
 
-def pytest_addoption(parser: pytest.Parser) -> None:
-    """Add custom pytest command-line options."""
-    parser.addoption(
-        "--keep-db",
-        action="store_true",
-        default=False,
-        help="Preserve test database on failure for debugging (does not drop test database after test)",
-    )
-
-
 @pytest.fixture(scope="session")
 def postgres_base_config(postgres_container: PostgresContainer) -> DatabaseConfig:
     """Session-scoped base database config from the testcontainer.

@@ -20,6 +20,10 @@ from props.llm_proxy.routes import _check_budget
 from props.testing.constants import BUDGET_TEST_MODEL, TRAIN_EXAMPLE
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+
 
 @pytest.mark.asyncio
 async def test_budget_allows_under_budget(synced_db: Database) -> None:

@@ -21,6 +21,11 @@ from props.db.models import ReportedIssue, ReportedIssueOccurrence
 from props.db.snapshots import LocationAnchor
 from props.testing.fixtures.runs import make_fake_critic_run
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+# gazelle:include_dep //props/testing/fixtures:runs
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db", "props.testing.fixtures.runs")
+
 
 @pytest.fixture
 def test_critic_run(synced_db: Database):

@@ -14,6 +14,10 @@ from props.db.config import DatabaseConfig
 from props.db.setup import upgrade_database
 from util.testing.postgres import DatabaseNames, create_temporary_database
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+
 
 def _schema(container: PostgresContainer, database: str) -> str:
     result = container.get_wrapped_container().exec_run(

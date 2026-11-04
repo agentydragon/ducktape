@@ -23,6 +23,10 @@ from props.orchestration.agent_credentials import ensure_agent_role
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+
 
 class FakeUpstream:
     async def __aenter__(self) -> FakeUpstream:
