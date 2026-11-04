@@ -10,7 +10,8 @@ connections, operation objects and cancellation functions remain in their owning
 
 ```mermaid
 flowchart LR
-  API{{"Runtime admission and transition workers"}}
+  API{{"Runtime admission"}}
+  Op(["Go operation coordinator"])
   ED["EnvironmentRuntimeDesiredStates"]
   Count["EnvironmentAdmissionCounts"]
   RC(["environment-runtime-lifecycle"])
@@ -41,11 +42,11 @@ flowchart LR
   Ack["IngressAcks"]
 
   API --> ED & Count
+  Op --> ED
   ED --> RC
   BI & BS --> RC
   Aggregate --> RC
-  API -.->|"typed transition request"| RC
-  RC -.->|"transition completion"| API
+  API -.->|"typed transition request and completion"| Op
   RC --> CloseStatus["EnvironmentRuntimeCloseStatuses"] --> API
   ED & Count & OwnerStatus & SS & AS & PS & EI --> Agg
   Agg --> Aggregate
@@ -70,7 +71,7 @@ flowchart LR
 
 | Controller                      | Watched inputs                                                                                                                                      | Exclusive output and effect boundary                                                                                                                         |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `environment-runtime-lifecycle` | Environment desired state, aggregate Session status, bootstrap request and status; direct transition requests and worker-completion channels        | Live Runtime Close status; direct transition completion; Runtime-owned workers perform blocking transition/shutdown steps                                    |
+| `environment-runtime-lifecycle` | Environment desired state, aggregate Session status, bootstrap request and status, and Close worker-completion channels                             | Live Runtime Close status; Runtime-owned workers perform blocking shutdown steps                                                                             |
 | `session-owner`                 | Session record (primary); explicit fresh-reservation retry (mapped)                                                                                 | Session owner status; construct and recover one live Session and its journal                                                                                 |
 | `environment-session-lifecycle` | Environment desired state, admission accounting, Session lifecycle and owner statuses, app-server status, process desired/status, Execution signals | Aggregate Session status; global native cleanup and exact fence, per-Session seal and delivery status                                                        |
 | `session-lifecycle`             | Session snapshot (primary); owner status, ingress ACKs, desired state, admissions, aggregate status and app-server status (mapped)                  | Session lifecycle status including generation-qualified pre-fence cleanup, admission, committed seal UID/cursor and delivery; guarded per-Session operations |
@@ -111,12 +112,14 @@ completion with consumption.
 Session and app-server statuses record `EnvironmentGeneration`; demand and `ObservedDemand` are
 component request sequences, not native attempt counts. One-off operation slots survive controller
 restarts within the process and publish completion facts before their owning controller consumes them.
-Runtime transition requests, cancellation and completion remain inside its coordinator. Each caller
-waits for its accepted operation to settle, even after caller cancellation; Close cancels active
-transition work before waiting for the successor generation. The coordinator wakes callers before
-joining workers on exit and never replays accepted transition preparation after restart.
+Runtime transition requests, cancellation and completion remain inside its Go-owned operation
+coordinator. Each caller waits for its accepted operation to settle, even after caller cancellation;
+Close cancels active transition work before waiting for the successor generation. Runtime starts the
+coordinator with the engine and joins it on engine exit. It wakes callers before joining workers on
+exit and never replays accepted transition preparation after a COSI controller restart. Only Close
+reconciliation is a COSI controller; its workers do not take the transition mutex.
 The separate live Runtime Close status reports the Close worker's exact generation, stage and failure.
-Runtime watches it before reading it, and treats coordinator or engine exit before `ReadyToJoin` as
+Runtime watches it before reading it, and treats controller or engine exit before `ReadyToJoin` as
 failure. The status does not replace the Session aggregate's `Closed` or prove native owner release.
 
 The process registry supplies one controller and globally unique attempt IDs. Runtime and harness

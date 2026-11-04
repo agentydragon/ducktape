@@ -130,10 +130,17 @@ durable History acknowledgements. Runtime cancels and joins History before closi
 and joins the engine before joining component workers, and releases its environment owner last.
 Canceling a Close caller ends only that caller's wait. Close first settles an accepted transition and
 its existing fence; failures retain ownership rather than manufacturing completion. Adoption and
-Quiesce use direct requests to the Runtime-owned coordinator; per-operation completion replaces
-private request/status resources. Close waits for its exact-generation live COSI status before
-joining the engine. On coordinator exit, callers wake before worker joining so the transition mutex
-cannot deadlock shutdown. Accepted work and uncertain starts remain owned until joined or fenced.
+Quiesce use direct requests to a Go-owned operation coordinator; per-operation completion replaces
+private request/status resources. Runtime starts that coordinator with its COSI engine. The Close
+controller cancels the shared lifecycle context on its first exit, even if Runtime's serving loop
+has not handled a fatal error. Runtime joins the coordinator on every engine exit, including early
+failure. The coordinator signals stopped before joining an
+accepted worker, so callers release the transition mutex. Close is the only COSI lifecycle
+controller: it observes the Closing generation after Runtime has settled the accepted operation and
+its prior fence under the transition mutex. Its workers never take that mutex, so an engine failure
+cannot wait on a Close worker blocked behind the operation caller. Close waits for the controller's
+exact-generation live COSI status before joining the engine. Accepted work and uncertain starts remain
+owned until joined or fenced.
 
 Session recovery or History delivery failure closes admission and starts local cleanup without
 inventing a seal. Failed native cleanup, engine failure or failed sealed delivery remains a failure.

@@ -158,7 +158,7 @@ func TestInitialSessionWaitWakesOnRuntimeFailureOrClose(t *testing.T) {
 func TestClosePreparationRetainsSessionCleanupAfterRecoveryFailure(t *testing.T) {
 	r := &Runtime{sessions: &session.Manager{}, sessionWorkerDone: make(chan struct{}), sessionWorkerErr: errors.New("Session recovery failed")}
 	close(r.sessionWorkerDone)
-	coordinator := &runtimeLifecycleController{r: r}
+	coordinator := &runtimeCloseController{r: r}
 	if err := coordinator.prepare(); err != nil {
 		t.Fatal(err)
 	}

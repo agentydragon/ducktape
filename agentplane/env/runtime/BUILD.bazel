@@ -16,6 +16,7 @@ go_library(
         "execution_service.go",
         "forward.go",
         "lifecycle_controller.go",
+        "operation_coordinator.go",
         "protocol.go",
         "runtime.go",
         "serve.go",
