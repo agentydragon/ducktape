@@ -5,6 +5,7 @@ INTEGRATIONS = {
         {"id": "openai", "type": "openai", "state_dir": "/data/session/openai"},
         {"id": "anthropic", "type": "anthropic", "state_dir": "/data/session/anthropic"},
         {"id": "quest", "type": "quest", "state_dir": "/data/session/quest-platform"},
+        {"id": "thrive", "type": "thrive", "state_dir": "/data/session/thrive"},
     ]
 }
 

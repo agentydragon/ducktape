@@ -25,6 +25,11 @@ configMapGenerator:
               "id": "quest",
               "type": "quest",
               "state_dir": "/data/session/quest-platform"
+            },
+            {
+              "id": "thrive",
+              "type": "thrive",
+              "state_dir": "/data/session/thrive"
             }
           ]
         }
