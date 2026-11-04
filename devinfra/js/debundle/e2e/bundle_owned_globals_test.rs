@@ -54,8 +54,9 @@ const ANALYTICS: &str = "const root = typeof globalThis < \"u\" ? globalThis : s
 const EXPERIMENTS: &str = "const root = typeof globalThis < \"u\" ? globalThis : self;\nroot.experimentInstances = {};\nvar instances = root.experimentInstances;\nfunction create(name) { instances[name] || (instances[name] = { name }); return instances[name]; }";
 
 const COLLECTION_REGISTRY: &str = "const root = typeof globalThis < \"u\" ? globalThis : {};\nconst contextKey = Symbol.for(\"context-registry\");\nfunction contexts() { root[contextKey] ??= new Map(); return root[contextKey]; }\nfunction set(name, value) { root[contextKey][name] = value; }";
+const LOGICAL_NOT_REGISTRY: &str = "const root = globalThis;\nconst safeValue = !false;\nroot.registry = safeValue;\nfunction register(name, value) { root.registry = root.registry || {}; root.registry[name] = value; }";
 
-fn cases() -> [(&'static str, Vec<&'static str>, Vec<&'static str>); 5] {
+fn cases() -> [(&'static str, Vec<&'static str>, Vec<&'static str>); 6] {
     [
         (SENTRY, vec!["register"], vec![]),
         (OTEL, vec!["root", "key", "register", "unregister"], vec![]),
@@ -68,6 +69,11 @@ fn cases() -> [(&'static str, Vec<&'static str>, Vec<&'static str>); 5] {
         (
             COLLECTION_REGISTRY,
             vec!["root", "contextKey", "contexts", "set"],
+            vec![],
+        ),
+        (
+            LOGICAL_NOT_REGISTRY,
+            vec!["root", "safeValue", "register"],
             vec![],
         ),
     ]

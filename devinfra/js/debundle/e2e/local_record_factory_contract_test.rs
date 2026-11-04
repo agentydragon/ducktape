@@ -817,6 +817,22 @@ fn assert_admitted(source: &str, callback_members: &[&'static str], expected_out
             .iter()
             .all(|report| report.local_record_factory_rejections.is_empty())
     );
+    let command = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == "command")
+        })
+        .expect("command source unit");
+    assert!(command.purity.is_pure(), "{:?}", command.purity);
+    let execution = command
+        .synchronous_execution
+        .as_ref()
+        .expect("command synchronous execution");
+    assert!(execution.complete, "{execution:#?}");
+    assert_eq!(execution.local_record_factory_uses.len(), 1);
     assert_module_exports(
         &fixture.out_root,
         "static/app/modules/callbacks/wrapped.js",
@@ -962,6 +978,77 @@ fn template_literals_of_proven_primitives_are_admitted() {
         "console.log(command.record.name, command.run());",
     );
     assert_admitted(&source, &["label"], "Example-2-1 169\n");
+}
+
+#[test]
+fn logical_not_literal_is_a_closed_constructor_input() {
+    let record = FRESH_RECORD.replace("enabled: true", "enabled: !false");
+    let source = fixture_source(
+        "",
+        FACTORY,
+        "",
+        &format!("create({record})"),
+        "",
+        "console.log(command.record.nested.enabled, command.run());",
+    );
+    assert_admitted(&source, &[], "true 169\n");
+}
+
+#[test]
+fn logical_not_does_not_hide_an_effectful_constructor_operand() {
+    let record = FRESH_RECORD.replace("enabled: true", "enabled: !effect()");
+    let before_command =
+        "const state = { count: 0 };\nfunction effect() { state.count++; return false; }\n";
+    let source = fixture_source(
+        "",
+        FACTORY,
+        before_command,
+        &format!("create({record})"),
+        "",
+        "console.log(command.record.nested.enabled, state.count, command.run());",
+    );
+    let members = [
+        Member::new("Flags"),
+        Member::new("mutate"),
+        Member::new("Holder"),
+        Member::new("create").with_retained_record_factory(),
+        Member::new("prefix"),
+        Member::new("state"),
+        Member::new("effect"),
+        Member::new("command"),
+        Member::new("later"),
+    ];
+    let fixture = run_fixture(FixtureOpts::new(
+        &source,
+        vec![logical_module_with_anon(
+            "all",
+            &members,
+            &["console.log(command.record.nested.enabled, state.count, command.run());"],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "true 1 169\n");
+
+    let graph = fixture.dependency_graph();
+    let command = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == "command")
+        })
+        .expect("command source unit");
+    let execution = command
+        .synchronous_execution
+        .as_ref()
+        .expect("command synchronous execution");
+    let [rejection] = execution.local_record_factory_rejections.as_slice() else {
+        panic!("expected the effectful operand to refuse the record-factory proof: {execution:#?}");
+    };
+    assert_eq!(
+        rejection.reason,
+        analysis::reports::schema::RecordFactoryRejectionReason::UnsupportedValue
+    );
 }
 
 #[test]

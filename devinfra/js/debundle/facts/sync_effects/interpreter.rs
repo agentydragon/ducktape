@@ -4514,7 +4514,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             ValueExpr::Primitive(operands) => operands
                 .iter()
                 .all(|operand| matches!(operand, ValueExpr::NonCallable(_) | ValueExpr::Undefined)),
-            ValueExpr::Void(operand) => {
+            ValueExpr::Void(operand) | ValueExpr::LogicalNot(operand) => {
                 matches!(
                     operand.as_ref(),
                     ValueExpr::NonCallable(_) | ValueExpr::Undefined
