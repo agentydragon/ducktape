@@ -102,3 +102,92 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "session_store",
+    srcs = ["session_store.py"],
+    deps = [
+        "@pypi//atomicwrites",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "probe",
+    srcs = ["probe.py"],
+    deps = ["@pypi//httpx2"],
+)
+
+py_library(
+    name = "integration_runtime",
+    srcs = ["integration_runtime.py"],
+    deps = [
+        ":host",
+        ":probe",
+        ":registry",
+        "@pypi//httpx2",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "owner_web",
+    srcs = ["owner_web.py"],
+    deps = [
+        "//util:oidc_login",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "proxy_support",
+    srcs = ["proxy_support.py"],
+    deps = [
+        ":auth",
+        ":proxy",
+        "@pypi//httpx2",
+        "@pypi//pydantic",
+        "@pypi//starlette",
+    ],
+)
+
+py_library(
+    name = "service_host",
+    srcs = ["service_host.py"],
+    deps = [
+        ":auth",
+        ":host",
+        ":owner_web",
+        ":proxy",
+        ":proxy_support",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "session_store_test",
+    srcs = ["session_store_test.py"],
+    deps = [
+        ":session_store",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "probe_test",
+    srcs = ["probe_test.py"],
+    deps = [
+        ":probe",
+        ":session_store",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+    ],
+)
