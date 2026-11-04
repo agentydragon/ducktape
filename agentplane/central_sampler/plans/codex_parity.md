@@ -1,8 +1,9 @@
 # Codex feature parity
 
 Codex `rust-v0.162.1` features the central sampler has not ported yet. Ported behavior is in
-[SPEC.md](../SPEC.md); gaps with a code site are `TODO`s in the code (timezone, base-instruction pruning,
-steering stream cuts and pending-input ordering, cell resource limits). Features left out on purpose
+[SPEC.md](../SPEC.md); some gaps have `TODO`s in the code (timezone, steering stream cuts and pending-input ordering,
+cell resource limits). Base-instruction pruning is also unimplemented: provider requests carry the
+full bundled instructions. Features left out on purpose
 are in the [README](../README.md#codex-features-left-out).
 
 ## Selected workflow work

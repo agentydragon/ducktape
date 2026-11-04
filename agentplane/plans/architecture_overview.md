@@ -48,10 +48,10 @@ Sandbox, so lifetime is an axis of its own rather than a consequence of the stor
   workspace dropped (not possible yet). Deleting it is the one act that drops its history. Every
   record stays in the outer cluster's API, and anything that names a Sandbox, such as collection
   membership, is a Kubernetes object it owns.
-- **D2. Kubernetes for live objects, databases for what outlives them.** Today's workflow made
-  consistent: a finished Sandbox is deleted, and its history, collection membership and archive
-  grants stay in service databases keyed by Sandbox UID, with git-authored sets reconciled in. Live
-  grants stay in `PolicySet`s.
+- **D2. Kubernetes for live objects, databases for what outlives them.** Extend today's retained
+  Session history so a deleted Sandbox's proposed collection membership and archive grants also
+  stay in service databases keyed by Sandbox UID, with git-authored sets reconciled in. Those
+  Sandbox records and grants are not implemented. Live grants stay in `PolicySet`s.
 - **D3. Agentplane's own control plane.** A nodeless kube-apiserver per environment, on kine over the
   CNPG cluster, holds the Agentplane kinds; workloads stay on the cluster. Either lifetime works, and
   retiring comes naturally, since retired Sandboxes then cost the cluster's control plane nothing.
@@ -301,7 +301,7 @@ reconciler if needed between those and live sandboxes", which the history-tag wa
 
 ## Right under every direction
 
-Candidates; each still needs the operator's go.
+Some foundations have landed; the remaining candidates still need the operator's go.
 
 - **Record the writing Sandbox's UID in History and check it on every push.** Landed (#11835), with
   the global Session ID kept as the key. D1 deletes by it, D2 keys grants by it, and D3 and D4 still

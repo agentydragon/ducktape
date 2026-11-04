@@ -471,22 +471,24 @@ shapes it. Finalize caller replacement semantics. Collection reads match history
 record of the Sandbox, which outlives it ([design](sandbox_tags.md)). V1 has no individual-Session
 grants or computed collection selection. Presets seed launch tags; later removals persist. Reading a
 Session resolves its recorded Sandbox identity, and all Sessions in that Sandbox use the same scope.
-Defaults expose no existing histories to workloads. Session listing is a distinct, weaker read-type
-permission, independent from send; its metadata fields are selected, and raw history read/follow
+The proposed broader grant should not expose other principals' histories by default. Existing same-principal
+reads are already implemented. Session listing is a distinct, weaker read-type permission, independent from send; its metadata fields are selected, and raw history read/follow
 behavior remains to design. Read does not imply send/create, and no folded-read API is required for v1.
 Cover discovery, linked evidence, live-feed revocation and unknown historical associations. Do not block
 this on a messaging transport.
 
-**Question for review:** should an `allSandboxes` read also reach histories with no recorded Sandbox
-UID, which are operator-only today ([History README](../history_service/README.md#session-writer-and-execution-sandbox))? Those rows keep the recorded
-namespace, which is all that target matches on; a history with no recorded Sandbox stays operator-only
-either way.
+**Question for review:** should an `allSandboxes` grant also reach histories with no recorded Sandbox
+UID? Those rows may retain a namespace but cannot match an exact Sandbox incarnation. Existing
+same-principal reads use the retained execution principal independently of the Sandbox UID; rows
+without a trustworthy principal remain limited to configured backend readers
+([History README](../history_service/README.md#session-writer-and-execution-sandbox)).
 
 ### `THREAD_READ_POLICY` — authorized retained-history access
 
 **Blocked on reviewed read policy, held by the operator, and on `HISTORY_SANDBOX_RECORD`, which keeps
-the Sandbox UID and history tags the association needs.** Enforce the immutable Session-to-Sandbox
-association and Sandbox-scoped grants through the shared rule evaluation at the owning backend across
+the Sandbox UID and history tags the association needs.** Same-principal retained reads already use
+the exact recorded execution identity. Add reviewed broader Sandbox-scoped grants and association
+handling through shared rule evaluation at the owning backend across
 list, raw/native evidence, direct reads and feeds, including reconnect and revocation. Keep app-only UI
 folds separate. Test allowed/denied histories, two principals, deleted Sandboxes and revocation with
 deterministic service tests plus a bounded deployed auth check. Cover a listing-only caller separately
@@ -537,8 +539,8 @@ serialize independent PRs.
 
 **Later decision; current duplication is accepted.** Design one authoritative owner/source for
 platform guidance while allowing placement- and environment-specific variants. Compare ownership and
-composition in the Environment Runtime's native harnesses and Central Sampler. The existing shared template is a textual
-source of truth; it does not settle which services distribute or compose guidance, or how deployment-
+composition in the Environment Runtime's native harnesses and Central Sampler. Both paths already use
+a shared renderer and template; these do not settle which services distribute or compose guidance, or how deployment-
 specific content and runtime-specific needs reach each Session. Use the [Session/runtime model](session_runtime_model.md)
 to compare concrete native-host and central-Sampler cases with zero, one and multiple attached
 environments, including deployment-specific URLs/configuration, placement and capability-specific
@@ -559,7 +561,7 @@ Related deferred work: [consolidate agents' access to documentation and system c
 **Future refactor; blocked on `PLATFORM_GUIDANCE_OWNERSHIP_DESIGN` review.** Put the job of knowing
 the platform instructions in one authoritative owner, then migrate Environment Runtime and Central
 Sampler consumers to it. Remove independently maintained guidance configuration and selection rules
-from those consumers. Shared template text alone does not complete this refactor. Consumers may
+from those consumers. The existing shared renderer and template do not by themselves complete this refactor. Consumers may
 cache or materialize resolved guidance; deployment-specific content, harness differences and
 per-environment instructions still need truthful composition under the reviewed design.
 
@@ -1530,8 +1532,9 @@ gate the selected VM workspace cutover. Details: [deferred endpoint](vm_block_st
 
 **Unscheduled; operator, 2026-10-13 PDT.** Extend capacity-enforcing node-local provisioning to
 all cluster nodes, tracked by [#4717](https://github.com/agentydragon/ducktape/issues/4717).
-`cluster/cdk8s/openebs_lvm/storage.py` already declares Proxmox filesystem and raw-block classes;
-that is not coverage of every node. `local-path` does not enforce PVC capacity. Verify capacity,
+`cluster/cdk8s/piraeus.py` defines strict-local SSD and HDD storage classes backed by node pools;
+that does not establish usable capacity on every node or both volume modes. `local-path` does not
+enforce PVC capacity. Verify capacity,
 node affinity and both required volume modes. A node-local volume remains pinned to its node;
 moving it is `WORKSPACE_NODE_PORTABILITY`. This provisioner work does not gate Sandbox ownership
 or the explicit layout contract for workspace PVCs.
@@ -2082,10 +2085,8 @@ flowchart LR
     SESSION_DELETION_FENCE[In progress: bounded deletion outcome delivery]
     SESSION_AND_INBOX_LIFETIME[Decision: Session and inbox lifetimes after environment deletion]
     DELIVERY_DESTINATION_CONTRACT[In progress: Session-ID command addressing]
-    SESSION_NOTIFICATION_ADDRESS[Blocked: remaining Session notification addressing]
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
     SESSION_DIRECTORY_NATIVE --> DELIVERY_DESTINATION_CONTRACT
-    DELIVERY_DESTINATION_AUTHORITY_DESIGN --> SESSION_NOTIFICATION_ADDRESS
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     CENTRAL_SESSION_CREATION_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     SESSION_IDENTITY_CONTRACT --> SESSION_IDENTITY_ENFORCEMENT
@@ -2467,25 +2468,6 @@ is deferred; do not choose a period here. Coordinate data ownership and store bo
 **Exit:** a reviewed lifecycle and authority contract for both Session kinds, with owners and
 cross-service failure behavior identified before implementing central Session inbox lifetime changes.
 This decision does not block independently safe native-only addressing cleanup.
-
-### `SESSION_NOTIFICATION_ADDRESS` — address inboxes and notices by Session ID
-
-**Native delivery cutover requires reviewed send authority.**
-[Session inbox diagnostics](../notification_service/docs/api.md#session-inbox-diagnostics) already
-read and watch by Session ID; inbox storage enforces one inbox per Session while retaining existing
-destination keys and state. Inbox reads, acknowledgement and retirement address the owning Session.
-Public message sends and their CLI use Session ID and resolve exact placement through Dispatcher.
-Migrate the remaining native delivery worker and Action-facing guidance using the existing Session
-opening and exact UID fences, subject to the reviewed send authority. This native slice does not
-require the full private native directory or a separate Action grant reshuffle.
-
-Native and central tool processes now receive only `AGENTPLANE_SESSION_ID`; retained central prompts
-may still contain Sandbox-shaped instructions, as recorded in the
-[address inventory](session_environment_model.md#session-address-inventory). Resolve an Environment
-only for actual placement, authorization or wake. Preserve subscription and message idempotency,
-inbox cursors, actor attribution, cross-Session denial, authorized unattended wake and exact UID
-fencing. `CENTRAL_SESSION_NOTIFICATIONS` separately covers central Sessions without Environments
-and the unresolved identity and lifetime decisions; neither slice may silently lose inbox data.
 
 ### `SESSION_HISTORY_PRESENTATION` — represent Sessions without a required Sandbox
 

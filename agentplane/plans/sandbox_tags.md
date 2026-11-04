@@ -1,7 +1,8 @@
 # History tags and History's Sandbox records
 
-Status: **agreed with the operator, 2026-10-19 to 2026-10-20 UTC; not implemented.** Inbox tags, the
-other tag kind, shipped; their behavior is in the [Sandboxes README](../sandboxes/README.md).
+Status: **agreed with the operator, 2026-10-19 to 2026-10-20 UTC; not implemented.** History tags
+and History's per-Sandbox record remain open. The separate inbox tags have shipped; their behavior is
+in the [Sandboxes README](../sandboxes/README.md).
 Implementation gates are in the [task DAG](task_dag.md#3-multiagent-decisions-before-implementations).
 The costs that led here and the directions weighed are in the
 [architecture overview](architecture_overview.md#keeping-finished-sandboxes-as-records).

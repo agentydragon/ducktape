@@ -3,20 +3,20 @@
 Status: **directory membership selected; remaining authority and fencing details need review.**
 The selected public command address is a globally unique Session UUID. The native Session directory
 in Dispatcher PostgreSQL is the authority for its placement. This note specifies the native send
-path that can follow [SESSION_DIRECTORY_NATIVE](task_dag.md#session_directory_native--dispatcher-authority-for-environment-hosted-sessions),
-and identifies decisions that still block implementation. It does not select a principal or send
+path and the remaining decisions after the initial Session-ID cutover. [SESSION_DIRECTORY_NATIVE](task_dag.md#session_directory_native--dispatcher-authority-for-environment-hosted-sessions)
+tracks the remaining native directory and private harness mapping work. It does not select a principal or send
 policy for a central Session without an environment.
 
 ## Current boundaries
 
 | Caller or boundary            | Current authority and behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App                           | Its Thread route and access checks precede Dispatcher submission. The Go bridge uses an exact Sandbox name and UID for opening and diagnostics; command routes submit both values. The app's service token is a configured privileged Dispatcher caller, so the backend does not independently authenticate the browser user.                                                                                                                                                                                             |
-| Direct CLI                    | Uses its workload token and supplies Sandbox name, UID, Session ID and command ID. Dispatcher checks a normal caller against the opening's execution ServiceAccount and the live Sandbox account.                                                                                                                                                                                                                                                                                                                         |
+| App                           | Its Thread route and access checks precede Dispatcher submission. The Go bridge uses an exact Sandbox name and UID for opening and diagnostics; commands address a Session ID. The app's service token is a configured privileged Dispatcher caller, so the backend does not independently authenticate the browser user.                                                                                                                                                                                                 |
+| Direct CLI                    | Uses its workload token and supplies Session ID and command ID. Dispatcher resolves the recorded placement and checks a normal caller against the opening's execution ServiceAccount and the live Sandbox account.                                                                                                                                                                                                                                                                                                        |
 | Same-principal Actions        | `session_delegation` sends the retained caller's namespace, name and UID in the reviewed delegation envelope. Dispatcher checks the effective caller, not Actions' actor privilege. Action approval does not enlarge backend authority.                                                                                                                                                                                                                                                                                   |
 | Orchestration Actions         | `orchestration_v1` is a documented temporary privileged service exception after an Action Decision. It verifies the named Sandbox incarnation before commands; backend grants for each operation remain separate work.                                                                                                                                                                                                                                                                                                    |
 | Notification API and worker   | Subscriptions check source access, exact Sandbox ownership and live Session membership at creation. A separate `session_inbox_access.send_message` policy permits inbox append for a target Sandbox, which can lead to a service-authored notice under Notification's wake policy. It does not grant arbitrary Runtime commands or direct wake. The worker rechecks its stored destination and sends its UID with a notice command. Dispatcher authenticates Notification's service account, not the original subscriber. |
-| Dispatcher                    | Queued commands and interrupts require an authorized Session opening with the exact Sandbox name and UID, including for privileged Pod-bound backends. A normal caller must match its execution principal. The queue transaction rechecks the opening binding and retains actor/effective caller attribution.                                                                                                                                                                                                             |
+| Dispatcher                    | Queued commands and interrupts require an authorized Session opening, including for privileged Pod-bound backends; Dispatcher resolves its exact Sandbox placement. A normal caller must match its execution principal. The queue transaction rechecks the opening binding and retains actor/effective caller attribution.                                                                                                                                                                                                |
 | Delivery, Gateway and Runtime | Dispatcher groups by Sandbox UID, rechecks live UID, lease and execution account, then calls the Gateway proxy. Gateway checks exact Sandbox UID, owner and ready Pod before forwarding and restricts Runtime Session mutation to the combined Gateway/Dispatcher ServiceAccount. Runtime journals admitted commands and rejects an unknown Session.                                                                                                                                                                      |
 
 Source anchors: [Dispatcher API](../runner_gateway/dispatcher/api.go),
@@ -26,7 +26,7 @@ Source anchors: [Dispatcher API](../runner_gateway/dispatcher/api.go),
 [Notification worker](../notification_service/worker/deliver.go),
 [delegated authorization](../docs/delegated_authorization.md).
 
-## Recommended native command contract
+## Native command contract and remaining authority decisions
 
 The external submit, model, reasoning-effort and interrupt requests name the Session UUID and a
 caller-held command ID (plus the operation's arguments and an interrupt's turn ID). A caller does
@@ -64,8 +64,8 @@ Resolving the directory, reading a Session or subscribing to a source is not sen
 Dispatcher now requires a Session record for every Session-targeted command, including privileged
 calls and interrupts. Gateway restricts direct Runtime Session mutation to the combined
 Gateway/Dispatcher workload. A Session record is distinct from a per-command receipt; this requirement
-does not itself change which operations are durably queued or journaled. The public command request
-still includes the Sandbox name and UID.
+does not itself define which operations are durably queued or journaled. Command requests address a
+Session ID; a broker may include an expected Sandbox UID as an authorization precondition.
 
 General destination/operation grants and revocation of previously accepted queued work remain in
 `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`; retaining the existing rules does not select a new

@@ -202,8 +202,8 @@ Missing:
 
 ## What this fixes about the order of work
 
-- Story 1 lacks only standing grants as their own product: the proxy, the Action Service and
-  approval delivery stand.
+- Story 1 still lacks a permission-request Action and standing grants as their own product; the
+  proxy, the Action Service and approval delivery stand.
 - Story 2 has the proxy's per-identity credential sets and the thread store, and proposes tiers
   and the events kind filter. A judge is an optional later addition.
 - Story 3 is story 2 with the orchestrator in the driver's seat and the fleet view on top.
