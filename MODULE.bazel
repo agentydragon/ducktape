@@ -418,12 +418,9 @@ use_repo(image_pins, "blackbox_exporter", "blackbox_exporter_linux_amd64", "cert
 # Replaces Dockerfile apt-get with snapshot-pinned deb extraction.
 apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
 
-# rules_distroless 0.9 moved source manifests and package lists into explicit
-# extension tags. Keep all images in one extension so they share a coherent
-# resolution graph. The extension caches its resolution only in MODULE.bazel.lock,
-# which this repo does not use (.bazelrc), so every cold Bazel server re-downloads and
-# re-parses the Debian indexes. The former per-image v1 lockfiles were removed because
-# v0.9 no longer reads that format.
+# Keep all images in one extension so they share a coherent resolution graph.
+# CI retains the generated MODULE.bazel.lock outside the cleaned checkout as a
+# disposable cache; Bazel validates its inputs before reusing the resolution.
 apt.sources_list(
     architectures = ["amd64"],
     components = ["main"],

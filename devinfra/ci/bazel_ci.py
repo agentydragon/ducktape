@@ -10,10 +10,78 @@ workflow.
 from __future__ import annotations
 
 import fnmatch
+import json
+import logging
 import os
 import subprocess
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+
+def _read_json_lockfile(path: Path, *, description: str) -> bytes | None:
+    """Read a lockfile if it is readable JSON, without interpreting Bazel's schema."""
+    try:
+        contents = path.read_bytes()
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        logger.warning("Could not read %s Bazel module lockfile %s: %s", description, path, exc)
+        return None
+
+    try:
+        json.loads(contents)
+    except (ValueError, RecursionError) as exc:
+        logger.warning("Ignoring invalid JSON in %s Bazel module lockfile %s: %s", description, path, exc)
+        return None
+    return contents
+
+
+def _atomic_write(path: Path, contents: bytes) -> None:
+    """Write through a temporary sibling directory so replacement is atomic."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".bazel-module-lock-", dir=path.parent) as temp_dir:
+        temporary_path = Path(temp_dir) / path.name
+        temporary_path.write_bytes(contents)
+        temporary_path.replace(path)
+
+
+@contextmanager
+def _module_lockfile_cache() -> Iterator[None]:
+    """Restore and persist Bazel's disposable module-resolution lockfile cache."""
+    workspace_lockfile = Path.cwd() / "MODULE.bazel.lock"
+    cache_home = os.environ.get("XDG_CACHE_HOME")
+    if cache_home:
+        cache_root: Path | None = Path(cache_home)
+    else:
+        try:
+            cache_root = Path.home() / ".cache"
+        except (OSError, RuntimeError) as exc:
+            logger.warning("Could not locate Bazel module lockfile cache: %s", exc)
+            cache_root = None
+    cache_lockfile = cache_root / "ducktape" / "bazel" / "MODULE.bazel.lock" if cache_root is not None else None
+
+    if cache_lockfile is not None and not workspace_lockfile.exists():
+        cached_contents = _read_json_lockfile(cache_lockfile, description="cached")
+        if cached_contents is not None:
+            try:
+                _atomic_write(workspace_lockfile, cached_contents)
+            except (OSError, ValueError) as exc:
+                logger.warning("Could not restore cached Bazel module lockfile %s: %s", cache_lockfile, exc)
+
+    try:
+        yield
+    finally:
+        if cache_lockfile is not None:
+            workspace_contents = _read_json_lockfile(workspace_lockfile, description="workspace")
+            if workspace_contents is not None:
+                try:
+                    _atomic_write(cache_lockfile, workspace_contents)
+                except (OSError, ValueError) as exc:
+                    logger.warning("Could not save Bazel module lockfile cache %s: %s", cache_lockfile, exc)
 
 
 def _run(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -227,7 +295,7 @@ def _select_targets(temp_dir: Path) -> tuple[bool, list[str], Path]:
 
 def main() -> int:
     """Run selection, race-enabled tests and normal builds, then finalize runner diagnostics."""
-    with tempfile.TemporaryDirectory(prefix="ducktape-bazel-ci-") as temp_path:
+    with _module_lockfile_cache(), tempfile.TemporaryDirectory(prefix="ducktape-bazel-ci-") as temp_path:
         temp_dir = Path(temp_path)
         try:
             full_sweep, targets, test_query = _select_targets(temp_dir)

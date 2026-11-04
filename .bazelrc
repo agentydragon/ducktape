@@ -56,14 +56,12 @@ build --host_per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare,-Wno-range-
 build --nobuild_runfile_links
 build --nolegacy_external_runfiles
 
-# No MODULE.bazel.lock: a ~14 MB file, mostly the rules_distroless `apt` resolution, that every
-# MODULE.bazel change would regenerate, for about 16 s off a cold sweep. Trade-off and when to
-# revisit: devinfra/debug/bazel_module_lockfile.md.
-common --lockfile_mode=off
+# Reuse Bazel's validated module resolutions across CI jobs; see devinfra/debug/bazel_module_lockfile.md.
+common --lockfile_mode=update
 
 # Bazel cancels in-flight Skyframe computations when the heap is under pressure
 # (--skyframe_high_water_mark_*_gc_drops_per_invocation, 10 each by default), and a cancelled
-# module extension restarts from scratch. With the lockfile off, the rules_distroless `apt`
+# module extension restarts from scratch. On a lockfile cache miss, the rules_distroless `apt`
 # extension runs on every cold server: it parses ~350 MB of Debian indexes in 1-1.5 GB of
 # heap, and those allocations themselves trigger the pressure that restarts it, over and over,
 # until a graph-wide sweep runs out of heap (#11120). Never shed state.
