@@ -36,7 +36,6 @@ const (
 	githubEventPrefix  = "GITHUB_EVENT_NAME_"
 	failureKindPrefix  = "SOURCE_FAILURE_KIND_"
 	subscriptionsRoute = "/v1/subscriptions"
-	inboxesRoute       = "/v1/inboxes"
 	messagesRoute      = "/v1/messages"
 )
 
@@ -59,9 +58,9 @@ func (a *app) readInboxCommand() *cobra.Command {
 	var after int64
 	var limit int
 	command := &cobra.Command{
-		Use:   "read ID [--after CURSOR] [--limit N]",
+		Use:   "read SESSION_ID [--after CURSOR] [--limit N]",
 		Short: "Read one page of inbox entries",
-		Long: `GET /v1/inboxes/{id}/entries. Reads are non-destructive and return one contiguous page.
+		Long: `GET /v1/sessions/{session_id}/inbox/entries. Reads are non-destructive and return one contiguous page.
 Continue after the last returned entry's cursor. Text output summarizes the entries; --json prints the
 full response, including provider payloads and the latest notice state. The service returns at most 128
 entries per page, and expired payloads are reported in inbox.expiredThrough.`,
@@ -76,7 +75,7 @@ entries per page, and expired payloads are reported in inbox.expiredThrough.`,
 			query := url.Values{}
 			query.Set("afterCursor", strconv.FormatInt(after, 10))
 			query.Set("limit", strconv.Itoa(limit))
-			response, err := svc.fetch(ctx, inboxesRoute+"/"+url.PathEscape(args[0])+"/entries", query)
+			response, err := svc.fetch(ctx, "/v1/sessions/"+url.PathEscape(args[0])+"/inbox/entries", query)
 			if err != nil {
 				return err
 			}
@@ -91,9 +90,9 @@ entries per page, and expired payloads are reported in inbox.expiredThrough.`,
 func (a *app) ackInboxCommand() *cobra.Command {
 	var through int64
 	command := &cobra.Command{
-		Use:   "ack ID --through CURSOR",
+		Use:   "ack SESSION_ID --through CURSOR",
 		Short: "Acknowledge a handled inbox prefix",
-		Long: `PUT /v1/inboxes/{id}/acknowledgement. Acknowledgement covers every entry through the cursor,
+		Long: `PUT /v1/sessions/{session_id}/inbox/acknowledgement. Acknowledgement covers every entry through the cursor,
 across all subscriptions in this inbox. Read and handle the whole contiguous prefix first. The service
 never moves the cursor backwards and refuses a cursor beyond the inbox's last entry.`,
 		Args: cobra.ExactArgs(1),
@@ -112,7 +111,7 @@ never moves the cursor backwards and refuses a cursor beyond the inbox's last en
 			}{ThroughCursor: strconv.FormatInt(through, 10)}
 			response, err := svc.do(ctx, request{
 				method: http.MethodPut,
-				path:   inboxesRoute + "/" + url.PathEscape(args[0]) + "/acknowledgement",
+				path:   "/v1/sessions/" + url.PathEscape(args[0]) + "/inbox/acknowledgement",
 				body:   body,
 			})
 			if err != nil {

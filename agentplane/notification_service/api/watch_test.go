@@ -50,11 +50,11 @@ func TestInboxWatchOpensAndFollowsCommittedChanges(t *testing.T) {
 	untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetId() == sub.GetInboxId() })
 	s.record(t, sub, 1)
 	untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetDelivery().GetPendingAcknowledgementCount() == 1 })
-	if _, err := s.client.AcknowledgeInbox(bearing(t, sandboxToken), &pb.AcknowledgeInboxRequest{InboxId: sub.GetInboxId(), ThroughCursor: 1}); err != nil {
+	if _, err := s.client.AcknowledgeInbox(bearing(t, sandboxToken), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
 		t.Fatal(err)
 	}
 	untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetAcknowledged() == 1 })
-	if _, err := s.client.RetireInbox(bearing(t, sandboxToken), &pb.RetireInboxRequest{InboxId: sub.GetInboxId()}); err != nil {
+	if _, err := s.client.RetireInbox(bearing(t, sandboxToken), &pb.RetireInboxRequest{SessionId: testSession}); err != nil {
 		t.Fatal(err)
 	}
 	retired := untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetRetired() })
@@ -132,7 +132,7 @@ func TestEntryWatchSendsChangesAndRemovesAcknowledgedEntries(t *testing.T) {
 			break
 		}
 	}
-	if _, err := s.client.AcknowledgeInbox(bearing(t, sandboxToken), &pb.AcknowledgeInboxRequest{InboxId: sub.GetInboxId(), ThroughCursor: 1}); err != nil {
+	if _, err := s.client.AcknowledgeInbox(bearing(t, sandboxToken), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
 		t.Fatal(err)
 	}
 	for {

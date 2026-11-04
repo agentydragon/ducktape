@@ -101,10 +101,10 @@ func githubSubscription(t *testing.T, service running, id string) map[string]any
 	return at(t, result, "subscription").(map[string]any)
 }
 
-func inboxEntries(t *testing.T, service running, inboxID string) []any {
+func inboxEntries(t *testing.T, service running) []any {
 	t.Helper()
 	code, page := agentCall(t, service, http.MethodGet,
-		"/v1/inboxes/"+inboxID+"/entries?limit=128&after_cursor=0", sandboxToken, nil)
+		"/v1/sessions/"+testSession+"/inbox/entries?limit=128&after_cursor=0", sandboxToken, nil)
 	if code != http.StatusOK {
 		t.Fatalf("read recovered inbox = %d %v", code, page)
 	}
@@ -217,7 +217,7 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 	eventually(t, "an empty GitHub baseline", func() bool {
 		return hasGitHubBaseline(githubSubscription(t, service, subscriptionID))
 	})
-	if entries := inboxEntries(t, service, inboxID); len(entries) != 0 {
+	if entries := inboxEntries(t, service); len(entries) != 0 {
 		t.Fatalf("baseline entries = %v, want a quiet OPEN state with no facts", entries)
 	}
 	var receipts int
@@ -246,7 +246,7 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 	service = restart(t, tune)
 	var recovered []any
 	eventually(t, "four current GitHub facts repaired by the restarted service", func() bool {
-		recovered = inboxEntries(t, service, inboxID)
+		recovered = inboxEntries(t, service)
 		return len(recovered) == 4
 	})
 	var recoveredReceipts int
@@ -296,7 +296,7 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 			OriginCommandIds: []string{submitted[0].id},
 		}}}),
 	)
-	entriesPath := "/v1/inboxes/" + inboxID + "/entries?limit=128&after_cursor=0"
+	entriesPath := "/v1/sessions/" + testSession + "/inbox/entries?limit=128&after_cursor=0"
 	var confirmed map[string]any
 	eventually(t, "History confirmation of the notice", func() bool {
 		code, page := agentCall(t, service, http.MethodGet, entriesPath, sandboxToken, nil)
@@ -309,11 +309,11 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 	if at(t, confirmed, "notice", "admitted") != true || at(t, confirmed, "notice", "commandId") != submitted[0].id {
 		t.Errorf("notice state = %v, want the submitted command admitted and confirmed", at(t, confirmed, "notice"))
 	}
-	if got := inboxEntries(t, service, inboxID); !reflect.DeepEqual(got, recovered) {
+	if got := inboxEntries(t, service); !reflect.DeepEqual(got, recovered) {
 		t.Fatalf("History reconciliation changed recovered entries: %v", got)
 	}
 	lastCursor := at(t, recovered, 3, "cursor")
-	code, acknowledged := agentCall(t, service, http.MethodPut, "/v1/inboxes/"+inboxID+"/acknowledgement", sandboxToken,
+	code, acknowledged := agentCall(t, service, http.MethodPut, "/v1/sessions/"+testSession+"/inbox/acknowledgement", sandboxToken,
 		map[string]any{"throughCursor": lastCursor})
 	if code != http.StatusOK || at(t, acknowledged, "inbox", "acknowledged") != lastCursor {
 		t.Fatalf("acknowledge through %v = %d %v", lastCursor, code, acknowledged)
@@ -355,7 +355,7 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 		}
 		postSignedGitHubDelivery(t, service, event, payload)
 	}
-	if got := inboxEntries(t, service, inboxID); !reflect.DeepEqual(got, recovered) {
+	if got := inboxEntries(t, service); !reflect.DeepEqual(got, recovered) {
 		t.Fatalf("late webhooks changed the recovered identities, cursors or payloads: %v", got)
 	}
 	var deliveries int
@@ -386,7 +386,7 @@ func TestGitHubCurrentFactsRecoverThroughServiceAfterRestartAndDeduplicateLateWe
 		}
 		return githubSubscription(t, service, subscriptionID)["lastSuccessAt"] != before
 	})
-	if got := inboxEntries(t, service, inboxID); !reflect.DeepEqual(got, recovered) {
+	if got := inboxEntries(t, service); !reflect.DeepEqual(got, recovered) {
 		t.Fatalf("unchanged polls changed recovered identities, cursors or payloads: %v", got)
 	}
 }

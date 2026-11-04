@@ -42,8 +42,8 @@ func TestTheOpenAPIDocumentDescribesTheRoutesTheGuidesUse(t *testing.T) {
 		{"post", "/v1/subscriptions", ""},
 		{"get", "/v1/subscriptions", ""},
 		{"patch", "/v1/subscriptions/", ""},
-		{"get", "/v1/inboxes/", "/entries"},
-		{"put", "/v1/inboxes/", "/acknowledgement"},
+		{"get", "/v1/sessions/", "/inbox/entries"},
+		{"put", "/v1/sessions/", "/inbox/acknowledgement"},
 		{"post", "/v1/messages", ""},
 		{"get", "/v1/messages/", ""},
 	} {

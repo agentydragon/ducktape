@@ -97,14 +97,14 @@ func TestSessionAddressedCreationRetainsAnExistingSubscriptionAndInbox(t *testin
 		t.Fatal(err)
 	}
 	s.record(t, stored, 2)
-	if _, err := s.client.AcknowledgeInbox(bearing(t, sandboxToken), &notificationspb.AcknowledgeInboxRequest{InboxId: stored.GetInboxId(), ThroughCursor: 1}); err != nil {
+	if _, err := s.client.AcknowledgeInbox(bearing(t, sandboxToken), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
 		t.Fatal(err)
 	}
 	retried, err := s.client.CreateSubscription(bearing(t, sandboxToken), request)
 	if err != nil || retried.GetSubscription().GetId() != stored.GetId() || retried.GetSubscription().GetInboxId() != stored.GetInboxId() {
 		t.Fatalf("retained subscription = %v, %v", retried, err)
 	}
-	page, err := s.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{InboxId: stored.GetInboxId()})
+	page, err := s.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
 	if err != nil || page.GetInbox().GetAcknowledged() != 1 || page.GetInbox().GetLastCursor() != 2 || len(page.GetEntries()) != 2 {
 		t.Fatalf("retained inbox = %v, %v", page, err)
 	}
@@ -420,15 +420,15 @@ func ownedCalls(server testServer, subscription *notificationspb.Subscription) m
 			return err
 		},
 		"ReadInbox": func(ctx context.Context) error {
-			_, err := server.client.ReadInbox(ctx, &notificationspb.ReadInboxRequest{InboxId: subscription.GetInboxId()})
+			_, err := server.client.ReadInbox(ctx, &notificationspb.ReadInboxRequest{SessionId: testSession})
 			return err
 		},
 		"AcknowledgeInbox": func(ctx context.Context) error {
-			_, err := server.client.AcknowledgeInbox(ctx, &notificationspb.AcknowledgeInboxRequest{InboxId: subscription.GetInboxId(), ThroughCursor: 1})
+			_, err := server.client.AcknowledgeInbox(ctx, &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1})
 			return err
 		},
 		"RetireInbox": func(ctx context.Context) error {
-			_, err := server.client.RetireInbox(ctx, &notificationspb.RetireInboxRequest{InboxId: subscription.GetInboxId()})
+			_, err := server.client.RetireInbox(ctx, &notificationspb.RetireInboxRequest{SessionId: testSession})
 			return err
 		},
 	}
@@ -452,7 +452,7 @@ func TestAnotherAccountSeesNoSubscriptionOrInboxOfTheCaller(t *testing.T) {
 		t.Run(name, func(t *testing.T) { requireCode(t, call(stranger(t)), codes.NotFound) })
 	}
 	// None of it touched the owner's.
-	read, err := server.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{InboxId: subscription.GetInboxId()})
+	read, err := server.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
 	if err != nil || len(read.GetEntries()) != 1 || read.GetInbox().GetAcknowledged() != 0 || read.GetInbox().GetRetired() {
 		t.Errorf("read = %v, %v", read, err)
 	}
@@ -496,9 +496,8 @@ func TestAnAgentReadsAcknowledgesAndRetiresItsInbox(t *testing.T) {
 	server := newServer(t)
 	subscription := server.subscribe(t, "inbox")
 	server.record(t, subscription, 3)
-	inboxID := subscription.GetInboxId()
 	read := func(request *notificationspb.ReadInboxRequest) (*notificationspb.ReadInboxResponse, error) {
-		request.InboxId = inboxID
+		request.SessionId = testSession
 		return server.client.ReadInbox(bearing(t, sandboxToken), request)
 	}
 
@@ -536,14 +535,14 @@ func TestAnAgentReadsAcknowledgesAndRetiresItsInbox(t *testing.T) {
 			requireCode(t, err, codes.InvalidArgument)
 		})
 	}
-	_, err = server.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{InboxId: "inbox"})
+	_, err = server.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{})
 	requireCode(t, err, codes.InvalidArgument)
 	if again, err := read(&notificationspb.ReadInboxRequest{}); err != nil || again.GetInbox().GetAcknowledged() != 0 {
 		t.Errorf("reading acknowledged: %v, %v", again, err)
 	}
 
 	acknowledge := func(through int64) (*notificationspb.AcknowledgeInboxResponse, error) {
-		return server.client.AcknowledgeInbox(bearing(t, sandboxToken), &notificationspb.AcknowledgeInboxRequest{InboxId: inboxID, ThroughCursor: through})
+		return server.client.AcknowledgeInbox(bearing(t, sandboxToken), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: through})
 	}
 	if acknowledged, err := acknowledge(2); err != nil || acknowledged.GetInbox().GetAcknowledged() != 2 {
 		t.Fatalf("acknowledged = %v, %v", acknowledged, err)
@@ -557,7 +556,7 @@ func TestAnAgentReadsAcknowledgesAndRetiresItsInbox(t *testing.T) {
 	requireCode(t, err, codes.InvalidArgument)
 
 	retire := func() error {
-		_, err := server.client.RetireInbox(bearing(t, sandboxToken), &notificationspb.RetireInboxRequest{InboxId: inboxID})
+		_, err := server.client.RetireInbox(bearing(t, sandboxToken), &notificationspb.RetireInboxRequest{SessionId: testSession})
 		return err
 	}
 	if err := retire(); err != nil {
@@ -581,4 +580,27 @@ func TestAnAgentReadsAcknowledgesAndRetiresItsInbox(t *testing.T) {
 		SubscriptionId: subscription.GetId(), Version: got.GetSubscription().GetVersion(),
 	})
 	requireCode(t, err, codes.FailedPrecondition)
+}
+
+func TestRetiredInboxAddressIsRejectedEvenWithSessionID(t *testing.T) {
+	server := newServer(t)
+	subscription := server.subscribe(t, "old-inbox-address")
+	server.record(t, subscription, 1)
+	read := &notificationspb.ReadInboxRequest{SessionId: testSession}
+	ack := &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}
+	retire := &notificationspb.RetireInboxRequest{SessionId: testSession}
+	for _, request := range []proto.Message{read, ack, retire} {
+		request.ProtoReflect().SetUnknown([]byte{0x0a, 0x03, 'o', 'l', 'd'})
+	}
+	ctx := bearing(t, sandboxToken)
+	_, err := server.client.ReadInbox(ctx, read)
+	requireCode(t, err, codes.InvalidArgument)
+	_, err = server.client.AcknowledgeInbox(ctx, ack)
+	requireCode(t, err, codes.InvalidArgument)
+	_, err = server.client.RetireInbox(ctx, retire)
+	requireCode(t, err, codes.InvalidArgument)
+	page, err := server.client.ReadInbox(ctx, &notificationspb.ReadInboxRequest{SessionId: testSession})
+	if err != nil || page.GetInbox().GetAcknowledged() != 0 || page.GetInbox().GetRetired() || len(page.GetEntries()) != 1 {
+		t.Fatalf("rejected requests changed inbox: %v, %v", page, err)
+	}
 }

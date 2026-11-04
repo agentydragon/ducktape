@@ -150,7 +150,7 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
         assert not held.acknowledged, f"acknowledged before the recipient acknowledged anything: {held}"
 
         read = _shell(
-            f"curl -sSf {AUTHORIZATION} {NOTIFICATIONS}'/v1/inboxes/{notice.inbox_id}/entries"
+            f"curl -sSf {AUTHORIZATION} {NOTIFICATIONS}'/v1/sessions/{recipient_agent.thread_id}/inbox/entries"
             f"?afterCursor={notice.acknowledged_at_preparation}&limit=128'"
         )
         with tracer.start_as_current_span(
@@ -167,7 +167,7 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
 
         acknowledge = _shell(
             f"curl -sSf -X PUT {AUTHORIZATION} -H 'Content-Type: application/json'"
-            f" -d '{{\"throughCursor\": {entry.cursor}}}' {NOTIFICATIONS}'/v1/inboxes/{notice.inbox_id}/acknowledgement'"
+            f" -d '{{\"throughCursor\": {entry.cursor}}}' {NOTIFICATIONS}'/v1/sessions/{recipient_agent.thread_id}/inbox/acknowledgement'"
         )
         with tracer.start_as_current_span(
             "system_test.agent_messaging.acknowledge", record_exception=False, set_status_on_exception=False

@@ -342,7 +342,7 @@ func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseA
 			HarnessUserMessageConfirmed: &eventpb.HarnessUserMessageConfirmed{OriginCommandIds: []string{submitted[0].id}},
 		}}),
 	)
-	entries := "/v1/inboxes/" + inboxID + "/entries?limit=128&after_cursor="
+	entries := "/v1/sessions/" + testSession + "/inbox/entries?limit=128&after_cursor="
 	var page map[string]any
 	eventually(t, "the notice to be confirmed", func() bool {
 		wake(t, service)
@@ -375,7 +375,7 @@ func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseA
 
 	// Acknowledging moves the handled prefix only.
 	acknowledge := func(through any) any {
-		code, acknowledged := agentCall(t, service, http.MethodPut, "/v1/inboxes/"+inboxID+"/acknowledgement", sandboxToken,
+		code, acknowledged := agentCall(t, service, http.MethodPut, "/v1/sessions/"+testSession+"/inbox/acknowledgement", sandboxToken,
 			map[string]any{"throughCursor": through})
 		if code != http.StatusOK {
 			t.Fatalf("acknowledge through %v = %d %v", through, code, acknowledged)
@@ -492,11 +492,11 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 		t.Errorf("once notified: %v", got)
 	}
 	entries := func(afterCursor string) map[string]any {
-		_, page := agentCall(t, service, http.MethodGet, "/v1/inboxes/"+inboxID+"/entries?limit=128&after_cursor="+afterCursor, sandboxToken, nil)
+		_, page := agentCall(t, service, http.MethodGet, "/v1/sessions/"+testSession+"/inbox/entries?limit=128&after_cursor="+afterCursor, sandboxToken, nil)
 		return at(t, page, "entries", 0).(map[string]any)
 	}
 	acknowledge := func(token string, through any) int {
-		code, _ := agentCall(t, service, http.MethodPut, "/v1/inboxes/"+inboxID+"/acknowledgement", token, map[string]any{"throughCursor": through})
+		code, _ := agentCall(t, service, http.MethodPut, "/v1/sessions/"+testSession+"/inbox/acknowledgement", token, map[string]any{"throughCursor": through})
 		return code
 	}
 	entry := entries("0")
@@ -505,7 +505,7 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 		t.Errorf("entry = %v", entry)
 	}
 	// The inbox is the recipient's alone: the sender can neither read nor acknowledge it.
-	if code, _ := agentCall(t, service, http.MethodGet, "/v1/inboxes/"+inboxID+"/entries?limit=128&after_cursor=0", otherToken, nil); code != http.StatusNotFound {
+	if code, _ := agentCall(t, service, http.MethodGet, "/v1/sessions/"+testSession+"/inbox/entries?limit=128&after_cursor=0", otherToken, nil); code != http.StatusNotFound {
 		t.Errorf("the sender reading the recipient's inbox = %d, want 404", code)
 	}
 	if code := acknowledge(otherToken, entry["cursor"]); code != http.StatusNotFound {

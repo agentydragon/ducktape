@@ -12,6 +12,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/worker"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 )
 
 // Notifications is the workloads' API: subscriptions that deliver events from a source into a Session's inbox,
@@ -213,7 +216,7 @@ func (s *Notifications) ReadInbox(ctx context.Context, request *notificationspb.
 }
 
 func (s *Notifications) readInbox(ctx context.Context, owner store.Owner, request *notificationspb.ReadInboxRequest) (*notificationspb.ReadInboxResponse, error) {
-	id, err := parseID("inbox_id", request.GetInboxId())
+	id, err := s.ownedInboxID(ctx, owner, request, request.GetSessionId())
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +240,7 @@ func (s *Notifications) AcknowledgeInbox(ctx context.Context, request *notificat
 }
 
 func (s *Notifications) acknowledgeInbox(ctx context.Context, owner store.Owner, request *notificationspb.AcknowledgeInboxRequest) (*notificationspb.AcknowledgeInboxResponse, error) {
-	id, err := parseID("inbox_id", request.GetInboxId())
+	id, err := s.ownedInboxID(ctx, owner, request, request.GetSessionId())
 	if err != nil {
 		return nil, err
 	}
@@ -253,9 +256,27 @@ func (s *Notifications) RetireInbox(ctx context.Context, request *notificationsp
 }
 
 func (s *Notifications) retireInbox(ctx context.Context, owner store.Owner, request *notificationspb.RetireInboxRequest) (*notificationspb.RetireInboxResponse, error) {
-	id, err := parseID("inbox_id", request.GetInboxId())
+	id, err := s.ownedInboxID(ctx, owner, request, request.GetSessionId())
 	if err != nil {
 		return nil, err
 	}
 	return &notificationspb.RetireInboxResponse{}, s.store.Retire(ctx, owner, id)
+}
+
+// ownedInboxID rejects retired addresses before resolving the Session for its current owner.
+func (s *Notifications) ownedInboxID(ctx context.Context, owner store.Owner, request proto.Message, sessionID string) (uuid.UUID, error) {
+	for unknown := request.ProtoReflect().GetUnknown(); len(unknown) > 0; {
+		field, _, size := protowire.ConsumeField(unknown)
+		if size < 0 {
+			return uuid.Nil, invalidRequest("invalid inbox request")
+		}
+		if field == 1 {
+			return uuid.Nil, invalidRequest("inbox_id is no longer accepted; address the Session by ID")
+		}
+		unknown = unknown[size:]
+	}
+	if err := model.CheckText("session_id", sessionID, 1, 200); err != nil {
+		return uuid.Nil, err
+	}
+	return s.store.InboxIDForSession(ctx, owner, sessionID)
 }

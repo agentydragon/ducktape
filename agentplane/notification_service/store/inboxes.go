@@ -113,6 +113,16 @@ func owned(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, owner Owner, lock
 	return inbox, err
 }
 
+// InboxIDForSession resolves only an inbox owned by the current Sandbox incarnation.
+func (s *Store) InboxIDForSession(ctx context.Context, owner Owner, sessionID string) (uuid.UUID, error) {
+	var id uuid.UUID
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM inbox WHERE owner_namespace = $1 AND owner_name = $2 AND destination_uid = $3 AND session_id = $4`, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, sessionID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return uuid.Nil, ErrNotFound
+	}
+	return id, err
+}
+
 // ensureInbox is the owner's inbox for a destination Session, created if absent and returned locked for update.
 func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner model.ServiceAccount, ref model.DestinationRef, sessionID string) (Inbox, error) {
 	written := now()

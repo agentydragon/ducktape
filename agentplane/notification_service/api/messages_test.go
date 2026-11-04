@@ -84,8 +84,7 @@ func TestAGrantedSenderMessagesASessionThatReadsItFromItsInbox(t *testing.T) {
 	if len(inboxes.GetInboxes()) != 1 {
 		t.Fatalf("inboxes = %v", inboxes)
 	}
-	inboxID := inboxes.GetInboxes()[0].GetId()
-	read, err := server.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{InboxId: inboxID})
+	read, err := server.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +106,7 @@ func TestAGrantedSenderMessagesASessionThatReadsItFromItsInbox(t *testing.T) {
 	if _, err := server.sentMessage(t, sandboxToken, sent.GetId()); status.Code(err) != codes.NotFound {
 		t.Errorf("the recipient's lookup: %v, want NotFound", err)
 	}
-	if _, err := server.client.AcknowledgeInbox(bearing(t, sandboxToken), &notificationspb.AcknowledgeInboxRequest{InboxId: inboxID, ThroughCursor: 1}); err != nil {
+	if _, err := server.client.AcknowledgeInbox(bearing(t, sandboxToken), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
 		t.Fatal(err)
 	}
 	followed, err := server.sentMessage(t, otherSandboxToken, sent.GetId())
