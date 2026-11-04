@@ -220,7 +220,7 @@ func (s *Store) FailExpiredWake(
 				WHERE session_id=$1 AND sandbox_uid=$2 AND state=$6
 				RETURNING `+openingColumns, id, owner.SandboxUID, FailedState, reason, now, QueueState, blockerBytes, assessmentBytes))
 		} else {
-			dispatch, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state=$3,
+			dispatch, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state=CASE WHEN delivery_attempted THEN 'UNKNOWN' ELSE $3 END,
 				reason=$4,updated_at=$5,delivery_blocker=COALESCE($7,delivery_blocker),wake_assessment=$8
 				WHERE command_id=$1 AND sandbox_uid=$2 AND state=$6
 				RETURNING `+dispatchColumns, id, owner.SandboxUID, FailedState, reason, now, QueueState, blockerBytes, assessmentBytes))

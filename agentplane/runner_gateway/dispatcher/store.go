@@ -110,6 +110,7 @@ type CallerIdentity struct {
 }
 
 type Dispatch struct {
+	DeliveryAttempted       bool
 	Position                int64
 	CommandID, SessionID    string
 	SandboxName, SandboxUID string
@@ -334,7 +335,7 @@ const dispatchColumns = `position, command_id, session_id, sandbox_name, sandbox
 	actor_account_namespace, actor_account_name, actor_account_uid, actor_pod_name, actor_pod_uid,
 	effective_caller_account_namespace, effective_caller_account_name, effective_caller_account_uid,
 	action_request_id::text, action_execution_id::text, created_at, updated_at,
-	delivery_blocker, wake_assessment`
+	delivery_blocker, wake_assessment, delivery_attempted`
 
 const qualifiedDispatchColumns = `d.position, d.command_id, d.session_id, d.sandbox_name, d.sandbox_uid::text,
 	d.wake_eligible, d.wake_caller_namespace, d.wake_caller_name, d.wake_from_incarnation,
@@ -342,7 +343,7 @@ const qualifiedDispatchColumns = `d.position, d.command_id, d.session_id, d.sand
 	d.actor_account_namespace, d.actor_account_name, d.actor_account_uid, d.actor_pod_name, d.actor_pod_uid,
 	d.effective_caller_account_namespace, d.effective_caller_account_name, d.effective_caller_account_uid,
 	d.action_request_id::text, d.action_execution_id::text, d.created_at, d.updated_at,
-	d.delivery_blocker, d.wake_assessment`
+	d.delivery_blocker, d.wake_assessment, d.delivery_attempted`
 
 func scanDispatch(row interface{ Scan(...any) error }) (*Dispatch, error) {
 	return scanDispatchColumns(row)
@@ -380,7 +381,7 @@ func scanDispatchColumns(row interface{ Scan(...any) error }, additional ...any)
 		&commandBytes, &d.State, &reason, &admissionBytes, &d.Traceparent,
 		&actorNS, &actorName, &actorUID, &actorPodName, &actorPodUID,
 		&effectiveNS, &effectiveName, &effectiveUID, &actionRequestID, &actionExecutionID,
-		&d.CreatedAt, &d.UpdatedAt, &blockerBytes, &wakeBytes,
+		&d.CreatedAt, &d.UpdatedAt, &blockerBytes, &wakeBytes, &d.DeliveryAttempted,
 	}
 	columns = append(columns, additional...)
 	err := row.Scan(columns...)
@@ -637,10 +638,10 @@ func (s *Store) cancel(ctx context.Context, id string, caller *CallerIdentity) (
 		var err error
 		if caller == nil {
 			result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state=$1, reason='sender', updated_at=now()
-				WHERE command_id=$2 AND state=$3 RETURNING `+dispatchColumns, CancelledState, id, QueueState))
+				WHERE command_id=$2 AND state=$3 AND NOT delivery_attempted RETURNING `+dispatchColumns, CancelledState, id, QueueState))
 		} else {
 			result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch d SET state=$1, reason='sender', updated_at=now()
-				WHERE d.command_id=$2 AND d.state=$3 AND ($4 OR EXISTS (
+				WHERE d.command_id=$2 AND d.state=$3 AND NOT d.delivery_attempted AND ($4 OR EXISTS (
 					SELECT 1 FROM session_opening o WHERE o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
 					AND o.execution_account_namespace=$5 AND o.execution_account_name=$6 AND o.execution_account_uid=$7))
 				RETURNING `+qualifiedDispatchColumns,
@@ -1160,6 +1161,27 @@ func (s *Store) ClaimSandboxOwner(ctx context.Context, sandboxUID, leaseUID stri
 	return result, err
 }
 
+// MarkDeliveryAttempt commits possible forwarding before issuing the external RPC.
+// Requeue, restart and lease handoff must never turn it back into known-unsent work.
+func (s *Store) MarkDeliveryAttempt(ctx context.Context, id string, owner Owner) (bool, error) {
+	marked := false
+	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
+		current, err := ownerMatch(ctx, tx, owner)
+		if err != nil || !current {
+			return err
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE dispatch SET delivery_attempted=true
+			WHERE command_id=$1 AND sandbox_uid=$2 AND state=$3`, id, owner.SandboxUID, DeliveringState)
+		if err != nil {
+			return err
+		}
+		count, err := result.RowsAffected()
+		marked = count == 1
+		return err
+	})
+	return marked, err
+}
+
 func (s *Store) Settle(ctx context.Context, id string, owner Owner, from []string, to, reason string, admission *eventlogpb.EventEntry) (*Dispatch, error) {
 	var result *Dispatch
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
@@ -1176,7 +1198,7 @@ func (s *Store) Settle(ctx context.Context, id string, owner Owner, from []strin
 				return err
 			}
 		}
-		result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state=$3, reason=$4, admission=$5, updated_at=now()
+		result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state=CASE WHEN $3='FAILED' AND state='QUEUED_IN_DISPATCHER' AND delivery_attempted THEN 'UNKNOWN' ELSE $3 END, reason=$4, admission=$5, updated_at=now()
 			WHERE command_id=$1 AND sandbox_uid=$2 AND state = ANY($6) RETURNING `+dispatchColumns,
 			id, owner.SandboxUID, to, nullIfEmpty(reason), payload, pqStringArray(from)))
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1233,7 +1255,7 @@ func (s *Store) settleOpening(ctx context.Context, id string, owner Owner, from 
 			return err
 		}
 		if rejectQueued {
-			if _, err := tx.ExecContext(ctx, `UPDATE dispatch SET state=$3,reason='session_opening_rejected',updated_at=now()
+			if _, err := tx.ExecContext(ctx, `UPDATE dispatch SET state=CASE WHEN delivery_attempted THEN 'UNKNOWN' ELSE $3 END,reason='session_opening_rejected',updated_at=now()
 				WHERE session_id=$1 AND sandbox_uid=$2 AND state=$4`, id, owner.SandboxUID, FailedState, QueueState); err != nil {
 				return err
 			}

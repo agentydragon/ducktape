@@ -128,13 +128,21 @@ func (blockedSandbox) GetSandbox(_ context.Context, name string) (SandboxSnapsho
 }
 
 type rejectingRunner struct {
-	command *commandpb.Command
-	err     error
+	command  *commandpb.Command
+	err      error
+	admitted map[string]bool
 }
 
 func (r *rejectingRunner) Deliver(_ context.Context, _ SandboxSnapshot, _ string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
 	r.command = command
+	if r.admitted != nil {
+		r.admitted[command.CommandId] = true
+	}
 	return nil, r.err
+}
+
+func (r *rejectingRunner) OpenSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *identitypb.ServiceAccountIdentity) error {
+	return r.err
 }
 
 func testStore(t *testing.T, cap int) *Store {
@@ -686,6 +694,9 @@ func TestDeletedSandboxBroadcastsTerminalRowsBeforeDeletingThem(t *testing.T) {
 	}
 	if row, err := store.Settle(ctx, "deleted-delivering", *owner, []string{QueueState}, DeliveringState, "", nil); err != nil || row == nil {
 		t.Fatalf("settle: %+v %v", row, err)
+	}
+	if marked, err := store.MarkDeliveryAttempt(ctx, "deleted-delivering", *owner); err != nil || !marked {
+		t.Fatalf("mark in-flight delivery: %t %v", marked, err)
 	}
 	// Two Dispatcher replicas must both receive the committed terminal snapshots:
 	// the rows are deleted in the same transaction and cannot be read afterward.
@@ -2859,5 +2870,263 @@ func TestNewOpeningWakeGrantCannotBypassCancelledNotificationUncertainty(t *test
 	}
 	if len(wake.callers) != 3 || !sameServiceAccountIdentity(wake.callers[2], fixture.caller) {
 		t.Fatalf("later generation did not reassess opening caller: %+v", wake.callers)
+	}
+}
+
+// The external boundary observes the committed marker before returning a lost
+// admission reply. Requeue and recovery cannot turn that attempt into unsent work.
+type attemptProbeRunner struct {
+	*retryRunner
+	before func()
+}
+
+func (r *attemptProbeRunner) Deliver(ctx context.Context, sandbox SandboxSnapshot, sessionID string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
+	r.before()
+	return r.retryRunner.Deliver(ctx, sandbox, sessionID, command)
+}
+
+func TestDeletionAfterLostCommandReplyRemainsUnknown(t *testing.T) {
+	ctx := t.Context()
+	store := testStore(t, 3)
+	head, err := enqueueWithSession(t, store, ctx, "lost-reply-session", "sandbox-worker", sandboxUID, input("worker-input", "hello"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := store.ClaimSandboxOwner(ctx, sandboxUID, "lost-reply-lease", 1, "replica-a", 0)
+	if err != nil || owner == nil {
+		t.Fatalf("owner: %+v %v", owner, err)
+	}
+	worker := &DeliveryWorker{Store: store, Runner: &attemptProbeRunner{retryRunner: &retryRunner{}, before: func() {
+		row, err := store.GetDispatch(ctx, head.CommandID)
+		if err != nil || !row.DeliveryAttempted || row.State != DeliveringState {
+			t.Fatalf("RPC preceded durable marker: %+v, %v", row, err)
+		}
+	}}}
+	worker.init()
+	defer worker.queue.ShutDown()
+	if !worker.deliverCommand(ctx, head, SandboxSnapshot{Name: "sandbox-worker", UID: sandboxUID, Incarnation: "pod-1"}, *owner, nil) {
+		t.Fatal("worker did not attempt delivery")
+	}
+	queued, err := store.GetDispatch(ctx, head.CommandID)
+	if err != nil || queued.State != QueueState || !queued.DeliveryAttempted {
+		t.Fatalf("lost reply requeue: %+v, %v", queued, err)
+	}
+	if _, err := store.Cancel(ctx, head.CommandID); !errors.Is(err, ErrNotCancellable) {
+		t.Fatalf("uncertain attempt cancelled as unsent: %v", err)
+	}
+	if _, err := store.RecoverSandbox(ctx, *owner); err != nil {
+		t.Fatal(err)
+	}
+	events, err := store.EndSandbox(ctx, sandboxUID)
+	if err != nil || len(events) != 1 || events[0].Dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN {
+		t.Fatalf("deletion after lost reply: %+v, %v", events, err)
+	}
+}
+
+func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
+	for _, markFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("mark-first=%t", markFirst), func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			store, databaseURL := testStoreWithURL(t, 3)
+			head, err := enqueueWithSession(t, store, ctx, "fence-order-session", "sandbox-worker", sandboxUID, input("fence-order-input", "hello"), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			owner, err := store.ClaimSandboxOwner(ctx, sandboxUID, "fence-order-lease", 1, "replica-a", 0)
+			if err != nil || owner == nil {
+				t.Fatalf("owner: %+v %v", owner, err)
+			}
+			if _, err := store.Settle(ctx, head.CommandID, *owner, []string{QueueState}, DeliveringState, "", nil); err != nil {
+				t.Fatal(err)
+			}
+			connect := func() (*Store, int) {
+				db, err := sql.Open("postgres", databaseURL)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { db.Close() })
+				db.SetMaxOpenConns(1)
+				var pid int
+				if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
+					t.Fatal(err)
+				}
+				return NewStore(db, 3), pid
+			}
+			marker, markerPID := connect()
+			deleter, deleterPID := connect()
+			gate, err := store.DB.BeginTx(ctx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer gate.Rollback()
+			var gatePID int
+			if err := gate.QueryRowContext(ctx, "SELECT pg_backend_pid() FROM sandbox_ownership WHERE sandbox_uid=$1 FOR UPDATE", sandboxUID).Scan(&gatePID); err != nil {
+				t.Fatal(err)
+			}
+			waitBlocked := func(waiter, blocker int) {
+				t.Helper()
+				ticker := time.NewTicker(10 * time.Millisecond)
+				defer ticker.Stop()
+				for {
+					var blocked bool
+					if err := store.DB.QueryRowContext(ctx, "SELECT $2 = ANY(pg_blocking_pids($1))", waiter, blocker).Scan(&blocked); err != nil {
+						t.Fatal(err)
+					}
+					if blocked {
+						return
+					}
+					select {
+					case <-ctx.Done():
+						t.Fatal(ctx.Err())
+					case <-ticker.C:
+					}
+				}
+			}
+			marked := make(chan bool, 1)
+			deleted := make(chan []TerminalEvent, 1)
+			errors := make(chan error, 2)
+			mark := func() {
+				value, err := marker.MarkDeliveryAttempt(ctx, head.CommandID, *owner)
+				marked <- value
+				errors <- err
+			}
+			deleteEnvironment := func() { events, err := deleter.EndSandbox(ctx, sandboxUID); deleted <- events; errors <- err }
+			// Queue the real transactions in both lock orders before opening the gate.
+			if markFirst {
+				go mark()
+				waitBlocked(markerPID, gatePID)
+				go deleteEnvironment()
+				waitBlocked(deleterPID, markerPID)
+			} else {
+				go deleteEnvironment()
+				waitBlocked(deleterPID, gatePID)
+				go mark()
+				waitBlocked(markerPID, deleterPID)
+			}
+			if err := gate.Commit(); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if err := <-errors; err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := <-marked; got != markFirst {
+				t.Fatalf("marker permission=%t, want %t", got, markFirst)
+			}
+			events := <-deleted
+			want := dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED
+			if markFirst {
+				want = dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN
+			}
+			if len(events) != 1 || events[0].Dispatch.GetState() != want {
+				t.Fatalf("ordered deletion: %+v; want %s", events, want)
+			}
+			if marked, err := store.MarkDeliveryAttempt(ctx, head.CommandID, *owner); err != nil || marked {
+				t.Fatalf("deleted worker gained permission to forward: %t, %v", marked, err)
+			}
+		})
+	}
+}
+
+func TestUncertainAttemptCannotBecomeKnownFailedOnRetryRefusal(t *testing.T) {
+	ctx := t.Context()
+	store := testStore(t, 3)
+	head, err := enqueueWithSession(t, store, ctx, "retry-refusal-session", "sandbox-worker", sandboxUID, input("retry-refusal-input", "hello"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := store.ClaimSandboxOwner(ctx, sandboxUID, "retry-refusal-lease", 1, "replica-a", 0)
+	if err != nil || owner == nil {
+		t.Fatalf("owner: %+v %v", owner, err)
+	}
+	if _, err := store.Settle(ctx, head.CommandID, *owner, []string{QueueState}, DeliveringState, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if marked, err := store.MarkDeliveryAttempt(ctx, head.CommandID, *owner); err != nil || !marked {
+		t.Fatalf("marker: %t, %v", marked, err)
+	}
+	if _, err := store.Settle(ctx, head.CommandID, *owner, []string{DeliveringState}, QueueState, "lost_reply", nil); err != nil {
+		t.Fatal(err)
+	}
+	head, err = store.GetDispatch(ctx, head.CommandID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := &DeliveryWorker{Store: store, Runner: &rejectingRunner{err: status.Error(codes.FailedPrecondition, "receiver sealed")}}
+	worker.init()
+	defer worker.queue.ShutDown()
+	if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, *owner, nil) {
+		t.Fatal("retry did not run")
+	}
+	row, err := store.GetDispatch(ctx, head.CommandID)
+	if err != nil || row == nil || row.State != UnknownState {
+		t.Fatalf("retry refusal overwrote uncertain result: %+v, %v", row, err)
+	}
+}
+
+func TestFirstCommandAttemptDoesNotInferNonAdmissionFromRPCCode(t *testing.T) {
+	for _, test := range []struct {
+		code codes.Code
+		want string
+	}{
+		{codes.Canceled, UnknownState},
+		{codes.Unknown, UnknownState},
+		{codes.Internal, UnknownState},
+		{codes.ResourceExhausted, UnknownState},
+		{codes.FailedPrecondition, UnknownState},
+	} {
+		t.Run(test.code.String(), func(t *testing.T) {
+			ctx := t.Context()
+			store := testStore(t, 3)
+			head, err := enqueueWithSession(t, store, ctx, "first-attempt-session", "sandbox-worker", sandboxUID, input("first-attempt-input", "hello"), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			owner, err := store.ClaimSandboxOwner(ctx, sandboxUID, "first-attempt-lease", 1, "replica-a", 0)
+			if err != nil || owner == nil {
+				t.Fatalf("owner: %+v %v", owner, err)
+			}
+			// The fake external owner commits before returning an error code.
+			runner := &rejectingRunner{err: status.Error(test.code, "response unavailable"), admitted: map[string]bool{}}
+			worker := &DeliveryWorker{Store: store, Runner: runner}
+			worker.init()
+			defer worker.queue.ShutDown()
+			if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, *owner, nil) {
+				t.Fatal("worker did not attempt delivery")
+			}
+			if !runner.admitted[head.CommandID] {
+				t.Fatal("external admission was not exercised")
+			}
+			row, err := store.GetDispatch(ctx, head.CommandID)
+			if err != nil || row.State != test.want {
+				t.Fatalf("first attempt result: %+v, %v; want %s", row, err, test.want)
+			}
+		})
+	}
+}
+
+func TestDeletedAdmittedInputKeepsKnownAdmissionInUnknownEffectSnapshot(t *testing.T) {
+	ctx := t.Context()
+	store := testStore(t, 3)
+	head, err := enqueueWithSession(t, store, ctx, "admitted-effect-session", "sandbox-worker", sandboxUID, input("admitted-effect-input", "hello"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := store.ClaimSandboxOwner(ctx, sandboxUID, "admitted-effect-lease", 1, "replica-a", 0)
+	if err != nil || owner == nil {
+		t.Fatalf("owner: %+v %v", owner, err)
+	}
+	admission := &eventlogpb.EventEntry{Cursor: 17}
+	if _, err := store.Settle(ctx, head.CommandID, *owner, []string{QueueState}, AdmittedState, "", admission); err != nil {
+		t.Fatal(err)
+	}
+	events, err := store.EndSandbox(ctx, sandboxUID)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("terminal snapshot: %+v %v", events, err)
+	}
+	if events[0].Dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN || !proto.Equal(events[0].Dispatch.GetAdmission(), admission) {
+		t.Fatalf("unknown effects erased known admission: %+v", events[0])
 	}
 }

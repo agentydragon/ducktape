@@ -160,8 +160,8 @@ a new Session UUID. Runtime admission reserves a Session, not a running native h
 
 A native `OpenSession` response of `INVALID_ARGUMENT` proves validation rejected the request before
 reservation; `ALREADY_EXISTS` reports a conflicting retained request. Dispatcher records these as
-`FAILED` and, in the same transaction, fails commands still `QUEUED_IN_DISPATCHER` with
-`session_opening_rejected`. It does not alter delivering or admitted commands. Admission and
+`FAILED` and, in the same transaction, fails commands still `QUEUED_IN_DISPATCHER` and never forwarded with
+`session_opening_rejected`; a previously attempted command becomes `UNKNOWN`. It does not alter delivering or admitted commands. Admission and
 settlement serialize on the Session ID, and settlement checks the current owner generation.
 A command admitted first is included; a later new queued command is refused with
 `FAILED_PRECONDITION` without a stored receipt. Exact existing-command retries still return the
@@ -179,3 +179,35 @@ cancellable. Automatic resolution of those held openings is not provided.
 These rules apply to native openings after all Dispatcher replicas run this protocol. Central
 sampler admission retains its existing behavior; new commands require a Dispatcher Session record.
 Deletion cleanup, retained History and UUID reuse policy are unchanged.
+
+## Possible command forwarding and deletion outcomes
+
+Before a queued command RPC leaves Dispatcher, its current fenced worker commits a sticky
+`delivery_attempted` fact under the same ownership lock used by environment cleanup. A removed row
+or stale owner cannot acquire that permission. Storage uncertainty is retried before forwarding;
+cancellation or ownership loss prevents forwarding. A worker crash, requeue or owner recovery
+retains the fact. Only an original command ID and payload may be reconciled; this is never permission
+to replay unknown native effects or target a replacement environment.
+
+Cancellation is available only before possible forwarding. A later identity/policy/wake failure or
+bare RPC error cannot prove that a prior attempt had no effects. Unavailable/deadline replies keep
+the existing same-ID journal reconciliation; other unproven terminal RPC errors become `UNKNOWN`.
+An actual returned Runtime admission remains admission evidence. An admitted input can have an
+unknown later execution/effect outcome on deletion; its terminal snapshot retains the admission
+entry and cursor. `UNKNOWN` does not negate that proven journal acceptance. An unmarked command, including a claimed row still before the forwarding marker, can fail
+as known-unsent; a requeued possibly-forwarded command becomes `UNKNOWN` on environment deletion.
+
+Deletion snapshots are transactional PostgreSQL notifications to connected `WatchDispatches`
+listeners. Cleanup then removes the command and opening receipts. These notifications provide no
+durable outcome read for a later subscriber. An already-terminal row is not included in cleanup
+snapshots: a connected watcher delayed behind its earlier invalidation can miss that outcome when
+cleanup removes the row. Broadcasting all retained receipts is not a bounded solution: terminal
+subscription buffers can overflow, and reconnect has no retained receipt to recover. Runtime journals and History remain separate evidence
+owners; cleanup neither deletes retained History nor converts missing evidence into failure.
+
+Treating an unmarked claim as known-unsent requires a cutover with no old command writers still
+running; overlapping old writers do not provide this evidence. A lost marker-commit reply is retried
+under ownership before any RPC. If ownership or the request is lost, no RPC is issued; a committed
+marker without a send remains conservatively uncertain.
+The migration adds the column without altering authored data or History. A rollback to old writers
+loses the forwarding-evidence guarantee even if the column remains present.

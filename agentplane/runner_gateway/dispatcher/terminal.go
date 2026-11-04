@@ -85,8 +85,8 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEv
 		}
 		positions := make([]int64, 0)
 		for _, change := range []struct{ State, Predicate string }{
-			{FailedState, "state='QUEUED_IN_DISPATCHER'"},
-			{UnknownState, "state='DELIVERING_TO_RUNNER' OR (state='RUNNER_ADMITTED' AND operation='submit_input')"},
+			{FailedState, "state IN ('QUEUED_IN_DISPATCHER','DELIVERING_TO_RUNNER') AND NOT delivery_attempted"},
+			{UnknownState, "(state IN ('QUEUED_IN_DISPATCHER','DELIVERING_TO_RUNNER') AND delivery_attempted) OR (state='RUNNER_ADMITTED' AND operation='submit_input')"},
 		} {
 			rows, err := tx.QueryContext(ctx, `UPDATE dispatch SET state=$2,reason='sandbox_deleted',updated_at=now()
 				WHERE sandbox_uid=$1 AND (`+change.Predicate+`) RETURNING position`, sandboxUID, change.State)

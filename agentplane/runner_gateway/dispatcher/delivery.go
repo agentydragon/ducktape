@@ -596,12 +596,25 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 		if !found || account == nil || accountOfIdentity(account) != accountOfIdentity(opening.ExecutionPrincipal) ||
 			account.GetUid() != opening.ExecutionPrincipal.GetUid() {
 			w.retryStorage(ctx, func() error {
-				_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{DeliveringState}, FailedState, "execution_identity_changed", nil)
+				state := FailedState
+				if head.DeliveryAttempted {
+					state = UnknownState
+				}
+				_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{DeliveringState}, state, "execution_identity_changed", nil)
 				return err
 			})
 			w.clearRetry(head.SessionID)
 			return true
 		}
+	}
+	var marked bool
+	w.retryStorage(ctx, func() error {
+		var err error
+		marked, err = w.Store.MarkDeliveryAttempt(ctx, head.CommandID, owner)
+		return err
+	})
+	if !marked || ctx.Err() != nil {
+		return false
 	}
 	admission, callErr := w.Runner.Deliver(ctx, sandbox, head.SessionID, head.Command)
 	if callErr != nil {
@@ -610,6 +623,10 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 	state, reason := AdmittedState, ""
 	if callErr != nil {
 		state, reason = w.deliveryFailure(head.SessionID, head.CommandID, head.SandboxUID, sandbox.Incarnation, callErr)
+		// A bare RPC error proves neither non-admission nor the outcome of an earlier attempt.
+		if state == FailedState {
+			state = UnknownState
+		}
 	}
 	w.retryStorage(ctx, func() error {
 		_, err := w.Store.Settle(ctx, head.CommandID, owner, []string{DeliveringState}, state, reason, admission)

@@ -398,14 +398,14 @@ passes runner codes through. The first row is already true on `devel`, where the
 | ---------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | Runner in lameduck refuses work                                  | `ABORTED`             | back to `QUEUED_IN_DISPATCHER`, retry after resume                                                                                        |
 | Conditional `Quiesce` refused (`if_idle_since` differs, or busy) | `ABORTED`             | none: the controller resets its idle timer                                                                                                |
-| Journal sealed, setup failed, harness stopped, `BootstrapFailed` | `FAILED_PRECONDITION` | terminal: `FAILED` with the reason                                                                                                        |
+| Journal sealed, setup failed, harness stopped, `BootstrapFailed` | `FAILED_PRECONDITION` | terminal: `UNKNOWN` unless non-admission is independently established                                                                     |
 | Redelivered `command_id` already admitted                        | success               | `RUNNER_ADMITTED`, or later, from the runner's answer                                                                                     |
 | Runner `OpenSession` returns `ALREADY_EXISTS`                    | `ALREADY_EXISTS`      | terminal: `FAILED`; the runner returns the existing attachment for exact retries, so this status means a requested spec or setup conflict |
 
 **Ambiguous delivery resolves on redelivery.** The runner's journal lives on the state volume and answers a
 redelivered `command_id` with its existing admission, even after the harness stopped or the journal was sealed. A
 call whose reply was lost across an incarnation boundary is therefore resolved by redelivering to the next
-incarnation. `UNKNOWN` remains only for a Sandbox that was deleted. For `OpenSession` this holds
+incarnation. A terminal reply without proven non-admission, or deletion without established effects, remains `UNKNOWN`. For `OpenSession` this holds
 within one runner build only (D4).
 
 ### D4. The queue service: required or optional, one door or two, separate or merged
