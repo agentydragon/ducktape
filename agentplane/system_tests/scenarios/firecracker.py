@@ -93,7 +93,7 @@ async def preserves_live_guest(
     harness = session_pb2.HARNESS_CODEX
     offered = await models_offered_for(client, [harness])
     model = scripted.model(pod.name, harness)
-    agent = await Agent.open(
+    agent = await Agent.create(
         client,
         dispatcher,
         sandbox=view.target.name,
