@@ -36,7 +36,7 @@ func TestAPIRequestUsesUnixSocketAndIgnoresSuccessfulResponseBody(t *testing.T) 
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { _ = server.Close() })
 
-	api := NewAPI(socket)
+	api := NewAPI(socket, apiTimeout)
 	if err := api.Request(context.Background(), http.MethodPut, "/machine-config", map[string]any{"vcpu_count": 2}); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestAPIRequestRejectsHTTPFailureAndOversizedResponse(t *testing.T) {
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() { _ = server.Close() })
 
-	api := NewAPI(socket)
+	api := NewAPI(socket, apiTimeout)
 	if err := api.Request(context.Background(), http.MethodPut, "/failure", nil); err == nil || !strings.Contains(err.Error(), "HTTP 400") {
 		t.Errorf("HTTP failure error = %v, want status error", err)
 	}

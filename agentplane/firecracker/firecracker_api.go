@@ -18,6 +18,7 @@ import (
 
 const (
 	apiTimeout          = 20 * time.Second
+	snapshotAPITimeout  = 2 * time.Minute
 	maxAPIResponseBytes = 1 << 20
 	vmmStopGrace        = 5 * time.Second
 )
@@ -26,14 +27,14 @@ type API struct {
 	client *http.Client
 }
 
-func NewAPI(socket string) *API {
+func NewAPI(socket string, timeout time.Duration) *API {
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socket)
 		},
 		DisableKeepAlives: true,
 	}
-	return &API{client: &http.Client{Transport: transport, Timeout: apiTimeout}}
+	return &API{client: &http.Client{Transport: transport, Timeout: timeout}}
 }
 
 func (a *API) Request(ctx context.Context, method, route string, payload any) error {

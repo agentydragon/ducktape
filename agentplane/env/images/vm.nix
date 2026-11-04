@@ -406,6 +406,8 @@ in
   # Ownership, the setgid mode and inherited harness access are persistent tmpfiles policy rather
   # than imperative chown/chmod/setfacl commands. The service below reapplies it after the mount.
   systemd.tmpfiles.rules = [
+    # Runtime journals stay root-owned; the shared Codex process runs as agent.
+    "d ${stateDir}/codex 0700 ${agentUser} ${agentUser} -"
     "d ${workspaceDir} 2770 ${agentUser} ${agentUser} -"
     "z ${workspaceDir} 2770 ${agentUser} ${agentUser} -"
     "a+ ${workspaceDir} - - - - d:user:${toString agentId}:rwx,d:group:${toString agentId}:rwx"

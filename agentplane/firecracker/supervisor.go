@@ -352,7 +352,9 @@ func (s *Supervisor) runContinuation(ctx context.Context, manifest *Manifest) (e
 	}); err != nil {
 		return err
 	}
-	api := NewAPI(s.apiPath)
+	api := NewAPI(s.apiPath, apiTimeout)
+	// Snapshot operations include RAM file I/O and fsync, unlike control requests.
+	snapshotAPI := NewAPI(s.apiPath, snapshotAPITimeout)
 	if manifest == nil {
 		if err := s.configure(ctx, api); err != nil {
 			return err
@@ -362,7 +364,7 @@ func (s *Supervisor) runContinuation(ctx context.Context, manifest *Manifest) (e
 			return err
 		}
 		generation := filepath.Join(s.storage.Work, manifest.Generation)
-		if err := api.Request(ctx, "PUT", "/snapshot/load", struct {
+		if err := snapshotAPI.Request(ctx, "PUT", "/snapshot/load", struct {
 			State  string `json:"snapshot_path"`
 			Memory string `json:"mem_file_path"`
 			Resume bool   `json:"resume_vm"`
@@ -411,7 +413,7 @@ func (s *Supervisor) runContinuation(ctx context.Context, manifest *Manifest) (e
 		return err
 	}
 	memory, vmstate := filepath.Join(capture, "memory"), filepath.Join(capture, "vmstate")
-	if err := api.Request(ctx, "PUT", "/snapshot/create", struct {
+	if err := snapshotAPI.Request(ctx, "PUT", "/snapshot/create", struct {
 		Type   string `json:"snapshot_type"`
 		State  string `json:"snapshot_path"`
 		Memory string `json:"mem_file_path"`

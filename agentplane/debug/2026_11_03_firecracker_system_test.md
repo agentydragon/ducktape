@@ -80,7 +80,7 @@ credentials stay in a temporary Docker config on the Bazel client, outside test 
   producing an 8,280,714-byte hash file. Both private-image input targets are tagged `manual`.
 - [Post-rebase fixture checks](https://app.buildbuddy.io/invocation/86ae21db-00f3-499c-bc70-c2e4d9330670):
   render, determinism, retained logs and all six changed library aspects passed.
-- Full Firecracker acceptance: setup attempts below; no deployed-system pass claimed yet.
+- Full Firecracker acceptance: attempts below; no deployed-system pass claimed yet.
 
 ## Acceptance attempts
 
@@ -230,3 +230,21 @@ also pass, including the new durable state-binding cases.
 The branch was rebased again onto `c85180ea40`. New scenario and launcher-test imports follow
 devel's moved undeclared-output and OCI helpers; the retained OpenTelemetry fixture helper remains
 in its existing owning package.
+
+The [twelfth run](https://app.buildbuddy.io/invocation/fdeba6d7-517a-41ff-a354-d115af68f1b1),
+at source `9e63208d37`, completed guest startup and credential synchronization at 07:34:10 UTC.
+The Runtime connected and the app opened a Codex Session. Its first command failed before
+dispatch: systemd reported `200/CHDIR` for the harness unit. The shared app-server directory
+`/state/codex` is created by the root Runtime with mode `0700`, but its systemd process runs as
+`agent`. The guest tmpfiles policy now prepares that directory as agent-owned, keeping Runtime
+journals root-owned. Failed native start errors also include systemd status/code diagnostics.
+
+Cleanup then requested suspension at 07:34:33 UTC. Firecracker wrote the full 1,610,612,736-byte
+RAM file and a 27,441-byte VM state file by 07:34:34, but had not acknowledged snapshot creation
+when the generic 20-second HTTP client deadline expired at 07:34:54. The launcher fenced the
+network and reaped the VMM; no checkpoint was committed and no resume was attempted. Snapshot
+create/load now have their own two-minute I/O deadline, while control requests retain 20 seconds
+and uncertain requests are never retried. The app readiness, suspend and test budgets are unchanged.
+The [focused supervisor checks](https://app.buildbuddy.io/invocation/518686a2-f379-441d-92db-7011adacccdd)
+passed with the deadline separation and native failure diagnostics. Ordinary PR CI was green at
+`9e63208d37`; that does not cover this manual hardware acceptance target.
