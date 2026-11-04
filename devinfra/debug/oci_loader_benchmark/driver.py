@@ -21,14 +21,13 @@ def main() -> None:
     if mode == "noop":
         return
     tag, *script = args
-    image = OciImage(postgres_18.IMAGE.rloc_file, tag)
+    image = OciImage(tag=tag, layout_rlocation=postgres_18.IMAGE.layout_rlocation)
     if mode == "python":
         load_oci_image(image)
         return
     if mode != "guarded_rules" or len(script) != 1:
         raise ValueError((mode, script))
-    layout_rloc = runfiles.get_required_path(image.rloc_file).read_text().strip()
-    wanted = read_oci_layout_digest(runfiles.get_required_path(layout_rloc))
+    wanted = read_oci_layout_digest(runfiles.get_required_path(image.layout_rlocation))
     if _already_loaded(tag, wanted):
         return
     with _one_loader_at_a_time(tag):
