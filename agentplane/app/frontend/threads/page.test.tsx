@@ -1,3 +1,4 @@
+import type * as ThreadClientModule from "./client";
 // @vitest-environment happy-dom
 import {
   ThreadPayloadField,
@@ -37,7 +38,6 @@ import type * as SandboxClientModule from "../sandboxes/client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { api } from "../client";
 import {
-  type ThreadView,
   type CommandSubmission,
   type CommandTarget,
   dispatchFromJson,
@@ -68,8 +68,10 @@ import { reconnected, serveEventStreams, ServedWatch, stubWatchFetch } from "../
 
 const COMMAND_TARGET = { sandbox: THREAD.sandbox, sandboxUid: "20000000-0000-4000-8000-000000000001" };
 
+type ThreadView = ThreadClientModule.ThreadView;
+
 vi.mock("./client", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./client")>()),
+  ...(await importOriginal<typeof ThreadClientModule>()),
   submitInput: vi.fn(),
   changeModel: vi.fn(),
   changeReasoningEffort: vi.fn(),
