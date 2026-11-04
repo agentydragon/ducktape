@@ -12,7 +12,9 @@ payloads when notified. Reads are non-destructive; acknowledgement explicitly ad
 contiguous prefix. Unacknowledged entries do not cause repeated reminders.
 Creating a subscription resolves the existing Dispatcher opening and retains current Sandbox ownership,
 exact UID and live Runtime membership checks. Sessions opened only through Runtime have no Dispatcher
-opening and cannot create subscriptions. Persisted subscriptions, inbox cursors and notices remain intact.
+opening and cannot create subscriptions or receive new messages. Message sends also resolve the opening,
+then evaluate the sender's current scoped grant against its exact Sandbox. Persisted subscriptions,
+inbox cursors and notices remain intact.
 For UID-pinned destinations, workers retire an inbox only after two Sandbox lookups
 confirm that its managed Sandbox is missing or has a different UID, separated by the
 configured `stale_inbox_confirmation_s` grace period. Matching UIDs (including
@@ -49,7 +51,9 @@ subscription through a newly opened harness after rollout. Existing sessions ret
 
 Subscription creation uses a Session-only request and requires a Dispatcher opening. Deploy the
 Notification API and CLI images together; creations can fail while old and new versions overlap.
-Once all serving replicas and client binaries agree, retry with the original idempotency key.
+Message sends also use a Session-only request; old CLI binaries cannot send to the new API during
+the rolling overlap. Once serving replicas and client binaries agree, retry uncertain creations and
+sends with their original idempotency keys.
 The existing `AGENTPLANE_DESTINATION` metadata envelope still contains the Sandbox reference and
 Session ID; the CLI extracts only the Session ID for subscription creation. This preserves the
 default CLI invocation in retained central Session prompts without rewriting those prompts or History.

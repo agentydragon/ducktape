@@ -9,6 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -19,26 +20,36 @@ func (s *Notifications) SendMessage(ctx context.Context, request *notificationsp
 	return serve(ctx, s, request, s.sendMessage)
 }
 
-// sendMessage accepts the message once the sender's current grants allow it to the Sandbox the destination names
-// now. Revoking a grant later never withdraws it.
+// sendMessage resolves the Session's live placement before checking the sender's grant against its exact Sandbox.
+// Revoking a grant later never withdraws an accepted message.
 func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAccount, request *notificationspb.SendMessageRequest) (*notificationspb.SendMessageResponse, error) {
-	if request.GetDestinationRef() == nil {
-		return nil, invalidRequest("destination_ref is required")
+	if err := model.CheckText("session_id", request.GetSessionId(), 1, 200); err != nil {
+		return nil, err
+	}
+	if !s.policy.Health.Available() {
+		return nil, errSendPolicyUnavailable
+	}
+	opening, err := s.openings.GetSessionOpening(ctx, &dispatcherpb.GetSessionOpeningRequest{SessionId: request.GetSessionId()})
+	if status.Code(err) == codes.NotFound {
+		return nil, errNoSession
+	}
+	if err != nil {
+		return nil, unavailable("session opening", err)
+	}
+	placement := opening.GetOpening()
+	if placement.GetSessionId() != request.GetSessionId() || placement.GetSandbox() == "" || placement.GetSandboxUid() == "" {
+		return nil, unavailable("session opening", errors.New("incomplete Session placement"))
 	}
 	message := store.Message{
 		Sender: sender,
 		DestinationRef: model.DestinationRef{
-			Namespace: request.GetDestinationRef().GetNamespace(), Name: request.GetDestinationRef().GetName(),
-			UID: request.GetDestinationRef().GetUid(),
+			Namespace: s.namespace, Name: placement.GetSandbox(), UID: placement.GetSandboxUid(),
 		},
 		SessionID: request.GetSessionId(), IdempotencyKey: request.GetIdempotencyKey(), Body: request.GetBody(),
 		FromSession: request.FromSession,
 	}
 	if err := message.Validate(s.messageBodyLimit); err != nil {
 		return nil, err
-	}
-	if !s.policy.Health.Available() {
-		return nil, errSendPolicyUnavailable
 	}
 	view, err := s.sandbox(ctx, message.DestinationRef)
 	if err != nil {

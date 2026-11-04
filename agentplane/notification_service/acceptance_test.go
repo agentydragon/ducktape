@@ -446,8 +446,7 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 	})
 	message := func(key string) map[string]any {
 		return map[string]any{
-			"destinationRef": map[string]any{"namespace": testNamespace, "name": sandboxName},
-			"sessionId":      testSession, "idempotencyKey": key, "body": "Please review the change.",
+			"sessionId": testSession, "idempotencyKey": key, "body": "Please review the change.",
 			"fromSession": "test-from-session",
 		}
 	}

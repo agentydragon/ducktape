@@ -2212,11 +2212,12 @@ retain History and actual harness stores. This does not decide central attachmen
 
 ### `SESSION_NOTIFICATION_ADDRESS` — address inboxes and notices by Session ID
 
-**Remaining message and delivery cutover is blocked on `SESSION_DIRECTORY_NATIVE`, `DELIVERY_DESTINATION_CONTRACT`, and reviewed send authority.**
+**Remaining delivery and inbox-operation cutover is blocked on `SESSION_DIRECTORY_NATIVE`, `DELIVERY_DESTINATION_CONTRACT`, and reviewed send authority.**
 [Session inbox diagnostics](../notification_service/docs/api.md#session-inbox-diagnostics) already
 read and watch by Session ID; inbox storage enforces one inbox per Session while retaining existing
-destination keys and state. Migrate remaining message sends, inbox operations, delivery worker, CLI,
-Action-facing guidance and
+destination keys and state. Public message sends and their CLI use Session ID and resolve exact
+placement through Dispatcher; stored destination fences and output provenance remain. Migrate the
+remaining inbox-ID operations, delivery worker, Action-facing guidance and
 `AGENTPLANE_DESTINATION` to Session UUID addressing. Resolve an environment only when an actual
 placement, authorization or wake decision needs it. Preserve subscription and message idempotency,
 inbox cursors, actor attribution, cross-Session denial, authorized unattended wake, and exact UID

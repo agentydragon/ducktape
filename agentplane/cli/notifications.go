@@ -514,14 +514,14 @@ the inbox.`,
 }
 
 func (a *app) sendCommand() *cobra.Command {
-	var body, bodyFile, uid, fromSession, key string
+	var body, bodyFile, fromSession, key string
 	command := &cobra.Command{
-		Use:   "send NAMESPACE/SANDBOX SESSION_ID {--body TEXT | --body-file FILE} [--uid UID] [--from-session ID] [--key KEY]",
+		Use:   "send SESSION_ID {--body TEXT | --body-file FILE} [--from-session ID] [--key KEY]",
 		Short: "Message another Session",
-		Long: `POST /v1/messages: puts the text in the inbox of that Session of that Sandbox, which notices it like any
+		Long: `POST /v1/messages: puts the text in the inbox of that Session, which notices it like any
 entry. A session_inbox_access rule bound to your ServiceAccount must allow send_message to the Sandbox,
-else exit 1 (PERMISSION_DENIED). --uid sends only to that incarnation; without it the message goes to
-the Sandbox of that name now, and the answer carries its UID. The text is sent as given, from --body or
+else exit 1 (PERMISSION_DENIED). The service resolves the Session's current Sandbox and exact UID.
+The text is sent as given, from --body or
 --body-file (- reads stdin). --from-session is the label of the Session you write from, so the recipient
 can answer you; it defaults to the session_id of AGENTPLANE_DESTINATION, and nothing verifies it.
 
@@ -530,15 +530,10 @@ failed or uncertain send with --key KEY and the same message: the service answer
 already accepted. The key with another message exits 4. Exit 5 when there is no such Sandbox or
 incarnation, or no record of the Session in it. Exit 3 is UNAVAILABLE (retry with the key) or
 RESOURCE_EXHAUSTED (too many of your messages there await acknowledgement: wait, do not send more).`,
-		Args: cobra.ExactArgs(2),
+		Args: cobra.ExactArgs(1),
 		RunE: a.command("NOTIFICATIONS", func(ctx context.Context, svc *service, args []string) error {
-			namespace, name, ok := strings.Cut(args[0], "/")
-			if !ok || namespace == "" || name == "" || strings.Contains(name, "/") {
-				return usageFailure("want NAMESPACE/SANDBOX, got %q", args[0])
-			}
 			message := &notificationspb.SendMessageRequest{
-				DestinationRef: &notificationspb.DestinationRef{Namespace: namespace, Name: name, Uid: uid},
-				SessionId:      args[1], IdempotencyKey: key, Body: body,
+				SessionId: args[0], IdempotencyKey: key, Body: body,
 			}
 			if bodyFile != "" {
 				text, err := a.readBody(bodyFile)
@@ -572,7 +567,6 @@ RESOURCE_EXHAUSTED (too many of your messages there await acknowledgement: wait,
 	command.Flags().StringVar(&bodyFile, "body-file", "", "read the message text from FILE; - reads stdin")
 	command.MarkFlagsOneRequired("body", "body-file")
 	command.MarkFlagsMutuallyExclusive("body", "body-file")
-	command.Flags().StringVar(&uid, "uid", "", "send only to this incarnation of the Sandbox")
 	command.Flags().StringVar(&fromSession, "from-session", "", "your Session's label; defaults to AGENTPLANE_DESTINATION's session_id")
 	command.Flags().StringVar(&key, "key", "", "idempotency key; generated and printed on stderr if absent")
 	return command

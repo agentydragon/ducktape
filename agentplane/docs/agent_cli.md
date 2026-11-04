@@ -65,7 +65,7 @@ group, so another service joins as one more group under them.
 | `notifications subscription ID`                                                                                                                    | `GET /v1/subscriptions/{id}`                                            |
 | `notifications renew ID [--lifetime-days N]`                                                                                                       | `GET`, then `PATCH` with the read `version`                             |
 | `notifications cancel ID`                                                                                                                          | `DELETE /v1/subscriptions/{id}`                                         |
-| `notifications send NAMESPACE/SANDBOX SESSION_ID {--body TEXT \| --body-file FILE\|-} [--uid UID] [--from-session ID] [--key KEY]`                 | `POST /v1/messages`                                                     |
+| `notifications send SESSION_ID {--body TEXT \| --body-file FILE\|-} [--from-session ID] [--key KEY]`                                               | `POST /v1/messages`                                                     |
 | `notifications message ID`                                                                                                                         | `GET /v1/messages/{id}`                                                 |
 | `egress rules`                                                                                                                                     | `GET /v1/rules`                                                         |
 
