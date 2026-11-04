@@ -1542,6 +1542,7 @@ def generate_manifests(root: Path) -> None:
         ),
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
+        flux_image_automation_ghcr_kustomization,
     )
     flux_image_automation_forgejo_artifact = artifact(
         "flux-image-automation-forgejo", forgejo_image_automation.OUTPUT_DIR

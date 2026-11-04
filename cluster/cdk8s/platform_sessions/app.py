@@ -254,13 +254,16 @@ def platform_sessions(
     directory: RenderedDirectory,
     external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
+    flux_image_automation: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
         NAME,
         directory,
         description="Authenticated upstream sessions and scoped proxies.",
-        suspend=True,
+        suspend=False,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, monitoring_crds),
+        depends_on=flux_kustomization_depends_on_many(
+            external_secrets_operator, monitoring_crds, flux_image_automation
+        ),
     )
