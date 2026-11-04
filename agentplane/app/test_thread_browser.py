@@ -45,6 +45,7 @@ from agentplane.app.testing.thread_browser import (
     scripted_runner,
 )
 from agentplane.app.testing.thread_test_support import ThreadHTTP
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.channels import Channel
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import (
@@ -497,11 +498,14 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
     await draft.fill("Draft survives projection replacement")
     previous = await page.request.post(
         f"{thread_browser.ingress.url}/upstream/history/v1/sessions/{thread}/entities",
-        data='{"projection_epoch":"","range":{"start_entity_index":"0","limit":1}}',
-        headers={"content-type": "application/json"},
+        data=json_format.MessageToDict(
+            history_service_pb2.ReadThreadEntitiesRequest(range=history_service_pb2.EntityRange(limit=1))
+        ),
+        headers={"Origin": thread_browser.ingress.url},
     )
     assert previous.ok
-    old_scope = await previous.json()
+    old_scope = json_format.ParseDict(await previous.json(), history_service_pb2.ReadThreadEntitiesResponse())
+    assert old_scope.projection_epoch
     ready = asyncio.Event()
     release = asyncio.Event()
     finished = asyncio.Event()
@@ -568,7 +572,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
 
         stale = await page.request.get(
             f"{thread_browser.ingress.url}/threads/{thread}/sync/entities",
-            params={"projection_epoch": old_scope["projection_epoch"], "offset": "now"},
+            params={"projection_epoch": old_scope.projection_epoch, "offset": "now"},
         )
         assert stale.status == 410
         await page.screenshot(path=undeclared_outputs_dir() / "projected-epoch-replacement.png")

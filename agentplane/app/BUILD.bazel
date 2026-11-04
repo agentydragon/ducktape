@@ -383,6 +383,7 @@ py_test(
         "//agentplane/app/testing:thread_view_marks",
         "//agentplane/history_service:channels",
         "//agentplane/history_service:client",
+        "//agentplane/history_service:history_service_pb2",
         "//agentplane/history_service/fold:models",
         "//agentplane/history_service/fold:views",
         "//agentplane/history_service/testing:electric_service",
