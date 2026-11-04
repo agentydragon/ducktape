@@ -78,7 +78,9 @@ gate before writing; regrouping does not bypass source-unit identity checks.
 `modules refine --dry-run --analysis` may additionally report statement-order
 commutation for its exact complete post-edit module map, after drained modules
 are removed. This opt-in assessment requires a verified staged artifact and
-the full-tree transform context for one graph chunk. It is report-only: the
+the full-tree transform context for one graph chunk; its source and output
+roots must be supplied explicitly rather than inherited from environment
+defaults. It is report-only: the
 existing complete identity, realizability, and atomic-group gates remain
 authoritative, and the assessment does not establish replacement, privacy, or
 singleton guarantees.

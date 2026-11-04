@@ -451,11 +451,25 @@ enum DebundleCommand {
     Snapshot(snapshot::SnapshotArgs),
 }
 
+fn cli_command() -> clap::Command {
+    DebundleArgs::command().mut_subcommand("modules", |modules| {
+        modules.mut_subcommand("refine", |refine| {
+            // Refine's opt-in candidate assessment requires caller-supplied
+            // inputs. Keep the shared Clap env defaults on every existing
+            // transform command, but do not let them masquerade as explicit
+            // assessment arguments here.
+            refine
+                .mut_arg("tree_source_root", |arg| arg.env(None::<&'static str>))
+                .mut_arg("out_root", |arg| arg.env(None::<&'static str>))
+        })
+    })
+}
+
 /// Parse the current process arguments with Clap metadata available for
 /// resolving environment values and defaults, then dispatch the command.
 pub fn run_debundle_cli_from_process() -> ExitCode {
     let raw_argv = std::env::args_os().collect::<Vec<_>>();
-    let command = DebundleArgs::command();
+    let command = cli_command();
     let matches = command.clone().get_matches_from(raw_argv.clone());
     let args = DebundleArgs::from_arg_matches(&matches)
         .expect("Clap validated DebundleArgs before constructing ArgMatches");

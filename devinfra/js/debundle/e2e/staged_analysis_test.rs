@@ -1673,6 +1673,56 @@ fn modules_refine_assessment_refuses_stale_or_partial_context_before_writes() {
         "ordinary modules refine with transform environment defaults",
     );
     assert_eq!(module_snapshot(&staged.modules), before);
+
+    let explicit_auxiliary_matching_environment = {
+        let source_root = staged.root().to_path_buf();
+        let out_root = staged.root().join("ambient-output");
+        let output = Command::new(debundler_path())
+            .args([
+                "modules",
+                "refine",
+                "--batch",
+                path(&batch),
+                "--modules",
+                path(&staged.modules),
+                "--graph",
+                path(&staged.graph),
+                "--source-root",
+                path(&source_root.join("snapshot")),
+                "--tree-config",
+                path(&staged.config),
+                "--tree-source-root",
+                path(&source_root),
+                "--out-root",
+                path(&out_root),
+                "--dry-run",
+                "--format",
+                "json",
+            ])
+            .env("DEBUNDLE_TREE_SOURCE_ROOT", &source_root)
+            .env("DEBUNDLE_OUT", &out_root)
+            .output()
+            .expect("spawn debundler with explicit transform inputs matching environment defaults");
+        CommandResult {
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            status: output.status,
+        }
+    };
+    assert_eq!(
+        explicit_auxiliary_matching_environment.status.code(),
+        Some(1),
+        "explicit transform inputs must still require --analysis when equal to environment defaults\n{}",
+        explicit_auxiliary_matching_environment.stderr
+    );
+    assert!(
+        explicit_auxiliary_matching_environment
+            .stderr
+            .contains("require --analysis"),
+        "expected explicit-context refusal:\n{}",
+        explicit_auxiliary_matching_environment.stderr
+    );
+    assert_eq!(module_snapshot(&staged.modules), before);
 }
 
 #[test]

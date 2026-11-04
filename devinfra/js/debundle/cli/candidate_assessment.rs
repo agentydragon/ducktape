@@ -31,7 +31,9 @@ pub struct CandidateEffectAssessmentArgs {
 
 /// Candidate assessment options for a command that already owns its tree
 /// config and module root arguments. The auxiliary transform inputs are the
-/// same shared group used by [`TransformContextArgs`].
+/// same shared group used by [`TransformContextArgs`]. `modules refine`
+/// disables the source/output environment defaults for these options so a
+/// supplied value always came from the CLI.
 #[derive(Debug, clap::Args, Clone, Default)]
 pub struct CandidateEffectAssessmentRefineArgs {
     /// Verified staged analysis artifact for the candidate effect assessment.
@@ -101,7 +103,7 @@ impl CandidateEffectAssessmentRefineArgs {
     ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
         let Some(analysis) = &self.analysis else {
             ensure!(
-                !self.auxiliary.has_explicit_inputs(),
+                !self.auxiliary.has_any_inputs(),
                 "transform context arguments require --analysis for candidate effect assessment"
             );
             return Ok(None);

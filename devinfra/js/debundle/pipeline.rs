@@ -196,6 +196,17 @@ impl TransformContextAuxArgs {
             || !self.package_roots.is_empty()
             || self.packages_root.is_some()
     }
+
+    /// Whether any transform input is present, including environment values.
+    /// `modules refine` disables these two env defaults, so presence there
+    /// means the caller explicitly supplied the input.
+    pub fn has_any_inputs(&self) -> bool {
+        self.tree_vendor_marks.is_some()
+            || self.tree_source_root.is_some()
+            || self.out_root.is_some()
+            || !self.package_roots.is_empty()
+            || self.packages_root.is_some()
+    }
 }
 
 fn differs_from_environment(value: &Option<PathBuf>, variable: &str) -> bool {

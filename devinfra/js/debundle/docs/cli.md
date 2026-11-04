@@ -1360,6 +1360,8 @@ For a report-only effect relocation assessment of the exact candidate, add
 `--tree-config` and `--modules` arguments also supply the assessment's tree
 config and module root. The config must select exactly one full-tree root for
 the graph chunk, and the transform must materialize only that graph chunk.
+The assessment's source root and output root must be passed explicitly; it does
+not inherit `DEBUNDLE_TREE_SOURCE_ROOT` or `DEBUNDLE_OUT`.
 This assessment uses the complete post-refinement documents, after drained
 modules are removed, and runs after the unchanged identity and realizability
 gates pass but before YAML writes. It reports statement-order commutation only;
