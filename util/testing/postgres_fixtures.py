@@ -28,9 +28,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.core import testcontainers_config
 from testcontainers.postgres import PostgresContainer
 
+from devinfra.oci.oci import load_oci_image
 from third_party.containers import postgres_18, ryuk
 from util.db_migrations import MigrationRunner
-from devinfra.oci.oci import load_oci_image
 from util.testing.postgres import (
     DatabaseClones,
     DatabaseNames,
