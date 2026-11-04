@@ -1,4 +1,4 @@
-package firecracker
+package vsock
 
 import (
 	"context"

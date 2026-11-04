@@ -110,7 +110,8 @@ changed. After saving the focused evidence, the disposable
 
 This preceding launcher implementation used the generated Python `GuestManagement` stub directly over a private Unix
 socket. Its small Go bridge owned no protobuf messages: it used the separately reviewed
-[`util/vsock/firecracker`](../../util/vsock/firecracker/README.md) stream transport from PR #14136.
+[`agentplane/firecracker/vsock`](../firecracker/vsock/README.md) transport, initially split into PR #14136
+and subsequently folded into the environment PR.
 Agentplane owns port 52, private socket permissions, boot-ID checks and credential policy. The guest
 uses `github.com/mdlayher/vsock` for its native listener and keeps host-CID authorization in the
 management service. The protobuf-over-stdin/stdout helper and the hand-written native socket
@@ -158,9 +159,9 @@ after saving evidence; no VM disks, RAM snapshots or private keys are retained i
 ## Go supervisor and direct vsock gRPC (2026-11-04 UTC)
 
 The current launcher is Go. Its generated `GuestManagement` client uses
-`grpc.WithContextDialer` and the independent `util/vsock/firecracker.Dial` library directly.
+`grpc.WithContextDialer` and `agentplane/firecracker/vsock.Dial` directly.
 The Python launcher runtime, intermediate bridge executable and private listening socket are
-removed. The transport PR retains only the stream dialer. Firecracker's own control API remains
+removed. The transport package retains only the stream dialer and is owned by the Firecracker launcher. Firecracker's own control API remains
 HTTP over its Unix socket.
 
 [The integrated Go launcher and guest tests](https://app.buildbuddy.io/invocation/898bc023-0052-4d62-a1ed-50a66e0840cb)

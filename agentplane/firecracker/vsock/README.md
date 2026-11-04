@@ -13,7 +13,7 @@ connection, err := grpc.NewClient(
     "passthrough:///guest-management",
     grpc.WithTransportCredentials(insecure.NewCredentials()),
     grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-        return firecracker.Dial(ctx, socketPath, port)
+        return vsock.Dial(ctx, socketPath, port)
     }),
 )
 ```

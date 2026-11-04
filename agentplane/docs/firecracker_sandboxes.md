@@ -109,7 +109,7 @@ sends the current certificate, key, CA and host wall time through the typed `Gue
 gRPC service over vsock port 52. The guest accepts only host CID 2 and checks the expected boot
 identity before applying changes. The root service binds a privileged port so an unprivileged
 guest process cannot impersonate it and receive private keys. The Go supervisor uses its generated gRPC client with a custom context dialer from
-[`util/vsock/firecracker`](../../util/vsock/firecracker/README.md). The dialer performs the
+[`agentplane/firecracker/vsock`](../firecracker/vsock/README.md). The dialer performs the
 Firecracker `CONNECT 52` handshake and returns the stream directly to gRPC in the same process.
 The guest uses `github.com/mdlayher/vsock` for its native listener; host-CID authorization
 remains in the management service. Runtime reloads TLS files on a new handshake without restarting

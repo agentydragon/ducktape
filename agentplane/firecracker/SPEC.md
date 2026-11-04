@@ -36,7 +36,7 @@ port `52`. The host first reads `GetStatus`, then sends the current clock, TLS c
 CA bundle and expected boot ID; the guest rejects a mismatched identity before changing state.
 The host client retries transport establishment within a bounded deadline while the guest boots.
 The Go supervisor uses the generated gRPC client directly with a custom context dialer from
-`util/vsock/firecracker`. The dialer performs Firecracker's `CONNECT 52` handshake on the VMM's
+`agentplane/firecracker/vsock`. The dialer performs Firecracker's `CONNECT 52` handshake on the VMM's
 Unix socket and returns the connection to gRPC. There is no intermediate process or private
 listening socket. gRPC owns serialization, message limits, deadlines and cancellation; each
 synchronization closes its client connection on success or failure.

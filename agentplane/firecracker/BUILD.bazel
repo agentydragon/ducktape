@@ -24,7 +24,7 @@ go_library(
     visibility = ["//agentplane:__subpackages__"],
     deps = [
         "//agentplane/env/firecracker:management_go_proto",
-        "//util/vsock/firecracker",
+        "//agentplane/firecracker/vsock",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//credentials/insecure",

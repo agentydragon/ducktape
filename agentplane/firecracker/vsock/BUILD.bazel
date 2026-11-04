@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/firecracker:__pkg__"])
+
+go_library(
+    name = "vsock",
+    srcs = ["dial.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/firecracker/vsock",
+)
+
+go_test(
+    name = "vsock_test",
+    srcs = ["dial_test.go"],
+    embed = [":vsock"],
+)

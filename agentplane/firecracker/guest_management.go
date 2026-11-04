@@ -8,7 +8,7 @@ import (
 	"time"
 
 	managementpb "github.com/agentydragon/ducktape/agentplane/env/firecracker/managementpb"
-	vsockfirecracker "github.com/agentydragon/ducktape/util/vsock/firecracker"
+	"github.com/agentydragon/ducktape/agentplane/firecracker/vsock"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -33,7 +33,7 @@ func SynchronizeGuest(ctx context.Context, socketPath, expectedBootID, credentia
 	connection, err := grpc.NewClient(
 		"passthrough:///firecracker-guest-management",
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
-			return vsockfirecracker.Dial(ctx, socketPath, guestManagementPort)
+			return vsock.Dial(ctx, socketPath, guestManagementPort)
 		}),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDisableRetry(),
