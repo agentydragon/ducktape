@@ -185,8 +185,9 @@ async def _followed_body(
         reference = ThreadPayloadReference.model_validate(text_ref)
         assert reference.chunk_count == str(len(_STREAMED))
         content = SessionHistory(history)
-        scope = await content.current_scope(thread)
-        assert scope is not None
+        summary = await content.session_summary(thread)
+        assert summary is not None
+        assert summary.HasField("projection_epoch")
         async with (
             asyncio.timeout(120),
             httpx.AsyncClient(base_url=service.url, timeout=35, event_hooks={"request": [forward]}) as electric,
@@ -203,7 +204,9 @@ async def _followed_body(
             ) as browser,
         ):
             await ThreadHTTP(browser).wait(thread)
-            proxy = _Shape(browser, f"/threads/{thread}/sync/chunks/text", {"projection_epoch": scope.projection_epoch})
+            proxy = _Shape(
+                browser, f"/threads/{thread}/sync/chunks/text", {"projection_epoch": summary.projection_epoch}
+            )
             holder = await _open(proxy)
             [opened] = forwarded
             held = await holder.load(reference)

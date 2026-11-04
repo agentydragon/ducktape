@@ -47,13 +47,14 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     thread = await event_logs.seed(SANDBOX, SESSION)
     await history.set_attached(thread, source.attached)
     await history.record(thread, source.entries)
-    scope = await content.current_scope(thread)
-    assert scope is not None
+    summary = await content.session_summary(thread)
+    assert summary is not None
+    assert summary.HasField("projection_epoch")
     await store.wait(thread)
     path = f"/upstream/history/v1/sessions/{thread}"
     evidence_path = f"{path}/entity-evidence"
     frames_path = f"{path}/native-frames"
-    params = {"projectionEpoch": scope.projection_epoch, "entity": {"entityKind": "item", "entityId": "first"}}
+    params = {"projectionEpoch": summary.projection_epoch, "entity": {"entityKind": "item", "entityId": "first"}}
     async with httpx.AsyncClient(base_url=app.url) as client:
         denied = await client.post(evidence_path, json=params | {"afterCursor": "0", "limit": 2})
         assert denied.status_code == 401

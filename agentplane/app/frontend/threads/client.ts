@@ -16,6 +16,8 @@ import {
   ReadEntityEvidenceResponseSchema,
   ReadNativeFramesRequestSchema,
   ReadNativeFramesResponseSchema,
+  ReadThreadEntitiesRequestSchema,
+  ReadThreadEntitiesResponseSchema,
   type ReadEntityEvidenceRequest,
   type ReadEntityEvidenceResponse,
   type ReadNativeFramesRequest,
@@ -28,6 +30,7 @@ import {
   SessionSummarySchema,
   type SessionSummary,
   type ReadSessionObservationsResponse,
+  type ReadThreadEntitiesResponse,
 } from "../../../history_service/history_service_pb";
 import {
   ChangeModelRequestSchema,
@@ -54,7 +57,6 @@ export interface ThreadListing {
   sandboxUID?: string;
 }
 export type ThreadWindow = { threads: ThreadView[]; more: boolean; archived_count: number };
-export type ThreadScope = { projection_epoch: string; through_cursor: string };
 export type ThreadPayloadRef = {
   projection_epoch: string;
   owner_cursor: string;
@@ -384,16 +386,27 @@ export async function interruptTurn(
   return { kind: "interrupt_result", result };
 }
 
-/**
- * The epoch a thread's shapes are pinned to. A long poll: the server holds the read until the
- * thread has a fold, and answers null if it still has none when the hold runs out.
- */
-export async function threadScope(threadId: string, signal?: AbortSignal): Promise<ThreadScope | null> {
-  const url = new URL(`/threads/${encodeURIComponent(threadId)}/sync/scope`, window.location.href);
-  const response = await fetchWithLogin(url, { signal });
-  if (response.status === 204) return null;
-  if (!response.ok) throw new Error(`Thread scope failed with ${response.status}`);
-  return (await response.json()) as ThreadScope;
+/** Reads the current projection scope through History's generated HTTP facade. The Session may
+ * not have been recorded yet, or its fold may not have materialized; both are resolved by the
+ * caller's WatchSessionSummaries subscription. */
+export async function threadScope(threadId: string, signal?: AbortSignal): Promise<ReadThreadEntitiesResponse | null> {
+  const request = create(ReadThreadEntitiesRequestSchema, {
+    sessionId: threadId,
+    projectionEpoch: "",
+    window: { case: "range", value: { startEntityIndex: 0n, limit: 1 } },
+  });
+  try {
+    const value = await historyJson(`/sessions/${encodeURIComponent(threadId)}/entities`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: bodyWithoutSessionId(toJson(ReadThreadEntitiesRequestSchema, request)),
+      signal,
+    });
+    return fromJson(ReadThreadEntitiesResponseSchema, value);
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 export async function getThread(threadId: string): Promise<ThreadView> {

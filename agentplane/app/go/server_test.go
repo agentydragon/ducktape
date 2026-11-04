@@ -140,7 +140,7 @@ func TestNonUUIDIDSegmentMatchesNoRoute(t *testing.T) {
 	for _, request := range []struct{ method, path string }{
 		{http.MethodPatch, "/threads/form"},
 		{http.MethodGet, "/threads/form/observations"},
-		{http.MethodGet, "/threads/form/sync/scope"},
+		{http.MethodGet, "/threads/form/sync/entities"},
 		{http.MethodGet, "/threads/form/events/stream"},
 		// uuid.Parse accepts this compact spelling; route converters do not.
 		{http.MethodPatch, "/threads/00000000000000000000000000000000"},
@@ -155,7 +155,7 @@ func TestNonUUIDIDSegmentMatchesNoRoute(t *testing.T) {
 	}
 	for _, request := range []struct{ method, path string }{
 		{http.MethodPatch, "/threads/00000000-0000-0000-0000-000000000000"},
-		{http.MethodGet, "/threads/00000000-0000-0000-0000-000000000000/sync/scope"},
+		{http.MethodGet, "/threads/00000000-0000-0000-0000-000000000000/sync/entities"},
 		{http.MethodGet, "/upstream/notifications/v1/sessions/example/inbox:watch"},
 	} {
 		response := httptest.NewRecorder()

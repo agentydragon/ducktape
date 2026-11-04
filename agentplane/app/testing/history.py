@@ -1,11 +1,11 @@
 """Script fixture Sessions through History; observe their archive through its public API."""
 
-from dataclasses import dataclass
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import grpc
 
 from agentplane.grpc.calls import ServiceError
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_log_pb2
@@ -21,12 +21,6 @@ def fixture_session_id(sandbox: str, session_id: str) -> UUID:
         return UUID(session_id)
     except ValueError:
         return uuid5(NAMESPACE_URL, sandbox + "/" + session_id)
-
-
-@dataclass(frozen=True)
-class ThreadScope:
-    projection_epoch: str
-    through_cursor: int
 
 
 class SessionHistory:
@@ -58,15 +52,10 @@ class SessionHistory:
     async def read_watermark(self, thread_id: UUID) -> int:
         return (await self.reader.get_session_summary(str(thread_id))).committed_cursor
 
-    async def current_scope(self, thread_id: UUID) -> ThreadScope | None:
+    async def session_summary(self, thread_id: UUID) -> history_service_pb2.SessionSummary | None:
         try:
-            summary = await self.reader.get_session_summary(str(thread_id))
+            return await self.reader.get_session_summary(str(thread_id))
         except ServiceError as error:
             if error.code != grpc.StatusCode.NOT_FOUND:
                 raise
             return None
-        return (
-            ThreadScope(summary.projection_epoch, summary.folded_through)
-            if summary.HasField("projection_epoch")
-            else None
-        )

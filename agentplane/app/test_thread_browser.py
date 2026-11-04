@@ -45,6 +45,7 @@ from agentplane.app.testing.thread_browser import (
     scripted_runner,
 )
 from agentplane.app.testing.thread_test_support import ThreadHTTP
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.channels import Channel
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import (
@@ -296,7 +297,7 @@ async def test_switching_threads_starts_at_each_threads_tail(
             await page.mouse.wheel(0, -10_000)
         await expect(page.get_by_text("Thread 0 message 40", exact=True)).to_be_visible()
         for number in (1, 0):
-            async with page.expect_request(f"**/threads/{threads[number]}/sync/scope"):
+            async with page.expect_request(f"**/upstream/history/v1/sessions/{threads[number]}/entities"):
                 await page.locator(
                     ".agentplane-thread-list-row-name", has_text=f"Test navigation thread {number}"
                 ).click()
@@ -410,7 +411,7 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
         page.on("request", record)
 
         async def open_thread(number: int) -> None:
-            async with page.expect_request(f"**/threads/{threads[number]}/sync/scope"):
+            async with page.expect_request(f"**/upstream/history/v1/sessions/{threads[number]}/entities"):
                 await page.locator(
                     ".agentplane-thread-list-row-name", has_text=f"Test navigation thread {number}"
                 ).click()
@@ -495,9 +496,16 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     draft = message_composer(page)
     await draft.fill("Draft survives projection replacement")
-    previous = await page.request.get(f"{thread_browser.ingress.url}/threads/{thread}/sync/scope")
+    previous = await page.request.post(
+        f"{thread_browser.ingress.url}/upstream/history/v1/sessions/{thread}/entities",
+        data=json_format.MessageToDict(
+            history_service_pb2.ReadThreadEntitiesRequest(range=history_service_pb2.EntityRange(limit=1))
+        ),
+        headers={"Origin": thread_browser.ingress.url},
+    )
     assert previous.ok
-    old_scope = await previous.json()
+    old_scope = json_format.ParseDict(await previous.json(), history_service_pb2.ReadThreadEntitiesResponse())
+    assert old_scope.projection_epoch
     ready = asyncio.Event()
     release = asyncio.Event()
     finished = asyncio.Event()
@@ -564,7 +572,7 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
 
         stale = await page.request.get(
             f"{thread_browser.ingress.url}/threads/{thread}/sync/entities",
-            params={"projection_epoch": old_scope["projection_epoch"], "offset": "now"},
+            params={"projection_epoch": old_scope.projection_epoch, "offset": "now"},
         )
         assert stale.status == 410
         await page.screenshot(path=undeclared_outputs_dir() / "projected-epoch-replacement.png")
@@ -748,8 +756,8 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
         async with asyncio.timeout(10):
             while True:
-                scope = await content.current_scope(thread)
-                if scope is not None and scope.through_cursor >= source.entries[-1].cursor:
+                summary = await content.session_summary(thread)
+                if summary is not None and summary.folded_through >= source.entries[-1].cursor:
                     break
                 await asyncio.sleep(0.01)
         # Whether or not the delta beat the drop, nothing shown is withdrawn.

@@ -658,7 +658,7 @@ async def test_session_catching_up(view: VisualPage, app: AgentplaneFixture) -> 
 
 
 async def test_session_sync_unavailable(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.set_flag(Flag.SYNC_SCOPE_UNAVAILABLE)
+    await app.set_flag(Flag.THREAD_SCOPE_UNAVAILABLE)
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector('[role="alert"]', state="attached")
     await view.capture(target=view.page.locator("#app"))
