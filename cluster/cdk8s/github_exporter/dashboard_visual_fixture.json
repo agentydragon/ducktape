@@ -1704,5 +1704,14 @@
         ]
       }
     }
-  }
+  },
+  "query_fingerprints": {
+    "1/A": "6ec61da8e997d640aa0e6090897d8c0b2626152ef5a48570cccaf7fd3f37e390",
+    "2/A": "baacc229d21d62d9a82d308e4d10d2a15ec3b2bb1069e3f152205981d81fe0be",
+    "2/B": "18f03746902d803ca4cf7b930fb1cd7b6a1b26b9962095592d7760c6ee97c257",
+    "3/A": "37abb09ead70c00a58f076330c316b31133487009e85e292b4c44ebd0f425336",
+    "4/A": "e8a4b6ce17b9ff5db4ca3f5ac0c78385f571849ec51330e66d106d8c45041a88",
+    "4/B": "18f03746902d803ca4cf7b930fb1cd7b6a1b26b9962095592d7760c6ee97c257"
+  },
+  "variable_fingerprints": {}
 }

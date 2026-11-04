@@ -787,5 +787,17 @@
     "3/B": "Captured from a historical Mimir query with All selected; labels anonymized.",
     "3/C": "Captured from a historical Mimir query with All selected; labels anonymized.",
     "time_range": "Captured from an earlier 24-hour period because power-supply metrics were absent in the recent window."
+  },
+  "query_fingerprints": {
+    "1/A": "1df1fe4d0d1351c9a896c6e528d5da57aa1e023d49004be7b873fa47e2e42b61",
+    "2/A": "cd0777ebeffbfee2a151cdd13aab47b4970f883ce94d7ab719f8827fff72afac",
+    "3/A": "169b2b479239f3b853b9d25cbb496b9895a5d1c1885ba8622c44f537d6f65221",
+    "3/B": "93d3ca8338e47a4f2edcd32ca2f33e744f9f8294075dc7e15aa166a9a5183d45",
+    "3/C": "03c89ac547a91cb5952df8acb256c8beb1252ef374a06d3a11a923a1d5fdfbb4",
+    "4/A": "ed9a818ff35989fba7051764166d7e284b2494b38c045bb72b7b5df0aa11108b",
+    "5/A": "86d549e623bd772b5beda96170f0f29bdf54ec67254fda24170422da6627f02f"
+  },
+  "variable_fingerprints": {
+    "instance": "57778a6ee33d4ed2f65f179b8aae06f8ea6665bffc663934ca6f61c17d3fb2ba"
   }
 }

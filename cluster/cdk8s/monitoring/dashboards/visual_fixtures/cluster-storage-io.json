@@ -5886,5 +5886,22 @@
   },
   "variables": {
     "node": ["node-a", "node-b", "node-c", "node-d", "node-e", "node-f", "node-g"]
+  },
+  "query_fingerprints": {
+    "2/A": "1b0f1764919e70fc5925841fb4207619063c79ebb75616e0b8ba877018e04ab9",
+    "4/A": "10876e023ca22db36aa3ec3036271b5acca9440c0b3d1ef26a52230b586b183c",
+    "6/A": "efa8170d7299d5c6f85c0a0954e26a26f82811d8c179ab27061ff97720123e74",
+    "8/A": "3b53e2d1fd5abbde79489a6ace54a5548345c508a02b296d24f77579f84929e6",
+    "10/A": "5bcf7376cec057ae5d137269a3c4c4b6cac50147d423c1f6c9f728a4c925f554",
+    "12/A": "b72b15d3004f2fd9eebc5ffd311044c415d82c9088db95b9d5e1d1cbf89d88d1",
+    "13/A": "b5a329a1a10be4f8b1bb326561835dc0202a35fe3b25fc04c6acf2381ac687e9",
+    "14/A": "636b17f0526dbcc9fac7589ac44f248d65a856d1f8387e4546efa199e448e5ce",
+    "15/A": "90a3031c04210a9312d265a01d9ca3173de2da982732ce33a47a87a357a468c5",
+    "16/A": "b69bfc848a6a401982ffdca1fa854a66d5fb940486f0ace701b8089269df69fa",
+    "17/A": "7b1bc295d0e5d40fad84f97a329bd074aeabdb73d923b269c569742bb43155aa",
+    "18/A": "2ad456ab25c097cddeb914c67d932c3b6e639b1a5656278a8f4dc3b4cdce1021"
+  },
+  "variable_fingerprints": {
+    "node": "ff26e9ea6d50e68ef0e43dcc5b0701850fef0464355f3841e0ecd6068d21faad"
   }
 }

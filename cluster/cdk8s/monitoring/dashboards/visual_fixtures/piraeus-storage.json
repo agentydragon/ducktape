@@ -7252,5 +7252,33 @@
   "variables": {
     "node": ["node-a", "node-b", "node-c", "node-d", "node-e", "node-f", "node-g"],
     "pool_node": ["node-a", "node-b", "node-c", "node-d", "node-e", "node-f", "node-g"]
+  },
+  "query_fingerprints": {
+    "26/A": "e332ee7d1418aa8c629666aaba43a5d87c1998b7fb636cb9ae41eb828e3468d4",
+    "27/A": "a1bf13d8799806235e0ee8e8359c559be78b4db758aeabaedf5a49937a8a6e1a",
+    "28/A": "bae3ceb71dfdcd3a27db26177bfa00970a15069bb81307bfba81a6397530ca65",
+    "29/A": "5eb6980ec29b0f6e237e1717950853cef254f42ffac8f90db8433e2fe569dae1",
+    "30/A": "cd2cbcd17e8d4d247baa7cd22ba31512ec1d61d5b9d44073203d120f9d4b6186",
+    "31/A": "cc0e9876aa3ff6a814403910ca8778eb2cfa98b5f3910fc8e4b4bb25b6c84309",
+    "34/A": "7f81f7a61ad96351267e50b4e133943d41dada37554e0d0a09bcdecab5b6ba4a",
+    "34/B": "7096c36cda28522a5c697b0f67abcc436b28235710e8d5f38c97f03c54fa2bbc",
+    "34/C": "5c7e0e999c334e95c9f5b3fd83cbbf8b6b9ac23f8abf8c624116109bed80a665",
+    "34/D": "776e97071369b28ae506768666504daacb3c30a02d2f1921ada3de35f8238aa5",
+    "34/E": "32b0de2ed5f97aad09bf4a05810ba778b222371e52da6c1cc5f121fc4efd8785",
+    "34/F": "2a8a2b56f0f3f95452f8a3260b3c69ddce37d3bc57c16d79a86dcfe5b9029d4d",
+    "32/A": "64bc4eadd9cda4979d0baf204d4df7e25d7ee8663c74382742a44f285edfba12",
+    "32/B": "a6988b0d23906de04c28e27bcc1a1f677c1a4933ef8d93fcce88453d493dd42f",
+    "33/A": "ce0e67b1461e561c01900190067b67b270fa18f275b953ed4fee3bb75fa0137f",
+    "33/B": "a6988b0d23906de04c28e27bcc1a1f677c1a4933ef8d93fcce88453d493dd42f",
+    "36/A": "0be3ca5029472cbd1a02374224fc6d8fdcbfd856857233e0a72e66456e850f5a",
+    "37/A": "7c448a6ad6ed04aa53fab4bd21d685489caf310a1951097b15f7ed1e9dbbd976",
+    "37/B": "aa7d4a0a07de02b5165e7069897047a85b34e99ec763c87e6593d63235c3cc33",
+    "39/A": "0caf4b4dfe296cbf6510b1ee4bfc2e02bc3c5188b5d0bb6c96c549db3609b2ab",
+    "39/B": "25b54816f68239919eb37553fc6f59593a7dd1d63f01590364b50be0de60a1f2",
+    "39/C": "261e1ca4578a3c09d4b61ca0ca19934d8c22a07f00c6b117c74dcdcb0f5c61d3"
+  },
+  "variable_fingerprints": {
+    "node": "5415c3a8bd10d15d670b2df0e9d250d1bb79608e050c31fba66702bcd995bdfb",
+    "pool_node": "7c747e8c9f32881d97b4f359ed71c88e551cad94e46764bab232e0d2bcd571fc"
   }
 }

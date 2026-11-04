@@ -769,5 +769,22 @@
     "node": ["node-a"],
     "instance": ["instance-1"],
     "device": ["device-1"]
+  },
+  "query_fingerprints": {
+    "1/A": "7b25b081ff1a70b44eb38e89bd46e5eba5df98360b4a67c827eec45d57cb7798",
+    "2/A": "535880d935dfd1eacf8dcf0ee17b559776718792610e0276684744abc0bd8a3e",
+    "3/A": "c4380f4f932facf48a2cffe0f0dc175ef53f6c1f9dd672adc32d2786112907d1",
+    "4/A": "2e899fac377690ec6df8368e19c48e089c791b314cf78ad25792e9580092abc8",
+    "5/A": "9d32b8d00284a6ee7e0d94bc792f72e42076f55357b659158fc1451c18c60b4d",
+    "6/A": "0d4ee67cc3e0aa687d8ed8380ac79b6463fc88b9427e609aab5bfaf06ea3cfcf",
+    "7/A": "1171aff6e171ca36308d64ad2d238a092446f5f1e76b656e1e2250472e9d985e"
+  },
+  "variable_fingerprints": {
+    "node": "553bc45bf0f2a995ed4659861321b6c0546236e1e51c7af20d2fa23d1362face",
+    "instance": "6fea26c69e24623ad41acbc8495042430d96f503f6bbe1b3cc16e50433d91fd4",
+    "device": "2df16419195afff27ef132bf57020b8152a43ee96d3510d35c7b2ddaabcd884b"
+  },
+  "empty_reasons": {
+    "4/A": "Recorded capture returned no KubeVirt tap0 events in this window."
   }
 }

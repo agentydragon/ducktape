@@ -9320,5 +9320,23 @@
   },
   "capture_notes": {
     "time_range": "Captured from one historical 24-hour window containing filesystem and component-attribution data; identifying labels anonymized."
+  },
+  "query_fingerprints": {
+    "2/A": "34df2228acb1c3a8e1b36eb310023dfdb84359d26c3f92637af4ca161dcd4bac",
+    "3/A": "eaaf448e4bc242f55d41819d1456b87ff22935a7e71772d0f1a49989b6f2d415",
+    "18/A": "edc40e6b1f758714deef31070121036fb95ebd3835bb9bb9ae84f5de74969ffe",
+    "18/B": "a85372591f1ef84ba81f8f37f95584509fdf8d86e9812d1ffaa2a24781809c05",
+    "18/C": "1181676e8f15e36428f8e2f00f3b7f45dc1f0f5d502b5cc04ce1450e272258bc",
+    "18/D": "8a28a31e5330633f952f2eb399dc795b7ea766def78fc24b02fb007f16a0c742",
+    "19/A": "0642377b8b360dea2cee60e1dd0f20e54e5c2209c59db8e48f0ba4399455c7bc",
+    "19/MaxDisk": "0d9bfb1ee5aeae0d14bf06770627c4661895a375aa8ec9307dab7cae9adc2b2b",
+    "20/A": "2eeb3fa3fd0ed1e3379a002d7e2aa59556cb5d89bb08551b29b8d5ea617d1b65",
+    "20/B": "072b2b88e78cc2b2691002ded9fc52d44ba2dc5b458f22ecf31fbdd1eb0e5a98",
+    "21/A": "f7e8f4c6a64c9fccff5c4cefb7b1f159ebdb363566824c053c0152b4345c3510",
+    "4/A": "a8a02267f7b16704d1eeaa90dcec0349cb0a955d7670fcd0b477db8218dec50a",
+    "5/A": "c15773aa97e87061001910bf6e8a3adf97ed99f8f3392690a3456d3dc10aebbb"
+  },
+  "variable_fingerprints": {
+    "node": "5415c3a8bd10d15d670b2df0e9d250d1bb79608e050c31fba66702bcd995bdfb"
   }
 }
