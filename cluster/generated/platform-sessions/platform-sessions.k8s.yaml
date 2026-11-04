@@ -201,6 +201,47 @@ spec:
           reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: agentplane-staging-egress-credentials
       type: Opaque
 ---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-thrive-scraper-bearer
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-thrive-scraper-bearer
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-thrive-scraper-bearer
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-thrive-scraper-bearer
+    template:
+      data:
+        token: "{{ .password }}"
+      metadata:
+        annotations:
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: thrive-scraper
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: thrive-scraper
+      type: Opaque
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -309,6 +350,11 @@ spec:
                     - key: token
                       path: quest
                   name: platform-sessions-quest-bearer
+              - secret:
+                  items:
+                    - key: token
+                      path: thrive-scraper
+                  name: platform-sessions-thrive-scraper-bearer
         - emptyDir: {}
           name: tmp
 ---
