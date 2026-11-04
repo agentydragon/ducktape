@@ -457,10 +457,11 @@ For a regular-expression literal, ECMA-262 §13.2.7 validates the pattern and
 flags as an early error and evaluates a valid literal through `RegExpCreate`
 with source-derived strings. That operation does not resolve or call a mutable
 global `RegExp` binding or execute user code. The certificate requires the
-dedicated transfer to return the exact root allocation and finalizes only
-after the declared binding is initialized. The abstract allocation identity
-does not establish RegExp internal slots, prototype/method integrity,
-`lastIndex` behavior, or effects of later property reads, getters or calls.
+shared allocation transfer to return the exact `Kind::RegExp` root allocation
+and finalizes only after the declared binding is initialized. The abstract
+allocation identity does not establish RegExp internal slots,
+prototype/method integrity, `lastIndex` behavior, or effects of later property
+reads, getters or calls.
 `RegExp(...)` and `new RegExp(...)` remain unsupported because they evaluate a
 mutable constructor binding and can invoke user code. Under the existing
 [A6 input contract](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md) that the original chunk runs to
@@ -2648,8 +2649,13 @@ A directly imported, stable top-level function or class declaration of another
 analyzed chunk receives a summary when every operation its call performs runs
 no other code. The body may read only its parameters and its own `const`/`let`
 bindings (`var` reads before initialization yield `undefined`; lexical TDZ
-reads have no summary). It may create primitives, closures, and object or array literals with
-literal keys other than `__proto__`. It may construct an argument-free
+reads have no summary). It may create primitives, closures, object or array literals with
+literal keys other than `__proto__`, and regular-expression literals. A regex
+literal transfers only to a fresh `Kind::RegExp` allocation; its own property
+descriptors, internal slots, prototype methods, `lastIndex` behavior and
+coercion or matcher protocols remain unknown. This literal transfer does not
+resolve the mutable global `RegExp` binding. `RegExp(...)` and `new RegExp(...)`
+are outside this admission. It may construct an argument-free
 `Map`/`Set`/`WeakMap`/`WeakSet` whose global slot is intact in every analyzed
 chunk's census. The shared provider operation accepts only a direct
 zero-argument `new` of that unshadowed global binding and retains the native-row

@@ -124,6 +124,105 @@ fn callable_factories_use_shared_empty_keyed_collection_transfers() {
 }
 
 #[test]
+fn regexp_literal_factories_return_fresh_allocations_without_protocol_shape() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { direct, localBound, nested } from './peer.js';\n\
+             const first = direct();\nconst second = direct();\n\
+             const local = localBound();\nconst record = nested();\n\
+             const nestedPattern = record.nested.pattern;\n\
+             console.log(first !== second, first.test('a'), first.lastIndex, second.lastIndex, first.test('a'), first.lastIndex, local.test('b'), local.lastIndex, nestedPattern.test('c'), nestedPattern.lastIndex);\n",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "const RegExp = () => { throw new Error('mutable RegExp binding called'); };\n\
+             export function direct() { return /a/g; }\n\
+             export function localBound() { const pattern = /b/g; return pattern; }\n\
+             export function nested() { const pattern = /c/g; return { nested: { pattern } }; }\n",
+        )]),
+    );
+    assert_preserved_entry_output(&fixture, "true true 1 0 false 0 true 1 true 1\n");
+
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    for name in ["direct", "localBound", "nested"] {
+        let summary = &report["imported_callables"][name]["foreign_call"];
+        assert_eq!(
+            summary["returns"],
+            serde_json::json!([{"kind": "fresh_allocation"}])
+        );
+        assert_eq!(summary["retained_arguments"], serde_json::json!([]));
+        assert_eq!(summary["native_constructions"], serde_json::json!([]));
+    }
+}
+
+#[test]
+fn regexp_literal_summary_keeps_global_binding_and_prototype_behavior_live() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { literal, construct } from './peer.js';\n\
+             globalThis.constructorCalls = 0;\n\
+             globalThis.getterCalls = 0;\n\
+             globalThis.coercionCalls = 0;\n\
+             const originalRegExp = globalThis.RegExp;\n\
+             Object.defineProperty(originalRegExp.prototype, 'test', { configurable: true, get() { globalThis.getterCalls++; return function() { return 'getter'; }; } });\n\
+             Object.defineProperty(originalRegExp.prototype, Symbol.toPrimitive, { configurable: true, value() { globalThis.coercionCalls++; return 'coerced'; } });\n\
+             globalThis.RegExp = function(pattern, flags) { globalThis.constructorCalls++; return new originalRegExp(pattern, flags); };\n\
+             const pattern = literal();\n\
+             const constructed = construct();\n\
+             globalThis.RegExp = originalRegExp;\n\
+             console.log(pattern.test('x'), String(pattern), Object.getPrototypeOf(pattern) === originalRegExp.prototype, constructed instanceof originalRegExp, globalThis.getterCalls, globalThis.coercionCalls, globalThis.constructorCalls);\n",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export function literal() { return /x/g; }\n\
+             export function construct() { return new RegExp('x', 'g'); }\n",
+        )]),
+    );
+    assert_preserved_entry_output(&fixture, "getter coerced true true 1 1 1\n");
+
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    let literal = &report["imported_callables"]["literal"]["foreign_call"];
+    assert_eq!(
+        literal["returns"],
+        serde_json::json!([{"kind": "fresh_allocation"}])
+    );
+    assert_eq!(literal["native_constructions"], serde_json::json!([]));
+    assert!(
+        report["imported_callables"]["construct"]["foreign_call"].is_null(),
+        "a constructor call does not use the RegExp-literal transfer"
+    );
+}
+
+#[test]
+fn regexp_literal_does_not_bypass_unmigrated_method_record_metadata() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { mixed } from './peer.js';\n\
+             const result = mixed();\n\
+             const first = result.pattern();\n\
+             const second = result.pattern();\n\
+             console.log(first !== second, first.test('x'), first.lastIndex, second.lastIndex);\n",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export function mixed() { return { pattern() { return /x/g; } }; }\n",
+        )]),
+    );
+    assert_preserved_entry_output(&fixture, "true true 1 0\n");
+
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    let summary = &report["imported_callables"]["mixed"];
+    assert_eq!(
+        summary["foreign_call"]["returns"],
+        serde_json::json!([{"kind": "fresh_allocation"}])
+    );
+    assert_eq!(summary["returned_record"]["members"][0]["name"], "pattern");
+}
+
+#[test]
 fn callable_native_constructor_refusals_keep_node_behavior() {
     for (provider, entry, expected) in [
         (

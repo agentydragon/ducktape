@@ -331,6 +331,12 @@ pub(super) fn derive(
             AbstractValue::Value(Value::Prim(_)) => {
                 returns.insert(ForeignReturn::Primitive);
             }
+            AbstractValue::Value(Value::Alloc(Kind::RegExp, _)) => {
+                // Regex literals are fresh opaque allocations here: their
+                // prototype, internal slots, methods, and lastIndex stay
+                // outside the provider's retention projection.
+                returns.insert(ForeignReturn::FreshAllocation);
+            }
             AbstractValue::Value(Value::Alloc(kind, _)) if kind.is_keyed_collection() => {
                 // Empty native construction has no user argument references
                 // to traverse. Preserve its typed identity as a fresh leaf.
@@ -361,7 +367,7 @@ pub(super) fn derive(
                                 pending.push(*nested)
                             }
                             AbstractValue::Value(Value::Alloc(kind, _))
-                                if kind.is_keyed_collection() => {}
+                                if kind.is_keyed_collection() || *kind == Kind::RegExp => {}
                             AbstractValue::Value(Value::Prim(_)) => {}
                             _ => return None,
                         }

@@ -210,6 +210,16 @@ pub(super) fn transfer(
             value.judgment.compose(&judgment);
             return Some(value);
         }
+        ValueExpr::Alloc(Kind::RegExp, allocation) => {
+            // A validated literal evaluates through RegExpCreate without
+            // looking up the mutable global binding. Track only its fresh
+            // allocation-site identity; prototype and internal-slot behavior
+            // stay outside this transfer.
+            Values::from([AbstractValue::Value(Value::Alloc(
+                Kind::RegExp,
+                *allocation,
+            ))])
+        }
         ValueExpr::New(callee, arguments, site) if context.source_covered() => {
             return context.keyed_collection_new(callee, arguments, *site);
         }

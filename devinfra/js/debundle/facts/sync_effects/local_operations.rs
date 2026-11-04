@@ -1,6 +1,7 @@
 //! Source-covered local operations collected before value lowering erases writes.
 
 use super::value_model::{ValueExpr, object_data_property_name, static_property_name};
+use crate::facts::abstract_domain::value::Kind;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use swc_common::Span;
@@ -152,6 +153,7 @@ fn simple_binding(pattern: &Pat) -> Option<Id> {
 fn unconditional_value(value: &ValueExpr) -> bool {
     match value {
         ValueExpr::Binding(_) | ValueExpr::NonCallable(_) | ValueExpr::Undefined => true,
+        ValueExpr::Alloc(Kind::RegExp, _) => true,
         ValueExpr::New(..) if is_keyed_collection_new(value) => true,
         ValueExpr::ObjectLiteral(_, properties) => properties
             .iter()

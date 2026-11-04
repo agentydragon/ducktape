@@ -570,8 +570,8 @@ impl OriginalInitializer {
                 }),
             (
                 Leaf::RegExp(allocation),
-                ValueExpr::ObjectLiteral(lowered, _),
-                AbstractValue::Value(Value::Alloc(Kind::Object, evaluated)),
+                ValueExpr::Alloc(Kind::RegExp, lowered),
+                AbstractValue::Value(Value::Alloc(Kind::RegExp, evaluated)),
             ) => values.len() == 1 && allocation == lowered && allocation == evaluated,
             (
                 Leaf::Class(expected),

@@ -49,6 +49,21 @@ pub enum Kind {
 }
 
 impl Kind {
+    /// Kinds whose application-time prefix tracks arbitrary own-property
+    /// containment. This carries callback/escape references without implying
+    /// that reads have ordinary-record or descriptor semantics.
+    pub fn tracks_prefix_own_properties(self) -> bool {
+        matches!(self, Self::Object | Self::RegExp)
+    }
+
+    /// Kinds whose retained references are expanded from prefix heap state.
+    /// `Set` is included because its contents are tracked in a separate
+    /// native lane; its property behavior does not use the arbitrary-own-
+    /// property lane above.
+    pub fn tracks_prefix_references(self) -> bool {
+        self.tracks_prefix_own_properties() || self == Self::Set
+    }
+
     /// ECMA-262 § Keyed Collections: `Map`, `Set`, `WeakMap`, `WeakSet`.
     pub fn is_keyed_collection(self) -> bool {
         matches!(self, Self::Map | Self::Set | Self::WeakMap | Self::WeakSet)
