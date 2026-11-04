@@ -323,9 +323,18 @@ export { x, y };
             logical_module("mod_y", &[Member::new("y")]),
         ],
     );
-    // The error names both claiming modules, so the spec author can find the
-    // conflicting pair without re-reading source.
-    expect_rejection_containing_all(opts, &["destructure", "mod_x", "mod_y"]);
+    // The common projection reports the typed conflict and retains both
+    // explicitly requested destination module paths in its refusal.
+    expect_rejection_containing_all(
+        opts,
+        &[
+            "placement projection is unmappable",
+            "OwnedBindingDestinationMismatch",
+            "DestructuringDestinationSplit",
+            "mod_x",
+            "mod_y",
+        ],
+    );
 }
 
 #[test]

@@ -832,13 +832,14 @@ impl ChunkPlanBuilder {
     }
 
     /// Apply the shared placement-kernel decision to each retained
-    /// destructuring declarator. The kernel owns the colocation/refusal rule;
-    /// this builder applies its pull recommendation to the canonical binding
-    /// catalogue and export plans.
+    /// destructuring declarator. The kernel owns the colocation rule; this
+    /// builder applies only its one-owner pull recommendation to the canonical
+    /// binding catalogue and export plans. Conflicting requests stay intact
+    /// for the final projection to report through the shared candidate path.
     pub(super) fn apply_destructuring_group_placement(
         &mut self,
         destructuring_groups: &[DestructuringDeclaratorGroup],
-    ) -> Result<()> {
+    ) {
         // Overlapping `var` declarators can share a hygienic binding. Iterate
         // until no more siblings move, so a pull through a later group also
         // reaches earlier groups that share the newly placed binding.
@@ -857,28 +858,9 @@ impl ChunkPlanBuilder {
                 let decision = classify_destructuring_group_owners(group, explicit_owners);
                 match &decision.classification {
                     DestructuringGroupOwnerClassification::Unclaimed => {}
-                    DestructuringGroupOwnerClassification::Split { .. } => {
-                        let mut named_owners: Vec<_> = decision
-                            .owners
-                            .iter()
-                            .map(|(binding, destination)| (binding.0.to_string(), destination.0))
-                            .collect();
-                        named_owners.sort();
-                        let (first_binding, first_owner) = &named_owners[0];
-                        let (other_binding, other_owner) = named_owners
-                            .iter()
-                            .find(|(_, destination)| destination != first_owner)
-                            .expect("a split decision has owners in distinct destinations");
-                        let first_plan_id = &self.module_plans[*first_owner].id;
-                        let other_plan_id = &self.module_plans[*other_owner].id;
-                        let diagnostic = format!(
-                            "destructure declarator binds {first_binding} (claimed by module \
-                             {first_plan_id}) and {other_binding} (claimed by module {other_plan_id}); \
-                             destructuring declarators must move atomically — claim both \
-                             bindings from the same module or claim neither.",
-                        );
-                        return Err(anyhow::Error::new(decision).context(diagnostic));
-                    }
+                    // Keep every authored owner request for final projection.
+                    // Do not turn the planning classifier into a second veto.
+                    DestructuringGroupOwnerClassification::Split { .. } => {}
                     DestructuringGroupOwnerClassification::OneOwner { destination } => {
                         let already_owned: BTreeSet<_> = decision
                             .owners
@@ -938,7 +920,6 @@ impl ChunkPlanBuilder {
                 break;
             }
         }
-        Ok(())
     }
 
     /// Bindings declared by an anonymously-claimed statement (e.g. a
@@ -985,7 +966,7 @@ impl ChunkPlanBuilder {
     pub(super) fn route_nested_var_statements(
         &mut self,
         nested_var_statements: &[NestedVarStatement],
-    ) -> Result<()> {
+    ) {
         for nested in nested_var_statements {
             let owners = nested
                 .bindings
@@ -1005,36 +986,15 @@ impl ChunkPlanBuilder {
                 continue;
             }
             if !check.missing_bindings.is_empty() {
-                let missing_bindings = check
-                    .missing_bindings
-                    .iter()
-                    .map(|binding| binding.0.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let message = format!(
-                    "top-level control-flow statement at body index {} also declares unassigned \
-                     bindings ({missing_bindings}); assign them to the same module before extracting the statement",
-                    check.statement,
-                );
-                return Err(anyhow::Error::new(check).context(message));
+                // Preserve partial ownership for the final projection's typed
+                // refusal instead of manufacturing a statement destination.
+                continue;
             }
 
             let destination = match &check.classification {
                 NestedVarDestinationClassification::Unclaimed => continue,
                 NestedVarDestinationClassification::OneDestination { destination } => *destination,
-                NestedVarDestinationClassification::SplitDestinations { destinations } => {
-                    let module_names = destinations
-                        .iter()
-                        .map(|destination| self.module_plans[destination.0].id.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    let message = format!(
-                        "top-level control-flow statement at body index {} declares bindings assigned \
-                         to different modules ({module_names}); assign all nested var bindings to one module",
-                        check.statement,
-                    );
-                    return Err(anyhow::Error::new(check).context(message));
-                }
+                NestedVarDestinationClassification::SplitDestinations { .. } => continue,
             };
             self.whole_statement_assignment
                 .insert(nested.statement, destination.0);
@@ -1043,7 +1003,6 @@ impl ChunkPlanBuilder {
             plan.anonymous_statements.sort_unstable();
             plan.anonymous_statements.dedup();
         }
-        Ok(())
     }
 
     /// Residual sweep: route every chunk top-level binding the spec
