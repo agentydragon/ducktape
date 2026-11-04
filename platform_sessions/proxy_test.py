@@ -6,8 +6,9 @@ import pytest_bazel
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, SecretStr
 
+from platform_sessions.auth import Bearer, BearerAuth
 from platform_sessions.host import create_app
-from platform_sessions.proxy import Consumer, HeaderPolicy, ProxyInstance, ProxyRequest, ProxyResponse, install_proxy
+from platform_sessions.proxy import HeaderPolicy, ProxyInstance, ProxyRequest, ProxyResponse, install_proxy
 from platform_sessions.registry import IntegrationInstance
 from platform_sessions.routes import Route
 
@@ -32,11 +33,12 @@ def make_client():
     )
     transport = Transport()
     policy = HeaderPolicy(request=frozenset({"X-Private-Request"}), response=frozenset({"X-Private-Response"}))
-    consumer = Consumer(
-        SecretStr("consumer-secret"), {"example": (Route("GET", "/orders/*"), Route("FROB", "/orders"))}
+    consumer = Bearer(
+        SecretStr("consumer-secret"), routes={"example": (Route("GET", "/orders/*"), Route("FROB", "/orders"))}
     )
-    app = create_app([], "https://service.test", require_owner=lambda: None)
-    install_proxy(app, {"example": ProxyInstance(config, transport, policy)}, [consumer])
+    auth = BearerAuth([consumer, Bearer(SecretStr("owner-secret"), owner=True)])
+    app = create_app([], "https://service.test", require_owner=lambda request: None, auth=auth)
+    install_proxy(app, {"example": ProxyInstance(config, transport, policy)}, auth)
     return TestClient(app, base_url="https://service.test"), transport
 
 
@@ -91,6 +93,15 @@ def test_authorization_and_provider_specific_header_filtering():
     assert b"cookie" not in headers
     assert b"x-private-request" not in headers
     assert b"x-connection-token" not in headers
+
+
+def test_owner_bearer_can_proxy_arbitrary_routes():
+    client, transport = make_client()
+    assert client.delete("/proxy/example/new/path", headers={"authorization": "Bearer owner-secret"}).status_code == 200
+    assert transport.requests[-1].owner is True
+    assert (
+        client.delete("/proxy/example/new/path", headers={"authorization": "Bearer consumer-secret"}).status_code == 403
+    )
 
 
 def test_custom_method_and_no_retry():

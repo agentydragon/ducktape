@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any, Protocol
 
-from fastapi import APIRouter, Depends, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
+from platform_sessions.auth import BearerAuth
 from platform_sessions.registry import IntegrationInstance
 
 logger = logging.getLogger(__name__)
@@ -58,6 +60,7 @@ def create_management_router(
     public_base_url: str,
     *,
     require_owner: Callable[..., Any],
+    auth: BearerAuth,
     transport: Any = None,
     classify_error: Callable[[Exception], tuple[str, int] | None] | None = None,
 ) -> APIRouter:
@@ -65,12 +68,25 @@ def create_management_router(
     by_id = {integration.config.id: integration for integration in integrations}
     if len(by_id) != len(integrations):
         raise ValueError("Duplicate integration ID")
-    router = APIRouter(prefix="/api/integrations", dependencies=[Depends(require_owner)])
+
+    async def require_management_owner(request: Request) -> None:
+        if request.headers.getlist("authorization"):
+            principal = auth.authenticate(request)
+            if principal is None or not principal.owner:
+                raise HTTPException(status_code=403, detail="Owner access required")
+            return
+        result = require_owner(request)
+        if inspect.isawaitable(result):
+            await result
+
+    router = APIRouter(prefix="/api/integrations", dependencies=[Depends(require_management_owner)])
 
     def same_origin(request: Request) -> bool:
-        return request.headers.get("origin") == public_base_url.rstrip("/") and request.headers.get(
-            "sec-fetch-site"
-        ) in {None, "same-origin", "none"}
+        origin = request.headers.get("origin")
+        principal = auth.authenticate(request)
+        return request.headers.get("sec-fetch-site") in {None, "same-origin", "none"} and (
+            origin == public_base_url.rstrip("/") or (origin is None and principal is not None and principal.owner)
+        )
 
     async def candidate_request(id: str, request: Request) -> tuple[Integration | None, Any, JSONResponse | None]:
         runtime = by_id.get(id)
@@ -174,6 +190,7 @@ def create_app(
     public_base_url: str,
     *,
     require_owner: Callable[..., Any],
+    auth: BearerAuth,
     transport: Any = None,
     classify_error: Callable[[Exception], tuple[str, int] | None] | None = None,
     start: Callable[[], Awaitable[None]] | None = None,
@@ -198,6 +215,7 @@ def create_app(
             integrations,
             public_base_url,
             require_owner=require_owner,
+            auth=auth,
             transport=transport,
             classify_error=classify_error,
         )

@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-import hmac
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from fastapi import FastAPI, Request
-from pydantic import SecretStr
 from starlette.responses import JSONResponse, Response
 from starlette.types import Receive, Scope, Send
 
+from platform_sessions.auth import BearerAuth
 from platform_sessions.registry import IntegrationInstance
-from platform_sessions.routes import Route, _encoded_path, _segments, authorize_route
+from platform_sessions.routes import _encoded_path, _segments, authorize_route
 
 # The transport owns upstream authentication and session rotation. These are
 # always removed regardless of the additional provider-configured rules.
@@ -45,20 +44,13 @@ class HeaderPolicy:
 
 
 @dataclass(frozen=True)
-class Consumer:
-    """A caller credential and its per-instance route allowlist."""
-
-    token: SecretStr
-    routes: Mapping[str, tuple[Route, ...]]
-
-
-@dataclass(frozen=True)
 class ProxyRequest:
     method: str
     url: str
     query: bytes = field(repr=False)
     headers: tuple[tuple[bytes, bytes], ...] = field(repr=False)
     body: bytes = field(repr=False)
+    owner: bool = False
 
 
 @dataclass(frozen=True)
@@ -125,14 +117,11 @@ def _rewrite_location(location: bytes, upstream_url: str, base_url: str, instanc
 
 
 class _Proxy:
-    def __init__(self, instances: Mapping[str, ProxyInstance], consumers: Sequence[Consumer]):
+    def __init__(self, instances: Mapping[str, ProxyInstance], auth: BearerAuth):
         if any(key != instance.config.id for key, instance in instances.items()):
             raise ValueError("Proxy instance ID mismatch")
         self.instances = instances
-        self.consumers = consumers
-        tokens = [consumer.token.get_secret_value() for consumer in consumers]
-        if any(not token for token in tokens) or len(set(tokens)) != len(tokens):
-            raise ValueError("Empty or duplicate consumer credential")
+        self.auth = auth
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -142,15 +131,8 @@ class _Proxy:
         await response(scope, receive, send)
 
     async def _request(self, request: Request) -> Response:
-        auth = [value for name, value in request.scope["headers"] if name.lower() == b"authorization"]
-        consumer = None
-        if len(auth) == 1:
-            scheme, separator, token = auth[0].partition(b" ")
-            if separator and scheme.lower() == b"bearer":
-                for entry in self.consumers:
-                    if hmac.compare_digest(token, entry.token.get_secret_value().encode("utf-8")):
-                        consumer = entry
-        if consumer is None:
+        principal = self.auth.authenticate(request)
+        if principal is None:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         raw_path = request.scope.get("raw_path", b"")
         parts = raw_path.split(b"/", 3)
@@ -167,7 +149,10 @@ class _Proxy:
             return JSONResponse({"error": "not_found"}, status_code=404)
         try:
             mapped = authorize_route(
-                request.method, raw_path_text, instance.config.upstream_base_url, consumer.routes.get(instance_id, ())
+                request.method,
+                raw_path_text,
+                instance.config.upstream_base_url,
+                None if principal.owner else principal.routes.get(instance_id, ()),
             )
         except ValueError:
             return JSONResponse({"error": "invalid_path"}, status_code=400)
@@ -182,6 +167,7 @@ class _Proxy:
                     query=request.scope.get("query_string", b""),
                     headers=_filter_headers(request.scope["headers"], _REQUEST_PRIVATE, instance.headers.request),
                     body=await request.body(),
+                    owner=principal.owner,
                 )
             )
             headers = _filter_headers(
@@ -203,6 +189,6 @@ class _Proxy:
             return JSONResponse({"error": "upstream_unavailable"}, status_code=502)
 
 
-def install_proxy(app: FastAPI, instances: Mapping[str, ProxyInstance], consumers: Sequence[Consumer]) -> None:
+def install_proxy(app: FastAPI, instances: Mapping[str, ProxyInstance], auth: BearerAuth) -> None:
     """Mount the proxy; applications must leave this path to bearer authentication."""
-    app.mount("/proxy", _Proxy(instances, consumers))
+    app.mount("/proxy", _Proxy(instances, auth))
