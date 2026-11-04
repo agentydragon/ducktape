@@ -177,7 +177,7 @@ def gnome_session(
     container.with_volume_mapping(str(fixture_dir), "/fixtures", "ro")
     container.with_volume_mapping(str(fake_daemon_script), "/fake-daemon.js", "ro")
     container.with_volume_mapping(
-        str(get_required_path("_main/util/testing/gnome/fake-daemon.js")), "/gnome-fake-daemon.js", "ro"
+        str(get_required_path("_main/gnome/testing/fake-daemon.js")), "/gnome-fake-daemon.js", "ro"
     )
     container.with_volume_mapping(str(screenshot_dir), "/out", "rw")
     with container:
