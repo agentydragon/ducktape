@@ -32,7 +32,7 @@ RBE and action-cache settings and the same target executor properties from
 [`k3s/defs.bzl`](../defs.bzl): `dockerNetwork=bridge`, 4 estimated compute units, and 50 GB estimated
 free disk. The baseline invocation is commit `ff579d35`; BuildBuddy labels the candidate invocation
 `a7685d0f` with the local compression patch applied. Between those commits, no files under
-`agentplane/system_tests/k3s/` or `agentplane/system_tests/k3s/guest/` changed. The generic system-test
+`agentplane/system_tests/k3s/` or `agentplane/system_tests/vm/guest/` changed. The generic system-test
 readiness wait and environment-runtime-credential wait did change, and artifact pins were refreshed, so these are
 not identical whole-test source trees. The PR now uses base `983281cb8e`. Since the measured candidate
 commit, `fixture_chart.py` also set the central sampler fixture to one replica. That fixture change is

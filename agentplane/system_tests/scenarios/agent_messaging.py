@@ -29,12 +29,12 @@ from agentplane.app.testing.client import Client
 from agentplane.notification_service import notifications_pb2
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests import send_grant
-from agentplane.system_tests.agent import Agent
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.sandbox import Sandboxes
-from agentplane.system_tests.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.tracing import tracer
+from agentplane.system_tests.deployment import send_grant
+from agentplane.system_tests.driver.agent import Agent
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.sandbox import Sandboxes
+from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 BODY = "Test message: the change is ready for review."

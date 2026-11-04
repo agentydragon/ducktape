@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 import httpx
 import pytest
 
-from agentplane.system_tests.tracing import tracer
+from agentplane.system_tests.driver.tracing import tracer
 
 
 def _edge_url(value: object, server: str) -> str:

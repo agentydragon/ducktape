@@ -6,9 +6,23 @@ cross-component behavior and durable system evidence. They are not unit tests wi
 they are the checks that the deployed system does what <../egress/SPEC.md> says it does and that a
 session's standing instructions reach the model that serves it.
 
-The CI suites each start one [disposable k3s stack](k3s/README.md) in an RBE action.
+Source ownership follows the part of a test being changed:
+
+| Directory                             | Owns                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------------------- |
+| [`suites/`](suites/)                  | Runnable CI and manual/live entrypoints, pytest selection and suite fixtures    |
+| [`scenarios/`](scenarios/)            | Behaviors and assertions exercised against a deployment                         |
+| [`driver/`](driver/)                  | Sessions, Sandboxes, API clients, scripted models and concurrent case execution |
+| [`deployment/`](deployment/README.md) | Fixture charts, rendering, databases and workload setup/cleanup                 |
+| [`k3s/`](k3s/README.md)               | Retained node, bootstrap, networking, PKI and the `k3s_suite` macro             |
+| [`vm/`](vm/README.md)                 | KubeVirt, storage, guest evidence and the test guest image in `guest/`          |
+
+Offline tests live beside the helpers they exercise. The root `conftest.py` holds shared pytest
+configuration; deployment-specific fixtures are explicit plugins selected by the suite macro.
+
+The CI suites each start one [disposable k3s stack](deployment/README.md) in an RBE action.
 The session-scoped `deployment` fixture exposes its cluster handle, app URL, token, and MCP access
-([`system_test_target.py`](k3s/system_test_target.py)). Compatible scenarios share a stack:
+([`system_test_target.py`](deployment/system_test_target.py)). Compatible scenarios share a stack:
 
 | Target                                                        | Scenarios                                                                                                    |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -56,7 +70,7 @@ measured in the
 Their shared login and policy fixtures live under `suites/mcp/`. The Pod central sampler shares
 the discovery and policy suite's MCP stack. Pod and VM suites retain their own stacks.
 Within each suite, independent Claude/Codex cases run together through
-[`run_harness_pair`](harness_pair.py), sharing the test's clients and scripted model server.
+[`run_harness_pair`](driver/harness_pair.py), sharing the test's clients and scripted model server.
 Each harness still creates its own Sandboxes and runs every scenario assertion. Seven Pod pairs
 and four MCP pairs overlap; the messaging and launcher pairs each peak at four Sandbox Pods.
 The Pod suite also runs two independent cases concurrently on that same stack. Model proxy,
@@ -81,7 +95,7 @@ The Dispatcher suite remains separate because replica coverage changes the share
 Deployment and deletes a recorded Pod while checking controller behavior.
 
 `test_vm` runs on a stack with KubeVirt emulating the guest CPU and the k3s test guest
-([VM Sandboxes](k3s/README.md#vm-sandboxes)). It starts three VM Sandboxes concurrently: one
+([VM Sandboxes](deployment/README.md#vm-sandboxes)). It starts three VM Sandboxes concurrently: one
 credential-checked scripted turn per harness through the launcher's egress relay, Codex tool OOM
 containment and its successful follow-up command with the same Runner and app-server. All three
 Sandboxes boot independently on an 8-unit executor with room for their
@@ -102,7 +116,7 @@ against staging by hand ([Running live](#running-live)).
 
 The rendered stack selects the model backend. The `test_real_model` stack
 and a deployment serve a real model. On the other stacks, LLM ingress forwards to the scenario itself, which plays the model
-([`scripted_upstream.py`](scripted_upstream.py)): the `scripted` fixture hands a scenario the
+([`scripted_upstream.py`](driver/scripted_upstream.py)): the `scripted` fixture hands a scenario the
 `ScriptedModel` of its own Sandbox's Pod, and the scenario answers each request and asserts what
 the harness sent. Suites explicitly select their cases; a case marked `real_model` or
 `scripted_model` fails setup if its stack serves the other backend. Only cases whose evidence
@@ -157,11 +171,11 @@ next input its own turn.
 to the harness's own reported turn to half a second, then times the browser's reads to open that
 thread, per stage, cold and warm, against regression ceilings; its module docstring defines each
 interval. Each run writes its timings to
-`bazel-testlogs/agentplane/system_tests/test_thread_latency/test.outputs/`.
+`bazel-testlogs/agentplane/system_tests/suites/live/test_thread_latency/test.outputs/`.
 
 ## Phase tracing
 
-All k3s suites use the shared [`tracing.py`](tracing.py) tracer and the test OTel provider.
+All k3s suites use the shared [`tracing.py`](driver/tracing.py) tracer and the test OTel provider.
 `test.outputs/test-spans.jsonl` flushes each completed driver span immediately, including setup,
 per-image imports, PKI, manifest application, Deployment readiness, scenarios, session opening, turn
 collection, diagnostics, Sandbox cleanup and k3s teardown. Import worker threads inherit the setup
@@ -278,7 +292,7 @@ identities and command IDs to `test.outputs/explicit-resume-idle-pod.json`.
 ## Agent messaging
 
 The `messaging` scenario has one agent message another, each in its own Sandbox, on each harness. The
-sender holds the fixture's [`send_grant`](send_grant.py) PolicySet, a `session_inbox_access` rule to an
+sender holds the fixture's [`send_grant`](deployment/send_grant.py) PolicySet, a `session_inbox_access` rule to an
 inbox tag the recipient carries, and runs `agentplane notifications send`; the recipient reads and
 acknowledges its inbox when the platform's notice starts its turn. It asserts the entry's authenticated
 sender and the sender's view of its message: covered while the recipient holds the notice, acknowledged
@@ -354,7 +368,7 @@ bbr test //agentplane/system_tests/suites/mcp:test_services --test_arg=-k --test
 `mcp:test_actions` and `mcp:test_services` each run a stack with Dex,
 the standalone MCP edge, `mcp-everything` and the Dex-backed OAuth MCP fixture
 (both use the MCP fixture stack), configured under test-only names
-([`mcp_servers.py`](mcp_servers.py)). The DCR scenario checks deployed discovery and public-client
+([`mcp_servers.py`](deployment/mcp_servers.py)). The DCR scenario checks deployed discovery and public-client
 registration using plain HTTP; `//agentplane/mcp_edge/authserver:sdk_dcr_test` owns the real Python
 SDK contract against production handlers and PostgreSQL ([`dcr.md`](dcr.md)). The MCP scenario
 exercises Actions calling its upstream MCP fixtures. In that scenario the scripted model runs one
@@ -431,11 +445,11 @@ bbr test --config=live-openai //agentplane/system_tests/suites:test_real_model
 ```
 
 That target runs the egress probe, whose evidence is what a real model works out. The probe's
-Sandbox discovers and presents the fixture's own credential ([`probe_credential.py`](probe_credential.py)),
+Sandbox discovers and presents the fixture's own credential ([`probe_credential.py`](deployment/probe_credential.py)),
 a token for a ServiceAccount holding no RBAC, which the Kubernetes API names back only if the proxy
 substituted it. The egress scenario in `test_pod` runs the other egress cases with the scripted model: the model call goes
 through the proxy, and a PolicySet bound to a running Sandbox takes effect. The latter binds the
-fixture's own PolicySet ([`runtime_grant.py`](runtime_grant.py)), not one a deployment's Sandboxes use.
+fixture's own PolicySet ([`runtime_grant.py`](deployment/runtime_grant.py)), not one a deployment's Sandboxes use.
 
 ## Running live
 
@@ -444,10 +458,10 @@ deployment has, and run against staging. They are not in CI and not on RBE: they
 `//...` never selects them, and they need a kubeconfig and a route to the cluster. Name one explicitly:
 
 ```bash
-bazelisk test //agentplane/system_tests:test_thread_latency --test_output=streamed --test_arg=-s
+bazelisk test //agentplane/system_tests/suites/live:test_thread_latency --test_output=streamed --test_arg=-s
 ```
 
-`//agentplane/system_tests:test_ollama_routes` exercises every configured Ollama chat
+`//agentplane/system_tests/suites/live:test_ollama_routes` exercises every configured Ollama chat
 route offered by the committed staging app ConfigMap, on each harness that offers it (Codex alone today),
 with the 128k cases first. Collection reads the generated manifest, not cdk8s Python;
 each case still checks that the live app offers the route before opening a session. Each cell creates a Sandbox,

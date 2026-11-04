@@ -6,7 +6,6 @@ once at the fixture boundary and default to staging.
 
 from __future__ import annotations
 
-import os
 from collections.abc import AsyncIterator, Generator, Iterator
 from functools import partial
 from pathlib import Path
@@ -18,29 +17,20 @@ from opentelemetry import trace
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests import native_artifacts, scenario, scripted_upstream
-from agentplane.system_tests.case_batch import CASE_RESULT
-from agentplane.system_tests.cluster import AGENT_SERVICE_ACCOUNT, AUDIENCE, Cluster, mint_token
-from agentplane.system_tests.dispatcher_transport import native_client
-from agentplane.system_tests.offered_models import models_offered_for
-from agentplane.system_tests.ollama_warmup import warm_ollama
-from agentplane.system_tests.sandbox import Sandboxes, sandbox_scope
-from agentplane.system_tests.tracing import timing_summary, tracer
+from agentplane.system_tests.driver import native_artifacts, scenario, scripted_upstream
+from agentplane.system_tests.driver.case_batch import CASE_RESULT
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.dispatcher_transport import native_client
+from agentplane.system_tests.driver.offered_models import models_offered_for
+from agentplane.system_tests.driver.ollama_warmup import warm_ollama
+from agentplane.system_tests.driver.sandbox import Sandboxes, sandbox_scope
+from agentplane.system_tests.driver.tracing import timing_summary, tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.net import Listener
 from util.testing.otel_tracing import configure_tracing
 
 # `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
-
-BASE_URL = "AGENTPLANE_SYSTEM_TEST_URL"
-TOKEN = "AGENTPLANE_SYSTEM_TEST_TOKEN"
-NAMESPACE = "AGENTPLANE_SYSTEM_TEST_NAMESPACE"
-SERVICE_ACCOUNT = "AGENTPLANE_SYSTEM_TEST_SERVICE_ACCOUNT"
-
-
-STAGING_URL = "https://agentplane-staging.allegedly.works"
-STAGING_NAMESPACE = "agentplane-staging"
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -81,21 +71,6 @@ def pytest_runtest_makereport(
         # OTel span duration, rather than just the time spent waiting for its result.
         report.duration = item.stash[CASE_RESULT].seconds
     return report
-
-
-@pytest.fixture(scope="session")
-def base_url() -> str:
-    return os.environ.get(BASE_URL, STAGING_URL)
-
-
-@pytest.fixture(scope="session")
-def token(cluster: Cluster) -> str:
-    """The caller's own token if it set one, else one minted from the caller's kubeconfig."""
-    if (supplied := os.environ.get(TOKEN)) is not None:
-        return supplied
-    return mint_token(
-        cluster=cluster, service_account=os.environ.get(SERVICE_ACCOUNT, AGENT_SERVICE_ACCOUNT), audience=AUDIENCE
-    )
 
 
 @pytest.fixture
@@ -174,16 +149,6 @@ async def sandbox(cluster: Cluster, client: Client, phase_tracer: trace.Tracer) 
     """
     async with sandbox_scope(cluster, client, phase_tracer) as create:
         yield create
-
-
-@pytest.fixture(scope="session")
-def cluster() -> Cluster:
-    """Explicit live deployment access; k3s suites override this with their own cluster."""
-    return Cluster(
-        kubeconfig=Path(os.environ.get("KUBECONFIG", str(Path.home() / ".kube/config"))),
-        namespace=os.environ.get(NAMESPACE, STAGING_NAMESPACE),
-        kubectl_command=("kubectl",),
-    )
 
 
 def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:

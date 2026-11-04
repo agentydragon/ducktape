@@ -10,12 +10,14 @@ import pytest
 
 from agentplane.app.testing.client import Client
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests import scenario
-from agentplane.system_tests.agent import TURN_SECONDS
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.executor import Executor
-from agentplane.system_tests.harness_pair import run_harness_pair
-from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes
+from agentplane.system_tests.driver import scenario
+from agentplane.system_tests.driver.agent import TURN_SECONDS
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.executor import Executor
+from agentplane.system_tests.driver.harness_pair import run_harness_pair
+from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
+from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.scenarios import (
     agent_messaging,
     egress,
@@ -26,9 +28,7 @@ from agentplane.system_tests.scenarios import (
     suspend_resume,
     thread_stream,
 )
-from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.suites import pod_runners
-from agentplane.system_tests.tracing import tracer
 
 
 @dataclass(frozen=True)

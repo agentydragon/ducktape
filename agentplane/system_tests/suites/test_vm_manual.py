@@ -7,13 +7,13 @@ import pytest_bazel
 
 from agentplane.app.testing.client import Client
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.executor import Executor
-from agentplane.system_tests.k3s import guest_logs
-from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
-from agentplane.system_tests.sandbox import Sandboxes
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.executor import Executor
+from agentplane.system_tests.driver.sandbox import Sandboxes
+from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.scenarios import storage, suspend_resume, vm_workspace_ownership
-from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.vm import guest_logs
+from agentplane.system_tests.vm.block_storage import STORAGE_CLASS
 
 pytestmark = pytest.mark.vm_sandboxes
 

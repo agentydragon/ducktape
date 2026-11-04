@@ -18,10 +18,10 @@ from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.executor import Executor
-from agentplane.system_tests.sandbox import ENVIRONMENT_RUNTIME_CONTAINER
-from agentplane.system_tests.tracing import tracer
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.executor import Executor
+from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER
+from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 BOUND_SECONDS = 300

@@ -1,0 +1,97 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+# gazelle:resolve py agentplane.central_sampler.sampler_pb2_grpc //agentplane/central_sampler:sampler_pb2_grpc
+# gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
+# gazelle:map_kind py_test py_test //devinfra/python:defs.bzl
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//agentplane/system_tests/driver:cluster",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_ollama_routes",
+    timeout = "eternal",
+    srcs = ["test_ollama_routes.py"],
+    env_inherit = [
+        "HOME",
+        "KUBECONFIG",
+        "OLLAMA_SMOKE_CASE",
+        "OLLAMA_SMOKE_HOLD_SECONDS",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/env/runtime:harness",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/sandboxes/runtimeconfig:model_catalog",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:agent",
+        "//agentplane/system_tests/driver:ollama_catalog",
+        "//agentplane/system_tests/driver:sandbox",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# Live against staging: one sandbox and one turn per harness. `eternal` because the bound is the suite's own
+# -- a Pod scheduled and pulled, then a turn that may take TURN_SECONDS. Its latency ceilings are asserted
+# inside the test, not by Bazel's clock.
+py_test(
+    name = "test_thread_latency",
+    timeout = "eternal",
+    srcs = ["test_thread_latency.py"],
+    env_inherit = [
+        "AGENTPLANE_SYSTEM_TEST_NAMESPACE",
+        "AGENTPLANE_SYSTEM_TEST_SERVICE_ACCOUNT",
+        "AGENTPLANE_SYSTEM_TEST_TOKEN",
+        "AGENTPLANE_SYSTEM_TEST_URL",
+        "HOME",
+        "KUBECONFIG",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/app/testing:models",
+        "//agentplane/env/runtime:harness",
+        "//agentplane/history_service:history_service_pb2",
+        "//agentplane/history_service/testing:protojson",
+        "//agentplane/native/claude:wire",
+        "//agentplane/native/codex:wire",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:agent",
+        "//agentplane/system_tests/driver:sandbox",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//httpx",
+        "@pypi//more_itertools",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+    ],
+)

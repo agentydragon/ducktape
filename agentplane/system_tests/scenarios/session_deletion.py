@@ -23,16 +23,16 @@ from agentplane.proto import session_pb2
 from agentplane.runner_gateway import api
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
-from agentplane.system_tests.cleanup_diagnostics import capture_without_masking
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.dispatcher_transport import Caller, bound_caller, forward
-from agentplane.system_tests.sandbox import (
+from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.dispatcher_transport import Caller, bound_caller, forward
+from agentplane.system_tests.driver.sandbox import (
     ENVIRONMENT_RUNTIME_CONTAINER,
     ENVIRONMENT_RUNTIME_LEASE_SUFFIX,
     POD_TEMPLATE,
 )
+from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.scenarios.dispatcher import container_mount_sources, opening_until
-from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 

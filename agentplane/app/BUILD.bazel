@@ -256,7 +256,7 @@ oci_image(
         "//third_party/debian_slim:cacerts",
     ],
     user = "1000:1000",
-    visibility = ["//agentplane/system_tests/k3s:__pkg__"],
+    visibility = ["//agentplane/system_tests/deployment:__pkg__"],
     workdir = "/",
 )
 

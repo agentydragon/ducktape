@@ -164,7 +164,7 @@ py_library(
     name = "secret_ref",
     srcs = ["secret_ref.py"],
     visibility = [
-        "//agentplane/system_tests/k3s:__pkg__",
+        "//agentplane/system_tests/deployment:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
@@ -193,7 +193,7 @@ py_library(
     name = "service_ref",
     srcs = ["service_ref.py"],
     visibility = [
-        "//agentplane/system_tests/k3s:__pkg__",
+        "//agentplane/system_tests/deployment:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
@@ -301,7 +301,7 @@ py_library(
     name = "config_format",
     srcs = ["config_format.py"],
     visibility = [
-        "//agentplane/system_tests/k3s:__pkg__",
+        "//agentplane/system_tests/deployment:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
@@ -418,7 +418,7 @@ py_library(
     name = "cnpg",
     srcs = ["cnpg.py"],
     visibility = [
-        "//agentplane/system_tests/k3s:__pkg__",
+        "//agentplane/system_tests/deployment:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
@@ -598,7 +598,7 @@ py_library(
     name = "probes",
     srcs = ["probes.py"],
     visibility = [
-        "//agentplane/system_tests/k3s:__pkg__",
+        "//agentplane/system_tests/deployment:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
@@ -704,7 +704,7 @@ py_library(
     name = "pod_policy",
     srcs = ["pod_policy.py"],
     visibility = [
-        "//agentplane/system_tests/k3s:__pkg__",
+        "//agentplane/system_tests/deployment:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
@@ -1974,7 +1974,7 @@ py_library(
     name = "agent_access_profiles",
     srcs = ["agent_access_profiles.py"],
     visibility = [
-        "//agentplane/system_tests/k3s:__pkg__",
+        "//agentplane/system_tests/deployment:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [

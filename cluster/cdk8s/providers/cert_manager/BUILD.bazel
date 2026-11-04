@@ -16,7 +16,7 @@ cdk8s_import(
     module_name = "cert_manager_crds",
     module_path = "io/cert_manager",
     visibility = [
-        "//agentplane/system_tests/k3s:__pkg__",
+        "//agentplane/system_tests/deployment:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
 )
@@ -28,7 +28,7 @@ cdk8s_import(
     module_name = "trust_manager_crds",
     module_path = "io/cert_manager/trust",
     visibility = [
-        "//agentplane/system_tests/k3s:__pkg__",
+        "//agentplane/system_tests/deployment:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
 )
@@ -40,7 +40,7 @@ cdk8s_import(
     module_name = "cert_manager_clusterissuer_crds",
     module_path = "io/cert_manager",
     visibility = [
-        "//agentplane/system_tests/k3s:__pkg__",
+        "//agentplane/system_tests/deployment:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
 )
@@ -58,7 +58,7 @@ py_library(
     name = "cert_manager_certificate",
     srcs = ["certificate.py"],
     visibility = [
-        "//agentplane/system_tests/k3s:__pkg__",
+        "//agentplane/system_tests/deployment:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
@@ -72,7 +72,7 @@ py_library(
     name = "cluster_issuer",
     srcs = ["cluster_issuer.py"],
     visibility = [
-        "//agentplane/system_tests/k3s:__pkg__",
+        "//agentplane/system_tests/deployment:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
@@ -97,7 +97,7 @@ py_library(
     name = "cert_manager_bundle",
     srcs = ["bundle.py"],
     visibility = [
-        "//agentplane/system_tests/k3s:__pkg__",
+        "//agentplane/system_tests/deployment:__pkg__",
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [

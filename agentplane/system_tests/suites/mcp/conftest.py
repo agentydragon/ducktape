@@ -8,9 +8,9 @@ from collections.abc import AsyncIterator
 import httpx
 import pytest
 
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.k3s.stack import Stack
-from agentplane.system_tests.operator_login import (
+from agentplane.system_tests.deployment.stack import Stack
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.operator_login import (
     LoginBlockedError,
     OperatorCredentials,
     operator_bff_client,

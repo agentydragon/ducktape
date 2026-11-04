@@ -12,8 +12,8 @@ from agentplane.app.testing.client import Client
 from agentplane.env.runtime.harness import Harness
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.sandbox import VM_TEMPLATE, Sandboxes
-from agentplane.system_tests.session_setup import run_setup
+from agentplane.system_tests.driver.sandbox import VM_TEMPLATE, Sandboxes
+from agentplane.system_tests.driver.session_setup import run_setup
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 WORKSPACE_ROOT = "/state/workspaces"

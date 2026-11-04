@@ -1,0 +1,236 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+# gazelle:resolve py agentplane.central_sampler.sampler_pb2_grpc //agentplane/central_sampler:sampler_pb2_grpc
+# gazelle:resolve py agentplane.environments.v1.environment_service_pb2 //agentplane/environments/v1:environment_service_pb2
+# gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
+# gazelle:resolve py cert_manager_clusterissuer_crds //cluster/cdk8s/providers/cert_manager:clusterissuer
+# gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
+
+load("@image_pins//:pins.bzl", "KUBEVIRT_VIRT_API_REFERENCE", "KUBEVIRT_VIRT_CONTROLLER_REFERENCE", "KUBEVIRT_VIRT_HANDLER_REFERENCE", "KUBEVIRT_VIRT_LAUNCHER_REFERENCE", "KUBEVIRT_VIRT_OPERATOR_REFERENCE", "KYVERNO_KYVERNOPRE_REFERENCE", "KYVERNO_KYVERNO_REFERENCE")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//agentplane/system_tests/k3s:defs.bzl", "K3S_EXEC_PROPERTIES")
+load("//devinfra/erofs:defs.bzl", "erofs_image")
+load("//devinfra/oci:defs.bzl", "oci_image_manifest")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+py_library(
+    name = "configuration",
+    srcs = ["configuration.py"],
+    deps = ["//agentplane/env:config"],
+)
+
+py_library(
+    name = "supervision",
+    srcs = ["supervision.py"],
+    deps = [
+        ":configuration",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests/driver:agent",
+        "//agentplane/system_tests/driver:session_setup",
+        "@pypi//protobuf",
+    ],
+)
+
+# Keep the VM-only supervision fixture off the Debian guest-root dependency path.
+pkg_files(
+    name = "supervision_fixture_file",
+    srcs = ["//agentplane/env/runtime/supervision:environment_runtime_systemd_fixture"],
+    attributes = pkg_attributes(mode = "0755"),
+    renames = {"//agentplane/env/runtime/supervision:environment_runtime_systemd_fixture": "environment-runtime-systemd-fixture"},
+)
+
+pkg_tar(
+    name = "supervision_fixture_bin",
+    srcs = [":supervision_fixture_file"],
+    package_dir = "/bin",
+)
+
+pkg_tar(
+    name = "test_runner_disk_bin",
+    deps = [
+        ":supervision_fixture_bin",
+        "//agentplane/env/images:disk_bin",
+    ],
+)
+
+erofs_image(
+    name = "test_runner_disk_erofs",
+    out = "test-runner.img",
+    tar = ":test_runner_disk_bin",
+    volume_label = "agentplane",
+)
+
+pkg_tar(
+    name = "test_runner_disk_img",
+    srcs = [":test_runner_disk_erofs"],
+    mode = "0644",
+    owner = "107.107",
+    package_dir = "/disk",
+    remap_paths = {"test-runner.img": "runner.img"},
+)
+
+oci_image(
+    name = "test_runner_disk_image",
+    architecture = "amd64",
+    os = "linux",
+    tars = [
+        ":test_runner_disk_bin",
+        ":test_runner_disk_img",
+    ],
+    user = "107:107",
+)
+
+oci_image_manifest(
+    name = "vm_runner_disk_image",
+    images = {":test_runner_disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"},
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+)
+
+oci_image_manifest(
+    name = "vm_images",
+    images = {
+        "@kubevirt_virt_api_linux_amd64": KUBEVIRT_VIRT_API_REFERENCE,
+        "@kubevirt_virt_controller_linux_amd64": KUBEVIRT_VIRT_CONTROLLER_REFERENCE,
+        "@kubevirt_virt_handler_linux_amd64": KUBEVIRT_VIRT_HANDLER_REFERENCE,
+        "@kubevirt_virt_launcher_linux_amd64": KUBEVIRT_VIRT_LAUNCHER_REFERENCE,
+        "@kubevirt_virt_operator_linux_amd64": KUBEVIRT_VIRT_OPERATOR_REFERENCE,
+        "@kyverno_kyverno_linux_amd64": KYVERNO_KYVERNO_REFERENCE,
+        "@kyverno_kyvernopre_linux_amd64": KYVERNO_KYVERNOPRE_REFERENCE,
+    },
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+)
+
+py_library(
+    name = "block_storage",
+    testonly = True,
+    srcs = ["block_storage.py"],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+    deps = [
+        "//agentplane/system_tests/driver:cluster",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "sandboxes",
+    srcs = ["sandboxes.py"],
+    deps = [
+        ":configuration",
+        "@pypi//more_itertools",
+    ],
+)
+
+py_library(
+    name = "guest_logs",
+    srcs = ["guest_logs.py"],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+)
+
+py_test(
+    name = "test_guest_logs",
+    srcs = ["test_guest_logs.py"],
+    deps = [
+        ":guest_logs",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_block_storage",
+    srcs = ["test_block_storage.py"],
+    exec_properties = K3S_EXEC_PROPERTIES,
+    deps = [
+        ":block_storage",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/testing:kubernetes_apiserver",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "trace_contract",
+    srcs = ["trace_contract.py"],
+    visibility = ["//agentplane/system_tests/suites:__pkg__"],
+)
+
+py_library(
+    name = "infrastructure",
+    srcs = ["infrastructure.py"],
+    deps = [
+        "//agentplane/system_tests/driver:tracing",
+        "//agentplane/system_tests/k3s:release_manifests",
+        "//devinfra/bazel:runfiles",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "runtime",
+    srcs = ["runtime.py"],
+    deps = [
+        ":block_storage",
+        ":guest_logs",
+        ":infrastructure",
+        ":sandboxes",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/k3s:baseline",
+        "//devinfra/testing:undeclared_outputs",
+    ],
+)
+
+py_test(
+    name = "test_runtime",
+    srcs = ["test_runtime.py"],
+    deps = [
+        ":infrastructure",
+        ":runtime",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:rendered_fixture",
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/k3s:baseline",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_trace_contract",
+    srcs = ["test_trace_contract.py"],
+    deps = [
+        ":trace_contract",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "pytest_plugin",
+    srcs = ["pytest_plugin.py"],
+    deps = [
+        ":guest_logs",
+        ":runtime",
+        "//agentplane/system_tests/deployment:virtualization",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//pytest",
+    ],
+)

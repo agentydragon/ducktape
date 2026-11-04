@@ -20,19 +20,19 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_log_pb2, event_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.agent import (
+from agentplane.system_tests.driver.agent import (
     TURN_SECONDS,
     WORKING_DIRECTORY,
     Agent,
     Turn,
     environment_runtime_startup_retries,
 )
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.dispatcher_transport import TOKEN_AUDIENCE, forward
-from agentplane.system_tests.executor import Executor
-from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
-from agentplane.system_tests.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.tracing import tracer
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.dispatcher_transport import TOKEN_AUDIENCE, forward
+from agentplane.system_tests.driver.executor import Executor
+from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
+from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
 from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation

@@ -67,12 +67,12 @@ K3S_BINARY = "@k3s_linux_amd64//file:k3s"
 
 K3S_BINARY_RLOCATION = "$(rlocationpath " + K3S_BINARY + ")"
 
-_HARNESSES_LAYOUT = "//agentplane/system_tests/k3s:harnesses/environment_tools_layout"
-_FIXTURE = "//agentplane/system_tests/k3s:rendered/local-model.json"
-_MCP_FIXTURE = "//agentplane/system_tests/k3s:rendered/local-model-mcp-fixtures.json"
-_MCP_IMAGES = "//agentplane/system_tests/k3s:mcp_images"
-_VM_FIXTURE = "//agentplane/system_tests/k3s:rendered/local-model-vm.json"
-_REAL_MODEL_FIXTURE = "//agentplane/system_tests/k3s:rendered/public-litellm.json"
+_HARNESSES_LAYOUT = "//agentplane/system_tests/deployment:harnesses/environment_tools_layout"
+_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model.json"
+_MCP_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-mcp-fixtures.json"
+_MCP_IMAGES = "//agentplane/system_tests/deployment:mcp_images"
+_VM_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-vm.json"
+_REAL_MODEL_FIXTURE = "//agentplane/system_tests/deployment:rendered/public-litellm.json"
 _CERT_MANAGER_INSTALL = "@cert_manager_v1_21_2_release//file"
 _TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml"
 
@@ -99,8 +99,8 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
     config = _STACKS[stack]
     images = {
         "fixture": [
-            "//agentplane/system_tests/k3s:service_images",
-            "//agentplane/system_tests/k3s:deletion_test_disk" if stack == "deletion" else "//agentplane/system_tests/k3s:vm_runner_disk_image" if config.vm else "//agentplane/system_tests/k3s:runner_disk_image",
+            "//agentplane/system_tests/deployment:service_images",
+            "//agentplane/system_tests/deployment:deletion_test_disk" if stack == "deletion" else "//agentplane/system_tests/vm:vm_runner_disk_image" if config.vm else "//agentplane/system_tests/deployment:runner_disk_image",
         ] + config.images,
         "pki": ["//agentplane/system_tests/k3s/pki:images"],
         "vm": [],
@@ -112,17 +112,17 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _CERT_MANAGER_INSTALL + ")",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _TRUST_MANAGER_INSTALL + ")",
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + config.fixture + ")",
-        "PYTEST_PLUGINS": "agentplane.system_tests.k3s.system_test_target" + (",agentplane.system_tests.k3s.vm_test_target" if config.vm else ""),
+        "PYTEST_PLUGINS": "agentplane.system_tests.deployment.system_test_target" + (",agentplane.system_tests.vm.pytest_plugin" if config.vm else ""),
     }
     properties = {}
     suite_tags = K3S_TAGS + tags
     if config.vm:
         # Three 1.5 GiB guests boot alongside k3s services; request eight estimated compute units.
         properties["EstimatedComputeUnits"] = "8"
-        images["vm"] = ["//agentplane/system_tests/k3s:vm_images"]
+        images["vm"] = ["//agentplane/system_tests/vm:vm_images"]
         images["guest"] = [
-            "//agentplane/system_tests/k3s/guest:vm_guest_boot_layout",
-            "//agentplane/system_tests/k3s/guest:vm_guest_root_profile_layout" if profile_guest else "//agentplane/system_tests/k3s/guest:vm_guest_root_layout",
+            "//agentplane/system_tests/vm/guest:vm_guest_boot_layout",
+            "//agentplane/system_tests/vm/guest:vm_guest_root_profile_layout" if profile_guest else "//agentplane/system_tests/vm/guest:vm_guest_root_layout",
         ]
         data += ["@kubevirt_operator_bundle//file", "@kyverno_install//file"]
         env |= {
@@ -159,6 +159,6 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         exec_properties = K3S_EXEC_PROPERTIES | properties,
         tags = suite_tags,
         deps = deps + [
-            "//agentplane/system_tests/k3s:system_test_target",
-        ] + (["//agentplane/system_tests/k3s:vm_test_target"] if config.vm else []),
+            "//agentplane/system_tests/deployment:system_test_target",
+        ] + (["//agentplane/system_tests/vm:pytest_plugin"] if config.vm else []),
     )

@@ -170,7 +170,7 @@ The subsequent conversation-recovery failure is addressed separately in
   to make selection of the tool deterministic. This covers the production Runner and pinned Codex
   inside the test guest, independently of further guest slimming. It does not exercise the
   production NixOS systemd caps, executor death/restart, or a breached outer service limit;
-  [fixture details and artifacts](../system_tests/k3s/README.md#vm-sandboxes) describe the scope.
+  [fixture details and artifacts](../system_tests/deployment/README.md#vm-sandboxes) describe the scope.
 
 - [Tool memory isolation](harness_tool_memory_isolation.md) records optional research on putting
   tighter resource limits around a tool child. That would be a separate resource policy, not a change

@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentplane.system_tests.tracing import tracer
+from agentplane.system_tests.driver.tracing import tracer
 
 
 @dataclass(frozen=True)

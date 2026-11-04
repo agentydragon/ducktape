@@ -8,10 +8,10 @@ import pytest
 import pytest_asyncio
 import pytest_bazel
 
-from agentplane.system_tests.case_batch import CASE_RESULT, Case, CaseBatch
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.dispatcher_transport import native_client
-from agentplane.system_tests.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.case_batch import CASE_RESULT, Case, CaseBatch
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.dispatcher_transport import native_client
+from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.suites import pod_runners
 from agentplane.system_tests.suites.pod_cases import SCENARIOS, Resources, Scenario
 from util.net import Listener

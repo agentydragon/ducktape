@@ -12,11 +12,11 @@ from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.agent import WORKING_DIRECTORY, Agent, scripted_turn_with_admission_and_history
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
-from agentplane.system_tests.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.tracing import tracer
+from agentplane.system_tests.driver.agent import WORKING_DIRECTORY, Agent, scripted_turn_with_admission_and_history
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
+from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.tracing import tracer
 
 _RUNNER_CREDENTIAL_LABEL = "agentplane.allegedly.works/environment-runtime-credential"
 _SANDBOX_LABEL = "agentplane.allegedly.works/sandbox"

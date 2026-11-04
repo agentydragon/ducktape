@@ -5,7 +5,7 @@ from typing import Any
 
 import yaml
 
-from agentplane.system_tests.tracing import tracer
+from agentplane.system_tests.driver.tracing import tracer
 
 
 def load_release_manifest(path: Path, name: str) -> list[dict[str, Any]]:

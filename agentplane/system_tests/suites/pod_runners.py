@@ -10,9 +10,9 @@ from uuid import uuid4
 from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import session_pb2
-from agentplane.system_tests.cluster import Cluster
-from agentplane.system_tests.scenario import open_resources
-from agentplane.system_tests.tracing import tracer
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.scenario import open_resources
+from agentplane.system_tests.driver.tracing import tracer
 
 # gazelle:include_dep @pypi//protobuf
 

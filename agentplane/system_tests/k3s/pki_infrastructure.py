@@ -8,8 +8,8 @@ from typing import Any
 import yaml
 from tenacity import Retrying, retry_if_exception, retry_if_exception_type, stop_after_delay, wait_fixed
 
+from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.k3s.release_manifests import load_release_manifest
-from agentplane.system_tests.tracing import tracer
 from devinfra.bazel.runfiles import get_required_path
 
 Kubectl = Callable[..., str]
