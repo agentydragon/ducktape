@@ -340,6 +340,10 @@ pub fn analyze_program(
             .collect(),
         chunks,
     };
+    // Facts and context ordinals own everything encoding needs. Release the
+    // parsed program and its indexes before allocating the encoded artifact.
+    drop(artifact_indexes);
+    drop(artifact);
     analysis_artifact::write_artifact(&header, &body, &ordinals)
 }
 
