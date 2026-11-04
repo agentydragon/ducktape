@@ -3714,8 +3714,30 @@ insertion of those `ClassMembers` into the escaped-callback set. Its typed
 `writer` distinguishes the publication operation; optional `top_level_owner`
 and `span_start`/`span_end` locate the operation in the analyzed chunk, and
 `source_location` names the containing source unit when available. Missing
-context remains unknown. This record is diagnostic only and does not affect
-the construction proof or conservative effects.
+context remains unknown. For `bounded_invocation_fallback`, the optional
+`bounded_fallback_input_path` records one deterministic retained-reference path
+from an existing fallback seed: an abstract argument-vector position, captured
+binding, escaped callback pool, named export binding, or default/runtime export
+callback roots. An argument position is not proof of a runtime caller argument:
+ordinary fallback uses its abstract invocation inputs, while callback-pool
+fallback uses the original opaque-operation inputs rather than the synthetic
+flattened callback-set argument.
+Duplicate abstract values keep the first seed in argument, captured-binding,
+escaped-pool, then export order. Typed path edges reuse the callback walk's
+stored-reference carriers; array elements are reported only for canonical
+array-index property keys when the abstract reference has an array allocation
+kind. Object-backed array-literal storage remains a stored-property edge
+because its array shape is not represented on the retained reference. The path
+omits runtime allocation identities and indices into abstract value sets. If a
+path cannot be rooted, it is reported as
+`unknown` with a reason. This is one valid abstract path, not a unique cause of
+publication. The optional `bounded_fallback_callsite` separately locates the
+opaque invocation that entered the fallback when its call span is known; its
+offsets locate that operation expression, while `source_location` identifies
+the active top-level owner context and may differ from a nested callable's
+lexical location. It does not replace the writer span or claim that the opaque
+caller itself performed the publication. Both fields are diagnostic only and
+do not affect the construction proof or conservative effects.
 
 Each record's `reach` classifies the code the conservative path stands for.
 `{"kind": "bounded"}`: known source code, namely a rejected local construction

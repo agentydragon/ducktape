@@ -23,13 +23,29 @@ pub(super) enum CallbackOperation {
         outcome: Box<Outcome>,
     },
     BoundedInvocationFallback {
-        owner: SourceUnitOrdinal,
-        arguments: Vec<Values>,
-        captured: Context,
-        reason: ExecutionPrecisionLossReason,
-        reach: HavocReach,
-        span: Span,
+        request: BoundedInvocationFallbackRequest,
     },
+}
+
+pub(super) struct BoundedInvocationFallbackRequest {
+    pub(super) owner: SourceUnitOrdinal,
+    pub(super) arguments: Vec<Values>,
+    pub(super) captured: Context,
+    pub(super) reason: ExecutionPrecisionLossReason,
+    pub(super) reach: HavocReach,
+    pub(super) span: Span,
+    pub(super) diagnostics: BoundedInvocationFallbackDiagnostics,
+}
+
+#[derive(Default)]
+pub(super) struct BoundedInvocationFallbackDiagnostics {
+    /// Span of the opaque operation whose callback pool entered this fallback.
+    pub(super) callsite_span: Option<Span>,
+    /// Abstract input values used only to root diagnostics. At a callback-pool
+    /// boundary these are the original opaque-operation arguments, not the
+    /// synthetic flattened callback-pool argument. An empty vector means the
+    /// pool admitted no supplied arguments. This never changes semantic args.
+    pub(super) arguments: Option<Vec<Values>>,
 }
 
 #[derive(Clone)]
@@ -75,15 +91,8 @@ pub(super) fn dispatch(
             );
             CallbackResult::Outcome(outcome)
         }
-        CallbackOperation::BoundedInvocationFallback {
-            owner,
-            arguments,
-            captured,
-            reason,
-            reach,
-            span,
-        } => CallbackResult::Outcome(Box::new(executor.bounded_invocation_fallback_transfer(
-            owner, &arguments, &captured, reason, reach, span,
-        ))),
+        CallbackOperation::BoundedInvocationFallback { request } => CallbackResult::Outcome(
+            Box::new(executor.bounded_invocation_fallback_transfer(request)),
+        ),
     }
 }

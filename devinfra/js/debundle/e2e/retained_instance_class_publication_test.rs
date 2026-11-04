@@ -1,6 +1,7 @@
 //! Retained local instances must not be confused with escaped class members.
 use analysis::reports::schema::{ConstructionRejection, RecordFactoryRejectionReason};
 use debundle_e2e_support::*;
+use serde_json::Value as JsonValue;
 
 const MAP_SOURCE: &str = r#"class Box {
   callback = () => this.record.value;
@@ -38,6 +39,36 @@ console.log("ready");
 "#;
 
 const OPAQUE_CHUNK: &str = "export function retain(value) { globalThis.saved = value; }\n";
+
+const BOUNDED_FALLBACK_PEER: [(&str, &str); 1] = [(
+    "static/peer",
+    "export function host(...callbacks) {\n  for (const callback of callbacks) {\n    const result = callback();\n    if (typeof result === 'function') result();\n  }\n}\n",
+)];
+
+const CALLBACK_POOL_SIZE: usize = 70;
+
+fn bounded_fallback_witness_source() -> String {
+    let mut source = String::from(
+        r#"import { host } from "./peer.js";
+class Box {
+  callback = () => this.record.value;
+  constructor(record) { this.record = record; }
+}
+function create(record) { return new Box(record); }
+const first = create({ value: 7 });
+const shelf = { nested: [first] };
+const reader = (shelf => () => shelf.nested[0].callback)(shelf);
+"#,
+    );
+    let fillers = (0..CALLBACK_POOL_SIZE)
+        .map(|index| format!("() => {index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    source.push_str(&format!(
+        "host(reader, {fillers});\nconst again = create({{ value: 8 }});\nconsole.log(first.callback(), again.callback());\n"
+    ));
+    source
+}
 
 const PROJECTED_SOURCE: &str = r#"class Box {
   callback = () => this.record.value;
@@ -253,6 +284,29 @@ fn assert_class_members_escape_refusal(graph: &analysis::DependencyGraphReport, 
     );
 }
 
+fn class_members_escape_rejection<'a>(
+    graph: &'a analysis::DependencyGraphReport,
+    binding: &str,
+) -> &'a analysis::reports::schema::LocalRecordFactoryRejection {
+    let execution = source_unit(graph, binding)
+        .synchronous_execution
+        .as_ref()
+        .expect("later factory execution report");
+    let [rejection] = execution.local_record_factory_rejections.as_slice() else {
+        panic!("expected the later factory proof to be refused: {execution:#?}");
+    };
+    assert_eq!(rejection.factory_binding, "create");
+    assert_eq!(
+        rejection.reason,
+        RecordFactoryRejectionReason::ConstructorProof
+    );
+    assert_eq!(
+        rejection.construction,
+        Some(ConstructionRejection::ClassMembersEscaped)
+    );
+    rejection
+}
+
 #[test]
 fn mapping_a_retained_instance_does_not_publish_class_members() {
     let fixture = run_fixture(FixtureOpts::new(
@@ -304,6 +358,78 @@ fn opaque_consumer_of_an_instance_still_blocks_later_construction() {
     let graph = fixture.dependency_graph();
     assert_factory_complete(&graph, "first");
     assert_class_members_escape_refusal(&graph, "again");
+    let publication = class_members_escape_rejection(&graph, "again")
+        .first_class_members_publication
+        .as_ref()
+        .expect("first actual class-members publication");
+    let publication = serde_json::to_value(publication).expect("serialize publication");
+    assert_ne!(publication["writer"], "bounded_invocation_fallback");
+    assert!(publication.get("bounded_fallback_input_path").is_none());
+}
+
+#[test]
+fn bounded_pool_fallback_reports_the_original_retained_input_path() {
+    let source = bounded_fallback_witness_source();
+    let host_statement = source
+        .lines()
+        .find(|line| line.starts_with("host("))
+        .expect("opaque host call statement");
+    let bindings = ["Box", "create", "first", "shelf", "reader", "again"];
+    let fixture = run_fixture(
+        FixtureOpts::new(&source, vec![module(&bindings, &[host_statement])])
+            .with_extra_chunks(&BOUNDED_FALLBACK_PEER)
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7 8\n");
+
+    let graph = fixture.dependency_graph();
+    assert_factory_complete(&graph, "first");
+    let publication = class_members_escape_rejection(&graph, "again")
+        .first_class_members_publication
+        .as_ref()
+        .expect("first actual class-members publication");
+    let report: JsonValue = serde_json::to_value(publication).expect("serialize publication");
+    assert_eq!(report["writer"], "bounded_invocation_fallback");
+    assert!(report.get("span_start").is_none());
+    assert!(report.get("span_end").is_none());
+
+    let path = &report["bounded_fallback_input_path"];
+    assert_eq!(path["kind"], "retained", "{path:#}");
+    assert_eq!(path["seed"]["kind"], "argument", "{path:#}");
+    assert_eq!(path["seed"]["position"], 0, "{path:#}");
+    let edges = path["edges"].as_array().expect("typed retained edges");
+    assert!(
+        edges[0]["kind"] == "closure_snapshot" || edges[0]["kind"] == "closure_cell",
+        "{path:#}"
+    );
+    assert_eq!(edges[0]["binding"], "shelf", "{path:#}");
+    assert_eq!(edges[1]["kind"], "object_property", "{path:#}");
+    assert_eq!(edges[1]["property"], "nested", "{path:#}");
+    assert_eq!(edges[2]["kind"], "object_property", "{path:#}");
+    assert_eq!(edges[2]["property"], "0", "{path:#}");
+    assert_eq!(edges[3]["kind"], "class_members_capability", "{path:#}");
+
+    let callsite = &report["bounded_fallback_callsite"];
+    assert!(callsite.is_object(), "{report:#}");
+    assert!(callsite["top_level_owner"].is_number(), "{callsite:#}");
+    let start = u32::try_from(
+        callsite["span_start"]
+            .as_u64()
+            .expect("bounded fallback call-site span start"),
+    )
+    .expect("span start fits u32");
+    let end = u32::try_from(
+        callsite["span_end"]
+            .as_u64()
+            .expect("bounded fallback call-site span end"),
+    )
+    .expect("span end fits u32");
+    let start = start
+        .checked_sub(1)
+        .expect("SWC source starts at BytePos(1)") as usize;
+    let end = end.checked_sub(1).expect("SWC source starts at BytePos(1)") as usize;
+    assert!(start < end, "{callsite:#}");
+    assert!(source[start..end].contains("host("), "{callsite:#}");
 }
 
 #[test]

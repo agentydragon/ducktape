@@ -778,6 +778,96 @@ pub struct FirstClassMembersPublication {
     pub span_end: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
+    /// For bounded invocation fallback, one deterministic retained-input path
+    /// to the first newly published class capability. This is diagnostic
+    /// context only; it does not establish that the seed caused publication.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bounded_fallback_input_path: Option<BoundedInvocationFallbackInputPath>,
+    /// Span of the opaque invocation that entered a bounded fallback, when
+    /// known. The location is the active top-level owner context, which may
+    /// differ from a nested callable's lexical source location. This context
+    /// is distinct from the writer's own span above.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bounded_fallback_callsite: Option<BoundedInvocationFallbackCallSite>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct BoundedInvocationFallbackCallSite {
+    pub top_level_owner: Option<SourceUnitOrdinal>,
+    pub span_start: u32,
+    pub span_end: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+/// A retained-input path followed by the bounded callback-pool fallback.
+/// Unknown is explicit when the shared callback walk found a class capability
+/// but could not preserve a rooted path for it.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BoundedInvocationFallbackInputPath {
+    Retained {
+        seed: BoundedInvocationFallbackSeed,
+        edges: Vec<BoundedInvocationFallbackPathEdge>,
+    },
+    Unknown {
+        reason: BoundedInvocationFallbackUnknownPathReason,
+    },
+}
+
+/// One of the exact root groups supplied to the bounded fallback's existing
+/// callback-value union. If a value occurs in several groups, the witness
+/// follows the first matching group in argument, captured-binding, escaped
+/// pool, export-callback order.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BoundedInvocationFallbackSeed {
+    /// Position in an abstract input-argument vector, not proof of a runtime
+    /// caller argument. Pool fallback uses original supplied inputs rather
+    /// than its synthetic flattened callback-set argument.
+    Argument {
+        position: usize,
+    },
+    CapturedBinding {
+        binding: String,
+    },
+    EscapedCallbackPool,
+    AvailableExportBinding {
+        binding: String,
+    },
+    AvailableExportCallbacks,
+}
+
+/// A typed retained-reference edge. Array-element edges require an actual
+/// array allocation and a canonical index property; ordinary object-backed
+/// array-literal storage remains an object-property edge. Collection indices
+/// and runtime allocation identities are omitted where the abstract value is
+/// a set.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BoundedInvocationFallbackPathEdge {
+    ObjectProperty { property: String },
+    UnknownObjectProperty,
+    ArrayElement { index: u32 },
+    UnknownArrayProperty,
+    AppliedGetter { property: Option<String> },
+    AppliedSetter { property: Option<String> },
+    ClosureHomeObject,
+    ClosureSnapshot { binding: String },
+    ClosureCell { binding: String },
+    InstanceRetainedValue,
+    DeferredCallbackRetainedValue,
+    AuditedResultRetainedValue,
+    DescriptorMapRetainedValue,
+    EscapedCallbackPoolExpansion,
+    ClassMembersCapability,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BoundedInvocationFallbackUnknownPathReason {
+    SeedUnavailable,
+    RetainedReferencePathUnavailable,
 }
 
 /// The operation that first exposed class members to the opaque callback pool.
