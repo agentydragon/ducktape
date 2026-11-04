@@ -932,7 +932,7 @@ fn run_prepared_transform(
                     RunOutput::DryRun | RunOutput::Accepted => GateRejectionPolicy::Refuse,
                     RunOutput::EmitOnRejection => GateRejectionPolicy::LowerUnrunnable,
                 },
-                capture_effect_assessment: assessment_only,
+                assessment_only,
                 analysis,
             },
         )?;

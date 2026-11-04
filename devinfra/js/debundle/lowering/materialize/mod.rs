@@ -110,7 +110,7 @@ pub(super) struct ChunkContext<'a> {
     pub(super) full_reports: &'a BTreeSet<super::FullReportKind>,
     pub(super) full_report_chunks: &'a BTreeSet<String>,
     pub(super) gate_rejection: GateRejectionPolicy,
-    pub(super) capture_effect_assessment: bool,
+    pub(super) assessment_only: bool,
     pub(super) export_reentry_policies: &'a BTreeMap<ChunkId, ExportReentryPolicy>,
     pub(super) export_reentry_reports: &'a BTreeMap<ChunkId, ExportReentryReport>,
     /// Vendor-plan consultation for runtime re-import construction;
@@ -547,7 +547,7 @@ pub(super) fn finish_logical_chunk(
         full_reports,
         full_report_chunks,
         gate_rejection: gate_rejection_policy,
-        capture_effect_assessment,
+        assessment_only,
         vendor_import_oracle,
         export_reentry_policies,
         export_reentry_reports,
@@ -693,7 +693,7 @@ pub(super) fn finish_logical_chunk(
         assignment_chunk_renames,
         entry_destination,
     )?;
-    if capture_effect_assessment {
+    if assessment_only {
         let assessment = assignment_analysis
             .effect_relocation_assessment::<std::convert::Infallible>(
                 &analysis.facts,

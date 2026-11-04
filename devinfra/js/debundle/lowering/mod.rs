@@ -350,10 +350,10 @@ pub struct MaterializeLogicalModulesOptions {
     pub full_reports: BTreeSet<FullReportKind>,
     pub full_report_chunks: BTreeSet<String>,
     pub gate_rejection: GateRejectionPolicy,
-    /// Return the exact typed effect relocation sweep from each finalized
-    /// assignment plan. This remains report-only and is used by the
-    /// assessment-only CLI path.
-    pub capture_effect_assessment: bool,
+    /// Stop materialization after the report-only effect relocation sweep for
+    /// each finalized assignment plan. This requires loaded staged analysis
+    /// facts and is used by the assessment-only CLI path.
+    pub assessment_only: bool,
     pub analysis: AnalysisMode,
 }
 
@@ -404,6 +404,10 @@ pub fn materialize_logical_modules(
     vendor_plan: &vendor::VendorResolutionPlan,
     options: MaterializeLogicalModulesOptions,
 ) -> Result<Materialized> {
+    ensure!(
+        !options.assessment_only || matches!(&options.analysis, AnalysisMode::Load { .. }),
+        "assessment-only materialization requires loaded staged analysis facts",
+    );
     let MaterializeSpecInputs {
         host_behavior,
         program_premises,
@@ -561,7 +565,7 @@ pub fn materialize_logical_modules(
                                 full_reports: &options.full_reports,
                                 full_report_chunks: &options.full_report_chunks,
                                 gate_rejection: options.gate_rejection,
-                                capture_effect_assessment: options.capture_effect_assessment,
+                                assessment_only: options.assessment_only,
                                 export_reentry_reports: &export_reentry_reports,
                                 vendor_import_oracle: vendor_import_oracle.as_ref(),
                                 export_reentry_policies: &export_reentry_policies,
@@ -694,7 +698,7 @@ pub fn materialize_logical_modules(
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
 
-    if options.capture_effect_assessment {
+    if options.assessment_only {
         let assessments = chunk_results
             .into_iter()
             .map(|result| match result {

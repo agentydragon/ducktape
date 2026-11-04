@@ -299,10 +299,7 @@ fn assert_candidate_assessment_matches_run(
         "candidate run failed unexpectedly:\n{}",
         result.stderr
     );
-    let report: Value = serde_json::from_slice(
-        &fs::read(out_root.join("reports/tree/main/effect_translation_validation.json")).unwrap(),
-    )
-    .unwrap();
+    let report = read_effect_report(&out_root);
     for field in [
         "decision",
         "emitted_order",
@@ -314,6 +311,13 @@ fn assert_candidate_assessment_matches_run(
     ] {
         assert_eq!(assessment[field], report[field], "assessment field {field}");
     }
+}
+
+fn read_effect_report(out_root: &Path) -> Value {
+    serde_json::from_slice(
+        &fs::read(out_root.join("reports/tree/main/effect_translation_validation.json")).unwrap(),
+    )
+    .unwrap()
 }
 
 fn command(args: &[&str]) -> CommandResult {
@@ -919,13 +923,24 @@ fn reports_only_requires_analysis_and_keeps_final_program_validation() {
 #[test]
 fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
     let staged = staged_tree(
-        &[("main", "const value = 1;\nconsole.log(value);\n")],
         &[(
-            "value.yaml",
-            "members: [{selector: {binding: {name: value}}}]\n",
+            "main",
+            "function first() { return \"first\"; }\n\
+             function second() { return \"second\"; }\n\
+             console.log(first(), second());\n",
+        )],
+        &[(
+            "z_later.yaml",
+            "members: [{selector: {binding: {name: first}}}, {selector: {binding: {name: second}}}]\n",
         )],
     );
-    let result = staged.assign(Some("value:a_value"), Some(&staged.artifact), true);
+    let baseline_out = staged.root().join("run-baseline");
+    let baseline = staged.run_with_analysis(&staged.artifact, &baseline_out, false);
+    assert_ok(&baseline, "baseline staged run");
+    let baseline_report = read_effect_report(&baseline_out);
+    assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
+
+    let result = staged.assign(Some("second:a_earlier"), Some(&staged.artifact), true);
     assert_ok(&result, "bindings assign --dry-run --analysis");
     let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
@@ -933,14 +948,26 @@ fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
         assessment["decision"]["status"], "accepted",
         "{assessment:#}"
     );
-    assert_eq!(assessment["swapped_pairs"], 0, "{assessment:#}");
-    assert_candidate_assessment_matches_run(assessment, &staged, "candidate", true, false);
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
+    assert_ne!(
+        assessment["emitted_order"], baseline_report["emitted_order"],
+        "candidate extraction into the earlier ESM module must invert source-unit order"
+    );
 
-    // The same move, without requesting the optional report-only assessment,
-    // keeps the ordinary graph-backed editor path intact and applies the spec.
-    let applied = staged.assign(Some("value:a_value"), None, false);
+    // Apply the identical move through the ordinary graph-backed edit path,
+    // then compare the assessment with run --analysis over that candidate YAML.
+    let applied = staged.assign(Some("second:a_earlier"), None, false);
     assert_ok(&applied, "ordinary graph-backed bindings assign");
-    assert!(staged.modules.join("a_value.yaml").is_file());
+    assert!(staged.modules.join("a_earlier.yaml").is_file());
+    assert_candidate_assessment_matches_run(assessment, &staged, "candidate", true, false);
+    assert_node_output(
+        &staged.root().join("run-candidate/app/main/entry.js"),
+        "first second\n",
+        "",
+    );
 }
 
 #[test]
