@@ -944,8 +944,11 @@ Object.defineProperty(pattern, 'custom', {\n\
   configurable: true,\n\
   get() { globalThis.regexOwnGetterReads = (globalThis.regexOwnGetterReads || 0) + 1; return 'own'; },\n\
 });\n\
-const sourceReads = [pattern.source, pattern.notPresent, pattern.lastIndex, pattern.custom];\n\
-console.log(sourceReads[0], sourceReads[1], sourceReads[2], sourceReads[3], marker, globalThis.regexGetterReads, globalThis.regexOwnGetterReads);\n";
+const sourceText = pattern.source;\n\
+const missingValue = pattern.notPresent;\n\
+const lastIndexValue = pattern.lastIndex;\n\
+const customValue = pattern.custom;\n\
+console.log(sourceText, missingValue, lastIndexValue, customValue, marker, globalThis.regexGetterReads, globalThis.regexOwnGetterReads);\n";
     let fixture = run_fixture(
         FixtureOpts::new(
             source,
@@ -979,26 +982,33 @@ console.log(sourceReads[0], sourceReads[1], sourceReads[2], sourceReads[3], mark
             && pattern_execution["precision_losses"] == serde_json::json!([]),
         "RegExp literal creation alone remains a complete allocation: {pattern_execution:#?}"
     );
-    let source_execution = execution("sourceReads");
-    assert!(
-        source_execution["complete"] == false
-            && source_execution["precision_losses"]
-                .as_array()
-                .is_some_and(|losses| {
-                    losses.iter().any(|loss| {
-                        loss["reason"]["code"] == "unsupported_operation"
-                            && loss["reason"]["operation"] == "member_read"
-                    })
-                }),
-        "unknown, missing, own-data, and prototype RegExp property reads stay outside literal-allocation coverage: {source_execution:#?}"
-    );
+    for binding in [
+        "sourceText",
+        "missingValue",
+        "lastIndexValue",
+        "customValue",
+    ] {
+        let read_execution = execution(binding);
+        assert!(
+            read_execution["complete"] == false
+                && read_execution["precision_losses"]
+                    .as_array()
+                    .is_some_and(|losses| {
+                        losses.iter().any(|loss| {
+                            loss["reason"]["code"] == "unsupported_operation"
+                                && loss["reason"]["operation"] == "member_read"
+                        })
+                    }),
+            "the {binding} RegExp property read stays outside literal-allocation coverage: {read_execution:#?}"
+        );
+    }
 
     let report = fixture.effect_translation_validation();
     assert_eq!(report["swapped_pairs"], 1, "{report:#}");
     assert_eq!(report["counts"]["havoc_pairs"], 0, "{report:#}");
     assert_eq!(
-        report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
-        "the getter-triggering member read remains outside creation coverage: {report:#}"
+        report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 4,
+        "each RegExp property read remains outside creation coverage: {report:#}"
     );
     for domain in ["global_properties", "general_heap", "host_effects"] {
         assert!(
