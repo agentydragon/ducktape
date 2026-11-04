@@ -87,6 +87,34 @@ func TestFreshBaseline(t *testing.T) {
 		t.Fatalf("request rows = %d", got)
 	}
 }
+func TestFreshSchemaMatchesPreviousRelease(t *testing.T) {
+	old := cloneDatabase(t)
+	fresh := cloneDatabase(t)
+	exec(t, fresh, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`)
+	if err := Up(t.Context(), fresh); err != nil {
+		t.Fatal(err)
+	}
+	const query = `SELECT coalesce(string_agg(entry, E'\n' ORDER BY entry), '') FROM (
+ SELECT 'column:' || table_name || ':' || column_name || ':' || data_type || ':' || is_nullable || ':' || coalesce(column_default, '') AS entry
+ FROM information_schema.columns WHERE table_schema=current_schema() AND table_name <> 'action_service_goose_version'
+ UNION ALL
+ SELECT 'constraint:' || c.relname || ':' || con.conname || ':' || pg_get_constraintdef(con.oid)
+ FROM pg_constraint con JOIN pg_class c ON c.oid=con.conrelid WHERE c.relnamespace=current_schema()::regnamespace AND c.relname <> 'action_service_goose_version'
+ UNION ALL
+ SELECT 'index:' || indexname || ':' || indexdef FROM pg_indexes WHERE schemaname=current_schema() AND tablename <> 'action_service_goose_version'
+ ) definitions`
+	var oldSchema, newSchema string
+	if err := old.QueryRowContext(t.Context(), query).Scan(&oldSchema); err != nil {
+		t.Fatal(err)
+	}
+	if err := fresh.QueryRowContext(t.Context(), query).Scan(&newSchema); err != nil {
+		t.Fatal(err)
+	}
+	if oldSchema != newSchema {
+		t.Fatalf("fresh schema differs from previous release:\nold:\n%s\nnew:\n%s", oldSchema, newSchema)
+	}
+}
+
 func TestAdoptCompletedNinePreservesRowsAndHistory(t *testing.T) {
 	db := cloneDatabase(t)
 	seed(t, db)

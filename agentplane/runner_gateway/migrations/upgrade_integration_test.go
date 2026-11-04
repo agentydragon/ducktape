@@ -113,6 +113,20 @@ func TestBaselineRejectsPartialPredecessors(t *testing.T) {
 	}
 }
 
+func TestBaselineRejectsUnknownObjectsInFreshDatabase(t *testing.T) {
+	db := openMigrationDatabase(t)
+	if _, err := db.ExecContext(t.Context(), `CREATE TABLE unrecognized_data (value text); INSERT INTO unrecognized_data VALUES ('keep')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := Up(t.Context(), db); err == nil {
+		t.Fatal("baseline accepted an unrecognized database")
+	}
+	var value string
+	if err := db.QueryRowContext(t.Context(), `SELECT value FROM unrecognized_data`).Scan(&value); err != nil || value != "keep" {
+		t.Fatalf("unrecognized data changed: %q, %v", value, err)
+	}
+}
+
 func TestBaselineRejectsSchemaWithoutHistory(t *testing.T) {
 	db := openMigrationDatabase(t)
 	if err := Up(t.Context(), db); err != nil {

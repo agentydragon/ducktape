@@ -15,7 +15,10 @@ BEGIN
 
     IF existing_tables = 0 THEN
         -- Goose creates its history table before executing the first migration.
-        IF EXISTS (SELECT 1 FROM runner_gateway_dispatcher_goose_version WHERE version_id > 0) THEN
+        IF EXISTS (SELECT 1 FROM runner_gateway_dispatcher_goose_version WHERE version_id > 0)
+            OR EXISTS (SELECT 1 FROM pg_class WHERE relnamespace=current_schema()::regnamespace
+                AND relkind IN ('r','p','v','m','S','f')
+                AND relname NOT IN ('runner_gateway_dispatcher_goose_version','runner_gateway_dispatcher_goose_version_id_seq')) THEN
             RAISE EXCEPTION 'Dispatcher history exists without its schema; restore it or use the previous image to finish migration 13';
         END IF;
         RETURN;
