@@ -135,7 +135,11 @@ the extant bound Sandbox object; the standalone API can inspect/control its own 
 
 ## Verification
 
-Run the service, exporter and executor integration targets via Bazel. They use real PostgreSQL,
+Run `//agentplane/central_sampler:central_sampler_unit_test` for image preparation, settings and
+code-mode Go tests without starting PostgreSQL. The existing
+`//agentplane/central_sampler:central_sampler_test` target initializes PostgreSQL and runs the
+service, exporter and executor integration cases. Run both targets for the full Go test sweep. The
+integration targets use real PostgreSQL,
 pinned upstream host/executor processes, authenticated Gateway/History and scripted provider wire
 fixtures. Scripted acceptance does not establish live provider or subscription compatibility.
 Responses Lite compaction uses Codex's remote-v2 beta protocol. Anthropic uses native server-side
