@@ -50,6 +50,7 @@ py_library(
         "//props/db:database",
         "//props/db/sync:model_metadata",
         "//props/llm_proxy:app",
+        "//props/llm_proxy:database",
         "//props/orchestration:agent_registry",
         "//props/orchestration:docker_env",
         "//props/orchestration:docker_executor",

@@ -62,6 +62,7 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.llm_proxy.app import create_app as create_llm_proxy_app  # alias: backend.app also defines create_app
+from props.llm_proxy.database import ProxyDatabase
 from props.orchestration.agent_registry import AgentRegistry, ResolvedImage
 from props.orchestration.docker_env import PROPS_NETWORK_NAME
 from props.orchestration.docker_executor import DockerExecutor
@@ -173,8 +174,8 @@ async def _make_stack(
             registry_proxy_config = RegistryProxyConfig(host="localhost", port=registry_proxy_server.port)
             backend_url = backend_server.origin
             # Agents talk to the standalone LLM proxy (the backend dropped its /v1
-            # mount in #1894); the proxy reuses the backend's llm router + auth against
-            # the same DB and forwards to the fake OpenAI upstream above.
+            # mount in #1894); the proxy uses async PostgreSQL connections to the
+            # same DB and forwards to the fake OpenAI upstream above.
             llm_proxy_url = llm_proxy_server.origin
             agent_base_env = _build_agent_base_env(db.config)
 
@@ -204,10 +205,11 @@ async def _make_stack(
             deps = BackendDeps(config=config, registry_proxy_config=registry_proxy_config, backend_url=backend_url)
 
             async with (
+                ProxyDatabase(db.config) as proxy_db,
                 fake_openai_server.serve_in_loop(fake_openai.create_app()),
                 ensure_agent_network(async_docker_client),
                 backend_server.serve_in_loop(create_app(deps=deps)),
-                llm_proxy_server.serve_in_loop(create_llm_proxy_app(db=db, config=config)),
+                llm_proxy_server.serve_in_loop(create_llm_proxy_app(db=proxy_db, config=config)),
                 registry_proxy_server.serve_in_loop(create_registry_proxy_app(db=db)),
             ):
                 executor = DockerExecutor(
