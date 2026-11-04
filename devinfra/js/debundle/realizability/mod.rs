@@ -54,9 +54,11 @@ mod incremental_quotient;
 mod translation_validation;
 
 pub use effect_translation_validation::{
-    EffectConflictCell, EffectConflictDisposition, EffectConflictRow, EffectOpacity,
-    EffectTranslationValidationInputs, EffectTranslationValidationReport,
-    effect_translation_validate,
+    EffectConflictCell, EffectConflictDiagnosticRow, EffectConflictDisposition, EffectConflictRow,
+    EffectCoverageReport, EffectOpacity, EffectRelocationAcceptanceScope,
+    EffectRelocationAssessment, EffectRelocationAssessmentInputs, EffectRelocationConflict,
+    EffectRelocationDecision, EffectTranslationValidationInputs, EffectTranslationValidationReport,
+    LegacyEdgeComparisonCounts, assess_effect_relocation, effect_translation_validate,
 };
 use esm_simulator::EsmEvaluationSimulator;
 use incremental_quotient::{IncrementalQuotient, QuotientOverlay};

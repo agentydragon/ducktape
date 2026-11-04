@@ -215,8 +215,10 @@ fn bounded_conflict_examples_preserve_all_checks_and_complete_export() {
     let effects = full.effect_translation_validation();
     assert_eq!(
         pairs.len() as u64,
-        effects["counts"]["both_pairs"].as_u64().unwrap()
-            + effects["counts"]["legacy_edge_only_pairs"]
+        effects["legacy_edge_comparison"]["both_pairs"]
+            .as_u64()
+            .unwrap()
+            + effects["legacy_edge_comparison"]["legacy_edge_only_pairs"]
                 .as_u64()
                 .unwrap()
     );
