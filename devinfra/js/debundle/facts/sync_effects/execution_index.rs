@@ -6253,7 +6253,10 @@ impl ExecutionIndex {
         let inert = |value: &ValueExpr| {
             matches!(
                 value,
-                ValueExpr::ObjectLiteral(..) | ValueExpr::Primitive(_) | ValueExpr::Undefined
+                ValueExpr::ObjectLiteral(..)
+                    | ValueExpr::Primitive(_)
+                    | ValueExpr::LogicalNot(_)
+                    | ValueExpr::Undefined
             )
         };
         inert(value)
