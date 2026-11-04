@@ -1045,6 +1045,105 @@ fn graph_options_survive_the_source_only_analysis_boundary() {
     }
 }
 
+#[test]
+fn trusted_dataflow_summaries_reach_staged_facts_and_remain_in_the_projection() {
+    let source = r#"class Holder1 { constructor() { this.kind = "h1"; } }
+class Holder2 { constructor() { this.kind = "h2"; } }
+const instA = new Holder1();
+const instB = new Holder2();
+console.log(instA.kind, instB.kind);
+export { Holder1, Holder2, instA, instB };
+"#;
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("mod_a", &[Member::new("Holder1"), Member::new("instA")]),
+                logical_module("mod_b", &[Member::new("Holder2"), Member::new("instB")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain()
+        .with_trusted_dataflow_summaries(),
+    );
+    assert_ok(
+        &staged.run(&["--analysis", path(&staged.artifact)]),
+        "run trusted dataflow facts from the staged artifact",
+    );
+    let reused = staged.set_aside("trusted-reused");
+    let graph: DependencyGraphReport =
+        read_gzip_json(&reused.join("out/reports/tree/static/app/dependency_graph.json.gz"));
+    let inst_a = debundle_e2e_support::source_unit_for_binding(&graph, "instA");
+    let inst_b = debundle_e2e_support::source_unit_for_binding(&graph, "instB");
+    assert!(
+        graph.edges.iter().all(|edge| {
+            edge.edge_kind != DepKind::Sequenced
+                || !((edge.source == inst_a && edge.target == inst_b)
+                    || (edge.source == inst_b && edge.target == inst_a))
+        }),
+        "trusted syntactic summaries should keep disjoint constructor calls unsequenced"
+    );
+    assert_ok(
+        &staged.run(&[]),
+        "direct run with trusted dataflow summaries",
+    );
+    assert_same_trees(&reused.join("out"), &staged.root().join("out"));
+    staged.set_aside("trusted-direct");
+
+    let mut spec: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&staged.spec).unwrap()).unwrap();
+    spec["chunk_analysis_options"]["static/app"]["trusted_dataflow_summaries"] = false.into();
+    write_yaml_file(&staged.spec, &spec);
+    let edited = staged.root().join("without-trusted-summaries.projection");
+    assert_ok(
+        &staged.project(&edited),
+        "project without trusted dataflow summaries",
+    );
+    assert_ne!(
+        fs::read(&staged.projection).unwrap(),
+        fs::read(&edited).unwrap(),
+        "trusted dataflow assumptions must remain in analysis identity"
+    );
+    let refused = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert!(
+        !refused.status.success(),
+        "changed trusted dataflow assumptions reused saved facts"
+    );
+    assert!(
+        refused.stderr.contains("another projection"),
+        "{}",
+        refused.stderr
+    );
+}
+
+#[test]
+fn empty_chunk_options_keep_their_analysis_projection_key() {
+    let (staged, _fixture) = staged(split_with_pure_import());
+    let original = fs::read(&staged.projection).unwrap();
+    let mut spec: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&staged.spec).unwrap()).unwrap();
+    spec["chunk_analysis_options"]["static/app"] =
+        serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+    write_yaml_file(&staged.spec, &spec);
+
+    let edited = staged.root().join("empty-chunk-options.projection");
+    assert_ok(&staged.project(&edited), "project empty chunk options");
+    assert_ne!(
+        original,
+        fs::read(&edited).unwrap(),
+        "an authored per-chunk key remains part of the projection"
+    );
+    let refused = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert!(
+        !refused.status.success(),
+        "adding an empty per-chunk options entry reused saved facts"
+    );
+    assert!(
+        refused.stderr.contains("another projection"),
+        "{}",
+        refused.stderr
+    );
+}
+
 fn native_member_fixture() -> FixtureOpts<'static> {
     const SOURCE: &str = "var alias = Object.defineProperty;\nvar other = Object.getOwnPropertyDescriptor;\nconsole.log(typeof alias);\n";
     FixtureOpts::new(

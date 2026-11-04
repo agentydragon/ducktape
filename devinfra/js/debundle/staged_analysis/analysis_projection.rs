@@ -1,5 +1,5 @@
-//! The spec as the analysis stages read it. The cross-module pass and each
-//! chunk's fact analysis take their spec-derived inputs only from an
+//! The source-analysis inputs projected from the authored spec. The cross-module
+//! pass and each chunk's fact analysis take those inputs only from an
 //! [`AnalysisProjection`], built once the selector solve has run. Its
 //! assignment-derived fields hold what the solve resolved premises to
 //! (binding names, declarations); module destinations and the logical-module
@@ -16,12 +16,15 @@ use std::path::{Path, PathBuf};
 
 use analysis::AnalysisAssumptions;
 use analysis::analysis_inputs::SourceDeclaration;
+use analysis::{GraphOptions, LocalEffectPolicy};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use spec::{
-    ChunkExportPurity, DependencyGraphOptions, HostBehavior, IntrinsicsNeverWritten,
-    LoadJsChunksArgs, NativeOperationKind, ProgramPremises, SourceMatchClaim, SourceUnitSelector,
-    TransformSpec, VendorLevel, VendorMark,
+    AdmissionOverrides, ArgumentInputContract, BuiltinGlobalRoot, ChunkExportPurity,
+    CommutingStatementsContract, DependencyGraphOptions, HostBehavior, IntrinsicsNeverWritten,
+    LoadJsChunksArgs, NativeCallIdentityInputContract, NativeOperationInputContract,
+    NativeOperationKind, NoAccessorInstallCallableContract, ProgramPremises, SourceMatchClaim,
+    SourceUnitSelector, TransformSpec, ValueInputContract, VendorLevel, VendorMark,
 };
 
 use super::ResolvedMemberSite;
@@ -74,9 +77,96 @@ pub enum NativeOperationSourceSelector {
     Declaration(SourceDeclaration),
 }
 
+/// Author inputs consumed while facts are analyzed for one chunk.
+/// Graph construction and authored report context have separate projections.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChunkAnalysisInputs {
+    pub trusted_dataflow_summaries: bool,
+    pub deferred_global_publications: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,
+    pub non_reentrant_global_membership: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,
+    pub local_effect_policy: LocalEffectPolicy,
+    pub admission_overrides: AdmissionOverrides,
+    pub value_inputs: Vec<ValueInputContract>,
+    pub native_call_identity_inputs: Vec<NativeCallIdentityInputContract>,
+    pub argument_inputs: Vec<ArgumentInputContract>,
+    pub no_accessor_install_callables: Vec<NoAccessorInstallCallableContract>,
+}
+
+/// Inputs used only while building a chunk's dependency graph. The commuting
+/// contracts retain their authored notes for the graph's report evidence.
+#[derive(Debug, Clone, Default)]
+pub struct ChunkGraphInputs {
+    pub options: GraphOptions,
+    pub commuting_statements: Vec<CommutingStatementsContract>,
+}
+
+/// The authored options after an exhaustive split at the stage boundary.
+/// This is transient; `AnalysisSpec` stores only `analysis` inputs.
+#[derive(Debug, Clone, Default)]
+pub struct ProjectedChunkOptions {
+    pub analysis: ChunkAnalysisInputs,
+    pub graph: ChunkGraphInputs,
+    pub native_operation_inputs: Vec<NativeOperationInputContract>,
+}
+
+/// Split the mixed YAML authoring type into the inputs read by each stage.
+/// Every field is named here so adding an option requires an explicit owner.
+pub fn project_chunk_options(
+    options: &BTreeMap<String, DependencyGraphOptions>,
+) -> Result<BTreeMap<String, ProjectedChunkOptions>> {
+    options
+        .iter()
+        .map(|(chunk, authored)| {
+            // Graph report evidence retains the authored rationale. Analysis
+            // identities strip notes from the source contracts below.
+            let commuting_statements = authored.commuting_statements.clone();
+            let DependencyGraphOptions {
+                value_inputs,
+                native_operation_inputs,
+                commuting_statements: _,
+                native_call_identity_inputs,
+                argument_inputs,
+                no_accessor_install_callables,
+                deferred_global_publications,
+                non_reentrant_global_membership,
+                dataflow_aware_s_chain,
+                trusted_dataflow_summaries,
+                admission_overrides,
+                local_property_effects,
+            } = without_notes(authored)?;
+            Ok((
+                chunk.clone(),
+                ProjectedChunkOptions {
+                    analysis: ChunkAnalysisInputs {
+                        trusted_dataflow_summaries,
+                        deferred_global_publications,
+                        non_reentrant_global_membership,
+                        local_effect_policy: if local_property_effects {
+                            LocalEffectPolicy::LocalPropertyWrites
+                        } else {
+                            LocalEffectPolicy::KnownEffectsOnly
+                        },
+                        admission_overrides,
+                        value_inputs,
+                        native_call_identity_inputs,
+                        argument_inputs,
+                        no_accessor_install_callables,
+                    },
+                    graph: ChunkGraphInputs {
+                        options: GraphOptions {
+                            dataflow_aware_s_chain,
+                        },
+                        commuting_statements,
+                    },
+                    native_operation_inputs,
+                },
+            ))
+        })
+        .collect()
+}
+
 pub struct AnalysisProjection<'a> {
-    /// Graph-only options and authored native selectors are removed.
-    pub chunk_analysis_options: Cow<'a, BTreeMap<String, DependencyGraphOptions>>,
+    pub chunk_analysis_inputs: Cow<'a, BTreeMap<String, ChunkAnalysisInputs>>,
     /// With source-marker export policies already resolved.
     pub chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
     pub host_behavior: &'a HostBehavior,
@@ -91,7 +181,7 @@ pub struct AnalysisProjection<'a> {
 
 impl<'a> AnalysisProjection<'a> {
     pub fn new(
-        chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
+        chunk_options: &'a BTreeMap<String, ProjectedChunkOptions>,
         chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
         host_behavior: &'a HostBehavior,
         intrinsics_never_written: Option<&'a IntrinsicsNeverWritten>,
@@ -99,7 +189,7 @@ impl<'a> AnalysisProjection<'a> {
         resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
     ) -> Result<Self> {
         let mut native_operation_inputs = BTreeMap::new();
-        for (chunk_name, options) in chunk_analysis_options {
+        for (chunk_name, options) in chunk_options {
             let mut inputs = Vec::new();
             for (input_index, input) in options.native_operation_inputs.iter().enumerate() {
                 let request_id = format!(
@@ -137,7 +227,12 @@ impl<'a> AnalysisProjection<'a> {
             }
         }
         Ok(Self {
-            chunk_analysis_options: Cow::Owned(analysis_options(chunk_analysis_options)?),
+            chunk_analysis_inputs: Cow::Owned(
+                chunk_options
+                    .iter()
+                    .map(|(chunk, options)| (chunk.clone(), options.analysis.clone()))
+                    .collect(),
+            ),
             chunk_export_purity,
             host_behavior,
             intrinsics_never_written,
@@ -156,10 +251,9 @@ impl<'a> AnalysisProjection<'a> {
     }
 }
 
-/// Everything analysis reads from a run's spec, with premises resolved by the
-/// selector solve. Source paths are relative to the source root; author notes
-/// and the options only the chunk graph build reads are left out, so editing
-/// them leaves the encoding unchanged.
+/// Everything source analysis reads from a run's spec, with premises resolved
+/// by the selector solve. Source paths are relative to the source root; author
+/// notes and graph-construction inputs are kept in their owning contexts.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisSpec {
     pub inputs: LoadJsChunksArgs,
@@ -169,7 +263,7 @@ pub struct AnalysisSpec {
     /// As authored; source-marker policies are resolved against the parsed
     /// program.
     pub chunk_export_purity: BTreeMap<String, ChunkExportPurity>,
-    pub chunk_analysis_options: BTreeMap<String, DependencyGraphOptions>,
+    pub chunk_analysis_inputs: BTreeMap<String, ChunkAnalysisInputs>,
     /// `TransformSpec::materialize_chunk_ids`, in order.
     pub analysed_chunks: Vec<String>,
     /// `materialize_logical_modules.file`.
@@ -194,7 +288,14 @@ impl AnalysisSpec {
                 swap.bundle.path = relative(&swap.bundle.path);
             }
         }
-        let chunk_analysis_options = analysis_options(&spec.chunk_analysis_options)?;
+        let projected_options = project_chunk_options(&spec.chunk_analysis_options)?;
+        // Preserve authored chunk keys, including entries whose options all
+        // belong to graph construction. Their source-analysis projection is
+        // empty, matching the previous analysis-cache identity.
+        let chunk_analysis_inputs = projected_options
+            .into_iter()
+            .map(|(chunk, options)| (chunk, options.analysis))
+            .collect();
         Ok(Self {
             inputs: LoadJsChunksArgs {
                 input_root: relative(&spec.inputs.input_root),
@@ -205,7 +306,7 @@ impl AnalysisSpec {
             program_premises: without_notes(&spec.program_premises)?,
             vendor,
             chunk_export_purity: without_notes(&spec.chunk_export_purity)?,
-            chunk_analysis_options,
+            chunk_analysis_inputs,
             analysed_chunks: spec.materialize_chunk_ids().into_iter().collect(),
             entry_file: spec.materialize_logical_modules.file.clone(),
             prune_other_chunks: spec.materialize_logical_modules.prune_other_chunks,
@@ -267,7 +368,7 @@ impl AnalysisSpec {
         chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
     ) -> AnalysisProjection<'a> {
         AnalysisProjection {
-            chunk_analysis_options: Cow::Borrowed(&self.chunk_analysis_options),
+            chunk_analysis_inputs: Cow::Borrowed(&self.chunk_analysis_inputs),
             chunk_export_purity,
             host_behavior: &self.host_behavior,
             intrinsics_never_written: self.program_premises.intrinsics_never_written.as_ref(),
@@ -335,9 +436,9 @@ impl AnalysisSpec {
             &other.chunk_export_purity,
         )?);
         differing.extend(keyed_differences(
-            "chunk_analysis_options",
-            &self.chunk_analysis_options,
-            &other.chunk_analysis_options,
+            "chunk_analysis_inputs",
+            &self.chunk_analysis_inputs,
+            &other.chunk_analysis_inputs,
         )?);
         differing.extend(keyed_differences(
             "declared assumptions",
@@ -346,18 +447,6 @@ impl AnalysisSpec {
         )?);
         Ok(differing)
     }
-}
-
-fn analysis_options(
-    options: &BTreeMap<String, DependencyGraphOptions>,
-) -> Result<BTreeMap<String, DependencyGraphOptions>> {
-    let mut projected: BTreeMap<String, DependencyGraphOptions> = without_notes(options)?;
-    for options in projected.values_mut() {
-        options.commuting_statements.clear();
-        options.dataflow_aware_s_chain = false;
-        options.native_operation_inputs.clear();
-    }
-    Ok(projected)
 }
 
 fn keyed_differences<T: Serialize>(

@@ -1,9 +1,9 @@
 //! Shared fact computation and loaded-fact validation, independent of lowering.
 use super::analysis_projection::AnalysisProjection;
 use super::progress::emit_debundle_progress;
+use analysis::AnalysisInputs;
 use analysis::analysis_inputs::CallableSummary;
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
-use analysis::{AnalysisInputs, LocalEffectPolicy};
 use anyhow::{Context, Result};
 use artifact::paths::normalize_module_path;
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, JsFile, get_chunk_entry_path};
@@ -129,8 +129,8 @@ pub fn compute_logical_chunk_facts(
     } = context;
     // `local_property_effects` selects the facts pass's local-effect policy,
     // which travels in the hints.
-    let dependency_graph_options = projection
-        .chunk_analysis_options
+    let chunk_analysis_inputs = projection
+        .chunk_analysis_inputs
         .get(chunk_id)
         .cloned()
         .unwrap_or_default();
@@ -312,15 +312,12 @@ pub fn compute_logical_chunk_facts(
                 .no_reentry_exports
                 .extend(bindings.iter().cloned());
         }
-        if dependency_graph_options.local_property_effects {
-            inputs.local_effect_policy = LocalEffectPolicy::LocalPropertyWrites;
-        }
+        inputs.local_effect_policy = chunk_analysis_inputs.local_effect_policy;
         inputs.assumptions.trusted_dataflow_summaries =
-            dependency_graph_options.trusted_dataflow_summaries;
-        inputs.assumptions.deferred_global_publications = dependency_graph_options
-            .deferred_global_publications
-            .clone();
-        inputs.assumptions.non_reentrant_global_membership = dependency_graph_options
+            chunk_analysis_inputs.trusted_dataflow_summaries;
+        inputs.assumptions.deferred_global_publications =
+            chunk_analysis_inputs.deferred_global_publications.clone();
+        inputs.assumptions.non_reentrant_global_membership = chunk_analysis_inputs
             .non_reentrant_global_membership
             .clone();
         inputs
@@ -331,7 +328,7 @@ pub fn compute_logical_chunk_facts(
                 chunk_id,
                 &runtime_ast.module,
                 &facts,
-                dependency_graph_options.admission_overrides,
+                chunk_analysis_inputs.admission_overrides,
                 &resolve_dynamic_import,
             )?;
             facts
@@ -361,7 +358,7 @@ pub fn compute_logical_chunk_facts(
                 &analysis_inputs,
                 Some(source_path),
                 |span| line_index.line_range_and_start_column_for_span(span),
-                dependency_graph_options.admission_overrides,
+                chunk_analysis_inputs.admission_overrides,
                 export_reentry_policy,
                 &resolve_dynamic_import,
             )?

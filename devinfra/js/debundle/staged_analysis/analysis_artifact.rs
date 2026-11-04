@@ -8,7 +8,7 @@
 //! re-parses the sources the body's contexts refer to.
 //!
 //! The artifact holds `CrossModulePurities` once. Each chunk's
-//! `AnalysisInputs` derive from it and its chunk options; storing them
+//! `AnalysisInputs` derive from it and the source-analysis projection; storing them
 //! instead would repeat the program-wide census per chunk (1.77 GB on the
 //! Claude CLI).
 

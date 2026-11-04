@@ -705,9 +705,9 @@ impl<'de> Deserialize<'de> for RetainedCallbackSignature {
 /// precondition (see `devinfra/js/debundle/AGENTS.md` →
 /// "Conditionally-correct optimizations").
 ///
-/// The YAML surface of `TransformSpec::chunk_analysis_options`. Analysis
-/// consumes most fields; dependency-graph construction reads only its
-/// projection `analysis::GraphOptions`.
+/// The YAML authoring surface for per-chunk source-analysis and graph inputs.
+/// The stage boundary maps every field into the source-analysis inputs, graph
+/// options, commuting contracts, or normalized native-operation premises.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DependencyGraphOptions {

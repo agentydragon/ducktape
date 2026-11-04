@@ -23,7 +23,8 @@ pub enum KnownEffect {
     TypescriptMetadataDecorateHelperThreeArgs,
 }
 
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LocalEffectPolicy {
     #[default]
     KnownEffectsOnly,
