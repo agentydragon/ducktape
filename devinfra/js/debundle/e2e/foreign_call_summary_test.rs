@@ -455,6 +455,94 @@ fn returned_closure_can_read_a_destructured_catch_binding() {
 }
 
 #[test]
+fn returned_closure_destructuring_locals_stay_deferred() {
+    let source = "import { make } from './peer.js';\n\
+                  let reads = 0;\n\
+                  const input = { get value() { reads++; return 42; } };\n\
+                  const wrapped = make();\n\
+                  console.log(reads, wrapped(input), reads);\n";
+    let provider = "export function make() {\n\
+                     return (input) => {\n\
+                       const { value } = input;\n\
+                       return value;\n\
+                     };\n\
+                   }\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+    );
+    assert_preserved_entry_output(&fixture, "0 42 1\n");
+
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    let callable = &report["imported_callables"]["make"];
+    assert_eq!(
+        callable["foreign_call"]["returns"],
+        serde_json::json!([{"kind": "fresh_allocation"}])
+    );
+    assert_eq!(
+        callable["foreign_call"]["retained_arguments"],
+        serde_json::json!([])
+    );
+    assert_eq!(callable["callback_factory_evidence"], serde_json::json!([]));
+}
+
+#[test]
+fn returned_closure_nested_patterns_keep_formals_and_callback_policy() {
+    let source = "import { make } from './peer.js';\n\
+                  const wrapped = make(() => 42, () => { throw Error('unused'); });\n\
+                  console.log(...wrapped({ nested: {}, items: [7, 8] }));\n";
+    let provider = "export function make(callback, unused) {\n\
+                     const wrapped = (input) => {\n\
+                       const { nested: { value = callback() }, ...rest } = input;\n\
+                       const [head, ...tail] = rest.items;\n\
+                       return [value, head, tail.length];\n\
+                     };\n\
+                     return wrapped;\n\
+                   }\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+    );
+    assert_preserved_entry_output(&fixture, "42 7 1\n");
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    let callable = &report["imported_callables"]["make"];
+    assert_eq!(
+        callable["foreign_call"]["returns"],
+        serde_json::json!([{"kind": "fresh_allocation"}])
+    );
+    assert_eq!(
+        callable["foreign_call"]["retained_arguments"],
+        serde_json::json!([0, 1])
+    );
+    assert_eq!(callable["callback_factory_evidence"], serde_json::json!([]));
+}
+
+#[test]
+fn destructuring_in_factory_or_class_closure_keeps_existing_refusals() {
+    let source = "import { make, Box } from './peer.js';\n\
+                  const wrapped = make({ value: 42 });\n\
+                  const box = new Box();\n\
+                  console.log(wrapped(), box.invoke({ value: 7 }));\n";
+    let provider = "export function make(input) {\n\
+                     const { value } = input;\n\
+                     return () => value;\n\
+                   }\n\
+                   export class Box {\n\
+                     #callback;\n\
+                     constructor() {\n\
+                       this.#callback = (input) => { const { value } = input; return value; };\n\
+                     }\n\
+                     invoke(input) { return this.#callback(input); }\n\
+                   }\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+    );
+    assert_preserved_entry_output(&fixture, "42 7\n");
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    for name in ["make", "Box"] {
+        assert!(report["imported_callables"][name]["foreign_call"].is_null());
+    }
+}
+
+#[test]
 fn strict_expression_returns_preserve_runtime_values_and_retained_arguments() {
     for (returned, use_result, expected, retained) in [
         (
