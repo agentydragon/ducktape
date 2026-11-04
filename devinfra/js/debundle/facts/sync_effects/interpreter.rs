@@ -3226,6 +3226,55 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || self.state.parameter_initialized_objects.contains(&object)
     }
 
+    /// Capabilities retained by the selected member, not its Get result.
+    /// Called with receivers already evaluated at the current read prefix.
+    fn selected_member_capabilities(&self, receivers: &Values, property: Option<&str>) -> Values {
+        let mut selected = Values::new();
+        for receiver in receivers {
+            match receiver {
+                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                    if let Some(properties) = self.state.prefix_object_properties.get(object) {
+                        if let Some(property) = property {
+                            selected.extend(
+                                properties
+                                    .get(&Some(property.to_owned()))
+                                    .into_iter()
+                                    .flatten()
+                                    .cloned(),
+                            );
+                            selected.extend(properties.get(&None).into_iter().flatten().cloned());
+                        } else {
+                            selected.extend(properties.values().flatten().cloned());
+                        }
+                    }
+                }
+                // These carriers already projected their retained capabilities
+                // through Member. Preserve that policy without reevaluation.
+                AbstractValue::Instance(_, _)
+                | AbstractValue::DeferredCallbacks(_)
+                | AbstractValue::ForeignDeferredRecord
+                | AbstractValue::ArrayIntrinsic => {
+                    selected.insert(receiver.clone());
+                }
+                AbstractValue::AuditedRetainedResult(_, captured) => {
+                    selected.insert(AbstractValue::DeferredCallbacks(captured.clone()));
+                }
+                AbstractValue::Value(Value::Alloc(Kind::Class, key))
+                | AbstractValue::ClassMembers(key) => {
+                    selected.insert(AbstractValue::ClassMembers(*key));
+                }
+                AbstractValue::OwnDescriptorMap(site) => {
+                    selected.extend(self.descriptor_map_callbacks(*site));
+                }
+                AbstractValue::Value(Value::Unavailable) => {}
+                _ => {
+                    selected.insert(AbstractValue::Value(Value::Top));
+                }
+            }
+        }
+        selected
+    }
+
     fn ordinary_data_properties(
         &self,
         values: &Values,
@@ -10085,7 +10134,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 // This receiver is still settled: preserve the known member's
                 // capabilities for effects before taint discards its value.
                 // Unsettled receivers took the possible-getter path above.
-                let selected = self.evaluate(&call.callee, env, captures);
+                let selected = self.selected_member_capabilities(&values, property.as_deref());
                 self.taint_objects(&values);
                 self.promote_escaped_callbacks(&selected, outcome);
                 if self.state.array_iteration_depth > 0 {
