@@ -51,6 +51,7 @@ func (*runtimeLifecycleController) Inputs() []controller.Input {
 		{Namespace: lifecycle.Namespace, Type: lifecycle.EnvironmentDesiredStateType, Kind: controller.InputWeak},
 		{Namespace: lifecycle.Namespace, Type: bootstrap.RequestType, Kind: controller.InputWeak},
 		{Namespace: lifecycle.Namespace, Type: bootstrap.StatusType, Kind: controller.InputWeak},
+		{Namespace: lifecycle.Namespace, Type: lifecycle.AggregateStatusType, Kind: controller.InputWeak},
 	}
 }
 
@@ -94,12 +95,15 @@ func (c *runtimeLifecycleController) Run(ctx context.Context, r controller.Runti
 		}
 	}()
 	for {
-		var closeDone, transitionDone <-chan struct{}
+		var closeDone, transitionDone, nativeDeadline <-chan struct{}
 		if c.op != nil {
 			closeDone = c.op.done
 		}
 		if c.transition.worker != nil {
 			transitionDone = c.transition.worker.done
+		}
+		if c.stage == runtimeCloseNativeStopping && c.op == nil {
+			nativeDeadline = c.plan.fenceCtx.Done()
 		}
 		select {
 		case <-ctx.Done():
@@ -111,6 +115,7 @@ func (c *runtimeLifecycleController) Run(ctx context.Context, r controller.Runti
 		case <-r.EventCh():
 		case <-closeDone:
 		case <-transitionDone:
+		case <-nativeDeadline:
 		}
 		if err := c.reconcile(ctx, closeCtx, r); err != nil {
 			c.r.mu.Lock()
@@ -160,6 +165,16 @@ func (c *runtimeLifecycleController) reconcile(ctx, closeCtx context.Context, r 
 			return nil
 		}
 	}
+	if c.stage == runtimeCloseNativeStopping {
+		settled, nativeErr := c.nativeStopSettled(ctx, r)
+		if settled {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			c.plan.nativeCleanupErr = nativeErr
+			c.stage = runtimeCloseExecutionFencing
+		}
+	}
 	if c.stage == runtimeCloseBootstrapSettling {
 		settled, err := c.bootstrapSettled(ctx, r)
 		if err != nil {
@@ -185,7 +200,7 @@ func (c *runtimeLifecycleController) reconcile(ctx, closeCtx context.Context, r 
 		}
 		return nil
 	}
-	if c.stage == runtimeCloseBootstrapSettling {
+	if c.stage == runtimeCloseNativeStopping || c.stage == runtimeCloseBootstrapSettling {
 		return nil
 	}
 	op := &closeOperation{done: make(chan struct{})}
@@ -218,14 +233,28 @@ func (c *runtimeLifecycleController) bootstrapSettled(ctx context.Context, r con
 	return found && status.Phase.IsTerminal(), nil
 }
 
+// Observe the exact-generation COSI proof before the shared fence deadline.
+// Native cleanup errors are saved so Execution fencing still runs first.
+func (c *runtimeLifecycleController) nativeStopSettled(ctx context.Context, reader controller.Reader) (bool, error) {
+	if !c.plan.sessionsStarted {
+		return true, nil
+	}
+	settled, err := c.r.observeNativeStop(ctx, reader, c.plan.generation, true)
+	if settled || err != nil {
+		return true, err
+	}
+	if err := c.plan.fenceCtx.Err(); err != nil {
+		return true, err
+	}
+	return false, nil
+}
+
 // A completed worker advances to the next shutdown barrier. Keep the sequence
 // explicit so changing a status value cannot silently skip a fence or join.
 func nextRuntimeCloseStage(stage runtimeCloseStage) (runtimeCloseStage, error) {
 	switch stage {
 	case runtimeClosePreparing:
 		return runtimeCloseNativeStopping, nil
-	case runtimeCloseNativeStopping:
-		return runtimeCloseExecutionFencing, nil
 	case runtimeCloseExecutionFencing:
 		return runtimeCloseHistoryFlushing, nil
 	case runtimeCloseHistoryFlushing:
@@ -253,12 +282,6 @@ func (c *runtimeLifecycleController) runStage(ctx context.Context, stage runtime
 	switch stage {
 	case runtimeClosePreparing:
 		return c.prepare()
-	case runtimeCloseNativeStopping:
-		if p.sessionsStarted {
-			p.nativeCleanupErr = c.r.waitForNativeStop(p.fenceCtx, p.generation, true)
-			return nil
-		}
-		return nil
 	case runtimeCloseExecutionFencing:
 		return c.r.waitForExecutionFenced(p.fenceCtx, p.generation)
 	case runtimeCloseHistoryFlushing:
