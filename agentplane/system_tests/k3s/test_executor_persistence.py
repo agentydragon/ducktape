@@ -73,6 +73,40 @@ def test_image_cleanup_surfaces_a_failed_removal(tmp_path: Path, monkeypatch: py
         k3s.prune_unused_images()
 
 
+@pytest.mark.parametrize(
+    ("references", "container_refs"),
+    [
+        ({"repoTags": ["fixture:current"]}, []),
+        ({"repoDigests": ["fixture@sha256:current"]}, []),
+        ({"pinned": True}, []),
+        ({}, ["sha256:importing"]),
+    ],
+)
+def test_image_cleanup_accepts_a_new_reference_during_removal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, references: dict[str, Any], container_refs: list[str]
+) -> None:
+    k3s = stack.K3s(tmp_path, tmp_path / "unused-k3s")
+    removed: list[str] = []
+
+    def crictl(*args: str, check: bool = True) -> str:
+        match args:
+            case ("images", "-o", "json"):
+                return json.dumps({"images": [{"id": "sha256:importing", **(references if removed else {})}]})
+            case ("ps", "-a", "-o", "json"):
+                return json.dumps({"containers": [{"imageRef": ref} for ref in container_refs] if removed else []})
+            case ("rmi", *ids):
+                removed.extend(ids)
+                return ""
+            case _:
+                raise AssertionError(args)
+
+    monkeypatch.setattr(k3s, "crictl", crictl)
+
+    k3s.prune_unused_images()
+
+    assert removed == ["sha256:importing"]
+
+
 def _postgres_pod(
     uid: str,
     *,
