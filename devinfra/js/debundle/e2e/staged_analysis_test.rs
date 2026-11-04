@@ -5,10 +5,11 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use debundle_e2e_support::*;
 use debundle_e2e_support::{TreeFixture, TreeRun, run_tree_graph_fixture};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// Two modules split across an at-init read, a cross-module pure import, and
 /// a member annotation, so the artifact carries cross-module summaries,
@@ -311,6 +312,50 @@ impl TreeStaged {
         command(&args.iter().map(String::as_str).collect::<Vec<_>>())
     }
 
+    fn refine(
+        &self,
+        batch: &Path,
+        analysis: Option<&Path>,
+        dry_run: bool,
+        partial_context_without_analysis: bool,
+    ) -> CommandResult {
+        let root = self.root();
+        let mut args = vec![
+            "modules".to_string(),
+            "refine".to_string(),
+            "--batch".to_string(),
+            path(batch).to_string(),
+            "--modules".to_string(),
+            path(&self.modules).to_string(),
+            "--graph".to_string(),
+            path(&self.graph).to_string(),
+            "--source-root".to_string(),
+            path(&root.join("snapshot")).to_string(),
+            "--tree-config".to_string(),
+            path(&self.config).to_string(),
+            "--format".to_string(),
+            "json".to_string(),
+        ];
+        if dry_run {
+            args.push("--dry-run".to_string());
+        }
+        if let Some(analysis) = analysis {
+            args.extend([
+                "--tree-vendor-marks".to_string(),
+                path(&self.vendor_marks).to_string(),
+                "--tree-source-root".to_string(),
+                path(root).to_string(),
+                "--out-root".to_string(),
+                path(&root.join("candidate-out")).to_string(),
+                "--analysis".to_string(),
+                path(analysis).to_string(),
+            ]);
+        } else if partial_context_without_analysis {
+            args.extend(["--tree-source-root".to_string(), path(root).to_string()]);
+        }
+        command(&args.iter().map(String::as_str).collect::<Vec<_>>())
+    }
+
     fn run_with_analysis(
         &self,
         analysis: &Path,
@@ -342,10 +387,18 @@ impl TreeStaged {
 }
 
 fn staged_tree(chunks: &[(&str, &str)], modules: &[(&str, &str)]) -> TreeStaged {
+    staged_tree_with_module_roots(chunks, &[], modules)
+}
+
+fn staged_tree_with_module_roots(
+    chunks: &[(&str, &str)],
+    module_roots: &[(&str, &str)],
+    modules: &[(&str, &str)],
+) -> TreeStaged {
     let run = run_tree_graph_fixture(
         &TreeFixture {
             chunks,
-            module_roots: &[],
+            module_roots,
             modules,
         },
         &[],
@@ -394,6 +447,27 @@ fn staged_tree(chunks: &[(&str, &str)], modules: &[(&str, &str)]) -> TreeStaged 
         "tree analyze",
     );
     staged
+}
+
+fn source_unit_for_binding(staged: &TreeStaged, binding: &str) -> String {
+    let graph: Value = read_gzip_json(&staged.graph);
+    let units = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|declared| {
+                    declared
+                        .iter()
+                        .any(|declared| declared["binding"].as_str() == Some(binding))
+                })
+        })
+        .map(|node| node["id"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(units.len(), 1, "expected one source unit for {binding:?}");
+    units.into_iter().next().unwrap()
 }
 
 fn module_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
@@ -1445,6 +1519,188 @@ fn modules_merge_requested_assessment_refuses_stale_artifacts_before_yaml_writes
         result.stderr.contains("projection") || result.stderr.contains("analysis"),
         "{}
 expected staged projection/artifact mismatch",
+        result.stderr
+    );
+    assert_eq!(module_snapshot(&staged.modules), before);
+}
+
+#[test]
+fn modules_refine_assessment_matches_staged_run_for_its_candidate_plan() {
+    let staged = staged_tree(
+        &[(
+            "main",
+            "function first() { return \"first\"; }\n\
+             function second() { return \"second\"; }\n\
+             console.log(first(), second());\n",
+        )],
+        &[(
+            "z_later.yaml",
+            "members: [{selector: {binding: {name: first}}}, {selector: {binding: {name: second}}}]\n",
+        )],
+    );
+    let baseline_out = staged.root().join("run-refine-baseline");
+    let baseline = staged.run_with_analysis(&staged.artifact, &baseline_out, false);
+    assert_ok(&baseline, "baseline staged run");
+    let baseline_report = read_effect_report(&baseline_out);
+    assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
+
+    let batch = staged.root().join("refine.json");
+    fs::write(
+        &batch,
+        serde_json::to_vec(&json!([{
+            "unit_id": source_unit_for_binding(&staged, "second"),
+            "module": "a_earlier",
+        }]))
+        .unwrap(),
+    )
+    .unwrap();
+    let before = module_snapshot(&staged.modules);
+    let result = staged.refine(&batch, Some(&staged.artifact), true, false);
+    assert_ok(&result, "modules refine --dry-run --analysis");
+    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    let assessment = &outcome["effect_relocation_assessment"];
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
+    assert_ne!(
+        assessment["emitted_order"], baseline_report["emitted_order"],
+        "moving the later source unit into an earlier module must invert the emitted order"
+    );
+    assert_eq!(module_snapshot(&staged.modules), before);
+
+    let applied = staged.refine(&batch, None, false, false);
+    assert_ok(&applied, "ordinary graph-backed modules refine");
+    let applied_outcome: Value = serde_json::from_str(&applied.stdout).unwrap();
+    assert!(
+        applied_outcome
+            .get("effect_relocation_assessment")
+            .is_none()
+    );
+    assert!(staged.modules.join("a_earlier.yaml").is_file());
+    assert!(staged.modules.join("z_later.yaml").is_file());
+    assert_candidate_assessment_matches_run(assessment, &staged, "refine-candidate", true, false);
+    assert_node_output(
+        &staged.root().join("run-refine-candidate/app/main/entry.js"),
+        "first second\n",
+        "",
+    );
+}
+
+#[test]
+fn modules_refine_assessment_refuses_stale_or_partial_context_before_writes() {
+    let staged = staged_tree(
+        &[("main", "function first() { return \"first\"; }\n")],
+        &[(
+            "z_later.yaml",
+            "members: [{selector: {binding: {name: first}}}]\n",
+        )],
+    );
+    let foreign = staged_tree(
+        &[("main", "function other() { return \"other\"; }\n")],
+        &[(
+            "other.yaml",
+            "members: [{selector: {binding: {name: other}}}]\n",
+        )],
+    );
+    let batch = staged.root().join("refine.json");
+    fs::write(
+        &batch,
+        serde_json::to_vec(&json!([{
+            "unit_id": source_unit_for_binding(&staged, "first"),
+            "module": "a_earlier",
+        }]))
+        .unwrap(),
+    )
+    .unwrap();
+    let before = module_snapshot(&staged.modules);
+
+    let stale = staged.refine(&batch, Some(&foreign.artifact), true, false);
+    assert_eq!(stale.status.code(), Some(1), "{}", stale.stderr);
+    assert!(
+        stale.stderr.contains("projection")
+            || stale.stderr.contains("analysis")
+            || stale.stderr.contains("source"),
+        "expected staged input mismatch:\n{}",
+        stale.stderr
+    );
+    assert_eq!(module_snapshot(&staged.modules), before);
+
+    let partial = staged.refine(&batch, None, true, true);
+    assert_eq!(partial.status.code(), Some(1), "{}", partial.stderr);
+    assert!(
+        partial.stderr.contains("require --analysis"),
+        "{}",
+        partial.stderr
+    );
+    assert_eq!(module_snapshot(&staged.modules), before);
+
+    let env_defaults = {
+        let output = Command::new(debundler_path())
+            .args([
+                "modules",
+                "refine",
+                "--batch",
+                path(&batch),
+                "--modules",
+                path(&staged.modules),
+                "--graph",
+                path(&staged.graph),
+                "--source-root",
+                path(&staged.root().join("snapshot")),
+                "--tree-config",
+                path(&staged.config),
+                "--dry-run",
+                "--format",
+                "json",
+            ])
+            .env("DEBUNDLE_TREE_SOURCE_ROOT", staged.root())
+            .env("DEBUNDLE_OUT", staged.root().join("ambient-output"))
+            .output()
+            .expect("spawn debundler with transform environment defaults");
+        CommandResult {
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            status: output.status,
+        }
+    };
+    assert_ok(
+        &env_defaults,
+        "ordinary modules refine with transform environment defaults",
+    );
+    assert_eq!(module_snapshot(&staged.modules), before);
+}
+
+#[test]
+fn modules_refine_assessment_refuses_scoped_tree_before_writes() {
+    let staged = staged_tree_with_module_roots(
+        &[("main", "function first() { return \"first\"; }\n")],
+        &[("chunks/main", "main")],
+        &[(
+            "chunks/main/z_later.yaml",
+            "members: [{selector: {binding: {name: first}}}]\n",
+        )],
+    );
+    let batch = staged.root().join("refine.json");
+    fs::write(
+        &batch,
+        serde_json::to_vec(&json!([{
+            "unit_id": source_unit_for_binding(&staged, "first"),
+            "module": "chunks/main/a_earlier",
+        }]))
+        .unwrap(),
+    )
+    .unwrap();
+    let before = module_snapshot(&staged.modules);
+    let result = staged.refine(&batch, Some(&staged.artifact), true, false);
+    assert_eq!(result.status.code(), Some(1), "{}", result.stderr);
+    assert!(
+        result.stderr.contains("one full-tree module root"),
+        "{}",
         result.stderr
     );
     assert_eq!(module_snapshot(&staged.modules), before);

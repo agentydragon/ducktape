@@ -1151,6 +1151,15 @@ pub struct SourceUnitRefineOutcome {
     #[serde(flatten)]
     pub outcome: MutationOutcome,
     pub source_units_reassigned: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect_relocation_assessment: Option<gate::EffectRelocationAssessment>,
+}
+
+pub struct SourceUnitRefineOptions<'a> {
+    pub tree_config: Option<&'a Path>,
+    pub assignments: Vec<SourceUnitAssignment>,
+    pub dry_run: bool,
+    pub effect_assessment_context: Option<CandidateEffectAssessmentContext<'a>>,
 }
 
 fn validate_refine_module_id(module: &str) -> Result<()> {
@@ -1199,10 +1208,18 @@ pub fn run_source_unit_refine(
     dependency_graph_path: &Path,
     source_root: &Path,
     source_context: Option<&graph_provenance::VerifiedGraphSourceContext>,
-    tree_config: Option<&Path>,
-    assignments: Vec<SourceUnitAssignment>,
-    dry_run: bool,
+    options: SourceUnitRefineOptions<'_>,
 ) -> Result<SourceUnitRefineOutcome> {
+    let SourceUnitRefineOptions {
+        tree_config,
+        assignments,
+        dry_run,
+        effect_assessment_context,
+    } = options;
+    anyhow::ensure!(
+        effect_assessment_context.is_none() || dry_run,
+        "candidate effect assessment requires --dry-run"
+    );
     if assignments.is_empty() {
         bail!("source unit assignment batch is empty");
     }
@@ -1552,6 +1569,8 @@ pub fn run_source_unit_refine(
 
     let to_delete = drained_source_modules(&docs, &source_modules);
     let post_spec = post_edit_spec_from_docs(&docs, &to_delete)?;
+    // This unchanged gate first proves the complete expected source-unit map
+    // and applies its legacy realizability/atom-split checks to `post_spec`.
     gate_post_edit_assignment_with_expected_source_unit_modules(
         dependency_graph_path,
         modules_root,
@@ -1561,6 +1580,22 @@ pub fn run_source_unit_refine(
         &expected_source_unit_modules,
         scope.as_ref(),
     )?;
+    let effect_relocation_assessment = if let Some(context) = effect_assessment_context {
+        let candidate_modules = docs
+            .iter()
+            .filter(|(path, _)| !to_delete.contains(*path))
+            .map(|(path, (_, doc))| (path.clone(), doc.clone()))
+            .collect();
+        Some(assess_candidate_effect_relocation(
+            context.transform,
+            context.analysis,
+            context.graph_source,
+            modules_root,
+            &candidate_modules,
+        )?)
+    } else {
+        None
+    };
 
     let (files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
@@ -1580,6 +1615,7 @@ pub fn run_source_unit_refine(
             files_deleted,
         },
         source_units_reassigned,
+        effect_relocation_assessment,
     })
 }
 

@@ -1,11 +1,17 @@
 //! `modules` command arguments, dispatch, and report presentation. Merge and
 //! delete planning/persistence live in `module`, separate from CLI rendering.
-use crate::binding::{SourceUnitAssignment, run_source_unit_refine};
+use crate::binding::{
+    CandidateEffectAssessmentContext, SourceUnitAssignment, SourceUnitRefineOptions,
+    run_source_unit_refine,
+};
+use crate::candidate_assessment::CandidateEffectAssessmentRefineArgs;
 use crate::comment::{ModuleCommentArgs, run_module_comment_cmd};
+use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
 use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use crate::module_apply::{ModulesApplyArgs, run_modules_apply};
 use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
+use analysis_identity::ANALYSIS_ENGINE_SHA256;
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use graph_provenance::VerifiedGraphSourceContext;
@@ -201,7 +207,9 @@ enum ModulesNsCommand {
     /// assignment to match the requested assignment before running the normal
     /// realizability and atomic-group gates. Import/export scaffolding and
     /// residual source units cannot be moved. Module comments and notes stay with
-    /// their original YAML module.
+    /// their original YAML module. `--dry-run --analysis` additionally reports
+    /// statement-order commutation for the exact candidate; it requires the full
+    /// tree transform context and does not change the gate verdict.
     Refine(ModulesRefineArgs),
     /// Report a read-only, gate-checked refinement of existing module groups.
     ///
@@ -307,6 +315,11 @@ struct ModulesRefineArgs {
     /// Tree config that scopes this graph-backed edit to its chunk's module roots.
     #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
     tree_config: Option<PathBuf>,
+
+    /// Opt-in report-only relocation assessment using the complete transform
+    /// context and a verified staged analysis artifact. Requires --dry-run.
+    #[command(flatten)]
+    effect_assessment: CandidateEffectAssessmentRefineArgs,
 
     /// Validate the complete edit without writing module YAML.
     #[arg(long)]
@@ -654,14 +667,39 @@ fn run_modules_refine(
     };
     let assignments: Vec<SourceUnitAssignment> =
         serde_json::from_str(&text).context("parsing modules refine batch")?;
+    let edit = GraphEditArgs {
+        modules_root: args.modules_root.clone(),
+        dry_run: args.dry_run,
+        no_verify: false,
+        dependency_graph_path: Some(args.graph.clone()),
+        source_root: Some(args.source_root.clone()),
+        format: args.format,
+    };
+    let candidate_context =
+        args.effect_assessment
+            .resolve(&edit, source_context, args.tree_config.as_deref())?;
+    let effect_assessment_context =
+        candidate_context
+            .as_ref()
+            .map(|context| CandidateEffectAssessmentContext {
+                transform: &context.transform,
+                analysis: pipeline::AnalysisArtifactInput {
+                    path: &context.analysis_path,
+                    analysis_engine_sha256: ANALYSIS_ENGINE_SHA256,
+                },
+                graph_source: context.graph_source,
+            });
     let outcome = match run_source_unit_refine(
         &args.modules_root,
         &args.graph,
         &args.source_root,
         source_context,
-        args.tree_config.as_deref(),
-        assignments,
-        args.dry_run,
+        SourceUnitRefineOptions {
+            tree_config: args.tree_config.as_deref(),
+            assignments,
+            dry_run: args.dry_run,
+            effect_assessment_context,
+        },
     ) {
         Ok(outcome) => outcome,
         Err(err) => {
