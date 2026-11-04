@@ -967,3 +967,224 @@ fn an_initializer_export_gets_no_call_or_record_summary() {
     assert!(summary["foreign_call"].is_null(), "{summary}");
     assert!(summary["returned_record"].is_null(), "{summary}");
 }
+
+#[test]
+fn deferred_descriptor_creation_migration_controls() {
+    for (provider, entry, expected, retained, native, members) in [
+        (
+            "export function make() { let stored = 0; return { get value() { globalThis.events.push('get'); return stored; }, set value(next) { globalThis.events.push('set'); stored = next; }, run() { return this.value; }, tag: 'record' }; }",
+            "globalThis.events = []; const record = make(); const descriptor = Object.getOwnPropertyDescriptor(record, 'value'); console.log(events.length, typeof descriptor.get, typeof descriptor.set, Object.hasOwn(descriptor, 'value')); record.value = 7; console.log(record.run(), events.join(','));",
+            "0 function function false\n7 set,get\n",
+            vec![],
+            vec![],
+            vec![],
+        ),
+        (
+            "export function make() { const state = new Map(); return { put(key, value) { state.set(key, value); }, get size() { return state.size; }, async settle() { return Promise.all([...state.values()]); }, *values() { yield* state.values(); } }; }",
+            "const record = make(); record.put('key', 42); record.settle().then(values => console.log(record.size, [...record.values()].join(','), values.join(',')));",
+            "1 42 42\n",
+            vec![],
+            vec!["map"],
+            vec!["put", "size", "settle", "values"],
+        ),
+        (
+            "export function make() { return { read() { return super.value + this.offset; } }; }",
+            "const record = make(); Object.setPrototypeOf(record, { value: 40 }); const detached = record.read; console.log(detached.call({ offset: 2 })); Object.setPrototypeOf(record, { value: 41 }); console.log(detached.call({ offset: 2 }));",
+            "42\n43\n",
+            vec![],
+            vec![],
+            vec!["read"],
+        ),
+        (
+            "export function make(callback, unused) { return [, callback, () => callback(), { run() { return callback(); } }]; }",
+            "const record = make(() => 42, () => { throw Error('unused'); }); console.log(Object.hasOwn(record, 0), Object.hasOwn(record, 1), record[2](), record[3].run());",
+            "false true 42 42\n",
+            vec![0, 1],
+            vec![],
+            vec![],
+        ),
+        (
+            "export function make(callback, unused) { const label = ``; var repeated = 1; var repeated; return function recur(count) { return count ? recur(count - 1) : callback() + label.length + repeated; }; const unreachable = 9; }",
+            "console.log(make(() => 41, () => { throw Error('unused'); })(2));",
+            "42\n",
+            vec![0, 1],
+            vec![],
+            vec![],
+        ),
+        (
+            "export function make(callback, unused) { return { run() { return callback(); }, run: 7, get value() { return callback(); }, set value(next) {}, get value() { return 42; } }; }",
+            "const record = make(() => 1, () => { throw Error('unused'); }); console.log(record.run, record.value, typeof Object.getOwnPropertyDescriptor(record, 'value').set);",
+            "7 42 function\n",
+            vec![0, 1],
+            vec![],
+            vec![],
+        ),
+    ] {
+        let source = format!("import {{ make }} from './peer.js';\n{entry}\n");
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        let report: serde_json::Value =
+            read_json(&fixture.report_root.join("static/app/modules.json"));
+        let callable = &report["imported_callables"]["make"];
+        assert_eq!(
+            callable["foreign_call"]["returns"],
+            serde_json::json!([{"kind": "fresh_allocation"}]),
+            "{provider}"
+        );
+        assert_eq!(
+            callable["foreign_call"]["retained_arguments"],
+            serde_json::json!(retained),
+            "{provider}"
+        );
+        assert_eq!(
+            callable["foreign_call"]["native_constructions"],
+            serde_json::json!(native)
+        );
+        assert_eq!(callable["callback_factory_evidence"], serde_json::json!([]));
+        if members.is_empty() {
+            assert!(callable["returned_record"].is_null());
+        } else {
+            let actual: Vec<_> = callable["returned_record"]["members"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|member| member["name"].as_str().unwrap())
+                .collect();
+            assert_eq!(actual, members);
+        }
+    }
+}
+
+#[test]
+fn executable_prefix_retains_unreachable_pattern_and_loop_bindings() {
+    for declaration in [
+        "var { value } = { value: 42 };",
+        "for (var [value] of [[42]]) {}",
+    ] {
+        let provider = format!(
+            "export function make() {{ return {{ read() {{ return value; }} }}; {declaration} }}"
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                "import { make } from './peer.js'; console.log(make().read() === undefined);",
+                vec![],
+            )
+            .with_extra_chunks(&[("static/peer", &provider)]),
+        );
+        assert_preserved_entry_output(&fixture, "true\n");
+        let report: serde_json::Value =
+            read_json(&fixture.report_root.join("static/app/modules.json"));
+        assert_eq!(
+            report["imported_callables"]["make"]["foreign_call"]["returns"],
+            serde_json::json!([{"kind": "fresh_allocation"}])
+        );
+    }
+    for (declaration, expected) in [
+        ("const { value } = { value: 42 };", "ReferenceError\n"),
+        ("let [value] = [42];", "ReferenceError\n"),
+    ] {
+        let provider = format!("export function make() {{ return value; {declaration} }}");
+        let fixture = run_fixture(
+            FixtureOpts::new("import { make } from './peer.js'; try { make(); } catch (error) { console.log(error.name); }", vec![])
+                .with_extra_chunks(&[("static/peer", &provider)]),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        let report: serde_json::Value =
+            read_json(&fixture.report_root.join("static/app/modules.json"));
+        assert!(report["imported_callables"]["make"]["foreign_call"].is_null());
+    }
+}
+
+#[test]
+fn repeated_sparse_factory_keeps_holes_and_old_alias_contents() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "function make(value) { return [, value]; } const early = make(1); early[0] = 7; const late = make(2); const values = new Set(late); console.log(early[0], Object.hasOwn(late, 0), values.has(undefined), [...late].join(','));",
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "7 false true ,2\n");
+}
+
+#[test]
+fn dead_native_shadow_cannot_borrow_global_constructor_identity() {
+    for (declaration, expected) in [
+        ("const Map = globalThis.Map;", "ReferenceError\n"),
+        ("var { Map } = globalThis;", "TypeError\n"),
+        (
+            "function Map() { throw Error('local constructor'); }",
+            "Error\n",
+        ),
+        ("class Map {}", "ReferenceError\n"),
+    ] {
+        let provider = format!(
+            "export function make() {{ const cache = new Map(); return {{ read() {{ return cache.size; }} }}; {declaration} }}"
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new("import { make } from './peer.js'; try { make(); } catch (error) { console.log(error.name); }", vec![])
+                .with_extra_chunks(&[("static/peer", &provider)]),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        let report: serde_json::Value =
+            read_json(&fixture.report_root.join("static/app/modules.json"));
+        assert!(report["imported_callables"]["make"]["foreign_call"].is_null());
+    }
+}
+
+#[test]
+fn hoisted_function_values_do_not_reuse_parameter_or_undefined_values() {
+    for provider in [
+        "export function make(local) { return local; function local() {} }",
+        "export function make() { var local; return local; function local() {} }",
+        "export const make = function self() { return self; };",
+    ] {
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                "import { make } from './peer.js'; console.log(typeof make(42));",
+                vec![],
+            )
+            .with_extra_chunks(&[("static/peer", provider)]),
+        );
+        assert_preserved_entry_output(&fixture, "function\n");
+        let report: serde_json::Value =
+            read_json(&fixture.report_root.join("static/app/modules.json"));
+        assert!(
+            report["imported_callables"]["make"]["foreign_call"].is_null(),
+            "an unsupported activation value is not an argument or undefined: {provider}"
+        );
+    }
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { make } from './peer.js'; console.log(make(42));",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export function make(value) { var local = value; return local; function local() {} }",
+        )]),
+    );
+    assert_preserved_entry_output(&fixture, "42\n");
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    assert_eq!(
+        report["imported_callables"]["make"]["foreign_call"]["returns"],
+        serde_json::json!([{"kind": "argument", "index": 0}]),
+        "an explicit initializer can replace the hoisted binding value"
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { make } from './peer.js'; const earlier = make(41); const later = make(42); console.log(earlier(), later());",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export function make(value) { var local = value; return () => local; function local() {} }",
+        )]),
+    );
+    assert_preserved_entry_output(&fixture, "41 42\n");
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    assert_eq!(
+        report["imported_callables"]["make"]["foreign_call"]["retained_arguments"],
+        serde_json::json!([0]),
+        "initialized function-binding cells retain each activation's value"
+    );
+}

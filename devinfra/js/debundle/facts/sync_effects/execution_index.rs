@@ -3,7 +3,7 @@
 mod callback_arguments;
 mod prototype_properties;
 
-use super::local_operations::LocalBody;
+use super::local_operations::{DeferredCallableCreation, LocalBinding, LocalBody};
 use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use super::value_model::{
@@ -1326,6 +1326,9 @@ struct Callable {
     calls: Vec<Call>,
     local_assignments: Vec<(Id, ValueExpr)>,
     declared_locals: BTreeSet<Id>,
+    hoisted_vars: BTreeSet<Id>,
+    lexical_declarations: BTreeMap<Id, LocalBinding>,
+    self_binding: Option<Id>,
     /// Catch parameters and destructured declarations are locals for closure
     /// projection. Keep them separate from `declared_locals`, whose consumers
     /// also include direct callback-factory and class-closure admission.
@@ -1336,7 +1339,7 @@ struct Callable {
     direct_return_site: Option<CallSite>,
     allocation_return: Option<ValueExpr>,
     local_body: Option<LocalBody>,
-    local_functions: BTreeSet<Id>,
+    local_functions: BTreeMap<Id, u32>,
     literal_captures: BTreeSet<Id>,
     literal_exposures: BTreeSet<Id>,
     escaped_bindings: BTreeSet<Id>,
@@ -1566,12 +1569,15 @@ impl Default for Callable {
             calls: Vec::new(),
             local_assignments: Vec::new(),
             declared_locals: BTreeSet::new(),
+            hoisted_vars: BTreeSet::new(),
+            lexical_declarations: BTreeMap::new(),
+            self_binding: None,
             pattern_locals: BTreeSet::new(),
             returns: Vec::new(),
             direct_return_site: None,
             allocation_return: None,
             local_body: None,
-            local_functions: BTreeSet::new(),
+            local_functions: BTreeMap::new(),
             literal_captures: BTreeSet::new(),
             literal_exposures: BTreeSet::new(),
             escaped_bindings: BTreeSet::new(),
@@ -5740,6 +5746,10 @@ struct ExecutionIndex {
     map_entry_arrays: BTreeSet<u32>,
     dense_array_literals: BTreeMap<u32, usize>,
     array_elements: BTreeMap<u32, Vec<Option<ArrayElement>>>,
+    literal_property_kinds: BTreeMap<u32, Vec<super::value_model::LiteralPropertyKind>>,
+    callable_creations: BTreeMap<u32, DeferredCallableCreation>,
+    method_record_members:
+        BTreeMap<u32, Vec<crate::facts::abstract_domain::foreign_call::RecordMember>>,
     array_iterations: BTreeMap<CallSite, ArrayIteration>,
     async_callables: BTreeSet<u32>,
     callable_member_reads: BTreeMap<u32, Vec<(ValueExpr, Option<String>)>>,
@@ -5941,6 +5951,9 @@ impl Default for ExecutionIndex {
             map_entry_arrays: BTreeSet::new(),
             dense_array_literals: BTreeMap::new(),
             array_elements: BTreeMap::new(),
+            literal_property_kinds: BTreeMap::new(),
+            callable_creations: BTreeMap::new(),
+            method_record_members: BTreeMap::new(),
             array_iterations: BTreeMap::new(),
             async_callables: BTreeSet::new(),
             callable_member_reads: BTreeMap::new(),
@@ -6244,6 +6257,28 @@ impl ExecutionIndex {
             return None;
         }
         self.own_descriptor_shapes.get(&allocation)
+    }
+
+    pub(super) fn literal_property_kind(
+        &self,
+        allocation: u32,
+        position: usize,
+    ) -> super::value_model::LiteralPropertyKind {
+        self.literal_property_kinds
+            .get(&allocation)
+            .and_then(|kinds| kinds.get(position))
+            .cloned()
+            .unwrap_or(super::value_model::LiteralPropertyKind::Opaque)
+    }
+
+    pub(super) fn callable_creation(&self, callable: u32) -> Option<DeferredCallableCreation> {
+        self.callable_creations.get(&callable).copied()
+    }
+
+    pub(super) fn callable_home_object(&self, callable: u32) -> Option<u32> {
+        self.callable_creations
+            .get(&callable)
+            .and_then(|creation| creation.home_object())
     }
 
     pub(super) fn allocation_layout(
@@ -10443,6 +10478,21 @@ impl ExecutionIndex {
         self.prototype_capture_stack.push(key);
         visit(self);
         self.prototype_capture_stack.pop();
+        let callable = self.callables.get_mut(&key).unwrap();
+        if let Some(body) = callable.local_body.take() {
+            callable.local_body = Some(
+                body.with_declarations(
+                    callable.hoisted_vars.iter().cloned(),
+                    callable
+                        .lexical_declarations
+                        .iter()
+                        .map(|(binding, kind)| (binding.clone(), *kind))
+                        .chain(callable.local_functions.iter().map(|(binding, function)| {
+                            (binding.clone(), LocalBinding::HoistedFunction(*function))
+                        })),
+                ),
+            );
+        }
         self.current = saved_current;
         self.variable_scope = saved_variable_scope;
         self.past_await = saved_await;
@@ -10951,10 +11001,9 @@ impl Visit for ExecutionIndex {
 
     fn visit_setter_prop(&mut self, setter: &SetterProp) {
         self.callable_spans.insert(setter.span.lo.0, setter.span);
-        // Object-literal setters are not represented by a `Function` node in
-        // SWC, so their bodies lack a per-Callable prefix summary.
-        // Accessor bodies retain the enclosing callable here; source order
-        // cannot distinguish their deferred captured writes from local writes.
+        // The Function child has its own canonical callable key. Keep this
+        // owner-wide marker conservative: exact descriptor-body activation
+        // and owner-local captured-write settlement are separate proofs.
         self.unindexed_accessor_owners.insert(self.owner);
         self.setter_owners
             .entry(static_property_name(&setter.key))
@@ -10967,8 +11016,8 @@ impl Visit for ExecutionIndex {
 
     fn visit_getter_prop(&mut self, getter: &GetterProp) {
         self.callable_spans.insert(getter.span.lo.0, getter.span);
-        // Accessor bodies retain the enclosing callable here; source order
-        // cannot distinguish their deferred captured writes from local writes.
+        // The Function child is indexed separately, while this owner marker
+        // conservatively prevents unproved accessor-write settlement.
         self.unindexed_accessor_owners.insert(self.owner);
         let previous_scope = self.variable_scope.take();
         getter.visit_children_with(self);
@@ -10984,6 +11033,81 @@ impl Visit for ExecutionIndex {
     fn visit_object_lit(&mut self, object: &ObjectLit) {
         if matches!(object.props.as_slice(), [PropOrSpread::Spread(_)]) {
             self.exact_object_spread_copies.insert(object.span.lo.0);
+        }
+        use super::value_model::LiteralPropertyKind;
+        let mut definition_kinds = Vec::new();
+        let mut record_members = Some(Vec::new());
+        let mut member_names = BTreeSet::new();
+        for property in &object.props {
+            let member = match property {
+                PropOrSpread::Prop(property) => match property.as_ref() {
+                    Prop::Method(method) if method.function.decorators.is_empty() => {
+                        Some((&method.key, method.function.span.lo.0))
+                    }
+                    Prop::Getter(getter) => Some((&getter.key, getter.function.span.lo.0)),
+                    _ => None,
+                },
+                _ => None,
+            };
+            if let Some(members) = record_members.as_mut() {
+                if let Some((key, function_start)) = member
+                    && matches!(
+                        key,
+                        PropName::Ident(_) | PropName::Str(_) | PropName::Num(_)
+                    )
+                    && let Some(name) = object_data_property_name(key)
+                    && member_names.insert(name.clone())
+                {
+                    members.push(crate::facts::abstract_domain::foreign_call::RecordMember {
+                        name,
+                        function_start,
+                    });
+                } else {
+                    record_members = None;
+                }
+            }
+
+            let (kind, callable) = match property {
+                PropOrSpread::Prop(property) => match property.as_ref() {
+                    Prop::KeyValue(_) | Prop::Shorthand(_) => (LiteralPropertyKind::Data, None),
+                    Prop::Method(method) => {
+                        (LiteralPropertyKind::Method, Some(method.function.span.lo.0))
+                    }
+                    Prop::Getter(getter) => {
+                        (LiteralPropertyKind::Getter, Some(getter.function.span.lo.0))
+                    }
+                    Prop::Setter(setter) => {
+                        (LiteralPropertyKind::Setter, Some(setter.function.span.lo.0))
+                    }
+                    _ => (LiteralPropertyKind::Opaque, None),
+                },
+                _ => (LiteralPropertyKind::Opaque, None),
+            };
+            definition_kinds.push(kind);
+            if let Some(callable) = callable {
+                let home_object = object.span.lo.0;
+                let creation = match kind {
+                    LiteralPropertyKind::Method => DeferredCallableCreation::Method {
+                        callable,
+                        home_object,
+                    },
+                    LiteralPropertyKind::Getter => DeferredCallableCreation::Getter {
+                        callable,
+                        home_object,
+                    },
+                    LiteralPropertyKind::Setter => DeferredCallableCreation::Setter {
+                        callable,
+                        home_object,
+                    },
+                    _ => unreachable!("only deferred definitions have a callable"),
+                };
+                self.callable_creations.insert(callable, creation);
+            }
+        }
+        self.literal_property_kinds
+            .insert(object.span.lo.0, definition_kinds);
+        if let Some(members) = record_members.filter(|members| !members.is_empty()) {
+            self.method_record_members.insert(object.span.lo.0, members);
         }
         let mut descriptor_shape = BTreeMap::new();
         let mut descriptor_creation_order = Vec::new();
@@ -11261,7 +11385,9 @@ impl Visit for ExecutionIndex {
             self.hoisted_nested_functions
                 .insert(declaration.function.span.lo.0);
             let callable = self.callables.get_mut(&key).unwrap();
-            callable.local_functions.insert(declaration.ident.to_id());
+            callable
+                .local_functions
+                .insert(declaration.ident.to_id(), declaration.function.span.lo.0);
             callable.local_assignments.push((
                 declaration.ident.to_id(),
                 ValueExpr::Alloc(Kind::Function, declaration.function.span.lo.0),
@@ -11298,14 +11424,14 @@ impl Visit for ExecutionIndex {
                 ValueExpr::Alloc(Kind::Class, declaration.class.span.lo.0),
             ));
         } else if let Some(key) = self.current {
-            self.callables
-                .get_mut(&key)
-                .unwrap()
-                .local_assignments
-                .push((
-                    declaration.ident.to_id(),
-                    ValueExpr::Alloc(Kind::Class, declaration.class.span.lo.0),
-                ));
+            let callable = self.callables.get_mut(&key).unwrap();
+            callable
+                .lexical_declarations
+                .insert(declaration.ident.to_id(), LocalBinding::Let);
+            callable.local_assignments.push((
+                declaration.ident.to_id(),
+                ValueExpr::Alloc(Kind::Class, declaration.class.span.lo.0),
+            ));
         }
     }
 
@@ -11505,6 +11631,22 @@ impl Visit for ExecutionIndex {
                 .push(PropertyKeyExpr::Unknown);
         }
         expression.visit_children_with(self);
+        if let Some(binding) = &expression.ident {
+            let callable = self
+                .callables
+                .get_mut(&expression.function.span.lo.0)
+                .unwrap();
+            callable.self_binding = Some(binding.to_id());
+            if let Some(body) = callable.local_body.take() {
+                callable.local_body = Some(body.with_declarations(
+                    std::iter::empty(),
+                    [(
+                        binding.to_id(),
+                        LocalBinding::NamedSelf(expression.function.span.lo.0),
+                    )],
+                ));
+            }
+        }
     }
 
     fn visit_class_expr(&mut self, expression: &ClassExpr) {
@@ -11529,6 +11671,9 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_function(&mut self, function: &Function) {
+        self.callable_creations
+            .entry(function.span.lo.0)
+            .or_insert(DeferredCallableCreation::Function(function.span.lo.0));
         if let Some(candidate) = namespace_wrapper::candidate(function) {
             self.namespace_wrapper_candidates
                 .insert(function.span.lo.0, candidate);
@@ -11610,6 +11755,10 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_arrow_expr(&mut self, arrow: &ArrowExpr) {
+        self.callable_creations.insert(
+            arrow.span.lo.0,
+            DeferredCallableCreation::Arrow(arrow.span.lo.0),
+        );
         if arrow.is_async {
             self.async_callables.insert(arrow.span.lo.0);
         }
@@ -11826,6 +11975,33 @@ impl Visit for ExecutionIndex {
                 },
             );
         }
+        if self.variable_kind == Some(VarDeclKind::Var)
+            && let Some(callable) = self.variable_scope
+            && let Pat::Ident(binding) = &declarator.name
+        {
+            self.callables
+                .get_mut(&callable)
+                .unwrap()
+                .hoisted_vars
+                .insert(binding.id.to_id());
+        }
+        if let Some(callable) = self.current
+            && let Pat::Ident(binding) = &declarator.name
+            && let Some(kind @ (VarDeclKind::Let | VarDeclKind::Const)) = self.variable_kind
+        {
+            self.callables
+                .get_mut(&callable)
+                .unwrap()
+                .lexical_declarations
+                .insert(
+                    binding.id.to_id(),
+                    if kind == VarDeclKind::Let {
+                        LocalBinding::Let
+                    } else {
+                        LocalBinding::Const
+                    },
+                );
+        }
         let initializer = declarator
             .init
             .as_ref()
@@ -11885,6 +12061,28 @@ impl Visit for ExecutionIndex {
                     .unwrap()
                     .pattern_locals
                     .extend(bindings.iter().map(|(binding, _)| binding.clone()));
+            }
+            if self.variable_kind == Some(VarDeclKind::Var)
+                && let Some(callable) = self.variable_scope
+            {
+                self.callables
+                    .get_mut(&callable)
+                    .unwrap()
+                    .hoisted_vars
+                    .extend(bindings.iter().map(|(binding, _)| binding.clone()));
+            } else if let Some(callable) = self.current
+                && let Some(kind @ (VarDeclKind::Let | VarDeclKind::Const)) = self.variable_kind
+            {
+                let kind = if kind == VarDeclKind::Let {
+                    LocalBinding::Let
+                } else {
+                    LocalBinding::Const
+                };
+                self.callables
+                    .get_mut(&callable)
+                    .unwrap()
+                    .lexical_declarations
+                    .extend(bindings.iter().map(|(binding, _)| (binding.clone(), kind)));
             }
             for (id, _) in bindings {
                 self.binding_declaration_writes
@@ -13500,9 +13698,6 @@ fn infer_foreign_calls<'f>(
     collection_intact: impl Fn(NativeIntrinsic) -> bool,
     wanted: impl Fn(&InferredForeignCall) -> bool,
 ) -> BTreeMap<String, InferredForeignCall> {
-    use crate::facts::abstract_domain::foreign_call::{
-        ForeignBody, derive_unmigrated_foreign_call,
-    };
     if !index.dynamic_scope_owners.is_empty() {
         return BTreeMap::new();
     }
@@ -13514,19 +13709,9 @@ fn infer_foreign_calls<'f>(
                 ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => &export.decl,
                 _ => return None,
             };
-            let (binding, body, start, hoisted) = match declaration {
-                Decl::Fn(function) => (
-                    &function.ident,
-                    ForeignBody::Function(&function.function),
-                    function.function.span.lo.0,
-                    true,
-                ),
-                Decl::Class(class) => (
-                    &class.ident,
-                    ForeignBody::Class,
-                    class.class.span.lo.0,
-                    true,
-                ),
+            let (binding, is_class, start, hoisted) = match declaration {
+                Decl::Fn(function) => (&function.ident, false, function.function.span.lo.0, true),
+                Decl::Class(class) => (&class.ident, true, class.class.span.lo.0, true),
                 Decl::Var(declaration) => {
                     let [declarator] = declaration.decls.as_slice() else {
                         return None;
@@ -13534,21 +13719,18 @@ fn infer_foreign_calls<'f>(
                     let Pat::Ident(binding) = &declarator.name else {
                         return None;
                     };
-                    let (body, start) = match declarator.init.as_deref()?.unwrap_parens() {
-                        Expr::Fn(function) => (
-                            ForeignBody::Function(&function.function),
-                            function.function.span.lo.0,
-                        ),
-                        Expr::Arrow(arrow) => (ForeignBody::Arrow(arrow), arrow.span.lo.0),
+                    let (is_class, start) = match declarator.init.as_deref()?.unwrap_parens() {
+                        Expr::Fn(function) => (false, function.function.span.lo.0),
+                        Expr::Arrow(arrow) => (false, arrow.span.lo.0),
                         _ => return None,
                     };
-                    (&binding.id, body, start, false)
+                    (&binding.id, is_class, start, false)
                 }
                 _ => return None,
             };
             exported_locals
                 .contains(binding.sym.as_ref())
-                .then_some((binding, body, start, hoisted))
+                .then_some((binding, is_class, start, hoisted))
         })
         .collect();
     if declarations.is_empty() {
@@ -13558,31 +13740,21 @@ fn infer_foreign_calls<'f>(
     let candidates: Vec<_> = declarations
         .into_iter()
         .filter(|(binding, ..)| !index.reassigned_bindings.contains(&binding.to_id()))
-        .filter_map(|(binding, declaration, declaration_start, hoisted)| {
-            let derived = match &declaration {
-                ForeignBody::Class => {
-                    // Class construction has its own source-covered ordered
-                    // operation plan. Refusal never retries the private AST evaluator.
-                    strict_provider::derive_class(index, declaration_start, &shadowed)?
-                }
-                ForeignBody::Function(_) | ForeignBody::Arrow(_)
-                    if index
-                        .callables
-                        .get(&declaration_start)
-                        .is_some_and(|callable| {
-                            callable.allocation_return.is_some()
-                                || callable.local_body.as_ref().is_some_and(|body| {
-                                    body.allocation_only_syntax()
-                                        || body.closure_allocation_syntax()
-                                })
-                        }) =>
-                {
-                    // This migrated slice consumes the central value/operation transfers.
-                    // A failed access/coverage judgment must not retry the AST evaluator.
-                    strict_provider::derive(index, declaration_start, &shadowed)?
-                }
-                _ => derive_unmigrated_foreign_call(declaration, &shadowed, &collection_intact)?,
+        .filter_map(|(binding, is_class, declaration_start, hoisted)| {
+            let derived = if is_class {
+                strict_provider::derive_class(index, declaration_start, &shadowed)?
+            } else {
+                // All callable bodies consume one shared source-covered plan.
+                // Refusal never retries another evaluator.
+                strict_provider::derive(index, declaration_start, &shadowed)?
             };
+            if !derived
+                .native_constructions
+                .iter()
+                .all(|family| collection_intact(*family))
+            {
+                return None;
+            }
             Some((
                 binding,
                 foreign_call(index, derived, declaration_start, hoisted),

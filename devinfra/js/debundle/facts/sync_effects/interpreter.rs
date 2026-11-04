@@ -1130,6 +1130,11 @@ struct ApplicationAllocationContext<'a, 'source, 'rule> {
 }
 
 impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
+    fn array_created(&mut self, allocation: u32, sparse: bool) {
+        if sparse {
+            self.executor.state.tainted_objects.insert(allocation);
+        }
+    }
     fn source_covered(&self) -> bool {
         self.executor.source_covered
     }
@@ -1160,6 +1165,16 @@ impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
         )
     }
 
+    fn literal_property_kind(
+        &self,
+        allocation: u32,
+        position: usize,
+    ) -> super::super::value_model::LiteralPropertyKind {
+        self.executor
+            .inputs
+            .index
+            .literal_property_kind(allocation, position)
+    }
     fn literal_layout(&self, allocation: u32) -> super::super::allocation_transfer::LiteralLayout {
         self.executor.inputs.index.allocation_layout(allocation)
     }
@@ -1233,6 +1248,32 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
         }
     }
 
+    fn missing_activation_binding(&self, binding: &Id, frame: &LocalFrame) -> bool {
+        matches!(
+            self.body.bindings.get(binding),
+            Some(LocalBinding::NamedSelf(_) | LocalBinding::HoistedFunction(_))
+        ) && !frame.environment.contains_key(binding)
+    }
+
+    fn refuse_activation_value(&mut self, frame: &LocalFrame) {
+        let span = self
+            .scope
+            .caller()
+            .and_then(|key| self.executor.inputs.index.callable_spans.get(&key))
+            .copied()
+            .unwrap_or(DUMMY_SP);
+        self.fallback(
+            frame,
+            Values::new(),
+            ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation: ExecutionOperation::OpaqueExecution,
+                ordered_field_read_refusal: None,
+                ordered_call_admission_refusal: None,
+            },
+            span,
+        );
+    }
+
     fn fallback(
         &mut self,
         frame: &LocalFrame,
@@ -1281,9 +1322,20 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
 }
 
 impl LocalContext for LocalExecutionContext<'_, '_, '_> {
+    fn array_created(&mut self, allocation: u32, sparse: bool) {
+        if sparse {
+            self.executor.state.tainted_objects.insert(allocation);
+        }
+    }
     fn instantiate_bindings(&mut self, frame: &mut LocalFrame) {
         let mut allocated = false;
         for (binding, kind) in &self.body.bindings {
+            if self.missing_activation_binding(binding, frame) {
+                // A captured context can carry a prior activation's cell.
+                // Its source binding is not this missing function value.
+                self.executor.state.active_cells.remove(binding);
+                continue;
+            }
             if !self
                 .executor
                 .inputs
@@ -1292,11 +1344,19 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             {
                 continue;
             }
+            let Some(values) = frame.environment.get(binding) else {
+                // The shared activation model cannot instantiate a missing
+                // self/hoisted-function value from source identity alone.
+                continue;
+            };
             let cell = self.executor.state.lexical_cells.insert(LexicalCell {
-                values: frame.environment[binding].clone(),
+                values: values.clone(),
                 kind: *kind,
                 initialization: match kind {
-                    LocalBinding::Parameter | LocalBinding::Var => CellInitialization::Initialized,
+                    LocalBinding::Parameter
+                    | LocalBinding::Var
+                    | LocalBinding::NamedSelf(_)
+                    | LocalBinding::HoistedFunction(_) => CellInitialization::Initialized,
                     LocalBinding::Let | LocalBinding::Const => CellInitialization::Uninitialized,
                 },
             });
@@ -1314,6 +1374,29 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         }
     }
     fn local_binding_stored(&mut self, binding: &Id, frame: &LocalFrame) {
+        if !self.executor.state.active_cells.contains_key(binding)
+            && self
+                .executor
+                .inputs
+                .captured_local_bindings
+                .contains(binding)
+            && let Some(kind @ LocalBinding::HoistedFunction(_)) = self.body.bindings.get(binding)
+        {
+            // The prologue could not manufacture this function value. An
+            // actually executed initializer now establishes this activation's
+            // mutable cell using its evaluated value, as for other locals.
+            let cell = self.executor.state.lexical_cells.insert(LexicalCell {
+                values: frame.environment[binding].clone(),
+                kind: *kind,
+                initialization: CellInitialization::Initialized,
+            });
+            self.executor
+                .state
+                .active_cells
+                .insert(binding.clone(), cell);
+            self.executor.state.prefix_revision =
+                self.executor.state.prefix_revision.wrapping_add(1);
+        }
         if let Some(id) = self.executor.state.active_cells.get(binding).copied() {
             let cell = &mut self.executor.state.lexical_cells[id.0];
             let values = &frame.environment[binding];
@@ -1330,8 +1413,29 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     fn closure(
         &mut self,
         frame: &mut LocalFrame,
-        callable: u32,
+        creation: super::super::local_operations::DeferredCallableCreation,
     ) -> Option<super::super::allocation_transfer::AllocationValue> {
+        let callable = creation.callable();
+        assert_eq!(
+            self.executor.inputs.index.callable_creation(callable),
+            Some(creation),
+            "canonical callable creation kind/home-object association"
+        );
+        let body = &self.executor.inputs.index.callables[&callable];
+        let reads = self
+            .executor
+            .inputs
+            .index
+            .prototype_callable_reads
+            .get(&callable)
+            .unwrap_or(&body.reads);
+        if reads
+            .iter()
+            .any(|binding| self.missing_activation_binding(binding, frame))
+        {
+            self.refuse_activation_value(frame);
+            return None;
+        }
         let captures = self.executor.closure_captures(callable, &frame.environment);
         let values = Values::from([AbstractValue::Closure(callable, captures)]);
         frame.inputs.extend(values.iter().cloned());
@@ -1348,7 +1452,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     ) -> Option<super::super::allocation_transfer::AllocationValue> {
         if let Some(id) = self.executor.state.active_cells.get(binding).copied() {
             let cell = &mut self.executor.state.lexical_cells[id.0];
-            if cell.kind == LocalBinding::Const
+            if matches!(cell.kind, LocalBinding::Const | LocalBinding::NamedSelf(_))
                 || cell.initialization == CellInitialization::Uninitialized
             {
                 return Some(super::super::allocation_transfer::AllocationValue::opaque(
@@ -1385,6 +1489,10 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         None
     }
     fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<LocalValueResult> {
+        if self.missing_activation_binding(binding, frame) {
+            self.refuse_activation_value(frame);
+            return None;
+        }
         if self.executor.inputs.top_bindings.contains(binding) {
             self.executor
                 .promote_top_effects(vec![binding], Vec::new(), self.owner, self.outcome);
@@ -1513,6 +1621,16 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         };
         self.fallback(frame, reached, fallback_reason, span);
         None
+    }
+    fn literal_property_kind(
+        &self,
+        allocation: u32,
+        position: usize,
+    ) -> super::super::value_model::LiteralPropertyKind {
+        self.executor
+            .inputs
+            .index
+            .literal_property_kind(allocation, position)
     }
     fn literal_layout(&self, allocation: u32) -> super::super::allocation_transfer::LiteralLayout {
         self.executor.inputs.index.allocation_layout(allocation)
@@ -3071,6 +3189,92 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 )]
         )
     }
+    /// The payload heap retains accessor callbacks as capabilities, not as
+    /// the result of reading their property. Only a data-tagged lookup may
+    /// project that payload into an expression value.
+    fn payload_lookup_is_data(&self, object: u32, property: Option<&str>) -> bool {
+        if self
+            .state
+            .applied_accessors
+            .get(&object)
+            .is_some_and(|accessors| {
+                property.is_none_or(|property| accessors.contains_key(property))
+            })
+        {
+            return false;
+        }
+        if let Some(shape) = self.inputs.index.ordinary_record_shape(object) {
+            return match property {
+                Some(property) => !matches!(
+                    shape.properties.get(property),
+                    Some(super::super::value_model::OwnPropertyDescriptorSyntax::Accessor { .. })
+                ),
+                None => shape.properties.values().all(|descriptor| {
+                    matches!(
+                        descriptor,
+                        super::super::value_model::OwnPropertyDescriptorSyntax::Data
+                    )
+                }),
+            };
+        }
+        // Arrays and runtime-created data copies have their own shape proof.
+        // An ambiguous source literal has neither, so its pooled payload does
+        // not establish the descriptor selected by a later property lookup.
+        self.inputs.index.array_elements.contains_key(&object)
+            || self.state.ordinary_spread_copies.contains(&object)
+            || self.state.descriptor_copy_results.contains(&object)
+            || self.state.parameter_initialized_objects.contains(&object)
+    }
+
+    /// Capabilities retained by the selected member, not its Get result.
+    /// Called with receivers already evaluated at the current read prefix.
+    fn selected_member_capabilities(&self, receivers: &Values, property: Option<&str>) -> Values {
+        let mut selected = Values::new();
+        for receiver in receivers {
+            match receiver {
+                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                    if let Some(properties) = self.state.prefix_object_properties.get(object) {
+                        if let Some(property) = property {
+                            selected.extend(
+                                properties
+                                    .get(&Some(property.to_owned()))
+                                    .into_iter()
+                                    .flatten()
+                                    .cloned(),
+                            );
+                            selected.extend(properties.get(&None).into_iter().flatten().cloned());
+                        } else {
+                            selected.extend(properties.values().flatten().cloned());
+                        }
+                    }
+                }
+                // These carriers already projected their retained capabilities
+                // through Member. Preserve that policy without reevaluation.
+                AbstractValue::Instance(_, _)
+                | AbstractValue::DeferredCallbacks(_)
+                | AbstractValue::ForeignDeferredRecord
+                | AbstractValue::ArrayIntrinsic => {
+                    selected.insert(receiver.clone());
+                }
+                AbstractValue::AuditedRetainedResult(_, captured) => {
+                    selected.insert(AbstractValue::DeferredCallbacks(captured.clone()));
+                }
+                AbstractValue::Value(Value::Alloc(Kind::Class, key))
+                | AbstractValue::ClassMembers(key) => {
+                    selected.insert(AbstractValue::ClassMembers(*key));
+                }
+                AbstractValue::OwnDescriptorMap(site) => {
+                    selected.extend(self.descriptor_map_callbacks(*site));
+                }
+                AbstractValue::Value(Value::Unavailable) => {}
+                _ => {
+                    selected.insert(AbstractValue::Value(Value::Top));
+                }
+            }
+        }
+        selected
+    }
+
     fn ordinary_data_properties(
         &self,
         values: &Values,
@@ -3294,6 +3498,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
         } else {
             self.state.primitive_arrays.remove(&object);
+            self.literal_heap().invalidate_dense_array(object);
             self.state.tainted_objects.insert(object);
         }
         let mut result = Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, object))]);
@@ -4382,7 +4587,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .iter()
                 .any(|param| param.binding.is_none() || param.default.is_some())
             || callable.local_assignments.iter().any(|(id, value)| {
-                !callable.local_functions.contains(id)
+                !callable.local_functions.contains_key(id)
                     || !matches!(value, ValueExpr::Alloc(Kind::Function, _))
             })
             || callable.returns.len() != 1
@@ -4394,7 +4599,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .params
             .iter()
             .filter_map(|param| param.binding.clone())
-            .chain(callable.local_functions.iter().cloned())
+            .chain(callable.local_functions.keys().cloned())
             .collect();
         callable.reads.is_subset(&allowed)
             && self.closed_local_record_value(&callable.returns[0], &allowed)
@@ -5387,7 +5592,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn stable_fresh_function_target(&self, key: u32, callable: &Callable, id: &Id) -> bool {
-        callable.local_functions.contains(id)
+        callable.local_functions.contains_key(id)
             && !callable.rebinds.contains(id)
             && !callable.literal_captures.contains(id)
             && !callable.escaped_bindings.contains(id)
@@ -5459,6 +5664,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
             AbstractValue::Closure(_, captured) => {
+                if let Some(home_object) = captured.values.home_object {
+                    visit(&AbstractValue::Value(Value::Alloc(
+                        Kind::Object,
+                        home_object,
+                    )));
+                }
                 for value in captured.values.snapshots.values().flatten() {
                     visit(value);
                 }
@@ -6303,7 +6514,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let mut changed = false;
         for id in cells {
             let cell = &mut self.state.lexical_cells[id.0];
-            if cell.kind == LocalBinding::Const
+            if matches!(cell.kind, LocalBinding::Const | LocalBinding::NamedSelf(_))
                 && cell.initialization == CellInitialization::Initialized
             {
                 continue;
@@ -7354,11 +7565,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .get(&key)
             .unwrap_or(&callable.reads);
         let free_bindings = reads.iter().chain(callable.rebinds.iter());
-        let mut captured = LexicalCaptures::default();
+        let mut captured = LexicalCaptures {
+            home_object: self.inputs.index.callable_home_object(key),
+            ..Default::default()
+        };
         for id in free_bindings {
             if self.inputs.top_bindings.contains(id)
                 || callable.declared_locals.contains(id)
-                || callable.local_functions.contains(id)
+                || callable.local_functions.contains_key(id)
                 || callable
                     .params
                     .iter()
@@ -8394,6 +8608,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 if self.inputs.index.array_elements.contains_key(key) {
                     return self.evaluate_array(*key, env, captures);
                 }
+                let definitions = properties
+                    .iter()
+                    .enumerate()
+                    .map(|(position, (name, value))| {
+                        super::super::value_model::PropertyDefinition::new(
+                            self.inputs.index.literal_property_kind(*key, position),
+                            name.clone(),
+                            value,
+                        )
+                    })
+                    .collect::<Vec<_>>();
                 super::super::allocation_transfer::record(
                     &mut ApplicationAllocationContext {
                         executor: self,
@@ -8401,7 +8626,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         captures,
                     },
                     *key,
-                    properties.iter().map(|(name, value)| (name.clone(), value)),
+                    definitions,
                     super::super::allocation_transfer::AllocationJudgment::Opaque,
                     |context, expression| context.child(expression),
                 )
@@ -8492,6 +8717,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         }
                         AbstractValue::Value(Value::Alloc(Kind::Object, object_id)) => {
                             if !self.state.object_properties_are_settled(&object_id) {
+                                values.insert(AbstractValue::Value(Value::Top));
+                                continue;
+                            }
+                            if !self.payload_lookup_is_data(object_id, property.as_deref()) {
                                 values.insert(AbstractValue::Value(Value::Top));
                                 continue;
                             }
@@ -9905,7 +10134,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 // This receiver is still settled: preserve the known member's
                 // capabilities for effects before taint discards its value.
                 // Unsettled receivers took the possible-getter path above.
-                let selected = self.evaluate(&call.callee, env, captures);
+                let selected = self.selected_member_capabilities(&values, property.as_deref());
                 self.taint_objects(&values);
                 self.promote_escaped_callbacks(&selected, outcome);
                 if self.state.array_iteration_depth > 0 {
@@ -12381,6 +12610,10 @@ impl Executor<'_, '_> {
         let mut prior_effect_owners = outcome.executed_owners.clone();
         prior_effect_owners
             .retain(|owner| !self.state.private_constructor_result_owners.contains(owner));
+        // Ordered execution records the root too; the completed private-result proof covers it.
+        if outcome.effects.local_record_factory_purity.is_some() {
+            prior_effect_owners.remove(&fact.ordinal);
+        }
         if !self.queries.completed_statement_is_pure(fact.ordinal)
             && self.state.private_constructor_result_owners.is_empty()
         {

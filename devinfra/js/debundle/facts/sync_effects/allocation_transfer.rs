@@ -4,7 +4,8 @@
 //! Lowered values alone can have erased calls, writes or coercions.
 
 use super::value_model::{
-    AbstractValue, CallSite, Context, DenseArray, ProviderScopeId, ValueExpr, Values,
+    AbstractValue, CallSite, Context, DenseArray, LiteralPropertyKind, PropertyDefinition,
+    ProviderScopeId, ValueExpr, Values,
 };
 use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use crate::facts::abstract_domain::builtins::{
@@ -64,6 +65,8 @@ pub(super) trait AllocationContext {
     fn binding(&mut self, binding: &Id) -> Option<AllocationValue>;
     fn child(&mut self, expression: &ValueExpr) -> Option<AllocationValue>;
     fn literal_layout(&self, allocation: u32) -> LiteralLayout;
+    fn literal_property_kind(&self, allocation: u32, position: usize) -> LiteralPropertyKind;
+    fn array_created(&mut self, _allocation: u32, _sparse: bool) {}
     fn heap(&mut self) -> LiteralHeap<'_>;
     /// The adapter proves original constructor identity for this canonical New
     /// expression. The operation's row and result semantics are shared.
@@ -155,6 +158,12 @@ impl LiteralHeap<'_> {
         let before = slot.len();
         slot.extend(values.iter().cloned());
         if slot.len() != before {
+            *self.revision = self.revision.wrapping_add(1);
+        }
+    }
+
+    pub(super) fn invalidate_dense_array(&mut self, allocation: u32) {
+        if self.arrays.remove(&allocation).is_some() {
             *self.revision = self.revision.wrapping_add(1);
         }
     }
@@ -313,65 +322,38 @@ pub(super) fn transfer(
         ValueExpr::ObjectLiteral(allocation, properties) => {
             context.unmodeled_effect_operation();
             let layout = context.literal_layout(*allocation);
-            let mut may_throw = false;
-            let mut can_complete = true;
             match layout {
                 LiteralLayout::Record => {
+                    let definitions = properties
+                        .iter()
+                        .enumerate()
+                        .map(|(position, (name, value))| {
+                            PropertyDefinition::new(
+                                context.literal_property_kind(*allocation, position),
+                                name.clone(),
+                                value,
+                            )
+                        })
+                        .collect::<Vec<_>>();
                     return record(
                         context,
                         *allocation,
-                        properties.iter().map(|(name, value)| (name.clone(), value)),
+                        definitions,
                         judgment,
                         |context, expression| context.child(expression),
                     );
                 }
                 LiteralLayout::DenseArray(elements) => {
-                    let mut slots = Vec::new();
-                    let mut containment = Values::new();
-                    for expression in elements {
-                        if !can_complete {
-                            break;
-                        }
-                        let child = context.child(&expression)?;
-                        judgment.compose(&child.judgment);
-                        let mut values = child.values;
-                        may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
-                        if values.is_empty() {
-                            can_complete = false;
-                            continue;
-                        }
-                        containment.extend(values.iter().cloned());
-                        slots.push(values);
-                    }
-                    if can_complete {
-                        let mut heap = context.heap();
-                        // Match the ordinary array lane: containment is filled
-                        // before dense_array observes and versions the slots.
-                        heap.properties
-                            .entry(*allocation)
-                            .or_default()
-                            .entry(None)
-                            .or_default()
-                            .extend(containment);
-                        heap.dense_array(*allocation, slots);
-                    }
+                    return array(
+                        context,
+                        *allocation,
+                        elements.iter().map(Some),
+                        judgment,
+                        |context, expression| context.child(expression),
+                    );
                 }
                 _ => return None,
             }
-            let mut values = Values::new();
-            if can_complete {
-                values.insert(AbstractValue::Value(Value::Alloc(
-                    Kind::Object,
-                    *allocation,
-                )));
-            }
-            if may_throw || !can_complete {
-                judgment = AllocationJudgment::Opaque;
-                if may_throw {
-                    values.insert(AbstractValue::Value(Value::Unavailable));
-                }
-            }
-            values
         }
         _ => {
             context.unmodeled_effect_operation();
@@ -442,26 +424,95 @@ fn primitive_operation<'a>(
 pub(super) fn record<'a, C: AllocationContext, E: 'a>(
     context: &mut C,
     allocation: u32,
-    properties: impl IntoIterator<Item = (Option<String>, &'a E)>,
+    properties: impl IntoIterator<Item = PropertyDefinition<&'a E>>,
     mut judgment: AllocationJudgment,
     mut child: impl FnMut(&mut C, &'a E) -> Option<AllocationValue>,
 ) -> Option<AllocationValue> {
+    context.unmodeled_effect_operation();
     let mut evaluated = BTreeMap::<Option<String>, Values>::new();
     let mut may_throw = false;
     let mut can_complete = true;
-    for (property, expression) in properties {
+    for (position, definition) in properties.into_iter().enumerate() {
+        let expected = context.literal_property_kind(allocation, position);
+        if expected != LiteralPropertyKind::Opaque && expected != definition.kind() {
+            return None;
+        }
+        let property = definition.name().map(str::to_owned);
         if !can_complete {
             break;
         }
-        let child = child(context, expression)?;
+        let child = child(context, *definition.value())?;
         judgment.compose(&child.judgment);
         let mut values = child.values;
         may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
         can_complete &= !values.is_empty();
+        // This is descriptor payload containment. Its ordinary-data eligibility
+        // remains guarded by the canonical descriptor tag at every read.
         evaluated.entry(property).or_default().extend(values);
     }
     if can_complete {
         context.heap().record(allocation, evaluated);
+    }
+    let mut values = Values::new();
+    if can_complete {
+        values.insert(AbstractValue::Value(Value::Alloc(Kind::Object, allocation)));
+    }
+    if may_throw || !can_complete {
+        judgment = AllocationJudgment::Opaque;
+        values.insert(AbstractValue::Value(Value::Unavailable));
+    }
+    Some(AllocationValue { values, judgment })
+}
+
+/// No-spread array creation shares ordered child transfer with local execution.
+/// Holes are absent own properties, and never acquire a dense-array proof.
+pub(super) fn array<'a, C: AllocationContext, E: 'a>(
+    context: &mut C,
+    allocation: u32,
+    elements: impl IntoIterator<Item = Option<&'a E>>,
+    mut judgment: AllocationJudgment,
+    mut child: impl FnMut(&mut C, &'a E) -> Option<AllocationValue>,
+) -> Option<AllocationValue> {
+    context.unmodeled_effect_operation();
+    let mut properties = BTreeMap::<Option<String>, Values>::new();
+    let mut dense = Vec::new();
+    let mut has_hole = false;
+    let mut may_throw = false;
+    let mut can_complete = true;
+    for (index, element) in elements.into_iter().enumerate() {
+        if !can_complete {
+            break;
+        }
+        let Some(element) = element else {
+            has_hole = true;
+            continue;
+        };
+        let evaluated = child(context, element)?;
+        judgment.compose(&evaluated.judgment);
+        let mut values = evaluated.values;
+        may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
+        can_complete &= !values.is_empty();
+        properties
+            .entry(None)
+            .or_default()
+            .extend(values.iter().cloned());
+        properties.insert(Some(index.to_string()), values.clone());
+        dense.push(values);
+    }
+    if can_complete {
+        properties.entry(None).or_default();
+        properties.insert(
+            Some("length".into()),
+            Values::from([AbstractValue::PRIMITIVE]),
+        );
+        let mut heap = context.heap();
+        heap.record(allocation, properties);
+        if !has_hole {
+            heap.dense_array(allocation, dense);
+        } else {
+            heap.invalidate_dense_array(allocation);
+        }
+        context.array_created(allocation, has_hole);
     }
     let mut values = Values::new();
     if can_complete {
