@@ -24,3 +24,17 @@ Pod-UID proof. All calls retain Sandbox UID/owner and current Runtime incarnatio
 - Gateway proxy and Executor methods reject delegated envelopes. Delegation is configured only
   on Dispatcher and EnvironmentService methods. Explicit resume and automatic wake retain their
   own lifecycle authorization.
+
+Runtime Session creation and commands, including immediate interrupts, are writes: the Gateway
+refuses forwarding once its synchronized inventory observes `Quiescing` or deletion. Diagnostics
+remain available while quiescing, and the controller's authorized `Quiesce` can still complete the
+seal. Cache observation is asynchronous; this routing check does not make Kubernetes
+`deletionTimestamp` atomic with Runtime admission.
+
+For ordinary managed deletion, the receiver barrier is the exact incarnation's completed Runtime
+quiescence: every Session has closed final admission, sealed its journal and received History's seal
+acknowledgement before the controller removes the workload. A request already past Gateway routing
+must still pass Runtime's admission gate. Runtime's initial lameduck permits exact-turn interrupts;
+its final Session cutoff refuses new command IDs, including interrupts. Existing command IDs retain
+journal reconciliation. Removing finalizers or using foreground deletion bypasses this managed
+protocol and supplies no such proof.

@@ -28,7 +28,7 @@ type environmentRuntimeProxy struct {
 
 // connection is the elected connection to the runner of the Sandbox the call's metadata names. Gateway.Methods
 // admitted the caller.
-func (p *environmentRuntimeProxy) connection(ctx context.Context, allowSuspending bool) (*runnerConnection, error) {
+func (p *environmentRuntimeProxy) connection(ctx context.Context, writes, allowSuspending bool) (*runnerConnection, error) {
 	g := p.gateway
 	metadata, _ := metadata.FromIncomingContext(ctx)
 	names := metadata.Get(sandboxapi.RunnerProxySandboxMetadataKey)
@@ -53,7 +53,7 @@ func (p *environmentRuntimeProxy) connection(ctx context.Context, allowSuspendin
 			Namespace: values[sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey][0],
 			Name:      values[sandboxapi.RunnerProxySandboxOwnerNameMetadataKey][0],
 		},
-	}, false, allowSuspending)
+	}, writes, allowSuspending)
 	if err != nil {
 		return nil, unavailable(err)
 	}
@@ -68,7 +68,7 @@ func (p *environmentRuntimeProxy) connection(ctx context.Context, allowSuspendin
 }
 
 func (p *environmentRuntimeProxy) ListSessions(ctx context.Context, request *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
-	connection, err := p.connection(ctx, false)
+	connection, err := p.connection(ctx, false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (p *environmentRuntimeProxy) ListSessions(ctx context.Context, request *ses
 }
 
 func (p *environmentRuntimeProxy) GetStatus(ctx context.Context, request *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
-	connection, err := p.connection(ctx, false)
+	connection, err := p.connection(ctx, false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func (p *environmentRuntimeProxy) GetStatus(ctx context.Context, request *sessio
 }
 
 func (p *environmentRuntimeProxy) OpenSession(ctx context.Context, request *environmentruntimepb.OpenSessionRequest) (*environmentruntimepb.OpenSessionResponse, error) {
-	connection, err := p.connection(ctx, false)
+	connection, err := p.connection(ctx, true, false)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (p *environmentRuntimeProxy) OpenSession(ctx context.Context, request *envi
 func (p *environmentRuntimeProxy) Quiesce(ctx context.Context, request *sessionpb.QuiesceRequest) (*sessionpb.QuiesceResponse, error) {
 	// The controller may have published Quiescing while this Gateway still caches the preceding
 	// SuspendPending phase. Only this controller-authorized control call can use that phase.
-	connection, err := p.connection(ctx, true)
+	connection, err := p.connection(ctx, false, true)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func (p *environmentRuntimeProxy) Quiesce(ctx context.Context, request *sessionp
 }
 
 func (p *environmentRuntimeProxy) SubmitInput(ctx context.Context, request *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
-	connection, err := p.connection(ctx, false)
+	connection, err := p.connection(ctx, true, false)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func (p *environmentRuntimeProxy) SubmitInput(ctx context.Context, request *envi
 }
 
 func (p *environmentRuntimeProxy) ChangeModel(ctx context.Context, request *environmentruntimepb.ChangeModelRequest) (*environmentruntimepb.ChangeModelResponse, error) {
-	connection, err := p.connection(ctx, false)
+	connection, err := p.connection(ctx, true, false)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func (p *environmentRuntimeProxy) ChangeModel(ctx context.Context, request *envi
 }
 
 func (p *environmentRuntimeProxy) ChangeReasoningEffort(ctx context.Context, request *environmentruntimepb.ChangeReasoningEffortRequest) (*environmentruntimepb.ChangeReasoningEffortResponse, error) {
-	connection, err := p.connection(ctx, false)
+	connection, err := p.connection(ctx, true, false)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +126,7 @@ func (p *environmentRuntimeProxy) ChangeReasoningEffort(ctx context.Context, req
 }
 
 func (p *environmentRuntimeProxy) InterruptTurn(ctx context.Context, request *environmentruntimepb.InterruptTurnRequest) (*environmentruntimepb.InterruptTurnResponse, error) {
-	connection, err := p.connection(ctx, false)
+	connection, err := p.connection(ctx, true, false)
 	if err != nil {
 		return nil, err
 	}

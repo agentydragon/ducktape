@@ -2056,7 +2056,7 @@ flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: delivery ownership and service topology]
     SESSION_DIRECTORY_NATIVE[Ready: Dispatcher Session directory for native placement]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: send authority and internal fencing]
-    SESSION_DELETION_FENCE[Candidate: prove and enforce the Session deletion fence]
+    SESSION_DELETION_FENCE[In progress: managed deletion proof and outcome evidence]
     DELIVERY_DESTINATION_CONTRACT[Blocked: Session-ID command addressing]
     SESSION_NOTIFICATION_ADDRESS[Blocked: remaining Session notification addressing]
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
@@ -2171,18 +2171,32 @@ fencing questions remain applicable. Exit: a reviewed authority and race contrac
 
 ### `SESSION_DELETION_FENCE` — prove and enforce the Session deletion fence
 
-**Candidate; first trace and test the existing boundaries.** Map Dispatcher admission, queued wake and
-forwarding, Gateway routing, Runtime quiesce/admission and exact-UID environment deletion. The final
-Dispatcher recheck for an immediate interrupt is not atomic with the Runtime RPC: deletion can race it.
-Use deterministic races to establish what prevents an old Runtime accepting work after the chosen deletion
-boundary, including queued commands, wake and interrupts. If existing fences do not enforce it, implement
-an authoritative receiver-checked fence or another proved mechanism. A cached generation alone is not proof.
+**In progress; managed-protocol boundaries traced, 2026-11-03.** The authoritative receiver
+barrier for ordinary managed deletion is completed exact-incarnation Runtime quiescence, after
+final Session admission cutoff, journal sealing and History acknowledgement. The controller waits
+for that barrier before deleting the workload. Runtime lameduck alone still admits exact-turn
+interrupts. Kubernetes `deletionTimestamp`, Gateway cache observation and Dispatcher's post-absence
+DB tombstone are distinct asynchronous events; no instantaneous cross-store boundary is claimed.
+Gateway Session mutations now use write routing, while diagnostics and controller sealing remain
+available. Deterministic component coverage holds an old control RPC at the Runtime receiver across
+final quiescence and races automatic wake's guarded patch with deletion.
 
-Fail work proven unsent, retain or expose unresolved in-flight outcomes as unknown, and never redirect or
-replay uncertain effects. Specify where that evidence remains observable without selecting Session-record
-retention or UUID reuse after deletion; those remain open decisions. This work is independent of the
-general central principal and attachment model. The [command authority plan](session_send_authority.md#recovery-and-decisions-for-review)
-defines the selected outcomes and remaining review.
+Remaining: a bounded test composing the actual Gateway, Runtime and controller through deletion
+and a delayed pre-boundary forward, including same-name replacement; the existing deployed
+Dispatcher suite covers queued deletion notification but does not hold that receiver race. Preserve
+the finalizer and exact-incarnation seal handshake in this scenario. Manual finalizer removal and
+foreground deletion bypass it and cannot be cited as a completed managed fence.
+
+Fail work proven unsent, expose unresolved in-flight outcomes as unknown, and never redirect or
+replay uncertain effects. A lost reply can currently requeue a possibly-forwarded command; cleanup
+must not classify that row as known-unsent. Deletion terminal events currently reach connected
+`WatchDispatches` listeners through transactional PostgreSQL notifications, then receipts are
+removed. They are not durable future reads. Cleanup does not snapshot already-terminal rows: a
+connected watcher delayed behind an earlier invalidation can miss that outcome after cleanup.
+Broadcasting every retained receipt can overflow bounded terminal subscriptions and leaves no
+receipt for reconnect; close this gap with a reviewed bounded delivery design, not an unbounded
+broadcast. Session-record retention and UUID reuse remain open; this node must not choose them. The [command authority plan](session_send_authority.md#recovery-and-decisions-for-review)
+keeps these outcome-evidence and authority decisions explicit.
 
 ### `DELIVERY_DESTINATION_CONTRACT` — send commands to a Session ID
 

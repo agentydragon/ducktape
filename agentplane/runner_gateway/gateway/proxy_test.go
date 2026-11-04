@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
+	kubeclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
@@ -97,6 +98,38 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 		t.Fatalf("proxy accepted a stale Sandbox UID: %v", err)
 	}
 
+	commands := []struct {
+		name string
+		call func(context.Context) error
+	}{
+		{"open", func(ctx context.Context) error {
+			_, err := client.OpenSession(ctx, &environmentruntimepb.OpenSessionRequest{})
+			return err
+		}},
+		{"input", func(ctx context.Context) error {
+			_, err := client.SubmitInput(ctx, &environmentruntimepb.SubmitInputRequest{})
+			return err
+		}},
+		{"model", func(ctx context.Context) error {
+			_, err := client.ChangeModel(ctx, &environmentruntimepb.ChangeModelRequest{})
+			return err
+		}},
+		{"effort", func(ctx context.Context) error {
+			_, err := client.ChangeReasoningEffort(ctx, &environmentruntimepb.ChangeReasoningEffortRequest{})
+			return err
+		}},
+		{"interrupt", func(ctx context.Context) error {
+			_, err := client.InterruptTurn(ctx, &environmentruntimepb.InterruptTurnRequest{})
+			return err
+		}},
+	}
+	// The fixture's command methods return Unimplemented only after forwarding.
+	for _, command := range commands {
+		if err := command.call(f.callerContext(f.dispatcherToken)); status.Code(err) != codes.Unimplemented {
+			t.Fatalf("%s before deletion = %v, want forwarded", command.name, err)
+		}
+	}
+
 	// The controller can still seal a live Runner while a held suspend is visible in the
 	// Gateway's cache. Other proxy methods remain unavailable in that phase.
 	f.sandbox.Status.OperatingMode = sandboxapi.OperatingModeSuspended
@@ -139,6 +172,38 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	}
 	if got := runner.quiesceCalls.Load(); got != 1 {
 		t.Fatalf("unready Pod sent a second Quiesce to Runner: %d", got)
+	}
+
+	f.pod.Status.Conditions[0].Status = corev1.ConditionTrue
+	if err := f.objects.Status().Update(t.Context(), f.pod); err != nil {
+		t.Fatal(err)
+	}
+	f.sandbox.Status.OperatingMode = sandboxapi.OperatingModeRunning
+	if err := f.objects.Status().Update(t.Context(), f.sandbox); err != nil {
+		t.Fatal(err)
+	}
+	f.sandbox.Finalizers = []string{"test.allegedly.works/hold-deletion"}
+	if err := f.objects.Update(t.Context(), f.sandbox); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.objects.Delete(t.Context(), f.sandbox); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.objects.Get(t.Context(), kubeclient.ObjectKeyFromObject(f.sandbox), f.sandbox); err != nil {
+		t.Fatal(err)
+	}
+	// Observe deletion before Runtime quiescence: no new command may be forwarded,
+	// while diagnostics and the controller's sealing handshake remain available.
+	for _, command := range commands {
+		if err := command.call(f.callerContext(f.dispatcherToken)); status.Code(err) != codes.FailedPrecondition {
+			t.Fatalf("%s during deletion = %v, want FailedPrecondition", command.name, err)
+		}
+	}
+	if _, err := client.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); err != nil {
+		t.Fatalf("deletion diagnostics: %v", err)
+	}
+	if _, err := client.Quiesce(f.callerContext(f.controllerToken), &sessionpb.QuiesceRequest{}); err != nil {
+		t.Fatalf("deletion Quiesce: %v", err)
 	}
 
 	stopObserver()

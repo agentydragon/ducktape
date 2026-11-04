@@ -569,3 +569,36 @@ func TestResumeTokenBindsTargetAndGeneration(t *testing.T) {
 		t.Fatal("resume token did not bind target UID and generation")
 	}
 }
+
+func TestAutomaticWakeDeletionRacesGuardedPatch(t *testing.T) {
+	sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{AllowOwnServiceAccount: true}, true, sandboxapi.SuspendedByIdle, 5)
+	sandbox.Finalizers = []string{"test.allegedly.works/hold-deletion"}
+	base := testObjects(t, sandbox, executionUID)
+	patches := 0
+	objects := testPatchClient{WithWatch: base, patch: func(ctx context.Context, object client.Object, patch client.Patch, options ...client.PatchOption) error {
+		patches++
+		// All policy checks and the budget reservation have completed. Deletion
+		// advances resourceVersion before the wake's optimistic-lock patch.
+		var current sandboxapi.Sandbox
+		if err := base.Get(ctx, client.ObjectKeyFromObject(object), &current); err != nil {
+			return err
+		}
+		if err := base.Delete(ctx, &current); err != nil {
+			return err
+		}
+		return base.Patch(ctx, object, patch, options...)
+	}}
+	h := newHarness(t, objects, nil)
+	caller := &lifecycle.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: testSandbox}, Uid: executionUID}
+	assessment, err := h.service.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, caller)
+	if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_FAILED || assessment.GetReason() != environmentlifecyclepb.WakeReason_WAKE_REASON_TARGET_CHANGED {
+		t.Fatalf("wake racing deletion = %+v, %v", assessment, err)
+	}
+	var current sandboxapi.Sandbox
+	if err := base.Get(t.Context(), client.ObjectKeyFromObject(sandbox), &current); err != nil {
+		t.Fatal(err)
+	}
+	if current.DeletionTimestamp == nil || current.Spec.WakeGeneration != 5 || patches != 1 {
+		t.Fatalf("deletion wake mutation: timestamp=%v generation=%d patches=%d", current.DeletionTimestamp, current.Spec.WakeGeneration, patches)
+	}
+}

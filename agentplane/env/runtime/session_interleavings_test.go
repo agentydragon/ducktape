@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -15,7 +16,10 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -195,5 +199,89 @@ func runLifecycleBarrierTrace(t *testing.T, operation string, trace []string) {
 		}
 	case <-ctx.Done():
 		t.Fatal("close did not settle")
+	}
+}
+
+// A valid old Gateway RPC has reached the receiver but has not entered Runtime
+// admission when the managed-deletion quiescence barrier completes.
+func TestForwardedInterruptCannotAdmitAfterQuiescedBoundary(t *testing.T) {
+	r, s := lifecycleTestSession(t)
+	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
+	defer cancel()
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	releaseCall := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(releaseCall)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(grpc.UnaryInterceptor(func(ctx context.Context, request any, _ *grpc.UnaryServerInfo, next grpc.UnaryHandler) (any, error) {
+		if interrupt, ok := request.(*environmentruntimepb.InterruptTurnRequest); ok && interrupt.GetCommandId() == "delayed-interrupt" {
+			close(entered)
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		return next(ctx, request)
+	}))
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, r.control)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	incoming, _ := metadata.FromIncomingContext(sessionCallContext(r, ctx))
+	callCtx := metadata.NewOutgoingContext(ctx, incoming.Copy())
+	client := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
+	prior := &environmentruntimepb.ChangeModelRequest{SessionId: s.ID(), CommandId: "before-deletion", Model: "test-model"}
+	receipt, err := client.ChangeModel(callCtx, prior)
+	if err != nil {
+		t.Fatalf("pre-boundary admission: %v", err)
+	}
+	delayed := make(chan error, 1)
+	go func() {
+		_, err := client.InterruptTurn(callCtx, &environmentruntimepb.InterruptTurnRequest{SessionId: s.ID(), CommandId: "delayed-interrupt", TurnId: "old-turn"})
+		delayed <- err
+	}()
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal("interrupt did not reach receiver")
+	}
+	if _, err := r.Quiesce(ctx, &sessionpb.QuiesceRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	waitLifecycle(t, r, func() bool { return currentSessionLifecycleStatus(r).Stage == lifecycle.Flushing }, "final journal seal")
+	seal := s.EventJournal().SealState()
+	if seal == nil {
+		t.Fatal("quiescence has no final seal")
+	}
+	if err := r.store.WriteAcknowledgement(s.ID(), retained.Acknowledgement{Cursor: seal.Cursor, Sealed: true}); err != nil {
+		t.Fatal(err)
+	}
+	waitLifecycle(t, r, func() bool { return currentSessionLifecycleStatus(r).Stage == lifecycle.Quiesced }, "managed deletion barrier")
+	releaseCall()
+	select {
+	case err := <-delayed:
+		if status.Code(err) != codes.FailedPrecondition {
+			t.Fatalf("delayed interrupt = %v, want sealed refusal", err)
+		}
+	case <-ctx.Done():
+		t.Fatal("delayed interrupt did not settle")
+	}
+	if command, err := s.EventJournal().GetCommand(ctx, "delayed-interrupt"); err != nil || command != nil {
+		t.Fatalf("late interrupt entered journal: %+v, %v", command, err)
+	}
+	retried, err := client.ChangeModel(callCtx, prior)
+	if err != nil || retried.GetAdmission().GetCursor() != receipt.GetAdmission().GetCursor() {
+		t.Fatalf("pre-boundary receipt retry = %+v, %v", retried, err)
+	}
+	if s.EventJournal().LastCursor() != seal.Cursor {
+		t.Fatal("post-boundary call appended to sealed journal")
 	}
 }

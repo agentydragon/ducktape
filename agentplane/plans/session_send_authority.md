@@ -87,8 +87,14 @@ a reachable Runtime's unknown Session is terminal for the command.
 work to the deleted environment. Fail accepted commands proven not to have left Dispatcher; if
 delivery may have reached Runtime and admission or effects cannot be established, make the outcome
 observable as unknown rather than claiming failure or replaying it. Preserve any outcome established
-by durable evidence, and never redirect accepted work to a replacement environment. Where the
-outcome is exposed and for how long remains part of the open Dispatcher/History retention decision.
+by durable evidence, and never redirect accepted work to a replacement environment. Deletion
+terminal snapshots currently reach connected `WatchDispatches` streams through transactional
+PostgreSQL notifications; cleanup removes the receipts, so later reads cannot recover those
+snapshots. A connected watcher behind an earlier terminal-row invalidation can also miss that
+outcome when cleanup removes the row; cleanup currently snapshots only outcomes it transitions.
+Broadcasting all retained receipts can overflow bounded subscriptions, so this remains a delivery
+design gap. Durable post-deletion outcome visibility and retention remain open Dispatcher/History
+decisions. Neither notification delivery nor Runtime admission proves that an uncertain effect failed.
 
 There remains a narrow race between Dispatcher's directory recheck and Runtime admission. For the
 first native slice, directory assignment is immutable for the lifetime of the exact environment
@@ -121,8 +127,14 @@ The outcome and initial caller/wake rules above are selected. Remaining design a
    the selected deletion boundary, or select an authoritative receiver-checked epoch. Identify
    what enforces that boundary and where outcomes remain observable. Session movement and UUID
    reuse after deletion remain separate decisions; a local cached generation alone is not a fence.
-   The immediate interrupt's final Dispatcher recheck can race deletion and forwarding; it does not
-   close this boundary. See [SESSION_DELETION_FENCE](task_dag.md#session_deletion_fence--prove-and-enforce-the-session-deletion-fence).
+   Ordinary managed deletion waits for the exact Runtime incarnation's final Session cutoffs,
+   journal seals and History acknowledgements before removing its workload. The initial lameduck
+   is earlier and still permits exact-turn interrupts. Gateway refuses Session mutation after its
+   cache observes quiescing/deletion; that observation is asynchronous. Runtime component coverage
+   holds an old control RPC across completed quiescence, but a bounded Gateway/Runtime/controller
+   composition test remains. `deletionTimestamp` is not a cross-service linearization point, and
+   manual finalizer removal or foreground deletion bypasses the managed handshake. The immediate
+   interrupt's final Dispatcher recheck can race deletion and forwarding; it does not close this boundary. See [SESSION_DELETION_FENCE](task_dag.md#session_deletion_fence--prove-and-enforce-the-session-deletion-fence).
 2. **Queued sender revocation.** The first cutover retains current service trust and effective-caller
    checks. Whether an accepted command is cancelled on a later user grant revocation remains a
    separate generalized-policy decision; a subscription is not a lasting send grant.
