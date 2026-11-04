@@ -5,7 +5,7 @@
  * from the shared scenario YAML, the same files the GNOME extension's renders and the CLI's
  * snapshot use, so the three surfaces are reviewed on identical states.
  *
- * "Now" is the scene's own `fetched_at`, which is what the Python renderers used: ages,
+ * "Now" is the scene's `presentation_at` (or older-payload `fetched_at`), which is what the Python renderers used: ages,
  * countdowns and stale tags then read exactly as they do in the terminal, and the render is
  * the same picture on every run.
  */
@@ -65,9 +65,10 @@ createRoot(root).render(
   ) : (
     <Dashboard
       quotas={quotas}
-      now={Date.parse(quotas.fetched_at)}
+      now={Date.parse(quotas.presentation_at ?? quotas.fetched_at)}
       error={null}
       connecting={false}
+      stopped={false}
       onRefresh={() => undefined}
     />
   )

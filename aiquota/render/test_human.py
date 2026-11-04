@@ -4,18 +4,9 @@ import pytest
 import pytest_bazel
 from syrupy.assertion import SnapshotAssertion
 
-from aiquota.models import (
-    AllQuotas,
-    FetchError,
-    FetchSuccess,
-    PrepaidBalanceAvailable,
-    ProviderFetch,
-    ProviderQuota,
-    QuotaWindow,
-    SuccessfulProviderFetch,
-)
+from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
 from aiquota.render import human
-from aiquota.render.format import format_prepaid_balance, format_reset_credit_summary
+from aiquota.render.format import format_deadline, format_reset_credit_summary
 from aiquota.render.view_model import to_view
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_fixture
 from devinfra.bazel.runfiles import get_required_path
@@ -24,334 +15,178 @@ if __name__ == "__main__":
     pytest_bazel.main()
 
 
-_FETCHED_AT = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
+_NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 
 
-def _success(short_window: QuotaWindow | None = None, long_window: QuotaWindow | None = None) -> ProviderFetch:
-    return ProviderFetch(
-        fetched_at=_FETCHED_AT,
-        result=FetchSuccess(windows=[window for window in (short_window, long_window) if window]),
+def _fixture(name: str) -> AllQuotas:
+    return load_quota_fixture(get_required_path(f"_main/aiquota/testing/fixtures/{name}.yaml"))
+
+
+def _quota(result: FetchSuccess) -> AllQuotas:
+    fetched = ProviderFetch(fetched_at=_NOW, result=result)
+    return AllQuotas(providers=[ProviderQuota(provider="codex", last_output=fetched)], fetched_at=_NOW)
+
+
+def test_default_rows_keep_balances_grants_groups_and_subscription_windows_separate() -> None:
+    rendered = human.render(_fixture("platform_credits_with_subscription_resets"), now=_NOW, tz=UTC)
+
+    assert rendered.startswith("Subscriptions\n\nClaude\n  Prepaid balance: $25.75")
+    assert "5h:  45% used  ↻ 2h" in rendered
+    assert "Codex\n  Banked resets: 3 · next known expiry Jan 29, 12:00 UTC" in rendered
+    assert "Banked resets: 3 · next known expiry Jan 29, 12:00 UTC · 1 expiry unknown" in rendered
+    assert "\n\nAPI balances\n\nOpenAI API\n  Available balance: $60.00" in rendered
+    assert "Grant: $60.00 remaining · expires Jun 1" in rendered
+    assert "Anthropic API\n  Shared org\n    Available balance: $75.00" in rendered
+    assert "Promo grant: $25.00 remaining · expires May 1 · scope: Claude API (Sonnet)" in rendered
+    assert "$100.00 granted" not in rendered
+    window_rows = [line for line in rendered.splitlines() if "% used" in line]
+    assert len({line.index("% used") for line in window_rows}) == 1
+    assert len({line.index("↻") for line in window_rows}) == 1
+    forecast_rows = [line for line in window_rows if "leaves" in line]
+    assert len({line.index("leaves") for line in forecast_rows}) == 1
+
+
+def test_details_show_grant_originals_full_deadlines_pace_and_peak_schedule() -> None:
+    quotas = _fixture("binding_summary")
+
+    default = human.render(quotas, now=_NOW, tz=UTC)
+    detailed = human.render(quotas, now=_NOW, tz=UTC, details=True)
+
+    assert "pace +10 pp" not in default
+    assert "3x windows (local)" not in default
+    assert "pace +10 pp" in detailed
+    assert "3x windows (local)" in detailed
+
+    credits = human.render(_fixture("openai_platform_credits"), now=_NOW, tz=UTC, details=True)
+    assert "expires 2026-02-01 00:00 UTC" in credits
+    assert "$100.00 granted" in credits
+
+
+def test_paid_mode_keeps_each_window_row_and_marks_actionable_state() -> None:
+    rendered = human.render(_fixture("paid_credits"), now=_NOW, tz=UTC)
+
+    assert "Codex\n  Paid credits: 2,746 credits" in rendered
+    assert "Included quota exhausted · paid credits available" in rendered
+    assert "5h: 100% used  ↻ 1h 30m" in rendered
+    assert "7d:  38% used  ↻ 3d 14h" in rendered
+
+
+def test_empty_success_has_precise_empty_state_and_does_not_render_burn_schedule() -> None:
+    rendered = human.render(_fixture("empty"), now=_NOW, tz=UTC)
+
+    assert rendered.count("No quota or credit data available") == 3
+    assert "burn" not in rendered
+    assert "Claude\n  No quota or credit data available" in rendered
+
+
+def test_offline_view_reports_cached_snapshot_age_and_hides_raw_error_by_default() -> None:
+    view = to_view(_fixture("binding_summary"), now=_NOW).model_copy(
+        update={"connection_error": "request timed out", "fetched_at": _NOW - timedelta(minutes=8)}
     )
 
+    default = human.render_view(view, now=_NOW, tz=UTC).plain
+    detailed = human.render_view(view, now=_NOW, tz=UTC, details=True).plain
 
-def _pq(provider: str, last_output: ProviderFetch) -> ProviderQuota:
-    return ProviderQuota(provider=provider, last_output=last_output)
+    assert default.startswith("Offline · cached snapshot from 8m ago")
+    assert "request timed out" not in default
+    assert "connection error: request timed out" in detailed
 
 
-def _quotas(*providers: ProviderQuota) -> AllQuotas:
-    return AllQuotas(providers=list(providers), fetched_at=_FETCHED_AT)
+def test_provider_error_uses_shared_summary_and_details_keep_original_error() -> None:
+    rendered = human.render(_fixture("tints"), now=_NOW, tz=UTC)
+    detailed = human.render(_fixture("tints"), now=_NOW, tz=UTC, details=True)
+
+    assert "Claude\n  Authentication failed" in rendered
+    assert "invalid_token" not in rendered
+    assert "error: HTTP 401 invalid_request: invalid_token" in detailed
 
 
-@pytest.mark.parametrize("used_percent", [100, 105])
-def test_exhausted_window_suppresses_pace_and_projection(used_percent: float) -> None:
-    # A provider with no burn schedule, so the whole-output equality below stays
-    # about pace suppression rather than also pinning the peak-window lines.
-    out = human.render(
-        _quotas(
-            _pq(
-                "codex",
-                _success(
-                    short_window=QuotaWindow(
-                        used_percent=used_percent, reset_seconds=3 * 3600 + 60, window_seconds=5 * 3600
-                    )
-                ),
-            )
-        ),
-        now=_FETCHED_AT,
-        tz=UTC,
+def test_stale_observation_is_marked_without_showing_pace_or_forecast() -> None:
+    rendered = human.render(_fixture("stale_observation"), now=_NOW, tz=UTC)
+
+    assert "Stale data · last observed 20m ago" in rendered
+    assert "pace " not in rendered
+    assert "leaves" not in rendered
+
+
+def test_expired_reset_waits_for_new_usage_and_suppresses_forecast() -> None:
+    rendered = human.render(_fixture("reset_pending"), now=_NOW, tz=UTC)
+
+    assert "Reset time passed · awaiting updated usage" in rendered
+    assert "↻ awaiting update" in rendered
+    assert "pace " not in rendered
+    assert "leaves" not in rendered
+
+
+def test_zero_banked_resets_are_hidden_until_details_or_quota_exhaustion() -> None:
+    ordinary = _quota(
+        FetchSuccess(
+            windows=[QuotaWindow(used_percent=12, reset_seconds=3600, window_seconds=5 * 3600)],
+            available_reset_credits=0,
+        )
+    )
+    exhausted = _quota(
+        FetchSuccess(
+            windows=[QuotaWindow(used_percent=100, reset_seconds=3600, window_seconds=5 * 3600)],
+            available_reset_credits=0,
+        )
     )
 
-    assert out == f"codex\n  5h: {round(used_percent):>3d}%  ↻ 3h01m  exhausted"
+    assert "Banked resets" not in human.render(ordinary, now=_NOW, tz=UTC)
+    assert "Banked resets: 0" in human.render(ordinary, now=_NOW, tz=UTC, details=True)
+    assert "Banked resets: 0" in human.render(exhausted, now=_NOW, tz=UTC)
 
 
-def test_subthreshold_usage_does_not_render_as_exhausted() -> None:
-    out = human.render(
-        _quotas(
-            _pq(
-                "zai",
-                _success(
-                    short_window=QuotaWindow(used_percent=99.9, reset_seconds=3 * 3600 + 60, window_seconds=5 * 3600)
-                ),
-            )
-        ),
-        now=_FETCHED_AT,
-        tz=UTC,
-    )
+def test_near_exhausted_usage_does_not_round_up_to_full_quota() -> None:
+    quotas = _quota(FetchSuccess(windows=[QuotaWindow(used_percent=99.9, reset_seconds=3600, window_seconds=5 * 3600)]))
 
-    assert "5h:  99%" in out
-    assert "exhausted" not in out
-
-
-def test_aligns_reset_and_pace_columns_across_providers() -> None:
-    out = human.render(
-        _quotas(
-            _pq(
-                "claude",
-                _success(
-                    short_window=QuotaWindow(
-                        used_percent=14, reset_seconds=2 * 3600 + 38 * 60, window_seconds=5 * 3600
-                    ),
-                    long_window=QuotaWindow(
-                        used_percent=33, reset_seconds=2 * 86400 + 11 * 3600, window_seconds=7 * 86400
-                    ),
-                ),
-            ),
-            _pq(
-                "codex",
-                _success(
-                    short_window=QuotaWindow(used_percent=19, reset_seconds=31 * 60, window_seconds=5 * 3600),
-                    long_window=QuotaWindow(
-                        used_percent=3, reset_seconds=6 * 86400 + 19 * 3600, window_seconds=7 * 86400
-                    ),
-                ),
-            ),
-            _pq(
-                "zai",
-                _success(
-                    short_window=QuotaWindow(used_percent=0, reset_seconds=0, window_seconds=5 * 3600),
-                    long_window=QuotaWindow(
-                        used_percent=35, reset_seconds=15 * 3600 + 39 * 60, window_seconds=7 * 86400
-                    ),
-                ),
-            ),
-        ),
-        now=_FETCHED_AT,
-        tz=UTC,
-    )
-    lines = out.splitlines()
-    delta_columns = [line.index("Δ") for line in lines if "Δ" in line]
-    forecast_columns = [line.index("leaves") for line in lines if "leaves" in line]
-    assert len(set(delta_columns)) == 1
-    assert len(set(forecast_columns)) == 1
-
-
-def test_renders_provider_supplied_duration_and_name() -> None:
-    output = ProviderFetch(
-        fetched_at=_FETCHED_AT,
-        result=FetchSuccess(
-            windows=[
-                QuotaWindow(name="model-specific", used_percent=12, reset_seconds=12 * 3600, window_seconds=24 * 3600)
-            ]
-        ),
-    )
-
-    assert "model-specific (1d):  12%" in human.render(_quotas(_pq("codex", output)), now=_FETCHED_AT, tz=UTC)
-
-
-def test_hidden_window_remains_in_model_but_is_not_rendered() -> None:
-    output = ProviderFetch(
-        fetched_at=_FETCHED_AT,
-        result=FetchSuccess(
-            windows=[
-                QuotaWindow(used_percent=7, reset_seconds=3600, window_seconds=7 * 86400),
-                QuotaWindow(name="Spark", display=False, used_percent=0, reset_seconds=3600, window_seconds=7 * 86400),
-            ]
-        ),
-    )
-    rendered = human.render(_quotas(_pq("codex", output)), now=_FETCHED_AT, tz=UTC)
-    assert "7d:   7%" in rendered
-    assert "Spark" not in rendered
-    assert isinstance(output.result, FetchSuccess)
-    assert len(output.result.windows) == 2
+    assert "99% used" in human.render(quotas, now=_NOW, tz=UTC)
+    assert "100% used" not in human.render(quotas, now=_NOW, tz=UTC)
 
 
 @pytest.mark.parametrize(
-    ("amount_minor", "exponent", "currency", "expected"),
+    ("when", "expected"),
     [
-        (12345, 2, "USD", "$123.45"),
-        (123, 0, "USD", "$123"),
-        (1234567, 3, "EUR", "1,234.567 EUR"),
-        (0, 2, "USD", "$0.00"),
-        (-123, 2, "USD", "-$1.23"),
-    ],
-)
-def test_formats_exact_prepaid_minor_units(amount_minor: int, exponent: int, currency: str, expected: str) -> None:
-    assert (
-        format_prepaid_balance(PrepaidBalanceAvailable(amount_minor=amount_minor, exponent=exponent, currency=currency))
-        == expected
-    )
-
-
-def test_cli_renders_claude_prepaid_balance_separately_from_codex_credits() -> None:
-    output = ProviderFetch(
-        fetched_at=_FETCHED_AT,
-        result=FetchSuccess(prepaid_balance=PrepaidBalanceAvailable(amount_minor=12345, exponent=2, currency="USD")),
-    )
-
-    rendered = human.render(_quotas(_pq("claude", output)), now=_FETCHED_AT, tz=UTC)
-
-    assert "Claude · $123.45 prepaid balance" in rendered
-    assert "paid credits" not in rendered
-    assert "no data" not in rendered
-
-
-def test_cli_marks_last_successful_prepaid_balance_stale_after_refresh_error() -> None:
-    last_success = SuccessfulProviderFetch(
-        fetched_at=_FETCHED_AT - timedelta(hours=1),
-        result=FetchSuccess(prepaid_balance=PrepaidBalanceAvailable(amount_minor=12345, exponent=2, currency="USD")),
-    )
-    quota = ProviderQuota(
-        provider="claude",
-        last_output=ProviderFetch(fetched_at=_FETCHED_AT, result=FetchError(error="temporary usage refresh failure")),
-        last_success=last_success,
-    )
-
-    rendered = human.render(_quotas(quota), now=_FETCHED_AT, tz=UTC)
-
-    assert "last refresh failed" in rendered
-    assert "Claude · $123.45 prepaid balance" in rendered
-    assert "(stale 1h00m)" in rendered
-
-
-def test_cli_preserves_independent_prepaid_and_quota_staleness() -> None:
-    older = _FETCHED_AT - timedelta(hours=1)
-    balance_older = _FETCHED_AT - timedelta(hours=2)
-    last_success = SuccessfulProviderFetch(
-        fetched_at=older,
-        result=FetchSuccess(
-            windows=[QuotaWindow(used_percent=25, reset_seconds=60, window_seconds=3600)],
-            prepaid_balance=PrepaidBalanceAvailable(amount_minor=12345, exponent=2, currency="USD"),
-        ),
-    )
-    quota = ProviderQuota(
-        provider="claude",
-        last_output=ProviderFetch(fetched_at=_FETCHED_AT, result=FetchError(error="temporary usage refresh failure")),
-        last_success=last_success,
-    )
-    provider = to_view(_quotas(quota), now=_FETCHED_AT).providers[0]
-    provider = provider.model_copy(
-        update={"display": provider.display.model_copy(update={"prepaid_stale_since": balance_older})}
-    )
-
-    rendered = human._render_provider(provider, _FETCHED_AT, human._ColumnWidths(), UTC).plain
-
-    assert "(stale 1h00m)" in rendered
-    assert "(prepaid stale 2h00m)" in rendered
-
-
-def test_openai_platform_grants_survive_a_failed_refresh_as_stale() -> None:
-    fixture = load_quota_fixture(get_required_path("_main/aiquota/testing/fixtures/openai_platform_credits.yaml"))
-    previous = fixture.providers[0].last_output
-    assert isinstance(previous.result, FetchSuccess)
-    quota = ProviderQuota(
-        provider="openai_platform",
-        last_output=ProviderFetch(fetched_at=_FETCHED_AT, result=FetchError(error="proxy unavailable")),
-        last_success=SuccessfulProviderFetch(fetched_at=_FETCHED_AT - timedelta(hours=1), result=previous.result),
-    )
-    rendered = human.render(_quotas(quota), now=_FETCHED_AT, tz=UTC)
-    assert "proxy unavailable" in rendered
-    assert "OpenAI API · $125.75 API credit" in rendered
-    assert (
-        "API credit grants: $100.00 expires 2026-02-01 00:00 UTC; $25.75 expires 2026-12-01 00:00 UTC (stale)"
-        in rendered
-    )
-    assert "expires 2026-02-01 00:00 UTC" in rendered
-
-
-def test_anthropic_platform_lists_org_balances_and_active_scoped_grants() -> None:
-    fixture = load_quota_fixture(get_required_path("_main/aiquota/testing/fixtures/anthropic_platform_credits.yaml"))
-
-    rendered = human.render(fixture, now=_FETCHED_AT, tz=UTC)
-
-    assert rendered.startswith("Anthropic API\n")
-    assert "Main org · Anthropic API credit balance · $123.45 available" in rendered
-    assert "Secondary org · Anthropic API credit balance · $50.00 available" in rendered
-    assert "API credit grant $85.00 / $100.00 · expires 2026-07-01 00:00 UTC" in rendered
-    assert "scope: unscoped" not in rendered
-    assert (
-        "API promo credit grant $25.00 / $30.00 · expires 2026-05-01 00:00 UTC · scope: claude_api (sonnet), claude_code"
-        in rendered
-    )
-    assert "Expired grant" not in rendered
-
-
-def test_renders_banked_reset_count_from_live_usage() -> None:
-    output = ProviderFetch(
-        fetched_at=_FETCHED_AT,
-        result=FetchSuccess(
-            windows=[QuotaWindow(used_percent=12, reset_seconds=12 * 3600, window_seconds=24 * 3600)],
-            available_reset_credits=2,
-            available_reset_credit_expiries=[datetime(2026, 1, 20, 9, 0, tzinfo=UTC)],
-        ),
-    )
-
-    assert human.render(_quotas(_pq("codex", output)), now=_FETCHED_AT, tz=UTC).startswith(
-        "codex · 2 resets (expiry: Jan 20, 09:00, 1 unknown)\n"
-    )
-
-
-@pytest.mark.parametrize(
-    ("count", "expiries", "lookup_failed", "expected"),
-    [
-        (1, [datetime(2026, 1, 20, 9, 0, tzinfo=UTC)], False, "1 reset (expiry: Jan 20, 09:00)"),
-        (
-            2,
-            [datetime(2026, 1, 20, 9, 0, tzinfo=UTC), datetime(2026, 2, 2, 12, 34, tzinfo=UTC)],
-            False,
-            "2 resets (expiry: Jan 20, 09:00, Feb 2)",
-        ),
-        (2, [], False, "2 resets (expiry: 2 unknown)"),
-        (2, [], True, "2 resets (expiry lookup failed)"),
-        (2, [datetime(2026, 1, 20, 9, 0, tzinfo=UTC)], True, "2 resets (expiry: Jan 20, 09:00; lookup failed)"),
-    ],
-)
-def test_formats_reset_credit_count_and_expiry_outcomes(count, expiries, lookup_failed, expected) -> None:
-    assert format_reset_credit_summary(count, expiries, lookup_failed, _FETCHED_AT, UTC) == expected
-
-
-@pytest.mark.parametrize(
-    ("expiry", "expected"),
-    [
-        (datetime(2026, 1, 29, 11, 59, 59, tzinfo=UTC), "Jan 29, 11:59"),
-        (datetime(2026, 1, 29, 12, 0, tzinfo=UTC), "Jan 29, 12:00"),
+        (datetime(2026, 1, 29, 11, 59, 59, tzinfo=UTC), "Jan 29, 11:59 UTC"),
         (datetime(2026, 1, 29, 12, 0, 1, tzinfo=UTC), "Jan 29"),
-        (datetime(2026, 1, 14, 9, 0, tzinfo=UTC), "Jan 14, 09:00"),
+        (datetime(2027, 1, 29, 12, 0, tzinfo=UTC), "Jan 29, 2027"),
     ],
 )
-def test_reset_expiry_time_is_omitted_only_when_more_than_two_weeks_away(expiry, expected) -> None:
-    assert format_reset_credit_summary(1, [expiry], False, _FETCHED_AT, UTC) == f"1 reset (expiry: {expected})"
+def test_deadline_uses_local_time_and_date_only_after_two_weeks(when: datetime, expected: str) -> None:
+    assert format_deadline(when, _NOW, UTC) == expected
+    assert format_deadline(when, _NOW, UTC, details=True) == when.strftime("%Y-%m-%d %H:%M UTC")
 
 
-def test_reset_expiry_cutoff_uses_viewer_timezone_for_rendering() -> None:
-    pacific = timezone(timedelta(hours=-8))
-    expiries = [datetime(2026, 1, 30, 5, 0, tzinfo=UTC), datetime(2026, 1, 29, 11, 59, 59, tzinfo=UTC)]
+def test_reset_credit_summary_is_compact_by_default_and_lists_all_expiries_in_details() -> None:
+    expiries = [datetime(2026, 1, 20, 9, 0, tzinfo=UTC), datetime(2026, 2, 2, 12, 34, tzinfo=UTC)]
 
-    assert format_reset_credit_summary(2, expiries, False, _FETCHED_AT, pacific) == (
-        "2 resets (expiry: Jan 29, Jan 29, 03:59)"
+    assert format_reset_credit_summary(3, expiries, False, _NOW, UTC) == (
+        "3 · next known expiry Jan 20, 09:00 UTC · 1 expiry unknown"
     )
-
-
-def test_combines_subscription_resets_and_separate_platform_credit_pools() -> None:
-    fixture = load_quota_fixture(
-        get_required_path("_main/aiquota/testing/fixtures/platform_credits_with_subscription_resets.yaml")
+    assert format_reset_credit_summary(3, expiries, False, _NOW, UTC, details=True) == (
+        "3 · known expiries 2026-01-20 09:00 UTC, 2026-02-02 12:34 UTC · 1 expiry unknown"
     )
-
-    rendered = human.render(fixture, now=_FETCHED_AT, tz=UTC)
-
-    assert "Claude · $25.75 prepaid balance" in rendered
-    assert "5h:  45%" in rendered
-    assert "7d:  32%" in rendered
-    assert "codex · 3 resets (expiry: Jan 29, 12:00, Feb 1, 1 unknown)" in rendered
-    assert "OpenAI API · $60.00 API credit" in rendered
-    assert "API credit grants: $60.00 expires 2026-06-01 00:00 UTC" in rendered
-    assert "Shared org · Anthropic API credit balance · $75.00 available" in rendered
-    assert "API credit grant $50.00 / $100.00 · expires 2026-07-01 00:00 UTC" in rendered
-    assert (
-        "API promo credit grant $25.00 / $50.00 · expires 2026-05-01 00:00 UTC · scope: claude_api (sonnet)" in rendered
-    )
+    assert format_reset_credit_summary(2, [], True, _NOW, UTC) == "2 · expiry lookup failed"
 
 
 @pytest.mark.parametrize("fixture_name", FIXTURE_NAMES)
 def test_renders_shared_fixture(fixture_name: str, snapshot: SnapshotAssertion) -> None:
-    fixture_path = get_required_path(f"_main/aiquota/testing/fixtures/{fixture_name}.yaml")
-    quotas = load_quota_fixture(fixture_path)
-    assert human.render(quotas, now=_FETCHED_AT, tz=UTC) == snapshot
+    assert human.render(_fixture(fixture_name), now=_NOW, tz=UTC) == snapshot
 
 
-def test_terminal_window_uses_shared_tint() -> None:
-    quotas = _quotas(
-        _pq("claude", _success(short_window=QuotaWindow(used_percent=60, reset_seconds=9000, window_seconds=18000)))
-    )
-    rendered = human.render_text(quotas, now=_FETCHED_AT, tz=UTC)
-    assert "Δ+10%" in rendered.plain
+def test_terminal_window_keeps_shared_tint() -> None:
+    quotas = _quota(FetchSuccess(windows=[QuotaWindow(used_percent=60, reset_seconds=9000, window_seconds=18000)]))
+
+    rendered = human.render_text(quotas, now=_NOW, tz=UTC)
+
+    assert "60% used" in rendered.plain
     assert any(span.style == "yellow" for span in rendered.spans)
+
+
+def test_reset_expiry_time_uses_viewer_timezone() -> None:
+    pacific = timezone(timedelta(hours=-8))
+    expiry = datetime(2026, 1, 29, 5, 0, tzinfo=UTC)
+
+    assert format_reset_credit_summary(1, [expiry], False, _NOW, pacific) == (
+        "1 · next known expiry Jan 28, 21:00 UTC-08:00"
+    )

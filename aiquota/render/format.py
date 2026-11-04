@@ -1,7 +1,7 @@
 """Shared format helpers for human and tmux renderers."""
 
 from datetime import UTC, datetime, timedelta, tzinfo
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from aiquota.models import PaceResult, PrepaidBalanceAvailable, QuotaWindow
 from aiquota.pace import is_exhausted
@@ -14,9 +14,9 @@ def format_duration(seconds: float) -> str:
     h, rem = divmod(rem, 3600)
     m = rem // 60
     if d > 0:
-        return f"{d}d{h}h"
+        return f"{d}d" + (f" {h}h" if h else "")
     if h > 0:
-        return f"{h}h{m:02d}m"
+        return f"{h}h" + (f" {m}m" if m else "")
     return f"{m}m"
 
 
@@ -66,55 +66,63 @@ def format_minor_currency(amount_minor: int, exponent: int, currency: str) -> st
     return f"{sign}${value}" if currency == "USD" else f"{sign}{value} {currency}"
 
 
-_RESET_CREDIT_DATE_ONLY_AFTER = timedelta(days=14)
+_DEADLINE_DATE_ONLY_AFTER = timedelta(days=14)
 
 
-def format_known_reset_credit_expiries(expiries: list[datetime], now: datetime, tz: tzinfo | None = None) -> str | None:
-    """Render expiry timestamps in the viewer's local time.
-
-    The endpoint can return fewer credit rows than the authoritative count, so
-    callers should compare the count with the rendered rows before claiming
-    that the list is complete. Expiries more than 14 days away omit the time;
-    the comparison uses absolute instants even when the viewer is across DST.
-    """
-
-    if not expiries:
-        return None
-
-    now_utc = now.astimezone(UTC)
-    formatted: list[str] = []
-    for expiry in expiries:
-        local_expiry = expiry.astimezone(tz)
-        date_format = "%b %-d" if expiry.astimezone(UTC) - now_utc > _RESET_CREDIT_DATE_ONLY_AFTER else "%b %-d, %H:%M"
-        formatted.append(local_expiry.strftime(date_format))
-    return ", ".join(formatted)
+def format_deadline(when: datetime, now: datetime, tz: tzinfo | None = None, *, details: bool = False) -> str:
+    local = when.astimezone(tz)
+    if details:
+        return local.strftime("%Y-%m-%d %H:%M %Z")
+    label = local.strftime("%b %-d")
+    if local.year != now.astimezone(tz).year:
+        label += local.strftime(", %Y")
+    if when.astimezone(UTC) - now.astimezone(UTC) <= _DEADLINE_DATE_ONLY_AFTER:
+        label += local.strftime(", %H:%M %Z")
+    return label
 
 
 def format_reset_credit_summary(
-    count: int, expiries: list[datetime], expiry_lookup_failed: bool, now: datetime, tz: tzinfo | None = None
+    count: int,
+    expiries: list[datetime],
+    expiry_lookup_failed: bool,
+    now: datetime,
+    tz: tzinfo | None = None,
+    *,
+    details: bool = False,
 ) -> str:
-    """Summarize banked resets without treating a failed lookup as an empty result."""
-    noun = "reset" if count == 1 else "resets"
-    label = f"{count} {noun}"
-    known_expiries = format_known_reset_credit_expiries(expiries, now, tz)
+    # The detail endpoint may be capped; the count is authoritative.
+    parts = [str(count)]
+    known = sorted(expiries)
+    if known:
+        shown = known if details else known[:1]
+        label = "known expiries" if details else "next known expiry"
+        parts.append(f"{label} {', '.join(format_deadline(expiry, now, tz, details=details) for expiry in shown)}")
     if expiry_lookup_failed:
-        if known_expiries is None:
-            return f"{label} (expiry lookup failed)"
-        return f"{label} (expiry: {known_expiries}; lookup failed)"
-    unknown_count = max(0, count - len(expiries))
-    if known_expiries is None and unknown_count == 0:
-        return label
-    details = known_expiries or ""
-    if unknown_count:
-        details += f", {unknown_count} unknown" if details else f"{unknown_count} unknown"
-    return f"{label} (expiry: {details})"
+        parts.append("expiry lookup failed")
+    elif count > len(known):
+        missing = count - len(known)
+        parts.append(f"{missing} expiry unknown" if missing == 1 else f"{missing} expiries unknown")
+    return " · ".join(parts)
+
+
+def format_paid_credit_balance(raw: str | None, unlimited: bool = False) -> str:
+    if unlimited:
+        return "unlimited credits"
+    if raw is not None:
+        try:
+            amount = Decimal(raw)
+            if amount.is_finite():
+                return f"{amount.quantize(Decimal(1), rounding=ROUND_HALF_UP):,} credits"
+        except InvalidOperation:
+            pass
+    return "available"
 
 
 def format_pace(pace: PaceResult | None) -> str | None:
     if pace is None or not pace.stable:
         return None
     sign = "+" if pace.deviation >= 0 else "-"
-    return f"{sign}{abs(round(pace.deviation))}%"
+    return f"{sign}{abs(round(pace.deviation))} pp"
 
 
 def format_pace_forecast(pace: PaceResult | None, reset_seconds: float) -> str | None:

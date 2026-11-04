@@ -13,8 +13,8 @@ export function formatDuration(seconds: number): string {
   const days = Math.floor(total / 86400);
   const hours = Math.floor((total % 86400) / 3600);
   const minutes = Math.floor((total % 3600) / 60);
-  if (days > 0) return `${days}d${hours}h`;
-  if (hours > 0) return `${hours}h${String(minutes).padStart(2, "0")}m`;
+  if (days > 0) return `${days}d${hours ? ` ${hours}h` : ""}`;
+  if (hours > 0) return `${hours}h${minutes ? ` ${minutes}m` : ""}`;
   return `${minutes}m`;
 }
 
@@ -35,57 +35,63 @@ export function formatPrepaidBalance(amountMinor: number, exponent: number, curr
 }
 
 export function formatClock(instant: Date): string {
-  return instant.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  return instant.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 }
 
 export function formatPeakInterval(interval: { start: string; end: string }): string {
   const start = new Date(interval.start);
-  const weekday = start.toLocaleDateString([], { weekday: "short" });
+  const weekday = start.toLocaleDateString("en-US", { weekday: "short" });
   return `${weekday} ${formatClock(start)}-${formatClock(new Date(interval.end))}`;
 }
 
-export function formatKnownExpiry(expiry: string | Date): string | null {
+const DEADLINE_DATE_ONLY_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
+
+export function formatDeadline(expiry: string | Date, now: Date, details = false): string | null {
   const date = expiry instanceof Date ? expiry : new Date(expiry);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleString([], {
+  const zone =
+    new Intl.DateTimeFormat("en-US", { timeZoneName: "short" })
+      .formatToParts(date)
+      .find((part) => part.type === "timeZoneName")?.value ?? "";
+  const clock = date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  if (details) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day} ${clock} ${zone}`;
+  }
+  const label = date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
+    ...(date.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
   });
-}
-
-const RESET_CREDIT_DATE_ONLY_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
-
-export function formatResetCreditExpiry(expiry: string | Date, now: Date): string | null {
-  const date = expiry instanceof Date ? expiry : new Date(expiry);
-  if (Number.isNaN(date.getTime())) return null;
-  if (date.getTime() - now.getTime() > RESET_CREDIT_DATE_ONLY_AFTER_MS) {
-    return date.toLocaleDateString([], { month: "short", day: "numeric" });
-  }
-  return formatKnownExpiry(date);
+  return date.getTime() - now.getTime() > DEADLINE_DATE_ONLY_AFTER_MS ? label : `${label}, ${clock} ${zone}`;
 }
 
 export function formatResetCreditSummary(
   count: number,
   expiries: (string | Date)[],
   expiryLookupFailed: boolean,
-  now: Date
+  now: Date,
+  details = false
 ): string {
-  const label = `${count} reset${count === 1 ? "" : "s"}`;
-  const knownExpiries = expiries
-    .map((expiry) => formatResetCreditExpiry(expiry, now))
-    .filter((expiry): expiry is string => expiry !== null);
-  if (expiryLookupFailed) {
-    return knownExpiries.length
-      ? `${label} (expiry: ${knownExpiries.join(", ")}; lookup failed)`
-      : `${label} (expiry lookup failed)`;
+  const parts = [String(count)];
+  const known = expiries
+    .map((expiry) => new Date(expiry))
+    .filter((date) => !Number.isNaN(date.getTime()))
+    .sort((a, b) => a.getTime() - b.getTime());
+  if (known.length) {
+    const shown = details ? known : known.slice(0, 1);
+    parts.push(
+      `${details ? "known expiries" : "next known expiry"} ${shown.map((date) => formatDeadline(date, now, details)).join(", ")}`
+    );
   }
-  const unknownCount = Math.max(0, count - knownExpiries.length);
-  if (knownExpiries.length === 0 && unknownCount === 0) return label;
-  const details = [...knownExpiries, ...(unknownCount > 0 ? [`${unknownCount} unknown`] : [])];
-  return `${label} (expiry: ${details.join(", ")})`;
+  if (expiryLookupFailed) parts.push("expiry lookup failed");
+  else if (count > known.length) {
+    const missing = count - known.length;
+    parts.push(`${missing} ${missing === 1 ? "expiry" : "expiries"} unknown`);
+  }
+  return parts.join(" · ");
 }
 
 export function formatMultiplier(value: number): string {

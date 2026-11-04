@@ -12,14 +12,13 @@ import {
   formatAge as sharedFormatAge,
   formatClock,
   formatDuration as sharedFormatDuration,
+  formatDeadline,
   formatMultiplier,
   formatPeakInterval,
-  formatPrepaidBalance as sharedFormatPrepaidBalance,
   formatResetCreditSummary,
   roundHalfToEven,
 } from "./presentation.js";
 
-const STALE_AFTER_SECONDS = 5 * 60;
 let fixtureNowMs = null;
 
 function nowMs() {
@@ -73,15 +72,17 @@ function formatDuration(seconds) {
 }
 
 function withLiveReset(state) {
-  if (!state?.resetAtMs) return state;
+  if (!state || state.resetAtMs == null || !Number.isFinite(state.resetAtMs)) return state;
+  const resetSeconds = Math.max(0, (state.resetAtMs - nowMs()) / 1000);
+  const resetPending = state.resetPending || resetSeconds === 0;
   return {
     ...state,
-    resetSeconds: Math.max(0, (state.resetAtMs - nowMs()) / 1000),
+    resetSeconds,
+    resetPending,
+    reset: resetPending ? "awaiting update" : formatDuration(resetSeconds),
+    pace: resetPending ? null : state.pace,
+    forecast: resetPending ? null : state.forecast,
   };
-}
-
-function isStaleFetch(lastFetch) {
-  return lastFetch != null && (nowMs() - lastFetch) / 1000 > STALE_AFTER_SECONDS;
 }
 
 function formatAge(seconds) {
@@ -91,15 +92,10 @@ function formatAge(seconds) {
 
 // The server selects the display snapshot; the desktop only formats its age.
 function effectiveState(state) {
-  const staleAge = state.staleSince != null ? Math.max(0, (nowMs() - state.staleSince) / 1000) : null;
+  const staleSince =
+    state.staleSince ?? (state.staleAtMs != null && nowMs() >= state.staleAtMs ? state.observedAtMs : null);
+  const staleAge = staleSince != null ? Math.max(0, (nowMs() - staleSince) / 1000) : null;
   return { ...state, staleAge };
-}
-
-function formatCheckFailure(error, lastCheck, haveWindows) {
-  const prefix = haveWindows ? "last refresh failed" : "check failed";
-  if (lastCheck == null) return `${prefix}: ${error}`;
-  const ageSeconds = Math.max(0, (nowMs() - lastCheck) / 1000);
-  return `${prefix} ${formatAge(ageSeconds)} ago: ${error}`;
 }
 
 function formatCompactDollars(usd) {
@@ -110,19 +106,6 @@ function formatCompactDollars(usd) {
   return `$${roundHalfToEven(usd)}`;
 }
 
-function formatUsdCurrency(usd) {
-  return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(Number(usd));
-}
-
-function formatGrantUsd(usd) {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(Number(usd));
-}
-
 // The "currently burning extra" decision lives in the Python view model
 // (see aiquota/render/view_model.py) and is delivered to us by the desktop
 // daemon as state.currentlyOverPlan. Don't
@@ -131,95 +114,32 @@ function formatExtraSpend(extra) {
   if (!extra || !extra.is_enabled || !(extra.used_usd > 0)) return null;
   const used = extra.used_usd;
   const limit = extra.monthly_limit_usd;
-  const pct = roundHalfToEven(extra.utilization);
-  return `extra $${roundHalfToEven(used)}/$${roundHalfToEven(limit)} (${pct}%) this month`;
+  return `Extra spend: $${roundHalfToEven(used)} / $${roundHalfToEven(limit)} this month`;
 }
 
-function formatBankedResets(count, expiries, expiryLookupFailed, now) {
+function formatBankedResets(count, expiries, expiryLookupFailed, now, details = false) {
   if (count == null) return null;
-  return formatResetCreditSummary(count, expiries ?? [], expiryLookupFailed, now);
+  return formatResetCreditSummary(count, expiries ?? [], expiryLookupFailed, now, details);
 }
 
-function formatPaidCredits(credits, active) {
-  if (!credits) return null;
-  let amount = "available";
-  if (credits.unlimited) amount = "unlimited";
-  else if (credits.balance != null) {
-    const parsed = Number(credits.balance);
-    if (Number.isFinite(parsed))
-      amount = `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(parsed)} left`;
-  }
-  return `${active ? "⚡ using paid credits" : "paid credits"} · ${amount}`;
+function isApiProvider(providerId) {
+  return providerId === "openai_platform" || providerId === "anthropic_platform";
 }
 
-function formatClaudePrepaidHeading(balance) {
-  if (balance == null) return null;
-  if (balance.kind !== "available") return "Claude · prepaid balance unavailable";
-  return `Claude · ${sharedFormatPrepaidBalance(balance.amount_minor, balance.exponent, balance.currency)} prepaid balance`;
+function formatExpiry(expiry, details = false) {
+  if (expiry == null) return "expiry unknown";
+  return `expires ${formatDeadline(expiry, new Date(nowMs()), details) ?? "expiry unknown"}`;
 }
 
-function formatOpenaiPlatformHeading(credits) {
-  if (!credits) return null;
-  const grants = credits.grants
-    .map((grant) => {
-      const remaining = formatGrantUsd(Number(grant.granted_usd) - Number(grant.used_usd));
-      const expiryDate = grant.expires_at ? new Date(grant.expires_at) : null;
-      const expiry =
-        expiryDate && !Number.isNaN(expiryDate.getTime())
-          ? expiryDate.toLocaleString([], {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-              hour12: false,
-            })
-          : "unknown";
-      const status = grant.is_scheduled ? " · scheduled" : grant.is_held_for_prepaid_transition ? " · held" : "";
-      return `${remaining} expires ${expiry}${status}`;
-    })
-    .join(", ");
-  const grantSummary = grants ? ` (${grants})` : "";
-  return `OpenAI · ${formatUsdCurrency(credits.total_available_usd)} API credit${grantSummary}`;
-}
-
-function formatAnthropicPlatformCredits(credits) {
-  if (!credits) return [];
-  if (credits.organizations.length === 0) return ["No Anthropic API organizations"];
-  return credits.organizations.flatMap((organization) => {
-    const balance = organization.balance?.credits;
-    const lines = [
-      balance
-        ? `${organization.name} · Anthropic API credit balance · ${sharedFormatPrepaidBalance(balance.amount_minor, balance.exponent, organization.currency ?? "USD")} available`
-        : `${organization.name} · Anthropic API credit balance ${organization.error ? `lookup failed: ${organization.error}` : "unavailable"}`,
-    ];
-    const appendTranches = (tranches, label) => {
-      for (const tranche of tranches) {
-        const granted = tranche.granted.credits;
-        const remaining = tranche.remaining.credits;
-        if (!granted || !remaining) continue;
-        const expiry = tranche.expires_at ? new Date(tranche.expires_at).toLocaleString() : "unknown";
-        const products = [
-          ...new Set(
-            tranche.scope.applies_to.map((item) => {
-              const qualifiers = [item.model_family, item.model_version].filter(Boolean).join(", ");
-              return qualifiers ? `${item.product} (${qualifiers})` : item.product;
-            })
-          ),
-        ].sort();
-        const scope =
-          ["unrestricted", "unscoped"].includes(tranche.scope.kind) && products.length === 0
-            ? ""
-            : ` · scope: ${products.join(", ") || tranche.scope.kind}`;
-        lines.push(
-          `${label} ${sharedFormatPrepaidBalance(remaining.amount_minor, remaining.exponent, tranche.currency)} / ${sharedFormatPrepaidBalance(granted.amount_minor, granted.exponent, tranche.currency)} · expires ${expiry}${scope}`
-        );
-      }
-    };
-    appendTranches(organization.tranches, "API credit grant");
-    appendTranches(organization.promo_tranches, "API promo credit grant");
-    return lines;
-  });
+function formatGrant(grant, details = false) {
+  const parts = [];
+  if (grant.group) parts.push(grant.group);
+  parts.push(`${grant.label}: ${grant.remaining}`);
+  parts.push(formatExpiry(grant.expires_at, details));
+  if (details) parts.push(`original ${grant.original}`);
+  if (grant.scope) parts.push(`scope: ${grant.scope}`);
+  if (grant.status) parts.push(grant.status);
+  return parts.join(" · ");
 }
 
 // Peak-burn formatting. The policy (is it peak, which windows are next) is
@@ -243,9 +163,8 @@ function formatBurnSummary(burn) {
 }
 
 function formatPeakSchedule(burn) {
-  const ahead = burn.in_peak ? burn.upcoming.slice(1) : burn.upcoming;
-  if (!ahead.length) return null;
-  return `${formatMultiplier(burn.peak_multiplier)}: ${ahead.map(formatPeakInterval).join("  ")}`;
+  if (!burn.upcoming.length) return null;
+  return `${formatMultiplier(burn.peak_multiplier)}: ${burn.upcoming.map(formatPeakInterval).join("  ")}`;
 }
 
 function clamp01(value) {
@@ -255,25 +174,24 @@ function clamp01(value) {
 
 function emptyProviderState() {
   return {
+    label: "",
+    balances: [],
+    grants: [],
     windows: [],
-    lastFetch: null,
-    lastCheck: null,
-    error: null,
+    errorSummary: null,
+    errorDetail: null,
     extraSpend: null,
-    paidCredits: null,
-    openaiPlatformCredits: null,
-    anthropicPlatformCredits: null,
-    prepaidBalance: null,
-    prepaidStaleSince: null,
     availableResetCredits: null,
     availableResetCreditExpiries: [],
     resetCreditExpiryLookupFailed: false,
     currentlyOverPlan: false,
-    extraStatus: "none",
     paidCreditsActive: false,
+    status: null,
     // Peak-burn schedule from the Python view model; null when the provider has none.
     burn: null,
     staleSince: null,
+    summaryTint: "unknown",
+    summaryIndex: null,
   };
 }
 
@@ -378,7 +296,14 @@ const QuotaIndicator = GObject.registerClass(
           '<method name="SetStreamStatus"><arg type="s" direction="in" name="status"/><arg type="s" direction="in" name="error"/></method>' +
           '<method name="SetSyncState"><arg type="d" direction="in" name="lastAttemptAt"/><arg type="d" direction="in" name="nextRetryAt"/><arg type="d" direction="in" name="now"/></method>' +
           '<method name="GetStreamStatus"><arg type="s" direction="out" name="status"/></method>' +
-          '<method name="GetPrepaidText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetBalanceText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetGrantText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetStatusText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetResetText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetPanelText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetDetailsText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetConnectionDetails"><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetEmptyLabelText"><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetHeaderText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetWindowRows"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="rows"/></method>' +
           '<method name="SetViewForTest"><arg type="s" direction="in" name="view"/></method>' +
@@ -398,10 +323,23 @@ const QuotaIndicator = GObject.registerClass(
             this._loadFixtureView(decodeBytes(bytes));
           },
           SetStreamStatus: (status, error) => this._setStreamState(status, error),
-          GetPrepaidText: (provider) => {
-            const item = this._providers.find(({ id }) => id === provider)?.prepaidRow;
-            return item?._summaryLabel.get_text() ?? "";
-          },
+          GetBalanceText: (provider) =>
+            this._providers.find(({ id }) => id === provider)?.balanceRow?._summaryLabel.get_text() ?? "",
+          GetGrantText: (provider) =>
+            this._providers.find(({ id }) => id === provider)?.grantRow?._summaryLabel.get_text() ?? "",
+          GetStatusText: (provider) =>
+            this._providers.find(({ id }) => id === provider)?.statusRow?._summaryLabel.get_text() ?? "",
+          GetResetText: (provider) =>
+            this._providers.find(({ id }) => id === provider)?.resetRow?._summaryLabel.get_text() ?? "",
+          GetPanelText: (provider) => this._providers.find(({ id }) => id === provider)?.paceLabel?.get_text() ?? "",
+          GetDetailsText: (provider) =>
+            this._providers
+              .find(({ id }) => id === provider)
+              ?.detailsItem?._detailRows.map((row) => row.label.get_text())
+              .join("\n") ?? "",
+          GetConnectionDetails: () =>
+            this._connectionDetailsItem?._detailRows.map((row) => row.label.get_text()).join("\n") ?? "",
+          GetEmptyLabelText: () => (this._emptyLabel.visible ? this._emptyLabel.get_text() : ""),
           GetHeaderText: (provider) => {
             const item = this._providers.find(({ id }) => id === provider)?.header;
             return item?.label.get_text() ?? "";
@@ -574,21 +512,30 @@ const QuotaIndicator = GObject.registerClass(
       this._statusRow.visible = true;
       if (this._streamStatus === "connected") this._statusRow._summaryLabel.add_style_class_name("quota-stream-live");
       else this._statusRow._summaryLabel.remove_style_class_name("quota-stream-live");
-      const label =
-        this._streamStatus === "connected"
-          ? "Quota stream live"
-          : this._streamStatus === "disconnected"
-            ? "Quota stream disconnected"
-            : "Connecting to quota stream";
-      const now = this._testNow ?? nowMs() / 1000;
-      const lastAttempt =
-        this._lastAttemptAt > 0
-          ? `Desktop sync attempt ${formatAge(Math.max(0, now - this._lastAttemptAt))} ago`
-          : "Desktop sync not attempted yet";
-      const retry = this._nextRetryAt > 0 ? `Retry in ${formatAge(this._nextRetryAt - now)}` : "No retry scheduled";
-      const error = this._streamError ? this._streamError.slice(0, 120) : "";
-      const status = error ? `${label} · ${error}` : label;
-      this._statusRow._summaryLabel.set_text(`${status} · ${lastAttempt} · ${retry}`);
+      if (this._streamStatus === "connected") {
+        this._statusRow._summaryLabel.set_text(
+          this._viewConnectionError ? "Connected · quota refresh failed" : "Connected"
+        );
+      } else if (this._streamStatus === "disconnected") {
+        const now = this._testNow ?? nowMs() / 1000;
+        const lastAttempt =
+          this._lastAttemptAt > 0
+            ? `last attempt ${formatAge(Math.max(0, now - this._lastAttemptAt))} ago`
+            : "no attempt yet";
+        const retry = this._nextRetryAt > 0 ? `retry in ${formatAge(this._nextRetryAt - now)}` : "no retry scheduled";
+        this._statusRow._summaryLabel.set_text(`Disconnected · ${lastAttempt} · ${retry}`);
+      } else {
+        this._statusRow._summaryLabel.set_text("Connecting");
+      }
+      this._renderDetails(
+        this._connectionDetailsItem,
+        [
+          this._streamStatus === "disconnected" && this._streamError
+            ? `Desktop sync error: ${this._streamError}`
+            : null,
+          this._viewConnectionError ? `Quota refresh error: ${this._viewConnectionError}` : null,
+        ].filter(Boolean)
+      );
     }
 
     _acceptView(rawView) {
@@ -597,7 +544,7 @@ const QuotaIndicator = GObject.registerClass(
         const data = JSON.parse(rawView);
         if (!data || !Array.isArray(data.providers)) throw new Error("invalid AIQuota view");
         if (this._fixtureMode) {
-          const fixtureTime = Date.parse(data.fetched_at);
+          const fixtureTime = Date.parse(data.presentation_at ?? data.fetched_at);
           fixtureNowMs = Number.isFinite(fixtureTime) ? fixtureTime : null;
         }
         this._remoteView = rawView;
@@ -626,6 +573,7 @@ const QuotaIndicator = GObject.registerClass(
         y_align: Clutter.ActorAlign.CENTER,
       });
       for (const p of this._providers) {
+        if (isApiProvider(p.id)) continue;
         p.icon = this._makeIcon(p.iconFile);
         p.paceLabel = new St.Label({ style_class: "quota-pace", y_align: Clutter.ActorAlign.CENTER });
         const provBox = new St.BoxLayout({ style_class: "quota-provider", y_align: Clutter.ActorAlign.CENTER });
@@ -657,30 +605,70 @@ const QuotaIndicator = GObject.registerClass(
       this._statusRow._summaryLabel.add_style_class_name("quota-stream-status");
       this._statusRow._summaryLabel.clutter_text.line_wrap = true;
       this.menu.addMenuItem(this._statusRow);
-      for (const p of this._providers) {
-        p.header = new PopupMenu.PopupSeparatorMenuItem(p.label);
-        const { windows } = effectiveState(p.state);
-        const rowCount = p.state.currentlyOverPlan || p.state.paidCreditsActive ? 1 : Math.max(1, windows.length);
-        p.windowRows = Array.from({ length: rowCount }, () => this._makeQuotaRow("quota"));
-        p.creditRow = this._makeTextRow();
-        p.prepaidRow = this._makeTextRow();
-        // Separate from windowRows so window indexing is unaffected; hidden
-        // outright for providers with no published schedule.
+      this._connectionDetailsItem = this._makeDetailsSubmenu("Connection details");
+      this.menu.addMenuItem(this._connectionDetailsItem);
+      const subscriptions = this._providers.filter(({ id }) => !isApiProvider(id));
+      const apiProviders = this._providers.filter(({ id }) => isApiProvider(id));
+      if (subscriptions.length) this._addProviderSection("Subscriptions", subscriptions);
+      if (apiProviders.length) this._addProviderSection("API balances", apiProviders);
+    }
+
+    _addProviderSection(title, providers) {
+      this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem(title));
+      for (const p of providers) {
+        p.header = new PopupMenu.PopupSeparatorMenuItem(p.state.label || p.label);
+        p.balanceRow = this._makeTextRow();
+        p.grantRow = this._makeTextRow();
+        p.resetRow = this._makeTextRow();
+        p.statusRow = this._makeTextRow();
         p.burnRow = this._makeTextRow();
+        p.windowRows = Array.from({ length: Math.max(1, effectiveState(p.state).windows.length) }, () =>
+          this._makeQuotaRow("quota")
+        );
+        p.detailsItem = this._makeDetailsSubmenu("Details");
         this.menu.addMenuItem(p.header);
-        this.menu.addMenuItem(p.creditRow);
-        this.menu.addMenuItem(p.prepaidRow);
+        this.menu.addMenuItem(p.balanceRow);
+        this.menu.addMenuItem(p.grantRow);
+        this.menu.addMenuItem(p.resetRow);
+        this.menu.addMenuItem(p.statusRow);
         this.menu.addMenuItem(p.burnRow);
         for (const row of p.windowRows) this.menu.addMenuItem(row);
+        this.menu.addMenuItem(p.detailsItem);
         p.header.label.add_style_class_name("quota-popup-header");
         p.header.label.clutter_text.line_wrap = true;
       }
+    }
+
+    _makeDetailsSubmenu(title) {
+      const item = new PopupMenu.PopupSubMenuMenuItem(title);
+      item._detailRows = [];
+      return item;
+    }
+
+    _renderDetails(item, details) {
+      if (!item) return;
+      const next = details.filter((detail) => typeof detail === "string" && detail.length > 0);
+      if (item._detailRows.map((row) => row.label.get_text()).join("\n") === next.join("\n")) {
+        item.visible = next.length > 0;
+        return;
+      }
+      item.menu.removeAll();
+      item._detailRows = next.map((detail) => {
+        const row = new PopupMenu.PopupMenuItem(detail, { reactive: false, can_focus: false });
+        row.label.clutter_text.line_wrap = true;
+        row.label.clutter_text.ellipsize = 0;
+        item.menu.addMenuItem(row);
+        return row;
+      });
+      item.visible = next.length > 0;
     }
 
     _makeTextRow() {
       const item = new PopupMenu.PopupBaseMenuItem({ reactive: false, can_focus: false });
       item.add_style_class_name("quota-popup-bar-item");
       item._summaryLabel = new St.Label({ text: "", style_class: "quota-popup-row", x_expand: true });
+      item._summaryLabel.clutter_text.line_wrap = true;
+      item._summaryLabel.clutter_text.ellipsize = 0;
       item.add_child(item._summaryLabel);
       return item;
     }
@@ -801,6 +789,7 @@ const QuotaIndicator = GObject.registerClass(
         tint: w.tint,
         elapsed: w.elapsed,
         exhausted: w.exhausted,
+        resetPending: w.reset_pending === true,
       };
     }
 
@@ -822,6 +811,7 @@ const QuotaIndicator = GObject.registerClass(
       );
       this._setProviderVisibility(providerIds);
       const fetchedAt = data.fetched_at ? new Date(data.fetched_at).getTime() : null;
+      this._viewConnectionError = data.connection_error ?? null;
       for (const p of this._providers) {
         const pq = data.providers?.find((x) => x.provider === p.id);
         if (!pq) {
@@ -830,41 +820,29 @@ const QuotaIndicator = GObject.registerClass(
         }
         const selected = pq.display;
         const result = selected.result;
-        const lastResult = pq.last_output?.result;
-        const lastCheck = pq.last_output?.fetched_at ? new Date(pq.last_output.fetched_at).getTime() : fetchedAt;
         p.state = {
+          label: pq.label || p.label,
+          balances: pq.balances ?? [],
+          grants: pq.grants ?? [],
           windows: (pq.display_windows ?? []).map((window) => this._mapWindow(window)),
-          staleSince:
-            selected.source === "last_success" && selected.observed_at
-              ? new Date(selected.observed_at).getTime()
-              : null,
-          lastFetch: selected.observed_at ? new Date(selected.observed_at).getTime() : null,
-          lastCheck,
-          error: lastResult?.kind === "error" ? lastResult.error : null,
+          observedAtMs: selected.observed_at ? new Date(selected.observed_at).getTime() : null,
+          staleSince: pq.stale_since ? new Date(pq.stale_since).getTime() : null,
+          staleAtMs: pq.stale_at ? new Date(pq.stale_at).getTime() : null,
+          errorSummary: pq.error_summary ?? null,
+          errorDetail: pq.error_detail ?? null,
           extraSpend: this._mapExtraSpend(result?.extra_spend),
-          paidCredits: result?.paid_credits ?? null,
-          openaiPlatformCredits: pq.display_openai_platform_credits ?? null,
-          anthropicPlatformCredits: pq.display_anthropic_platform_credits ?? null,
-          prepaidBalance: selected.prepaid_balance ?? null,
-          prepaidStaleSince: selected.prepaid_stale_since ? new Date(selected.prepaid_stale_since).getTime() : null,
           availableResetCredits: result?.available_reset_credits ?? null,
           availableResetCreditExpiries: result?.available_reset_credit_expiries ?? [],
           resetCreditExpiryLookupFailed: result?.reset_credit_expiry_lookup_failed === true,
           currentlyOverPlan: pq.currently_over_plan === true,
-          extraStatus: pq.extra_status ?? "none",
           paidCreditsActive: pq.paid_credits_active === true,
+          status: pq.status ?? null,
           burn: pq.burn ?? null,
           summaryTint: pq.summary_tint ?? "unknown",
           summaryIndex: pq.summary_index ?? null,
         };
       }
-      const needsRebuild = this._providers.some((p) => {
-        const count =
-          p.state.currentlyOverPlan || p.state.paidCreditsActive
-            ? 1
-            : Math.max(1, effectiveState(p.state).windows.length);
-        return p.windowRows.length !== count;
-      });
+      const needsRebuild = this._providers.some((p) => p.windowRows.length !== Math.max(1, p.state.windows.length));
       if (needsRebuild) this._buildPopup();
     }
 
@@ -901,13 +879,15 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _renderPanel() {
-      this._emptyLabel.visible = this._providers.length === 0 && this._streamStatus !== "connected";
-      for (const p of this._providers) this._renderProvider(p.state, p.icon, p.paceLabel);
+      const subscriptions = this._providers.filter(({ id }) => !isApiProvider(id));
+      this._emptyLabel.visible = subscriptions.length === 0;
+      for (const p of subscriptions) this._renderProvider(p.state, p.icon, p.paceLabel);
     }
 
     _renderProvider(state, icon, paceLabel) {
+      if (!icon || !paceLabel) return;
       const { windows, staleAge } = effectiveState(state);
-      if (state.error && windows.length === 0) {
+      if (state.errorSummary && windows.length === 0) {
         this._setTint(icon, paceLabel, "error");
         paceLabel.set_text("!");
         return;
@@ -919,20 +899,23 @@ const QuotaIndicator = GObject.registerClass(
       }
       const liveWindows = windows.map((window) => withLiveReset(window));
       const exhaustedWindows = liveWindows.filter((window) => window.exhausted);
-      const overPlan = state.currentlyOverPlan === true || state.paidCreditsActive === true;
-      const stale = staleAge != null || isStaleFetch(state.lastFetch);
-      const tint = overPlan ? "hot" : stale ? "stale" : state.summaryTint;
+      const resetPending = liveWindows.some((window) => window.resetPending);
+      const stale = staleAge != null;
+      const overPlan = !resetPending && !stale && state.currentlyOverPlan === true;
+      const paidCreditsActive = !resetPending && !stale && state.paidCreditsActive === true;
+      const tint = resetPending || stale ? "stale" : overPlan || paidCreditsActive ? "hot" : state.summaryTint;
       this._setTint(icon, paceLabel, tint);
       const paceText = state.summaryIndex == null ? "" : (liveWindows[state.summaryIndex]?.pace ?? "");
-      // A peak window costs a multiple per token, so it belongs in the panel
-      // where it is visible without opening the popup.
       const burning = state.burn?.in_peak === true ? "🔥" : "";
-      if (state.paidCreditsActive === true) {
-        paceLabel.set_text(`credits ⚡${burning}`);
+      if (resetPending) {
+        paceLabel.set_text(`↻?${stale ? " ~" : ""}${burning}`);
+      } else if (stale) {
+        paceLabel.set_text(`~${burning}`);
+      } else if (paidCreditsActive) {
+        paceLabel.set_text(`⚡${paceText}${burning}`);
       } else if (overPlan) {
         paceLabel.set_text(`${formatCompactDollars(state.extraSpend.used_usd)} ⚡${burning}`);
       } else if (exhaustedWindows.length > 0) {
-        // Multiple exhausted windows keep the provider blocked until the last reset.
         const resetSeconds = Math.max(...exhaustedWindows.map((window) => window.resetSeconds));
         paceLabel.set_text(`↻${formatDuration(resetSeconds)}${burning}`);
       } else {
@@ -943,132 +926,126 @@ const QuotaIndicator = GObject.registerClass(
     _renderPopup() {
       this._renderStreamStatus();
       for (const p of this._providers) {
-        this._renderProviderHeader(p.header, p.label, p.state);
-        this._renderCreditRow(p.creditRow, p.state);
-        this._renderPrepaidRow(p.prepaidRow, p.state);
-        this._renderBurnRow(p.burnRow, p.state.burn);
-        if (p.state.currentlyOverPlan === true || p.state.paidCreditsActive === true) {
-          const { windows } = effectiveState(p.state);
-          this._renderExtraActiveRow(p.windowRows[0], windows);
-          p.windowRows.slice(1).forEach((row) => (row.visible = false));
-        } else {
-          const { windows, staleAge, openaiPlatformCredits, anthropicPlatformCredits } = effectiveState(p.state);
-          if (windows.length === 0 && openaiPlatformCredits == null && anthropicPlatformCredits == null)
-            this._renderPopupRow(p.windowRows[0], null, staleAge);
-          windows.forEach((window, index) => this._renderPopupRow(p.windowRows[index], window, staleAge));
-          const rowCount =
-            windows.length === 0 && (openaiPlatformCredits != null || anthropicPlatformCredits != null)
-              ? 0
-              : Math.max(1, windows.length);
-          p.windowRows.forEach((row, index) => (row.visible = index < rowCount));
-        }
+        this._renderProviderHeader(p.header, p.state.label || p.label);
+        this._renderBalanceRow(p.balanceRow, p.state);
+        this._renderGrantRow(p.grantRow, p.state);
+        this._renderResetRow(p.resetRow, p.state);
+        this._renderStatusRow(p.statusRow, p.state);
+        this._renderBurnRow(p.burnRow, p.state);
+        const { windows, staleAge } = effectiveState(p.state);
+        windows.forEach((window, index) => this._renderPopupRow(p.windowRows[index], window, staleAge));
+        p.windowRows.forEach((row, index) => (row.visible = index < windows.length));
+        this._renderProviderDetails(p.detailsItem, p.state);
       }
     }
 
-    _renderProviderHeader(item, title, state) {
-      item.label.remove_style_class_name("quota-popup-header-error");
-      item.label.remove_style_class_name("quota-popup-header-stale");
-
-      const {
-        windows,
-        extraSpend,
-        availableResetCredits,
-        availableResetCreditExpiries,
-        resetCreditExpiryLookupFailed,
-        staleAge,
-        openaiPlatformCredits,
-        prepaidBalance,
-        prepaidStaleSince,
-      } = effectiveState(state);
-      const haveWindows = windows.length > 0;
-      const claudeHeading = title === "Claude" ? formatClaudePrepaidHeading(prepaidBalance) : null;
-      const openaiHeading = title === "OpenAI API" ? formatOpenaiPlatformHeading(openaiPlatformCredits) : null;
-      const titleWithBalance = openaiHeading ? openaiHeading : (claudeHeading ?? title);
-      const parts = [titleWithBalance];
-      if (state.error) {
-        parts.push(formatCheckFailure(state.error, state.lastCheck, haveWindows));
-        item.label.add_style_class_name("quota-popup-header-error");
-      } else if (isStaleFetch(state.lastFetch)) {
-        item.label.add_style_class_name("quota-popup-header-stale");
-      }
-      if (title === "Claude" && prepaidStaleSince != null && prepaidStaleSince !== state.staleSince) {
-        parts[0] += ` (prepaid stale ${formatAge(Math.max(0, (nowMs() - prepaidStaleSince) / 1000))})`;
-      }
-      if (staleAge != null) parts.push(`(stale ${formatAge(staleAge)})`);
-      const resets = formatBankedResets(
-        availableResetCredits,
-        availableResetCreditExpiries,
-        resetCreditExpiryLookupFailed,
-        new Date(nowMs())
-      );
-      if (resets) parts.push(resets);
-      const extraStr = formatExtraSpend(extraSpend);
-      if (extraStr) parts.push(extraStr);
-      if (!state.error && state.lastFetch == null) parts.push("no successful refresh yet");
-      else if (!state.error && isStaleFetch(state.lastFetch)) parts.push("stale");
-      item.label.set_text(parts.join(" · "));
+    _renderProviderHeader(item, title) {
+      item.label.set_text(title);
     }
 
-    _renderCreditRow(item, state) {
-      const { paidCredits } = effectiveState(state);
-      const text = formatPaidCredits(paidCredits, state.paidCreditsActive);
-      item.visible = text != null;
-      if (text == null) return;
-      item._summaryLabel.set_text(text);
-      if (state.paidCreditsActive) item._summaryLabel.add_style_class_name("quota-credit-active");
-      else item._summaryLabel.remove_style_class_name("quota-credit-active");
+    _renderBalanceRow(item, state) {
+      const lines = state.balances.map((balance) => {
+        const group = balance.group ? `${balance.group} · ` : "";
+        const staleSince = balance.stale_since ? new Date(balance.stale_since).getTime() : null;
+        const stale = staleSince == null ? "" : ` · stale ${formatAge(Math.max(0, (nowMs() - staleSince) / 1000))} ago`;
+        return `${group}${balance.label}: ${balance.value}${stale}`;
+      });
+      item.visible = lines.length > 0;
+      item._summaryLabel.set_text(lines.join("\n"));
     }
 
-    _renderPrepaidRow(item, state) {
-      const effective = effectiveState(state);
-      const lines = formatAnthropicPlatformCredits(effective.anthropicPlatformCredits);
-      const text = lines.length > 0 ? lines.join("\n") : null;
-      item.visible = text != null;
-      if (text != null) {
-        item._summaryLabel.set_text(text);
-      }
+    _renderGrantRow(item, state) {
+      const lines = state.grants.map((grant) => formatGrant(grant));
+      item.visible = lines.length > 0;
+      item._summaryLabel.set_text(lines.join("\n"));
     }
 
-    _renderBurnRow(item, burn) {
-      const summary = burn ? formatBurnSummary(burn) : null;
+    _renderResetRow(item, state) {
+      const exhausted = state.windows.some((window) => window.exhausted);
+      const count = state.availableResetCredits;
+      const summary =
+        count > 0 || (count === 0 && exhausted)
+          ? formatBankedResets(
+              count,
+              state.availableResetCreditExpiries,
+              state.resetCreditExpiryLookupFailed,
+              new Date(nowMs())
+            )
+          : null;
       item.visible = summary != null;
-      if (summary == null) return;
-      const schedule = formatPeakSchedule(burn);
-      item._summaryLabel.set_text(schedule ? `${summary}\n${schedule}` : summary);
+      item._summaryLabel.set_text(summary == null ? "" : `Banked resets: ${summary}`);
     }
 
-    _renderExtraActiveRow(item, windows) {
-      item._bars.visible = false;
-      this._clearQuotaBar(item._quotaBar);
-      const parts = windows.map((window) => this._formatExtraActiveWindow(window));
-      item._summaryLabel.set_text(parts.join("  "));
+    _renderStatusRow(item, state) {
+      const { staleAge } = effectiveState(state);
+      const hasData = state.windows.length > 0 || state.balances.length > 0 || state.grants.length > 0;
+      const parts = [];
+      const resetPending = state.windows.some((window) => withLiveReset(window).resetPending);
+      const status = resetPending ? "Reset time passed · awaiting updated usage" : state.status;
+      if (status) parts.push(status);
+      if (state.errorSummary) parts.push(state.errorSummary);
+      if (staleAge != null) parts.push(`Stale · observation ${formatAge(staleAge)} old`);
+      const extraSpend = formatExtraSpend(state.extraSpend);
+      if (extraSpend) parts.push(extraSpend);
+      if (!hasData) parts.push("No quota or balance readings");
+      item.visible = parts.length > 0;
+      item._summaryLabel.set_text(parts.join(" · "));
+      item._summaryLabel.remove_style_class_name("quota-popup-status-warning");
+      if (state.errorSummary || staleAge != null || resetPending)
+        item._summaryLabel.add_style_class_name("quota-popup-status-warning");
     }
 
-    _formatExtraActiveWindow(state) {
-      return `${state.label}: ${state.used}% ↻${state.reset}`;
+    _renderBurnRow(item, state) {
+      const hasSubstantiveData = state.windows.length > 0 || state.balances.length > 0 || state.grants.length > 0;
+      const summary = hasSubstantiveData && state.burn ? formatBurnSummary(state.burn) : null;
+      item.visible = summary != null;
+      item._summaryLabel.set_text(summary ?? "");
+    }
+
+    _renderProviderDetails(item, state) {
+      const details = [];
+      if (state.errorDetail) details.push(`${state.errorSummary ?? "Refresh failed"}: ${state.errorDetail}`);
+      for (const balance of state.balances) {
+        if (balance.error)
+          details.push(`${balance.group ? `${balance.group} · ` : ""}${balance.label}: ${balance.error}`);
+      }
+      details.push(...state.grants.map((grant) => formatGrant(grant, true)));
+      const { staleAge } = effectiveState(state);
+      for (const window of state.windows.map(withLiveReset)) {
+        if (staleAge == null && window.pace) details.push(`${window.label} pace: ${window.pace}`);
+      }
+      if (state.windows.length) {
+        details.push("Forecasts use average usage since the window started.");
+        details.push("Meter fill is quota used; tick is time elapsed.");
+      }
+      const resetDetails = formatBankedResets(
+        state.availableResetCredits,
+        state.availableResetCreditExpiries,
+        state.resetCreditExpiryLookupFailed,
+        new Date(nowMs()),
+        true
+      );
+      if (resetDetails && (state.availableResetCredits > 0 || state.windows.some((window) => window.exhausted)))
+        details.push(`Banked resets: ${resetDetails}`);
+      const schedule = formatPeakSchedule(state.burn);
+      if (schedule && (state.windows.length || state.balances.length || state.grants.length)) details.push(schedule);
+      this._renderDetails(item, details);
     }
 
     _renderPopupRow(item, state, staleAgeSeconds) {
-      if (state == null) {
-        item._bars.visible = false;
-        item._summaryLabel.set_text("no data");
-        this._clearQuotaBar(item._quotaBar);
-        return;
-      }
       item._bars.visible = true;
-      const parts = [`${state.used}%`, `↻${state.reset}`];
-      if (state.exhausted) {
-        parts.push("exhausted");
-      } else {
-        if (state.pace) parts.push(`Δ${state.pace}`);
-        if (state.forecast) parts.push(state.forecast);
-      }
+      const liveState = withLiveReset(state);
+      const parts = [
+        `${liveState.used}%`,
+        liveState.reset === "awaiting update" ? liveState.reset : `resets in ${liveState.reset}`,
+      ];
+      if (staleAgeSeconds == null && liveState.forecast) parts.push(liveState.forecast);
       item._summaryLabel.set_text(`${state.label}: ${parts.join("  ")}`);
       this._setQuotaBar(
         item._quotaBar,
         state.usedPercent == null ? null : state.usedPercent / 100,
         state.elapsed,
-        staleAgeSeconds != null ? "stale" : state.tint
+        staleAgeSeconds != null || liveState.resetPending ? "stale" : state.tint
       );
     }
 

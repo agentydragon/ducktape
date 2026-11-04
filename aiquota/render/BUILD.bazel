@@ -57,6 +57,7 @@ py_test(
     imports = ["../.."],
     deps = [
         ":tmux_lib",
+        ":view_model_lib",
         "//:conftest",
         "//aiquota:models",
         "@pypi//pytest_bazel",

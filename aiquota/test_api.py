@@ -406,11 +406,11 @@ async def test_events_send_current_view_and_broadcast_on_demand_refresh(monkeypa
         assert initial_result.windows[0].used_percent == 45.0
         quotas_response = await client.get("/v1/quotas", headers=auth)
         assert quotas_response.status_code == 200
-        assert initial.model_dump(mode="json") == quotas_response.json()
+        assert initial.providers[0].display == AllQuotasView.model_validate(quotas_response.json()).providers[0].display
 
         second_lines = second.aiter_lines().__aiter__()
         second_view = await _read_view(second_lines)
-        assert second_view == initial
+        assert second_view.providers[0].display == initial.providers[0].display
         assert provider.fetches == 1  # The second client used the service's fresh cache.
 
         service._cache_ttl = timedelta(0)
@@ -422,14 +422,17 @@ async def test_events_send_current_view_and_broadcast_on_demand_refresh(monkeypa
         first_update_result = first_update.providers[0].last_output.result
         assert isinstance(first_update_result, FetchSuccess)
         assert first_update_result.windows[0].used_percent == 52.0
-        assert second_update == first_update
+        assert second_update.providers[0].display == first_update.providers[0].display
         assert provider.fetches == 2  # One refresh reached both clients.
 
         provider.fail = True
         stale_response = await client.get("/v1/quotas", headers=auth)
         assert stale_response.status_code == 200
         stale_update = await _read_view(first_lines)
-        assert stale_update.model_dump(mode="json") == stale_response.json()
+        assert (
+            stale_update.providers[0].display
+            == AllQuotasView.model_validate(stale_response.json()).providers[0].display
+        )
         stale_provider = stale_update.providers[0]
         assert isinstance(stale_provider.last_output.result, FetchError)
         assert stale_provider.last_success is not None

@@ -26,6 +26,8 @@ FIXTURE_NAMES = (
     "reset_credit_expiry_unavailable",
     "platform_credits_with_subscription_resets",
     "wire_fields",
+    "reset_pending",
+    "stale_observation",
 )
 DEFAULT_NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 

@@ -6,16 +6,18 @@
  * output for the shared scenarios. The GNOME render test also loads the packaged copy.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   formatDuration,
-  formatKnownExpiry,
-  formatPrepaidBalance,
-  formatResetCreditExpiry,
+  formatDeadline,
   formatResetCreditSummary,
+  formatPrepaidBalance,
   roundHalfToEven,
 } from "../shared/presentation.js";
+
+beforeAll(() => vi.stubEnv("TZ", "UTC"));
+afterAll(() => vi.unstubAllEnvs());
 
 describe("formatPrepaidBalance", () => {
   it.each([
@@ -49,43 +51,50 @@ describe("formatResetCreditSummary", () => {
   const secondExpiry = "2026-02-02T12:34:00Z";
   const now = new Date("2026-01-15T12:00:00Z");
 
-  it("lists all known expiries", () => {
+  it("keeps the main summary short and puts the complete known list in details", () => {
     expect(formatResetCreditSummary(2, [firstExpiry, secondExpiry], false, now)).toBe(
-      `2 resets (expiry: ${formatKnownExpiry(firstExpiry)}, ${formatResetCreditExpiry(secondExpiry, now)})`
+      "2 · next known expiry Jan 1, 15:20 UTC"
+    );
+    expect(formatResetCreditSummary(2, [firstExpiry, secondExpiry], false, now, true)).toBe(
+      "2 · known expiries 2026-01-01 15:20 UTC, 2026-02-02 12:34 UTC"
     );
   });
 
   it("shows the difference between the count and a successful partial expiry lookup", () => {
     expect(formatResetCreditSummary(2, [firstExpiry], false, now)).toBe(
-      `2 resets (expiry: ${formatKnownExpiry(firstExpiry)}, 1 unknown)`
+      "2 · next known expiry Jan 1, 15:20 UTC · 1 expiry unknown"
     );
-    expect(formatResetCreditSummary(1, [firstExpiry], false, now)).toBe(
-      `1 reset (expiry: ${formatKnownExpiry(firstExpiry)})`
-    );
-    expect(formatResetCreditSummary(2, [], false, now)).toBe("2 resets (expiry: 2 unknown)");
+    expect(formatResetCreditSummary(1, [firstExpiry], false, now)).toBe("1 · next known expiry Jan 1, 15:20 UTC");
+    expect(formatResetCreditSummary(2, [], false, now)).toBe("2 · 2 expiries unknown");
   });
 
   it("does not infer an unknown count when the expiry lookup fails", () => {
-    expect(formatResetCreditSummary(2, [], true, now)).toBe("2 resets (expiry lookup failed)");
-    expect(formatResetCreditSummary(2, [firstExpiry], true, now)).toBe(
-      `2 resets (expiry: ${formatKnownExpiry(firstExpiry)}; lookup failed)`
-    );
+    expect(formatResetCreditSummary(2, [], true, now)).toBe("2 · expiry lookup failed");
+    expect(formatResetCreditSummary(2, [firstExpiry], true, now)).toContain("expiry lookup failed");
   });
 
   it("keeps a zero reset count concise when the lookup succeeds", () => {
-    expect(formatResetCreditSummary(0, [], false, now)).toBe("0 resets");
+    expect(formatResetCreditSummary(0, [], false, now)).toBe("0");
+  });
+});
+
+describe("formatDeadline", () => {
+  const now = new Date("2026-01-15T12:00:00Z");
+
+  it("uses a local date, includes the year when needed, and keeps nearby minute precision", () => {
+    expect(formatDeadline("2026-02-02T12:34:00Z", now)).toBe("Feb 2");
+    expect(formatDeadline("2027-02-02T12:34:00Z", now)).toBe("Feb 2, 2027");
+    expect(formatDeadline("2026-01-15T12:34:00Z", now)).toBe("Jan 15, 12:34 UTC");
   });
 
-  it.each([
-    ["2026-01-29T11:59:59Z", false],
-    ["2026-01-29T12:00:00Z", false],
-    ["2026-01-29T12:00:01Z", true],
-    ["2026-01-14T09:00:00Z", false],
-  ])("formats %s with a date-only value only when it is over two weeks away", (iso, isDateOnly) => {
-    const expiry = new Date(iso);
-    const rendered = formatResetCreditExpiry(expiry, now);
-    expect(rendered).toBe(
-      isDateOnly ? expiry.toLocaleDateString([], { month: "short", day: "numeric" }) : formatKnownExpiry(expiry)
-    );
+  it("uses the 14-day cutoff and gives grant details the full local timestamp", () => {
+    expect(formatDeadline("2026-01-29T11:59:59Z", now)).toBe("Jan 29, 11:59 UTC");
+    expect(formatDeadline("2026-01-29T12:00:00Z", now)).toBe("Jan 29, 12:00 UTC");
+    expect(formatDeadline("2026-01-29T12:00:01Z", now)).toBe("Jan 29");
+    expect(formatDeadline("2026-02-02T12:34:00Z", now, true)).toBe("2026-02-02 12:34 UTC");
+  });
+
+  it("returns null for an invalid deadline", () => {
+    expect(formatDeadline("not a timestamp", now)).toBeNull();
   });
 });

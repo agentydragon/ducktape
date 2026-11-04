@@ -1,11 +1,12 @@
-from aiquota.models import AllQuotas, FetchSuccess, ProviderQuota
+"""Compact tmux status summary, using the shared provider window selection."""
+
+from aiquota.models import AllQuotas, ProviderQuota
 from aiquota.render.view_model import ProviderView, to_view
 
 # Nerd Font cod-sparkle (U+EC10), the de-facto "AI" glyph in dev tooling.
-# Prepended once to the whole segment; each provider then uses its vendor
-# initial: Anthropic / OpenAI / Z.AI.
 _AI_GLYPH = "\uec10"
 PROVIDER_PREFIX = {"claude": "A", "codex": "O", "zai": "Z"}
+_API_PROVIDERS = {"openai_platform", "anthropic_platform"}
 
 TINT_FG = {
     "cool": "blue",
@@ -23,40 +24,44 @@ def render_provider(pq: ProviderQuota) -> str:
 
 
 def _render_provider(pq: ProviderView) -> str:
+    if pq.provider in _API_PROVIDERS:
+        return ""
     prefix = PROVIDER_PREFIX.get(pq.provider, pq.provider[0].upper())
-    result = pq.last_output.result
-
     windows = pq.display_windows
-    stale = pq.display.source == "last_success"
+    index = pq.summary_index
+    summary = windows[index] if index is not None and 0 <= index < len(windows) else None
+    stale = pq.stale_since is not None
 
-    errored = not isinstance(result, FetchSuccess)
-    if errored and not windows:
-        return f"#[fg={TINT_FG['error']}]{prefix}:!#[default]"
+    if summary is not None and summary.reset_pending:
+        value = "↻?"
+        color = "stale"
+    elif pq.paid_credits_active or pq.currently_over_plan:
+        value = "⚡"
+        color = pq.summary_tint
+    elif summary is not None and summary.exhausted:
+        value = f"↻{summary.reset}"
+        color = summary.tint
+    elif summary is not None:
+        value = f"{summary.used}%"
+        color = summary.tint
+    elif pq.error_summary is not None:
+        value = "!"
+        color = "error"
+    else:
+        value = "?"
+        color = pq.summary_tint
 
     if stale:
-        if not windows:
-            return f"#[fg={TINT_FG['stale']}]{prefix}:?#[default]"
-        summary = next((window for window in reversed(windows) if window.name is None), windows[-1])
-        return f"#[fg={TINT_FG['stale']}]{prefix}:{round(summary.used_percent)}%*#[default]"
-
-    color = TINT_FG[pq.summary_tint]
-
-    # Show the more informative window (prefer long if available)
-    if not windows:
-        return f"#[fg={color}]{prefix}:?#[default]"
-
-    summary = next((window for window in reversed(windows) if window.name is None), windows[-1])
-    pct = round(summary.used_percent)
-    return f"#[fg={color}]{prefix}:{pct}%#[default]"
+        value += "*"
+        color = "stale"
+    return f"#[fg={TINT_FG[color]}]{prefix}:{value}#[default]"
 
 
 def render_view(providers: list[ProviderView]) -> str:
-    segments = [_render_provider(pq) for pq in providers]
-    if not segments:
-        return ""
-    return f"{_AI_GLYPH} " + " ".join(segments)
+    segments = [_render_provider(provider) for provider in providers if provider.provider not in _API_PROVIDERS]
+    return f"{_AI_GLYPH} " + " ".join(segments) if segments else ""
 
 
 def render(providers: list[ProviderQuota]) -> str:
-    segments = [render_provider(pq) for pq in providers]
+    segments = [render_provider(provider) for provider in providers if provider.provider not in _API_PROVIDERS]
     return f"{_AI_GLYPH} " + " ".join(segments) if segments else ""

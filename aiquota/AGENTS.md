@@ -6,19 +6,23 @@ Three surfaces render one data model (<models.py>):
 - **GNOME extension** (<gnome/extension.js>)
 - **Browser dashboard** (<frontend/>, served by the API)
 
-The Haku Console quota panel renders `//aiquota/frontend:board` from its proxy's payload; keep
-it that way, never a hand-written copy (the last one drifted).
-
 ## Surfaces in lockstep
 
 Any presentation change to one surface is mirrored in the other two (the user reads them side
 by side and reports drift as a bug): the single "currently over plan" / "extra spend active"
-signal, window-row layout (label, used %, reset, pace, forecast), header (provider,
-error/stale annotations, extra-spend tail), collapsed view while burning extra. Shared
+signal, window rows (label, used %, reset, forecast; numeric pace in details), labelled balance and
+grant rows, and explicit stale/error/reset-pending states. Keep window rows present in paid mode.
+The tmux segment is intentionally a concise summary using the selected window and status,
+with API billing providers omitted. The GNOME panel likewise keeps API billing in the popup. Shared
 quota presentation decisions live in <render/view_model.py>. Its display selection identifies
 the current or last substantive result and its timestamp; clients render that selection and
 the latest fetch error without choosing a fallback themselves. Prepaid balance can have a
-separate stale timestamp because it is fetched independently.
+separate stale timestamp because it is fetched independently. `balances` and `grants` normalize
+provider-specific billing fields while retaining organizations, units, grant restrictions, and
+separate pools. Dates use `format_deadline` / `formatDeadline`; never add local date formats.
+`stale_at` is the server-owned freshness deadline; disconnected clients can compare their
+clock to it without inventing an age threshold. A passed reset deadline means awaiting a
+new reading, never a refilled bucket.
 
 The API emits time-refreshed window presentation views on the event stream. Python computes
 pace, forecast, tint and meter position once in the shared view model; the CLI, browser and
@@ -42,6 +46,7 @@ passes `now`). No bare element selectors, `:root` tokens or `useEffect` fetches.
   `alias_generator=to_camel`, else fields silently parse as `None` (CLI shows "no credentials
   found" / "0m to renew"). New providers: same config, plus a test round-tripping a realistic
   response.
-- "Currently over plan" = any window ≥100% usage. `ExtraSpend.is_enabled` only means the
+- "Currently over plan" = an exhausted window with extra usage enabled; it does not prove
+  requests are happening or a charge was incurred. `ExtraSpend.is_enabled` only means the
   feature is on; `used_usd` is month-cumulative. Surfaces consume this via
   `currently_over_plan` / `extra_status` in <render/view_model.py>.

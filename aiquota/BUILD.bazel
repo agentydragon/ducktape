@@ -47,6 +47,7 @@ py_library(
         "//aiquota/providers:openai_platform_lib",
         "//aiquota/providers:zai_lib",
         "//aiquota/render:view_model_lib",
+        "@pypi//httpx",
         "@pypi//platformdirs",
     ],
 )
@@ -411,5 +412,20 @@ py_library(
     deps = [
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
+    ],
+)
+
+py_test(
+    name = "test_cli",
+    srcs = ["test_cli.py"],
+    deps = [
+        ":cli_lib",
+        ":config",
+        ":models",
+        "//:conftest",
+        "//aiquota/render:view_model_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//typer",
     ],
 )

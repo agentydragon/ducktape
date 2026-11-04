@@ -28,7 +28,7 @@ Authorization: Bearer <AIQUOTA_API_BEARER_TOKEN>
 provider's selected display snapshot, its provenance and the latest fetch status, plus the derived policy bits every surface renders —
 `currently_over_plan`, `extra_status`, the peak-burn schedule, and per-window presentation (pace, forecast, tint and meter position). Serving those rather
 than letting each client re-derive them is what keeps the CLI, GNOME popup, browser
-dashboard, and Haku Console from drifting (see AGENTS.md). `/raw` returns the response body
+dashboard from drifting (see AGENTS.md). `/raw` returns the response body
 from the provider's usage endpoint, with fetch status and content type. It also
 carries the bounded exact response bytes as base64, their full-body SHA-256 and
 original byte length. The exact-byte field is truncated only when the response
@@ -49,8 +49,8 @@ time-derived peak-burn status changes between provider polls.
 ## Browser dashboard and OAuth API
 
 `https://aiquota.allegedly.works/` is a React dashboard rendering the same state as the
-CLI and the GNOME popup: per window a usage bar with a pace tick at the fraction of the
-window already elapsed, the reset countdown, pace deviation and forecast, plus banked
+CLI and the GNOME popup. Browser and GNOME meters pair usage fill with a tick for elapsed
+window time; CLI rows show usage and the same reset countdown and forecast, plus banked
 resets, extra spend, and peak-burn hours. Its wire types are generated from this API's
 OpenAPI schema (`//aiquota/frontend:schema`). aiquota owns an
 Authentik OAuth authorization-code flow: `/auth/login` redirects to the
@@ -98,6 +98,31 @@ all active event streams. When ClickHouse is configured, that same collector als
 persists each snapshot and readiness continues to wait for the first successful
 write.
 
+## Presentation
+
+The CLI, GNOME popup and browser group subscription quotas separately from API balances.
+Provider headings stay short; labelled balance and grant rows preserve each pool's units,
+organization and product restrictions. Grant rows show remaining value and expiry; expanded
+details add the original amount. Banked resets are separate from monetary and paid-credit balances.
+
+`aiquota --details` expands numeric pace, exact expiry times, all known reset-credit expiries,
+peak schedules and original error messages. The default keeps usage, reset countdowns,
+forecasts and concise error summaries. `--verbose` remains provider-response debugging.
+The tmux segment shows one compact subscription summary per provider and omits API balances.
+GNOME's panel also reserves API balances for its popup.
+
+All surfaces use local 24-hour time with minute precision. Expiries within 14 days include
+the time and timezone; distant expiries show a date, with the year when different. Details
+show the full local timestamp. Forecasts extrapolate average usage since the window started.
+The meter fill shows quota used and its tick shows elapsed window time.
+
+Provider observations become stale after ten minutes (two default collector intervals),
+or immediately when falling back after a provider error. Transport connection state is
+separate from provider freshness. CLI server failures retain the selected cached reading,
+show an offline warning, and refresh countdowns without fetching providers or choosing a
+different snapshot. Stale forecasts are suppressed. After a reset deadline passes, usage
+remains the last reported value and the surface says it is awaiting updated usage.
+
 ## Historical collection
 
 The in-cluster Deployment refreshes Claude and Codex every five minutes even
@@ -142,7 +167,7 @@ so a provider reading several endpoints in one cycle keeps every body.
 
 The current Codex usage response also carries
 `rate_limit_reset_credits.available_count`. AIQuota displays this authoritative
-live count as banked resets in the CLI, GNOME popup, and Haku Console; it never
+live count as banked resets in the CLI, GNOME popup, ; it never
 redeems a credit. When the companion detail endpoint names an expiry for a
 currently available credit, those surfaces display it as a _known_ expiry. The
 historical credit rows above remain available for analytics, but their detail

@@ -3,58 +3,51 @@ import type { ProviderView } from "./schema";
 import { effectiveQuota } from "./quotas";
 
 describe("effectiveQuota", () => {
-  it("returns the server-selected OpenAI Platform credits", () => {
-    const credits = { total_available_usd: "25.75", total_paid_available_usd: "25.75", grants: [] };
+  it("uses the selected cached snapshot while preserving the latest refresh error", () => {
     const provider = {
-      provider: "openai_platform",
-      last_output: {
-        fetched_at: "2026-01-15T12:00:00Z",
-        result: { kind: "success", windows: [], openai_platform_credits: credits },
-      },
-      display: {
-        source: "current",
-        observed_at: "2026-01-15T12:00:00Z",
-        result: { kind: "success", windows: [], openai_platform_credits: credits },
-        prepaid_balance: null,
-        prepaid_stale_since: null,
-      },
-      display_windows: [],
-      display_openai_platform_credits: credits,
-      display_anthropic_platform_credits: null,
-    } as unknown as ProviderView;
-
-    expect(effectiveQuota(provider).openaiPlatformCredits).toEqual(credits);
-  });
-
-  it("renders the server-selected stale snapshot and Anthropic credits", () => {
-    const provider = {
-      provider: "anthropic_platform",
-      last_output: { fetched_at: "2026-01-15T12:00:00Z", result: { kind: "error", error: "offline" } },
+      provider: "codex",
       display: {
         source: "last_success",
         observed_at: "2026-01-14T12:00:00Z",
         result: {
           kind: "success",
           windows: [],
-          anthropic_platform_credits: {
-            organizations: [{ uuid: "org-1", name: "Org", tranches: [], promo_tranches: [] }],
-          },
+          extra_spend: { used_usd: 25.5, monthly_limit_usd: 100, utilization: 25.5 },
+          available_reset_credits: 2,
+          available_reset_credit_expiries: ["2026-02-01T12:00:00Z"],
           reset_credit_expiry_lookup_failed: false,
         },
-        prepaid_balance: null,
-        prepaid_stale_since: null,
       },
+      last_output: { fetched_at: "2026-01-15T12:00:00Z", result: { kind: "error", error: "offline" } },
       display_windows: [],
-      display_openai_platform_credits: null,
-      display_anthropic_platform_credits: {
-        organizations: [{ uuid: "org-1", name: "Org", tranches: [], promo_tranches: [] }],
-      },
     } as unknown as ProviderView;
 
-    const result = effectiveQuota(provider);
+    expect(effectiveQuota(provider)).toEqual({
+      windows: [],
+      extraSpend: { used_usd: 25.5, monthly_limit_usd: 100, utilization: 25.5 },
+      resetCredits: 2,
+      resetCreditExpiries: ["2026-02-01T12:00:00Z"],
+      resetCreditExpiryLookupFailed: false,
+      staleSince: "2026-01-14T12:00:00Z",
+      error: "offline",
+    });
+  });
 
-    expect(result.staleSince).toBe("2026-01-14T12:00:00Z");
-    expect(result.error).toBe("offline");
-    expect(result.anthropicPlatformCredits?.organizations[0]?.uuid).toBe("org-1");
+  it("handles newly optional cached presentation fields without inventing readings", () => {
+    const provider = {
+      provider: "codex",
+      display: { source: "none", observed_at: null, result: null },
+      last_output: { fetched_at: "2026-01-15T12:00:00Z", result: { kind: "error", error: "offline" } },
+    } as unknown as ProviderView;
+
+    expect(effectiveQuota(provider)).toEqual({
+      windows: [],
+      extraSpend: null,
+      resetCredits: null,
+      resetCreditExpiries: [],
+      resetCreditExpiryLookupFailed: false,
+      staleSince: null,
+      error: "offline",
+    });
   });
 });
