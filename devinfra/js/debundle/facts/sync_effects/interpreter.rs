@@ -7201,7 +7201,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// reachable body reads, may since hold anything.
     fn unsettle(&mut self, values: &Values) {
         let mut pending: Vec<_> = values.iter().cloned().collect();
-        let mut visited = BTreeSet::new();
+        let mut visited = FxHashSet::default();
         // This pass does not change prefix values. Distinct closure contexts
         // still expand their own captures below, but share each binding's
         // identical prefix expansion. A later pass starts with an empty set.
@@ -7590,7 +7590,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let global = |cause| HavocReach::Global { cause };
         let mut roots: Vec<_> = owner.into_iter().collect();
         let mut pending: Vec<AbstractValue> = inputs.into_iter().cloned().collect();
-        let mut visited = BTreeSet::new();
+        let mut visited = FxHashSet::default();
         while let Some(value) = pending.pop() {
             if !visited.insert(value.clone()) {
                 continue;
