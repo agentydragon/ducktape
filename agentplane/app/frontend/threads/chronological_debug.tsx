@@ -1,30 +1,40 @@
 import { ActionIcon, Button, Drawer, Group, Stack, Text } from "@mantine/core";
+import { create, toJson } from "@bufbuild/protobuf";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
 import { IconHistory } from "../icons";
 
-import {
-  threadObservationEntry,
-  threadObservations,
-  type ObservationEntry as ArchivedObservationEntry,
-  type ObservationPage,
-} from "./client";
+import { threadObservationEntry, threadObservations } from "./client";
 import { displayableError } from "../client";
 import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
 import { JsonView } from "../../../../util/frontend/json_view";
+import { EventEntrySchema } from "../../../proto/event_log_pb";
+import {
+  ReadSessionEventsRequestSchema,
+  ReadSessionObservationsRequestSchema,
+  type ReadSessionEventsResponse,
+  type ReadSessionObservationsRequest,
+  type ReadSessionObservationsResponse,
+} from "../../../history_service/history_service_pb";
 
-type PageRequest = { before?: string; after?: string };
 const OpenDebug = createContext<((cursor?: string) => void) | null>(null);
 
 function ObservationEntry({ threadId, cursor }: { threadId: string; cursor: string }): JSX.Element {
-  const [entry, setEntry] = useState<ArchivedObservationEntry | null>(null);
+  const [response, setResponse] = useState<ReadSessionEventsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
-    setEntry(null);
+    setResponse(null);
     setError(null);
-    void threadObservationEntry(threadId, cursor, controller.signal).then(
+    void threadObservationEntry(
+      create(ReadSessionEventsRequestSchema, {
+        sessionId: threadId,
+        afterCursor: BigInt(cursor) - 1n,
+        limit: 1,
+      }),
+      controller.signal
+    ).then(
       (value) => {
-        if (!controller.signal.aborted) setEntry(value);
+        if (!controller.signal.aborted) setResponse(value);
       },
       (reason: unknown) => {
         if (!controller.signal.aborted) setError(displayableError(reason));
@@ -38,7 +48,42 @@ function ObservationEntry({ threadId, cursor }: { threadId: string; cursor: stri
         {error}
       </Text>
     );
-  return entry === null ? <Text role="status">Loading entry…</Text> : <JsonView value={entry.entry} />;
+  if (response === null) return <Text role="status">Loading entry…</Text>;
+  const entry = response.entries[0];
+  return entry === undefined ? (
+    <Text role="alert" c="red">
+      History Service did not return the requested observation.
+    </Text>
+  ) : (
+    <JsonView value={toJson(EventEntrySchema, entry)} />
+  );
+}
+
+function observationRequest(
+  sessionId: string,
+  bounds: { beforeCursor?: bigint; afterCursor?: bigint } = {}
+): ReadSessionObservationsRequest {
+  return create(ReadSessionObservationsRequestSchema, { sessionId, ...bounds, limit: 30 });
+}
+
+function nextStored(cursor: bigint, ranges: ReadonlyArray<{ first: bigint; last: bigint }>): bigint {
+  let following = cursor + 1n;
+  for (const range of [...ranges].sort((left, right) =>
+    left.first < right.first ? -1 : left.first > right.first ? 1 : 0
+  )) {
+    if (range.first <= following && following <= range.last) following = range.last + 1n;
+  }
+  return following;
+}
+
+function olderCursor(page: ReadSessionObservationsResponse): string | null {
+  const first = page.observations[0]?.cursor;
+  return first !== undefined && first > 1n ? first.toString() : null;
+}
+
+function newerCursor(page: ReadSessionObservationsResponse): string | null {
+  const last = page.observations.at(-1)?.cursor;
+  return last !== undefined && nextStored(last, page.settled) <= page.lastCursor ? last.toString() : null;
 }
 
 function Observation({
@@ -46,22 +91,22 @@ function Observation({
   observation,
 }: {
   threadId: string;
-  observation: ObservationPage["observations"][number];
+  observation: ReadSessionObservationsResponse["observations"][number];
 }): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   return (
     <Disclosure
-      dataAttributes={{ "data-debug-observation": observation.cursor }}
+      dataAttributes={{ "data-debug-observation": observation.cursor.toString() }}
       open={expanded}
       onOpenChange={setExpanded}
       summary={
         <>
-          Observation {observation.cursor} · {observation.kind}
+          Observation {observation.cursor.toString()} · {observation.kind}
         </>
       }
     >
       <DisclosureBody>
-        <ObservationEntry threadId={threadId} cursor={observation.cursor} />
+        <ObservationEntry threadId={threadId} cursor={observation.cursor.toString()} />
       </DisclosureBody>
     </Disclosure>
   );
@@ -73,16 +118,16 @@ function ObservationHistory({
   setRequest,
 }: {
   threadId: string;
-  request: PageRequest;
-  setRequest: (request: PageRequest) => void;
+  request: ReadSessionObservationsRequest;
+  setRequest: (request: ReadSessionObservationsRequest) => void;
 }): JSX.Element {
-  const [page, setPage] = useState<ObservationPage | null>(null);
+  const [page, setPage] = useState<ReadSessionObservationsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     setPage(null);
     setError(null);
-    void threadObservations(threadId, request, controller.signal).then(
+    void threadObservations(request, controller.signal).then(
       (value) => {
         if (!controller.signal.aborted) setPage(value);
       },
@@ -92,6 +137,8 @@ function ObservationHistory({
     );
     return () => controller.abort();
   }, [threadId, request]);
+  const beforeCursor = page === null ? null : olderCursor(page);
+  const afterCursor = page === null ? null : newerCursor(page);
   return (
     <Stack gap="sm" aria-label="Chronological observations">
       <Text size="sm" c="dimmed">
@@ -102,7 +149,9 @@ function ObservationHistory({
           <Text role="alert" c="red">
             {error}
           </Text>
-          <Button onClick={() => setRequest({ ...request })}>Retry debug page</Button>
+          <Button onClick={() => setRequest(create(ReadSessionObservationsRequestSchema, request))}>
+            Retry debug page
+          </Button>
         </>
       ) : page === null ? (
         <Text role="status">Loading observations…</Text>
@@ -110,24 +159,24 @@ function ObservationHistory({
         <>
           <Group>
             <Button
-              disabled={page.next_before_cursor === null}
-              onClick={() => setRequest({ before: page.next_before_cursor! })}
+              disabled={beforeCursor === null}
+              onClick={() => setRequest(observationRequest(request.sessionId, { beforeCursor: BigInt(beforeCursor!) }))}
             >
               Older observations
             </Button>
             <Button
-              disabled={page.next_after_cursor === null}
-              onClick={() => setRequest({ after: page.next_after_cursor! })}
+              disabled={afterCursor === null}
+              onClick={() => setRequest(observationRequest(request.sessionId, { afterCursor: BigInt(afterCursor!) }))}
             >
               Newer observations
             </Button>
-            <Button variant="subtle" onClick={() => setRequest({})}>
+            <Button variant="subtle" onClick={() => setRequest(observationRequest(request.sessionId))}>
               Latest observations
             </Button>
           </Group>
           {page.observations.length === 0 && <Text>No observations in this page.</Text>}
           {page.observations.map((observation) => (
-            <Observation key={observation.cursor} threadId={threadId} observation={observation} />
+            <Observation key={observation.cursor.toString()} threadId={threadId} observation={observation} />
           ))}
         </>
       )}
@@ -142,11 +191,15 @@ export function ChronologicalDebugProvider({
   threadId: string;
   children: ReactNode;
 }): JSX.Element {
-  const [selection, setSelection] = useState<PageRequest | null>(null);
+  const [selection, setSelection] = useState<ReadSessionObservationsRequest | null>(null);
   const open = (cursor?: string): void => {
     // The archive query has an exclusive bound. Keep its full signed-64-bit precision.
     const next = cursor === undefined ? null : BigInt(cursor) + 1n;
-    setSelection(next !== null && next <= 9223372036854775807n ? { before: next.toString() } : {});
+    setSelection(
+      next !== null && next <= 9223372036854775807n
+        ? observationRequest(threadId, { beforeCursor: next })
+        : observationRequest(threadId)
+    );
   };
   return (
     <OpenDebug.Provider value={open}>
