@@ -577,7 +577,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         waiting = await opening_until(
             stub, authentication, session, lambda row: row.reason == "sandbox_operator_requested_stop"
         )
-        assert waiting.sandbox_uid == uid
+        assert waiting.environment_hosted.environment.uid == uid
         assert waiting.delivery_blocker.kind == lifecycle_pb.DELIVERY_BLOCKER_KIND_OPERATOR_REQUESTED_STOP
         assert waiting.wake_assessment.state == lifecycle_pb.WAKE_STATE_DENIED
         assert waiting.wake_assessment.reason == lifecycle_pb.WAKE_REASON_OPERATOR_REQUESTED_STOP

@@ -58,7 +58,7 @@ var sessionPlacementMigration = goose.NewGoMigration(10,
 			}
 			if harness != sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
 				rows.Close()
-				return fmt.Errorf("retained central Session %s has invalid harness: %w", id, err)
+				return fmt.Errorf("retained central Session %s has invalid harness %v", id, harness)
 			}
 			spec.Placement = &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
 				ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: executor.GetName(), Uid: executor.GetUid()},

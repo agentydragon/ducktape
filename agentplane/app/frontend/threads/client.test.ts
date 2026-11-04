@@ -49,7 +49,13 @@ it("keeps app metadata and History SessionSummary in their generated message sha
     sandbox: { name: "sandbox", uid: "sandbox-uid" },
     attached: {
       sessionId: "thread-id",
-      spec: { harness: Harness.CLAUDE, model: "model" },
+      spec: {
+        placement: {
+          case: "environmentHosted",
+          value: { environment: { name: "sandbox", uid: "sandbox-uid" }, harness: Harness.CLAUDE },
+        },
+        model: "model",
+      },
       harnessState: HarnessState.RUNNING,
       setupState: SetupState.NOT_REQUIRED,
       launchOutcome: LaunchOutcome.STARTED,
@@ -99,8 +105,8 @@ it("passes the exact Sandbox UID to the paginated app Thread RPC", async () => {
 });
 
 it.each([
-  { label: "a retained harness", historicalHarness: "HARNESS_CLAUDE", expected: "HARNESS_CLAUDE" },
-  { label: "no retained harness provenance", historicalHarness: undefined, expected: null },
+  { label: "a retained harness", historicalHarness: "HARNESS_CLAUDE", expected: Harness.CLAUDE },
+  { label: "no retained harness provenance", historicalHarness: undefined, expected: Harness.UNSPECIFIED },
 ])("uses $label when archived History has no live placement", async ({ historicalHarness, expected }) => {
   vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
     const path = new URL(input instanceof Request ? input.url : input.toString()).pathname;
@@ -138,7 +144,7 @@ it.each([
 
   const result = await listThreadWindow({ limit: 20, search: null, includeArchived: true }, null);
   expect(result.threads).toHaveLength(1);
-  expect(result.threads[0]?.harness).toBe(expected);
+  expect(result.threads[0]?.summary.attached?.historicalHarness).toBe(expected);
 });
 
 it.each(["before", "after"] as const)("preserves %s archive cursors above JS integer precision", async (direction) => {
