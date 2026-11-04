@@ -1,7 +1,7 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
     name = "models",
@@ -92,4 +92,15 @@ oci_image(
     env = py_image_env(binary_name = "service_image_bin"),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [":layers"],
+)
+
+py_test(
+    name = "test_service",
+    srcs = ["test_service.py"],
+    deps = [
+        ":service",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
 )

@@ -108,7 +108,7 @@ async def health() -> dict[str, str]:
 
 
 @app.post("/vms", dependencies=_auth)
-async def create_vm(req: CreateVMRequest, config: Config, k8s: K8s) -> CreateVMResponse:
+def create_vm(req: CreateVMRequest, config: Config, k8s: K8s) -> CreateVMResponse:
     """Create a new Firecracker VM: PVCs + pod."""
     vm = k8s.create_vm(
         vm_image=config.vm_image,
@@ -121,7 +121,7 @@ async def create_vm(req: CreateVMRequest, config: Config, k8s: K8s) -> CreateVMR
 
 
 @app.post("/vms/{vm_id}/boot", dependencies=_auth)
-async def boot(vm_id: str, firecracker: Firecracker, control: Control) -> dict[str, str]:
+def boot(vm_id: str, firecracker: Firecracker, control: Control) -> dict[str, str]:
     """Boot a VM that has a running pod but hasn't been started yet."""
     firecracker.wait_ready()
     firecracker.boot(kernel_path=KERNEL_PATH, rootfs_path=ROOTFS_DEVICE_PATH, initramfs_path=INITRAMFS_PATH)
@@ -130,12 +130,12 @@ async def boot(vm_id: str, firecracker: Firecracker, control: Control) -> dict[s
 
 
 @app.get("/vms", dependencies=_auth)
-async def list_vms(k8s: K8s) -> ListVMsResponse:
+def list_vms(k8s: K8s) -> ListVMsResponse:
     return ListVMsResponse(vms=k8s.list_vms())
 
 
 @app.get("/vms/{vm_id}", dependencies=_auth)
-async def get_vm(vm_id: str, k8s: K8s) -> VMInfo:
+def get_vm(vm_id: str, k8s: K8s) -> VMInfo:
     vm = k8s.get_vm(vm_id)
     if vm is None:
         raise HTTPException(status_code=404, detail=f"VM {vm_id} not found")
@@ -143,15 +143,13 @@ async def get_vm(vm_id: str, k8s: K8s) -> VMInfo:
 
 
 @app.delete("/vms/{vm_id}", dependencies=_auth)
-async def destroy_vm(vm_id: str, k8s: K8s) -> dict[str, str]:
+def destroy_vm(vm_id: str, k8s: K8s) -> dict[str, str]:
     k8s.delete_vm(vm_id)
     return {"status": "deleted", "vm_id": vm_id}
 
 
 @app.post("/vms/{vm_id}/snapshot", dependencies=_auth)
-async def snapshot(
-    vm_id: str, req: SnapshotRequest, firecracker: Firecracker, control: Control, k8s: K8s
-) -> dict[str, str]:
+def snapshot(vm_id: str, req: SnapshotRequest, firecracker: Firecracker, control: Control, k8s: K8s) -> dict[str, str]:
     snapshot_vm(firecracker, control, snapshot_name=req.name)
     # Record source VM's rootfs PVC for restore cloning.
     k8s.label_snapshot(vm_id, req.name)
@@ -159,7 +157,7 @@ async def snapshot(
 
 
 @app.post("/snapshots/{snapshot_name}/restore", dependencies=_auth)
-async def restore(snapshot_name: str, req: RestoreRequest, config: Config, k8s: K8s) -> CreateVMResponse:
+def restore(snapshot_name: str, req: RestoreRequest, config: Config, k8s: K8s) -> CreateVMResponse:
     """Create a new VM restored from a snapshot."""
     source_rootfs_pvc = k8s.get_snapshot_rootfs_pvc(snapshot_name)
     vm = k8s.create_restored_vm(
