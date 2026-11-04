@@ -135,6 +135,7 @@ func TestRejectIncompleteHistoryAndSchema(t *testing.T) {
 	for _, tc := range []struct{ name, alter string }{
 		{"version eight", `DELETE FROM action_service_goose_version WHERE version_id=9`},
 		{"history gap", `DELETE FROM action_service_goose_version WHERE version_id=8`},
+		{"unapplied older migration", `INSERT INTO action_service_goose_version(version_id,is_applied) VALUES (1,false)`},
 		{"missing column", `ALTER TABLE action_request DROP COLUMN caller_uid`},
 		{"missing table", `DROP TABLE mcp_linkage_flow`},
 		{"missing index", `DROP INDEX ix_action_request_state_created`},

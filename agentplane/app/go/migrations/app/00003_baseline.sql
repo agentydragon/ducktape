@@ -10,7 +10,8 @@ BEGIN
       FROM (SELECT DISTINCT ON (version_id) version_id, is_applied
               FROM agentplane_app_goose_version ORDER BY version_id, id DESC) AS latest;
     IF previous_version = 2 THEN
-        IF (SELECT count(*) FROM (SELECT DISTINCT ON (version_id) version_id, is_applied FROM agentplane_app_goose_version ORDER BY version_id, id DESC) latest WHERE version_id IN (1, 2) AND is_applied) <> 2 OR
+        IF EXISTS (SELECT 1 FROM agentplane_app_goose_version WHERE version_id > 2) OR
+           (SELECT count(*) FROM (SELECT DISTINCT ON (version_id) version_id, is_applied FROM agentplane_app_goose_version ORDER BY version_id, id DESC) latest WHERE version_id IN (1, 2) AND is_applied) <> 2 OR
            to_regclass('thread') IS NULL OR to_regclass('operator_browser_session') IS NULL OR
            to_regclass('ix_operator_browser_session_expires_at') IS NULL OR
            (SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema()
@@ -85,7 +86,7 @@ BEGIN
         END IF;
         RETURN;
     END IF;
-    IF previous_version <> 0 OR EXISTS (
+    IF previous_version <> 0 OR EXISTS (SELECT 1 FROM agentplane_app_goose_version WHERE version_id > 0) OR EXISTS (
         SELECT 1 FROM pg_class WHERE relnamespace = current_schema()::regnamespace AND relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
         AND relname NOT IN ('agentplane_app_goose_version', 'agentplane_app_goose_version_id_seq')
     ) THEN

@@ -7,8 +7,10 @@ BEGIN
     SELECT COALESCE(max(version_id) FILTER (WHERE is_applied), 0) INTO previous_version
     FROM (SELECT DISTINCT ON (version_id) version_id, is_applied FROM action_service_goose_version ORDER BY version_id, id DESC) latest;
     IF previous_version = 9 THEN
-        IF (SELECT count(*) FROM (SELECT DISTINCT ON (version_id) version_id, is_applied FROM action_service_goose_version ORDER BY version_id, id DESC) latest WHERE version_id IN (7, 8, 9) AND is_applied) <> 3 OR
+        IF EXISTS (SELECT 1 FROM action_service_goose_version WHERE version_id > 9) OR
+            (SELECT count(*) FROM (SELECT DISTINCT ON (version_id) version_id, is_applied FROM action_service_goose_version ORDER BY version_id, id DESC) latest WHERE version_id IN (7, 8, 9) AND is_applied) <> 3 OR
             (SELECT count(*) FROM (SELECT DISTINCT ON (version_id) version_id, is_applied FROM action_service_goose_version ORDER BY version_id, id DESC) latest WHERE version_id BETWEEN 1 AND 6 AND is_applied) NOT IN (0, 6) OR
+            (SELECT count(*) FROM (SELECT DISTINCT ON (version_id) version_id, is_applied FROM action_service_goose_version ORDER BY version_id, id DESC) latest WHERE version_id BETWEEN 1 AND 6 AND NOT is_applied) <> 0 OR
             (SELECT count(*) FROM information_schema.tables WHERE table_schema=current_schema() AND table_type='BASE TABLE'
             AND table_name IN ('action_request','action_event','action_decision','action_execution','action_executor_heartbeat','action_push_subscription','action_push_delivery','mcp_oauth_token_state','mcp_server_linkage','mcp_linkage_flow')) <> 10
             OR EXISTS (SELECT 1 FROM (VALUES
@@ -30,7 +32,7 @@ BEGIN
         END IF;
         RETURN;
     END IF;
-    IF previous_version <> 0 OR EXISTS (SELECT 1 FROM pg_class WHERE relnamespace=current_schema()::regnamespace AND relkind IN ('r','p','v','m','S','f') AND relname NOT IN ('action_service_goose_version','action_service_goose_version_id_seq')) THEN
+    IF previous_version <> 0 OR EXISTS (SELECT 1 FROM action_service_goose_version WHERE version_id > 0) OR EXISTS (SELECT 1 FROM pg_class WHERE relnamespace=current_schema()::regnamespace AND relkind IN ('r','p','v','m','S','f') AND relname NOT IN ('action_service_goose_version','action_service_goose_version_id_seq')) THEN
         RAISE EXCEPTION 'Action baseline requires a fresh database or completed version 9; run the previous image first';
     END IF;
 CREATE TABLE action_request (
