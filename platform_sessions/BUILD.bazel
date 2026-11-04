@@ -36,3 +36,27 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "service",
+    srcs = ["service.py"],
+    data = ["//platform_sessions/frontend:assets"],
+    deps = [
+        ":registry",
+        "@pypi//fastapi",
+    ],
+)
+
+py_test(
+    name = "service_test",
+    srcs = ["service_test.py"],
+    deps = [
+        ":registry",
+        ":service",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//httpx",  # keep: fastapi.testclient requires httpx at runtime
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+    ],
+)
