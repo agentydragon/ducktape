@@ -941,6 +941,19 @@ workload authentication, Dispatcher, Environment Service, Actions, Notification,
 ingress also use SA identity. See [egress identity and substitution](../egress/SPEC.md#identity),
 [PolicySets](../docs/adr_policy_sets.md), and [delegated authorization](../docs/delegated_authorization.md).
 
+The operator also asks whether agent SAs should always be Sandbox-owned, have an independently
+managed lifetime, or support both. A central-sampler agent may need to keep the same identity and
+permissions with no Environment attached and as attachments change. Compare a durable SA and a
+logical principal backed by workload accounts; decide identity creation, deletion, bindings,
+credential delivery and who can act for it. A missing Environment does not itself mean an independent
+identity has disappeared. The human-operator-only fallback in `SESSION_AND_INBOX_LIFETIME` applies
+when the relevant Sandbox-owned SA actually disappears.
+The operator suggests that a Session's spec could name its ServiceAccount. Compare an exact
+ServiceAccount reference in the spec with a logical principal or separate identity association;
+decide selection authority, identity lifetime, possible reassignment, credentials and attachment
+checks. Today `SessionSpec` contains no identity field. A spec reference alone is not authority to
+impersonate the account.
+
 Compare existing identity governance and provisioning tools and their connectors with a custom
 controller. Consider [SCIM](https://datatracker.ietf.org/doc/html/rfc7644) for supported user and
 group provisioning, and distinguish it from OAuth/OIDC authentication and service-specific grants.

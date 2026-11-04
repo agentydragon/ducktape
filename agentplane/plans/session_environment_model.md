@@ -357,6 +357,26 @@ Equality is an _admission rule_, not a complete authorization design or an isola
 
 The operator clarified that each Sandbox gets a separate ServiceAccount so PolicyBinding CRs can attach and detach permission sets for that individual agent at the Sandbox level. An account is not just a way to authenticate a Pod: it is currently the subject at which per-agent egress, Actions, inbox and Kubernetes grants are assigned.
 
+**Ownership remains a design question:** should an agent's ServiceAccount always be owned by an
+Environment, be managed independently of Environments, or support both modes? A central-sampler
+Session may need the same agent identity and permissions while it has no Environment attached and
+across attachment changes. Compare a long-lived SA with an Agentplane principal mapped to workload
+identities; neither a shared SA nor a new identity service is selected. Define who creates and
+deletes the identity, its permission bindings and credentials, and how Session and Environment
+attachment lifetimes relate to it.
+
+**Candidate Session spec:** the operator suggests putting the agent ServiceAccount in the Session's
+spec. This could make the Session's intended identity explicit at creation and keep it independent
+of whether a central Session has an attached Environment. Compare a UID-pinned
+`ServiceAccountIdentity` reference in the spec with an Agentplane-principal reference or a separate
+Session-owned identity association. Today `SessionSpec` has no identity field: the Dispatcher
+opening names a Sandbox, while other records carry an `execution_principal` separately. Decide
+whether the field is required, how the caller is authorized to select it, whether it can change,
+and how its account lifetime and permissions are managed. A spec reference does not by itself grant
+impersonation authority or supply a credential; define authenticated delegation for central work
+and validate compatible identity when an Environment is attached. No wire or storage change is
+selected by this candidate.
+
 **Changing permissions is different from changing identity.** The Sandbox controller already updates its PolicyBinding when `spec.policySets` changes without replacing the running Pod. Policy readers converge independently, so revocation is not globally instantaneous; existing connections and already obtained information have their own behavior. This preserves an individual Sandbox’s permission handle while keeping its current SA and Pod.
 
 **Shared-SA tradeoff:** PolicyBindings name a ServiceAccount subject, and matching grants combine additively. If two environments use the same SA, their bindings’ grants can combine for that subject, so a grant intended for one can apply to the other. A shared SA therefore changes the current per-Sandbox permission granularity unless policy is redesigned with additional trustworthy scope. Sharing may be right for environments intentionally in the same privilege domain; it is not automatically equivalent to today’s per-agent permission assignment.
@@ -429,7 +449,7 @@ Give Sessions and environments a durable logical principal while keeping distinc
 
 **Working direction, not settled:** seriously consider an Agentplane-owned principal with independently managed permission bindings and Kubernetes identity as an adapter. Compare that with directly using a long-lived SA, after accounting for desired per-agent PolicyBinding granularity. Keep principal distinct from Session UUID, requester, service broker, workload authentication and journal writer. Establish how all relevant paths enforce the mapping; do not assume immutable association or an online identity-switch feature.
 
-For a central Session with no environment, the principal still exists and the sampler must exercise authorized capabilities under that principal through an appropriate authenticated delegation or broker path. A stored ServiceAccount name is neither a bearer token nor authority to impersonate it; the central sampler’s own ServiceAccount must not silently become the agent’s. Calls made _inside_ an environment use that environment’s actual Pod/relay and egress identity; verify that this agrees with the Session principal and each destination’s authorization contract.
+For a central Session with no environment, the principal still exists and the sampler must exercise authorized capabilities under that principal through an appropriate authenticated delegation or broker path. A stored ServiceAccount name is neither a bearer token nor authority to impersonate it; the central sampler’s own ServiceAccount must not silently become the agent’s. Calls made _inside_ an environment use that environment’s actual Pod/relay and egress identity; verify that this agrees with the Session principal and each destination’s authorization contract. Losing an Environment alone does not imply the agent identity disappeared: the human-operator-only fallback applies when the relevant Sandbox-owned ServiceAccount has actually disappeared, not merely when a Session has no attached Environment. The rights of a surviving independent identity still need their reviewed authorization contract.
 
 **Open cases:** which principal owns a Session when the creator is a human or another agent; who grants acting as P; whether, how and when Session or environment SA associations may change; whether absence is a supported state or only a cardinality limit; deletion/recreation and replacement of P; historical access when P is absent; central Session creation without any environment; multiple exact environments for P; and what is allowed when policies are revoked or an environment is replaced. Preserve UID fencing and retained data without making a same-name replacement inherit authority accidentally.
 
@@ -1022,6 +1042,22 @@ The operator's direction is that retained Sessions and inboxes become accessible
 inspection and administration through privileged service credentials, as in other operator paths.
 Disappearance of the original ServiceAccount must not transfer its authority to a replacement or
 other workload caller. This access direction does not decide Session deletion or retention.
+
+**2026-11-04 · Agent identity ownership across Environment attachments**
+
+The operator asked whether agent ServiceAccounts should always be Sandbox-owned or could have an
+independent lifetime. A central-sampler agent may have no attached Environment yet still need to
+keep its identity and permissions. Compare independently managed SAs, Sandbox-owned SAs and a
+separate principal with mapped workload accounts; ownership, cardinality, authority and credential
+delivery are not selected. The privileged human fallback above applies when the relevant SA is
+actually gone, not to every Session without an attached Environment.
+
+**2026-11-04 · Identity in the Session spec**
+
+The operator suggested making the ServiceAccount part of a Session's spec. This is a candidate for
+an explicit, stable Session identity, including for a central Session with no Environment. Account
+ownership, exact identity form, selection and change authority, and credential delivery remain to be
+designed; a Session spec does not itself authenticate its caller or create an account.
 
 **Still open**
 
