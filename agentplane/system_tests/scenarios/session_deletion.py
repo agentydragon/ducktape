@@ -189,7 +189,12 @@ async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[s
     settings = json.loads(await cluster.kubectl("get", "configmap", "runner-gateway-settings", "-o", "json"))
     config = yaml.safe_load(settings["data"]["settings.yaml"])
     app, _, _ = await bound_caller(cluster, "app")
-    gateway, _, _ = await bound_caller(cluster, "runner-gateway", audience=config["gateway_audience"])
+    deployment = json.loads(await cluster.kubectl("get", "deployment", "runner-gateway", "-o", "json"))
+    environment = deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+    audience = next(
+        item["value"] for item in environment if item["name"] == "AGENTPLANE_RUNNER_GATEWAY_GATEWAY_AUDIENCE"
+    )
+    gateway, _, _ = await bound_caller(cluster, "runner-gateway", audience=audience)
     name = f"systest-deletion-{uuid4().hex[:8]}"
     session, positive, delayed, observed, probe_session = (str(uuid4()) for _ in range(5))
     spec = session_pb2.SessionSpec(
