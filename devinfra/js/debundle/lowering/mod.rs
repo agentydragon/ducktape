@@ -53,8 +53,8 @@ use imports::VendorReimportOracle;
 use io::{ProgramGraphOutput, prepare_output_dir, write_chunk_report_json};
 
 use materialize::{
-    ChunkContext, ChunkSpec, ClaimedLogicalChunk, CommutingStatementsContext, EmissionChunkOutputs,
-    FinishedLogicalChunk, MaterializeLogicalChunkInputs, claim_prepared_chunk,
+    ChunkContext, ChunkSpec, ClaimedLogicalChunk, EmissionChunkOutputs, FinishedLogicalChunk,
+    GraphConstructionContext, MaterializeLogicalChunkInputs, claim_prepared_chunk,
     collect_materialized_logical_chunks, finish_logical_chunk, prepare_logical_chunk,
 };
 use spec_resolution::solve_projected_chunks;
@@ -585,7 +585,8 @@ pub fn materialize_logical_modules(
                             &cross_module_purities,
                             facts,
                             &program_graph,
-                            CommutingStatementsContext {
+                            GraphConstructionContext {
+                                options: chunk_analysis_options,
                                 graph_provenance: options.graph_provenance.as_ref(),
                                 resolved_member_sites: &resolved_member_sites,
                             },

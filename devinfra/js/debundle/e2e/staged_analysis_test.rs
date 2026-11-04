@@ -7,6 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use analysis::{DepKind, DependencyGraphReport};
 use debundle_e2e_support::*;
 use debundle_e2e_support::{TreeFixture, TreeRun, run_tree_graph_fixture};
 use serde_json::{Value, json};
@@ -873,6 +874,47 @@ fn assignment_edit_keeps_the_projection_and_the_artifact() {
         &staged.run(&["--analysis", &artifact]),
         "run --analysis after the edit",
     );
+}
+
+#[test]
+fn graph_options_survive_the_source_only_analysis_boundary() {
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        "const a = (globalThis.left = 1, 1);\nconst b = (globalThis.right = 2, 2);\nconsole.log(a, b);\n",
+        vec![
+            logical_module("first", &[Member::new("a")]),
+            logical_module("second", &[Member::new("b")]),
+        ],
+    ).with_dataflow_aware_s_chain());
+    let mut spec: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&staged.spec).unwrap()).unwrap();
+    for enabled in [false, true] {
+        spec["chunk_analysis_options"]["static/app"]["dataflow_aware_s_chain"] = enabled.into();
+        write_yaml_file(&staged.spec, &spec);
+        let edited = staged.root().join("edited.projection");
+        assert_ok(&staged.project(&edited), "project changed graph options");
+        assert!(
+            fs::read(&staged.projection).unwrap() == fs::read(edited).unwrap(),
+            "graph-only setting changed analysis identity"
+        );
+        assert_ok(
+            &staged.run(&["--analysis", path(&staged.artifact)]),
+            "run saved facts with changed graph options",
+        );
+        let reused = staged.set_aside(&format!("reused-{enabled}"));
+        let graph: DependencyGraphReport =
+            read_gzip_json(&reused.join("out/reports/tree/static/app/dependency_graph.json.gz"));
+        let a = source_unit_for_binding(&graph, "a");
+        let b = source_unit_for_binding(&graph, "b");
+        let has_edge = graph.edges.iter().any(|edge| {
+            edge.edge_kind == DepKind::Sequenced
+                && ((edge.source == a && edge.target == b)
+                    || (edge.source == b && edge.target == a))
+        });
+        assert_eq!(has_edge, !enabled, "dataflow graph setting was not applied");
+        assert_ok(&staged.run(&[]), "direct run with changed graph options");
+        assert_same_trees(&reused.join("out"), &staged.root().join("out"));
+        staged.set_aside(&format!("direct-{enabled}"));
+    }
 }
 
 fn native_member_fixture() -> FixtureOpts<'static> {

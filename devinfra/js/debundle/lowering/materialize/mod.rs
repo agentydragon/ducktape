@@ -392,7 +392,8 @@ impl ClaimedLogicalChunk<'_> {
 /// What resolving a chunk's `commuting_statements` reads besides the chunk:
 /// the spec path its evidence names and the resolved logical-module members a
 /// `resolved_member` endpoint may name.
-pub(super) struct CommutingStatementsContext<'a> {
+pub(super) struct GraphConstructionContext<'a> {
+    pub(super) options: &'a BTreeMap<String, spec::DependencyGraphOptions>,
     pub(super) graph_provenance: Option<&'a GraphProvenance>,
     pub(super) resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 }
@@ -404,7 +405,7 @@ pub(super) fn finish_logical_chunk(
     cross_module_purities: &super::cross_module::CrossModulePurities,
     loaded_facts: Option<ChunkFactAnalysis>,
     program_graph: &ProgramGraphOutput<'_>,
-    commuting_context: CommutingStatementsContext<'_>,
+    graph_context: GraphConstructionContext<'_>,
 ) -> Result<FinishedLogicalChunk> {
     let ClaimedLogicalChunk {
         prepared,
@@ -454,8 +455,8 @@ pub(super) fn finish_logical_chunk(
         ..
     } = ast_analysis;
     let chunk_top_level_mark = runtime_ast.top_level_mark;
-    let dependency_graph_options = projection
-        .chunk_analysis_options
+    let dependency_graph_options = graph_context
+        .options
         .get(chunk_id)
         .cloned()
         .unwrap_or_default();
@@ -464,8 +465,8 @@ pub(super) fn finish_logical_chunk(
         chunk_id,
         &runtime_ast.module.body,
         &dependency_graph_options.commuting_statements,
-        commuting_context.graph_provenance,
-        commuting_context.resolved_member_sites,
+        graph_context.graph_provenance,
+        graph_context.resolved_member_sites,
     )?;
     // Chunk analysis: hint-sensitive facts, then the dependency graph and
     // structural atomic groups. See `chunk_analysis/mod.rs`.
