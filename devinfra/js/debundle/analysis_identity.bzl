@@ -106,7 +106,7 @@ def _analysis_identity_impl(ctx):
     inputs = depset(files, transitive = transitive)
     manifest = ctx.actions.declare_file(ctx.label.name + ".manifest.json")
     output = ctx.actions.declare_file(ctx.label.name + ".rs")
-    profile = ctx.actions.declare_file(ctx.label.name + ".cprofile")
+    profiles = [ctx.actions.declare_file(ctx.label.name + suffix) for suffix in [".first_party.cprofile", ".external.cprofile", ".inventory.json"]]
     ctx.actions.write(manifest, json.encode({
         "config": config,
         "files": sorted([file.path for file in inputs.to_list()]),
@@ -115,10 +115,10 @@ def _analysis_identity_impl(ctx):
         executable = ctx.executable._hasher,
         arguments = [manifest.path, output.path],
         inputs = depset([manifest], transitive = [inputs]),
-        outputs = [output, profile],
+        outputs = [output] + profiles,
         mnemonic = "DebundleAnalysisIdentity",
     )
-    return [DefaultInfo(files = depset([output])), OutputGroupInfo(profile = depset([profile, manifest]))]
+    return [DefaultInfo(files = depset([output])), OutputGroupInfo(profile = depset(profiles + [manifest]))]
 
 analysis_identity = rule(
     implementation = _analysis_identity_impl,
