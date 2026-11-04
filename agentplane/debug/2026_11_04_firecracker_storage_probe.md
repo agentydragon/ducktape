@@ -38,12 +38,77 @@ perf stat -e task-clock,context-switches,page-faults -- sha256sum "$destination"
 stat -c '%s %b' "$source" "$destination"
 ```
 
-Sparsity avoids allocating holes, but `digest` still reads and hashes their logical zero bytes.
-Restore verifies every checkpoint file, then verifies each retained live regular-file disk
-before reusing it. Checkpoint copies and verifies every disk, including immutable runner,
-kernel and configuration inputs. A sparse image therefore still incurs repeated complete
-logical-file scans. The existing optimization correctly avoids rewriting verified live disks;
-it does not eliminate verification work.
+At `d110313300`, sparsity avoided allocating holes, but `digest` still read and hashed their
+logical zero bytes. Restore verified every checkpoint file, then each retained live
+regular-file disk before reusing it. Checkpoint copied and verified every disk, including
+immutable runner, kernel and configuration inputs. This incurred repeated complete logical-file
+reads. Verified live disks were already reused rather than rewritten.
+
+## Managed-worker observations and sparse-aware hashing
+
+The [current-head rerun](https://app.buildbuddy.io/invocation/d713bef1-5add-41a2-975a-31fdd3b07067)
+at `d110313300` passed the scenario but failed teardown's unchanged 300-second deadline.
+The second Codex turn verified the same child PID/start ticks, RAM marker, kernel, Runtime,
+process and native-session identities. Cleanup diagnostics show the deleting Sandbox waiting
+for restore, without a spent Quiesce attempt or a reported I/O/ENOSPC error. This is a failed
+full target, not a full acceptance pass.
+
+Observed file allocation on the worker during that run:
+
+| File                                                | Logical bytes | Allocated bytes |
+| --------------------------------------------------- | ------------: | --------------: |
+| Containerd-imported boot root                       | 9,073,119,232 |   9,073,123,328 |
+| Live root after sparse copy and initial boot writes | 9,073,119,232 |   6,665,912,320 |
+| State disk                                          | 2,147,483,648 |      69,914,624 |
+| Workspace disk                                      | 8,589,934,592 |      73,715,712 |
+
+Thus the OCI import materialized the root's holes, while the launcher's sparse-copy path
+recovered most of them. The nearly empty workspace still caused 8 GiB of ordinary file reads
+for each digest.
+
+`perf record -e cpu-clock -F 49 --call-graph fp` sampled the dedicated VM and, separately,
+the launcher PID. There were no lost samples. The launcher-filtered report attributed 73.03%
+of sampled CPU time to the kernel and 26.78% to the launcher executable; this does not measure
+off-CPU wait time. Kernel samples included page clearing and copying. `iostat -dx -y 5 120`
+reported mean work-disk reads of 61,736 KiB/s, writes of 26,993 KiB/s, and utilization of 77.26%.
+The profile intervals include setup and lifecycle work, not exclusively checkpointing.
+
+The profiler's default build-ID cache filled the small Ubuntu root disk during this run.
+Its cache and raw profiles were moved to the disposable worker's work disk at
+`/buildbuddy/tmp/agents/2026_11_03/firecracker-environment/profile-archive`, restoring 238 MiB
+free on root. Profilers and the temporary loopback-only artifact listener were stopped.
+This instrumentation disturbance makes the failed run unsuitable as a controlled latency
+baseline. The raw archive is ephemeral; it does not survive replacement of the worker VM.
+
+Candidate `9291cb128c` uses `SEEK_DATA`/`SEEK_HOLE` to hash allocated extents normally and feed
+logical zero bytes directly to SHA-256 for holes. It preserves the digest, logical size and
+manifest format. Filesystems that do not support extent queries retain sequential hashing;
+filesystems that report everything as data remain correct. The snapshot and restore integrity
+checks, syncs and identity fences are unchanged. This avoids populating the page cache with
+logical holes; it does not eliminate the CPU cost of hashing their zero contents.
+
+The [launcher/storage suite](https://app.buildbuddy.io/invocation/dc9babd6-71d6-41db-bd7f-453ea3566824)
+passed, including comparisons against independent SHA-256 values for empty, data-only,
+all-hole, leading-hole, trailing-hole and mixed-extent files.
+
+A standard Go benchmark compares the old sequential loop and the new helper on the same
+8 GiB sparse file with one small allocated extent. The [completed hosted runner](https://app.buildbuddy.io/invocation/3123949e-833a-4afa-84fb-56fffd824395)
+reports these single-iteration results on an AMD EPYC RBE worker:
+
+| Hash path                    | Seconds per operation | Logical throughput |
+| ---------------------------- | --------------------: | -----------------: |
+| Sequential file reads        |                75.722 |        113.44 MB/s |
+| Sparse-aware logical hashing |                 4.447 |      1,931.46 MB/s |
+
+This is about 17 times faster in this benchmark, not an end-to-end CI speedup estimate.
+The complete hardware rerun at the candidate uses the same production guest, without profiling:
+[invocation](https://app.buildbuddy.io/invocation/29aedad2-8644-40dd-95f9-e85001fb6b06).
+
+```sh
+bbr test //agentplane/firecracker:firecracker_test --test_output=all \
+  '--test_arg=-test.run=^$' --test_arg=-test.bench=BenchmarkDigestSparseWorkspace \
+  --test_arg=-test.benchtime=1x
+```
 
 ## A smaller guest closure is feasible
 
@@ -86,8 +151,8 @@ in
 
 ## Follow-on experiments
 
-1. Measure the actual launcher on the managed VM during checkpoint and restore, separating
-   CPU spent hashing, sparse-copy I/O, and sync latency. Preserve complete content verification,
+1. Validate the sparse-aware digest in the full hardware target and measure remaining
+   sparse-copy I/O and sync latency. Preserve complete content verification,
    the paused RAM/disk boundary, durable manifest publication and boot/config/VMM identity fences.
 2. Build and boot a smaller guest variant before selecting any tools to remove. Retain required
    agent capabilities or supply heavy tools through an explicit immutable tools disk.
@@ -95,6 +160,11 @@ in
    root/state boundary. A read-only Nix store or immutable lower filesystem could avoid copying
    gigabytes of unchanged tools per checkpoint. Prove snapshot consistency, boot mounting,
    restore validation, upgrades and garbage-collection ownership before changing the format.
+4. For writable disks, investigate Firecracker v1.17's optional [discard support](https://github.com/firecracker-microvm/firecracker/blob/v1.17.0/docs/api_requests/block-discard.md).
+   It is disabled by default, requires the Sync IO engine, and punches holes in regular backing
+   files when the guest trims free blocks. The current launcher does not enable it. This was
+   researched but not tested; it cannot remove occupied toolchain data or the logical cost of
+   hashing zeroes.
 
 Simply adding sparse copying would duplicate the existing implementation. Reducing logical
 disk size or separating immutable contents can also reduce full-file verification work.

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -53,6 +54,50 @@ func TestDigestSparseFilesMatchesLogicalContents(t *testing.T) {
 			want := sha256.Sum256(contents)
 			if actual.Size != int64(test.size) || actual.SHA256 != hex.EncodeToString(want[:]) {
 				t.Fatalf("digest = %+v, want size %d and SHA256 %x", actual, test.size, want)
+			}
+		})
+	}
+}
+
+func BenchmarkDigestSparseWorkspace(b *testing.B) {
+	path := filepath.Join(b.TempDir(), "workspace.img")
+	file, err := os.Create(path)
+	if err != nil {
+		b.Fatal(err)
+	}
+	const size = 8 * 1024 * 1024 * 1024
+	if _, err := file.WriteAt([]byte("retained workspace contents"), 1024*1024); err != nil {
+		b.Fatal(err)
+	}
+	if err := file.Truncate(size); err != nil {
+		b.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		b.Fatal(err)
+	}
+	for _, sparse := range []bool{false, true} {
+		b.Run(fmt.Sprintf("sparse-aware=%t", sparse), func(b *testing.B) {
+			b.SetBytes(size)
+			b.ReportAllocs()
+			for b.Loop() {
+				file, err := os.Open(path)
+				if err != nil {
+					b.Fatal(err)
+				}
+				hash := sha256.New()
+				var count int64
+				if sparse {
+					count, err = hashFileContents(file, hash)
+				} else {
+					count, err = io.CopyBuffer(hash, file, make([]byte, 1024*1024))
+				}
+				closeErr := file.Close()
+				if err := errors.Join(err, closeErr); err != nil {
+					b.Fatal(err)
+				}
+				if count != size {
+					b.Fatalf("hashed %d bytes, want %d", count, size)
+				}
 			}
 		})
 	}
