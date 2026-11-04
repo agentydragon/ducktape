@@ -303,25 +303,30 @@ class K3s:
     @tracer.start_as_current_span("system_test.images.prune")
     def prune_unused_images(self) -> None:
         """Reclaim dangling CRI ID aliases, preserving named, pinned and in-use images."""
-        images = json.loads(self.crictl("images", "-o", "json"))["images"]
-        containers = json.loads(self.crictl("ps", "-a", "-o", "json"))["containers"]
-        in_use = {container["imageRef"] for container in containers}
-        obsolete = [
-            image["id"]
-            for image in images
-            if not image.get("repoTags")
-            and not image.get("repoDigests")
-            and not image.get("pinned")
-            and image["id"] not in in_use
-        ]
+
+        def obsolete_images() -> set[str]:
+            images = json.loads(self.crictl("images", "-o", "json"))["images"]
+            containers = json.loads(self.crictl("ps", "-a", "-o", "json"))["containers"]
+            in_use = {container["imageRef"] for container in containers}
+            return {
+                image["id"]
+                for image in images
+                if not image.get("repoTags")
+                and not image.get("repoDigests")
+                and not image.get("pinned")
+                and image["id"] not in in_use
+            }
+
+        obsolete = sorted(obsolete_images())
         if obsolete:
             # Kubelet GC can remove an ID between listing it and crictl's status check.
             # Verify the postcondition instead of failing on an already-removed image.
             output = self.crictl("rmi", *obsolete, check=False)
             with (undeclared_outputs_dir() / "image-prune.log").open("a") as log:
                 log.write(json.dumps({"images": obsolete, "output": output}) + "\n")
-            remaining = {image["id"] for image in json.loads(self.crictl("images", "-o", "json"))["images"]}
-            if surviving := remaining.intersection(obsolete):
+            # CRI processes imports asynchronously: an ID can gain a named/pinned reference
+            # while its dangling alias is being removed. Recheck eligibility as well as identity.
+            if surviving := obsolete_images().intersection(obsolete):
                 raise RuntimeError(f"obsolete containerd images survived cleanup: {sorted(surviving)}\n{output}")
 
     def report_storage(self, stage: str) -> None:
