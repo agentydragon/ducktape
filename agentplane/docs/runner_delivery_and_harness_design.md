@@ -123,7 +123,7 @@ The current path has different authority at each step:
 | Notification subscription and worker | Caller/source access; configured namespace; live Sandbox UID and owner; live membership at creation. The worker rechecks UID and owner before sending and supplies the stored UID to Dispatcher.                                                                                                                | A source-read subscription is not a durable grant to send or wake after owner/grant revocation. Dispatcher authenticates the Notification service account, not the originating user.                                                                     |
 | App command and diagnostics          | The app resolves a retained Thread from History; live diagnostic reads carry expected UID and owner.                                                                                                                                                                                                            | Retained association and a live preflight do not authorize a future command after replacement or revocation. App and Notification need the same reviewed send contract.                                                                                  |
 | Dispatcher admission and wake        | Dispatcher retains the effective sender and expected Sandbox UID with queued work. Before automatic resume, the shared lifecycle manager rechecks the live target UID and effective ServiceAccount UID against `resumePolicy`, or checks the separate `wake_callers` broker grant. Requested stops stay sticky. | Dispatcher admission and retained attribution do not grant wake authority. `wake_callers` permits automatic wake only; explicit operator resume uses the separate direct Pod-bound `operator_callers` grant. A requested wake does not assert readiness. |
-| Gateway proxy and runner             | Proxy authenticates an allowed service account and routes to the connection holder. UID and owner headers are required; the proxy checks the exact Sandbox and ready Pod. Runner rejects an unknown Session.                                                                                                    | The Go Dispatcher carries the watched UID into proxy calls, rejecting a same-name replacement. Proxy's broad caller list is not a per-destination send grant; runner membership cannot be checked while offline.                                         |
+| Gateway proxy and runner             | Runtime Session creation and command proxy calls require a Pod-bound Gateway/Dispatcher ServiceAccount token; general proxy callers have diagnostics only. UID and owner headers fence the exact Sandbox and ready Pod. Runtime rejects an unknown Session.                                                     | Dispatcher carries the watched UID into proxy calls, rejecting a same-name replacement. The shared workload credential authenticates delivery, not a per-destination sender grant; execution-time authority remains this decision's separate boundary.   |
 
 The app's live Runner inventory still uses the identity-fenced per-Sandbox proxy. Explicit Sandbox
 resume now calls the Runner Gateway's `EnvironmentService`, which checks the operator's
@@ -220,10 +220,12 @@ The Go Runner Gateway combines Dispatcher admission and delivery with runner con
 control proxy in one process and Deployment. Dispatcher owns durable admission, ordering, retries,
 delivery status and guarded wake; the connection role owns runner state observation and the proxy. The stable
 `agentplane-session-dispatcher` and `agentplane-runner-gateway` Services retain their token audiences.
-One gRPC listener serves distinct authenticated Dispatcher, Runner proxy and runner `Connect`
-surfaces. App and Notification may submit to Dispatcher v0, with a narrower wake allowlist;
-`Quiesce` is controller-only, and runner `Connect` requires runner-audience and Pod/ServiceAccount
-proof. Tightening the proxy's other method permissions remains separate work.
+One public gRPC listener serves separately authorized Dispatcher, EnvironmentService, Runtime proxy
+and Executor APIs. Runtime Session creation and commands admit only Pod-bound tokens of the combined
+Gateway/Dispatcher ServiceAccount; startup verifies that account from its mounted token and current
+Pod. General proxy callers receive diagnostics only, `Quiesce` is controller-only, and Executor keeps
+its independent caller grant. Gateway observes Runtime through its private mTLS `WatchState` API.
+Dispatcher admission, explicit resume and automatic wake retain their distinct grants.
 
 The Dispatcher PostgreSQL queue, per-Sandbox delivery Lease and database-generation fence remain
 separate from the connection Lease and EndpointSlice. A worker on replica A may deliver through

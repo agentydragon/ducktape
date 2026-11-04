@@ -7,7 +7,12 @@ effective caller and applies the Sandbox's `wakeOnSend` setting and the configur
 EnvironmentService and Dispatcher share the Gateway listener and Dispatcher TokenReview audience.
 The Gateway dials each Runner's native gRPC
 server on private port `9090`. Its public `listen_address` serves Dispatcher and proxies for the
-Runner and optional Executor services with the existing caller authorization. The Sandbox
+Runner and optional Executor services with independent per-method authorization.
+Only the Pod-bound Gateway/Dispatcher workload can proxy Runtime Session creation and commands;
+`gateway_callers` grants read-only diagnostics. Startup reviews `runner_token_file` with the Gateway
+audience and verifies its Pod name, current UID and ServiceAccount against Kubernetes before serving.
+The Kubernetes API must answer that TokenReview and Pod read; failure prevents startup.
+See the [proxy contract](gateway/SPEC.md). The Sandbox
 Controller owns `Sandbox.status`.
 
 Cluster and k3s Gateways and Runners use certificates from cert-manager and roots distributed by

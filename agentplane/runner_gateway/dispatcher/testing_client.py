@@ -4,11 +4,13 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Self
+from uuid import UUID
 
 import grpc
 from google.protobuf.message import Message
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.grpc.calls import call_unary, dial
+from agentplane.grpc.calls import bearer, call_unary, dial
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 
 # gazelle:include_dep @pypi//protobuf
@@ -59,3 +61,48 @@ class SessionDispatcherClient:
         if not opening.sandbox or not opening.sandbox_uid:
             raise ValueError(f"Session {session_id} has no recorded Sandbox destination")
         return opening.sandbox, opening.sandbox_uid
+
+
+async def delivered_opening(dispatcher: SessionDispatcherClient, session_id: UUID) -> None:
+    """Return once the Dispatcher has delivered the Session's opening to its runner."""
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+    ):
+        with attempt:
+            response = await dispatcher.unary(
+                dispatcher.stub.GetSessionOpening,
+                session_dispatcher_pb2.GetSessionOpeningRequest(session_id=str(session_id)),
+            )
+            assert response.opening.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED, response.opening
+
+
+async def admitted(
+    dispatcher: SessionDispatcherClient, dispatch: session_dispatcher_pb2.Dispatch
+) -> session_dispatcher_pb2.Dispatch:
+    """`dispatch` once its runner admitted it, as the Dispatcher's watch reports it."""
+    stream = dispatcher.stub.WatchDispatches(
+        session_dispatcher_pb2.WatchDispatchesRequest(
+            filter=session_dispatcher_pb2.DispatchFilter(
+                session_id=dispatch.session_id, command_ids=[dispatch.command_id]
+            )
+        ),
+        metadata=await bearer(dispatcher.token_file),
+        timeout=30,
+    )
+    try:
+        async for response in stream:
+            if not response.HasField("dispatch"):
+                continue
+            row: session_dispatcher_pb2.Dispatch = response.dispatch
+            assert row.state not in {
+                session_dispatcher_pb2.DELIVERY_STATE_FAILED,
+                session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN,
+            }, row
+            if row.state in {
+                session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED,
+                session_dispatcher_pb2.DELIVERY_STATE_HARNESS_CONFIRMED,
+            }:
+                return row
+    finally:
+        stream.cancel()
+    raise AssertionError("the Dispatch watch ended before the runner admitted it")

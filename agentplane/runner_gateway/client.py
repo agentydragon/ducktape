@@ -2,11 +2,10 @@
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from uuid import UUID
 
 from google.protobuf.message import Message
 
-from agentplane.env.runtime.control import environment_runtime_pb2, environment_runtime_pb2_grpc
+from agentplane.env.runtime.control import environment_runtime_pb2_grpc
 from agentplane.grpc.calls import call_unary, dial
 from agentplane.proto import session_pb2
 from agentplane.proto.identity_pb2 import SandboxDestination
@@ -26,14 +25,11 @@ class SandboxControlClient:
     control Service, each on a connection dialed for that call alone: a replica that no longer holds
     it refuses with UNAVAILABLE, and the caller's retry resolves the control Service again."""
 
-    def __init__(
-        self, *, control_target: str, token_file: Path, request_timeout_s: float, lifecycle_timeout_s: float = 310
-    ) -> None:
+    def __init__(self, *, control_target: str, token_file: Path, request_timeout_s: float) -> None:
         # A template of `{sandbox}` and `{namespace}`: `{sandbox}-control.{namespace}.svc:8080`.
         self.control_target = control_target
         self.token_file = token_file
         self.request_timeout_s = request_timeout_s
-        self.lifecycle_timeout_s = lifecycle_timeout_s
 
     def runner(self, destination: SandboxDestination) -> SandboxRunner:
         return SandboxRunner(self, destination)
@@ -89,15 +85,3 @@ class SandboxRunner:
         return await self.control.runner_unary(
             self.destination, lambda stub: stub.GetStatus, session_pb2.GetStatusRequest()
         )
-
-    async def open_session(
-        self, *, session_id: str | UUID, spec: session_pb2.SessionSpec, setup_script: str | None = None
-    ) -> session_pb2.Attached:
-        """Open a Runner Session directly; its retry contract is owned by the Runner."""
-        request = environment_runtime_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec)
-        if setup_script is not None:
-            request.setup_script = setup_script
-        response = await self.control.runner_unary(
-            self.destination, lambda stub: stub.OpenSession, request, timeout_s=self.control.lifecycle_timeout_s
-        )
-        return response.attached

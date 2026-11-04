@@ -9,16 +9,14 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.history import SessionHistory
-from agentplane.app.testing.runner_gateway import admitted, delivered_opening
 from agentplane.env.e2e.testing import launches
 from agentplane.env.e2e.testing.process import RunningRunner
-from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2
 from agentplane.proto import command_pb2, session_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, admitted, delivered_opening
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.testing.scripted_model import ScriptedModel, Text
@@ -164,7 +162,7 @@ async def test_runner_client_does_not_fall_back_after_gateway_stops(
         await sandbox_control.runner(sandbox.destination).list_sessions()
 
 
-async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
+async def test_dispatcher_resumes_a_dormant_session_and_proxy_reports_it(
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
     sandbox_control: SandboxControlClient,
@@ -174,16 +172,15 @@ async def test_runner_proxy_lists_and_sends_to_a_dormant_session(
     model: ScriptedModel,
 ) -> None:
     session_id = str(uuid4())
-    await sandbox_control.runner_unary(
-        sandbox.destination,
-        lambda stub: stub.OpenSession,
-        environment_runtime_pb2.OpenSessionRequest(session_id=session_id, spec=spec),
-        timeout_s=sandbox_control.lifecycle_timeout_s,
+    await session_dispatcher.unary(
+        session_dispatcher.stub.OpenSession,
+        session_dispatcher_pb2.OpenSessionRequest(
+            session_id=session_id, sandbox=SANDBOX, sandbox_uid=sandbox.uid, spec=spec
+        ),
     )
-    await sandbox_control.runner_unary(
-        sandbox.destination,
-        lambda stub: stub.SubmitInput,
-        environment_runtime_pb2.SubmitInputRequest(session_id=session_id, command_id="first", text="hi"),
+    await delivered_opening(session_dispatcher, UUID(session_id))
+    await admitted(
+        session_dispatcher, await session_dispatcher.submit_input(session_id, "first", SANDBOX, sandbox.uid, "hi")
     )
     await model.reply(await model.request(), Text("hello"))
     client = sandbox_control.runner(sandbox.destination)

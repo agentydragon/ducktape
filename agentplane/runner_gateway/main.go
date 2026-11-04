@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -38,6 +39,7 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -75,6 +77,32 @@ func accountSet(accounts []auth.Account) map[auth.Account]struct{} {
 		result[account] = struct{}{}
 	}
 	return result
+}
+
+// dispatcherAccount proves that the token used by delivery workers belongs to this
+// Gateway/Dispatcher Pod. Caller headers and an account allowlist alone cannot identify
+// the combined process; TokenReview's Pod UID must agree with the current Pod as well.
+func dispatcherAccount(ctx context.Context, c config, resolver *auth.Resolver, objects client.Reader) (auth.Account, error) {
+	token, err := os.ReadFile(c.RunnerTokenFile)
+	if err != nil {
+		return auth.Account{}, errors.New("could not read Dispatcher workload credential")
+	}
+	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("authorization", "Bearer "+strings.TrimSpace(string(token))))
+	principal, err := resolver.RequireAccount(ctx, accountSet(c.GatewayCallers))
+	if err != nil {
+		return auth.Account{}, fmt.Errorf("review Dispatcher workload credential: %w", err)
+	}
+	if principal.Account.Namespace != c.Namespace || principal.PodName != c.PodName {
+		return auth.Account{}, errors.New("Dispatcher workload credential belongs to another Pod")
+	}
+	var pod corev1.Pod
+	if err := objects.Get(ctx, client.ObjectKey{Namespace: principal.Account.Namespace, Name: c.PodName}, &pod); err != nil {
+		return auth.Account{}, fmt.Errorf("read Dispatcher workload Pod: %w", err)
+	}
+	if string(pod.UID) != principal.PodUID || pod.Spec.ServiceAccountName != principal.Account.Name {
+		return auth.Account{}, errors.New("Dispatcher workload credential disagrees with current Pod identity")
+	}
+	return principal.Account, nil
 }
 
 func accountNamespaces(accounts []auth.Account, extra *auth.Account, additional ...auth.Account) []string {
@@ -271,9 +299,14 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	if err != nil {
 		return err
 	}
+	deliveryAccount, err := dispatcherAccount(ctx, c, gatewayAuth, objects)
+	if err != nil {
+		return err
+	}
 	g, err := gateway.New(gateway.Config{
 		RunnerSecurity: c.RunnerSecurity,
 		Namespace:      c.Namespace, CallerAccounts: c.GatewayCallers, ExecutorCallers: c.ExecutorCallers,
+		DispatcherAccount:        deliveryAccount,
 		SandboxControllerAccount: c.ControllerAccount,
 		HolderName:               c.PodName, HolderIP: c.PodIP, ProxyPort: int32(c.ProxyPort),
 	}, gatewayAuth, inventory, inventoryHealth, kube.CoordinationV1(), kube.DiscoveryV1())
@@ -336,7 +369,6 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	methods := auth.HealthMethods()
 	maps.Copy(methods, dispatcherMethods)
 	maps.Copy(methods, environments.Methods(dispatchAuth))
-	maps.Copy(methods, g.Methods())
 	if c.Delegation != nil {
 		delegator := auth.Delegator{Account: c.Delegation.Actor, CallerNamespaces: c.Delegation.CallerNamespaces}
 		uidReader := auth.ServiceAccountUIDReaderFunc(func(ctx context.Context, account auth.Account) (string, bool, error) {
@@ -354,6 +386,9 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 			return fmt.Errorf("configure Runner Gateway delegation: %w", err)
 		}
 	}
+	// Gateway proxy and Executor methods never accept delegated actor envelopes.
+	// Only Dispatcher and EnvironmentService expose delegated authorization.
+	maps.Copy(methods, g.Methods())
 	server := grpc.NewServer(append(
 		methods.ServerOptions(0),
 		observability.GRPCServerOption(),

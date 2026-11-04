@@ -165,7 +165,7 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 	defer proxyListener.Close()
 
 	tokenFile := filepath.Join(t.TempDir(), "caller-token")
-	if err := os.WriteFile(tokenFile, []byte(f.appToken), 0o600); err != nil {
+	if err := os.WriteFile(tokenFile, []byte(f.dispatcherToken), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	hub := dispatcher.NewWatchHub(integrationDatabase.URL)

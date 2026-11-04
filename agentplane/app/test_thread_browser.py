@@ -65,6 +65,7 @@ from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
+from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
@@ -136,14 +137,16 @@ async def empty_gateway_access(
     tmp_path: Path,
 ) -> AsyncIterator[GatewayAccess]:
     """A real inventory service for tests whose Sandbox has already been deleted."""
+    workload = ServiceAccountRef(namespace=namespace.name, name=GATEWAY.name)
     token_file = tmp_path / "empty-gateway-token"
-    token_file.write_text(await api_server.workload_token(GATEWAY, [GATEWAY_AUDIENCE]))
+    token_file.write_text(await api_server.workload_token(workload, [GATEWAY_AUDIENCE]))
     async with run_gateway(
         namespace.kubeconfig,
         database_url=dispatcher_database_url,
         namespace=namespace.name,
         dispatcher_callers=(APP,),
-        gateway_callers=(APP, GATEWAY),
+        gateway_callers=(APP, workload),
+        workload=workload,
         environment_readers=(APP,),
         dispatcher_audience=DISPATCHER_AUDIENCE,
         gateway_audience=GATEWAY_AUDIENCE,

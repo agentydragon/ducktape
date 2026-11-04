@@ -77,14 +77,9 @@ class GatewayProcess:
         cert_file, key_file = issue_workload_leaf(self.environment_runtime_ca, uri, directory)
         return TLS(cert_file=str(cert_file), key_file=str(key_file), ca_file=str(self.environment_runtime_ca_file))
 
-    def gateway_client(
-        self, token_file: Path, *, request_timeout_s: float = 20, lifecycle_timeout_s: float = 310
-    ) -> SandboxControlClient:
+    def gateway_client(self, token_file: Path, *, request_timeout_s: float = 20) -> SandboxControlClient:
         return SandboxControlClient(
-            control_target=self.target,
-            token_file=token_file,
-            request_timeout_s=request_timeout_s,
-            lifecycle_timeout_s=lifecycle_timeout_s,
+            control_target=self.target, token_file=token_file, request_timeout_s=request_timeout_s
         )
 
     async def _check_process(self) -> None:
@@ -206,6 +201,7 @@ async def run_gateway(
     namespace: str,
     dispatcher_callers: Sequence[ServiceAccountRef],
     gateway_callers: Sequence[ServiceAccountRef],
+    workload: ServiceAccountRef,
     executor_callers: Sequence[ServiceAccountRef] = (),
     environment_readers: Sequence[ServiceAccountRef] = (),
     environment_managers: Sequence[ServiceAccountRef] = (),
@@ -249,7 +245,7 @@ async def run_gateway(
             effective_settings = Settings(
                 sandbox_namespace=namespace,
                 dispatcher_database_url=database_url,
-                pod_name="runner-gateway-test",
+                pod_name=workload.name,
                 pod_ip="192.0.2.10",
                 runner_token_file=runner_proxy_token_file,
                 kubeconfig=kubeconfig,
@@ -292,7 +288,7 @@ async def run_gateway(
                 **os.environ,
                 Settings.config_file_env: str(settings_path),
                 env_name(Settings, "dispatcher_database_url"): _wire_database_url(database_url),
-                env_name(Settings, "pod_name"): "runner-gateway-test",
+                env_name(Settings, "pod_name"): workload.name,
                 # Kubernetes rejects loopback EndpointSlice addresses. This advertised test address
                 # is not dialed: this single-replica fixture sends RPCs to its loopback listener.
                 env_name(Settings, "pod_ip"): "192.0.2.10",

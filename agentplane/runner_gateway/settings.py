@@ -98,7 +98,8 @@ class Settings(YamlFileSettings):
         description="Independent Actions delegation trust; does not grant direct or privileged caller access.",
     )
     gateway_callers: Set[ServiceAccountName] = Field(
-        min_length=1, description="ServiceAccounts admitted to the Gateway's Runner proxy, as namespace/name."
+        min_length=1,
+        description="ServiceAccounts admitted to Gateway read-only Runtime diagnostics, as namespace/name.",
     )
     wake_callers: Set[ServiceAccountName] | None = Field(
         default=None,

@@ -77,7 +77,7 @@ flowchart LR
     browser -->|HTTPS, one origin| edge
     edge -->|HTML, assets and service worker| frontend
     edge -->|API, auth and streams| app
-    app -->|gRPC health + Runner proxy RPCs| gw
+    app -->|gRPC health + read-only Runtime diagnostics| gw
     app -->|Dispatcher commands and watches: gRPC| gw
     app --> hs
     app -->|gRPC operator watches + health| notif
@@ -223,7 +223,7 @@ flowchart LR
     actions -->|Session reads: broker or delegated caller, gRPC| history
     environments -->|resume + eligibility| lifecycle
     app -->|per-Sandbox Runner Proxy: live inventory + diagnostics| gateway
-    dispatcher -->|wrapped Codex and Claude opens + commands| gateway
+    dispatcher -->|Pod-bound workload token: wrapped Codex and Claude opens + commands| gateway
     dispatcher -->|central opens + commands: Sampler gRPC| central
     sandboxctl -->|Quiesce| gateway
     dispatcher -->|Sandbox watch| k8s

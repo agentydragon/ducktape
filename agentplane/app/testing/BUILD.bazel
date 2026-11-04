@@ -257,15 +257,12 @@ py_library(
         "//agentplane/grpc:calls",
         "//agentplane/history_service/testing:go_service",
         "//agentplane/runner_gateway:client",
-        "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/runner_gateway/testing:gateway_process",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:kubernetes_apiserver",
         "//util/testing:postgres",
-        "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//tenacity",
     ],
 )
 

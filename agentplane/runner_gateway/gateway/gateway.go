@@ -21,9 +21,12 @@ import (
 // Config contains the per-process Gateway role wiring. Public callers use TokenReview;
 // runner connections use explicitly configured transport security and incarnation-fenced metadata.
 type Config struct {
-	RunnerSecurity           environment_runtime_transport.Security
-	Namespace                string
-	CallerAccounts           []auth.Account
+	RunnerSecurity environment_runtime_transport.Security
+	Namespace      string
+	CallerAccounts []auth.Account
+	// DispatcherAccount is the combined Gateway/Dispatcher workload. Its Pod-bound
+	// projected token is the only public route to Runtime Session creation and commands.
+	DispatcherAccount        auth.Account
 	SandboxControllerAccount *auth.Account
 	HolderName               string
 	HolderIP                 string
@@ -95,6 +98,9 @@ func New(
 	if config.Namespace == "" || len(config.CallerAccounts) == 0 || callerAuth == nil {
 		return nil, fmt.Errorf("Gateway namespace, caller policy and token resolvers are required")
 	}
+	if config.DispatcherAccount.Namespace == "" || config.DispatcherAccount.Name == "" {
+		return nil, fmt.Errorf("Gateway Dispatcher account is required")
+	}
 	if config.HolderName == "" || config.HolderIP == "" || config.ProxyPort < 1 {
 		return nil, fmt.Errorf("Gateway holder Pod name, IP and proxy port are required")
 	}
@@ -140,6 +146,7 @@ func New(
 // controller may quiesce the Environment Runtime; with no controller configured, nobody may.
 func (g *Gateway) Methods() auth.Methods {
 	callers := auth.Accounts(g.callerAuth, g.config.CallerAccounts)
+	dispatcher := auth.Accounts(g.callerAuth, []auth.Account{g.config.DispatcherAccount})
 	var controllers []auth.Account
 	if g.config.SandboxControllerAccount != nil {
 		controllers = []auth.Account{*g.config.SandboxControllerAccount}
@@ -148,11 +155,11 @@ func (g *Gateway) Methods() auth.Methods {
 	return auth.Methods{
 		environmentruntimepb.EnvironmentRuntime_ListSessions_FullMethodName:          callers,
 		environmentruntimepb.EnvironmentRuntime_GetStatus_FullMethodName:             callers,
-		environmentruntimepb.EnvironmentRuntime_OpenSession_FullMethodName:           callers,
-		environmentruntimepb.EnvironmentRuntime_SubmitInput_FullMethodName:           callers,
-		environmentruntimepb.EnvironmentRuntime_ChangeModel_FullMethodName:           callers,
-		environmentruntimepb.EnvironmentRuntime_ChangeReasoningEffort_FullMethodName: callers,
-		environmentruntimepb.EnvironmentRuntime_InterruptTurn_FullMethodName:         callers,
+		environmentruntimepb.EnvironmentRuntime_OpenSession_FullMethodName:           dispatcher,
+		environmentruntimepb.EnvironmentRuntime_SubmitInput_FullMethodName:           dispatcher,
+		environmentruntimepb.EnvironmentRuntime_ChangeModel_FullMethodName:           dispatcher,
+		environmentruntimepb.EnvironmentRuntime_ChangeReasoningEffort_FullMethodName: dispatcher,
+		environmentruntimepb.EnvironmentRuntime_InterruptTurn_FullMethodName:         dispatcher,
 		environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName:               auth.Accounts(g.callerAuth, controllers),
 		executorpb.Executor_OpenSession_FullMethodName:                               executors,
 		executorpb.Executor_StartProcess_FullMethodName:                              executors,
