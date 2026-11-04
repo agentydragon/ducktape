@@ -782,7 +782,7 @@ it("grows the window a page at a time and narrows it to a search", async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(search, "thread 50");
     search.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await act(async () => vi.runAllTimers());
+  await act(async () => vi.advanceTimersByTimeAsync(300));
   expect(container.textContent).toContain("Listed thread 50");
   expect(container.textContent).not.toContain("Listed thread 49");
 });
