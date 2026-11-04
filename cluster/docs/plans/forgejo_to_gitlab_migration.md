@@ -32,6 +32,36 @@ consumers before retiring the old installation; do not assume it is disposable.
   a capacity forecast. Rails startup showed long I/O stalls with container image files on a busy HDD. Measure current
   peak capacity and restart behavior, including application image storage, before committing production workloads.
 
+## GitLab repository storage direction (2026-11-03)
+
+The spike's Praefect cluster replicates repositories across Gitaly nodes. GitLab calls the
+[Praefect Helm chart experimental and unsuitable for production](https://docs.gitlab.com/charts/charts/gitlab/praefect/)
+and has de-prioritized Gitaly Cluster on Kubernetes in favor of a new backend. Standalone Gitaly on Kubernetes is
+generally available but has no repository-level failover. The
+[hybrid architecture](https://docs.gitlab.com/administration/gitaly/kubernetes/) runs Praefect and Gitaly outside
+Kubernetes for repository-level HA. None of these maturity statements establishes our contractual support entitlement.
+
+GitLab's [Scaling Git design](https://handbook.gitlab.com/handbook/engineering/architecture/design-documents/scaling-git/)
+proposes authoritative Git repository data in object storage, with stateless Gitaly nodes caching data locally, a new Git
+MVCC format for consistent reads and atomic writes, and a routing layer. GitLab's stated goal is resilience and
+horizontal scaling on Kubernetes without Praefect or its separate PostgreSQL database. This concerns Git repositories,
+not the separate object-storage categories already used by GitLab for features such as LFS and the registry.
+
+The design is ongoing and explicitly not committed. The [engineering epic](https://gitlab.com/groups/gitlab-org/-/work_items/21711)
+reported on 2026-10-22 that most MVCC-reference migration infrastructure had landed and the object-storage format
+extension was in review; it does not establish a production release date. Public proof-of-concept changes exist for
+[Git](https://gitlab.com/gitlab-org/git/-/merge_requests/551) and
+[Gitaly](https://gitlab.com/gitlab-org/gitaly/-/merge_requests/8812), but are not a deployable production solution.
+The design says the object-storage migration is for "enterprise customers" and an earlier local-storage phase is the
+last stage for non-enterprise customers; the final edition and license eligibility are unclear.
+
+SeaweedFS is named as an example object store, not verified for our deployment. The design requires read-after-write
+consistency, conditional create-only writes and deletes, ordered prefix listing and ETag behavior. Verify those semantics,
+durability and availability against the actual SeaweedFS version and configuration before considering it for Git's
+authoritative data. Object storage would become a Git availability dependency. Recheck the upstream design, release
+status, licensing and migration path from Praefect before treating it as an option; do not depend on its arrival for the
+current cutover decision.
+
 ## Phase 1: inventory and contract
 
 1. Inventory every Forgejo repository by owner, default branch, visibility, branches/tags, wikis and LFS use, active
@@ -183,7 +213,8 @@ inconsistencies without separate evidence.
 ## Open decisions and immediate next work
 
 - Accept in-cluster Praefect's documented beta status, use standalone Kubernetes Gitaly with lower availability, or
-  revisit the supported hybrid topology.
+  revisit the supported hybrid topology. Track the proposed object-storage backend separately until its production
+  readiness, license, SeaweedFS compatibility and migration path are established.
 - Promote the spike versus reproduce it as a production instance; whether to retain Forgejo read-only temporarily after
   cutover; explicit outage and data-loss objectives; production Git and registry hostname layout; per-image or shared
   registry project layout; and mirror policy.
