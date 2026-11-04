@@ -462,6 +462,20 @@ requires its exact protected source origin and full Set iterator/next protocol
 proof; Set kind alone proves none of these facts. Prefix mutation, escape,
 accessor, reentry and taint guards remain required.
 
+For checked top-level Set initializer operations, `SetIterableProof` also
+publishes one typed source-operand projection keyed by the exact constructor
+span. It names the immediate array-literal allocation site and its source-unit
+occurrence; protocol dependencies remain on the canonical constructor proof.
+This source projection is consumed by native-row purity, heap-content
+classification (including vendor pruning), and the execution adapter. It does
+not contain evaluated values, array length, Set size, iteration order,
+multiplicity after Set deduplication, or a reusable prefix snapshot. The
+`IterateNative` transfer still matches the runtime source allocation against
+the projected origin and derives exact slots only from the current settled
+prefix; otherwise it may retain only primitive-only knowledge. Borrowed array
+aliases with no immediate literal source remain on the separate checked
+alias-purity path.
+
 After successful admission, the exact native Fresh Set row can retain a Set
 allocation kind/origin on its normal branch. This does not model Set contents,
 deduplication, size, own properties or allocation multiplicity. The common

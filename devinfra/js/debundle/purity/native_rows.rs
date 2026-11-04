@@ -8,6 +8,7 @@
 //! not purity's.
 
 use super::*;
+use crate::facts::TopLevelNativeIterableOperandProjection;
 use crate::facts::abstract_domain::builtins::{self, ArgSel, Invocation, Row, Throws};
 use crate::facts::abstract_domain::effect::{CoerceCheck, CoerceOp};
 use crate::facts::abstract_domain::heap::{Mutation, is_plain_data_prop};
@@ -168,6 +169,12 @@ pub(crate) fn static_member(member: &MemberExpr) -> Option<(&str, &str)> {
 pub(crate) struct NativeOperand<'a> {
     pub(crate) expr: &'a Expr,
     pub(crate) spread: Option<Span>,
+    /// A source-site certificate for the exact collection-constructor
+    /// operand. This is not an evaluated iterable or a settled prefix value.
+    pub(crate) native_iterable: Option<(
+        &'a TopLevelNativeIterableOperandProjection,
+        &'a ProofDependencies,
+    )>,
 }
 
 impl<'a> From<&'a ExprOrSpread> for NativeOperand<'a> {
@@ -175,7 +182,19 @@ impl<'a> From<&'a ExprOrSpread> for NativeOperand<'a> {
         Self {
             expr: &arg.expr,
             spread: arg.spread,
+            native_iterable: None,
         }
+    }
+}
+
+impl<'a> NativeOperand<'a> {
+    pub(crate) fn with_native_iterable(
+        mut self,
+        projection: &'a TopLevelNativeIterableOperandProjection,
+        dependencies: &'a ProofDependencies,
+    ) -> Self {
+        self.native_iterable = Some((projection, dependencies));
+        self
     }
 }
 
@@ -279,7 +298,7 @@ pub(crate) fn native_call_purity(
                 let Expr::Array(array) = operand.expr.unwrap_parens() else {
                     return None;
                 };
-                fresh_array_elements(
+                let purity = fresh_array_elements(
                     array,
                     elements,
                     &spelling,
@@ -287,7 +306,15 @@ pub(crate) fn native_call_purity(
                     local_shadowed,
                     declared_pure,
                     graph,
-                )?
+                )?;
+                if let Some((projection, dependencies)) = operand.native_iterable {
+                    if !projection.matches_operand(operand.expr) {
+                        return None;
+                    }
+                    purity.with_dependencies(dependencies)
+                } else {
+                    purity
+                }
             }
         };
         verdict = verdict.then(purity);

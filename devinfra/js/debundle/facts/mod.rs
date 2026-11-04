@@ -93,7 +93,9 @@ pub(crate) use purity_classification::*;
 pub(crate) use semantic_inference::ArgumentNoEscapeFacts;
 pub use set_iterables::certify_stable_set_spreads;
 pub(crate) use set_iterables::{
-    SetIterableProof, SetIterableShapes, primitive_literal_property_keys,
+    NativeIterableOperandOrigin, SetIterableProof, SetIterableShapes,
+    TopLevelNativeIterableOperandProjection, TopLevelNativeIterableOperandSite,
+    primitive_literal_property_keys,
 };
 pub(crate) use source_unit_read_closure::SourceUnitReadClosure;
 pub use statement_facts::{

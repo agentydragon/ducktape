@@ -290,7 +290,11 @@ pub(crate) fn classify_expr_purity(
                     .tpl
                     .exprs
                     .iter()
-                    .map(|expr| NativeOperand { expr, spread: None })
+                    .map(|expr| NativeOperand {
+                        expr,
+                        spread: None,
+                        native_iterable: None,
+                    })
                     .collect();
                 native_call_purity(
                     callee,
@@ -1148,11 +1152,47 @@ pub(crate) fn classify_new_expr_purity(
     {
         return Effects::none().with_dependencies(dependencies);
     }
-    // A `SetIterableProof` admits this exact call after checking its supported
-    // argument shape (direct primitive-array literal, stable const alias, or
-    // proven static-member array). Its dependencies are therefore consumed
-    // for every certified shape; calls without a certificate may still use
-    // the intrinsic row below.
+    // A checked top-level collection operand uses the same source projection
+    // as native-row purity, heap classification, and IterateNative. The row
+    // still classifies every element expression and preserves abrupt effects;
+    // the projection supplies only exact source identity and protocol deps.
+    if callee.sym.as_ref() == "Set"
+        && !shadowed.contains("Set")
+        && !local_shadowed.contains("Set")
+        && let Some((projection, dependencies)) = graph.native_iterable_operand(new_expr.span)
+        && args.len() == 1
+        && args[0].spread.is_none()
+    {
+        let operands =
+            [NativeOperand::from(&args[0]).with_native_iterable(projection, dependencies)];
+        let Some(purity) = native_call_purity(
+            (callee.sym.as_ref(), None),
+            Invocation::Construct,
+            &operands,
+            shadowed,
+            local_shadowed,
+            declared_pure,
+            graph,
+        ) else {
+            return Effects::of_detail(
+                Effect::Invoke(InvokeSite::Construct),
+                new_expr.span,
+                "checked Set operand no longer matches its source projection".to_string(),
+            );
+        };
+        if purity.is_pure() {
+            return purity;
+        }
+        return Effects::of_detail(
+            Effect::Invoke(InvokeSite::Construct),
+            new_expr.span,
+            "new Set(...) has impure operand(s)".to_string(),
+        )
+        .then(purity);
+    }
+    // Other Set proof families, including borrowed aliases and arrays of
+    // primitive static-member reads, remain outside the selected/inferred
+    // top-level source projection above.
     if callee.sym.as_ref() == "Set"
         && !shadowed.contains("Set")
         && !local_shadowed.contains("Set")

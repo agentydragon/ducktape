@@ -550,6 +550,16 @@ impl ChunkCodeGraph {
         self.set_iterable_proof.dependencies_for_constructor(span)
     }
 
+    pub(crate) fn native_iterable_operand(
+        &self,
+        span: Span,
+    ) -> Option<(
+        &crate::facts::TopLevelNativeIterableOperandProjection,
+        &ProofDependencies,
+    )> {
+        self.set_iterable_proof.native_iterable_operand(span)
+    }
+
     pub(crate) fn stable_set_spread_dependencies(&self, span: Span) -> Option<&ProofDependencies> {
         self.set_iterable_proof.stable_spread_dependencies(span)
     }

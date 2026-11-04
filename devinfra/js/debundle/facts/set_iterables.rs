@@ -16,6 +16,64 @@ use anyhow::{Result, bail};
 use source_identity::SourceUnitOrdinal;
 use std::sync::Arc;
 
+/// Source identity and top-level initialization scope for one checked
+/// collection constructor operand. Construction is private to the source
+/// proof that joins an exact top-level operation with its checked input. This
+/// records syntax/proof identity only; it never contains evaluated iterator
+/// yields or a runtime collection size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TopLevelNativeIterableOperandProjection {
+    operation_span: Span,
+    operand: NativeIterableOperandOrigin,
+    owner: SourceUnitOrdinal,
+}
+
+/// Origin of the statically checked constructor operand. Runtime iteration
+/// still resolves and validates the corresponding allocation at its prefix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NativeIterableOperandOrigin {
+    ImmediateArrayLiteral { allocation_site: u32 },
+}
+
+impl TopLevelNativeIterableOperandProjection {
+    fn new(operation_span: Span, allocation_site: u32, owner: SourceUnitOrdinal) -> Self {
+        Self {
+            operation_span,
+            operand: NativeIterableOperandOrigin::ImmediateArrayLiteral { allocation_site },
+            owner,
+        }
+    }
+
+    pub(crate) fn operation_span(self) -> Span {
+        self.operation_span
+    }
+
+    pub(crate) fn operand_origin(self) -> NativeIterableOperandOrigin {
+        self.operand
+    }
+
+    pub(crate) fn owner(self) -> SourceUnitOrdinal {
+        self.owner
+    }
+
+    pub(crate) fn matches_operand(self, expr: &Expr) -> bool {
+        matches!(
+            (self.operand, expr.unwrap_parens()),
+            (
+                NativeIterableOperandOrigin::ImmediateArrayLiteral { allocation_site },
+                Expr::Array(array)
+            ) if array.span.lo.0 == allocation_site
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TopLevelNativeIterableOperandSite {
+    pub(crate) operation_span: Span,
+    pub(crate) operand: NativeIterableOperandOrigin,
+    pub(crate) owner: SourceUnitOrdinal,
+}
+
 /// Certify the one-way source/schedule premise before value-flow inference.
 /// The input constructor and every intervening source unit are independently
 /// selected primitive-Set operations in the same original declaration. No
@@ -194,6 +252,7 @@ pub(crate) struct SetIterableProof {
     author_dependencies: BTreeMap<u32, ProofDependencies>,
     stable_spreads: BTreeMap<u32, ProofDependencies>,
     source_constructions: BTreeMap<u32, InferredSetConstruction>,
+    native_iterable_operands: BTreeMap<u32, TopLevelNativeIterableOperandProjection>,
     protected_intervals: Vec<Vec<Id>>,
     spread_sources: BTreeMap<u32, u32>,
     array_spreads: StableArraySpreadShapes,
@@ -207,6 +266,7 @@ impl SetIterableProof {
         source_constructions: &BTreeMap<u32, InferredSetConstruction>,
         native_inputs: &[ResolvedNativeOperationInput],
         array_spreads: StableArraySpreadShapes,
+        constructor_operands: &BTreeMap<u32, TopLevelNativeIterableOperandSite>,
     ) -> Self {
         let author_dependencies = author_inputs
             .iter()
@@ -261,13 +321,14 @@ impl SetIterableProof {
             })
             .flatten()
             .collect();
-        Self {
+        let mut proof = Self {
             facts,
             author_inputs,
             author_dependencies,
             protected_intervals,
             spread_sources,
             source_constructions: source_constructions.clone(),
+            native_iterable_operands: BTreeMap::new(),
             stable_spreads: spreads
                 .into_iter()
                 .flat_map(|stable| {
@@ -277,7 +338,38 @@ impl SetIterableProof {
                 })
                 .collect(),
             array_spreads,
+        };
+        let operation_sites: BTreeSet<_> = proof
+            .author_inputs
+            .keys()
+            .chain(proof.source_constructions.keys())
+            .copied()
+            .collect();
+        for site in operation_sites {
+            let Some(source) = constructor_operands.get(&site) else {
+                continue;
+            };
+            if proof
+                .dependencies_for_constructor(source.operation_span)
+                .is_none()
+            {
+                continue;
+            }
+            let NativeIterableOperandOrigin::ImmediateArrayLiteral { allocation_site } =
+                source.operand;
+            if source.operation_span.lo.0 != site {
+                continue;
+            }
+            proof.native_iterable_operands.insert(
+                site,
+                TopLevelNativeIterableOperandProjection::new(
+                    source.operation_span,
+                    allocation_site,
+                    source.owner,
+                ),
+            );
         }
+        proof
     }
 
     pub(crate) fn protected_intervals(&self) -> &[Vec<Id>] {
@@ -304,6 +396,39 @@ impl SetIterableProof {
                 self.facts
                     .dependencies(&SemanticKey::PrimitiveSetIteration(span.lo.0))
             })
+    }
+
+    /// Return the one shared source/operand projection and its canonical
+    /// protocol dependencies for a checked top-level Set constructor.
+    pub(crate) fn native_iterable_operand(
+        &self,
+        span: Span,
+    ) -> Option<(&TopLevelNativeIterableOperandProjection, &ProofDependencies)> {
+        let projection = self.native_iterable_operands.get(&span.lo.0)?;
+        (projection.operation_span() == span)
+            .then_some((projection, self.dependencies_for_constructor(span)?))
+    }
+
+    /// The projection constrains literals that use the shared certificate.
+    /// Previously certified nonliteral and unrelated fresh-Set sites keep
+    /// their existing flow-root admission and do not acquire a new owner gate.
+    pub(crate) fn heap_constructor_in_owner(&self, span: Span, owner: SourceUnitOrdinal) -> bool {
+        self.native_iterable_operand(span)
+            .is_none_or(|(projection, _)| projection.owner() == owner)
+    }
+
+    /// Return canonical proof dependencies for early heap admission. The
+    /// immediate-literal projection is the shared path; selected alias and
+    /// static-member constructions retain their existing proof-backed path.
+    pub(crate) fn heap_constructor_dependencies(
+        &self,
+        span: Span,
+        owner: SourceUnitOrdinal,
+    ) -> Option<&ProofDependencies> {
+        if !self.heap_constructor_in_owner(span, owner) {
+            return None;
+        }
+        self.dependencies_for_constructor(span)
     }
 
     pub(crate) fn author_input_for_constructor(
