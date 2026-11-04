@@ -27,13 +27,6 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestMain(m *testing.M) {
-	if len(os.Args) > 1 && os.Args[1] == supervision.SupervisorMode {
-		os.Exit(supervision.SupervisorMain(os.Args[2:]))
-	}
-	os.Exit(m.Run())
-}
-
 func TestNativeStartUsesManagedProcessAdmission(t *testing.T) {
 	wantErr := errors.New("managed admission refused")
 	var observed supervision.ProcessConfig
@@ -83,7 +76,10 @@ func TestNativeStartIsOwnedAndFencedByProcessController(t *testing.T) {
 	if err := os.WriteFile(binary, []byte("#!/bin/sh\nexec /bin/sleep 60\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	supervisor := supervision.NewSubprocessSupervisor(nil)
+	supervisor, err := supervision.NewPID1Supervisor()
+	if err != nil {
+		t.Fatal(err)
+	}
 	start := NativeStart(NativeConfig{
 		Config: Config{URL: "ws://127.0.0.1:4501"}, Binary: binary, StateDir: t.TempDir(),
 		LaunchProcess: func(ctx context.Context, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {

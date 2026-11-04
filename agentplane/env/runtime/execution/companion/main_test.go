@@ -14,18 +14,15 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 )
 
-func TestMain(m *testing.M) {
-	if len(os.Args) > 1 && os.Args[1] == supervision.SupervisorMode {
-		os.Exit(supervision.SupervisorMain(os.Args[2:]))
-	}
-	os.Exit(m.Run())
-}
-
 func TestCompanionRefusesUnavailableCodexAndKeepsServing(t *testing.T) {
 	dir := t.TempDir()
 	socket := filepath.Join(dir, "control.sock")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	supervisor, err := supervision.NewPID1Supervisor()
+	if err != nil {
+		t.Fatal(err)
+	}
 	served := make(chan error, 1)
 	go func() {
 		served <- serve(
@@ -34,7 +31,7 @@ func TestCompanionRefusesUnavailableCodexAndKeepsServing(t *testing.T) {
 			filepath.Join(dir, "absent-codex"),
 			"ws://127.0.0.1:4501",
 			"127.0.0.1:0",
-			supervision.NewSubprocessSupervisor(nil),
+			supervisor,
 		)
 	}()
 	waitForSocket(t, socket)

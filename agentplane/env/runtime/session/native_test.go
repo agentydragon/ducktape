@@ -338,8 +338,12 @@ func frameTestSessionWithControllerGate(t *testing.T, command []string, withCont
 	if err != nil {
 		t.Fatal(err)
 	}
+	supervisor, err := supervision.NewPID1Supervisor()
+	if err != nil {
+		t.Fatal(err)
+	}
 	launch := func(ctx context.Context, owner string, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
-		return host.Launch(ctx, owner, 0, supervision.NewSubprocessSupervisor(nil), processConfig)
+		return host.Launch(ctx, owner, 0, supervisor, processConfig)
 	}
 	scriptRunner, err := scripts.New(scripts.Config{LaunchProcess: launch})
 	if err != nil {
@@ -389,7 +393,7 @@ func frameTestSessionWithControllerGate(t *testing.T, command []string, withCont
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := host.Launch(ctx, ControllerName+"/"+s.id, 0, supervision.NewSubprocessSupervisor(nil), supervision.ProcessConfig{Command: command, Dir: root, Env: map[string]string{}, StopGrace: 5 * time.Second})
+	p, err := host.Launch(ctx, ControllerName+"/"+s.id, 0, supervisor, supervision.ProcessConfig{Command: command, Dir: root, Env: map[string]string{}, StopGrace: 5 * time.Second})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -808,13 +812,6 @@ func openTestJournal(t *testing.T) *journal.Journal {
 		}
 	})
 	return journal
-}
-
-func TestMain(m *testing.M) {
-	if len(os.Args) > 1 && os.Args[1] == supervision.SupervisorMode {
-		os.Exit(supervision.SupervisorMain(os.Args[2:]))
-	}
-	os.Exit(m.Run())
 }
 
 // setLifecycleStatusReady directly seeds controller-owned lifecycle status; callers with a

@@ -168,10 +168,13 @@ func withTestSessionFacilities(t *testing.T, config Config) Config {
 			t.Error(err)
 		}
 	})
-	launch := func(ctx context.Context, owner string, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
-		return host.Launch(ctx, owner, 0, supervision.NewSubprocessSupervisor(nil), processConfig)
+	supervisor, err := supervision.NewPID1Supervisor()
+	if err != nil {
+		t.Fatal(err)
 	}
-	var err error
+	launch := func(ctx context.Context, owner string, processConfig supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
+		return host.Launch(ctx, owner, 0, supervisor, processConfig)
+	}
 	config.Scripts, err = scripts.New(scripts.Config{LaunchProcess: launch})
 	if err != nil {
 		t.Fatal(err)
