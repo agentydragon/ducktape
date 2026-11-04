@@ -51,7 +51,7 @@ independent facts:
   read it.
 - `acknowledged`: the recipient acknowledged its inbox through the message, which acknowledges every
   earlier entry too. It never means the recipient did what you asked.
-- `inboxRetired`: the recipient's inbox was retired, as when its Sandbox was deleted. A message no notice
+- `inboxRetired`: the recipient's inbox was explicitly retired. A message no notice
   covered will never be noticed.
 
 A suspended Sandbox accepts messages, and the notice is prepared, so `covered` turns true, but the recipient

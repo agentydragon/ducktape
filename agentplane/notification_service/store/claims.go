@@ -31,7 +31,7 @@ type Claim struct {
 	Inbox
 	Owner model.ServiceAccount
 	held  lease.Lease
-	// staleCheckAt is the deadline of the recheck of an unavailable destination, as it was when claimed.
+	// staleCheckAt is the next check of an unavailable destination, as it was when claimed.
 	staleCheckAt *time.Time
 }
 
@@ -155,16 +155,20 @@ func (s *Store) Release(ctx context.Context, claim Claim, deliveryError *string,
 			next = &backoff
 		}
 		if held.staleCheckAt != nil {
-			// A transient lookup failure must not confirm staleness or spin before the recheck.
-			floor := released
-			if deliveryError != nil {
-				floor = backoff
-			}
+			// Keep source work due while delivery is unavailable, but do not retry a pending notice
+			// or unread entries before the destination's next check.
 			recheck := *held.staleCheckAt
-			if recheck.Before(floor) {
-				recheck = floor
+			if deliveryError != nil && recheck.Before(backoff) {
+				recheck = backoff
 			}
 			next = &recheck
+			if nextSource.Valid && nextSource.Time.Before(recheck) {
+				sourceDue := nextSource.Time
+				if deliveryError != nil && sourceDue.Before(backoff) {
+					sourceDue = backoff
+				}
+				next = utc(sourceDue)
+			}
 		}
 		if err := inboxLease.Release(ctx, tx, claim.held); err != nil {
 			return err
@@ -200,45 +204,34 @@ func (s *Store) NextWorkAt(ctx context.Context) (*time.Time, error) {
 	return utc(deadline.Time), nil
 }
 
-// ObserveStale records that the claimed inbox's destination is not the Sandbox it names. The first
-// observation sets a recheck deadline confirmation from now and releases the claim for it. An observation
-// after that deadline retires the inbox, cancels its subscriptions and reports true.
-func (s *Store) ObserveStale(ctx context.Context, claim Claim, reason string, confirmation time.Duration) (bool, error) {
-	var retired bool
-	err := s.fencedTransaction(ctx, claim, func(tx *sql.Tx, held heldInbox) error {
-		observed := now()
-		recheck := observed.Add(confirmation)
-		if held.staleCheckAt != nil {
-			recheck = *held.staleCheckAt
+// ObserveStale records an unavailable exact Sandbox incarnation. The inbox and its subscriptions
+// remain live; source reads continue, while notice delivery waits for a matching destination.
+func (s *Store) ObserveStale(ctx context.Context, claim Claim, reason string, retry time.Duration) error {
+	return s.fencedTransaction(ctx, claim, func(tx *sql.Tx, held heldInbox) error {
+		recheck := now().Add(retry)
+		var nextSource sql.NullTime
+		if err := tx.QueryRowContext(ctx, `
+			SELECT min(next_attempt) FROM subscription WHERE inbox_id = $1 AND NOT cancelled AND expires_at > now()`,
+			held.ID).Scan(&nextSource); err != nil {
+			return err
+		}
+		next := recheck
+		if nextSource.Valid && nextSource.Time.Before(next) {
+			next = nextSource.Time
 		}
 		if err := inboxLease.Release(ctx, tx, claim.held); err != nil {
 			return err
 		}
-		if held.staleCheckAt != nil && !held.staleCheckAt.After(observed) {
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE inbox SET retired = true, updated_at = $2, next_attempt = NULL, delivery_error = $3 WHERE id = $1`,
-				held.ID, observed, "destination retired: "+reason); err != nil {
-				return err
-			}
-			if _, err := tx.ExecContext(ctx,
-				`UPDATE subscription SET cancelled = true, version = version + 1 WHERE inbox_id = $1 AND NOT cancelled`,
-				held.ID); err != nil {
-				return err
-			}
-			retired = true
-			return notify(ctx, tx)
-		}
 		if _, err := tx.ExecContext(ctx, `
-			UPDATE inbox SET stale_check_at = $2, next_attempt = $2, delivery_error = $3 WHERE id = $1`,
-			held.ID, recheck, "destination pending retirement: "+reason); err != nil {
+			UPDATE inbox SET stale_check_at = $2, next_attempt = $3, delivery_error = $4 WHERE id = $1`,
+			held.ID, recheck, next, "destination unavailable: "+reason); err != nil {
 			return err
 		}
 		return notify(ctx, tx)
 	})
-	return retired, err
 }
 
-// ClearStale forgets a pending retirement once the destination is found to be the Sandbox it names.
+// ClearStale forgets the unavailable state once the destination is found to be the Sandbox it names.
 func (s *Store) ClearStale(ctx context.Context, claim Claim) error {
 	if claim.staleCheckAt == nil {
 		return nil

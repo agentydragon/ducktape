@@ -19,13 +19,12 @@ Sessions created only through Runtime have no Dispatcher Session and cannot crea
 receive new messages. Message sends also resolve the Session, then evaluate the sender's current
 scoped grant against its exact Sandbox. Persisted subscriptions, inbox cursors and notices remain
 intact through the placement migration.
-For UID-pinned destinations, workers retire an inbox only after two Sandbox lookups
-confirm that its managed Sandbox is missing or has a different UID, separated by the
-configured `stale_inbox_confirmation_s` grace period. Matching UIDs (including
-suspended Sandboxes) resume delivery; owner mismatches and transport failures never
-confirm retirement. Retirement cancels subscriptions and stops retries but retains entries
-and notices for normal retention and inspection; it never acknowledges them or rebinds
-an inbox to a replacement Sandbox.
+For UID-pinned destinations, a missing Sandbox or different UID leaves the inbox and
+subscriptions active. Workers continue reconciling subscription sources and store unread
+entries and prepared notices, but do not submit notices until the original UID is found.
+The configured `unavailable_destination_retry_s` controls the retry interval for an unavailable
+destination; a source due earlier is still read. A same-name replacement never receives the
+old notice. Explicit inbox retirement remains available through the API.
 
 Agent entry point: [`/llms.txt`](docs/agents/llms.txt), with linked subscription, inbox-handling,
 GitHub and messaging workflows served under `/docs/agents/`, and `/openapi.json` as the HTTP reference. Update the guides

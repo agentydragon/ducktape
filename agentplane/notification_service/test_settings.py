@@ -65,7 +65,7 @@ notice_debounce:
     assert settings.session_dispatcher == SessionDispatcherSettings(
         target="dispatcher:8080", token_file=Path("/tokens/dispatcher"), request_timeout_s=15
     )
-    assert settings.stale_inbox_confirmation_s == 30
+    assert settings.unavailable_destination_retry_s == 30
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__INBOXES_PER_ACCOUNT", "18")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__ACTIVE_SUBSCRIPTIONS_PER_INBOX", "36")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__ENTRIES_PER_INBOX", "750")

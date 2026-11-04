@@ -14,9 +14,8 @@ type Settings struct {
 	// indefinitely.
 	GitHubDeliveryRetentionDays *int           `mapstructure:"github_delivery_retention_days"`
 	NoticeDebounce              NoticeDebounce `mapstructure:"notice_debounce"`
-	// StaleInboxConfirmationSeconds is the wait between the first lookup that finds an inbox's Sandbox gone or
-	// replaced and the one that retires the inbox.
-	StaleInboxConfirmationSeconds float64 `mapstructure:"stale_inbox_confirmation_s"`
+	// UnavailableDestinationRetrySeconds is the retry interval for an unavailable or replaced destination.
+	UnavailableDestinationRetrySeconds float64 `mapstructure:"unavailable_destination_retry_s"`
 }
 
 // NoticeDebounce sets when entries are announced to the agent. Persistence and inbox reads are never delayed.
@@ -36,9 +35,9 @@ func (d NoticeDebounce) Debounce() store.Debounce {
 
 func DefaultSettings() Settings {
 	return Settings{
-		NoticeDebounce:                NoticeDebounce{QuietSeconds: 2, MaxWaitSeconds: 10},
-		StaleInboxConfirmationSeconds: 30,
-		GitHubDeliveryRetentionDays:   new(7),
+		NoticeDebounce:                     NoticeDebounce{QuietSeconds: 2, MaxWaitSeconds: 10},
+		UnavailableDestinationRetrySeconds: 30,
+		GitHubDeliveryRetentionDays:        new(7),
 	}
 }
 
@@ -54,8 +53,8 @@ func (s Settings) Validate() error {
 	if s.NoticeDebounce.MaxWaitSeconds <= 0 || s.NoticeDebounce.MaxWaitSeconds > 3600 {
 		failures = append(failures, errors.New("notice_debounce.max_wait_seconds must be above 0 and at most 3600"))
 	}
-	if s.StaleInboxConfirmationSeconds <= 0 || s.StaleInboxConfirmationSeconds > 3600 {
-		failures = append(failures, errors.New("stale_inbox_confirmation_s must be above 0 and at most 3600"))
+	if s.UnavailableDestinationRetrySeconds <= 0 || s.UnavailableDestinationRetrySeconds > 3600 {
+		failures = append(failures, errors.New("unavailable_destination_retry_s must be above 0 and at most 3600"))
 	}
 	return errors.Join(failures...)
 }

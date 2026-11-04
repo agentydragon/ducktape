@@ -209,16 +209,13 @@ func (w *Worker) attend(ctx context.Context, claim store.Claim) (attended, error
 	case budget.Err() != nil && ctx.Err() == nil:
 		failed(timeoutName)
 	case errors.As(err, &stale):
-		retired, observeErr := w.Store.ObserveStale(ctx, claim, stale.reason, seconds(w.Settings.StaleInboxConfirmationSeconds))
+		observeErr := w.Store.ObserveStale(ctx, claim, stale.reason, seconds(w.Settings.UnavailableDestinationRetrySeconds))
 		outcome.released = true
-		if retired {
-			slog.InfoContext(ctx, "retired stale notification inbox", "inbox", claim.ID, "reason", stale.reason)
-		}
 		if !errors.Is(observeErr, store.ErrClaimLost) {
 			return outcome, observeErr
 		}
 	case errors.Is(err, errOwnerMismatch):
-		// The destination is the Sandbox it names, so a pending retirement is over.
+		// The destination is the Sandbox it names, so its unavailable state is over.
 		clearErr := w.Store.ClearStale(ctx, claim)
 		name := "OwnerMismatchError"
 		outcome.deliveryError = &name
@@ -241,18 +238,28 @@ func (w *Worker) attend(ctx context.Context, claim store.Claim) (attended, error
 
 // work is the step's policy for one inbox. deliver is false while the inbox's history is known to be invalid.
 func (w *Worker) work(ctx context.Context, claim store.Claim, deliver bool) error {
-	if err := w.checkDestination(ctx, claim); err != nil {
-		return err
+	destinationErr := w.checkDestination(ctx, claim)
+	var stale *staleDestinationError
+	if destinationErr != nil && !errors.As(destinationErr, &stale) {
+		return destinationErr
 	}
-	if err := w.Store.ClearStale(ctx, claim); err != nil {
-		return err
+	if stale == nil {
+		if err := w.Store.ClearStale(ctx, claim); err != nil {
+			return err
+		}
 	}
 	if err := w.readSource(ctx, claim); err != nil {
 		return err
 	}
 	notice, err := w.prepareNotice(ctx, claim)
-	if err != nil || notice == nil || !deliver {
+	if err != nil {
 		return err
+	}
+	if stale != nil {
+		return stale
+	}
+	if notice == nil || !deliver {
+		return nil
 	}
 	return w.deliver(ctx, claim, claim.DestinationRef.Name, *notice)
 }

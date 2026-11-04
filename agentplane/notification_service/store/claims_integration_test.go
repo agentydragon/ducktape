@@ -227,14 +227,14 @@ func TestEveryWriteOfAClaimIsFencedByTheLease(t *testing.T) {
 			notice := f.prepareNotice(t, claim)
 			lose(t, f, claim)
 
-			// ClearStale does nothing for a claim that saw no pending retirement.
-			pendingRetirement := claim
-			pendingRetirement.staleCheckAt = ptr(time.Now())
+			// ClearStale does nothing for a claim that saw no unavailable destination.
+			pendingUnavailable := claim
+			pendingUnavailable.staleCheckAt = ptr(time.Now())
 			entry := &eventlogpb.EventEntry{Cursor: 1}
 			writes := map[string]func() error{
 				"Release":                 func() error { return f.Release(t.Context(), claim, nil, nil) },
-				"ObserveStale":            func() error { _, err := f.ObserveStale(t.Context(), claim, "not_found", time.Second); return err },
-				"ClearStale":              func() error { return f.ClearStale(t.Context(), pendingRetirement) },
+				"ObserveStale":            func() error { return f.ObserveStale(t.Context(), claim, "not_found", time.Second) },
+				"ClearStale":              func() error { return f.ClearStale(t.Context(), pendingUnavailable) },
 				"PendingEntryTimes":       func() error { _, err := f.PendingEntryTimes(t.Context(), claim); return err },
 				"CurrentNotice":           func() error { _, err := f.CurrentNotice(t.Context(), claim); return err },
 				"PrepareNotice":           func() error { _, err := f.PrepareNotice(t.Context(), claim); return err },
@@ -312,9 +312,9 @@ func TestReleaseSchedulesTheNextWorkFromTheDurableState(t *testing.T) {
 		{name: "a failure postpones work that is due", entries: 1, subscription: time.Hour, deliveryError: &failure, noticeDue: ptr(-time.Second), wantAfterRelease: ptr(5 * time.Second)},
 		{name: "a failure postpones a subscription that is overdue", subscription: -time.Minute, deliveryError: &failure, wantAfterRelease: ptr(5 * time.Second)},
 		{name: "a failure does not bring later work forward", subscription: time.Hour, deliveryError: &failure, wantAtOffset: ptr(time.Hour)},
-		{name: "a pending retirement is rechecked at its deadline", entries: 1, subscription: time.Hour, noticeDue: ptr(-time.Second), staleCheck: ptr(10 * time.Second), wantAtOffset: ptr(10 * time.Second)},
-		{name: "a pending retirement past its deadline is due now", subscription: time.Hour, staleCheck: ptr(-10 * time.Second), wantAfterRelease: ptr(time.Duration(0))},
-		{name: "a pending retirement past its deadline waits out a failure", subscription: time.Hour, staleCheck: ptr(-10 * time.Second), deliveryError: &failure, wantAfterRelease: ptr(5 * time.Second)},
+		{name: "an unavailable destination is rechecked at its deadline", entries: 1, subscription: time.Hour, noticeDue: ptr(-time.Second), staleCheck: ptr(10 * time.Second), wantAtOffset: ptr(10 * time.Second)},
+		{name: "an unavailable destination past its deadline is due now", subscription: time.Hour, staleCheck: ptr(-10 * time.Second), wantAfterRelease: ptr(time.Duration(0))},
+		{name: "an unavailable destination past its deadline waits out a failure", subscription: time.Hour, staleCheck: ptr(-10 * time.Second), deliveryError: &failure, wantAfterRelease: ptr(5 * time.Second)},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := newClaimFixture(t)
@@ -550,77 +550,59 @@ func TestAFailureReportedAfterTheSubscriptionExpiredIsIgnored(t *testing.T) {
 	requireEqual(t, f.get(t, created.ID).Failure, (*SourceFailure)(nil))
 }
 
-func TestStaleDestinationRetiresTheInboxOnTheObservationAfterTheConfirmationWait(t *testing.T) {
+func TestUnavailableDestinationKeepsInboxAndSubscriptionsAndSchedulesSourceWork(t *testing.T) {
 	f := newClaimFixture(t)
 	subscription := f.subscribe(t, f.body("first"))
+	f.exec(t, `UPDATE subscription SET next_attempt = now() + interval '1 hour' WHERE id = $1`, subscription.ID)
 	claim := f.claim(t)
 
 	before := time.Now()
-	retired, err := f.ObserveStale(t.Context(), claim, "not_found", 30*time.Second)
-	if err != nil || retired {
-		t.Fatalf("first observation = %v, %v; want it pending", retired, err)
+	if err := f.ObserveStale(t.Context(), claim, "not_found", 30*time.Second); err != nil {
+		t.Fatal(err)
 	}
 	pending := f.read(t, subscription.InboxID, 0).Inbox
-	requireEqual(t, pending.DeliveryError, ptr("destination pending retirement: not_found"))
+	requireEqual(t, pending.DeliveryError, ptr("destination unavailable: not_found"))
 	requireEqual(t, pending.Retired, false)
 	requireBetween(t, "recheck", f.nextWorkAt(t), before.Add(30*time.Second), time.Now().Add(30*time.Second))
 	requireEqual(t, f.get(t, subscription.ID).Cancelled, false)
 	f.requireNoneDue(t)
 
-	// An observation before the deadline does not move it.
+	// A source due before the next destination recheck remains claimable.
+	f.exec(t, `UPDATE subscription SET next_attempt = now() - interval '1 second' WHERE id = $1`, subscription.ID)
 	f.exec(t, `UPDATE inbox SET next_attempt = now() - interval '1 second' WHERE id = $1`, subscription.InboxID)
 	claim = f.claim(t)
-	requireBetween(t, "stale deadline", claim.staleCheckAt, before.Add(30*time.Second), time.Now().Add(30*time.Second))
-	retired, err = f.ObserveStale(t.Context(), claim, "uid_changed", time.Hour)
-	if err != nil || retired {
-		t.Fatalf("observation before the deadline = %v, %v; want it still pending", retired, err)
+	if err := f.ObserveStale(t.Context(), claim, "uid_changed", time.Hour); err != nil {
+		t.Fatal(err)
 	}
-	requireBetween(t, "recheck", f.nextWorkAt(t), before.Add(30*time.Second), time.Now().Add(30*time.Second))
-
-	// Once the deadline has passed, the next observation retires the inbox and cancels its subscriptions.
-	f.exec(t, `UPDATE inbox SET stale_check_at = now() - interval '1 second', next_attempt = now() - interval '1 second' WHERE id = $1`,
-		subscription.InboxID)
-	claim = f.claim(t)
-	retired, err = f.ObserveStale(t.Context(), claim, "uid_changed", 30*time.Second)
-	if err != nil || !retired {
-		t.Fatalf("observation after the deadline = %v, %v; want the inbox retired", retired, err)
+	if next := f.nextWorkAt(t); next == nil || next.After(time.Now()) {
+		t.Errorf("NextWorkAt = %v, want the source due now", next)
 	}
-	gone := f.read(t, subscription.InboxID, 0).Inbox
-	requireEqual(t, gone.Retired, true)
-	requireEqual(t, gone.DeliveryError, ptr("destination retired: uid_changed"))
-	cancelled := f.get(t, subscription.ID)
-	requireEqual(t, cancelled.Cancelled, true)
-	requireEqual(t, cancelled.Version, subscription.Version+1)
-	f.requireNoneDue(t)
-	if next := f.nextWorkAt(t); next != nil {
-		t.Errorf("NextWorkAt = %s, want none", next)
-	}
+	requireEqual(t, f.read(t, subscription.InboxID, 0).Inbox.Retired, false)
+	requireEqual(t, f.get(t, subscription.ID).Cancelled, false)
 }
 
-func TestAFoundDestinationClearsThePendingRetirement(t *testing.T) {
+func TestAFoundDestinationClearsTheUnavailableState(t *testing.T) {
 	f := newClaimFixture(t)
 	subscription := f.subscribe(t, f.body("first"))
 	claim := f.claim(t)
-	if _, err := f.ObserveStale(t.Context(), claim, "not_found", time.Hour); err != nil {
+	if err := f.ObserveStale(t.Context(), claim, "not_found", time.Hour); err != nil {
 		t.Fatal(err)
 	}
 	f.exec(t, `UPDATE inbox SET stale_check_at = now() - interval '1 second', next_attempt = now() - interval '1 second' WHERE id = $1`,
 		subscription.InboxID)
 	claim = f.claim(t)
 	if claim.staleCheckAt == nil {
-		t.Fatal("the claim saw no pending retirement")
+		t.Fatal("the claim saw no unavailable state")
 	}
 
 	if err := f.ClearStale(t.Context(), claim); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.count(t, `SELECT count(*) FROM inbox WHERE id = $1 AND stale_check_at IS NULL`, subscription.InboxID); got != 1 {
-		t.Fatal("the pending retirement was kept")
+		t.Fatal("the unavailable state was kept")
 	}
-	// Staleness has to be confirmed again, however long ago it was first seen.
-	retired, err := f.ObserveStale(t.Context(), claim, "not_found", time.Hour)
-	if err != nil || retired {
-		t.Fatalf("observation after clearing = %v, %v; want it pending", retired, err)
+	if err := f.ObserveStale(t.Context(), claim, "not_found", time.Hour); err != nil {
+		t.Fatal(err)
 	}
 }
 
