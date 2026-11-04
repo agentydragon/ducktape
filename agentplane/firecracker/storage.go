@@ -147,7 +147,7 @@ func (storage *Storage) Prepare(ctx context.Context) error {
 			return err
 		}
 		staging := uniqueSibling(destination)
-		if _, err := copyDurable(ctx, image.source, staging); err != nil {
+		if err := copyAndSync(ctx, image.source, staging); err != nil {
 			_ = os.Remove(staging)
 			return fmt.Errorf("copy %s image: %w", image.name, err)
 		}
@@ -339,7 +339,7 @@ func (storage *Storage) Restore(ctx context.Context, manifest *Manifest) error {
 			}
 		}
 		staging := uniqueSibling(target)
-		if _, err := copyDurable(ctx, source, staging); err != nil {
+		if err := copyAndSync(ctx, source, staging); err != nil {
 			_ = os.Remove(staging)
 			return err
 		}
@@ -530,35 +530,42 @@ func hashFileContents(file *os.File, hash io.Writer) (int64, error) {
 }
 
 func copyDurable(ctx context.Context, source, destination string) (FileRecord, error) {
+	if err := copyAndSync(ctx, source, destination); err != nil {
+		return FileRecord{}, err
+	}
+	return digest(destination)
+}
+
+func copyAndSync(ctx context.Context, source, destination string) error {
 	block, err := isBlockDevice(source)
 	if err != nil {
-		return FileRecord{}, err
+		return err
 	}
 	if block {
 		if err := copySparse(ctx, source, destination); err != nil {
-			return FileRecord{}, err
+			return err
 		}
 	} else {
 		if _, err := runCommand(ctx, "cp", "--reflink=auto", "--sparse=always", "--", source, destination); err != nil {
-			return FileRecord{}, err
+			return err
 		}
 		if err := os.Chmod(destination, 0o600); err != nil {
-			return FileRecord{}, err
+			return err
 		}
 		file, err := os.Open(destination)
 		if err != nil {
-			return FileRecord{}, err
+			return err
 		}
 		syncErr := file.Sync()
 		closeErr := file.Close()
 		if err := errors.Join(syncErr, closeErr); err != nil {
-			return FileRecord{}, err
+			return err
 		}
 	}
 	if err := ctx.Err(); err != nil {
-		return FileRecord{}, err
+		return err
 	}
-	return digest(destination)
+	return nil
 }
 
 func copySparse(ctx context.Context, source, destination string) error {

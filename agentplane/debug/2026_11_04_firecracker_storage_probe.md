@@ -2,8 +2,8 @@
 
 The operator requested a storage probe alongside the full acceptance rerun of PR #14029 at
 `d110313300cc63e59f7b36cf514de06e57763adc`. This probe changes neither the deployed worker nor
-the PR's guest configuration. The smaller variant was built only in the local Nix store; it
-has not been booted or substituted into the acceptance test.
+the PR's production guest configuration. The first phase built a smaller system closure;
+a subsequent isolated boot and RAM-resume probe is recorded below.
 
 ## Sparse copying is already present
 
@@ -112,6 +112,53 @@ bbr test //agentplane/firecracker:firecracker_test --test_output=all \
   --test_arg=-test.benchtime=1x
 ```
 
+## Copy/fsync costs and discarded digests
+
+A second standard Go benchmark isolates copy, file sync and destination hashing on an
+8 GiB sparse workspace with one small data extent. The
+[three-arm RBE run](https://app.buildbuddy.io/invocation/6b0840d8-28c7-4a5e-9419-974dec1782ba)
+passed on an AMD EPYC worker:
+
+| Operation                     | One iteration |
+| ----------------------------- | ------------: |
+| Sparse copy                   |      12.27 ms |
+| Sparse copy + fsync           |      20.07 ms |
+| Sparse copy + fsync + SHA-256 |       4.690 s |
+
+These are single iterations of an almost-empty file, not a populated root-disk or
+end-to-end measurement. The hasher avoids reading holes but still processes their
+logical zeroes. Reflink support and page-cache state can also affect these numbers.
+
+```sh
+bbr test //agentplane/firecracker:firecracker_test --test_output=all \
+  '--test_arg=-test.run=^$' --test_arg=-test.bench=BenchmarkCheckpointCopySparseWorkspace \
+  --test_arg=-test.benchtime=1x
+```
+
+Two callers discarded the digest returned by `copyDurable`: initial boot-image staging
+and Restore's repair copy from an already-verified generation. Those hashes did not compare
+source and destination. The candidate uses `copyAndSync` for those callers, retaining
+sparse copying, file sync, rename and directory sync. Checkpoint records and all existing
+restore integrity and live-disk equality checks remain. The
+[package regression suite](https://app.buildbuddy.io/invocation/c6cd635b-f7e9-4cc5-8f84-f1185bbc35f1)
+passed, including sparse-content and mode checks for the extracted helper.
+
+Full-file SHA-256 is an application integrity policy, not a Firecracker prerequisite or
+the mechanism establishing checkpoint ownership and atomicity. Here it detects damaged
+generation files and decides whether an existing live disk equals the checkpoint, allowing
+Restore to reuse it. It is not an authenticity signature. The separate owner lock, active
+marker, complete file set, paused VMM, durable manifest publication and identity checks
+establish the lifecycle boundary.
+
+Firecracker 1.17's [snapshot contract](https://github.com/firecracker-microvm/firecracker/blob/v1.17.0/docs/snapshotting/snapshot-support.md#creating-full-snapshots)
+drains and fsyncs block-device backing files before snapshot creation returns. The
+launcher's request uses the default sync behavior for RAM and VMM state too. Thus a
+same-owner, same-generation reuse design can rely on that durable boundary, provided it
+also proves no intervening writer or file replacement. Dropping content hashes would
+remove corruption detection; retaining the live reuse branch would require an explicit
+provenance rule. Neither broader change is made by this candidate. Small config and VMM
+identity digests serve a separate compatibility purpose.
+
 ## A smaller guest closure is feasible
 
 The Firecracker guest imports the VM guest's `environment.systemPackages`, which includes the
@@ -151,13 +198,54 @@ in
 }).config.system.build.toplevel
 ```
 
+## Boot and RAM resume of the smaller guest
+
+The variant was assembled using the existing `firecracker-image.nix` root-filesystem
+recipe and kernel, with only `preCommitPackages = []`. The host Nix store had about
+2.5 GiB free, so the rootfs derivation's `buildCommand` ran through its `nix develop`
+environment with `out` and `TMPDIR` in task scratch. The system closure itself was
+already built in the Nix store. No production image pin or guest module was edited.
+
+| File / observation               | Logical bytes | Allocated bytes |
+| -------------------------------- | ------------: | --------------: |
+| Assembled smaller rootfs         | 4,086,632,448 |   2,613,149,696 |
+| Containerd-imported smaller root | 4,086,632,448 |   4,086,636,544 |
+| Live smaller root after boot     | 4,086,632,448 |   2,548,985,856 |
+
+The logical root is 55.0% smaller than the 9,073,119,232-byte baseline. Its live
+allocated size is 61.8% below the earlier worker observation of 6,665,912,320 bytes.
+These are disk measurements, not RAM or latency reductions. OCI import again
+materialized holes, and launcher preparation recovered them.
+
+The isolated OCI manifest is
+`sha256:8da36c7d7e85f4c99c03719610cd1aef2ae2a4c6e48947bcf55eb1fda495a202`.
+The existing full system-test target used this layout through a command-line
+`--override_repository=+image_pins+firecracker_boot_linux_amd64=<layout-repository>`.
+That local repository supplies the same `copy_to_directory` target as the generated
+image repository, using the variant's OCI blobs, index and layout marker.
+
+The [hardware probe](https://app.buildbuddy.io/invocation/88af37ca-0bda-4bfc-a9d7-0883c1840506)
+uses runtime source `3ecae3a864` and the smaller guest. Both real Codex scripted turns
+completed. PID `585`, start ticks `6071`, RAM marker, kernel boot ID, Runtime identity,
+native session and process identity survived VMM exit and restore; the counter advanced
+from `2` to `85`. The existing scenario also checked ext4 root/state/workspace, EROFS
+runner and ISO9660 config/launch/trust mounts, and absence of a projected ServiceAccount
+token in the guest. The full target passed, including teardown, in **959.2 seconds**.
+Its Sandbox cleanup span took **129.575 seconds**, within the unchanged 300-second
+budget. This is an observed result from a separate run, not a controlled comparison
+with the production guest's 288.956-second cleanup.
+
+This proves the reduced tool bundle can boot and resume this workload. It does not
+establish tool parity for arbitrary agent tasks, reduced guest RAM requirements, or a
+controlled latency improvement. The production guest remains unchanged.
+
 ## Follow-on experiments
 
-1. Validate the sparse-aware digest in the full hardware target and measure remaining
-   sparse-copy I/O and sync latency. Preserve complete content verification,
-   the paused RAM/disk boundary, durable manifest publication and boot/config/VMM identity fences.
-2. Build and boot a smaller guest variant before selecting any tools to remove. Retain required
-   agent capabilities or supply heavy tools through an explicit immutable tools disk.
+1. Measure remaining copy/sync I/O on populated disks and choose the content-integrity
+   policy explicitly. Preserve the paused RAM/disk boundary, durable manifest publication
+   and boot/config/VMM identity fences; content checksums are a separate policy decision.
+2. Decide which agent capabilities require the omitted pre-commit tools before selecting a
+   smaller production guest, or supply heavy tools through an explicit immutable tools disk.
 3. Investigate retaining large immutable inputs by verified image digest, with a small writable
    root/state boundary. A read-only Nix store or immutable lower filesystem could avoid copying
    gigabytes of unchanged tools per checkpoint. Prove snapshot consistency, boot mounting,

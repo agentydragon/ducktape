@@ -103,6 +103,105 @@ func BenchmarkDigestSparseWorkspace(b *testing.B) {
 	}
 }
 
+func BenchmarkCheckpointCopySparseWorkspace(b *testing.B) {
+	const size = 8 * 1024 * 1024 * 1024
+	source := filepath.Join(b.TempDir(), "workspace.img")
+	file, err := os.Create(source)
+	if err != nil {
+		b.Fatal(err)
+	}
+	if _, err := file.WriteAt([]byte("retained workspace contents"), 1024*1024); err != nil {
+		b.Fatal(err)
+	}
+	if err := file.Truncate(size); err != nil {
+		b.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		b.Fatal(err)
+	}
+
+	for _, benchmark := range []struct {
+		name     string
+		withSync bool
+		digest   bool
+	}{
+		{name: "copy"},
+		{name: "copy+fsync", withSync: true},
+		{name: "copy+fsync+sha256", withSync: true, digest: true},
+	} {
+		b.Run(benchmark.name, func(b *testing.B) {
+			b.SetBytes(size)
+			b.ReportAllocs()
+			ctx := context.Background()
+			for i := 0; b.Loop(); i++ {
+				destination := filepath.Join(b.TempDir(), fmt.Sprintf("workspace-%d.img", i))
+				if benchmark.digest {
+					if _, err := copyDurable(ctx, source, destination); err != nil {
+						b.Fatal(err)
+					}
+					continue
+				}
+				if _, err := runCommand(ctx, "cp", "--reflink=auto", "--sparse=always", "--", source, destination); err != nil {
+					b.Fatal(err)
+				}
+				if err := os.Chmod(destination, 0o600); err != nil {
+					b.Fatal(err)
+				}
+				if benchmark.withSync {
+					if err := syncFile(destination); err != nil {
+						b.Fatal(err)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestCopyAndSyncCopiesSparseRegularFile(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source.img")
+	destination := filepath.Join(root, "destination.img")
+	const size = 4*1024*1024 + 17
+	want := make([]byte, size)
+	contents := map[int]string{0: "leading data", 2 * 1024 * 1024: "data after a hole"}
+	for offset, value := range contents {
+		copy(want[offset:], value)
+	}
+	file, err := os.Create(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for offset, value := range contents {
+		if _, err := file.WriteAt([]byte(value), int64(offset)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := file.Truncate(size); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyAndSync(context.Background(), source, destination); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatal("copied sparse file contents do not match source")
+	}
+	info, err := os.Stat(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("copied file mode = %o, want 600", info.Mode().Perm())
+	}
+}
+
 func testStorage(t *testing.T) *Storage {
 	t.Helper()
 	root := t.TempDir()
