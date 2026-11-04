@@ -207,9 +207,9 @@ runtime_catalog:
 	if !ok {
 		t.Fatalf("discovery returned harness %q, which does not decode as SessionSpec.Harness", harnessName)
 	}
-	spec := &sessionpb.SessionSpec{Harness: sessionpb.Harness(harnessValue)}
-	if spec.GetHarness() != sessionpb.Harness_HARNESS_CLAUDE {
-		t.Fatalf("discovery harness decoded to %s", spec.GetHarness())
+	harness := sessionpb.Harness(harnessValue)
+	if harness != sessionpb.Harness_HARNESS_CLAUDE {
+		t.Fatalf("discovery harness decoded to %s", harness)
 	}
 }
 

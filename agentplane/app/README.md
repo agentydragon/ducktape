@@ -165,6 +165,11 @@ preset defaults, while explicit empty, zero and null values clear them. An omitt
 uses the preset; null clears it; a string (including empty) replaces it. Request envelopes and
 response codecs are generated from the proto; the nested override map intentionally preserves JSON
 presence rather than duplicating the `SessionSpec` scalar schema.
+The resolved preset carries the placement: native presets use `environment_hosted` with the exact
+current Sandbox identity and harness, while the central-sampler offer uses `central_sampler_v1`
+with that same fixed executor environment. Dispatcher validates the placement against the selected
+Sandbox UID; this app flow does not create optional central attachments or environment-free central
+Sessions.
 The generated unary gateway runs the app-owned service in process after cookie-or-reviewed-workload-token
 admission and cookie CSRF checks. Token admission also supports explicitly authorized callers and
 integration tests; it does not make this a backend service API. The app calls the Dispatcher over gRPC.

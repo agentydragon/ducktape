@@ -76,10 +76,15 @@ func DescribeOpening(row *Opening) (*dispatcherpb.SessionOpening, error) {
 	result := &dispatcherpb.SessionOpening{
 		SessionId: row.SessionID,
 		State:     state, CreatedAt: timestamppb.New(row.CreatedAt), UpdatedAt: timestamppb.New(row.UpdatedAt),
-		DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment, Harness: row.Spec.GetHarness(),
+		DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment,
 	}
-	if err := row.Placement.setWire(result, row.SandboxName, row.SandboxUID); err != nil {
-		return nil, err
+	switch row.Placement {
+	case EnvironmentHosted:
+		result.Placement = &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: row.Spec.GetEnvironmentHosted()}
+	case CentralSampler:
+		result.Placement = &dispatcherpb.SessionOpening_CentralSamplerV1{CentralSamplerV1: row.Spec.GetCentralSamplerV1()}
+	default:
+		return nil, fmt.Errorf("stored Session has no placement")
 	}
 	if row.Reason != "" {
 		result.Reason = &row.Reason

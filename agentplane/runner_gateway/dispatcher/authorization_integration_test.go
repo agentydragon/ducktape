@@ -219,8 +219,7 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 
 	sessionID := uuid.NewString()
 	opened, err := client.OpenSession(authorityContext(t, "owner-account"), &dispatcherpb.OpenSessionRequest{
-		Placement: &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: caller.Name, SandboxUid: authoritySandboxUID}}},
-		SessionId: sessionID, Spec: &sessionpb.SessionSpec{},
+		SessionId: sessionID, Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: caller.Name, Uid: authoritySandboxUID}, Harness: sessionpb.Harness_HARNESS_CODEX}}},
 	})
 	if err != nil {
 		t.Fatalf("owner OpenSession: %v", err)
@@ -384,9 +383,8 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	requireMissingSessionCommands(t, client, delegated(), uuid.NewString(), snapshot.Name, snapshot.UID)
 
 	sessionID := uuid.NewString()
-	spec := &sessionpb.SessionSpec{}
+	spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: snapshot.Name, Uid: snapshot.UID}, Harness: sessionpb.Harness_HARNESS_CODEX}}}
 	directOpening, err := client.OpenSession(authorityContext(t, "effective-token"), &dispatcherpb.OpenSessionRequest{
-		Placement: &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: snapshot.Name, SandboxUid: snapshot.UID}}},
 		SessionId: sessionID, Spec: spec,
 	})
 	if err != nil {
@@ -394,7 +392,6 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	}
 	inventory.failSandboxRead(errors.New("inventory unavailable after accepted opening"))
 	openingRetry, err := client.OpenSession(delegated(), &dispatcherpb.OpenSessionRequest{
-		Placement: &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: snapshot.Name, SandboxUid: snapshot.UID}}},
 		SessionId: sessionID, Spec: spec,
 	})
 	if err != nil || openingRetry.GetOpening().GetSessionId() != sessionID {
@@ -660,9 +657,8 @@ func TestOpeningRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 	}, nil)
 	setup := "echo retained"
 	request := &dispatcherpb.OpenSessionRequest{
-		Placement: &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: snapshot.Name, SandboxUid: snapshot.UID}}},
 		SessionId: uuid.NewString(),
-		Spec:      &sessionpb.SessionSpec{}, SetupScript: &setup,
+		Spec:      &sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: snapshot.Name, Uid: snapshot.UID}, Harness: sessionpb.Harness_HARNESS_CODEX}}}, SetupScript: &setup,
 	}
 	first, err := client.OpenSession(authorityContext(t, "retry-owner"), request)
 	if err != nil {
@@ -700,9 +696,11 @@ func TestOpeningRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 		name  string
 		apply func(*dispatcherpb.OpenSessionRequest)
 	}{
-		{"environment name", func(r *dispatcherpb.OpenSessionRequest) { r.GetEnvironmentHosted().Environment.Sandbox += "-other" }},
+		{"environment name", func(r *dispatcherpb.OpenSessionRequest) {
+			r.GetSpec().GetEnvironmentHosted().Environment.Name += "-other"
+		}},
 		{"environment UID", func(r *dispatcherpb.OpenSessionRequest) {
-			r.GetEnvironmentHosted().Environment.SandboxUid = uuid.NewString()
+			r.GetSpec().GetEnvironmentHosted().Environment.Uid = uuid.NewString()
 		}},
 		{"spec", func(r *dispatcherpb.OpenSessionRequest) { r.Spec.Instructions = "different instructions" }},
 		{"absent spec", func(r *dispatcherpb.OpenSessionRequest) { r.Spec = nil }},
@@ -800,8 +798,12 @@ func TestOpeningDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 		{queuedID, owner, sessionpb.Harness_HARNESS_CODEX},
 		{pendingID, serviceAccountIdentityFor(caller, ""), sessionpb.Harness_HARNESS_CODEX},
 	} {
+		spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "discovery-sandbox", Uid: uid}, Harness: row.harness}}}
+		if row.harness == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
+			spec.Placement = &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "discovery-sandbox", Uid: uid}}}
+		}
 		if _, err := store.OpenSessionForCaller(t.Context(), row.id, "discovery-sandbox", uid,
-			&sessionpb.SessionSpec{Harness: row.harness}, nil, nil, row.principal, CallerIdentity{Privileged: true, ServiceAccountIdentity: owner, Attribution: &AdmissionAttribution{Actor: owner, EffectiveCaller: owner}}); err != nil {
+			spec, nil, nil, row.principal, CallerIdentity{Privileged: true, ServiceAccountIdentity: owner, Attribution: &AdmissionAttribution{Actor: owner, EffectiveCaller: owner}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -823,15 +825,15 @@ func TestOpeningDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 	if err != nil || len(first.GetOpenings()) != 1 || first.GetOpenings()[0].GetSessionId() != queuedID || first.GetNextPageToken() == "" {
 		t.Fatalf("owner first page: %v %v", first, err)
 	}
-	if first.GetOpenings()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetOpenings()[0].GetEnvironmentHosted().GetEnvironment().GetSandboxUid() != uid || first.GetOpenings()[0].GetHarness() != sessionpb.Harness_HARNESS_CODEX {
+	if first.GetOpenings()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetOpenings()[0].GetEnvironmentHosted().GetEnvironment().GetUid() != uid || first.GetOpenings()[0].GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CODEX {
 		t.Fatalf("queued opening placement/state: %v", first)
 	}
 	got, err := client.GetSessionOpening(authorityContext(t, "discovery-owner"), &dispatcherpb.GetSessionOpeningRequest{SessionId: queuedID})
-	if err != nil || got.GetOpening().GetHarness() != sessionpb.Harness_HARNESS_CODEX {
+	if err != nil || got.GetOpening().GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CODEX {
 		t.Fatalf("owner opening harness: %v %v", got, err)
 	}
 	central, err := client.GetSessionOpening(authorityContext(t, "discovery-foreign"), &dispatcherpb.GetSessionOpeningRequest{SessionId: foreignID})
-	if err != nil || central.GetOpening().GetHarness() != sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
+	if err != nil || central.GetOpening().GetCentralSamplerV1().GetExecutorEnvironment().GetUid() != uid {
 		t.Fatalf("central opening harness: %v %v", central, err)
 	}
 	// The last row of a page can disappear between requests without invalidating its cursor.
@@ -842,7 +844,7 @@ func TestOpeningDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 		Limit: 1, PageToken: first.GetNextPageToken(),
 	})
 	if err != nil || len(second.GetOpenings()) != 1 || second.GetOpenings()[0].GetSessionId() != failedID || second.GetNextPageToken() != "" ||
-		second.GetOpenings()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED || second.GetOpenings()[0].GetHarness() != sessionpb.Harness_HARNESS_CLAUDE {
+		second.GetOpenings()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED || second.GetOpenings()[0].GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CLAUDE {
 		t.Fatalf("owner second page: %v %v", second, err)
 	}
 	// A cursor carries position only; it never grants the original caller's authority.

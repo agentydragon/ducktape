@@ -27,7 +27,7 @@ func (s *Notifications) subscribe(ctx context.Context, owner model.ServiceAccoun
 	if target == nil {
 		return store.Subscription{}, unavailable("session opening", errors.New("incomplete Session placement"))
 	}
-	body.DestinationRef = model.DestinationRef{Namespace: s.namespace, Name: target.GetSandbox(), UID: target.GetSandboxUid()}
+	body.DestinationRef = model.DestinationRef{Namespace: s.namespace, Name: target.GetName(), UID: target.GetUid()}
 	if err := body.Validate(); err != nil {
 		return store.Subscription{}, err
 	}

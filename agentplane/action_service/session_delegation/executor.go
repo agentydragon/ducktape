@@ -177,16 +177,16 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 			SessionId:   args.SessionID,
 			SetupScript: args.SetupScript,
 			Spec: &sessionpb.SessionSpec{
-				Harness: harness, Model: args.Spec.Model,
+				Model:           args.Spec.Model,
 				Cwd:             strings.ReplaceAll(args.Spec.Cwd, "{session_id}", args.SessionID),
 				ReasoningEffort: args.Spec.ReasoningEffort, Instructions: args.AdditionalInstructions,
 			},
 		}
-		target := &dispatcherpb.ExactSandbox{Sandbox: args.Target.Name, SandboxUid: args.Target.UID}
-		request.Placement = &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: target}}
+		target := &sessionpb.ExactEnvironment{Name: args.Target.Name, Uid: args.Target.UID}
 		if harness == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
-			request.Placement = &dispatcherpb.OpenSessionRequest_CentralSampler{CentralSampler: &dispatcherpb.CentralSamplerPlacement{}}
-			request.InitialExecutor = target
+			request.Spec.Placement = &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: target}}
+		} else {
+			request.Spec.Placement = &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: target, Harness: harness}}
 		}
 		response, err := e.dispatcher.OpenSession(ctx, request)
 		if err != nil {

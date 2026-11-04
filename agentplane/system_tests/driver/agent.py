@@ -159,7 +159,13 @@ class Agent:
             attributes={"sandbox.name": sandbox, "harness": session_pb2.Harness.Name(harness)},
         ):
             spec = session_pb2.SessionSpec(
-                harness=harness, cwd=cwd, model=model, reasoning_effort="low", instructions=instructions
+                environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                    environment=session_pb2.ExactEnvironment(name=sandbox, uid=sandbox_uid), harness=harness
+                ),
+                cwd=cwd,
+                model=model,
+                reasoning_effort="low",
+                instructions=instructions,
             )
             # Retry the same desired session even if an earlier Open reached the runner.
             session_id = uuid4()

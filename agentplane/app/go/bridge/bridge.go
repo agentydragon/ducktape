@@ -73,11 +73,12 @@ func (b *RunnerBridge) OpenSession(
 	request := &dispatcherpb.OpenSessionRequest{
 		SessionId: sessionID.String(), Spec: proto.Clone(spec).(*sessionpb.SessionSpec),
 	}
-	target := &dispatcherpb.ExactSandbox{Sandbox: sandbox, SandboxUid: sandboxUID}
-	request.Placement = &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: target}}
-	if spec.GetHarness() == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
-		request.Placement = &dispatcherpb.OpenSessionRequest_CentralSampler{CentralSampler: &dispatcherpb.CentralSamplerPlacement{}}
-		request.InitialExecutor = target
+	target := spec.GetEnvironmentHosted().GetEnvironment()
+	if spec.GetCentralSamplerV1() != nil {
+		target = spec.GetCentralSamplerV1().GetExecutorEnvironment()
+	}
+	if target.GetName() != sandbox || target.GetUid() != sandboxUID {
+		return nil, errors.New("Session placement does not match requested Sandbox")
 	}
 	if setupScript != nil {
 		value := *setupScript
@@ -94,15 +95,15 @@ func (b *RunnerBridge) OpenSession(
 		return nil, err
 	}
 	opening := response.GetOpening()
-	var returnedTarget *dispatcherpb.ExactSandbox
+	var returnedTarget *sessionpb.ExactEnvironment
 	if opening != nil {
 		returnedTarget = opening.GetEnvironmentHosted().GetEnvironment()
-		if opening.GetCentralSampler() != nil {
-			returnedTarget = opening.GetInitialExecutor()
+		if opening.GetCentralSamplerV1() != nil {
+			returnedTarget = opening.GetCentralSamplerV1().GetExecutorEnvironment()
 		}
 	}
-	if opening == nil || opening.GetSessionId() != sessionID.String() || returnedTarget.GetSandbox() != sandbox ||
-		returnedTarget.GetSandboxUid() != sandboxUID {
+	if opening == nil || opening.GetSessionId() != sessionID.String() || returnedTarget.GetName() != sandbox ||
+		returnedTarget.GetUid() != sandboxUID {
 		return nil, &SessionOpeningNotFoundError{SessionID: sessionID, Sandbox: sandbox}
 	}
 	return opening, nil

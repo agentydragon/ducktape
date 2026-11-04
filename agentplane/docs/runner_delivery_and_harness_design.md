@@ -389,11 +389,13 @@ arrange one Codex app-server process per store or the current Claude stream-json
 Session. Process instances may appear as diagnostics with hosted Sessions/status. At-most-one
 process per store and shared-store concurrent safety remain open.
 
-Current [`SessionSpec`](../proto/session.proto) already selects Claude or Codex and has no store
-selector; the runner creates `CLAUDE_CONFIG_DIR` under the Session's runner-owned directory and
+Current [`SessionSpec`](../proto/session.proto) selects native Claude or Codex through
+`placement.environment_hosted.harness`, alongside its exact required environment. It still has no
+store selector; the runner creates `CLAUDE_CONFIG_DIR` under the Session's runner-owned directory and
 one `CODEX_HOME` for the Runner. No production in-repo caller currently chooses either directory. A private default-store
 policy remains a candidate; future store-management needs can be considered separately without
-putting a store ID in the current Session destination.
+putting a store ID in the current Session destination. Central sampler V1 has a separate placement
+with one required executor environment; it does not share the native harness store contract.
 
 The Sandbox UID must identify the exact incarnation; namespace/name may be a locator, but its wire
 syntax and UID resolver are open. A runner-owned store ID names one durable lineage and is never

@@ -6,17 +6,19 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
 
-func testPlacement(spec *sessionpb.SessionSpec) SessionPlacement {
-	if spec.GetHarness() == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
-		return CentralSampler
+func testPlacement(spec *sessionpb.SessionSpec, sandboxName, sandboxUID string) SessionPlacement {
+	if placementOf(spec) == "" {
+		spec.Placement = &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
+			Environment: &sessionpb.ExactEnvironment{Name: sandboxName, Uid: sandboxUID}, Harness: sessionpb.Harness_HARNESS_CODEX,
+		}}
 	}
-	return EnvironmentHosted
+	return placementOf(spec)
 }
 
 func (s *Store) OpenSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account) (*Opening, error) {
-	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, testPlacement(spec), spec, setupScript, wakeCaller, nil, nil)
+	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, testPlacement(spec, sandboxName, sandboxUID), spec, setupScript, wakeCaller, nil, nil)
 }
 
 func (s *Store) OpenSessionForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal *ServiceAccountIdentity, caller CallerIdentity) (*Opening, error) {
-	return s.OpenSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID, testPlacement(spec), spec, setupScript, wakeCaller, executionPrincipal, caller)
+	return s.OpenSessionWithPlacementForCaller(ctx, sessionID, sandboxName, sandboxUID, testPlacement(spec, sandboxName, sandboxUID), spec, setupScript, wakeCaller, executionPrincipal, caller)
 }

@@ -203,7 +203,11 @@ func modelConfigServer(t *testing.T) *httptest.Server {
 }
 
 func openLifecycleSession(id, cwd string) *environmentruntimepb.OpenSessionRequest {
-	return &environmentruntimepb.OpenSessionRequest{SessionId: id, Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: cwd, Model: "test-model"}}
+	return &environmentruntimepb.OpenSessionRequest{SessionId: id, Spec: &sessionpb.SessionSpec{
+		Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
+			Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE,
+		}}, Cwd: cwd, Model: "test-model",
+	}}
 }
 
 func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }

@@ -9,6 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/orchestration_v1/contract"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc/codes"
@@ -258,8 +259,14 @@ func listing(summary *historypb.SessionSummary) SessionListing {
 		l.LastTurnStatus = new(summary.GetLastTurnStatus().String())
 	}
 	if attached := summary.GetAttached(); attached != nil {
+		harness := attached.GetSpec().GetEnvironmentHosted().GetHarness()
+		if attached.GetSpec().GetCentralSamplerV1() != nil {
+			harness = sessionpb.Harness_HARNESS_CENTRAL_SAMPLER
+		} else if harness == sessionpb.Harness_HARNESS_UNSPECIFIED {
+			harness = attached.GetHistoricalHarness()
+		}
 		l.Runner = &RunnerSnapshot{
-			Harness: attached.GetSpec().GetHarness().String(), HarnessState: attached.GetHarnessState().String(),
+			Harness: harness.String(), HarnessState: attached.GetHarnessState().String(),
 			LaunchOutcome: attached.GetLaunchOutcome().String(),
 		}
 		if turn := attached.GetActiveTurnId(); turn != "" {
@@ -300,10 +307,10 @@ func (e *Executor) sessionForRead(ctx context.Context, ref contract.SandboxRef, 
 	var tied []string
 	if opening != nil {
 		target := opening.GetOpening().GetEnvironmentHosted().GetEnvironment()
-		if opening.GetOpening().GetCentralSampler() != nil {
-			target = opening.GetOpening().GetInitialExecutor()
+		if opening.GetOpening().GetCentralSamplerV1() != nil {
+			target = opening.GetOpening().GetCentralSamplerV1().GetExecutorEnvironment()
 		}
-		tied = append(tied, target.GetSandboxUid())
+		tied = append(tied, target.GetUid())
 	}
 	if written := summary.GetSandbox(); written != nil && written.Uid != nil {
 		tied = append(tied, *written.Uid)

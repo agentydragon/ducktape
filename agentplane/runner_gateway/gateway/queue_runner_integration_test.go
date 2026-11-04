@@ -21,6 +21,7 @@ import (
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 )
 
 type queueCatalog struct{ sandbox dispatcher.SandboxSnapshot }
@@ -111,10 +112,14 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 	}}
 	f := newSandboxFixture(t)
 	sandboxUID := string(f.sandbox.UID)
-	if _, err := store.OpenSession(ctx, "session-queue", testSandbox, sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	spec, err := proto.Marshal(&sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
+		Environment: &sessionpb.ExactEnvironment{Name: testSandbox, Uid: sandboxUID}, Harness: sessionpb.Harness_HARNESS_CODEX,
+	}}})
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, "UPDATE session_opening SET state=$2 WHERE session_id=$1", "session-queue", dispatcher.AdmittedState); err != nil {
+	if _, err := db.ExecContext(ctx, `INSERT INTO session_opening(session_id,sandbox_name,sandbox_uid,spec,state,created_at,updated_at)
+		VALUES($1,$2,$3,$4,$5,now(),now())`, "session-queue", testSandbox, sandboxUID, spec, dispatcher.AdmittedState); err != nil {
 		t.Fatal(err)
 	}
 	queued, err := store.Enqueue(ctx, "session-queue", testSandbox, sandboxUID, command, nil)

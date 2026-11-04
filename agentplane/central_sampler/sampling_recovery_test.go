@@ -30,7 +30,7 @@ func TestSamplingRecoveryReconcilesOnlyTheAbandonedResponse(t *testing.T) {
 				store := newTestStore(t)
 				session, err := openStoreSession(t, store, &samplerpb.OpenSessionRequest{
 					SessionId: uuid.NewString(),
-					Spec:      &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture"},
+					Spec:      &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture"},
 				}, "fixture-account", api)
 				if err != nil {
 					t.Fatal(err)

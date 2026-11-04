@@ -35,6 +35,11 @@ func openStoreSession(t *testing.T, store *Store, request *samplerpb.OpenSession
 			Target: &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "fixture-sandbox", Uid: "fixture-sandbox-uid"},
 		}
 	}
+	if request.GetSpec() != nil && request.GetSpec().GetPlacement() == nil {
+		request.Spec.Placement = &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
+			ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: request.GetExecutor().GetTarget().GetName(), Uid: request.GetExecutor().GetTarget().GetUid()},
+		}}
+	}
 	platformInstructions := fixturePlatformInstructions
 	return store.OpenSession(t.Context(), request, ownerUID, api, &platformInstructions)
 }
@@ -44,7 +49,7 @@ func openSessionForStore(t *testing.T, store *Store, setup string) *Session {
 	request := &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
-			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
+			Cwd: "/fixture", Model: "fixture-model",
 		},
 		SetupScript: &setup,
 	}
@@ -62,7 +67,8 @@ func TestStoreOpeningFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 	request := &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
-			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model", Instructions: briefing,
+			Placement: &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "fixture-executor", Uid: "fixture-executor-uid"}}},
+			Cwd:       "/fixture", Model: "fixture-model", Instructions: briefing,
 		},
 		Executor: &identitypb.SandboxDestination{
 			Owner:  &identitypb.ServiceAccount{Namespace: "fixture-executor-namespace", Name: "fixture-execution-account"},
@@ -159,7 +165,8 @@ func TestStoreOpeningWithoutPlatformGuidanceKeepsCallerPromptAcrossActivation(t 
 	request := &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
-			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model", Instructions: "\n  Fixture raw caller prompt.\n",
+			Placement: &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "fixture-executor", Uid: "fixture-executor-uid"}}},
+			Cwd:       "/fixture", Model: "fixture-model", Instructions: "\n  Fixture raw caller prompt.\n",
 		},
 		Executor: &identitypb.SandboxDestination{
 			Owner:  &identitypb.ServiceAccount{Namespace: "fixture", Name: "fixture-executor"},
@@ -278,7 +285,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	session, err := openStoreSession(t, store, &samplerpb.OpenSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
-			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
+			Cwd: "/fixture", Model: "fixture-model",
 		},
 		Executor: executor, ExpectedIncarnationUid: previousIncarnationUID,
 	}, "fixture-account", protocol.APIStyleResponses)
@@ -799,7 +806,7 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 			store := newTestStore(t)
 			session, err := openStoreSession(t, store, &samplerpb.OpenSessionRequest{
 				SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{
-					Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
+					Cwd: "/fixture", Model: "fixture-model",
 				},
 			}, "fixture-account", api)
 			if err != nil {
@@ -1659,7 +1666,7 @@ func ptrInt(value int) *int { return &value }
 func TestDescribePreservesSessionConfigurationAndUpdatesModel(t *testing.T) {
 	store := newTestStore(t)
 	spec := &sessionpb.SessionSpec{
-		Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model",
+		Cwd: "/fixture", Model: "fixture-model",
 		ReasoningEffort: "high", Instructions: "stored instructions",
 	}
 	executor := &identitypb.SandboxDestination{
@@ -1972,7 +1979,7 @@ func TestPendingInterruptTakesPrecedenceOverSteering(t *testing.T) {
 
 func TestStoreReopeningIgnoresRetiredSessionRouting(t *testing.T) {
 	store := newTestStore(t)
-	request := &samplerpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model"}}
+	request := &samplerpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}}
 	legacy := proto.Clone(request).(*samplerpb.OpenSessionRequest)
 	legacy.Spec.ProtoReflect().SetUnknown([]byte{0x32, 0x00})
 	if _, err := openStoreSession(t, store, legacy, "fixture-account", protocol.APIStyleResponses); err != nil {

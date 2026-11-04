@@ -23,8 +23,11 @@ composes it into the runtime configuration. The [protocol contract](../SPEC.md) 
    name Environment Runtime variables containing credential placeholders; tokens are not serialized in the file.
 3. The Sandbox Controller supplies `launch.json`: namespace, name, UID and optional bootstrap source.
    Deployment policy and platform instructions cannot be supplied by this file.
-4. `SessionSpec` supplies harness, absolute working directory, model, optional reasoning effort,
-   task instructions and Session setup. A Session cannot raise template resource limits.
+4. `SessionSpec.placement.environment_hosted` supplies the exact environment and native harness;
+   the spec also supplies absolute working directory, model, optional reasoning effort, task
+   instructions and Session setup. Central sampler V1 is admitted by the separate
+   `central_sampler_v1` placement and is not handled by this native Runtime. A Session cannot raise
+   template resource limits.
 
 The loader resolves `environment_runtime_environment` against the process environment, overlays its explicit
 values, and resolves `harness_environment` against that result. In each declaration `inherit` is an

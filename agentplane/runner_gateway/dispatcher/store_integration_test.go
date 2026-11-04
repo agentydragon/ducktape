@@ -1230,6 +1230,9 @@ func newWakeWorkerFixture(t *testing.T, spec *sessionpb.SessionSpec, wake WakeRe
 	ctx := context.Background()
 	store := testStore(t, 3)
 	sandboxName, sandboxUID := "sandbox-"+uuid.NewString()[:8], uuid.NewString()
+	if spec.GetCentralSamplerV1() != nil {
+		spec.GetCentralSamplerV1().ExecutorEnvironment = &sessionpb.ExactEnvironment{Name: sandboxName, Uid: sandboxUID}
+	}
 	sessionID, commandID := uuid.NewString(), uuid.NewString()
 	caller := &lifecycle.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "agentplane", Name: sandboxName}, Uid: uuid.NewString()}
 	actor := &lifecycle.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "agentplane", Name: "action-broker"}, Uid: uuid.NewString()}
@@ -1728,7 +1731,7 @@ func TestWorkerDoesNotRepeatUnknownWakeInSameGeneration(t *testing.T) {
 }
 
 func TestCentralOpeningAndInputBypassSuspendedExecutorWake(t *testing.T) {
-	fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER}, nil)
+	fixture := newWakeWorkerFixture(t, &sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{}}}, nil)
 	if ready, err := fixture.worker.prepareOpening(context.Background(), fixture.opening, fixture.sandbox, fixture.owner); err != nil || !ready {
 		t.Fatalf("central opening required executor wake: ready=%v err=%v", ready, err)
 	}
@@ -1993,7 +1996,7 @@ func TestWorkerSerializesCommandsPerSession(t *testing.T) {
 func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 	ctx := admitted(t)
 	store := testStore(t, 3)
-	spec := &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER}
+	spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "sandbox-api", Uid: sandboxUID}}}}
 	opening, err := store.OpenSession(ctx, "central-unready-session", "sandbox-api", sandboxUID, spec, nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -2031,12 +2034,12 @@ func TestCentralOpeningUsesConfiguredSampler(t *testing.T) {
 	ctx := admitted(t)
 	store := testStore(t, 3)
 	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: blockedSandbox{}, CentralTarget: &CentralTarget{Target: "configured", TokenFile: "configured"}}
-	request := &dispatcherpb.OpenSessionRequest{Placement: &dispatcherpb.OpenSessionRequest_CentralSampler{CentralSampler: &dispatcherpb.CentralSamplerPlacement{}}, InitialExecutor: &dispatcherpb.ExactSandbox{Sandbox: "sandbox-api", SandboxUid: sandboxUID}, SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test"}}
+	request := &dispatcherpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "sandbox-api", Uid: sandboxUID}}}, Model: "test-model", Cwd: "/test"}}
 	opened, err := service.OpenSession(ctx, request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if opened.GetOpening().GetCentralSampler() == nil || opened.GetOpening().GetInitialExecutor().GetSandboxUid() != sandboxUID {
+	if opened.GetOpening().GetCentralSamplerV1().GetExecutorEnvironment().GetUid() != sandboxUID {
 		t.Fatalf("central opening lost its owner or initial executor: %v", opened.GetOpening())
 	}
 	// Simulate a pre-upgrade stored spec containing retired field 6.
@@ -2053,7 +2056,7 @@ func TestCentralOpeningUsesConfiguredSampler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("retry with retired metadata: %v", err)
 	}
-	if retried.GetOpening().GetCentralSampler() == nil || retried.GetOpening().GetInitialExecutor().GetSandboxUid() != sandboxUID {
+	if retried.GetOpening().GetCentralSamplerV1().GetExecutorEnvironment().GetUid() != sandboxUID {
 		t.Fatalf("central retry changed placement: %v", retried.GetOpening())
 	}
 	service.CentralTarget = nil
@@ -2076,10 +2079,7 @@ func TestOpenSessionRejectsNonCanonicalUUIDBeforeRecording(t *testing.T) {
 		"urn:uuid:" + canonical,
 	} {
 		t.Run(sessionID, func(t *testing.T) {
-			_, err := service.OpenSession(ctx, &dispatcherpb.OpenSessionRequest{
-				Placement: &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: "sandbox-api", SandboxUid: sandboxUID}}},
-				SessionId: sessionID,
-			})
+			_, err := service.OpenSession(ctx, &dispatcherpb.OpenSessionRequest{SessionId: sessionID})
 			if status.Code(err) != codes.InvalidArgument || status.Convert(err).Message() != "session_id must be a canonical UUID" {
 				t.Fatalf("OpenSession(%q) = %v, want canonical UUID InvalidArgument", sessionID, err)
 			}
@@ -2140,10 +2140,7 @@ func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
 					},
 				},
 			}
-			_, err = service.OpenSession(ctx, &dispatcherpb.OpenSessionRequest{
-				Placement: &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: "sandbox-api", SandboxUid: uid}}},
-				SessionId: sessionID, Spec: &sessionpb.SessionSpec{},
-			})
+			_, err = service.OpenSession(ctx, &dispatcherpb.OpenSessionRequest{SessionId: sessionID, Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox-api", Uid: uid}, Harness: sessionpb.Harness_HARNESS_CODEX}}}})
 			if status.Code(err) != codes.FailedPrecondition {
 				t.Fatalf("opening after cleanup: %v", err)
 			}
@@ -2347,7 +2344,7 @@ func TestNativeOpeningOutcomesFenceQueuedWork(t *testing.T) {
 			store := testStore(t, 3)
 			sessionID, uid, commandID := uuid.NewString(), uuid.NewString(), uuid.NewString()
 			sandbox := SandboxSnapshot{Name: "test-materialization", Namespace: "test-namespace", UID: uid, Incarnation: "test-incarnation"}
-			spec := &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CODEX}
+			spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: uid}, Harness: sessionpb.Harness_HARNESS_CODEX}}}
 			if _, err := store.OpenSession(ctx, sessionID, sandbox.Name, uid, spec, nil, nil); err != nil {
 				t.Fatal(err)
 			}
@@ -2425,11 +2422,11 @@ func TestUnprovenOpeningFailureHoldsCommandsAndPreservesOtherPaths(t *testing.T)
 			store := testStore(t, 3)
 			sessionID, uid, commandID := uuid.NewString(), uuid.NewString(), uuid.NewString()
 			sandbox := SandboxSnapshot{Name: "test-unproven", Namespace: "test-namespace", UID: uid, Incarnation: "test-incarnation"}
-			harness := sessionpb.Harness_HARNESS_CODEX
+			spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: uid}, Harness: sessionpb.Harness_HARNESS_CODEX}}}
 			if kind == "central" {
-				harness = sessionpb.Harness_HARNESS_CENTRAL_SAMPLER
+				spec.Placement = &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: uid}}}
 			}
-			if _, err := store.OpenSession(ctx, sessionID, sandbox.Name, uid, &sessionpb.SessionSpec{Harness: harness}, nil, nil); err != nil {
+			if _, err := store.OpenSession(ctx, sessionID, sandbox.Name, uid, spec, nil, nil); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := enqueueWithSession(t, store, ctx, sessionID, sandbox.Name, uid, input(commandID, "pending"), nil); err != nil {
@@ -2475,7 +2472,7 @@ func TestOpeningRejectionSerializesWithAdmissionAndFencesOwners(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	sessionID, uid, commandID := uuid.NewString(), uuid.NewString(), uuid.NewString()
-	if _, err := store.OpenSession(ctx, sessionID, "test-rejection-race", uid, &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CODEX}, nil, nil); err != nil {
+	if _, err := store.OpenSession(ctx, sessionID, "test-rejection-race", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	oldOwner, err := store.ClaimSandboxOwner(ctx, uid, "test-old-lease", 1, "test-old-owner", 0)

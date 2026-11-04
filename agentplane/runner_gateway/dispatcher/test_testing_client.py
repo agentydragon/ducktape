@@ -9,6 +9,7 @@ import pytest_bazel
 
 from agentplane.grpc.calls import ServiceError
 from agentplane.grpc.serving import serving
+from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 
@@ -56,8 +57,8 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
         return session_dispatcher_pb2.GetSessionOpeningResponse(
             opening=session_dispatcher_pb2.SessionOpening(
                 session_id=request.session_id,
-                environment_hosted=session_dispatcher_pb2.EnvironmentHostedPlacement(
-                    environment=session_dispatcher_pb2.ExactSandbox(sandbox="original", sandbox_uid="original-uid")
+                environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                    environment=session_pb2.ExactEnvironment(name="original", uid="original-uid")
                 ),
             )
         )
@@ -76,8 +77,8 @@ async def test_native_submission_preserves_identity_and_rotates_service_credenti
         opening = await client.get_session_opening("session")
         assert (
             opening.session_id,
-            opening.environment_hosted.environment.sandbox,
-            opening.environment_hosted.environment.sandbox_uid,
+            opening.environment_hosted.environment.name,
+            opening.environment_hosted.environment.uid,
         ) == ("session", "original", "original-uid")
         sandbox, uid = await client.session_target("session")
         first = await client.submit_input("session", "same-command", sandbox, uid, "original input")

@@ -9,6 +9,7 @@ import (
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	_ "github.com/lib/pq"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -31,10 +32,8 @@ func TestSessionPlacementUpgradePreservesRetainedCentralOwner(t *testing.T) {
 		if err := insertCurrentOpeningWriterRow(t.Context(), db, test.id); err != nil {
 			t.Fatal(err)
 		}
-		data, err := proto.Marshal(&sessionpb.SessionSpec{Harness: test.harness})
-		if err != nil {
-			t.Fatal(err)
-		}
+		data := protowire.AppendVarint(protowire.AppendTag(nil, 1, protowire.VarintType), uint64(test.harness))
+		data = protowire.AppendBytes(protowire.AppendTag(data, 99, protowire.BytesType), []byte("unrelated"))
 		if _, err := db.ExecContext(t.Context(), "UPDATE session_opening SET spec=$2 WHERE session_id=$1", test.id, data); err != nil {
 			t.Fatal(err)
 		}
@@ -43,12 +42,27 @@ func TestSessionPlacementUpgradePreservesRetainedCentralOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, test := range []struct{ id, want string }{{"retained-native", "environment_hosted"}, {"retained-central", "central_sampler"}} {
-		var got string
-		if err := db.QueryRowContext(t.Context(), "SELECT placement FROM session_opening WHERE session_id=$1", test.id).Scan(&got); err != nil {
+		var raw []byte
+		if err := db.QueryRowContext(t.Context(), "SELECT spec FROM session_opening WHERE session_id=$1", test.id).Scan(&raw); err != nil {
 			t.Fatal(err)
 		}
-		if got != test.want {
-			t.Fatalf("%s placement = %q, want %q", test.id, got, test.want)
+		var spec sessionpb.SessionSpec
+		if err := proto.Unmarshal(raw, &spec); err != nil {
+			t.Fatal(err)
+		}
+		got := "environment_hosted"
+		if spec.GetCentralSamplerV1() != nil {
+			got = "central_sampler"
+		}
+		var target *sessionpb.ExactEnvironment
+		if got == "environment_hosted" {
+			target = spec.GetEnvironmentHosted().GetEnvironment()
+		} else {
+			target = spec.GetCentralSamplerV1().GetExecutorEnvironment()
+		}
+		if got != test.want || target.GetName() != "sandbox" || target.GetUid() != "00000000-0000-0000-0000-000000000001" ||
+			!bytes.Equal(spec.ProtoReflect().GetUnknown(), protowire.AppendBytes(protowire.AppendTag(nil, 99, protowire.BytesType), []byte("unrelated"))) {
+			t.Fatalf("%s placement = %v, want %q with exact target", test.id, spec.GetPlacement(), test.want)
 		}
 	}
 }
@@ -250,7 +264,7 @@ func insertPreviousOpeningWriterRow(ctx context.Context, db *sql.DB, id string) 
 		 creator_pod_name,creator_pod_uid,action_request_id,action_execution_id,wake_eligible,wake_caller_namespace,wake_caller_name,
 		 spec,setup_script,state,traceparent,created_at,updated_at)
 		VALUES ($1,'sandbox','00000000-0000-0000-0000-000000000001',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
-		 NULL,NULL,NULL,NULL,false,NULL,NULL,decode('','hex'),NULL,'QUEUED_IN_DISPATCHER','',now(),now())`, id)
+		 NULL,NULL,NULL,NULL,false,NULL,NULL,decode('0801','hex'),NULL,'QUEUED_IN_DISPATCHER','',now(),now())`, id)
 	return err
 }
 
@@ -265,7 +279,7 @@ func insertCurrentDispatchWriterRow(ctx context.Context, db *sql.DB, id string) 
 func insertCurrentOpeningWriterRow(ctx context.Context, db *sql.DB, id string) error {
 	_, err := db.ExecContext(ctx, `INSERT INTO session_opening
 		(session_id,sandbox_name,sandbox_uid,spec,state,created_at,updated_at,delivery_blocker,wake_assessment)
-		VALUES ($1,'sandbox','00000000-0000-0000-0000-000000000001',decode('','hex'),
+		VALUES ($1,'sandbox','00000000-0000-0000-0000-000000000001',decode('0801','hex'),
 		 'QUEUED_IN_DISPATCHER',now(),now(),NULL,decode('0802','hex'))`, id)
 	return err
 }

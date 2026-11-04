@@ -101,7 +101,10 @@ func (s *Sampler) OpenSession(ctx context.Context, request *samplerpb.OpenSessio
 			return invalid()
 		}
 	}
-	if len(spec.GetInstructions()) > 1024*1024 || len(spec.GetCwd()) > 4096 || len(request.GetSetupScript()) > 65536 || spec.GetHarness() != sessionpb.Harness_HARNESS_CENTRAL_SAMPLER || !strings.HasPrefix(spec.GetCwd(), "/") {
+	if len(spec.GetInstructions()) > 1024*1024 || len(spec.GetCwd()) > 4096 || len(request.GetSetupScript()) > 65536 || spec.GetCentralSamplerV1() == nil ||
+		spec.GetCentralSamplerV1().GetExecutorEnvironment().GetName() != executor.GetTarget().GetName() ||
+		spec.GetCentralSamplerV1().GetExecutorEnvironment().GetUid() != executor.GetTarget().GetUid() ||
+		!strings.HasPrefix(spec.GetCwd(), "/") {
 		return invalid()
 	}
 	modelConfig, modelConfigured := s.Settings.Models[spec.GetModel()]

@@ -345,6 +345,11 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 		executor.GetTarget().GetNamespace() != executor.GetOwner().GetNamespace() {
 		return nil, protocol.ErrInvalid
 	}
+	placement := request.GetSpec().GetCentralSamplerV1()
+	if placement == nil || placement.GetExecutorEnvironment().GetName() != executor.GetTarget().GetName() ||
+		placement.GetExecutorEnvironment().GetUid() != executor.GetTarget().GetUid() {
+		return nil, protocol.ErrInvalid
+	}
 	if principal := request.GetExecutionPrincipal(); principal != nil &&
 		(principal.GetAccount().GetNamespace() == "" || principal.GetAccount().GetName() == "" || principal.GetUid() == "" ||
 			principal.GetAccount().GetNamespace() != request.GetExecutor().GetOwner().GetNamespace() ||
@@ -820,7 +825,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 		previousIncarnationUID := ""
 		if replacementIncarnationUID != "" {
 			configuration := new(samplerpb.OpenSessionRequest)
-			if err := (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(session.Configuration, configuration); err != nil {
+			if err := proto.Unmarshal(session.Configuration, configuration); err != nil {
 				return err
 			}
 			previousIncarnationUID = configuration.GetExpectedIncarnationUid()

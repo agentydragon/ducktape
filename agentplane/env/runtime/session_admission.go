@@ -52,8 +52,10 @@ func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb
 	}
 	spec := proto.Clone(request.Spec).(*sessionpb.SessionSpec)
 	spec.Instructions = r.config.Launch.Instructions(request.SessionId, spec.Instructions)
-	if spec.Harness != sessionpb.Harness_HARNESS_CLAUDE && spec.Harness != sessionpb.Harness_HARNESS_CODEX {
-		return nil, status.Error(codes.InvalidArgument, "spec.harness must be CLAUDE or CODEX")
+	placement := spec.GetEnvironmentHosted()
+	if placement == nil || (placement.GetHarness() != sessionpb.Harness_HARNESS_CLAUDE && placement.GetHarness() != sessionpb.Harness_HARNESS_CODEX) ||
+		placement.GetEnvironment().GetName() != r.config.Launch.Sandbox.Name || placement.GetEnvironment().GetUid() != r.config.Launch.Sandbox.UID {
+		return nil, status.Error(codes.InvalidArgument, "spec.environment_hosted must select this exact environment and a native harness")
 	}
 	if !filepath.IsAbs(spec.Cwd) || spec.Model == "" {
 		return nil, status.Error(codes.InvalidArgument, "spec.cwd must be absolute and spec.model is required")
@@ -106,7 +108,7 @@ func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb
 		}
 		return &environmentruntimepb.OpenSessionResponse{Attached: attached}, nil
 	}
-	budget, err := r.config.ResolveModelConfig(ctx, spec.Harness, spec.Model)
+	budget, err := r.config.ResolveModelConfig(ctx, placement.GetHarness(), spec.Model)
 	if err != nil {
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}

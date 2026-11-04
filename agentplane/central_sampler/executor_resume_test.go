@@ -697,7 +697,7 @@ func TestExecCommandExpectedIncarnationDoesNotRevealUIDOnAuthorizationFailure(t 
 func resumedExecutorStore(t *testing.T, api protocol.APIStyle) (*Store, Owner, *samplerpb.OpenSessionRequest) {
 	t.Helper()
 	store := newTestStore(t)
-	request := &samplerpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "fixture-model"}, Executor: &identitypb.SandboxDestination{Target: &identitypb.EnvironmentTarget{Namespace: "agents", Name: "sandbox", Uid: "sandbox-uid"}, Owner: &identitypb.ServiceAccount{Namespace: "agents", Name: "sandbox"}}, ExpectedIncarnationUid: "original"}
+	request := &samplerpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}, Executor: &identitypb.SandboxDestination{Target: &identitypb.EnvironmentTarget{Namespace: "agents", Name: "sandbox", Uid: "sandbox-uid"}, Owner: &identitypb.ServiceAccount{Namespace: "agents", Name: "sandbox"}}, ExpectedIncarnationUid: "original"}
 	session, err := openStoreSession(t, store, request, "fixture-account", api)
 	if err != nil {
 		t.Fatal(err)

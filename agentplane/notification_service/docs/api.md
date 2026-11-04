@@ -13,13 +13,19 @@ Workload calls require a Pod-bound Kubernetes ServiceAccount bearer token with t
 audience. Owner authority is the verified ServiceAccount, shared by its workloads. Subscription creation
 addresses a Session by `session_id`. The service resolves its existing Dispatcher opening, checks the exact
 Sandbox UID and caller ownership, and confirms current Runtime membership before source authorization.
-It uses the required environment for native Sessions and the currently fixed initial executor for central Sessions.
+It reads the required environment from `environment_hosted` or the fixed `executor_environment` from
+`central_sampler_v1`. Both currently resolve to the existing Sandbox-backed destination. Central
+sampler V1 remains tied to that exact Sandbox identity and does not support optional attachments or
+environment-free Sessions.
 An absent opening is `NOT_FOUND`; an unavailable lookup is `UNAVAILABLE`. Direct Runtime-only Sessions
 cannot create subscriptions or receive new messages. Message sends specify only `session_id`; the
 service resolves the opening and checks the sender's scoped grant against its exact Sandbox.
 Inbox and subscription IDs identify subsequent operations.
 The caller's inboxes and subscriptions are those opened for the Sandbox that runs as its account now: a Sandbox
 recreated under a deleted one's name sees none of the deleted one's, and an account no Sandbox runs as has none.
+The placement wire change is a coordinated cutover with the Dispatcher and sampler; pre-cutover
+Sandbox/service binaries are not a supported compatibility tier. Existing subscription, inbox and
+retained History data remain subject to their current UID-pinned retirement and retention rules.
 
 - `POST /v1/subscriptions`: immutable provider-owned source/filter and `idempotency_key`; identical retries return
   the same subscription, conflicting reuse returns 409. Actions replay defaults to sequence zero;

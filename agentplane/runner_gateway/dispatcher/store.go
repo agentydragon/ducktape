@@ -17,6 +17,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
@@ -678,7 +679,7 @@ func (s *Store) cancel(ctx context.Context, id string, caller *CallerIdentity) (
 	return nil, ErrNotCancellable
 }
 
-const openingColumns = `session_id, sandbox_name, sandbox_uid::text, placement, execution_account_namespace,
+const openingColumns = `session_id, sandbox_name, sandbox_uid::text, execution_account_namespace,
 	execution_account_name, execution_account_uid::text, creator_account_namespace,
 	creator_account_name, creator_account_uid::text, effective_caller_account_namespace,
 	effective_caller_account_name, effective_caller_account_uid, creator_pod_name, creator_pod_uid,
@@ -695,16 +696,13 @@ func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
 	var callerNS, callerName, incarnation, script, reason sql.NullString
 	var wakeAt sql.NullTime
 	var spec, blockerBytes, wakeBytes []byte
-	err := row.Scan(&o.SessionID, &o.SandboxName, &o.SandboxUID, &o.Placement, &ownerNS, &ownerName, &ownerUID,
+	err := row.Scan(&o.SessionID, &o.SandboxName, &o.SandboxUID, &ownerNS, &ownerName, &ownerUID,
 		&creatorNS, &creatorName, &creatorUID, &effectiveNS, &effectiveName, &effectiveUID, &creatorPodName, &creatorPodUID,
 		&actionRequestID, &actionExecutionID, &o.WakeEligible,
 		&callerNS, &callerName, &incarnation, &wakeAt, &spec, &script, &o.State,
 		&reason, &o.Traceparent, &o.CreatedAt, &o.UpdatedAt, &blockerBytes, &wakeBytes)
 	if err != nil {
 		return nil, err
-	}
-	if o.Placement != EnvironmentHosted && o.Placement != CentralSampler {
-		return nil, fmt.Errorf("unknown stored Session placement %q", o.Placement)
 	}
 	if ownerNS.Valid != ownerName.Valid || ownerUID.Valid && !ownerNS.Valid || creatorNS.Valid != creatorName.Valid ||
 		creatorNS.Valid != creatorUID.Valid {
@@ -753,6 +751,14 @@ func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
 	o.Spec = &sessionpb.SessionSpec{}
 	if err := (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(spec, o.Spec); err != nil {
 		return nil, err
+	}
+	o.Placement = placementOf(o.Spec)
+	if o.Placement == "" {
+		return nil, errors.New("stored Session has no placement")
+	}
+	target := requestTarget(&dispatcherpb.OpenSessionRequest{Spec: o.Spec})
+	if target.GetName() != o.SandboxName || target.GetUid() != o.SandboxUID {
+		return nil, errors.New("stored Session placement disagrees with executor projection")
 	}
 	return o, nil
 }
@@ -803,8 +809,12 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 	if sessionID == "" || sandboxName == "" || spec == nil {
 		return nil, errors.New("session_id, sandbox and spec are required")
 	}
-	if !placement.matchesHarness(spec) {
-		return nil, errors.New("Session placement does not match harness")
+	if !placement.matchesSpec(spec) {
+		return nil, errors.New("Session placement does not match spec")
+	}
+	target := requestTarget(&dispatcherpb.OpenSessionRequest{Spec: spec})
+	if target.GetName() != sandboxName || target.GetUid() != sandboxUID {
+		return nil, errors.New("Session placement does not match executor projection")
 	}
 	data, err := wire(spec)
 	if err != nil {
@@ -857,12 +867,12 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 		}
 		attributionArgs := attributionValues(attribution)
 		result, err = scanOpening(tx.QueryRowContext(ctx, `INSERT INTO session_opening
-			(session_id,sandbox_name,sandbox_uid,placement,execution_account_namespace,execution_account_name,execution_account_uid,
+			(session_id,sandbox_name,sandbox_uid,execution_account_namespace,execution_account_name,execution_account_uid,
 			 creator_account_namespace,creator_account_name,creator_account_uid,effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid,
 			 creator_pod_name,creator_pod_uid,action_request_id,action_execution_id,wake_eligible,wake_caller_namespace,wake_caller_name,
 			 spec,setup_script,state,traceparent,created_at,updated_at,delivery_blocker,wake_assessment)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,now(),now(),$25,$26) RETURNING `+openingColumns,
-			sessionID, sandboxName, sandboxUID, placement, ownerNS, ownerName, ownerUID, creatorNS, creatorName, creatorUID,
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,now(),now(),$24,$25) RETURNING `+openingColumns,
+			sessionID, sandboxName, sandboxUID, ownerNS, ownerName, ownerUID, creatorNS, creatorName, creatorUID,
 			attributionArgs[5], attributionArgs[6], attributionArgs[7], attributionArgs[3], attributionArgs[4], attributionArgs[8], attributionArgs[9],
 			wakeCaller != nil, ns, name, data, setupScript, QueueState,
 			observability.Traceparent(ctx), nil, wakeAssessment))

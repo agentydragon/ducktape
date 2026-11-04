@@ -3,17 +3,24 @@
 ## Identity and admission
 
 `Sampler` is a separate authenticated gRPC API. `OpenSession` binds a canonical public Session UUID
-to a central `SessionSpec`, caller ServiceAccount UID and fixed `SandboxDestination` plus expected
-incarnation UID. The Dispatcher also supplies an optional immutable execution principal containing
+to a `SessionSpec` whose placement is `central_sampler_v1` with one exact `executor_environment`,
+caller ServiceAccount UID and fixed `SandboxDestination` plus expected incarnation UID. The
+Dispatcher and sampler require the spec environment and executor destination to match. The
+Dispatcher also supplies an optional immutable execution principal containing
 the account namespace/name and ServiceAccount UID; when present, its account must match the executor
 owner and the configuration retains it across retries and restarts. A legacy configuration without
 that principal cannot acquire one on a retry. The authenticated sampler ServiceAccount remains the
 journal producer identity and is retained separately by History. The Dispatcher uses its one
-configured central sampler target. Session specs,
-including browser, Actions, and Dispatcher opening inputs, contain no service selection. Model and effort must be server-configured. Every RPC
-uses TokenReview and the allowed-account policy; Session UUID knowledge grants no authority.
+configured central sampler target; callers select the V1 placement, not a service endpoint. Model and
+effort must be server-configured. Every RPC uses TokenReview and the allowed-account policy; Session
+UUID knowledge grants no authority.
 Reusing an identifier with a different payload conflicts. The integration app owns neither this
 admission nor the continuation database.
+
+This V1 placement retains the existing Sandbox-backed identity, admission, notification, wake and
+deletion behavior. Its exact executor environment is required and fixed for the Session. It does not
+add optional attachments or allow an environment-free central Session; those changes require the
+separate [Session/environment task](../plans/task_dag.md#central-session-environment-independence).
 
 `spec.instructions` is the caller's briefing. Callers that expose an additive
 `additional_instructions` parameter map it to this field; it never replaces Agentplane guidance.
@@ -55,8 +62,9 @@ lets the sampling request finish, because a cut stream leaves its intent uncerta
 `notify()` outputs and user input in one arrival-ordered queue; the sampler records a step's
 `notify()` outputs before its steering input.
 
-Dispatcher routes `HARNESS_CENTRAL_SAMPLER` directly to a configured sampler. Its native ProxyRunner
-continues to serve wrapped Codex/Claude. There is no central-to-native fallback. Initial open
+Dispatcher routes `SessionSpec.placement=central_sampler_v1` directly to a configured sampler. Its
+native ProxyRunner continues to serve wrapped Codex/Claude selected by
+`environment_hosted.harness`. There is no central-to-native fallback. Initial open
 requires a ready incarnation; later central commands do not wake or wait for executor readiness.
 The Sandbox UID stays fixed. A verified new incarnation of that same Sandbox can be adopted at
 execution-session initialization, including after suspend and resume.

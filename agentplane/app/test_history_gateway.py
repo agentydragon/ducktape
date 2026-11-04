@@ -30,6 +30,16 @@ from agentplane.testing.scripted_model import ScriptedModel, Text
 pytest_plugins = ("agentplane.app.integration_fixtures",)
 
 
+def _exact_session_spec(spec: session_pb2.SessionSpec, sandbox: str, sandbox_uid: str) -> session_pb2.SessionSpec:
+    exact = session_pb2.SessionSpec()
+    exact.CopyFrom(spec)
+    if exact.WhichOneof("placement") != "environment_hosted":
+        raise ValueError("History gateway tests require an environment-hosted Session")
+    exact.environment_hosted.environment.name = sandbox
+    exact.environment_hosted.environment.uid = sandbox_uid
+    return exact
+
+
 async def test_production_bridge_reads_runner_history_across_gateway_restarts(
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
@@ -41,9 +51,10 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
     spec: session_pb2.SessionSpec,
     model: ScriptedModel,
 ) -> None:
+    exact_spec = _exact_session_spec(spec, SANDBOX, sandbox.uid)
     response = await http.post(
         f"/sandboxes/{SANDBOX}/sessions",
-        json={"session_id": str(uuid4()), "sandbox_uid": sandbox.uid, "spec": MessageToDict(spec)},
+        json={"session_id": str(uuid4()), "sandbox_uid": sandbox.uid, "spec": MessageToDict(exact_spec)},
     )
     assert response.status_code == 201, response.text
     opening = ParseDict(response.json(), session_dispatcher_pb2.SessionOpening())
@@ -174,15 +185,10 @@ async def test_dispatcher_resumes_a_dormant_session_and_proxy_reports_it(
     model: ScriptedModel,
 ) -> None:
     session_id = str(uuid4())
+    exact_spec = _exact_session_spec(spec, SANDBOX, sandbox.uid)
     await session_dispatcher.unary(
         session_dispatcher.stub.OpenSession,
-        session_dispatcher_pb2.OpenSessionRequest(
-            session_id=session_id,
-            environment_hosted=session_dispatcher_pb2.EnvironmentHostedPlacement(
-                environment=session_dispatcher_pb2.ExactSandbox(sandbox=SANDBOX, sandbox_uid=sandbox.uid)
-            ),
-            spec=spec,
-        ),
+        session_dispatcher_pb2.OpenSessionRequest(session_id=session_id, spec=exact_spec),
     )
     await delivered_opening(session_dispatcher, UUID(session_id))
     await admitted(

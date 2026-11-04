@@ -3,6 +3,7 @@ package dispatcher
 import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -11,28 +12,36 @@ type SessionPlacement string
 
 const (
 	EnvironmentHosted SessionPlacement = "environment_hosted"
-	CentralSampler    SessionPlacement = "central_sampler"
+	CentralSampler    SessionPlacement = "central_sampler_v1"
 )
+
+func placementOf(spec *sessionpb.SessionSpec) SessionPlacement {
+	switch spec.GetPlacement().(type) {
+	case *sessionpb.SessionSpec_EnvironmentHosted:
+		return EnvironmentHosted
+	case *sessionpb.SessionSpec_CentralSamplerV1:
+		return CentralSampler
+	default:
+		return ""
+	}
+}
 
 func placementFromRequest(request *dispatcherpb.OpenSessionRequest) (SessionPlacement, error) {
 	if request.GetSpec() == nil {
 		return "", status.Error(codes.InvalidArgument, "Session spec is required")
 	}
-	switch request.GetPlacement().(type) {
-	case *dispatcherpb.OpenSessionRequest_EnvironmentHosted:
-		if request.GetInitialExecutor() != nil || !validExactSandbox(request.GetEnvironmentHosted().GetEnvironment()) {
-			return "", status.Error(codes.InvalidArgument, "environment_hosted requires one exact environment and no initial_executor")
-		}
-		if request.GetSpec().GetHarness() == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
-			return "", status.Error(codes.InvalidArgument, "central sampler harness requires central_sampler placement")
+	spec := request.GetSpec()
+	switch placementOf(spec) {
+	case EnvironmentHosted:
+		if !validExactEnvironment(spec.GetEnvironmentHosted().GetEnvironment()) ||
+			(spec.GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CLAUDE &&
+				spec.GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CODEX) {
+			return "", status.Error(codes.InvalidArgument, "environment_hosted requires one exact environment and a native harness")
 		}
 		return EnvironmentHosted, nil
-	case *dispatcherpb.OpenSessionRequest_CentralSampler:
-		if !validExactSandbox(request.GetInitialExecutor()) {
-			return "", status.Error(codes.InvalidArgument, "central_sampler currently requires an exact initial_executor")
-		}
-		if request.GetSpec().GetHarness() != sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
-			return "", status.Error(codes.InvalidArgument, "central_sampler placement requires central sampler harness")
+	case CentralSampler:
+		if !validExactEnvironment(spec.GetCentralSamplerV1().GetExecutorEnvironment()) {
+			return "", status.Error(codes.InvalidArgument, "central_sampler_v1 currently requires one exact executor environment")
 		}
 		return CentralSampler, nil
 	default:
@@ -40,43 +49,23 @@ func placementFromRequest(request *dispatcherpb.OpenSessionRequest) (SessionPlac
 	}
 }
 
-func validExactSandbox(target *dispatcherpb.ExactSandbox) bool {
-	return target != nil && target.GetSandbox() != "" && target.GetSandboxUid() != ""
+func validExactEnvironment(target *sessionpb.ExactEnvironment) bool {
+	if target == nil || target.GetName() == "" {
+		return false
+	}
+	_, err := uuid.Parse(target.GetUid())
+	return err == nil
 }
 
-func requestTarget(request *dispatcherpb.OpenSessionRequest) *dispatcherpb.ExactSandbox {
-	if request.GetEnvironmentHosted() != nil {
-		return request.GetEnvironmentHosted().GetEnvironment()
+func requestTarget(request *dispatcherpb.OpenSessionRequest) *sessionpb.ExactEnvironment {
+	if request.GetSpec().GetEnvironmentHosted() != nil {
+		return request.GetSpec().GetEnvironmentHosted().GetEnvironment()
 	}
-	return request.GetInitialExecutor()
-}
-
-func (p SessionPlacement) setWire(opening *dispatcherpb.SessionOpening, sandboxName, sandboxUID string) error {
-	target := &dispatcherpb.ExactSandbox{Sandbox: sandboxName, SandboxUid: sandboxUID}
-	switch p {
-	case EnvironmentHosted:
-		opening.Placement = &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: target}}
-	case CentralSampler:
-		opening.Placement = &dispatcherpb.SessionOpening_CentralSampler{CentralSampler: &dispatcherpb.CentralSamplerPlacement{}}
-		opening.InitialExecutor = target
-	default:
-		return status.Error(codes.Internal, "unknown stored Session placement")
-	}
-	return nil
+	return request.GetSpec().GetCentralSamplerV1().GetExecutorEnvironment()
 }
 
 func (p SessionPlacement) requiresReadyExecutor() bool { return p == EnvironmentHosted }
 
-func (p SessionPlacement) matchesHarness(spec *sessionpb.SessionSpec) bool {
-	if spec == nil {
-		return false
-	}
-	switch p {
-	case EnvironmentHosted:
-		return spec.GetHarness() != sessionpb.Harness_HARNESS_CENTRAL_SAMPLER
-	case CentralSampler:
-		return spec.GetHarness() == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER
-	default:
-		return false
-	}
+func (p SessionPlacement) matchesSpec(spec *sessionpb.SessionSpec) bool {
+	return p != "" && placementOf(spec) == p
 }

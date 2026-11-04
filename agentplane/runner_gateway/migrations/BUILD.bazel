@@ -14,6 +14,7 @@ go_library(
         "//agentplane/proto:session_go_proto",
         "@com_github_pressly_goose_v3//:goose",
         "@com_github_pressly_goose_v3//lock",
+        "@org_golang_google_protobuf//encoding/protowire",
         "@org_golang_google_protobuf//proto",
     ],
 )

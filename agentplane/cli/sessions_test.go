@@ -10,6 +10,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -174,7 +175,7 @@ func (f *sessionListFixture) ListSessionOpenings(_ context.Context, request *dis
 	f.requests <- request
 	return &dispatcherpb.ListSessionOpeningsResponse{
 		Openings: []*dispatcherpb.SessionOpening{{
-			SessionId: "58cae82c-453d-4de7-ae5b-17a8f7596077", Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: "queued-sandbox", SandboxUid: "queued-sandbox-uid"}}},
+			SessionId: "58cae82c-453d-4de7-ae5b-17a8f7596077", Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "queued-sandbox", Uid: "queued-sandbox-uid"}}},
 			State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 		}},
 		NextPageToken: "next-page",

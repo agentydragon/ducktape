@@ -76,8 +76,8 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 		t.Fatal(err)
 	}
 	native := &nativeFixture{}
-	spec := &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER}
 	sandbox := SandboxSnapshot{Name: "executor", Namespace: "test", UID: "sandbox-uid", Incarnation: "pod-uid", Blocker: "sandbox_not_ready"}
+	spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: sandbox.UID}}}}
 	runner := &RoutingRunner{Native: native, Store: openingFixture{&Opening{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: CentralSampler, Spec: spec}}, Target: &CentralTarget{Target: listener.Addr().String(), TokenFile: tokenFile}, Timeout: time.Second}
 	setup := "printf 'executor setup\\n'"
 	if err := runner.OpenSession(context.Background(), sandbox, "session", spec, &setup, nil); err != nil {
@@ -95,7 +95,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 	if _, err := runner.Deliver(context.Background(), changed, "session", &commandpb.Command{}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("changed binding accepted: %v", err)
 	}
-	nativeSpec := &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CODEX}
+	nativeSpec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: sandbox.UID}, Harness: sessionpb.Harness_HARNESS_CODEX}}}
 	runner.Store = openingFixture{&Opening{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: EnvironmentHosted, Spec: nativeSpec}}
 	if err := runner.OpenSession(context.Background(), sandbox, "native", nativeSpec, nil, nil); err != nil {
 		t.Fatal(err)

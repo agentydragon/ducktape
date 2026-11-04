@@ -26,6 +26,14 @@ Explicit resume uses the shared lifecycle manager's caller, UID, policy and guar
 the remaining `IDLE_SUSPEND_UI_DRIVE` is VM staging UI acceptance. These are current constraints,
 not a required ontology for every future harness.
 
+The in-progress SessionSpec contract makes the split explicit in one `placement` oneof:
+`environment_hosted` carries the exact environment and native harness selection, while
+`central_sampler_v1` carries one exact, fixed executor environment. Central sampler V1 keeps the
+existing Sandbox-backed identity, admission, notification, wake and deletion behavior; it still
+cannot open without an environment or manage optional attachments. Native harness store identity and
+harness-native Session IDs remain future work. The broader environment-independent central model
+below is a target, tracked by the [central Session task](task_dag.md#central-session-environment-independence).
+
 ## Cases the model must represent
 
 - A Sandbox exists first, and an official Claude Code or Codex CLI runs there with its native

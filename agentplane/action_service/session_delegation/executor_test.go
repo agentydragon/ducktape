@@ -156,7 +156,7 @@ func (b *delegatedBackend) OpenSession(ctx context.Context, request *dispatcherp
 	}
 	b.gotOpen = proto.Clone(request).(*dispatcherpb.OpenSessionRequest)
 	return &dispatcherpb.OpenSessionResponse{Opening: &dispatcherpb.SessionOpening{
-		SessionId: request.GetSessionId(), Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: request.GetEnvironmentHosted()},
+		SessionId: request.GetSessionId(), Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: request.GetSpec().GetEnvironmentHosted()},
 		State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 	}}, nil
 }
@@ -606,7 +606,7 @@ func TestOpenForwardsRecordedCallerAndReturnsTypedOpening(t *testing.T) {
 	if outcome.State != store.ExecutionSucceeded {
 		t.Fatalf("outcome state = %s, want succeeded (%s)", outcome.State, outcome.Error)
 	}
-	if backend.gotOpen == nil || backend.gotOpen.GetSessionId() != testSessionID || backend.gotOpen.GetEnvironmentHosted().GetEnvironment().GetSandboxUid() != "sandbox-uid-1" ||
+	if backend.gotOpen == nil || backend.gotOpen.GetSessionId() != testSessionID || backend.gotOpen.GetSpec().GetEnvironmentHosted().GetEnvironment().GetUid() != "sandbox-uid-1" ||
 		backend.gotOpen.GetSpec().GetInstructions() != "Investigate the child task." || backend.gotOpen.GetSpec().GetCwd() != "/workspace/"+testSessionID {
 		t.Fatalf("OpenSession request = %v", backend.gotOpen)
 	}
@@ -615,7 +615,7 @@ func TestOpenForwardsRecordedCallerAndReturnsTypedOpening(t *testing.T) {
 			SessionID         string `json:"session_id"`
 			EnvironmentHosted struct {
 				Environment struct {
-					SandboxUID string `json:"sandbox_uid"`
+					UID string `json:"uid"`
 				} `json:"environment"`
 			} `json:"environment_hosted"`
 			State string `json:"state"`
@@ -624,7 +624,7 @@ func TestOpenForwardsRecordedCallerAndReturnsTypedOpening(t *testing.T) {
 	if err := json.Unmarshal(outcome.Result, &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Opening.SessionID != testSessionID || result.Opening.EnvironmentHosted.Environment.SandboxUID != "sandbox-uid-1" || result.Opening.State != "DELIVERY_STATE_QUEUED_IN_DISPATCHER" {
+	if result.Opening.SessionID != testSessionID || result.Opening.EnvironmentHosted.Environment.UID != "sandbox-uid-1" || result.Opening.State != "DELIVERY_STATE_QUEUED_IN_DISPATCHER" {
 		t.Fatalf("opening result = %+v", result.Opening)
 	}
 }

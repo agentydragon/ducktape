@@ -68,15 +68,25 @@ func (f *fakeRunner) EnvironmentRuntimeStatus(_ context.Context, sandbox *enviro
 	return f.status, f.err
 }
 
+func bridgeTestSpec() *sessionpb.SessionSpec {
+	return &sessionpb.SessionSpec{Cwd: "/workspace", Model: "model", Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{
+		Environment: &sessionpb.ExactEnvironment{Name: "operator-sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CODEX,
+	}}}
+}
+
+func bridgeTestRequest(id string) *dispatcherpb.OpenSessionRequest {
+	return &dispatcherpb.OpenSessionRequest{SessionId: id, Spec: bridgeTestSpec()}
+}
+
 func TestParseSessionSpecOverlaysDefaultsAndRejectsUnknownFields(t *testing.T) {
 	defaults := &sessionpb.SessionSpec{
-		Harness: sessionpb.Harness_HARNESS_CODEX, Cwd: "/workspace/{session_id}", Model: "default-model",
+		Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "operator-sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CODEX}}, Cwd: "/workspace/{session_id}", Model: "default-model",
 	}
 	parsed, err := ParseSessionSpec(defaults, map[string]any{"model": "", "instructions": "follow this"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if parsed.GetHarness() != sessionpb.Harness_HARNESS_CODEX || parsed.GetCwd() != defaults.GetCwd() || parsed.GetModel() != "" || parsed.GetInstructions() != "follow this" {
+	if parsed.GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CODEX || parsed.GetCwd() != defaults.GetCwd() || parsed.GetModel() != "" || parsed.GetInstructions() != "follow this" {
 		t.Fatalf("parsed spec = %v", parsed)
 	}
 	if _, err := ParseSessionSpec(defaults, map[string]any{"not_a_field": true}); err == nil {
@@ -91,10 +101,10 @@ func TestParseSessionSpecOverlaysDefaultsAndRejectsUnknownFields(t *testing.T) {
 
 func TestOpenSessionPreservesIdentitySpecAndOptionalSetupScript(t *testing.T) {
 	sessionID := uuid.MustParse("0a27b278-a057-48c5-8c46-10765b069e39")
-	spec := &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CODEX, Cwd: "/workspace", Model: "model"}
+	spec := bridgeTestSpec()
 	setup := ""
 	dispatcher := &fakeDispatcher{opening: &dispatcherpb.SessionOpening{
-		SessionId: sessionID.String(), Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: "operator-sandbox", SandboxUid: "sandbox-uid"}}},
+		SessionId: sessionID.String(), Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: spec.GetEnvironmentHosted()},
 	}}
 	bridge, err := New("operators", &fakeSandboxGetter{}, nil, dispatcher)
 	if err != nil {
@@ -105,8 +115,8 @@ func TestOpenSessionPreservesIdentitySpecAndOptionalSetupScript(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := dispatcher.openRequest
-	if request.GetSessionId() != sessionID.String() || request.GetEnvironmentHosted().GetEnvironment().GetSandbox() != "operator-sandbox" ||
-		request.GetEnvironmentHosted().GetEnvironment().GetSandboxUid() != "sandbox-uid" || !proto.Equal(request.GetSpec(), spec) {
+	if request.GetSessionId() != sessionID.String() || request.GetSpec().GetEnvironmentHosted().GetEnvironment().GetName() != "operator-sandbox" ||
+		request.GetSpec().GetEnvironmentHosted().GetEnvironment().GetUid() != "sandbox-uid" || !proto.Equal(request.GetSpec(), spec) {
 		t.Fatalf("OpenSession request = %v", request)
 	}
 	if request.SetupScript == nil || request.GetSetupScript() != "" || opening != dispatcher.opening {
@@ -137,17 +147,17 @@ func TestOpenSessionPreservesIdentitySpecAndOptionalSetupScript(t *testing.T) {
 
 func TestOpenSessionForwardsNilUUIDLikePythonRoute(t *testing.T) {
 	dispatcher := &fakeDispatcher{opening: &dispatcherpb.SessionOpening{
-		SessionId: uuid.Nil.String(), Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: "operator-sandbox", SandboxUid: "sandbox-uid"}}},
+		SessionId: uuid.Nil.String(), Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: bridgeTestSpec().GetEnvironmentHosted()},
 	}}
 	bridge, err := New("operators", &fakeSandboxGetter{}, nil, dispatcher)
 	if err != nil {
 		t.Fatal(err)
 	}
-	opening, err := bridge.OpenSession(context.Background(), "operator-sandbox", "sandbox-uid", uuid.Nil, &sessionpb.SessionSpec{}, nil)
+	opening, err := bridge.OpenSession(context.Background(), "operator-sandbox", "sandbox-uid", uuid.Nil, bridgeTestSpec(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dispatcher.openRequest.GetSessionId() != uuid.Nil.String() || dispatcher.openRequest.GetEnvironmentHosted().GetEnvironment().GetSandboxUid() != "sandbox-uid" ||
+	if dispatcher.openRequest.GetSessionId() != uuid.Nil.String() || dispatcher.openRequest.GetSpec().GetEnvironmentHosted().GetEnvironment().GetUid() != "sandbox-uid" ||
 		opening.GetSessionId() != uuid.Nil.String() {
 		t.Fatalf("nil UUID was not forwarded: request=%v opening=%v", dispatcher.openRequest, opening)
 	}
@@ -160,7 +170,7 @@ func TestOpenSessionTimeoutCarriesStableIdempotencyKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = bridge.OpenSession(context.Background(), "operator-sandbox", "sandbox-uid", sessionID, &sessionpb.SessionSpec{}, nil)
+	_, err = bridge.OpenSession(context.Background(), "operator-sandbox", "sandbox-uid", sessionID, bridgeTestSpec(), nil)
 	var timeout *DispatcherRequestTimeoutError
 	if !errors.As(err, &timeout) || timeout.SessionID != sessionID || !strings.Contains(err.Error(), sessionID.String()) {
 		t.Fatalf("timeout = %#v, error = %v", timeout, err)
@@ -310,7 +320,7 @@ func (s *dispatcherTestServer) OpenSession(ctx context.Context, request *dispatc
 		return nil, status.FromContextError(ctx.Err()).Err()
 	}
 	return &dispatcherpb.OpenSessionResponse{Opening: &dispatcherpb.SessionOpening{
-		SessionId: request.GetSessionId(), Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: request.GetEnvironmentHosted()},
+		SessionId: request.GetSessionId(), Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: request.GetSpec().GetEnvironmentHosted()},
 	}}, nil
 }
 
@@ -334,13 +344,13 @@ func TestDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := uuid.NewString()
-	if _, err := client.OpenSession(context.Background(), &dispatcherpb.OpenSessionRequest{SessionId: id, Placement: &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: "operator-sandbox", SandboxUid: "sandbox-uid"}}}}); err != nil {
+	if _, err := client.OpenSession(context.Background(), bridgeTestRequest(id)); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(tokenFile, []byte("token-two\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.OpenSession(context.Background(), &dispatcherpb.OpenSessionRequest{SessionId: id, Placement: &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: "operator-sandbox", SandboxUid: "sandbox-uid"}}}}); err != nil {
+	if _, err := client.OpenSession(context.Background(), bridgeTestRequest(id)); err != nil {
 		t.Fatal(err)
 	}
 	if len(service.seenBearer) != 2 || service.seenBearer[0] != "Bearer token-one" || service.seenBearer[1] != "Bearer token-two" {
@@ -352,7 +362,7 @@ func TestDispatcherClientUsesRotatingBearerAndMapsDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = slowClient.OpenSession(context.Background(), &dispatcherpb.OpenSessionRequest{SessionId: id, Placement: &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: "operator-sandbox", SandboxUid: "sandbox-uid"}}}})
+	_, err = slowClient.OpenSession(context.Background(), bridgeTestRequest(id))
 	var timeout *RequestTimeoutError
 	if !errors.As(err, &timeout) {
 		t.Fatalf("deadline error = %T %v, want RequestTimeoutError", err, err)

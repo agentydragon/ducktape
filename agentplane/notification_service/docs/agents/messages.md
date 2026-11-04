@@ -27,7 +27,8 @@ agentplane notifications send THEIR_SESSION_ID --body 'The change is ready for r
 
 Use the Session ID you were given; nothing lists other agents' Sessions. The service resolves the
 Session's current exact Sandbox target through its Dispatcher opening and pins the UID in the answer.
-For a central Session this is its fixed initial executor. The body is plain text, 32 KiB at most unless the
+For `central_sampler_v1` this is its fixed `executor_environment`; Central sampler V1 still requires
+that Sandbox-backed target. The body is plain text, 32 KiB at most unless the
 platform says otherwise. `fromSession` lets the recipient answer you; it is optional and nothing
 verifies it.
 

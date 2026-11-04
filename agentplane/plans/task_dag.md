@@ -1044,10 +1044,11 @@ Represent Sandbox-local native harnesses/state and central Sessions whose option
 execution in one shared domain vocabulary. A native harness's required local environment is a
 capability constraint of that harness, not a universal Session attachment requirement. Keep
 Session identity, durable harness stores, running hosts, placement and execution attachments distinct.
-Dispatcher now stores the owner variant for openings and exposes the native exact environment or
-central owner plus fixed current initial executor. This does not implement optional central
-attachments, environment-free central opening, independent central lifetime after executor deletion,
-or the unresolved principal and harness-store contracts.
+The in-progress [SessionSpec placement cutover](#session-spec-placement-cutover) makes the owner
+variant explicit in the spec: `environment_hosted` carries the exact native environment and harness,
+and `central_sampler_v1` carries one exact required executor environment. Central V1 remains
+Sandbox-backed and does not implement optional attachments, environment-free admission, independent
+central lifetime after executor deletion, or the unresolved principal and harness-store contracts.
 Preserve harness-specific constraints: Claude
 Code naturally runs in the environment it acts in; a shared vocabulary must not pretend every
 backend supports independent placement or executor replacement.
@@ -2123,6 +2124,7 @@ flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: delivery ownership and service topology]
     SESSION_DATA_OWNERSHIP_DESIGN[Later decision: Session data and service boundaries]
     SESSION_DIRECTORY_NATIVE[Ready: Dispatcher Session directory for native placement]
+    SESSION_SPEC_PLACEMENT_CUTOVER[In progress: SessionSpec placement hard cutover]
     SESSION_IDENTITY_CONTRACT[Decision: Session identity and shared-Environment admission]
     SESSION_ACCESS_GROUPING_DESIGN[Decision: Session access grouping and tags]
     CENTRAL_SESSION_CREATION_CONTRACT[Decision: central Session creation without an Environment]
@@ -2141,6 +2143,7 @@ flowchart LR
     DELIVERY_DESTINATION_CONTRACT[In progress: Session-ID command addressing]
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
     SESSION_DIRECTORY_NATIVE --> DELIVERY_DESTINATION_CONTRACT
+    SESSION_SPEC_PLACEMENT_CUTOVER --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     CENTRAL_SESSION_CREATION_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     SESSION_IDENTITY_CONTRACT --> SESSION_IDENTITY_ENFORCEMENT
@@ -2345,6 +2348,8 @@ A privileged caller must not accidentally bypass the trust-domain rule.
 concurrent races, account replacement and policy change. The central attachment endpoint does not
 yet need to exist: `SESSION_ENV_ATTACHMENTS` must integrate and test this gate before shipping it.
 
+<a id="central-session-environment-independence"></a>
+
 ### `CENTRAL_SESSION_WITHOUT_ENVIRONMENT` — central Session without an Environment
 
 **Blocked on `SESSION_IDENTITY_CONTRACT` and `CENTRAL_SESSION_CREATION_CONTRACT`.** Implement the
@@ -2449,8 +2454,9 @@ existing `session_opening` row or its replacement into the single Dispatcher Pos
 for live Session ID and native placement; do not add a competing writable mapping. Opening with a
 new UUID durably establishes logical existence independent of owner readiness; retain the immutable
 creation request and exact required environment UID separately from owner materialization and
-command delivery. Reuse existing native authorization; do not invent an environment-free central
-principal. The sampler remains subject to its current contract until separately changed.
+command delivery. Reuse existing native authorization for native Sessions; do not infer a central
+principal from it. Central sampler V1 remains Sandbox-backed under the in-progress placement
+cutover; environment-free central admission is tracked separately.
 
 The [native opening outcome contract](../runner_gateway/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands)
 separates proven rejection from unconfirmed owner outcomes and fences dependent queued work.
@@ -2461,15 +2467,41 @@ This is current behavior, not a decision that Environment deletion must delete t
 that boundary with `SESSION_AND_INBOX_LIFETIME`. A native-first slice may proceed, but must not
 foreclose a retained Session or silently choose its lifetime. Dispatcher is the current first owner;
 `DECLARATIVE_SESSIONS_DESIGN` retains a future CRD as an option, not a competing authority.
-The opening also stores an immutable `environment_hosted` or `central_sampler` owner variant;
-native placement contains its exact environment, while the central opening's required fixed initial
-executor is separate from its owner. This is not an attachment or lifetime implementation.
+The current [SessionSpec placement cutover](#session-spec-placement-cutover) keeps the owner variant
+explicit: `environment_hosted` carries the exact environment and native harness selection;
+`central_sampler_v1` carries one exact required executor environment. Both still use the existing
+Sandbox identity, admission, wake, notification and deletion behavior. This is not an attachment,
+environment-independent Session, or lifetime implementation.
 Remaining: specify how held unconfirmed openings are explicitly resolved and how the owner selects
 and retains the specific harness store and native Session ID. Preserve authority and retained History across service-store boundaries;
 never automatically replay an uncertain native effect. The caller can select an exact
 environment _at creation_; later Session addressing uses the UUID. Choose the minimum schema and
 read API as implementation details, and link its contract from the
 [Session/environment plan](session_environment_model.md#session-address-inventory).
+
+<a id="session-spec-placement-cutover"></a>
+
+### `SESSION_SPEC_PLACEMENT_CUTOVER` — move Session placement into SessionSpec
+
+**In progress (Codex; coordinated hard cutover, 2026-11-04 PDT).** Replace the flat harness field and
+Dispatcher-level placement inputs with one `SessionSpec.placement` oneof. `environment_hosted`
+contains the exact environment name and UID plus native harness selection. `central_sampler_v1`
+contains one explicit, fixed required executor environment. V1 central Sessions retain Sandbox
+identity, admission, wake, notifications and deletion behavior; they have no optional attachments
+and are not independent of an environment. Native store identity and harness-native Session ID
+selection remain future work under `HARNESS_IDENTITY_DESIGN`.
+
+This is a coordinated API and stored-data cutover across Dispatcher, central sampler, App, CLI,
+other clients and Runtime. Old Sandbox callers and binaries are not supported during an overlap
+period. Its migration plan preserves retained records through Dispatcher migration 11, central sampler
+migration 10 and History migration 8; it does not delete/recreate central or History data and must
+not replay commands, notifications or other effects. See the [Dispatcher cutover contract](../runner_gateway/dispatcher/SPEC.md#sessionspec-placement-cutover)
+and the [Session/environment plan](session_environment_model.md#central-session-environment-independence).
+
+Exit: all callers and services use the placement oneof, existing records migrate without changing
+their identities or effect/history records, and no compatibility path accepts the former flat
+placement fields. The later removal of the required central executor environment is tracked by
+`CENTRAL_SESSION_WITHOUT_ENVIRONMENT` above.
 
 ### `DELIVERY_DESTINATION_AUTHORITY_DESIGN` — assign Session send authority and internal fences
 

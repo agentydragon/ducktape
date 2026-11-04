@@ -56,7 +56,7 @@ func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAcc
 	message := store.Message{
 		Sender: sender,
 		DestinationRef: model.DestinationRef{
-			Namespace: s.namespace, Name: target.GetSandbox(), UID: target.GetSandboxUid(),
+			Namespace: s.namespace, Name: target.GetName(), UID: target.GetUid(),
 		},
 		SessionID: request.GetSessionId(), IdempotencyKey: request.GetIdempotencyKey(), Body: request.GetBody(),
 		FromSession: request.FromSession,

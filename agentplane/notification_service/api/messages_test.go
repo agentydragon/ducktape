@@ -11,6 +11,7 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
@@ -237,9 +238,10 @@ func TestAMessageNeedsACompleteDispatcherOpening(t *testing.T) {
 
 func TestOpeningTargetUsesTypedPlacement(t *testing.T) {
 	central := &dispatcherpb.SessionOpening{
-		SessionId:       testSession,
-		Placement:       &dispatcherpb.SessionOpening_CentralSampler{CentralSampler: &dispatcherpb.CentralSamplerPlacement{}},
-		InitialExecutor: &dispatcherpb.ExactSandbox{Sandbox: sandboxName, SandboxUid: sandboxUID},
+		SessionId: testSession,
+		Placement: &dispatcherpb.SessionOpening_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
+			ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: sandboxName, Uid: sandboxUID},
+		}},
 	}
 	for _, test := range []struct {
 		name    string
@@ -248,8 +250,8 @@ func TestOpeningTargetUsesTypedPlacement(t *testing.T) {
 	}{
 		{"native environment", nativeOpening(testSession, sandboxName, sandboxUID), true},
 		{"central initial executor", central, true},
-		{"missing placement", &dispatcherpb.SessionOpening{SessionId: testSession, InitialExecutor: central.InitialExecutor}, false},
-		{"missing central executor", &dispatcherpb.SessionOpening{SessionId: testSession, Placement: central.Placement}, false},
+		{"missing placement", &dispatcherpb.SessionOpening{SessionId: testSession}, false},
+		{"missing central executor", &dispatcherpb.SessionOpening{SessionId: testSession, Placement: &dispatcherpb.SessionOpening_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{}}}, false},
 		{"wrong Session", nativeOpening("other", sandboxName, sandboxUID), false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -257,7 +259,7 @@ func TestOpeningTargetUsesTypedPlacement(t *testing.T) {
 			if (target != nil) != test.want {
 				t.Fatalf("openingTarget(%v) = %v, want present %t", test.opening, target, test.want)
 			}
-			if test.want && (target.GetSandbox() != sandboxName || target.GetSandboxUid() != sandboxUID) {
+			if test.want && (target.GetName() != sandboxName || target.GetUid() != sandboxUID) {
 				t.Fatalf("wrong exact target: %v", target)
 			}
 		})

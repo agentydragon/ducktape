@@ -442,7 +442,7 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 		ctx, "Dispatcher OpenSession",
 		trace.WithAttributes(
 			attribute.String("session.id", request.GetSessionId()),
-			attribute.String("sandbox.name", requestTarget(request).GetSandbox()),
+			attribute.String("sandbox.name", requestTarget(request).GetName()),
 		),
 	)
 	defer func() { observability.End(span, resultErr) }()
@@ -468,7 +468,7 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 			return nil, apiError(ErrOpeningConflict)
 		}
 		target := requestTarget(request)
-		if err := row.matchRequest(target.GetSandbox(), target.GetSandboxUid(), placement, request.GetSpec(), request.SetupScript); err != nil {
+		if err := row.matchRequest(target.GetName(), target.GetUid(), placement, request.GetSpec(), request.SetupScript); err != nil {
 			return nil, apiError(err)
 		}
 		opening, err := DescribeOpening(row)
@@ -485,11 +485,11 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 		return nil, err
 	}
 	target := requestTarget(request)
-	current, err := s.sandbox(ctx, target.GetSandbox())
+	current, err := s.sandbox(ctx, target.GetName())
 	if err != nil {
 		return nil, err
 	}
-	if current.UID != target.GetSandboxUid() {
+	if current.UID != target.GetUid() {
 		return nil, status.Error(codes.FailedPrecondition, "sandbox identity changed")
 	}
 	if err := ValidateRuntime(placement, request.SetupScript, s.CentralTarget); err != nil {
@@ -514,7 +514,7 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 		}
 		execution = account
 	}
-	row, err = s.Store.OpenSessionWithPlacementForCaller(ctx, request.GetSessionId(), target.GetSandbox(), current.UID, placement,
+	row, err = s.Store.OpenSessionWithPlacementForCaller(ctx, request.GetSessionId(), target.GetName(), current.UID, placement,
 		request.GetSpec(), request.SetupScript, nil, execution, caller)
 	if err != nil {
 		return nil, apiError(err)

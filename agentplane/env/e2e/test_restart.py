@@ -64,7 +64,7 @@ async def _wait_for_claude_transcript(
     spec: session_pb2.SessionSpec, session_id: str, entries: Sequence[Any], state_dir: Path, text: str
 ) -> None:
     """Resume tests require the native transcript to exist before the abrupt container death."""
-    if spec.harness != session_pb2.HARNESS_CLAUDE:
+    if spec.environment_hosted.harness != session_pb2.HARNESS_CLAUDE:
         return
     inits = [
         frame

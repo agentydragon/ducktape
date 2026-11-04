@@ -594,7 +594,9 @@ func TestCentralSamplerWriterAndExecutorAreSeparate(t *testing.T) {
 	executorUID := uuid.NewString()
 	announcement := &session_ingresspb.SamplerAnnouncement{
 		Session: &sessionpb.Attached{SessionId: sessionID, Spec: &sessionpb.SessionSpec{
-			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test-workspace",
+			Placement: &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
+				ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "test-execution-sandbox", Uid: executorUID},
+			}}, Model: "test-model", Cwd: "/test-workspace",
 		}},
 		Executor: &identitypb.SandboxDestination{
 			Target: &identitypb.EnvironmentTarget{Namespace: testNamespace, Name: "test-execution-sandbox", Uid: executorUID}, Owner: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "test-execution-sandbox"},
@@ -612,8 +614,16 @@ func TestCentralSamplerWriterAndExecutorAreSeparate(t *testing.T) {
 		t.Fatalf("binding writer=%s executor=%s uid=%s", writerName, sandboxName, sandboxUID)
 	}
 	c.cancel()
+	mismatched := proto.Clone(announcement).(*session_ingresspb.SamplerAnnouncement)
+	mismatched.Executor.Target.Uid = uuid.NewString()
+	bad := ingress.open(t, token)
+	bad.send(&session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: mismatched}})
+	if _, err := bad.stream.Recv(); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("inconsistent central placement: %v", err)
+	}
 	changed := proto.Clone(announcement).(*session_ingresspb.SamplerAnnouncement)
 	changed.Executor.Target.Uid = uuid.NewString()
+	changed.Session.Spec.GetCentralSamplerV1().ExecutorEnvironment.Uid = changed.Executor.Target.Uid
 	next := ingress.open(t, token)
 	next.send(&session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: changed}})
 	if _, err := next.stream.Recv(); status.Code(err) != codes.PermissionDenied {

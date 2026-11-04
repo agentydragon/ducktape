@@ -63,19 +63,30 @@ it("sends the generated exact target through the EnvironmentService facade", asy
 it.each([undefined, null, "", "setup"])(
   "keeps the existing HTTP request and projected response for setup %s",
   async (setup) => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        Response.json(
-          { sessionId: id, sandbox: "test", sandboxUid: "uid", state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER" },
-          { status: 201 }
-        )
-      );
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json(
+        {
+          sessionId: id,
+          state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+          environmentHosted: {
+            environment: { name: "test", uid: "uid" },
+            harness: "HARNESS_CODEX",
+          },
+        },
+        { status: 201 }
+      )
+    );
     vi.stubGlobal("fetch", fetchMock);
     const opening = await openSession(
       target,
       id,
-      create(SessionSpecSchema, { harness: Harness.CODEX, model: "test-model" }),
+      create(SessionSpecSchema, {
+        placement: {
+          case: "environmentHosted",
+          value: { environment: { name: target.name, uid: target.uid }, harness: Harness.CODEX },
+        },
+        model: "test-model",
+      }),
       setup
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -84,7 +95,13 @@ it.each([undefined, null, "", "setup"])(
     expect(JSON.parse(init.body)).toEqual({
       session_id: id,
       sandbox_uid: "uid",
-      spec: { harness: "HARNESS_CODEX", model: "test-model" },
+      spec: {
+        environmentHosted: {
+          environment: { name: "test", uid: "uid" },
+          harness: "HARNESS_CODEX",
+        },
+        model: "test-model",
+      },
       ...(setup === undefined ? {} : { setup_script: setup }),
     });
     expect(opening.sessionId).toBe(id);
@@ -98,7 +115,11 @@ it("looks up the same Session identity without repeating an uncertain Open", asy
     .mockResolvedValueOnce(Response.json({ code: 4, message: "uncertain", detail: "uncertain" }, { status: 504 }))
     .mockResolvedValueOnce(
       Response.json({
-        opening: { sessionId: id, sandbox: "test", state: "DELIVERY_STATE_RUNNER_ADMITTED" },
+        opening: {
+          sessionId: id,
+          state: "DELIVERY_STATE_RUNNER_ADMITTED",
+          environmentHosted: { environment: { name: "test", uid: "uid" }, harness: "HARNESS_CODEX" },
+        },
       })
     );
   vi.stubGlobal("fetch", fetchMock);
@@ -112,9 +133,14 @@ it("looks up the same Session identity without repeating an uncertain Open", asy
 });
 
 it("rejects an opening for a different Session ID", async () => {
-  const fetchMock = vi
-    .fn()
-    .mockResolvedValue(Response.json({ opening: { sessionId: "different-session", sandbox: "test" } }));
+  const fetchMock = vi.fn().mockResolvedValue(
+    Response.json({
+      opening: {
+        sessionId: "different-session",
+        environmentHosted: { environment: { name: "test", uid: "uid" }, harness: "HARNESS_CODEX" },
+      },
+    })
+  );
   vi.stubGlobal("fetch", fetchMock);
 
   await expect(getSessionOpening(id)).rejects.toThrow(

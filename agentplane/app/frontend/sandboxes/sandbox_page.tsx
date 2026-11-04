@@ -554,6 +554,7 @@ export function SandboxPage({
             {/* Hidden, not unmounted: what was entered, and the model catalog, outlive closing the form. */}
             <div hidden={!launching}>
               <NewThreadForm
+                target={sandbox?.target ?? null}
                 presetName={sandbox?.configuration?.preset ?? null}
                 unavailableReason={threadUnavailableReason}
                 creating={creatingThread}

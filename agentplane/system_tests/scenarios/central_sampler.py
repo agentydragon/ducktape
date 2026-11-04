@@ -213,21 +213,21 @@ async def dispatcher_central_setup_tool_and_retained_answer(
     async with central_stack(cluster, tmp_path, template=template) as deployed:
         model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
-        session_spec = session_pb2.SessionSpec(harness=session_pb2.HARNESS_CENTRAL_SAMPLER, cwd=cwd, model=MODEL)
+        session_spec = session_pb2.SessionSpec(
+            central_sampler_v1=session_pb2.CentralSamplerV1Placement(
+                executor_environment=session_pb2.ExactEnvironment(name=deployed.sandbox, uid=deployed.sandbox_uid)
+            ),
+            cwd=cwd,
+            model=MODEL,
+        )
         interrupted_opening = await deployed.dispatcher.OpenSession(
             session_dispatcher_pb2.OpenSessionRequest(
-                session_id=interrupted_session_id,
-                central_sampler=session_dispatcher_pb2.CentralSamplerPlacement(),
-                initial_executor=session_dispatcher_pb2.ExactSandbox(
-                    sandbox=deployed.sandbox, sandbox_uid=deployed.sandbox_uid
-                ),
-                spec=session_spec,
-                setup_script=":\n",
+                session_id=interrupted_session_id, spec=session_spec, setup_script=":\n"
             ),
             metadata=deployed.metadata,
             timeout=15,
         )
-        assert interrupted_opening.opening.initial_executor.sandbox_uid == deployed.sandbox_uid
+        assert interrupted_opening.opening.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
         interrupted_input = await deployed.dispatcher.SubmitInput(
             session_dispatcher_pb2.SubmitInputRequest(
                 session_id=interrupted_session_id,
@@ -278,17 +278,13 @@ async def dispatcher_central_setup_tool_and_retained_answer(
         opening = await deployed.dispatcher.OpenSession(
             session_dispatcher_pb2.OpenSessionRequest(
                 session_id=session_id,
-                central_sampler=session_dispatcher_pb2.CentralSamplerPlacement(),
-                initial_executor=session_dispatcher_pb2.ExactSandbox(
-                    sandbox=deployed.sandbox, sandbox_uid=deployed.sandbox_uid
-                ),
                 spec=session_spec,
                 setup_script="printf 'prepared-on-executor\\n' > prepared.txt\nprintf 'setup-on-executor\\n'\n",
             ),
             metadata=deployed.metadata,
             timeout=15,
         )
-        assert opening.opening.initial_executor.sandbox_uid == deployed.sandbox_uid
+        assert opening.opening.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
         submitted = await deployed.dispatcher.SubmitInput(
             session_dispatcher_pb2.SubmitInputRequest(
                 session_id=session_id, expected_sandbox_uid=deployed.sandbox_uid, command_id=command_id, text=prompt
@@ -492,21 +488,19 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         )
         model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
-        session_spec = session_pb2.SessionSpec(harness=session_pb2.HARNESS_CENTRAL_SAMPLER, cwd=cwd, model=MODEL)
-        opening = await deployed.dispatcher.OpenSession(
-            session_dispatcher_pb2.OpenSessionRequest(
-                session_id=session_id,
-                central_sampler=session_dispatcher_pb2.CentralSamplerPlacement(),
-                initial_executor=session_dispatcher_pb2.ExactSandbox(
-                    sandbox=deployed.sandbox, sandbox_uid=deployed.sandbox_uid
-                ),
-                spec=session_spec,
-                setup_script=":\n",
+        session_spec = session_pb2.SessionSpec(
+            central_sampler_v1=session_pb2.CentralSamplerV1Placement(
+                executor_environment=session_pb2.ExactEnvironment(name=deployed.sandbox, uid=deployed.sandbox_uid)
             ),
+            cwd=cwd,
+            model=MODEL,
+        )
+        opening = await deployed.dispatcher.OpenSession(
+            session_dispatcher_pb2.OpenSessionRequest(session_id=session_id, spec=session_spec, setup_script=":\n"),
             metadata=deployed.metadata,
             timeout=15,
         )
-        assert opening.opening.initial_executor.sandbox_uid == deployed.sandbox_uid
+        assert opening.opening.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
         submitted = await deployed.dispatcher.SubmitInput(
             session_dispatcher_pb2.SubmitInputRequest(
                 session_id=session_id,

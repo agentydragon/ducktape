@@ -57,7 +57,7 @@ func TestGetSessionReadsTheLaunchedIncarnationsSession(t *testing.T) {
 	session := uuid.NewString()
 	at := timestamppb.New(testEpoch)
 	f.dispatcher.hold(&dispatcherpb.SessionOpening{
-		SessionId: session, Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: launched.Name, SandboxUid: string(launched.UID)}}},
+		SessionId: session, Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: launched.Name, Uid: string(launched.UID)}}},
 		State: dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED, CreatedAt: at, UpdatedAt: at,
 	})
 	var commands []string
@@ -76,7 +76,7 @@ func TestGetSessionReadsTheLaunchedIncarnationsSession(t *testing.T) {
 	summary.Attached = &sessionpb.Attached{
 		SessionId: session, ActiveTurnId: "test-turn", HarnessState: sessionpb.HarnessState_HARNESS_STATE_RUNNING,
 		LaunchOutcome: sessionpb.LaunchOutcome_LAUNCH_OUTCOME_STARTED,
-		Spec:          &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CODEX, Cwd: "/test", Instructions: "test"},
+		Spec:          &sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: launched.Name, Uid: string(launched.UID)}, Harness: sessionpb.Harness_HARNESS_CODEX}}, Cwd: "/test", Instructions: "test"},
 	}
 	f.history.hold(summary)
 	f.history.follow = func(_ *historypb.FollowSessionRequest, stream grpc.ServerStreamingServer[historypb.FollowSessionResponse]) error {
@@ -126,7 +126,7 @@ func TestGetSessionRefusesASessionItCannotTieToTheIncarnation(t *testing.T) {
 			session := uuid.NewString()
 			if test.opened != nil {
 				f.dispatcher.hold(&dispatcherpb.SessionOpening{
-					SessionId: session, Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: test.opened.Name, SandboxUid: string(test.opened.UID)}}},
+					SessionId: session, Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: test.opened.Name, Uid: string(test.opened.UID)}}},
 					State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 				})
 			}
@@ -293,7 +293,7 @@ func TestGetSessionBeforeHistoryHasArrived(t *testing.T) {
 	f := newFixture(t)
 	sandbox := f.launch(t, "test-opening-only")
 	session := uuid.NewString()
-	f.dispatcher.hold(&dispatcherpb.SessionOpening{SessionId: session, Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: sandbox.Name, SandboxUid: string(sandbox.UID)}}}},
+	f.dispatcher.hold(&dispatcherpb.SessionOpening{SessionId: session, Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: string(sandbox.UID)}}}},
 		&dispatcherpb.Dispatch{CommandId: "test-pending-command", SessionId: session, State: dispatcherpb.DeliveryState_DELIVERY_STATE_DELIVERING_TO_RUNNER})
 	state := resultOf[SessionState](f.attempt(t, f.caller, contract.ActionGetSession, turnArguments(t, sandbox, session, nil)))
 	if state.Session != nil || len(state.Dispatches) != 1 || state.Dispatches[0].History != nil || state.Dispatches[0].State != "DELIVERY_STATE_DELIVERING_TO_RUNNER" {

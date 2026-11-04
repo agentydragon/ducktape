@@ -216,27 +216,9 @@ message OpenSessionRequest {
   reserved "sandbox", "sandbox_uid";
   agentplane.proto.SessionSpec spec = 3;
   optional string setup_script = 4;  // selected only at creation
-  oneof placement {
-    EnvironmentHostedPlacement environment_hosted = 6;
-    CentralSamplerPlacement central_sampler = 7;
-  }
-  // Required by today's central execution protocol; it is not the central Session's owner.
-  ExactSandbox initial_executor = 8;
+  reserved 6, 7, 8;
+  reserved "environment_hosted", "central_sampler", "initial_executor";
 }
-
-message ExactSandbox {
-  string sandbox = 1;
-  string sandbox_uid = 2;
-}
-
-// The native owner is the Harness Host in this one exact environment.
-message EnvironmentHostedPlacement {
-  ExactSandbox environment = 1;
-}
-
-// The central sampler owns this Session. Environment attachments are separate future state;
-// today's initial executor is still required by OpenSession.
-message CentralSamplerPlacement {}
 
 // Where a Session's opening is, in the vocabulary of `DeliveryState`: `DELIVERY_STATE_RUNNER_ADMITTED` is
 // opened.
@@ -253,15 +235,13 @@ message SessionOpening {
   agentplane.proto.DeliveryBlocker delivery_blocker = 9;
   // The latest typed automatic-wake assessment. Denied or failed wake requests do not fail the opening.
   agentplane.proto.WakeAssessment wake_assessment = 10;
-  // The harness selected in the immutable opening request. Placement identifies the Session
-  // owner; central sampler openings also expose their current fixed initial executor.
-  agentplane.proto.Harness harness = 11;
+  reserved 11, 14;
+  reserved "harness", "initial_executor";
+  // Read-only projection of the placement stored in SessionSpec, without exposing instructions.
   oneof placement {
-    EnvironmentHostedPlacement environment_hosted = 12;
-    CentralSamplerPlacement central_sampler = 13;
+    agentplane.proto.EnvironmentHostedPlacement environment_hosted = 12;
+    agentplane.proto.CentralSamplerV1Placement central_sampler_v1 = 13;
   }
-  // Present only for central Sessions while initial executor admission is required.
-  ExactSandbox initial_executor = 14;
 }
 
 message OpenSessionResponse {

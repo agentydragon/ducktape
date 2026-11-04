@@ -456,8 +456,17 @@ function validateThread(metadata: ThreadMetadata, summary: SessionSummary): void
   const attachment = summary.attached;
   const spec = attachment?.spec;
   if (spec) {
-    assertKnownEnum(spec.harness, HarnessSchema, "Harness");
-    if (spec.harness === Harness.UNSPECIFIED) throw new Error("History Service returned an unspecified Harness");
+    const historicalHarness = attachment?.historicalHarness;
+    const harness =
+      spec.placement.case === "environmentHosted"
+        ? spec.placement.value.harness
+        : spec.placement.case === "centralSamplerV1"
+          ? Harness.CENTRAL_SAMPLER
+          : historicalHarness;
+    if (harness === undefined || harness === Harness.UNSPECIFIED) {
+      throw new Error("History Service returned an unspecified Harness");
+    }
+    assertKnownEnum(harness, HarnessSchema, "Harness");
   }
   assertKnownEnum(attachment?.harnessState ?? HarnessState.UNSPECIFIED, HarnessStateSchema, "HarnessState");
   if (attachment) {

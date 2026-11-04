@@ -248,6 +248,7 @@ go_test(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -265,6 +266,7 @@ py_test(
         "//:conftest",
         "//agentplane/grpc:calls",
         "//agentplane/grpc:serving",
+        "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway:conftest",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb2_grpc",

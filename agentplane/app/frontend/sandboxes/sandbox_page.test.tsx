@@ -874,7 +874,10 @@ it("resolves a queued Open from the live matching Thread projection exactly once
     const { session_id: sessionId } = await request.clone().json();
     return Response.json({
       sessionId,
-      sandbox: "startup-test",
+      environmentHosted: {
+        environment: { name: "startup-test", uid: readySandbox.target!.uid },
+        harness: "HARNESS_CODEX",
+      },
       state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
       reason: "waiting for runner",
     });
@@ -961,7 +964,10 @@ it("opens the client-minted Session ID returned by the opening", async () => {
     live.snapshot.threads = [threadView({ metadata: { threadId: publicId } })];
     return Response.json({
       sessionId: publicId,
-      sandbox: "startup-test",
+      environmentHosted: {
+        environment: { name: "startup-test", uid: readySandbox.target!.uid },
+        harness: "HARNESS_CODEX",
+      },
       state: "DELIVERY_STATE_RUNNER_ADMITTED",
     });
   });
@@ -1068,7 +1074,11 @@ it("defaults new threads to an offered harness while retaining existing Claude t
   expect(harness.value).toBe("Codex");
   await act(async () => harness.click());
   await submitNewThread();
-  expect((await postedBody(sessions)).spec.harness).toBe("HARNESS_CODEX");
+  const body = await postedBody(sessions);
+  expect(body.spec.environmentHosted).toEqual({
+    environment: { name: readySandbox.target!.name, uid: readySandbox.target!.uid },
+    harness: "HARNESS_CODEX",
+  });
 });
 
 it("keeps lifecycle controls when History Thread summaries are unavailable", async () => {
@@ -1250,8 +1260,8 @@ it("launches a configured central sampler while preserving the native offerings"
   );
   await submitNewThread();
   const body = await postedBody(sessions);
-  expect(body.spec.harness).toBe("HARNESS_CENTRAL_SAMPLER");
-  expect(body.spec).not.toHaveProperty("centralSampler");
-  expect(body.spec).not.toHaveProperty("central_sampler");
+  expect(body.spec.centralSamplerV1).toEqual({
+    executorEnvironment: { name: readySandbox.target!.name, uid: readySandbox.target!.uid },
+  });
   expect(body.setup_script).toBe("echo executor-setup");
 });

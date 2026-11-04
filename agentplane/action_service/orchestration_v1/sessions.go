@@ -29,16 +29,17 @@ func (e *Executor) openSession(ctx context.Context, args contract.OpenSessionArg
 	request := &dispatcherpb.OpenSessionRequest{
 		SessionId: args.SessionID, SetupScript: args.SetupScript,
 		Spec: &sessionpb.SessionSpec{
-			Harness: sessionpb.Harness(sessionpb.Harness_value[string(args.Spec.Harness)]), Model: args.Spec.Model,
+			Model:           args.Spec.Model,
 			Cwd:             strings.ReplaceAll(args.Spec.Cwd, "{session_id}", args.SessionID),
 			ReasoningEffort: args.Spec.ReasoningEffort, Instructions: args.Spec.Instructions,
 		},
 	}
-	target := &dispatcherpb.ExactSandbox{Sandbox: args.Sandbox.Name, SandboxUid: string(args.Sandbox.UID)}
-	request.Placement = &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: target}}
-	if request.Spec.GetHarness() == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
-		request.Placement = &dispatcherpb.OpenSessionRequest_CentralSampler{CentralSampler: &dispatcherpb.CentralSamplerPlacement{}}
-		request.InitialExecutor = target
+	target := &sessionpb.ExactEnvironment{Name: args.Sandbox.Name, Uid: string(args.Sandbox.UID)}
+	harness := sessionpb.Harness(sessionpb.Harness_value[string(args.Spec.Harness)])
+	if harness == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
+		request.Spec.Placement = &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: target}}
+	} else {
+		request.Spec.Placement = &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: target, Harness: harness}}
 	}
 	response, err := e.dispatcher.OpenSession(ctx, request)
 	if err != nil {

@@ -245,3 +245,9 @@ writer fencing and commit-before-ack rules apply. Central outboxes retain eviden
 PostgreSQL while History is unavailable. Raw boundary and execution-progress observations remain
 retained evidence; source-linked normalized Events drive the ordinary Thread fold. History does
 not own the provider continuation. See the [sampler contract](../central_sampler/SPEC.md).
+
+The SessionSpec placement cutover's History migration 8 moves a legacy archived
+`SessionSpec.harness` value into `historical_harness` on retained feed and summary snapshots when
+the old record has no exact placement to report. It does not invent an environment identity or
+change raw events, cursors or event ordering. New live openings use the typed placement in
+`SessionSpec`; historical evidence remains available through the migration.

@@ -208,7 +208,13 @@ func sessionDefaults(config Config, sandbox *environmentpb.EnvironmentDescriptor
 		if !ok {
 			return nil, nil, errors.New("ThreadPreset names an unknown Harness " + quote(thread.Harness))
 		}
-		defaults.Harness = sessionpb.Harness(harness)
+		target := sandbox.GetTarget()
+		exact := &sessionpb.ExactEnvironment{Name: target.GetName(), Uid: target.GetUid()}
+		if sessionpb.Harness(harness) == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
+			defaults.Placement = &sessionpb.SessionSpec_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: exact}}
+		} else {
+			defaults.Placement = &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: exact, Harness: sessionpb.Harness(harness)}}
+		}
 		defaults.Model = thread.Model
 		defaults.Cwd = thread.CWD
 		if thread.ReasoningEffort != nil {

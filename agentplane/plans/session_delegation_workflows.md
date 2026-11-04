@@ -146,6 +146,11 @@ central Sessions pin one Sandbox UID, with executor acquisition lazy when needed
 children and 0..N attachments remain the [runtime north star](session_runtime_model.md), not a
 claimed feature of this slice.
 
+The tool-facing `SessionSpec` shape below is a facade-level runtime-options object, not the generated
+Dispatcher protobuf. Its `harness` choice plus the required `target` compile into the current
+`SessionSpec.placement`; central sampler options become `central_sampler_v1` with that fixed executor
+environment. Do not send the examples as direct Dispatcher wire requests.
+
 Sharing a target and giving each child a working directory matches the stakeholder's current
 workflow. It creates no security isolation between those Sessions. Parentage is optional provenance
 and confers no permission. No parent transcript is copied automatically; the creator supplies the

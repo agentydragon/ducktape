@@ -18,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
@@ -188,7 +189,7 @@ type fakeOpenings struct {
 
 func nativeOpening(sessionID, name, uid string) *dispatcherpb.SessionOpening {
 	return &dispatcherpb.SessionOpening{SessionId: sessionID, Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{
-		EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: name, SandboxUid: uid}},
+		EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: name, Uid: uid}},
 	}}
 }
 

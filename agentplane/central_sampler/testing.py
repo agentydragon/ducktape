@@ -161,7 +161,13 @@ def settings(
 def open_request(cwd: Path) -> sampler_pb2.OpenSessionRequest:
     return sampler_pb2.OpenSessionRequest(
         session_id="079bd706-77b3-4b71-8c7e-605a7e19324c",
-        spec=session_pb2.SessionSpec(harness=session_pb2.HARNESS_CENTRAL_SAMPLER, cwd=str(cwd), model="test-model"),
+        spec=session_pb2.SessionSpec(
+            central_sampler_v1=session_pb2.CentralSamplerV1Placement(
+                executor_environment=session_pb2.ExactEnvironment(name="test-sandbox", uid="test-sandbox-uid")
+            ),
+            cwd=str(cwd),
+            model="test-model",
+        ),
         executor=identity_pb2.SandboxDestination(
             owner=identity_pb2.ServiceAccount(namespace="test", name="executor"),
             target=identity_pb2.EnvironmentTarget(namespace="test", name="test-sandbox", uid="test-sandbox-uid"),

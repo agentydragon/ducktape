@@ -65,7 +65,7 @@ async def test_one_turn_streams_reasoning_and_text(
 async def test_effort_change_is_confirmed_and_used_by_next_model_request(
     driver: RunnerDriver, model: ScriptedModel, spec: session_pb2.SessionSpec
 ) -> None:
-    if spec.harness == session_pb2.HARNESS_CLAUDE:
+    if spec.environment_hosted.harness == session_pb2.HARNESS_CLAUDE:
         # Haiku rejects the native effort setting before a model request; use an effort-capable model.
         spec.model = "agentplane-test/claude-opus-4-6"
         model.model = spec.model
@@ -77,7 +77,7 @@ async def test_effort_change_is_confirmed_and_used_by_next_model_request(
         admitted = await session.until(events.is_kind("command_admitted"))
         assert admitted.event.command_admitted.command.command_id == command_id
         assert admitted.event.command_admitted.command.change_reasoning_effort.effort == effort
-        if spec.harness == session_pb2.HARNESS_CLAUDE:
+        if spec.environment_hosted.harness == session_pb2.HARNESS_CLAUDE:
             # Claude's settings control response is the proof. Merely sending it is not.
             changed = await session.until(events.is_kind("reasoning_effort_changed"))
             assert changed.event.reasoning_effort_changed.command_id == command_id
@@ -86,7 +86,7 @@ async def test_effort_change_is_confirmed_and_used_by_next_model_request(
         request = await model.request()
         assert request.effort == effort
         await model.reply(request, Text(f"EFFORT_{index}_OK"))
-        if spec.harness == session_pb2.HARNESS_CODEX:
+        if spec.environment_hosted.harness == session_pb2.HARNESS_CODEX:
             # The matched turn/start answer, not command admission, settles Codex's effect.
             changed = await session.until(events.is_kind("reasoning_effort_changed"))
             assert changed.event.reasoning_effort_changed.command_id == command_id

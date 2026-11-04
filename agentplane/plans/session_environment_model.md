@@ -45,25 +45,35 @@ Gateway/Dispatcher workload; its read-only diagnostics and separate Executor ser
 These checks do not by themselves prove the remaining deletion-outcome fence. Public commands now
 address the Session by ID; Dispatcher resolves and fences its placement.
 
-Dispatcher now records an immutable typed opening placement: `environment_hosted` contains one
-exact required environment, while `central_sampler` names the central owner and carries its
-currently required, fixed `initial_executor` separately. Opening reads expose the same variant;
-delivery and wake decisions use the persisted discriminator rather than inferring ownership from
-the harness enum. Existing central opening rows are backfilled without moving their conversation
-or History data. This is a placement distinction within today's opening authority, not a new
-attachment API or proof that central Sessions can open without an executor. The native harness
-store selection, native ID mapping and central principal remain unresolved.
+**In-progress placement cutover (reported 2026-11-04 PDT; not a deployment claim):** the live
+contract moves backend selection and placement into the `SessionSpec.placement` oneof.
+`environment_hosted` carries an exact environment and native harness selection;
+`central_sampler_v1` carries one exact `executor_environment`. Dispatcher opening reads project that
+same placement. Central sampler V1 retains the existing Sandbox-backed identity, admission,
+notification, wake and deletion behavior. It still requires one fixed executor environment; it does
+not add attachments or permit environment-free central Sessions. Native harness store selection and
+harness-native ID mapping remain future work, and the central principal remains unresolved.
+
+The cutover is coordinated across Dispatcher, sampler, app/CLI, Notification and matching
+environment/runtime callers. The old flat `SessionSpec.harness` and Dispatcher placement fields are
+not a compatibility tier for old callers or Sandbox binaries. New migrations convert retained
+Dispatcher openings and sampler requests in place without requeueing work or replaying effects.
+History retains legacy harness facts as `historical_harness` when an exact old placement cannot be
+reconstructed; it does not fabricate an environment or discard retained events, cursors or order.
+This wire/storage change preserves existing central and History data but does not implement the
+future environment-independent model.
 
 **Ready next:** a [native-first Dispatcher Session authority](task_dag.md#session_directory_native--dispatcher-authority-for-environment-hosted-sessions)
 using existing authorization. Specify deletion and uncertain-outcome fencing as part of that slice;
 do not add a second competing writable directory. The current opening table is not a general
 Session directory.
 
-**Still require design:** central Sessions with no environment or multiple attachments, attachment
-authorization and transitions, the central
-principal and its authority, moving or changing wake orchestration, and cross-store deletion and
-History semantics. The current opening table is not a general Session directory, and the central
-sampler currently requires an executor.
+**Still require design:** central Sessions with no required environment, optional attachment
+semantics and authorization, the central principal and its authority, notification/wake behavior,
+lifetime and retention after environment loss, and cross-store deletion and History semantics. The
+current opening table is not a general Session directory, and central sampler V1 still requires one
+fixed executor environment. The explicit [central Session environment-independence task](task_dag.md#central-session-environment-independence)
+tracks these prerequisites and the later data-preserving migration.
 
 Decisions still needed include the Session/environment principal and privilege relationship; the
 exact Dispatcher/backend creation, ownership and idempotency protocol; attachment authorization,
@@ -73,6 +83,40 @@ provisioning are directions to evaluate, not a decision to use any particular id
 share a Kubernetes ServiceAccount. The related
 [Agentplane principal decision](task_dag.md#agent_principal_model_design--agentplane-principals-and-external-identities)
 covers identity provisioning and trust boundaries.
+
+<a id="central-session-environment-independence"></a>
+
+## Central Session without a required executor environment
+
+**Later work; not part of Central sampler V1.** V1 stores the sampler conversation centrally but
+requires one exact executor environment in `SessionSpec.placement.central_sampler_v1`. That
+environment remains Sandbox-backed for identity, admission, notifications, authorized wake and
+deletion. It is not an optional attachment. The later task is linked from the
+[task DAG](task_dag.md#central-session-environment-independence).
+
+Before removing this requirement, settle the central Session's principal and create/read/send
+authority independently of an attached environment; define Dispatcher and sampler admission when
+there is no executor target; and decide whether the selected 0..N attachment direction will ship now
+or in a separate step. Attachment names, per-operation authorization, exact UID fences and
+attach/detach history must be explicit. Define what inbox subscriptions, pending messages and
+unattended notifications do with no attachment and how an authorized wake targets a later exact
+environment. Resolve Session and inbox lifetime/retention after an environment is removed. History
+reads must remain available without a live environment or directory lookup.
+
+This is a coordinated wire and storage cutover across Dispatcher, sampler, app/CLI, Notification,
+History and environment callers. Old `SessionSpec` encodings and old Sandbox/runtime binaries are
+not a supported compatibility tier. Migrations must preserve central Session IDs, provider
+conversation, commands, cursors, effect evidence, inbox data and retained History; preserve legacy
+harness provenance when exact placement is absent instead of fabricating an environment. Do not
+requeue accepted work, replay an uncertain provider/executor effect, or turn missing History into a
+success claim. Keep placement and data migration separate from any later authorization change.
+
+**Exit:** a reviewed contract and migration plan for opening and addressing a central Session with
+zero environments, optional attachment semantics and authorization, inbox/wake behavior, lifetime
+and retention, and History access. Automated acceptance proves migrated central and History records
+remain readable, an environment-free Session admits and continues only allowed work, exact attached
+environment fences reject replacements, and uncertain effects are never replayed. No implementation
+starts before the principal/auth and lifetime decisions are resolved.
 
 A Session has one globally unique public ID. A resolver finds its responsible owner; that owner locates the harness continuation. Environment bindings describe where work can run.
 
@@ -655,7 +699,12 @@ Current sources: [History Service](https://github.com/agentydragon/ducktape/blob
 
 Give callers the same operation for creating a logical Session on either backend. Choose placement explicitly; let the selected owner prepare, reuse or start its harness as needed.
 
-### What opening means today
+### Opening behavior in the pre-cutover source snapshot
+
+This table describes the pinned pre-cutover source revision used for the address inventory. Its
+wire-field descriptions are historical; the in-progress [SessionSpec placement cutover](task_dag.md#session-spec-placement-cutover)
+defines the contract for this change. Central sampler V1 still requires one exact Sandbox-backed
+executor environment, while native store identity and harness-native Session IDs remain future work.
 
 | Layer               | Current behavior                                                                                                                                                                                                                                   | What success proves                                                                                                                                   |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -875,7 +924,7 @@ Teach agents, CLI and UI to inspect/select bindings and observe changes. Keep na
 
 Only after the contracts work, assess whether to regroup services, expose a separate binding resource, migrate native stores, or retire redundant names/fields. Those are consequences to evaluate, not prerequisites.
 
-**Data and rollout.** Preserve existing Session IDs, native stores, history, effective principals and idempotency across any selected transition. The user has said existing Sandboxes can be deleted for earlier Runtime cutovers; do not assume that automatically authorizes deleting retained Session or history data for a future design. A fresh-state cutover is possible only after its scope is established.
+**Data and rollout.** Preserve existing Session IDs, native stores, history, effective principals and idempotency across any selected transition. The current SessionSpec placement cutover is a coordinated hard cutover with no old Sandbox/runtime compatibility; its migrations preserve Dispatcher openings, sampler continuation and History evidence in place. Do not use a fresh-state cutover or delete retained Session/history data. The later environment-independent central change also requires migrations preserving central and History data, and must not replay uncertain effects.
 
 **Acceptance examples:** two Sessions in the same environment can reference the same Codex store with distinct native IDs; an unknown native-create result is not replayed; native Session survives ordinary Runtime restart; a shared Codex host can stop without losing Session identities; a central Session opens and accepts provider-only work with zero environments; adding two exact bindings routes each call correctly; deleting one environment does not delete the central Session; an in-flight unknown effect is not replayed; same-name replacement is not adopted; unauthorized attach/wake/execute is refused; native placement cannot be detached or changed through attachment or generic edit APIs.
 
@@ -915,7 +964,9 @@ Only after the contracts work, assess whether to regroup services, expose a sepa
 
 ## Session address inventory and follow-up work
 
-The inventory records the implemented opening lookup and Session inbox diagnostics. Subscription
+The inventory records the implemented opening lookup and Session inbox diagnostics at its pinned
+pre-cutover source revision. It is not the current wire-field contract; see the [SessionSpec
+placement cutover](task_dag.md#session-spec-placement-cutover). Subscription
 creation now uses a Session-only request, as merged in [#14103](https://github.com/agentydragon/ducktape/pull/14103).
 A Session ID is the public address; an exact environment UID remains meaningful
 for native placement, queued-work and execution fencing, authorization, and historical provenance.

@@ -98,6 +98,49 @@ it("passes the exact Sandbox UID to the paginated app Thread RPC", async () => {
   expect(url.searchParams.get("limit")).toBe("200");
 });
 
+it.each([
+  { label: "a retained harness", historicalHarness: "HARNESS_CLAUDE", expected: "HARNESS_CLAUDE" },
+  { label: "no retained harness provenance", historicalHarness: undefined, expected: null },
+])("uses $label when archived History has no live placement", async ({ historicalHarness, expected }) => {
+  vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+    const path = new URL(input instanceof Request ? input.url : input.toString()).pathname;
+    if (path === "/upstream/app/v1/threads") {
+      return Promise.resolve(
+        Response.json({
+          threads: [{ threadId: "archived-session", createdAt: "2026-11-04T00:00:00Z", archived: true }],
+          archivedCount: 1,
+        })
+      );
+    }
+    if (path === "/upstream/history/v1/sessions:batchGetSummaries") {
+      return Promise.resolve(
+        Response.json({
+          summaries: [
+            {
+              sessionId: "archived-session",
+              foldedThrough: "0",
+              feedStatus: "FEED_STATUS_ENDED",
+              sandbox: { name: "archived-sandbox", uid: "archived-sandbox-uid" },
+              attached: {
+                spec: { model: "archived-model" },
+                historicalHarness,
+                harnessState: "HARNESS_STATE_STOPPED",
+                setupState: "SETUP_STATE_NOT_REQUIRED",
+                launchOutcome: "LAUNCH_OUTCOME_STARTED",
+              },
+            },
+          ],
+        })
+      );
+    }
+    throw new Error(`Unexpected request: ${path}`);
+  });
+
+  const result = await listThreadWindow({ limit: 20, search: null, includeArchived: true }, null);
+  expect(result.threads).toHaveLength(1);
+  expect(result.threads[0]?.harness).toBe(expected);
+});
+
 it.each(["before", "after"] as const)("preserves %s archive cursors above JS integer precision", async (direction) => {
   const requests: Request[] = [];
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {

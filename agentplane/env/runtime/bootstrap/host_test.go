@@ -112,7 +112,7 @@ func TestFailedDurablePutDoesNotExposeSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	record, err := retained.NewRecord(&sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", Model: "model"}, "", nil)
+	record, err := retained.NewRecord(&sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}, Cwd: "/workspace", Model: "model"}, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -707,7 +707,7 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 	}
 	budget := 1234
 	native := "native-1"
-	record, err := retained.NewRecord(&sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", Model: "model"}, "printf exact", &budget)
+	record, err := retained.NewRecord(&sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}, Cwd: "/workspace", Model: "model"}, "printf exact", &budget)
 	if err != nil {
 		t.Fatal(err)
 	}

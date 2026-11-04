@@ -245,11 +245,12 @@ prints the Dispatcher opening record; it does not wait for History.`,
 			request := &dispatcherpb.OpenSessionRequest{
 				SessionId: args[0], Spec: spec,
 			}
-			target := &dispatcherpb.ExactSandbox{Sandbox: sandbox, SandboxUid: sandboxUID}
-			request.Placement = &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: target}}
-			if spec.GetHarness() == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
-				request.Placement = &dispatcherpb.OpenSessionRequest_CentralSampler{CentralSampler: &dispatcherpb.CentralSamplerPlacement{}}
-				request.InitialExecutor = target
+			target := spec.GetEnvironmentHosted().GetEnvironment()
+			if spec.GetCentralSamplerV1() != nil {
+				target = spec.GetCentralSamplerV1().GetExecutorEnvironment()
+			}
+			if target.GetName() != sandbox || target.GetUid() != sandboxUID {
+				return usageFailure("--spec placement must match --sandbox and --sandbox-uid")
 			}
 			if setupScriptSet {
 				contents, err := a.readSessionValue("--setup-script", setupScript)
@@ -525,14 +526,14 @@ func sessionOpeningLine(raw json.RawMessage) (string, error) {
 		return "", invalidResponse("no session ID in the opening")
 	}
 	target := opening.GetEnvironmentHosted().GetEnvironment()
-	if opening.GetCentralSampler() != nil {
-		target = opening.GetInitialExecutor()
+	if opening.GetCentralSamplerV1() != nil {
+		target = opening.GetCentralSamplerV1().GetExecutorEnvironment()
 	}
 	line := fields(
 		opening.GetSessionId(),
 		enumSuffix(opening.GetState().String(), "DELIVERY_STATE_"),
-		target.GetSandbox(),
-		"Kubernetes Sandbox UID "+target.GetSandboxUid(),
+		target.GetName(),
+		"Kubernetes Sandbox UID "+target.GetUid(),
 	)
 	if opening.Reason != nil {
 		line += fields("reason", fmt.Sprintf("%q", opening.GetReason()))

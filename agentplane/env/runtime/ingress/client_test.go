@@ -73,7 +73,7 @@ func newTestSource(t *testing.T, count int) (Source, *retained.Store, []*eventlo
 		Announce: func() *sessionpb.Attached {
 			return &sessionpb.Attached{
 				SessionId:  testSessionID,
-				Spec:       &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", Model: "test-model"},
+				Spec:       &sessionpb.SessionSpec{Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}, Cwd: "/workspace", Model: "test-model"},
 				LastCursor: j.LastCursor(),
 			}
 		},

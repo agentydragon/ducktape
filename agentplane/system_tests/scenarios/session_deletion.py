@@ -237,12 +237,6 @@ async def deployed_session_command_cannot_cross_deletion(
     gateway, _, _ = await bound_caller(cluster, "runner-gateway", audience=audience)
     name = f"systest-deletion-{uuid4().hex[:8]}"
     session, positive, delayed, observed, probe_session = (str(uuid4()) for _ in range(5))
-    spec = session_pb2.SessionSpec(
-        harness=session_pb2.HARNESS_CODEX,
-        model="chatgpt-sub/oai-responses/gpt-6-luna",
-        cwd="/state",
-        reasoning_effort="low",
-    )
     evidence: dict[str, object] = {"sandbox": name, "session": session, "delayed_command": delayed, "passed": False}
 
     def persist() -> None:
@@ -252,6 +246,14 @@ async def deployed_session_command_cannot_cross_deletion(
     async with AsyncExitStack() as stack:
         await stack.enter_async_context(scripted.case_scope())
         uid = await stack.enter_async_context(_sandbox(cluster, name, config["environment_default_policy_sets"]))
+        spec = session_pb2.SessionSpec(
+            environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                environment=session_pb2.ExactEnvironment(name=name, uid=uid), harness=session_pb2.HARNESS_CODEX
+            ),
+            model="chatgpt-sub/oai-responses/gpt-6-luna",
+            cwd="/state",
+            reasoning_effort="low",
+        )
         target = await stack.enter_async_context(forward(cluster))
         channel = await stack.enter_async_context(dial(target))
         history_settings = json.loads(await cluster.kubectl("get", "configmap", "history-service-config", "-o", "json"))
@@ -270,15 +272,7 @@ async def deployed_session_command_cannot_cross_deletion(
         )
         metadata = _metadata(gateway, cluster, name, uid)
         await dispatcher.OpenSession(
-            session_dispatcher_pb2.OpenSessionRequest(
-                environment_hosted=session_dispatcher_pb2.EnvironmentHostedPlacement(
-                    environment=session_dispatcher_pb2.ExactSandbox(sandbox=name, sandbox_uid=uid)
-                ),
-                session_id=session,
-                spec=spec,
-            ),
-            metadata=app.metadata,
-            timeout=15,
+            session_dispatcher_pb2.OpenSessionRequest(session_id=session, spec=spec), metadata=app.metadata, timeout=15
         )
         await opening_until(
             dispatcher,
@@ -428,15 +422,12 @@ async def deployed_session_command_cannot_cross_deletion(
         )
         assert replacement != uid
         replacement_session = str(uuid4())
+        replacement_spec = session_pb2.SessionSpec()
+        replacement_spec.CopyFrom(spec)
+        replacement_spec.environment_hosted.environment.uid = replacement
         # Use a fresh Session ID: the test imposes no retention policy on old Session UUIDs.
         await dispatcher.OpenSession(
-            session_dispatcher_pb2.OpenSessionRequest(
-                environment_hosted=session_dispatcher_pb2.EnvironmentHostedPlacement(
-                    environment=session_dispatcher_pb2.ExactSandbox(sandbox=name, sandbox_uid=replacement)
-                ),
-                session_id=replacement_session,
-                spec=spec,
-            ),
+            session_dispatcher_pb2.OpenSessionRequest(session_id=replacement_session, spec=replacement_spec),
             metadata=app.metadata,
             timeout=15,
         )

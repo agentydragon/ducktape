@@ -32,11 +32,14 @@ The manual queue, replica and wake probes are documented in the
 - **Order**: commands, including `InterruptTurn`, are delivered first in, first out per Session.
   The Runtime checks the interrupt’s exact target at admission; it never interrupts a successor turn.
   A delayed or uncertain delivery follows the same receipt and recovery rules as other commands.
-- **Opening a Session**: a new `OpenSession` requires a typed placement. `environment_hosted`
-  contains the one exact native environment; `central_sampler` identifies the central owner and
-  currently requires a separate exact `initial_executor`, fixed for the life of today's central
-  execution binding. This is not an attachment API. Both paths read the current Sandbox and refuse
-  a same-name replacement with `FAILED_PRECONDITION` before storing anything. It stores the request keyed by the
+- **Opening a Session**: `SessionSpec.placement` is the single source of backend and placement.
+  `environment_hosted` carries one exact environment and the native Claude/Codex harness selection;
+  `central_sampler_v1` carries one exact `executor_environment`. Central sampler V1 still uses the
+  existing Sandbox-backed identity, admission, notification, wake and deletion behavior. Its
+  executor environment is fixed for the Session; it is not an optional attachment, and the central
+  Session cannot yet open without an environment. Both placements resolve the named environment to
+  the current Sandbox and reject a same-name replacement with `FAILED_PRECONDITION` before storing
+  anything. The request is keyed by the
   caller-minted canonical lowercase UUID `session_id` and answers with a `SessionOpening` in the same delivery states.
   An exact retry uses retained receipt-read authority and returns the stored record without reading live
   Sandbox or execution-account inventory. It compares the same immutable placement, exact target, spec and
@@ -60,10 +63,13 @@ The manual queue, replica and wake probes are documented in the
   snapshot: concurrent creation before the cursor is seen on a fresh listing, and cleanup removes
   records. This includes today's environment-bound central openings without defining environment-free
   central Sessions. The CLI exposes it as `agentplane sessions list`.
-- **Wire rollout**: command requests changed shape; an old Dispatcher requires fields no longer sent by new
-  callers, and an old JSON client sends fields the new facade no longer recognizes. Roll out the Dispatcher and
-  its callers together. To roll back, revert the Dispatcher and callers together and check command admission
-  and authorization. Existing Session openings and running Sessions are unaffected.
+- **Wire and data cutover**: this cutover moves placement into the `SessionSpec` oneof; the flat
+  harness field and Dispatcher-level placement fields are retired. Coordinate the Dispatcher,
+  sampler, app/CLI and
+  other Session callers with the matching environment/runtime images. Old callers and old Sandbox
+  binaries are not supported in an overlap window. The in-place migrations convert retained opening
+  and sampler request records and preserve their Session/history data; they do not requeue commands
+  or replay effects. See the [placement cutover details](SPEC.md#sessionspec-placement-cutover).
 - **Caller authority**: a normal workload token must prove the target Sandbox's exact controller-owned
   execution ServiceAccount UID. New Sessions retain that UID as their immutable logical principal, and
   retain the actual opening caller separately as creator/broker. Normal command writes, cancellation,

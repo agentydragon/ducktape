@@ -127,7 +127,7 @@ async def test_open_session_preserves_override_presence(
             json.dumps(
                 {
                     "sessionId": str(session_id),
-                    "environmentHosted": {"environment": {"sandbox": "demo", "sandboxUid": sandbox_uid}},
+                    "environmentHosted": {"environment": {"name": "demo", "uid": sandbox_uid}},
                 }
             ).encode(),
             "application/json",
@@ -498,10 +498,15 @@ async def test_create_sandbox_captures_the_exact_complete_ack_without_retrying()
 
 async def test_open_session_rejects_a_different_sandbox_uid() -> None:
     async def opened(_after: int, writer: asyncio.StreamWriter) -> None:
-        await _respond(writer, "201 Created", b'{"sandboxUid":"different-uid"}', "application/json")
+        await _respond(
+            writer,
+            "201 Created",
+            b'{"environmentHosted":{"environment":{"name":"box","uid":"different-uid"}}}',
+            "application/json",
+        )
 
     async with _app(opened) as (client, _):
-        with pytest.raises(RuntimeError, match="different Sandbox UID"):
+        with pytest.raises(RuntimeError, match="different Environment identity"):
             await client.open_session("box", uuid4(), sandbox_uid="expected-uid")
         assert not client.opened_sandbox_uids
 

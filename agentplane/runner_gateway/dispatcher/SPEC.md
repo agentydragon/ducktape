@@ -38,15 +38,16 @@ It scopes existing Sessions and existing environments; it does not create enviro
 ## Session binding
 
 - The committed opening is Dispatcher's live Session reservation and placement authority. Its
-  immutable placement variant names either the Harness Host in one exact environment or the central
-  sampler. The native variant contains its required Sandbox name and UID. The central variant owns
-  the Session independently of its separately named `initial_executor`; current central admission
-  still requires that exact Sandbox and executor incarnation. The initial executor remains fixed
-  for this central Session under the current protocol; this change adds no attach/detach operation.
-  Dispatcher persists one placement
-  discriminator, validates it against the selected harness, and routes from the stored variant.
-  `SessionOpening` exposes the same typed placement under retained-owner read policy. Neither
-  variant promises environment-free central opening or multiple environment attachments yet.
+  immutable `SessionSpec.placement` oneof is the single source of backend and placement. The
+  `environment_hosted` variant contains one exact environment and the native Claude/Codex harness
+  selection. The `central_sampler_v1` variant contains one exact `executor_environment`. Dispatcher
+  validates and routes from the stored spec; `SessionOpening` exposes a read-only projection of the
+  same placement under retained-owner policy. Native harness store identity and harness-native ID
+  are not represented by this cutover and remain future work.
+- Central sampler V1 keeps today's Sandbox-backed identity, admission, notification, wake and deletion
+  semantics. Its executor environment is required and fixed for the Session. This is not an optional
+  attachment API, and it does not permit a central Session to open without an environment. See the
+  explicit [future central Session environment-independence task](../plans/task_dag.md#central-session-environment-independence).
 - `OpenSession` requires `session_id` to be a canonical lowercase UUID before reading Sandbox state or recording an
   opening. Callers must not deliberately reuse a Session UUID after deletion. Cleanup forgets the
   Dispatcher record and does not retain a UUID marker: a subsequent request cannot be recognized as
@@ -230,3 +231,22 @@ under ownership before any RPC. If ownership or the request is lost, no RPC is i
 marker without a send remains conservatively uncertain.
 The migration adds the column without altering authored data or History. A rollback to old writers
 loses the forwarding-evidence guarantee even if the column remains present.
+
+## SessionSpec placement cutover
+
+The placement wire contract in this cutover is coordinated and breaking. `SessionSpec` carries
+`environment_hosted` or `central_sampler_v1`; the previous flat harness field and Dispatcher-level
+placement/`initial_executor` fields are not a compatibility API. Old clients and old Sandbox/runtime
+binaries must not overlap the new contract. Update the Dispatcher, sampler, app/CLI and other callers
+with the matching environment images.
+
+Dispatcher migration 11 converts retained openings in place, deriving the new variant from the
+stored harness and exact Sandbox name/UID. It preserves other `SessionSpec` fields, delivery state,
+attribution and accepted receipts; it does not requeue work. Central sampler migration 10 converts
+the stored opening request using its retained executor target and preserves the conversation,
+commands, cursors and effect journal. History migration 8 retains a legacy archived harness as
+`historical_harness` where an exact placement cannot be reconstructed; it does not invent an
+environment identity or change event data/order. These migrations preserve central and History data
+while changing the live wire representation. They do not make uncertain native, provider or executor
+effects safe to replay. These descriptions specify the coordinated change; they do not claim that
+matching service images have already been deployed together.

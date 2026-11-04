@@ -111,7 +111,7 @@ func newSessionTestManager(t *testing.T, environment map[string]string) (context
 func reserveTestSession(t *testing.T, ctx context.Context, manager *Manager, store *retained.Store, id, cwd, setup string) *Session {
 	t.Helper()
 	record, err := retained.NewRecord(&sessionpb.SessionSpec{
-		Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: cwd, Model: "test-model",
+		Placement: &sessionpb.SessionSpec_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}, Cwd: cwd, Model: "test-model",
 	}, setup, nil)
 	if err != nil {
 		t.Fatal(err)

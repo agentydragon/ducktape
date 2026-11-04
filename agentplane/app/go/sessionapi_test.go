@@ -50,12 +50,12 @@ func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
 			},
 		},
 	}
-	sandbox := &environmentpb.EnvironmentDescriptor{Configuration: &environmentpb.EnvironmentConfiguration{Preset: proto.String("work")}}
+	sandbox := &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: "sandbox", Uid: "sandbox-uid"}, Configuration: &environmentpb.EnvironmentConfiguration{Preset: proto.String("work")}}
 	defaults, setup, err := sessionDefaults(config, sandbox, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if defaults.GetHarness() != sessionpb.Harness_HARNESS_CODEX || defaults.GetModel() != "model-a" || defaults.GetReasoningEffort() != "high" || setup == nil || *setup != "setup" {
+	if defaults.GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CODEX || defaults.GetModel() != "model-a" || defaults.GetReasoningEffort() != "high" || setup == nil || *setup != "setup" {
 		t.Fatalf("unexpected preset defaults: spec=%v setup=%v", defaults, setup)
 	}
 	merged, err := bridge.ParseSessionSpec(defaults, map[string]any{"model": "", "instructions": "request"})
@@ -149,7 +149,7 @@ func (p *sessionTestPeer) OpenSession(ctx context.Context, name, uid string, id 
 	if p.failOpen != nil {
 		return nil, p.failOpen
 	}
-	return &dispatcherpb.SessionOpening{SessionId: id.String(), Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: name, SandboxUid: uid}}}, State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER}, nil
+	return &dispatcherpb.SessionOpening{SessionId: id.String(), Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: name, Uid: uid}}}, State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER}, nil
 }
 
 type sessionTokenReviewer struct{}
@@ -237,8 +237,6 @@ func TestSessionOpeningGatewayPreservesPresetPresenceAndWireContract(t *testing.
 	}{
 		{"omitted", `{}`, "", sessionTestStringPtr("setup"), sessionpb.Harness_HARNESS_CODEX, "preset-model", "preset", "high"},
 		{"empty", `{"model":"","instructions":"","reasoning_effort":""}`, `,"setup_script":""`, sessionTestStringPtr(""), sessionpb.Harness_HARNESS_CODEX, "", "", ""},
-		{"null", `{"model":null,"instructions":null,"reasoningEffort":null,"harness":null}`, `,"setup_script":null`, nil, sessionpb.Harness_HARNESS_UNSPECIFIED, "", "", ""},
-		{"zero", `{"harness":0}`, `,"setup_script":"override"`, sessionTestStringPtr("override"), sessionpb.Harness_HARNESS_UNSPECIFIED, "preset-model", "preset", "high"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}, Configuration: &environmentpb.EnvironmentConfiguration{Preset: proto.String("work")}}}
@@ -255,7 +253,7 @@ func TestSessionOpeningGatewayPreservesPresetPresenceAndWireContract(t *testing.
 			if opening.GetSessionId() != id || opening.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER {
 				t.Fatalf("unexpected response %v", opening)
 			}
-			if peer.spec.GetHarness() != test.wantHarness || peer.spec.GetModel() != test.wantModel || peer.spec.GetInstructions() != test.wantInstructions || peer.spec.GetReasoningEffort() != test.wantEffort || peer.spec.GetCwd() != "/work/"+id || !reflect.DeepEqual(peer.setup, test.wantSetup) {
+			if peer.spec.GetEnvironmentHosted().GetHarness() != test.wantHarness || peer.spec.GetModel() != test.wantModel || peer.spec.GetInstructions() != test.wantInstructions || peer.spec.GetReasoningEffort() != test.wantEffort || peer.spec.GetCwd() != "/work/"+id || !reflect.DeepEqual(peer.setup, test.wantSetup) {
 				t.Fatalf("spec %v setup %v", peer.spec, peer.setup)
 			}
 			if !reflect.DeepEqual(peer.calls, []string{"thread", "dispatch"}) {

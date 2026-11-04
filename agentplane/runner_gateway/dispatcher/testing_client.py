@@ -61,11 +61,11 @@ class SessionDispatcherClient:
         target = (
             opening.environment_hosted.environment
             if opening.WhichOneof("placement") == "environment_hosted"
-            else opening.initial_executor
+            else opening.central_sampler_v1.executor_environment
         )
-        if not target.sandbox or not target.sandbox_uid:
+        if not target.name or not target.uid:
             raise ValueError(f"Session {session_id} has no recorded Sandbox destination")
-        return target.sandbox, target.sandbox_uid
+        return target.name, target.uid
 
 
 async def delivered_opening(dispatcher: SessionDispatcherClient, session_id: UUID) -> None:

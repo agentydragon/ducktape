@@ -88,8 +88,14 @@ async def failed_bridge_state(
 
 async def _create(http: httpx.AsyncClient, spec: session_pb2.SessionSpec, session_id: UUID, sandbox_uid: str) -> str:
     """Create a Session through the app, and wait for the Thread History's record of its opening gives it."""
+    exact_spec = session_pb2.SessionSpec()
+    exact_spec.CopyFrom(spec)
+    if exact_spec.WhichOneof("placement") != "environment_hosted":
+        raise ValueError("App bridge recovery tests require an environment-hosted Session")
+    exact_spec.environment_hosted.environment.name = SANDBOX
+    exact_spec.environment_hosted.environment.uid = sandbox_uid
     opened = await http.post(
-        SESSIONS, json={"session_id": str(session_id), "sandbox_uid": sandbox_uid, "spec": MessageToDict(spec)}
+        SESSIONS, json={"session_id": str(session_id), "sandbox_uid": sandbox_uid, "spec": MessageToDict(exact_spec)}
     )
     assert opened.status_code == 201, opened.text
     thread_id = str(opened.json()["sessionId"])
@@ -460,7 +466,7 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
         f"printf '%s\\n' ready > {shlex.quote(str(ready))}; "
         "printf 'partial tool output'; exec sleep 3600"
     )
-    codex = spec.harness == session_pb2.HARNESS_CODEX
+    codex = spec.environment_hosted.harness == session_pb2.HARNESS_CODEX
     expected = (
         {event_pb2.RECOVERY_DISPOSITION_UNKNOWN}
         if codex
@@ -764,17 +770,13 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
 ) -> None:
     # No app HTTP request opened this Thread; History's Session opening creates its row.
     session_id = uuid4()
+    exact_spec = session_pb2.SessionSpec()
+    exact_spec.CopyFrom(spec)
+    exact_spec.environment_hosted.environment.name = SANDBOX
+    exact_spec.environment_hosted.environment.uid = sandbox.destination.target.uid
     await session_dispatcher.unary(
         session_dispatcher.stub.OpenSession,
-        session_dispatcher_pb2.OpenSessionRequest(
-            session_id=str(session_id),
-            environment_hosted=session_dispatcher_pb2.EnvironmentHostedPlacement(
-                environment=session_dispatcher_pb2.ExactSandbox(
-                    sandbox=SANDBOX, sandbox_uid=sandbox.destination.target.uid
-                )
-            ),
-            spec=spec,
-        ),
+        session_dispatcher_pb2.OpenSessionRequest(session_id=str(session_id), spec=exact_spec),
     )
     await delivered_opening(session_dispatcher, session_id)
     # The app's production History watcher creates the Thread row; no command or SSE request ran.
