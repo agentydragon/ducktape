@@ -25,7 +25,8 @@ The staged per-chunk `SynchronousCalls` fact now carries
 `non_assumed_heap_accesses` as typed `reads` and `writes` sets of heap-content
 cells. It is analysis input to the commuting-premise check, not a new public
 report field. `dependency_graph.json.gz` retains the existing
-`premise_verdict.shared_cell` shape when that check finds a conflict; the cell
+`premise_verdict.conflict` shape with `kind: shared_cell` when the verdict is
+`known`; the cell
 may now come from a directly invoked callee. Saved analysis from an earlier
 engine must be recomputed before this field can be read.
 

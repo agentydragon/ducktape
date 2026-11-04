@@ -98,8 +98,8 @@ pub struct ContradictingEdge {
     pub conflict: KnownConflict,
 }
 
-/// A `commuting_statements` entry whose endpoints the analysis derived to
-/// definitely conflict (SPEC.md § Commuting statements).
+/// A `commuting_statements` entry whose endpoints have a modeled effect-set
+/// conflict (SPEC.md § Commuting statements).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CommutingStatementsContradiction {
     pub spec_location: String,
@@ -131,7 +131,7 @@ impl fmt::Display for CommutingStatementsContradiction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{} contradicts a source fact: source units {} and {} definitely conflict: ",
+            "{} contradicts a source fact: source units {} and {} have a modeled effect conflict: ",
             self.spec_location,
             source_unit_label(self.a, &self.a_binding),
             source_unit_label(self.b, &self.b_binding),
@@ -712,7 +712,7 @@ pub enum PremiseVerdict {
     /// The analysis already knows the two effects are unordered; the edge
     /// exists only as strict-chain adjacency.
     Summarized,
-    /// The analysis derived a definite conflict the premise contradicts.
+    /// The analysis derived a modeled conflict the premise contradicts.
     Known { conflict: KnownConflict },
 }
 
@@ -848,7 +848,7 @@ fn conflicting_cell(a: &StatementEffectSummary, b: &StatementEffectSummary) -> O
 /// Apply the chunk's `commuting_statements` premises (SPEC.md § Commuting
 /// statements). For each pair, every `Sequenced` edge between the two source
 /// units (either direction) becomes inert — unless the edge's retained
-/// [`PremiseVerdict`] is a definite conflict, in which case the entry
+/// [`PremiseVerdict`] is a modeled conflict, in which case the entry
 /// contradicts a source fact and the build fails. `EagerUse` edges are never
 /// touched: an at-init read is a dataflow dependence, not an ordering of
 /// effects. A pair with no inertable edge is unused and the build fails so
