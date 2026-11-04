@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
-from typing import Any, Literal
+from typing import Any
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -29,7 +29,6 @@ class InstanceConfig(BaseModel):
     id: str
     type: str
     enabled: bool = True
-    runtime: Literal["local"] = "local"
     upstream_base_url: str | None = None
     state_dir: str | None = None
     verification: VerificationConfig = Field(default_factory=VerificationConfig)
@@ -45,7 +44,6 @@ class InstanceConfig(BaseModel):
 
 class HostConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
-    version: Literal[1] = 1
     integrations: list[InstanceConfig]
 
 
@@ -63,7 +61,6 @@ class IntegrationInstance:
     id: str
     type: str
     enabled: bool
-    runtime: Literal["local"]
     upstream_base_url: str
     state_dir: PurePosixPath
     verification: VerificationConfig
@@ -131,7 +128,6 @@ class IntegrationRegistry:
                     id=item.id,
                     type=item.type,
                     enabled=item.enabled,
-                    runtime=item.runtime,
                     upstream_base_url=_upstream_url(
                         item.upstream_base_url
                         if item.upstream_base_url is not None

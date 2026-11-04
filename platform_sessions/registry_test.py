@@ -22,7 +22,6 @@ def registry() -> IntegrationRegistry:
 def test_resolves_multiple_instances_and_type_settings(registry: IntegrationRegistry) -> None:
     result = registry.resolve(
         {
-            "version": 1,
             "integrations": [
                 {"id": "first", "type": "example"},
                 {
@@ -39,7 +38,6 @@ def test_resolves_multiple_instances_and_type_settings(registry: IntegrationRegi
     assert result[0].upstream_base_url == "https://example.test"
     assert result[0].state_dir == PurePosixPath("/data/first")
     assert result[0].settings == ExampleSettings()
-    assert result[0].runtime == "local"
     assert result[1].settings == ExampleSettings(mode="other")
     assert result[1].state_dir == PurePosixPath("/srv/second")
     assert result[1].upstream_base_url == "http://example.test:8080"
@@ -52,7 +50,6 @@ def test_resolves_multiple_instances_and_type_settings(registry: IntegrationRegi
         {"integrations": [{"id": "../x", "type": "example"}]},
         {"integrations": [{"id": "a", "type": "example"}, {"id": "a", "type": "example"}]},
         {"integrations": [{"id": "a", "type": "missing"}]},
-        {"integrations": [{"id": "a", "type": "example", "runtime": "remote"}]},
         {"integrations": [{"id": "a", "type": "example", "enabled": "yes"}]},
         {"integrations": [{"id": "a", "type": "example", "state_dir": "relative"}]},
         {"integrations": [{"id": "a", "type": "example", "state_dir": ""}]},
