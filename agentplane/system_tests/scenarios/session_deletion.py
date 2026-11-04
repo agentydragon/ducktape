@@ -191,7 +191,7 @@ async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[s
     app, _, _ = await bound_caller(cluster, "app")
     gateway, _, _ = await bound_caller(cluster, "runner-gateway", audience=config["gateway_audience"])
     name = f"systest-deletion-{uuid4().hex[:8]}"
-    session, positive, delayed, observed = (str(uuid4()) for _ in range(4))
+    session, positive, delayed, observed, probe_session = (str(uuid4()) for _ in range(5))
     spec = session_pb2.SessionSpec(
         harness=session_pb2.HARNESS_CODEX,
         model="chatgpt-sub/oai-responses/gpt-6-luna",
@@ -278,7 +278,7 @@ async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[s
                         with pytest.raises(grpc.aio.AioRpcError) as refused:
                             await runner.ChangeReasoningEffort(
                                 environment_runtime_pb2.ChangeReasoningEffortRequest(
-                                    session_id=session, command_id=observed, effort="low"
+                                    session_id=probe_session, command_id=observed, effort="low"
                                 ),
                                 metadata=metadata,
                                 timeout=15,
@@ -341,7 +341,19 @@ async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[s
                     session_pb2.ListSessionsRequest(), metadata=replacement_metadata, timeout=15
                 )
                 assert replacement_session in {item.session_id for item in sessions.sessions}
-                assert session not in {item.session_id for item in sessions.sessions}
+        admitted = await runner.ChangeReasoningEffort(
+            environment_runtime_pb2.ChangeReasoningEffortRequest(
+                session_id=replacement_session, command_id=str(uuid4()), effort="low"
+            ),
+            metadata=replacement_metadata,
+            timeout=15,
+        )
+        assert admitted.admission.event.HasField("command_admitted")
+        # This RPC has no Session ID: NOT_FOUND proves UID routing refused the request, even if
+        # an installation retains old Sessions across a name replacement.
+        with pytest.raises(grpc.aio.AioRpcError) as stale_read:
+            await runner.ListSessions(session_pb2.ListSessionsRequest(), metadata=metadata, timeout=15)
+        assert stale_read.value.code() == grpc.StatusCode.NOT_FOUND
         # Preserve the delayed call's payload and old UID; it must not reach this healthy replacement.
         with pytest.raises(grpc.aio.AioRpcError) as stale:
             await runner.ChangeReasoningEffort(
