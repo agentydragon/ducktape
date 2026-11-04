@@ -86,7 +86,8 @@ Guide: <docs/container-images.md>.
 
 ## Storage Selection
 
-App PVCs default to `seaweedfs-ovh` (not node-pinned). Use `local-path-*` only for:
+Choose app PVC storage for the workload. `seaweedfs-ovh-ssd` provides distributed
+SeaweedFS CSI storage in OVH. Use `local-path-*` only for:
 
 - self-replicating stores needing a raw local disk — CNPG Postgres
   (<docs/cnpg_conventions.md>; never a DB on SeaweedFS);

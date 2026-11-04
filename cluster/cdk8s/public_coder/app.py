@@ -396,8 +396,8 @@ def _claims(scope: Construct) -> None:
     # capture taken to investigate a slow leak would be collected by the very next roll, which is
     # the case it exists for.
     #
-    # local-path rather than the seaweedfs-ovh default (cluster/README.md § Storage Selection):
-    # that default buys reschedulability, and this Pod cannot reschedule -- the Deployment pins
+    # local-path rather than replicated storage: replication buys reschedulability, and this
+    # Pod cannot reschedule -- the Deployment pins
     # it to ovh-ns102453 by required nodeAffinity and its state claim is local-path on that node.
     # A replicated claim would add a second, networked dependency to the gateway's startup path,
     # since a volume that will not mount blocks the Pod, in exchange for mobility it does not

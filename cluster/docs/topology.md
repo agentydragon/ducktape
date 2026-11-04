@@ -29,7 +29,6 @@
 
 | StorageClass          | Provisioner            | Region    | Notes                                                                                          |
 | --------------------- | ---------------------- | --------- | ---------------------------------------------------------------------------------------------- |
-| `seaweedfs-ovh`       | SeaweedFS CSI          | `hil-ovh` | **Default for app data**; not node-pinned; POSIX/S3 (HDD)                                      |
 | `seaweedfs-ovh-ssd`   | SeaweedFS CSI          | `hil-ovh` | NVMe SeaweedFS (`diskType: ssd`), Forgejo git hot tier                                         |
 | `piraeus-ssd-local`   | Piraeus (LINSTOR)      | `hil-ovh` | One copy on the consuming node's SSD pool; replicated apps and node-pinned SSD data            |
 | `piraeus-hdd-local`   | Piraeus (LINSTOR)      | `hil-ovh` | One copy on the consuming node's HDD pool; SeaweedFS `hdd` volume servers, bulk data           |

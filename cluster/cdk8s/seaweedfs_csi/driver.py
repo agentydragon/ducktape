@@ -55,10 +55,8 @@ def _values() -> dict[str, object]:
         "seaweedfsFiler": "seaweedfs-filer.seaweedfs.svc.cluster.local:8888",
         # Chart-created StorageClass disabled (storageClassName left empty): the chart's
         # storageclass.yaml template has no allowedTopologies support (only
-        # name/provisioner/volumeBindingMode/parameters), so the default `seaweedfs-ovh` class
-        # is built here instead, alongside `seaweedfs-ovh-ssd` -- same name, same
-        # provisioner/volumeBindingMode as the chart would have produced, plus
-        # allowedTopologies.
+        # name/provisioner/volumeBindingMode/parameters), so `seaweedfs-ovh-ssd`
+        # is built here with allowedTopologies instead.
         "storageClassName": "",
         # Node label keys the driver reports as each node's CSI accessible_topology
         # (NodeGetInfo) and that csi-provisioner requires to honour StorageClass
@@ -66,7 +64,7 @@ def _values() -> dict[str, object]:
         # Picks up seaweedfs/seaweedfs-csi-driver#301 (merged to master 2026-08-26, released
         # v1.4.30): before this, NodeGetInfo reported no topology at all and CSINode showed
         # topologyKeys=null for every node, so nothing stopped the scheduler from placing a
-        # seaweedfs-ovh*-PVC pod on a non-OVH node (cluster/generated/kyverno/policies/ formerly
+        # SeaweedFS CSI PVC pod on a non-OVH node (cluster/generated/kyverno/policies/ formerly
         # carried a pin-seaweedfs-ovh-consumers ClusterPolicy working around exactly this, now
         # removed in favor of the StorageClasses' own allowedTopologies).
         # `topology.kubernetes.io/zone` matches the node label OVH nodes actually carry
@@ -108,7 +106,7 @@ def _values() -> dict[str, object]:
         # and mount-service versions are auditable.
         "seaweedfsCsiPlugin": {"image": "chrislusf/seaweedfs-csi-driver", "tag": _VERSION},
         # Restrict the FUSE mount service + CSI node daemons to OVH kimsufi nodes. Pods
-        # consuming seaweedfs-ovh PVCs must schedule on OVH; we don't want phantom daemonsets
+        # consuming SeaweedFS CSI PVCs must schedule on OVH; we don't want phantom daemonsets
         # on non-OVH nodes until we know the backend is suitable.
         "mountService": {
             "enabled": True,
@@ -248,20 +246,11 @@ def chart(app: App) -> Chart:
     )
     _storage_class(
         chart,
-        "seaweedfs-ovh",
-        description=(
-            "SeaweedFS CSI (RWX, distributed), media-blind (HDD bulk). Default for app data volumes. "
-            "See sc-seaweedfs-ovh-ssd.yaml for the SSD-pinned tier."
-        ),
-    )
-    _storage_class(
-        chart,
         "seaweedfs-ovh-ssd",
         description=(
             "SeaweedFS CSI (RWX, distributed) pinned to the SSD volume tier. diskType=ssd maps to "
             "`weed mount -disk=ssd`, so volumes land only on ssd-tagged volume servers (the OVH NVMe "
-            "topology group). Reserved for fsync/latency-critical RWX data (Forgejo git). The default "
-            "seaweedfs-ovh class is media-blind (HDD bulk)."
+            "topology group). Used for fsync/latency-critical RWX data such as Forgejo git."
         ),
         # CSI v1.4.30 maps `diskType` to `weed mount -disk` and passes `replication` through
         # (verified against pkg/driver/mounter.go).

@@ -1,5 +1,7 @@
 # SeaweedFS CSI driver — Tana-workload benchmark
 
+This benchmark used the former `seaweedfs-ovh` class, which has since been retired.
+
 The CSI driver (chart v0.2.21 / image `chrislusf/seaweedfs-csi-driver:v1.4.14`,
 FUSE-backed) was stood up to evaluate whether `seaweedfs-ovh` is suitable
 storage for a Chromium-profile workload (`tana-mcp`'s `~/.config/tana`,
