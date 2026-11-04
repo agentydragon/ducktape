@@ -266,7 +266,6 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
-        "//util/testing:jsonl",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -23,8 +23,6 @@ from finance.augur.x.models.trained_private_equity import (
     TrainedPrivateEquityModelArtifact,
     TrainedPrivateEquityScalePrior,
 )
-from devinfra.bazel.runfiles import get_required_path
-from util.testing.jsonl import write_jsonl
 
 PRIVATE_COMPANY_A = IssuerId("private_company_a")
 

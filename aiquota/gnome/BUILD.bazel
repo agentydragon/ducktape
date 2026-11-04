@@ -73,9 +73,9 @@ py_test(
     deps = [
         "//:conftest",
         "//aiquota/testing:quota_fixtures",
+        "//devinfra/bazel:runfiles",
         "//gnome/testing:fake_daemon",
         "//gnome/testing:session",
-        "//devinfra/bazel:runfiles",
         "//util:oci",
         "//util/testing:output_writer",
         "//util/testing:undeclared_outputs",
