@@ -122,6 +122,16 @@ including after the replacement's inventory scan. A skipped condition never coun
 
 ## Pods and tests
 
+### Retiring the subprocess backend
+
+The subprocess backend exists for tests that launch Runtime outside a private PID namespace; it
+is not the production Pod or VM containment boundary. We intend to remove it after migrating those
+tests. It adds a supervisor with liveness and confirmation pipes for every native process, plus a
+separate Runtime owner lock inherited by those processes. It leaves an unresolved fence if a
+supervisor is lost before it reports the native PID. Pod tests should instead run Runtime as PID 1 and observe the container's exit before
+replacement; VM tests should use systemd's unit and cgroup fence. The COSI database lock prevents a
+second Runtime from owning the state concurrently, but does not replace either outer process fence.
+
 ### PID 1 and the outer fence
 
 `environment.supervision` explicitly selects `pid1` or `subprocess` for Runtime. Production Pods

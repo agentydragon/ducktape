@@ -6,11 +6,13 @@ import asyncio
 import ctypes
 import errno
 import fcntl
+import json
 import os
-import signal
+import shlex
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -21,34 +23,60 @@ from agentplane.history_service.testing.go_service import WRITER, GoHistoryServi
 from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import session_pb2
+from third_party.containers import debian_slim, ryuk
+from util.oci import load_oci_image
+from util.testing.container_logs import LoggedContainer
 
 # gazelle:include_dep @pypi//protobuf
 
 
 @dataclass
 class RunnerProcess:
-    process: asyncio.subprocess.Process
-    state_dir: Path
+    container: LoggedContainer
+    exit_code: int | None = None
+
+    def _host_pids(self, namespace_pids: list[int]) -> list[int]:
+        """Translate Runtime's PID-namespace IDs before its container exits."""
+        table = self.container.get_wrapped_container().top()
+        pid_index = table["Titles"].index("PID")
+        host_pids = []
+        for row in table["Processes"]:
+            host_pid = int(row[pid_index])
+            try:
+                status = (Path("/proc") / str(host_pid) / "status").read_text()
+            except FileNotFoundError:
+                continue
+            nspid = next(line for line in status.splitlines() if line.startswith("NSpid:"))
+            if int(nspid.split()[-1]) in namespace_pids:
+                host_pids.append(host_pid)
+        return host_pids
+
+    async def wait(self) -> int:
+        if self.exit_code is None:
+            result = await asyncio.to_thread(self.container.get_wrapped_container().wait, timeout=20)
+            self.exit_code = result["StatusCode"]
+        return self.exit_code
 
     async def crash(self, harness_pids: list[int]) -> None:
-        """The runner dies without logging anything; its harnesses see stdin close and exit on their
-        own, as they would when only the runner container is lost."""
-        os.killpg(self.process.pid, signal.SIGKILL)
-        await self.process.wait()
-        for pid in harness_pids:
+        """Kill Pod PID 1 and observe the container fence before starting a successor."""
+        host_pids = await asyncio.to_thread(self._host_pids, harness_pids)
+        if harness_pids:
+            assert host_pids, f"none of the requested namespace PIDs were still in the container: {harness_pids}"
+        await asyncio.to_thread(self.container.get_wrapped_container().kill, signal="SIGKILL")
+        assert await self.wait() == 137
+        for pid in host_pids:
             await asyncio.wait_for(wait_for_exit(pid), timeout=10)
-        await wait_for_owner_release(self.state_dir)
 
     async def stop(self) -> None:
         """SIGTERM, as a Pod's termination sends it; the runner stops its harnesses before exiting."""
-        if self.process.returncode is None:
-            self.process.send_signal(signal.SIGTERM)
+        if self.exit_code is None:
+            await asyncio.to_thread(self.container.get_wrapped_container().kill, signal="SIGTERM")
             try:
                 async with asyncio.timeout(20):
-                    await self.process.wait()
+                    assert await self.wait() == 0
             except TimeoutError:
-                os.killpg(self.process.pid, signal.SIGKILL)
-                await self.process.wait()
+                await asyncio.to_thread(self.container.get_wrapped_container().kill, signal="SIGKILL")
+                await self.wait()
                 raise TimeoutError("Go runner did not stop; a test checkpoint or script may still be held") from None
 
 
@@ -122,6 +150,8 @@ async def start_runner(
     """Start a runner process on the test's state directory; it returns once the runner is connected."""
     started: list[RunnerProcess] = []
     ingress = Endpoint(target=history_service.ingress_target, bearer=await history_service.writer_token(WRITER))
+    for image in (ryuk.IMAGE, debian_slim.IMAGE):
+        load_oci_image(image)
 
     async def start(
         *,
@@ -132,26 +162,42 @@ async def start_runner(
         harness_env: Sequence[str] = (),
         runner_binary: Path | None = None,
     ) -> RunnerProcess:
-        process = await asyncio.create_subprocess_exec(
-            *launches.runner_command(
-                harness,
-                endpoint.origin,
-                state_dir=tmp_path / "state",
-                control=gateway.endpoint,
-                ingress=ingress,
-                test_debug_checkpoint=test_debug_checkpoint,
-                bootstrap=bootstrap,
-                codex_binary=codex_binary,
-                harness_env=harness_env,
-                runner_binary=runner_binary,
-            ),
-            env=environment_runtime_environment(home),
-            start_new_session=True,
+        command = launches.runner_command(
+            harness,
+            endpoint.origin,
+            state_dir=tmp_path / "state",
+            control=gateway.endpoint,
+            ingress=ingress,
+            test_debug_checkpoint=test_debug_checkpoint,
+            bootstrap=bootstrap,
+            codex_binary=codex_binary,
+            harness_env=harness_env,
+            runner_binary=runner_binary,
         )
-        runner = RunnerProcess(process, tmp_path / "state")
+        env = environment_runtime_environment(home)
+        env["PATH"] = "/usr/bin:/bin"
+        config = json.loads(await asyncio.to_thread(Path(command[2]).read_text))
+        runtime = await asyncio.to_thread(Path(command[0]).absolute)
+        native = await asyncio.to_thread(
+            Path(config["claude" if harness == session_pb2.HARNESS_CLAUDE else "codex"]["binary"]).absolute
+        )
+        container = (
+            LoggedContainer(debian_slim.IMAGE.tag, test_name=f"restart-runtime-{uuid4().hex}")
+            .with_kwargs(network_mode="host", user=f"{os.getuid()}:{os.getgid()}", pids_limit=512, mem_limit="1g")
+            .with_volume_mapping(str(tmp_path), str(tmp_path), mode="rw")
+            .with_volume_mapping(str(runtime.resolve()), str(runtime), mode="ro")
+            .with_command(shlex.join(command))
+        )
+        # Codex ships resources next to bin/codex; Claude is a single executable.
+        native_mount = native.parent.parent if harness == session_pb2.HARNESS_CODEX else native
+        container.with_volume_mapping(str(native_mount.resolve()), str(native_mount), mode="ro")
+        for name, value in env.items():
+            container.with_env(name, value)
+        await asyncio.to_thread(container.__enter__)
+        runner = RunnerProcess(container)
         started.append(runner)
         connected = asyncio.create_task(gateway.control.connect(gateway.endpoint, launches.SANDBOX.uid))
-        exited = asyncio.create_task(process.wait())
+        exited = asyncio.create_task(runner.wait())
         try:
             done, _ = await asyncio.wait((connected, exited), return_when=asyncio.FIRST_COMPLETED)
             if exited in done:
@@ -168,5 +214,8 @@ async def start_runner(
 
     yield start
     for runner in started:
-        await runner.stop()
+        try:
+            await runner.stop()
+        finally:
+            await asyncio.to_thread(runner.container.__exit__, None, None, None)
     await gateway.control.disconnect()

@@ -121,7 +121,7 @@ def runner_command(
     codex = codex_launch(endpoint) if harness == session_pb2.HARNESS_CODEX else None
     config = Configuration(
         version=2,
-        environment=PodEnvironment(supervision="subprocess"),
+        environment=PodEnvironment(supervision="pid1"),
         state_dir=str(state_dir),
         initialization_cwd=str(state_dir),
         control=control,

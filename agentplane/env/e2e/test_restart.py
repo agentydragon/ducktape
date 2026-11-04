@@ -8,7 +8,7 @@ import json
 import os
 import shlex
 import shutil
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +17,7 @@ import pytest_bazel
 
 from agentplane.env.e2e.testing import events
 from agentplane.env.e2e.testing.driver import RunnerDriver, runner_test_session_id
+from agentplane.env.e2e.testing.failure_journal import FailureEvidence
 from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess
 from agentplane.history_service.testing.go_service import GoHistoryService
@@ -27,6 +28,13 @@ from agentplane.testing.scripted_model import Reasoning, ScriptedModel, ShellCal
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
+
+
+@pytest.fixture(autouse=True)
+def retain_failed_journal(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[None]:
+    yield
+    if (evidence := FailureEvidence.for_failed_call(request)) is not None:
+        evidence.capture_retained_journals(tmp_path / "state")
 
 
 async def _wait_for_session_ready(driver: RunnerDriver, session_id: str) -> None:
@@ -208,7 +216,7 @@ def contend() -> Callable[[Path], Awaitable[None]]:
     """A competing nonblocking flock must fail while the runner owns its state directory."""
 
     async def attempt(state_dir: Path) -> None:
-        descriptor = os.open(state_dir / ".agentplane-environment-runtime-owner", os.O_RDONLY)
+        descriptor = os.open(state_dir / "runtime-resources.db", os.O_RDONLY)
         try:
             try:
                 fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
