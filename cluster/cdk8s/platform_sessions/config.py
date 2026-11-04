@@ -11,6 +11,18 @@ INTEGRATIONS = {
 
 BEARERS = {
     "owner": {"role": "owner", "token_file": "/var/run/platform-sessions/owner"},
+    "thrive-scraper": {
+        "role": "routes",
+        "token_file": "/var/run/platform-sessions/thrive-scraper",
+        "allow": [
+            {"instance": "thrive", "method": "GET", "path": "/products"},
+            {"instance": "thrive", "method": "GET", "path": "/account/orders"},
+            {"instance": "thrive", "method": "GET", "path": "/account"},
+            {"instance": "thrive", "method": "GET", "path": "/carts"},
+            {"instance": "thrive", "method": "GET", "path": "/autoship/items"},
+            {"instance": "thrive", "method": "GET", "path": "/autoship/schedule/first"},
+        ],
+    },
     "aiquota": {
         "role": "routes",
         "token_file": "/var/run/platform-sessions/aiquota",

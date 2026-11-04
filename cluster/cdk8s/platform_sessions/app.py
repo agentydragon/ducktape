@@ -88,7 +88,7 @@ def _deployment(chart: Chart) -> None:
                 name=f"platform-sessions-{name}-bearer", items=[k8s.KeyToPath(key="token", path=name)]
             )
         )
-        for name in ("owner", "aiquota", "quest")
+        for name in ("owner", "aiquota", "quest", "thrive-scraper")
     ]
     deployment = k8s.KubeDeployment(
         chart,
@@ -203,6 +203,7 @@ def chart(app: App) -> Chart:
         ("owner", None),
         ("aiquota", "cli-proxy-api"),
         ("quest", "agentplane-staging-egress-credentials"),
+        ("thrive-scraper", "thrive-scraper"),
     ):
         annotations = (
             None
