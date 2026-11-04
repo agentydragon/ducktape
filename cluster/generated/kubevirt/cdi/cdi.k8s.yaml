@@ -50,7 +50,7 @@ spec:
 apiVersion: cdi.kubevirt.io/v1beta1
 kind: StorageProfile
 metadata:
-  name: seaweedfs-ovh
+  name: seaweedfs-ovh-ssd
 spec:
   claimPropertySets:
     - accessModes:

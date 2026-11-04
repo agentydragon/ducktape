@@ -123,23 +123,7 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   annotations:
-    description: SeaweedFS CSI (RWX, distributed), media-blind (HDD bulk). Default for app data volumes. See sc-seaweedfs-ovh-ssd.yaml for the SSD-pinned tier.
-  name: seaweedfs-ovh
-allowVolumeExpansion: true
-allowedTopologies:
-  - matchLabelExpressions:
-      - key: topology.kubernetes.io/zone
-        values:
-          - hil-ovh
-provisioner: seaweedfs-csi-driver
-reclaimPolicy: Delete
-volumeBindingMode: WaitForFirstConsumer
----
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  annotations:
-    description: SeaweedFS CSI (RWX, distributed) pinned to the SSD volume tier. diskType=ssd maps to `weed mount -disk=ssd`, so volumes land only on ssd-tagged volume servers (the OVH NVMe topology group). Reserved for fsync/latency-critical RWX data (Forgejo git). The default seaweedfs-ovh class is media-blind (HDD bulk).
+    description: SeaweedFS CSI (RWX, distributed) pinned to the SSD volume tier. diskType=ssd maps to `weed mount -disk=ssd`, so volumes land only on ssd-tagged volume servers (the OVH NVMe topology group). Used for fsync/latency-critical RWX data such as Forgejo git.
   name: seaweedfs-ovh-ssd
 allowVolumeExpansion: true
 allowedTopologies:

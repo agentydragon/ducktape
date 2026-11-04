@@ -33,8 +33,8 @@ editing a route.
       Home Assistant also has a Restic `ReplicationSource` to SeaweedFS.
       That does not cover Forgejo's shared storage. The Forgejo loss above was
       survivable only because nothing had been pushed yet, not because we had a
-      backup. Destination choice is non-trivial: `seaweedfs-ovh`→`seaweedfs-ovh`
-      doesn't protect against
+      backup. Destination choice is non-trivial: copying between PVCs on the same
+      SeaweedFS cluster doesn't protect against
       the failure mode we just hit (defeats the grocy/tana pattern when
       the primary is already on SeaweedFS). `local-path-proxmox` was unavailable
       during that incident; reassess it against the current Piraeus storage

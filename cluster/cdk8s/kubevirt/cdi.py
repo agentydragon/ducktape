@@ -37,7 +37,7 @@ _FILESYSTEM = StorageProfileSpecClaimPropertySetsVolumeMode.FILESYSTEM
 # storage class -> (clone strategy, [(access mode, volume mode)])
 _STORAGE_PROFILES = {
     "piraeus-hdd-local": ("copy", [("ReadWriteOnce", _FILESYSTEM)]),
-    "seaweedfs-ovh": ("copy", [("ReadWriteMany", _FILESYSTEM), ("ReadWriteOnce", _FILESYSTEM)]),
+    "seaweedfs-ovh-ssd": ("copy", [("ReadWriteMany", _FILESYSTEM), ("ReadWriteOnce", _FILESYSTEM)]),
 }
 
 
