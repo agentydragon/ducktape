@@ -10,9 +10,8 @@ own readiness, restart and journal decisions. A completed attempt never relaunch
 Each supervisor creates `Process` handles through a private backend interface. `Process` owns
 streams, PID and completion result; the backend owns launch, observation and execution-domain
 cleanup. `Start` bounds startup independently of process lifetime. `Stop` requests graceful shutdown
-and cleanup; `Wait` is intended to return only after exit and cleanup. The subprocess backend does
-not always satisfy that contract, as described below. A canceled wait cancels observation, not
-execution. Canceling startup tears down its intent and joins any late launch.
+and cleanup; `Wait` is intended to return only after exit and cleanup. A canceled wait cancels
+observation, not execution. Canceling startup tears down its intent and joins any late launch.
 
 COSI-managed launches use `ProcessDesiredStates`, `ProcessStatuses` and a finalizer per attempt.
 Launch callbacks and native handles stay in the registry. Teardown joins an in-flight start and
@@ -122,43 +121,26 @@ including after the replacement's inventory scan. A skipped condition never coun
 
 ## Pods and tests
 
-### Retiring the subprocess backend
+### Why there is no per-process supervisor
 
-The subprocess backend exists for tests that launch Runtime outside a private PID namespace; it
-is not the production Pod or VM containment boundary. We intend to remove it after migrating those
-tests. It adds a supervisor with liveness and confirmation pipes for every native process, plus a
-separate Runtime owner lock inherited by those processes. It leaves an unresolved fence if a
-supervisor is lost before it reports the native PID. Pod tests should instead run Runtime as PID 1 and observe the container's exit before
-replacement; VM tests should use systemd's unit and cgroup fence. The COSI database lock prevents a
-second Runtime from owning the state concurrently, but does not replace either outer process fence.
+The former subprocess backend existed for tests outside a private PID namespace. It added a
+supervisor, liveness and confirmation pipes, and an inherited owner lock for every native process;
+it could not prove cleanup when the helper died before reporting the native PID. Production already
+uses the Pod PID namespace or systemd's service and cgroup fence. Tests now exercise those same
+boundaries. The COSI database lock prevents concurrent Runtime ownership but is not a native-process
+fence. A replacement must observe the outer container fence or fence the prior systemd units.
 
 ### PID 1 and the outer fence
 
-`environment.supervision` explicitly selects `pid1` or `subprocess` for Runtime. Production Pods
-select `pid1`, invoke Environment Runtime directly and disable shared process namespaces. The PID1
-backend rejects a Runtime whose PID is not 1. Runtime's process domains share one PID1 reaper.
-The Execution API is embedded; its Pod companion runs separately as PID1 and owns the native
-exec-server namespace. Remaining non-PID1 Go test fixtures select Runtime's `subprocess` backend. VM
-systemd supervision does not fall back to a Pod backend.
+Pods explicitly select `pid1`, invoke Environment Runtime directly and disable shared process
+namespaces. Runtime must be PID 1 and its process domains share one reaper. The Execution API is
+embedded; its Pod companion runs separately as PID 1 and owns the native exec-server namespace.
 
-PID1 launches each child in its own process group without an environment owner descriptor.
-Runtime's open COSI database excludes a concurrent Runtime; the private PID namespace and its
-outer runtime fence contain descendants after PID1 death. The subprocess supervisor retains a
-trusted owner-descriptor copy and a parent-liveness pipe. Owners keep their database and any extra
-lock through ordinary process cleanup and journal closure.
-`Stop` closes stdin and sends TERM, then KILL after its grace budget; a canceled stop asks the
-subprocess supervisor to escalate and returns the caller's context error. After observing leader
-exit, PID1 signals the remaining group and reaps adopted children. The subprocess supervisor is a
-child subreaper: it signals the same group while the leader is unreaped, then reaps adopted group
-members and waits for group disappearance. It keeps the leader unreaped through signaling so the
-numeric group ID cannot be reused before targeting. Group disappearance has a five-second bound; if
-the process group remains, or if the trusted subprocess supervisor exits without explicit cleanup
-confirmation, `Wait` and `Stop` report a failed fence and the finalizer remains.
-
-Unexpected supervisor loss after the native PID was reported is not recovered here: the native child
-may survive, but the backend no longer reports it as cleanly stopped. Loss before the PID report still
-has an unresolved startup contract because `Host.Launch` can discard a failed backend start as an
-already-fenced attempt; see the [remaining startup gap](../../../TODO.md#handle-subprocess-supervisor-loss-before-and-after-native-pid-report).
+PID 1 launches each child in its own process group. The open COSI database excludes a concurrent
+Runtime; the private PID namespace and its outer runtime fence contain descendants after PID 1
+death. Stop closes stdin and sends TERM, then KILL after its grace budget. After observing leader
+exit, PID 1 signals the remaining group and reaps adopted children. It keeps the leader unreaped
+through signaling so the numeric group ID cannot be reused before targeting.
 
 Escaped groups require whole-container teardown. They can retain stdout/stderr pipes. Actual
 Runtime graceful shutdown joins accepted script and protocol readers; an escaped writer can
@@ -180,17 +162,15 @@ One process-wide reaper owns every PID1 child and adopted orphan. No PID1 child 
 Start's exec handshake and registration share a mutex with reaping. Managed exits use
 `waitid(WNOWAIT)`: the zombie leader reserves the process group identity while KILL is sent, then
 targeted `wait4` consumes its status. Orphan discovery reads every runtime thread's
-`/proc/self/task/*/children`; only unregistered children use orphan `wait4`. Mixing active
-subprocess wait owners with PID1 reaping is rejected. Unexpected wait/discovery failures terminate
-PID1 and leave the outer runtime to fence the namespace.
+`/proc/self/task/*/children`; only unregistered children use orphan `wait4`. Unexpected wait or
+discovery failures terminate PID1 and leave the outer runtime to fence the namespace.
 
 The outer fence is complete when the container runtime observes its init exit. Acquiring a state
 lock alone does not prove that boundary. Linux's
 [`do_exit`](https://github.com/torvalds/linux/blob/v6.12/kernel/exit.c) closes files before
 `exit_notify` reaches namespace teardown;
 [`zap_pid_ns_processes`](https://github.com/torvalds/linux/blob/v6.12/kernel/pid_namespace.c) then
-kills and joins remaining tasks. Abrupt PID1 death also kills an internal supervisor; its retained
-lock descriptor is not an independent whole-container fence.
+kills and joins remaining tasks.
 
 Sandbox Controller waits for the prior Pod's deletion event before creating its successor
 (`converge` in `sandbox_controller/controller.go`). Normal kubelet restarts and graceful Pod deletion
@@ -201,13 +181,11 @@ neither Pod UID nor PVC access mode replaces runtime fencing.
 
 ### Acceptance coverage
 
-`//agentplane/env/e2e:test_pid1_container` runs both backend fixtures in real private PID namespaces.
-It starts TERM-resistant same-group and escaped descendants, closes the subprocess native's
-inherited owner descriptor, and observes container exit and descendant death before restarting.
-The production cases start PID1 Runtime while the legacy independent owner lock is held, verify
-COSI database lock exclusion through shutdown, and cover clean TERM, Session-managed native
-processes and abrupt bootstrap death. They do not claim graceful completion
-with escaped pipe holders. JSON evidence and logs go to undeclared test outputs.
+`//agentplane/env/e2e:test_pid1_container` exercises PID 1 in real private PID namespaces. It
+starts TERM-resistant same-group and escaped descendants and observes container exit and descendant
+death before restarting. The production cases verify COSI database lock exclusion through shutdown
+and cover clean TERM, Session-managed native processes and abrupt bootstrap death. They do not claim
+graceful completion with escaped pipe holders. JSON evidence and logs go to undeclared test outputs.
 
 `//agentplane/env/e2e:test_executor_container` exercises the separately packaged Execution companion,
 native executor loss/replacement, shared app-server continuity and coordinated quiesce. Session and

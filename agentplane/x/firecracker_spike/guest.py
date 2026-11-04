@@ -90,8 +90,7 @@ class Workload:
                 [
                     "python3",
                     "-c",
-                    "import fcntl; f=open('/state/.agentplane-environment-runtime-owner','a+'); "
-                    "fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)",
+                    "import fcntl; f=open('/state/spike-owner.lock','a+'); fcntl.flock(f,fcntl.LOCK_EX|fcntl.LOCK_NB)",
                 ]
             ),
             "config": json.loads(Path("/run/agentplane/config/environment-runtime.json").read_text()),
@@ -163,7 +162,7 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     with (
         ExitStack() as stack,
-        Path("/state/.agentplane-environment-runtime-owner").open("a+") as owner,
+        Path("/state/spike-owner.lock").open("a+") as owner,
         Path("/state/workspaces/open-file").open("w+") as open_file,
     ):
         Handler.workload = Workload(stack, owner, open_file)

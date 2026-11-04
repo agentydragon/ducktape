@@ -128,7 +128,7 @@ func TestUncertainSessionReservationFailsRuntimeUntilRestart(t *testing.T) {
 			r.lifecycleCancel()
 			<-r.lifecycleDone
 			_ = r.closeSessions(t.Context())
-			if err := r.owner.Close(); err != nil {
+			if err := closeTestRuntimeStore(r); err != nil {
 				t.Fatal(err)
 			}
 

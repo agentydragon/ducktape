@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//agentplane/env/runtime/supervision/testing:defs.bzl", "pid1_go_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -9,12 +10,11 @@ go_library(
         "controller.go",
         "host.go",
         "managed_process.go",
+        "native_helpers.go",
         "pid1.go",
         "process.go",
         "process_resources.go",
         "resources.go",
-        "subprocess.go",
-        "supervisor.go",
         "systemd.go",
         "systemd_launcher.go",
         "systemd_scope.go",
@@ -45,6 +45,7 @@ go_test(
         ["*_test.go"],
         exclude = [
             "pid1_kernel_test.go",
+            "pid1_process_test.go",
             "systemd_kernel_test.go",
         ],
     ),
@@ -88,4 +89,11 @@ go_test(
         "@com_github_google_uuid//:uuid",
         "@org_uber_go_zap//:zap",
     ],
+)
+
+pid1_go_test(
+    name = "pid1_process_test",
+    srcs = ["pid1_process_test.go"],
+    embed = [":supervision"],
+    deps = ["@org_golang_x_sys//unix"],
 )

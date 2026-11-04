@@ -807,7 +807,7 @@ func TestMissingAdmissionStateRejectsDurableWork(t *testing.T) {
 		if err := closeRuntimeForTest(t, r); !state.IsNotFoundError(err) {
 			t.Errorf("Close after missing admission accounting = %v, want original failure", err)
 		}
-		owner, err := openEnvironmentOwner(r.config.StateDir)
+		owner, err := openTestRuntimeStore(r.config.StateDir)
 		if err != nil {
 			t.Errorf("settled cleanup retained the environment owner: %v", err)
 			return

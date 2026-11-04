@@ -11,7 +11,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 	runtime "github.com/agentydragon/ducktape/agentplane/env/runtime"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"go.opentelemetry.io/otel/attribute"
@@ -61,9 +60,6 @@ func run() int {
 func internalMode(args []string) (bool, int) {
 	if len(args) == 0 {
 		return false, 0
-	}
-	if args[0] == supervision.SupervisorMode {
-		return true, supervision.SupervisorMain(args[1:])
 	}
 	if args[0] == workspace.HelperMode {
 		return true, workspace.Main(args[1:])

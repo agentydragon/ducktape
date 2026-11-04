@@ -150,7 +150,7 @@ func TestRuntimeCloseEngineCancelJoinsBootstrapWaitAndRetainsOwner(t *testing.T)
 	if err := waitClose(t, closeDone); err == nil {
 		t.Fatal("Close succeeded after its lifecycle engine was canceled")
 	}
-	if owner, err := openEnvironmentOwner(stateDir); err == nil {
+	if owner, err := openTestRuntimeStore(stateDir); err == nil {
 		_ = owner.Close()
 		t.Fatal("engine cancellation released environment owner")
 	}
@@ -183,11 +183,8 @@ func TestBootstrapEventStorageFailureDoesNotLeaveBusyFact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := closer.Close(); err != nil {
-			t.Errorf("close bootstrap event store: %v", err)
-		}
-	})
+	t.Cleanup(func() { _ = closer.Close() })
+	config.testBacking = closer
 	eventState := &bootstrapEventWriteFailureState{State: resources, err: storageErr}
 	r := newLifecycleRunnerWithState(t, config, eventState)
 	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })

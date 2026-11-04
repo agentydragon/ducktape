@@ -90,7 +90,7 @@ In `mtls` mode, Environment Runtime verifies that its server certificate URI nam
 the Gateway presents the fixed `spiffe://agentplane/runner-gateway` identity. Both directions require
 mTLS. Missing, malformed or expired credentials fail; they never select plaintext.
 
-Local and subprocess tests may explicitly select `"security": {"mode": "insecure"}` and omit `tls`.
+Tests may explicitly select `"security": {"mode": "insecure"}` and omit `tls`.
 This serves plaintext without peer authentication. An insecure configuration containing a `tls`
 block is rejected. The Gateway selects the same mode through `runner_security`. Sandbox,
 incarnation, boot-ID and epoch fencing still apply; that metadata is not an authenticated identity.
@@ -109,8 +109,8 @@ persistence, operation receipts or execution configuration.
 
 `environment` has exactly one discriminator, `kind`:
 
-- `kind: "pod"`: required `supervision` (`pid1` for a private container PID namespace,
-  `subprocess` for non-PID1 fixtures), plus optional `executor` with loopback `url` and absolute ownership `socket`.
+- `kind: "pod"`: required `supervision` (`pid1` for a private container PID namespace),
+  plus optional `executor` with loopback `url` and absolute ownership `socket`.
   Kubernetes owns the container resource limits.
 - `kind: "vm"`: required `resources`, non-root `agent_uid`/`agent_gid`, absolute `block_devices`,
   optional `console_autologin` (false when omitted), and optional `executor` with loopback `url`.

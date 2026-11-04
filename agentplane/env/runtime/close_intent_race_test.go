@@ -96,7 +96,7 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 	if successor.fences.Load() != 0 {
 		t.Fatal("Execution fence started before the Session component completed native shutdown")
 	}
-	if owner, err := openEnvironmentOwner(config.StateDir); err == nil {
+	if owner, err := openTestRuntimeStore(config.StateDir); err == nil {
 		_ = owner.Close()
 		t.Fatal("environment owner released while Running preparation was unsettled")
 	}
@@ -111,7 +111,7 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 		t.Fatalf("Close returned before Execution fence completed: %v", err)
 	default:
 	}
-	if owner, err := openEnvironmentOwner(config.StateDir); err == nil {
+	if owner, err := openTestRuntimeStore(config.StateDir); err == nil {
 		_ = owner.Close()
 		t.Fatal("environment owner released before Execution fence")
 	}
@@ -125,7 +125,7 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 	if got := successor.fences.Load(); got != 1 {
 		t.Fatalf("successor Execution fence attempts = %d, want 1", got)
 	}
-	owner, err := openEnvironmentOwner(config.StateDir)
+	owner, err := openTestRuntimeStore(config.StateDir)
 	if err != nil {
 		t.Fatalf("environment owner retained after successful Close: %v", err)
 	}

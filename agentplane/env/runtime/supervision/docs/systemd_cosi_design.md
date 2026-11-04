@@ -53,8 +53,8 @@ packaged Host and Execution units. Systemd starts and restarts that Runtime unit
 process it owns; Runtime cannot supervise its own service through an in-process controller. Its
 unit and owner marker remain the outer lifetime boundary. The proposed controller covers the native
 transient workloads in the workload and executor slices, including harnesses, setup helpers and
-the exec-server. It does not change slice or identity policy. In Pods the existing PID 1 or
-subprocess backend remains responsible for its process domain; the executor companion remains a
+the exec-server. It does not change slice or identity policy. In Pods the PID 1 backend remains
+responsible for its process domain; the executor companion remains a
 separate container and PID namespace.
 
 ## Proposed resource and handle boundary
@@ -138,7 +138,7 @@ not promise to delete the code that does real systemd work. Review this change a
   lost reply, disconnect before and after acceptance, unit collection, changed invocation, failed
   stop, populated descendants and Runtime restart. The old attempt must never be replayed and a
   successor must never cross an unresolved fence.
-- The existing PID 1/subprocess process tests and the Pod and VM system suites for any later
+- The existing PID 1 process tests and the Pod and VM system suites for any later
   implementation that changes their shared controller or shutdown contract. Include the real
   systemd kernel fixture for changed manager/fence behavior; successful app shutdown must not stand
   in for cgroup emptiness.

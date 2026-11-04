@@ -1,5 +1,7 @@
 # Firecracker environment primitive proof
 
+> Historical spike: its independent test flock is not Environment Runtime’s current COSI database lock.
+
 The standalone spike runs Firecracker in a Kubernetes Pod on the KVM-capable `wyrm2` node. It boots
 the real Agentplane runner disk alongside separate state, workspace, config, trust and credential
 disks, and resumes a synthetic workload from a RAM snapshot after the original VMM exits.

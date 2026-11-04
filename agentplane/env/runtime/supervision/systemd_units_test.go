@@ -42,7 +42,7 @@ func TestSystemdStopTimeoutUsesConfiguredGrace(t *testing.T) {
 		{grace: time.Nanosecond, want: 1},
 		{grace: 1501 * time.Nanosecond, want: 2},
 		{grace: 50 * time.Millisecond, want: 50_000},
-		{grace: stopGrace, want: 5_000_000},
+		{grace: 5 * time.Second, want: 5_000_000},
 	} {
 		if got := systemdStopTimeout(test.grace); got != test.want {
 			t.Errorf("systemdStopTimeout(%s) = %d, want %d", test.grace, got, test.want)

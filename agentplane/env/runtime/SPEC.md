@@ -11,8 +11,6 @@ model remain separate design work.
 
 Runtime opens `StateDir/runtime-resources.db` with an exclusive lock before preparing native
 supervision and holds it until native cleanup, delivery/worker joins and journal closure complete.
-Pod and subprocess harnesses also inherit a descriptor for
-`StateDir/.agentplane-environment-runtime-owner`; VM systemd supervision does not use that lock.
 Prior process exit or lock acquisition alone does not prove that an abnormal container's native
 descendants were fenced.
 
@@ -151,11 +149,10 @@ resource writers. The [public control contract](docs/control.md) describes calle
 
 ## Native supervision
 
-| Mode                              | Runtime and native harnesses                                                         | Execution and replacement fence                                                                                                                                  |
-| --------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Production Pod (`pid1`)           | Runtime is PID 1 and owns one reaper; the COSI database excludes concurrent Runtimes | Embedded adapter claims the companion in a separate PID-1 container; replacement requires native cleanup, adapter shutdown and a fresh idle companion generation |
-| VM (`systemd`)                    | Harness transient services use the `harness` scope in `agentplane-workloads.slice`   | Execution transient services use `execution-service` in `agentplane-executors.slice`; prior units and native domains must be fenced before replacement           |
-| Explicit local/RBE (`subprocess`) | Subprocess helpers retain inherited ownership and parent-liveness barriers           | The embedded adapter joins its configured companion fence; this mode does not claim Pod cgroup containment                                                       |
+| Mode                    | Runtime and native harnesses                                                         | Execution and replacement fence                                                                                                                                  |
+| ----------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Production Pod (`pid1`) | Runtime is PID 1 and owns one reaper; the COSI database excludes concurrent Runtimes | Embedded adapter claims the companion in a separate PID-1 container; replacement requires native cleanup, adapter shutdown and a fresh idle companion generation |
+| VM (`systemd`)          | Harness transient services use the `harness` scope in `agentplane-workloads.slice`   | Execution transient services use `execution-service` in `agentplane-executors.slice`; prior units and native domains must be fenced before replacement           |
 
 Abnormal Pod Runtime exit requires the outer container fence. VM native units bind to
 `agentplane-environment-runtime.service` and `/run/agentplane-environment-runtime-lifetime` with its
@@ -176,15 +173,14 @@ Missing properties, changed invocation, manager disconnect and uncertain starts 
 closed. Process observations do not replace this proof.
 
 Each process receives its immutable non-negative `StopGrace` at launch. Systemd applies it as
-`TimeoutStopUSec`; PID1/subprocess supervision applies the same TERM-to-KILL policy. Native harnesses
+`TimeoutStopUSec`; PID1 supervision applies the same TERM-to-KILL policy. Native harnesses
 retain five seconds. Execution permits 90 seconds to fence its backend; its supervised VM process
 retains five-second systemd stop grace. Standalone Execution retains its own supervisor.
 
 ## Configuration
 
 `agentplane-environment-runtime --config <environment-runtime.json> --launch-file <launch.json>`
-requires explicit supervision: `pid1` for a Pod PID namespace, `systemd` with a VM launcher, or
-`subprocess` for explicit local/integration use. Runtime constructs per-incarnation Execution config
+requires explicit supervision: `pid1` for a Pod PID namespace or `systemd` with a VM launcher. Runtime constructs per-incarnation Execution config
 in memory. The Pod execution companion retains its separate external ownership socket.
 
 VM service configuration is mounted at `/run/agentplane/config/environment-runtime.json`, with
