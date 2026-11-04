@@ -159,8 +159,8 @@ class Settings(YamlFileSettings):
             "Inbox payloads and current pull request snapshots have separate lifetimes."
         ),
     )
-    stale_inbox_confirmation_s: PositiveSeconds = Field(
-        default=30, le=3600, description="Seconds between first and confirming unavailable UID-pinned Sandbox lookup."
+    unavailable_destination_retry_s: PositiveSeconds = Field(
+        default=30, le=3600, description="Seconds between checks of an unavailable UID-pinned Sandbox."
     )
     log_levels: LogLevels
     host: str = "0.0.0.0"

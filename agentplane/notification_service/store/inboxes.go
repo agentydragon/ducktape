@@ -406,7 +406,7 @@ func (s *Store) AppendEvent(ctx context.Context, tx *sql.Tx, inboxID, subscripti
 	return err
 }
 
-// Cleanup expires the payloads of entries older than 30 days and deletes inboxes retired that long ago, for
+// Cleanup expires acknowledged payloads older than 30 days and deletes inboxes retired that long ago, for
 // up to 100 inboxes after afterID in ID order. It returns the last inbox it covered, or nil once there are no
 // more. Entries keep their event identity, so a replay after payload expiry cannot notify again.
 func (s *Store) Cleanup(ctx context.Context, afterID *uuid.UUID) (*uuid.UUID, error) {
@@ -414,7 +414,7 @@ func (s *Store) Cleanup(ctx context.Context, afterID *uuid.UUID) (*uuid.UUID, er
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
 		cutoff := now().Add(-30 * 24 * time.Hour)
 		rows, err := tx.QueryContext(ctx, `
-			SELECT id, retired, updated_at, expired_through FROM inbox
+			SELECT id, retired, updated_at, expired_through, acknowledged FROM inbox
 			WHERE id > $1 ORDER BY id LIMIT 100 FOR UPDATE SKIP LOCKED`, startAfter(afterID))
 		if err != nil {
 			return err
@@ -424,11 +424,12 @@ func (s *Store) Cleanup(ctx context.Context, afterID *uuid.UUID) (*uuid.UUID, er
 			retired        bool
 			updatedAt      time.Time
 			expiredThrough int64
+			acknowledged   int64
 		}
 		var candidates []candidate
 		for rows.Next() {
 			var c candidate
-			if err := rows.Scan(&c.id, &c.retired, &c.updatedAt, &c.expiredThrough); err != nil {
+			if err := rows.Scan(&c.id, &c.retired, &c.updatedAt, &c.expiredThrough, &c.acknowledged); err != nil {
 				rows.Close()
 				return err
 			}
@@ -446,7 +447,7 @@ func (s *Store) Cleanup(ctx context.Context, afterID *uuid.UUID) (*uuid.UUID, er
 				}
 				continue
 			}
-			if err := expirePayloads(ctx, tx, c.id, c.expiredThrough, cutoff); err != nil {
+			if err := expirePayloads(ctx, tx, c.id, c.expiredThrough, c.acknowledged, cutoff); err != nil {
 				return err
 			}
 		}
@@ -457,10 +458,10 @@ func (s *Store) Cleanup(ctx context.Context, afterID *uuid.UUID) (*uuid.UUID, er
 
 // expirePayloads drops the payloads of the inbox's oldest unexpired entries, at most 1000, up to the first one
 // created since the cutoff, and moves the inbox's expired prefix over them.
-func expirePayloads(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, expiredThrough int64, cutoff time.Time) error {
+func expirePayloads(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, expiredThrough, acknowledged int64, cutoff time.Time) error {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT cursor, created_at FROM entry WHERE inbox_id = $1 AND cursor > $2 ORDER BY cursor LIMIT 1000`,
-		inboxID, expiredThrough)
+		`SELECT cursor, created_at FROM entry WHERE inbox_id = $1 AND cursor > $2 AND cursor <= $3 ORDER BY cursor LIMIT 1000`,
+		inboxID, expiredThrough, acknowledged)
 	if err != nil {
 		return err
 	}

@@ -289,11 +289,12 @@ func TestRetentionGapIsVisibleAndReplayKeepsTheTombstone(t *testing.T) {
 	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND action_at IS NOT NULL`, subscription.InboxID); got != 3 {
 		t.Fatalf("%d entries have native Action content before expiry, want 3", got)
 	}
+	f.acknowledge(t, subscription.InboxID, 3)
 	f.exec(t, `UPDATE entry SET created_at = now() - interval '31 days' WHERE inbox_id = $1`, subscription.InboxID)
 	f.cleanAll(t)
 
 	page := f.read(t, subscription.InboxID, 0)
-	if page.Inbox.ExpiredThrough != 3 || page.Inbox.Acknowledged != 0 || len(page.Entries) != 0 {
+	if page.Inbox.ExpiredThrough != 3 || page.Inbox.Acknowledged != 3 || len(page.Entries) != 0 {
 		t.Fatalf("page = %+v", page)
 	}
 	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND payload IS NULL`, subscription.InboxID); got != 3 {
@@ -322,6 +323,7 @@ func TestPayloadsExpireOnlyUpToTheFirstEntryYoungerThanThirtyDays(t *testing.T) 
 	for _, event := range events {
 		f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
 	}
+	f.acknowledge(t, subscription.InboxID, 4)
 	f.exec(t, `UPDATE entry SET created_at = now() - interval '31 days' WHERE inbox_id = $1 AND cursor IN (1, 2, 4)`, subscription.InboxID)
 	f.cleanAll(t)
 
@@ -332,6 +334,35 @@ func TestPayloadsExpireOnlyUpToTheFirstEntryYoungerThanThirtyDays(t *testing.T) 
 	// Reading skips the expired prefix and continues in order, past the entry that is old but not in it.
 	if len(page.Entries) != 2 || page.Entries[0].Cursor != 3 || page.Entries[1].Cursor != 4 {
 		t.Fatalf("entries = %+v, want cursors 3 and 4", page.Entries)
+	}
+}
+
+func TestUnreadProviderAndMessagePayloadsSurviveThirtyDayCleanup(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	creation := f.body("first")
+	subscription := f.subscribe(t, creation)
+	event := actionsEvents(creation.Source.(model.ActionsSource).RequestID, 1)[0]
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, payloadOf(event))
+	f.send(t, f.message(newOwner(), "message", "Please keep this message."))
+	f.exec(t, `UPDATE entry SET created_at = now() - interval '31 days' WHERE inbox_id = $1`, subscription.InboxID)
+
+	f.cleanAll(t)
+	page := f.read(t, subscription.InboxID, 0)
+	if page.Inbox.ExpiredThrough != 0 || len(page.Entries) != 2 {
+		t.Fatalf("unread entries after cleanup = %+v", page)
+	}
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND payload IS NOT NULL AND (action_at IS NOT NULL OR message_body IS NOT NULL)`, subscription.InboxID); got != 2 {
+		t.Fatalf("%d unread entries retained native content, want 2", got)
+	}
+
+	f.acknowledge(t, subscription.InboxID, 1)
+	f.cleanAll(t)
+	page = f.read(t, subscription.InboxID, 0)
+	if page.Inbox.ExpiredThrough != 1 || len(page.Entries) != 1 || page.Entries[0].Cursor != 2 {
+		t.Fatalf("message after acknowledging only the provider event = %+v", page)
+	}
+	if got := f.count(t, `SELECT count(*) FROM entry WHERE inbox_id = $1 AND cursor = 2 AND message_body = 'Please keep this message.'`, subscription.InboxID); got != 1 {
+		t.Fatal("the unread authored message body was cleared")
 	}
 }
 

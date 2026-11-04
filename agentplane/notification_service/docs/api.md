@@ -25,7 +25,9 @@ The caller's inboxes and subscriptions are those opened for the Sandbox that run
 recreated under a deleted one's name sees none of the deleted one's, and an account no Sandbox runs as has none.
 The placement wire change is a coordinated cutover with the Dispatcher and sampler; pre-cutover
 Sandbox/service binaries are not a supported compatibility tier. Existing subscription, inbox and
-retained History data remain subject to their current UID-pinned retirement and retention rules.
+retained History data remain subject to their current retention rules. A missing or replaced
+Sandbox does not retire an existing inbox or cancel its subscriptions. Its sources continue
+to be read, while runner notice delivery waits for the exact original UID.
 
 - `POST /v1/subscriptions`: immutable provider-owned source/filter and `idempotency_key`; identical retries return
   the same subscription, conflicting reuse returns 409. Actions replay defaults to sequence zero;
@@ -164,8 +166,9 @@ Notice admission and harness confirmation are distinct states, and neither prove
 handled the entries. Unacknowledged entries do not cause repeated reminders. Notification delivery
 does not promise exactly-once native execution.
 
-Provider payloads expire after 30 days while their event identities remain deduplicated.
-`expired_through` reports the resulting prefix gap without advancing acknowledgement. Retired
+Acknowledged provider payloads and message bodies expire after 30 days while event identities
+remain deduplicated. Unacknowledged contents stay readable while the inbox is active, including
+when its destination is unavailable. `expired_through` reports the resulting prefix gap. Retired
 inboxes are purged after 30 days. After purge, a new explicit subscription can establish a fresh
 inbox; there is no implicit routing to a successor Sandbox or Session.
 

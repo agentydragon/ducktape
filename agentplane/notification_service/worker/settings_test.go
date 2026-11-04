@@ -24,9 +24,9 @@ func TestSettingsAreBoundedAsThePythonServiceBoundsThem(t *testing.T) {
 		{"longest maximum wait", func(s *Settings) { s.NoticeDebounce.MaxWaitSeconds = 3600 }, true},
 		{"no maximum wait", func(s *Settings) { s.NoticeDebounce.MaxWaitSeconds = 0 }, false},
 		{"maximum wait over an hour", func(s *Settings) { s.NoticeDebounce.MaxWaitSeconds = 3601 }, false},
-		{"longest confirmation wait", func(s *Settings) { s.StaleInboxConfirmationSeconds = 3600 }, true},
-		{"no confirmation wait", func(s *Settings) { s.StaleInboxConfirmationSeconds = 0 }, false},
-		{"confirmation wait over an hour", func(s *Settings) { s.StaleInboxConfirmationSeconds = 3601 }, false},
+		{"longest retry interval", func(s *Settings) { s.UnavailableDestinationRetrySeconds = 3600 }, true},
+		{"no retry interval", func(s *Settings) { s.UnavailableDestinationRetrySeconds = 0 }, false},
+		{"retry interval over an hour", func(s *Settings) { s.UnavailableDestinationRetrySeconds = 3601 }, false},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			settings := DefaultSettings()

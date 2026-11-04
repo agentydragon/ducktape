@@ -102,7 +102,7 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	if c.Quotas.InboxesPerAccount != 64 || c.Quotas.ActiveSubscriptionsPerInbox != 64 || c.Quotas.EntriesPerInbox != 10_000 {
 		t.Errorf("quota defaults: %+v", c.Quotas)
 	}
-	if c.NoticeDebounce.QuietSeconds != 2 || c.NoticeDebounce.MaxWaitSeconds != 10 || c.StaleInboxConfirmationSeconds != 30 || (c.GitHubDeliveryRetentionDays == nil || *c.GitHubDeliveryRetentionDays != 7) {
+	if c.NoticeDebounce.QuietSeconds != 2 || c.NoticeDebounce.MaxWaitSeconds != 10 || c.UnavailableDestinationRetrySeconds != 30 || (c.GitHubDeliveryRetentionDays == nil || *c.GitHubDeliveryRetentionDays != 7) {
 		t.Errorf("worker defaults: %+v", c.Settings)
 	}
 	if c.RunnerGateway.RequestTimeoutSeconds != 5 || c.HistoryService.RequestTimeoutSeconds != 20 ||
@@ -117,12 +117,12 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 func TestAnEnvironmentVariableOverridesTheFileAtTopLevelAndNested(t *testing.T) {
 	c, err := loadTestConfig(t, requiredFile+"github_delivery_retention_days: 14\nport: 9000\nquotas:\n  entries_per_inbox: 5\n",
 		settingPrefix+"PORT=9001", settingPrefix+"NOTICE_DEBOUNCE__QUIET_SECONDS=7", settingPrefix+"ACTIONS__REQUEST_TIMEOUT_S=1.5",
-		settingPrefix+"STALE_INBOX_CONFIRMATION_S=9", settingPrefix+"GITHUB_DELIVERY_RETENTION_DAYS=3")
+		settingPrefix+"UNAVAILABLE_DESTINATION_RETRY_S=9", settingPrefix+"GITHUB_DELIVERY_RETENTION_DAYS=3")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.Port != 9001 || c.Quotas.EntriesPerInbox != 5 || c.NoticeDebounce.QuietSeconds != 7 ||
-		c.Actions.RequestTimeoutSeconds != 1.5 || c.StaleInboxConfirmationSeconds != 9 || (c.GitHubDeliveryRetentionDays == nil || *c.GitHubDeliveryRetentionDays != 3) {
+		c.Actions.RequestTimeoutSeconds != 1.5 || c.UnavailableDestinationRetrySeconds != 9 || (c.GitHubDeliveryRetentionDays == nil || *c.GitHubDeliveryRetentionDays != 3) {
 		t.Errorf("file and environment overrides: %+v", c)
 	}
 }
