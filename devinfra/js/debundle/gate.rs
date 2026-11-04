@@ -22,8 +22,8 @@ pub use assignment_analysis::{
     AtomicGroupPlacementObligation, CandidateRelocationAssessment,
     CandidateRelocationAssessmentReport, CandidateRelocationStatus,
     CrossDestinationRebindObligation, RejectedAssignment, SemanticOrderSccObligation,
-    StructuralPlacementAssessment, StructuralPlacementCheck, StructuralPlacementCoverage,
-    StructuralPlacementStatus, ValidatedAssignment,
+    StructuralPlacementAssessment, StructuralPlacementCoverage, StructuralPlacementStatus,
+    ValidatedAssignment,
 };
 pub use assignment_inputs::AssignmentInputs;
 pub use esm_import_order::EsmImportOrder;

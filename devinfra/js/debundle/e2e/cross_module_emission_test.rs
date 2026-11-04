@@ -2,6 +2,7 @@
 //! modules produced by `materialize_logical_modules`.
 
 use debundle_e2e_support::*;
+use serde_json::json;
 use std::fs;
 use swc_ecma_ast::{ImportSpecifier, ModuleDecl, ModuleExportName, ModuleItem};
 
@@ -153,19 +154,9 @@ export { mutable, write };
     );
     assert_eq!(candidate["decision"]["status"], "accepted", "{candidate:#}");
     assert_eq!(candidate["swapped_pairs"], 0, "{candidate:#}");
-    let unresolved = candidate["placement"]["coverage"]["unresolved_checks"]
-        .as_array()
-        .expect("typed structural coverage gaps");
-    assert!(
-        unresolved
-            .iter()
-            .any(|check| check == "destructuring_declarator_grouping"),
-        "{candidate:#}"
-    );
-    assert!(
-        unresolved
-            .iter()
-            .any(|check| check == "binding_and_shared_var_destination_projection"),
+    assert_eq!(
+        candidate["placement"]["coverage"]["unresolved_checks"],
+        json!([]),
         "{candidate:#}"
     );
     assert_eq!(candidate["placement"]["status"], "blocked");

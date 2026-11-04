@@ -3301,10 +3301,26 @@ authoritative destination of each declared or imported binding. Its spelling
 index stores binding identities and resolves destinations through the catalogue.
 Module plans carry export names and comments. Rebind analysis obtains an
 owned-only destination projection when needed; each construction update changes
-the catalogue once. After realizability validation, `EmissionPlacement` derives
-binding and whole-statement placement from the accepted `ModuleAssignment` and
-checks that declaration sites, import metadata, and whole-statement requests agree.
-Lowering consumes that immutable placement and its associated graph.
+the catalogue once. Candidate assessment and normal lowering share one checked
+source/destination projection over the same final assignment. The retained
+AST-facts pass supplies source-unit ordinals, raw statement locations, exact
+destructuring declarator groups, and nested-`var` groups; `SourceUnitLayout`
+joins them to graph `SourceUnitId`s once. The projection checks declarator
+grouping, graph-to-body coverage, repeated/shared binding ownership (including
+certified stable-Set intervals), and finalized whole-statement placement. Its
+typed result carries both candidate assessment evidence and, only when placement
+is mappable, the exact binding/statement maps consumed by lowering. For a
+finalized assignment that reaches this projection, failure produces a
+diagnostic candidate result with typed blockers and explicit unresolved checks;
+it does not fabricate an `EmissionPlacement`. Existing earlier plan-construction
+refusals in `pull_destructure_siblings` and `route_nested_var_statements` still
+fail before a final assignment exists, so those candidates do not produce this
+assessment. A legacy-gate-rejected but mappable candidate can still produce
+marked inspection output. This scoped candidate result is not emission
+authority: the existing realizability gate remains the only authority to emit
+runnable output until later coverage domains are closed. The candidate's effect
+assessment is computed once for that same assignment and import order; it does
+not rerun realizability or source analysis.
 
 `EmissionFiles` owns reconstructed syntax while body transformations are still
 allowed. Its output-path indexes are built once after lowering changes entry and

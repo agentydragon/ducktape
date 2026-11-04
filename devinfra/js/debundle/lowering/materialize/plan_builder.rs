@@ -15,15 +15,14 @@ use crate::rebind_fold::RebindFold;
 use crate::util::target_file_for_request;
 use analysis::{
     BindingCatalogue, BindingKind, ChunkId, DependencyGraphAndAtomicGroups, ModuleId, ModuleRole,
-    SourceUnitClass, SourceUnitId, top_level_id,
+    SourceUnitClass, SourceUnitId, SourceUnitLayout, top_level_id,
 };
 use anyhow::{Context, Result, bail, ensure};
-use js_ast::statement_for_source_unit_ordinal;
 use selector_outcome::{
     Declaration, Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
 };
 use selector_resolve::{EntityIndex, EntityOutcome, MemberSelector, Resolution};
-use source_identity::{SourceUnitOrdinal, StatementId};
+use source_identity::StatementId;
 use spec_resolution::{LogicalRequest, MemberRequest, reject_duplicate_member_bindings};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
@@ -1110,12 +1109,21 @@ impl ChunkPlanBuilder {
     pub(super) fn route_unclaimed_anonymous_to_catchall(
         &mut self,
         precomputed: &DependencyGraphAndAtomicGroups,
-        body: &[ModuleItem],
-    ) {
+        layout: &SourceUnitLayout,
+    ) -> Result<()> {
         let Some(index) = self.residual_plan_index else {
-            return;
+            return Ok(());
         };
         let graph = &precomputed.dependency_graph;
+        let source_unit_statements: HashMap<SourceUnitId, StatementId> = graph
+            .iter_nodes()
+            .map(|node| {
+                let location = layout.by_source_unit(node.id).with_context(|| {
+                    format!("source unit {} has no checked syntax location", node.id.0)
+                })?;
+                Ok((node.id, location.statement))
+            })
+            .collect::<Result<_>>()?;
         let mut body_indices = BTreeSet::new();
         let mut catchall_source_units = BTreeSet::new();
         for node in graph.iter_nodes() {
@@ -1126,9 +1134,8 @@ impl ChunkPlanBuilder {
             {
                 catchall_source_units.insert(node.id);
             } else if node.class() == SourceUnitClass::AnonymousStatement
-                && let Some(body_index) =
-                    statement_for_source_unit_ordinal(body, node.statement_ordinal)
-                && self.whole_statement_assignment.get(&body_index) == Some(&index)
+                && let Some(body_index) = source_unit_statements.get(&node.id)
+                && self.whole_statement_assignment.get(body_index) == Some(&index)
             {
                 catchall_source_units.insert(node.id);
             }
@@ -1140,14 +1147,12 @@ impl ChunkPlanBuilder {
                     return false;
                 };
                 if node.class() == SourceUnitClass::AnonymousStatement {
-                    let Some(body_index) =
-                        statement_for_source_unit_ordinal(body, node.statement_ordinal)
-                    else {
+                    let Some(body_index) = source_unit_statements.get(&source_unit_id) else {
                         return false;
                     };
                     return self
                         .whole_statement_assignment
-                        .get(&body_index)
+                        .get(body_index)
                         .is_none_or(|&assigned| assigned == index);
                 }
                 let in_catchall = node.declared.iter().all(|binding| {
@@ -1164,14 +1169,13 @@ impl ChunkPlanBuilder {
                     continue;
                 };
                 if node.class() == SourceUnitClass::AnonymousStatement
-                    && let Some(body_index) =
-                        statement_for_source_unit_ordinal(body, node.statement_ordinal)
+                    && let Some(body_index) = source_unit_statements.get(&source_unit_id)
                     && self
                         .whole_statement_assignment
-                        .get(&body_index)
+                        .get(body_index)
                         .is_none_or(|&assigned| assigned == index)
                 {
-                    body_indices.insert(body_index);
+                    body_indices.insert(*body_index);
                     catchall_source_units.insert(source_unit_id);
                 }
             }
@@ -1192,19 +1196,17 @@ impl ChunkPlanBuilder {
                 if node.class() == SourceUnitClass::BindingDeclaration {
                     continue;
                 }
-                let Some(body_index) =
-                    statement_for_source_unit_ordinal(body, node.statement_ordinal)
-                else {
-                    continue;
-                };
+                let body_index = source_unit_statements
+                    .get(&node.id)
+                    .expect("every graph node was checked against the source-unit layout");
                 if self
                     .whole_statement_assignment
-                    .get(&body_index)
+                    .get(body_index)
                     .is_some_and(|&assigned| assigned != index)
                 {
                     continue;
                 }
-                body_indices.insert(body_index);
+                body_indices.insert(*body_index);
                 if catchall_source_units.insert(node.id) {
                     pending.push(node.id);
                 }
@@ -1217,10 +1219,8 @@ impl ChunkPlanBuilder {
                 .iter_nodes()
                 .filter(|node| node.class() == SourceUnitClass::AnonymousStatement)
             {
-                if let Some(body_index) =
-                    statement_for_source_unit_ordinal(body, node.statement_ordinal)
-                {
-                    body_indices.insert(body_index);
+                if let Some(body_index) = source_unit_statements.get(&node.id) {
+                    body_indices.insert(*body_index);
                 }
             }
         }
@@ -1233,6 +1233,7 @@ impl ChunkPlanBuilder {
                 .anonymous_statements
                 .push(body_index);
         }
+        Ok(())
     }
 
     /// `PerAtomicGroup` mode: every unclaimed atomic factor group gets
@@ -1245,18 +1246,20 @@ impl ChunkPlanBuilder {
     pub(super) fn synthesize_per_atomic_group(
         &mut self,
         precomputed: &DependencyGraphAndAtomicGroups,
-        body: &[ModuleItem],
+        layout: &SourceUnitLayout,
         target_dir: &str,
     ) -> Result<()> {
         let dependency_graph = &precomputed.dependency_graph;
         let atomic_groups = &precomputed.atomic_groups;
         let mut source_unit_declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
-        let mut source_unit_statement_ordinal: HashMap<SourceUnitId, SourceUnitOrdinal> =
-            HashMap::new();
+        let mut source_unit_statements = HashMap::<SourceUnitId, StatementId>::new();
         for node in dependency_graph.iter_nodes() {
             let ids: Vec<Id> = node.declared.iter().cloned().collect();
             source_unit_declared_names.insert(node.id, ids);
-            source_unit_statement_ordinal.insert(node.id, node.statement_ordinal);
+            let location = layout.by_source_unit(node.id).with_context(|| {
+                format!("source unit {} has no checked syntax location", node.id.0)
+            })?;
+            source_unit_statements.insert(node.id, location.statement);
         }
 
         let residual_plan_index = self.residual_plan_index;
@@ -1283,14 +1286,10 @@ impl ChunkPlanBuilder {
                 }
             }
             if names.is_empty() {
-                let Some(stmt_ord) = source_unit_statement_ordinal.get(&source_unit).copied()
-                else {
-                    return true;
-                };
-                let Some(body_idx) = statement_for_source_unit_ordinal(body, stmt_ord) else {
-                    return true;
-                };
-                match whole_statement_assignment.get(&body_idx).copied() {
+                let body_idx = source_unit_statements
+                    .get(&source_unit)
+                    .expect("every graph node was checked against the source-unit layout");
+                match whole_statement_assignment.get(body_idx).copied() {
                     None => return true,
                     Some(idx) if Some(idx) == residual_plan_index => return true,
                     Some(_) => return false,
@@ -1326,16 +1325,12 @@ impl ChunkPlanBuilder {
                     .map(Vec::as_slice)
                     .unwrap_or(&[]);
                 if names.is_empty() {
-                    let Some(stmt_ord) = source_unit_statement_ordinal.get(source_unit).copied()
-                    else {
-                        continue;
-                    };
-                    let Some(body_idx) = statement_for_source_unit_ordinal(body, stmt_ord) else {
-                        continue;
-                    };
+                    let body_idx = source_unit_statements
+                        .get(source_unit)
+                        .expect("every graph node was checked against the source-unit layout");
                     self.whole_statement_assignment
-                        .insert(body_idx, synthetic_idx);
-                    anonymous_statements.push(body_idx);
+                        .insert(*body_idx, synthetic_idx);
+                    anonymous_statements.push(*body_idx);
                     continue;
                 }
                 for name in names {

@@ -1255,11 +1255,13 @@ fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
     assert_ok(&result, "bindings assign --dry-run --analysis");
     let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
-    assert_ne!(assessment["status"], "accepted", "{assessment:#}");
-    assert!(
-        assessment["placement"]["coverage"]["unresolved_checks"]
-            .as_array()
-            .is_some_and(|checks| !checks.is_empty()),
+    assert_eq!(
+        assessment["status"], "accepted_within_checked_scope",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["placement"]["coverage"]["unresolved_checks"],
+        json!([]),
         "{assessment:#}"
     );
     assert_eq!(assessment["legacy_gate_accepts"], true, "{assessment:#}");
@@ -1407,11 +1409,13 @@ fn modules_apply_assessment_accepts_a_closed_no_swap_candidate() {
         "{assessment:#}"
     );
     assert_eq!(assessment["swapped_pairs"], 0, "{assessment:#}");
-    assert_ne!(assessment["status"], "accepted", "{assessment:#}");
-    assert!(
-        assessment["placement"]["coverage"]["unresolved_checks"]
-            .as_array()
-            .is_some_and(|checks| !checks.is_empty()),
+    assert_eq!(
+        assessment["status"], "accepted_within_checked_scope",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["placement"]["coverage"]["unresolved_checks"],
+        json!([]),
         "{assessment:#}"
     );
 }

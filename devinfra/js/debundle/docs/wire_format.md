@@ -165,18 +165,31 @@ typed dependency-edge and source-unit identities; `atomic_group_obligations`
 retains each group's members, claims and causes. Pure `eager_use`/`sequenced`
 conflicts are classified as semantic-order SCCs, recognized write/co-location
 causes as structural constraints, and mixed or empty causes as explicit
-blockers. `placement.coverage.unresolved_checks` is a typed set naming the
-remaining source checks: `destructuring_declarator_grouping`,
-`source_unit_to_body_mapping`, `binding_and_shared_var_destination_projection`,
-and `whole_statement_destination_projection`. Coverage is complete only when
-that set is empty; completeness is derived and is not serialized separately.
+blockers. `placement.projection_violations` contains typed source-unit, binding,
+declarator, stable-interval and whole-statement identities for completed checks
+that found an inconsistency. `placement.coverage.unresolved_checks` is the
+canonical typed set naming source checks whose complete input domain was not
+available: `destructuring_declarator_grouping`, `source_unit_to_body_mapping`,
+`binding_and_shared_var_destination_projection`, and
+`whole_statement_destination_projection`. Coverage is complete only when that
+set is empty; completeness is derived and is not serialized separately. The
+same non-deserializable source/destination projection produces this evidence
+and the binding/statement maps consumed by the lowerer. An unmappable candidate
+whose finalized assignment reaches the projection still emits its diagnostic
+assessment, but it does not produce emitter maps. Earlier plan-construction
+refusals in `pull_destructure_siblings` and `route_nested_var_statements` occur
+before candidate assessment and continue to return their existing hard
+refusals; they are outside this report's coverage.
 The top-level candidate `status` distinguishes `blocked_by_effect`,
 `blocked_by_placement`, and `blocked_by_effect_and_placement`; `incomplete`
-means neither component proves a blocker, while full placement coverage and
-authority remain open. `legacy_gate_ordering_veto` identifies semantic-order
-SCCs that still veto under the current legacy gate. Thus an ordering-only gate
-veto does not appear as a structural placement blocker. This report never
-says `accepted` and never changes the legacy gate's authority.
+means the effect decision or one of the required placement domains remains
+unproved. `accepted_within_checked_scope` means the effect component accepted
+and all four placement checks completed without a known structural blocker.
+It is a scoped assessment only: it does not establish vendor replacement, final
+exports, reconstruction or output validity, and it is not emission authority.
+`legacy_gate_ordering_veto` identifies semantic-order SCCs that still veto
+under the current legacy gate. Thus an ordering-only gate veto does not appear
+as a structural placement blocker, and the legacy gate remains authoritative.
 Its flattened `decision`, `emitted_order` and `swapped_pairs` are projections
 of the same sweep reported in `effect_translation_validation.json`; the
 flattened `decision.status` describes the effect component only.
