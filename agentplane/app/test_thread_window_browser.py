@@ -372,8 +372,8 @@ async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draf
     before = _handles(await page.evaluate("() => performance.getEntriesByType('resource').map(entry => entry.name)"))
     assert len(before) == 1
     requests = _recording_requests(page)
-    scope_before = await thread_browser.content.current_scope(thread.id)
-    assert scope_before is not None
+    scope_before = await thread_browser.content.session_summary(thread.id)
+    assert scope_before is not None and scope_before.HasField("projection_epoch")
 
     await page.context.set_offline(True)
     try:
@@ -383,7 +383,7 @@ async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draf
         latest = append_items(thread_browser, "offline-item", range(70))
         async with asyncio.timeout(15):
             while True:
-                scope = await thread_browser.content.current_scope(thread.id)
+                scope = await thread_browser.content.session_summary(thread.id)
                 if scope is not None and scope.folded_through >= latest.cursor:
                     break
                 await asyncio.sleep(0.01)

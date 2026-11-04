@@ -1,13 +1,6 @@
 // @vitest-environment happy-dom
-import { create, fromJson } from "@bufbuild/protobuf";
 import { afterEach, expect, it, vi } from "vitest";
-
-import {
-  EntityKeySchema,
-  ReadEntityEvidenceRequestSchema,
-  ReadNativeFramesRequestSchema,
-  ThreadEntityKind,
-} from "../../../history_service/history_service_pb";
+import { create, fromJson } from "@bufbuild/protobuf";
 
 import {
   interruptTurn,
@@ -22,6 +15,14 @@ import {
   listThreadWindow,
 } from "./client";
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import {
+  EntityKeySchema,
+  ReadEntityEvidenceRequestSchema,
+  ReadNativeFramesRequestSchema,
+  ReadSessionEventsRequestSchema,
+  ReadSessionObservationsRequestSchema,
+  ThreadEntityKind,
+} from "../../../history_service/history_service_pb";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -62,7 +63,14 @@ it.each(["before", "after"] as const)("preserves %s archive cursors above JS int
       })
     );
   });
-  await threadObservations("test-thread", { [direction]: "9007199254740993" });
+  await threadObservations(
+    create(ReadSessionObservationsRequestSchema, {
+      sessionId: "test-thread",
+      beforeCursor: direction === "before" ? 9007199254740993n : undefined,
+      afterCursor: direction === "after" ? 9007199254740993n : undefined,
+      limit: 30,
+    })
+  );
   expect(requests).toHaveLength(1);
   const url = new URL(requests[0]!.url);
   expect(url.pathname).toBe("/upstream/history/v1/sessions/test-thread/observations");
@@ -102,8 +110,20 @@ it.each([
   "accepts short $label History pages when settlements cover missing cursors",
   async ({ request, observations, settled, cursors }) => {
     vi.stubGlobal("fetch", () => Promise.resolve(Response.json({ lastCursor: "34", observations, settled })));
-    await expect(threadObservations("test-thread", request)).resolves.toMatchObject({
+    const bounds = request as { before?: string; after?: string };
+    await expect(
+      threadObservations(
+        create(ReadSessionObservationsRequestSchema, {
+          sessionId: "test-thread",
+          beforeCursor: bounds.before === undefined ? undefined : BigInt(bounds.before),
+          afterCursor: bounds.after === undefined ? undefined : BigInt(bounds.after),
+          limit: 30,
+        })
+      )
+    ).resolves.toMatchObject({
+      lastCursor: 34n,
       observations: cursors.map((cursor) => ({ cursor: BigInt(cursor) })),
+      settled: settled.map((range) => ({ first: BigInt(range.first), last: BigInt(range.last) })),
     });
   }
 );
@@ -121,7 +141,17 @@ it.each([
   },
 ])("rejects an observation page with $label", async ({ cursor, lastCursor, observations }) => {
   vi.stubGlobal("fetch", () => Promise.resolve(Response.json({ lastCursor, observations, settled: [] })));
-  await expect(threadObservations("test-thread", cursor)).rejects.toThrow();
+  const bounds = cursor as { before?: string; after?: string };
+  await expect(
+    threadObservations(
+      create(ReadSessionObservationsRequestSchema, {
+        sessionId: "test-thread",
+        beforeCursor: bounds.before === undefined ? undefined : BigInt(bounds.before),
+        afterCursor: bounds.after === undefined ? undefined : BigInt(bounds.after),
+        limit: 30,
+      })
+    )
+  ).rejects.toThrow();
 });
 
 it("reads one History event with generated requests and keeps the 64-bit cursor exact", async () => {
@@ -147,8 +177,17 @@ it("reads one History event with generated requests and keeps the 64-bit cursor 
     );
   });
 
-  await expect(threadObservationEntry("test-thread", cursor)).resolves.toMatchObject({
-    cursor: BigInt(cursor),
+  await expect(
+    threadObservationEntry(
+      create(ReadSessionEventsRequestSchema, {
+        sessionId: "test-thread",
+        afterCursor: BigInt(cursor) - 1n,
+        limit: 1,
+      })
+    )
+  ).resolves.toMatchObject({
+    lastCursor: BigInt(cursor),
+    entries: [{ cursor: BigInt(cursor) }],
   });
   expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
     "/upstream/history/v1/sessions/test-thread/summary",
@@ -178,10 +217,14 @@ it("treats a settled History cursor as an absent observation", async () => {
     );
   });
 
-  await expect(threadObservationEntry("test-thread", "10")).rejects.toMatchObject({ status: 404 });
+  await expect(
+    threadObservationEntry(
+      create(ReadSessionEventsRequestSchema, { sessionId: "test-thread", afterCursor: 9n, limit: 1 })
+    )
+  ).rejects.toMatchObject({ status: 404 });
 });
 
-it("uses generated History requests and adapts evidence and native frame pages", async () => {
+it("passes History protobuf evidence and native frame pages through unchanged", async () => {
   const requests: Request[] = [];
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
     const request = new Request(input, init);
@@ -199,13 +242,12 @@ it("uses generated History requests and adapts evidence and native frame pages",
     );
   });
 
-  const entity = create(EntityKeySchema, { entityKind: ThreadEntityKind.ITEM, entityId: "item-id" });
   await expect(
     threadEvidence(
       create(ReadEntityEvidenceRequestSchema, {
         sessionId: "session-id",
         projectionEpoch: "history-v1",
-        entity,
+        entity: create(EntityKeySchema, { entityKind: ThreadEntityKind.ITEM, entityId: "item-id" }),
         afterCursor: 9007199254740992n,
         limit: 30,
       })
@@ -219,7 +261,7 @@ it("uses generated History requests and adapts evidence and native frame pages",
       create(ReadNativeFramesRequestSchema, {
         sessionId: "session-id",
         projectionEpoch: "history-v1",
-        entity,
+        entity: create(EntityKeySchema, { entityKind: ThreadEntityKind.ITEM, entityId: "item-id" }),
         observationCursor: 9007199254740993n,
         afterSequence: 9007199254740992n,
         limit: 30,
@@ -240,6 +282,7 @@ it("uses generated History requests and adapts evidence and native frame pages",
     expect(body).not.toHaveProperty("sessionId");
     expect(body).toMatchObject({
       projectionEpoch: "history-v1",
+      entity: { entityKind: ThreadEntityKind.ITEM, entityId: "item-id" },
       limit: 30,
     });
     const entity = fromJson(EntityKeySchema, body.entity);

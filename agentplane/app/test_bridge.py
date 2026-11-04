@@ -68,10 +68,10 @@ async def failed_bridge_state(
                 thread_id = UUID(session_id)
                 observed["history_cursor"] = await event_logs.last_cursor(thread_id)
                 observed["history_watermark"] = await event_logs.read_watermark(thread_id)
-                scope = await event_logs.current_scope(thread_id)
+                scope = await event_logs.session_summary(thread_id)
                 observed["history_scope"] = (
                     None
-                    if scope is None
+                    if scope is None or not scope.HasField("projection_epoch")
                     else {"projection_epoch": scope.projection_epoch, "through_cursor": scope.folded_through}
                 )
                 page = await event_logs.reader.read_session_events(session_id, after_cursor=0, limit=1)

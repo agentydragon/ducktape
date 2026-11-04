@@ -769,7 +769,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
         async with asyncio.timeout(10):
             while True:
-                scope = await content.current_scope(thread)
+                scope = await content.session_summary(thread)
                 if scope is not None and scope.folded_through >= source.entries[-1].cursor:
                     break
                 await asyncio.sleep(0.01)

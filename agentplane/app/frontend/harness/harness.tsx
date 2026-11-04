@@ -2467,7 +2467,7 @@ type Flag =
   | "inventoryStreamDropped"
   | "entityStreamDisconnected"
   | "entitySegmentsWithheld"
-  | "syncScopeUnavailable"
+  | "threadScopeUnavailable"
   | "commandAdmissionTimedOut"
   | "pendingActions"
   | "pendingActionOverflow"
@@ -3054,7 +3054,7 @@ routes.push(
       ) {
         throw new Error("scope read must request range 0 with limit 1 at the current projection");
       }
-      return flags.has("syncScopeUnavailable")
+      return flags.has("threadScopeUnavailable")
         ? // A persistent service failure is distinct from a retired epoch's 410, which the
           // production store resolves by reading the scope again.
           Response.json({ detail: "thread fold is temporarily unavailable" }, { status: 503 })

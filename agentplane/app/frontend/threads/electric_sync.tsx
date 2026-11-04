@@ -32,6 +32,7 @@ import { z } from "zod";
 
 import { displayableError, fetchWithLogin } from "../client";
 import { threadScope } from "./client";
+import { protoJson } from "./proto_json";
 import { backoff, type StreamConnection } from "../stream_reader";
 import { followWatch } from "../watch_stream";
 import {
@@ -283,19 +284,6 @@ function batches<T>(values: readonly T[], size: number): T[][] {
   return Array.from({ length: Math.ceil(values.length / size) }, (_, index) =>
     values.slice(index * size, (index + 1) * size)
   );
-}
-
-function protoJson(value: unknown): JsonValue {
-  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return value;
-  }
-  if (Array.isArray(value)) return value.map(protoJson);
-  if (typeof value === "object") {
-    const result: { [key: string]: JsonValue } = {};
-    for (const [key, child] of Object.entries(value)) result[key] = protoJson(child);
-    return result;
-  }
-  throw new Error("History watch returned a non-JSON value.");
 }
 
 function commandsById(ids: readonly string[]): SubsetParams {

@@ -3,7 +3,6 @@ import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
 
 import type { ThreadView as ThreadViewSchema } from "../schema";
 import { api, displayableError, fetchWithLogin, HttpError, ok } from "../client";
-import type { EventEntry } from "../../../proto/event_log_pb";
 import { TurnStatusSchema } from "../../../proto/event_pb";
 import { HarnessSchema, HarnessStateSchema, LaunchOutcomeSchema, SetupStateSchema } from "../../../proto/session_pb";
 import { ListThreadMetadataResponseSchema, ThreadMetadataSchema, type ThreadMetadata } from "../../app_service_pb";
@@ -19,16 +18,17 @@ import {
   ReadNativeFramesResponseSchema,
   ReadThreadEntitiesRequestSchema,
   ReadThreadEntitiesResponseSchema,
-  ReadSessionEventsRequestSchema,
-  ReadSessionEventsResponseSchema,
-  ReadSessionObservationsRequestSchema,
-  ReadSessionObservationsResponseSchema,
-  SessionSummarySchema,
-  type SessionSummary,
   type ReadEntityEvidenceRequest,
   type ReadEntityEvidenceResponse,
   type ReadNativeFramesRequest,
   type ReadNativeFramesResponse,
+  type ReadSessionEventsRequest,
+  type ReadSessionEventsResponse,
+  type ReadSessionObservationsRequest,
+  ReadSessionEventsResponseSchema,
+  ReadSessionObservationsResponseSchema,
+  SessionSummarySchema,
+  type SessionSummary,
   type ReadSessionObservationsResponse,
   type ReadThreadEntitiesResponse,
 } from "../../../history_service/history_service_pb";
@@ -77,7 +77,7 @@ function bodyWithoutSessionId(value: JsonValue): string {
   return JSON.stringify(body);
 }
 
-function nextStored(cursor: bigint, ranges: ReadonlyArray<{ first: bigint; last: bigint }>): bigint {
+export function nextStored(cursor: bigint, ranges: ReadonlyArray<{ first: bigint; last: bigint }>): bigint {
   let following = cursor + 1n;
   for (const range of [...ranges].sort((left, right) =>
     left.first < right.first ? -1 : left.first > right.first ? 1 : 0
@@ -87,40 +87,26 @@ function nextStored(cursor: bigint, ranges: ReadonlyArray<{ first: bigint; last:
   return following;
 }
 
-export function observationPageCursors(response: ReadSessionObservationsResponse): {
-  before?: bigint;
-  after?: bigint;
-} {
-  return {
-    before:
-      response.observations[0] && response.observations[0].cursor > 1n ? response.observations[0].cursor : undefined,
-    after:
-      response.observations.length > 0 &&
-      nextStored(response.observations.at(-1)!.cursor, response.settled) <= response.lastCursor
-        ? response.observations.at(-1)!.cursor
-        : undefined,
-  };
-}
-
 function validateObservationPage(
   response: ReadSessionObservationsResponse,
-  before: bigint | undefined,
-  after: bigint | undefined,
-  limit: number
+  request: ReadSessionObservationsRequest
 ): void {
   const cursors = response.observations.map((observation) => observation.cursor);
   let walk = cursors;
   let within: boolean;
   let shortOk: boolean;
-  if (after !== undefined) {
-    if (after > response.lastCursor) throw new Error("History observation cursor exceeds the History watermark");
-    walk = [after, ...cursors];
+  if (request.afterCursor !== undefined) {
+    if (request.afterCursor > response.lastCursor)
+      throw new Error("History observation cursor exceeds the History watermark");
+    walk = [request.afterCursor, ...cursors];
     const last = walk.at(-1)!;
     within = cursors.length === 0 || cursors.at(-1)! <= response.lastCursor;
     shortOk = nextStored(last, response.settled) > response.lastCursor;
   } else {
     let end = response.lastCursor;
-    if (before !== undefined && before <= end) end = before === 0n ? 0n : before - 1n;
+    if (request.beforeCursor !== undefined && request.beforeCursor <= end) {
+      end = request.beforeCursor === 0n ? 0n : request.beforeCursor - 1n;
+    }
     within = cursors.length === 0 || (cursors.at(-1)! <= end && end < nextStored(cursors.at(-1)!, response.settled));
     shortOk =
       cursors.length > 0 ? nextStored(0n, response.settled) === cursors[0] : nextStored(0n, response.settled) > end;
@@ -132,22 +118,22 @@ function validateObservationPage(
       break;
     }
   }
-  if (!within || !contiguous || (cursors.length !== limit && !shortOk)) {
+  if (!within || !contiguous || (cursors.length !== request.limit && !shortOk)) {
     throw new Error("History Service returned an invalid observation page");
   }
 }
 export async function threadObservationEntry(
-  threadId: string,
-  cursor: string,
+  request: ReadSessionEventsRequest,
   signal?: AbortSignal
-): Promise<EventEntry> {
-  const requestedCursor = BigInt(cursor);
+): Promise<ReadSessionEventsResponse> {
+  const requestedCursor = request.afterCursor + 1n;
+  if (request.limit !== 1) throw new Error("Chronological observation entry requests must have limit 1");
   if (requestedCursor < 1n) {
-    throw new HttpError(new Response(null, { status: 404 }), `no observation at ${cursor} in this thread`);
+    throw new HttpError(new Response(null, { status: 404 }), `no observation at ${requestedCursor} in this thread`);
   }
 
-  const sessionId = encodeURIComponent(threadId);
-  const summaryRequest = create(GetSessionSummaryRequestSchema, { sessionId: threadId });
+  const sessionId = encodeURIComponent(request.sessionId);
+  const summaryRequest = create(GetSessionSummaryRequestSchema, { sessionId: request.sessionId });
   const summary = fromJson(
     SessionSummarySchema,
     await historyJson(`/sessions/${encodeURIComponent(summaryRequest.sessionId)}/summary`, { signal })
@@ -160,45 +146,33 @@ export async function threadObservationEntry(
   );
   if (requestedCursor > watermark.lastCursor) {
     if (requestedCursor <= summary.foldedThrough) {
-      throw new Error(`History Service has not committed cursor ${cursor} used by its fold`);
+      throw new Error(`History Service has not committed cursor ${requestedCursor} used by its fold`);
     }
-    throw new HttpError(new Response(null, { status: 404 }), `no observation at ${cursor} in this thread`);
+    throw new HttpError(new Response(null, { status: 404 }), `no observation at ${requestedCursor} in this thread`);
   }
 
-  const eventsRequest = create(ReadSessionEventsRequestSchema, {
-    sessionId: threadId,
-    afterCursor: requestedCursor - 1n,
-    limit: 1,
-  });
   const eventsUrl = new URL(`/sessions/${sessionId}/events`, window.location.href);
-  eventsUrl.searchParams.set("after_cursor", eventsRequest.afterCursor.toString());
-  eventsUrl.searchParams.set("limit", String(eventsRequest.limit));
+  eventsUrl.searchParams.set("after_cursor", request.afterCursor.toString());
+  eventsUrl.searchParams.set("limit", String(request.limit));
   const page = fromJson(
     ReadSessionEventsResponseSchema,
     await historyJson(eventsUrl.pathname + eventsUrl.search, { signal })
   );
   const unstored = [...page.settlements.flatMap((settlement) => settlement.ranges), ...page.removed];
   if (nextStored(requestedCursor - 1n, unstored) !== requestedCursor) {
-    throw new HttpError(new Response(null, { status: 404 }), `no observation at ${cursor} in this thread`);
+    throw new HttpError(new Response(null, { status: 404 }), `no observation at ${requestedCursor} in this thread`);
   }
   if (page.entries.length !== 1 || page.entries[0]!.cursor !== requestedCursor) {
-    throw new Error(`History Service did not return requested cursor ${cursor}`);
+    throw new Error(`History Service did not return requested cursor ${requestedCursor}`);
   }
-  return page.entries[0]!;
+  return page;
 }
 
 export async function threadObservations(
-  threadId: string,
-  cursor: { before?: string; after?: string },
+  request: ReadSessionObservationsRequest,
   signal?: AbortSignal
 ): Promise<ReadSessionObservationsResponse> {
-  const request = create(ReadSessionObservationsRequestSchema, {
-    sessionId: threadId,
-    beforeCursor: cursor.before === undefined ? undefined : BigInt(cursor.before),
-    afterCursor: cursor.after === undefined ? undefined : BigInt(cursor.after),
-    limit: 30,
-  });
-  const url = new URL(`/sessions/${encodeURIComponent(threadId)}/observations`, window.location.href);
+  const url = new URL(`/sessions/${encodeURIComponent(request.sessionId)}/observations`, window.location.href);
   url.searchParams.set("limit", String(request.limit));
   if (request.beforeCursor !== undefined) url.searchParams.set("before_cursor", request.beforeCursor.toString());
   if (request.afterCursor !== undefined) url.searchParams.set("after_cursor", request.afterCursor.toString());
@@ -206,12 +180,7 @@ export async function threadObservations(
     ReadSessionObservationsResponseSchema,
     await historyJson(url.pathname + url.search, { signal })
   );
-  validateObservationPage(
-    response,
-    cursor.before === undefined ? undefined : BigInt(cursor.before),
-    cursor.after === undefined ? undefined : BigInt(cursor.after),
-    30
-  );
+  validateObservationPage(response, request);
   return response;
 }
 
@@ -219,7 +188,7 @@ export async function threadEvidence(
   request: ReadEntityEvidenceRequest,
   signal?: AbortSignal
 ): Promise<ReadEntityEvidenceResponse> {
-  return fromJson(
+  const response = fromJson(
     ReadEntityEvidenceResponseSchema,
     await historyJson(`/sessions/${encodeURIComponent(request.sessionId)}/entity-evidence`, {
       method: "POST",
@@ -228,13 +197,14 @@ export async function threadEvidence(
       signal,
     })
   );
+  return response;
 }
 
 export async function threadNativeFrames(
   request: ReadNativeFramesRequest,
   signal?: AbortSignal
 ): Promise<ReadNativeFramesResponse> {
-  return fromJson(
+  const response = fromJson(
     ReadNativeFramesResponseSchema,
     await historyJson(`/sessions/${encodeURIComponent(request.sessionId)}/native-frames`, {
       method: "POST",
@@ -243,6 +213,7 @@ export async function threadNativeFrames(
       signal,
     })
   );
+  return response;
 }
 
 /** An explicit Dispatcher rejection of this request, not a durable admission receipt. */
