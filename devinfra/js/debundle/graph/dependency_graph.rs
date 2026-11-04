@@ -1,4 +1,4 @@
-use source_identity::SourceUnitOrdinal;
+use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 
@@ -11,13 +11,6 @@ use crate::purity::Purity;
 use crate::{SourceLocation, StatementKind};
 
 use super::edge::{DependencyEdge, DependencyEdgeId, EdgeReason, EdgeRole};
-
-/// Stable-in-run identity of one dependency-graph source unit. A source unit is
-/// one post-comma-list `StatementFacts` row, so it is not necessarily one
-/// original AST statement. Original AST statements remain intact for emission.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct SourceUnitId(pub usize);
 
 /// Fine-grained dependency graph before logical modules are formed. Nodes are
 /// source units from split statement facts; edges are reads between source units

@@ -66,13 +66,13 @@ use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use analysis::{
-    DepKind, DependencyGraph, DependencyGraphReport, ModuleAssignment, ModuleId, SourceUnitId,
-    StatementKind,
+    DepKind, DependencyGraph, DependencyGraphReport, ModuleAssignment, ModuleId, StatementKind,
 };
 use anyhow::Context;
 use gate::{LadderDecision, ModuleAssignmentDelta, RealizabilityIndex, RealizabilityVerdict};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
+use source_identity::SourceUnitId;
 
 /// Source-unit report index into the `DependencyGraphReport.nodes` vector. Stable for
 /// the lifetime of one quotient graph.

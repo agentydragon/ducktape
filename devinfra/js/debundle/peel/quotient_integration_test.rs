@@ -78,8 +78,8 @@ fn original_home_merge_rejects_remote_tdz() {
     let right = q.class_of(q.source_unit_index_of("unit:7").unwrap());
     assert!(q.merge_preserves_invariants(left, right));
     let mut post = q.realizability_assignment().clone();
-    let target = post.of(analysis::SourceUnitId(7));
-    post.set(analysis::SourceUnitId(3), target);
+    let target = post.of(source_identity::SourceUnitId(7));
+    post.set(source_identity::SourceUnitId(3), target);
     let post_verdict = gate::check_realizability(q.dependency_graph(), &post);
     let index = gate::RealizabilityIndex::from_assignment(
         q.dependency_graph(),
@@ -88,7 +88,7 @@ fn original_home_merge_rejects_remote_tdz() {
     assert_eq!(
         index.verdict_after_moving_source_units(
             q.dependency_graph(),
-            &[analysis::SourceUnitId(3)],
+            &[source_identity::SourceUnitId(3)],
             target
         ),
         post_verdict,
@@ -137,7 +137,8 @@ fn group_contraction_commits_one_final_entry_assignment_and_honors_cap() {
     let classes = [ClassId(0), ClassId(1), ClassId(2)];
     assert!(!q.contract_group_if_preserving(&classes));
     assert_eq!(
-        q.realizability_assignment().of(analysis::SourceUnitId(0)),
+        q.realizability_assignment()
+            .of(source_identity::SourceUnitId(0)),
         assignments[0]
     );
     assert_eq!(q.class_of(SourceUnitIndex(0)), ClassId(0));
@@ -154,13 +155,14 @@ fn group_contraction_commits_one_final_entry_assignment_and_honors_cap() {
         assert_eq!(q.class_of(SourceUnitIndex(source_unit)), ClassId(0));
         assert_eq!(
             q.realizability_assignment()
-                .of(analysis::SourceUnitId(source_unit)),
+                .of(source_identity::SourceUnitId(source_unit)),
             ModuleId(0)
         );
     }
     assert_eq!(q.class_of(SourceUnitIndex(3)), ClassId(3));
     assert_eq!(
-        q.realizability_assignment().of(analysis::SourceUnitId(3)),
+        q.realizability_assignment()
+            .of(source_identity::SourceUnitId(3)),
         assignments[3]
     );
     assert!(q.realizability_verdict().is_realizable());

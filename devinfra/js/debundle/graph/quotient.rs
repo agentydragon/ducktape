@@ -1,10 +1,11 @@
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
+use source_identity::SourceUnitId;
 
 use crate::ModuleId;
 use crate::module_assignment::ModuleAssignment;
 
-use super::dependency_graph::{DependencyGraph, SourceUnitId};
+use super::dependency_graph::DependencyGraph;
 use super::edge::{DependencyEdge, EdgeRole};
 
 /// The I∪S module dependency graph: the quotient of an [`DependencyGraph`]

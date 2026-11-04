@@ -26,7 +26,8 @@ use source_identity::SourceUnitOrdinal;
 use analysis::graph::{DependencyEdgeId, chunk_constraining_module_edges};
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
-use analysis::{DepKind, DependencyGraph, SourceUnitId};
+use analysis::{DepKind, DependencyGraph};
+use source_identity::SourceUnitId;
 use spec::ModulePath;
 
 use super::esm_simulator::simulate_esm_post_order;

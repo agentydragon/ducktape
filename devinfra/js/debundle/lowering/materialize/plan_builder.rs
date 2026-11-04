@@ -16,15 +16,15 @@ use crate::util::target_file_for_request;
 use analysis::{
     BindingCatalogue, BindingKind, ChunkId, DependencyGraphAndAtomicGroups,
     DestructuringDeclaratorGroup, DestructuringGroupOwnerClassification, ModuleId, ModuleRole,
-    NestedVarDestinationClassification, NestedVarStatement, SourceUnitClass, SourceUnitId,
-    SourceUnitLayout, classify_destructuring_group_owners, classify_nested_var_placement,
-    top_level_id,
+    NestedVarDestinationClassification, NestedVarStatement, SourceUnitClass, SourceUnitLayout,
+    classify_destructuring_group_owners, classify_nested_var_placement, top_level_id,
 };
 use anyhow::{Context, Result, bail, ensure};
 use selector_outcome::{
     Declaration, Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
 };
 use selector_resolve::{EntityIndex, EntityOutcome, MemberSelector, Resolution};
+use source_identity::SourceUnitId;
 use source_identity::StatementId;
 use spec_resolution::{LogicalRequest, MemberRequest, reject_duplicate_member_bindings};
 use std::collections::{BTreeMap, BTreeSet, HashMap};

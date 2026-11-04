@@ -15,7 +15,7 @@ use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use analysis::facts::StructuralChunkSourceFacts;
-use analysis::{DepKind, SourceUnitId, StatementKind};
+use analysis::{DepKind, StatementKind};
 use anyhow::{Context, Result, bail};
 use js_ast::statement_for_source_unit_ordinal;
 use rayon::prelude::*;
@@ -31,6 +31,7 @@ use selector_outcome::{
 };
 use selector_runtime::solve_global_selector_program;
 use shape_index::ShapeIndex;
+use source_identity::SourceUnitId;
 use source_match::chunk_resolver::ChunkResolver;
 use source_match::{ParsedSourceMatchSelector, template_free_identifiers};
 use spec::{AnonymousStatementSelector, BindingSelector, BindingSourceKind, MemberSelectorSpec};

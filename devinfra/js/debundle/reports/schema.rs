@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use source_identity::SourceUnitOrdinal;
+use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::BTreeSet;
 use swc_atoms::Atom;
 
@@ -1266,7 +1266,7 @@ impl EdgeRoleReport {
     /// `at_init_callee_source_unit.and_then(by_id.get)` fallback.
     pub fn resolve(
         &self,
-        by_id: &std::collections::HashMap<String, crate::SourceUnitId>,
+        by_id: &std::collections::HashMap<String, SourceUnitId>,
     ) -> crate::EdgeRole {
         match self {
             EdgeRoleReport::PromotedAtInit { callee_source_unit } => {
@@ -1400,7 +1400,7 @@ pub struct ConflictingClaimReport {
 
 pub fn sequenced_source_unit_causes(
     dependency_graph: &crate::DependencyGraph,
-    members: &[crate::SourceUnitId],
+    members: &[SourceUnitId],
 ) -> Vec<SequencedSourceUnitCause> {
     let members: std::collections::BTreeSet<_> = members.iter().copied().collect();
     members
@@ -1433,7 +1433,7 @@ pub fn sequenced_edge_cause(
 /// e.g. an array allocation or a pure content reader).
 pub fn impure_source_unit_cause(
     dependency_graph: &crate::DependencyGraph,
-    source_unit: crate::SourceUnitId,
+    source_unit: SourceUnitId,
 ) -> Option<SequencedSourceUnitCause> {
     let node = dependency_graph.node(source_unit)?;
     let Purity::NotPure { .. } = &node.purity else {

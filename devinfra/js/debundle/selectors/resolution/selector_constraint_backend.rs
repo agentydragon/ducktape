@@ -7,8 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::hash::{Hash, Hasher};
 
-use analysis::SourceUnitId;
 use selector_ir::{SelectorTargetId, VariableDomain};
+use source_identity::SourceUnitId;
 
 const SHARED_SPARSE_DOMAIN_THRESHOLD: usize = 1024;
 

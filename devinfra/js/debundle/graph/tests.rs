@@ -9,7 +9,9 @@ mod chunk_constraining_module_edges_tests {
     use crate::graph::*;
     use crate::ids::ModuleId;
     use crate::module_assignment::ModuleAssignment;
-    use crate::{AnalysisInputs, DependencyGraph, SourceUnitId, facts::analyze_chunk};
+    use source_identity::SourceUnitId;
+
+    use crate::{AnalysisInputs, DependencyGraph, facts::analyze_chunk};
 
     fn parse_facts(source: &str) -> Vec<crate::StatementFacts> {
         let module = raw_js_test_support::parse(source);
@@ -120,9 +122,9 @@ mod from_report_tests {
         AtomicGraphReport, DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport,
         ModuleQuotientReport, NativeIntegrityGuard, NativeIntegrityUse, SourceUnitReport,
     };
-    use crate::{
-        DepKind, DependencyEdgeId, DependencyGraph, EdgeRole, SourceUnitId, StatementKind,
-    };
+    use source_identity::SourceUnitId;
+
+    use crate::{DepKind, DependencyEdgeId, DependencyGraph, EdgeRole, StatementKind};
 
     fn node(id: &str, ordinal: usize) -> SourceUnitReport {
         SourceUnitReport {

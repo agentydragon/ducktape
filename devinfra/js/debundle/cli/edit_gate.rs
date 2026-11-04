@@ -49,8 +49,7 @@ use ::gate::{
 };
 use analysis::{
     AtomicGroup, AtomicGroupConflict, AtomicGroupConflictReport, ConflictingClaim, DepKind,
-    DependencyGraph, DependencyGraphReport, ModuleAssignment, ModuleId, SourceUnitId,
-    compute_atomic_groups,
+    DependencyGraph, DependencyGraphReport, ModuleAssignment, ModuleId, compute_atomic_groups,
 };
 use anonymous_resolution::{
     DirectBindingSourceCheck, DirectBindingSourceResolution, ResolvedSourceClaims, SourceClaimSet,
@@ -59,6 +58,7 @@ use anonymous_resolution::{
 use anyhow::{Context, Result, bail};
 use graph_provenance::VerifiedGraphSourceContext;
 use serde::Serialize;
+use source_identity::SourceUnitId;
 use spec::{BindingSourceKind, MemberSelectorSpec, ModulePath};
 use spec_modules::{
     ModuleClaims, ModuleFile, collect_module_files, is_module_yaml, module_claims,

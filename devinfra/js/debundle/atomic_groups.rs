@@ -32,12 +32,12 @@ use std::collections::BTreeSet;
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use serde::{Deserialize, Serialize};
+use source_identity::SourceUnitId;
 
 use crate::analysis_inputs::ResolvedCommutingStatements;
 use crate::facts::StatementFacts;
 use crate::graph::{
-    DepKind, DependencyGraph, DependencyGraphBuildError, GraphOptions, SourceUnitId,
-    build_dependency_graph_with,
+    DepKind, DependencyGraph, DependencyGraphBuildError, GraphOptions, build_dependency_graph_with,
 };
 
 /// One atomic factor group: a set of source units that any valid

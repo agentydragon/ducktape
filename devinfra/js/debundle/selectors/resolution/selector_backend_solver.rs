@@ -10,7 +10,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
-use analysis::SourceUnitId;
 use selector_constraint_backend::{
     BackendAssignment, BackendAssignmentCoverage, BackendAssignmentError, BackendSolveResult,
     BackendSolveStatus, BackendVariableAssignment, CompiledSelectorProblem, ConstraintValue,
@@ -24,6 +23,7 @@ use selector_ir::{
     ClaimKind, ClaimOutcome, ResolvedClaim, SelectorFact, SelectorFactStore, SelectorProgram,
     SelectorTargetId, SolverClaim, SolverResult,
 };
+use source_identity::SourceUnitId;
 
 /// What every target of a program that admits no assignment reports.
 const UNSATISFIABLE_REASON: &str = "selectors that interact with this one admit no joint \
@@ -496,13 +496,13 @@ impl MaterializationFacts {
 mod tests {
     use std::convert::Infallible;
 
-    use analysis::SourceUnitId;
     use selector_constraint_backend::ConstraintValue;
     use selector_constraint_backend::{
         BackendAssignment, BackendAssignmentCoverage, BackendSolveResult, BackendSolveStatus,
         BackendValueId, BackendVariableAssignment,
     };
     use selector_ir::{SelectorAtom, SourceUnitTerm, StringTerm, VariableDomain};
+    use source_identity::SourceUnitId;
 
     use super::*;
 

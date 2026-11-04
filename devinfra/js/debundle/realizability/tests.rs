@@ -5,7 +5,6 @@ use super::incremental_quotient::{
 };
 use super::*;
 use crate::counted_digraph::CountedDiGraph;
-use analysis::SourceUnitId;
 use analysis::facts::analyze_chunk;
 use analysis::graph::{EdgeRole, build_dependency_graph_with};
 use analysis::ids::ModuleId;
@@ -16,6 +15,7 @@ use report_fixtures::{
     active_source_unit, dependency_edge, promoted_dependency_edge, residual_source_unit,
     singleton_graph,
 };
+use source_identity::SourceUnitId;
 
 fn parse_and_build(source: &str) -> DependencyGraph {
     let module = raw_js_test_support::parse(source);

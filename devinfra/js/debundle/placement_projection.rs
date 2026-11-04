@@ -8,13 +8,12 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
 
 use serde::Serialize;
-use source_identity::{SourceUnitOrdinal, StatementId};
+use source_identity::{SourceUnitId, SourceUnitOrdinal, StatementId};
 use swc_ecma_ast::{Id, ModuleItem};
 
 use crate::analysis_inputs::StableSetIterableUse;
 use crate::{
     BindingKind, DependencyGraph, LocalBindings, ModuleAssignment, ModuleId, SourceUnitClass,
-    SourceUnitId,
 };
 
 /// One post-split source unit's location in the retained raw module body.

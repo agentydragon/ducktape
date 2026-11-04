@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::ops::ControlFlow;
 
-use super::SourceUnitId;
+use source_identity::SourceUnitId;
 
 /// Temporal constraints only: co-location and rebind edges do not order
 /// statements within their shared destination.
