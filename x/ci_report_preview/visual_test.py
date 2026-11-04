@@ -131,6 +131,9 @@ async def _check_wide_table_scrolling(page: Page, *, viewport_name: str) -> list
                 f"wide table wrapper cannot receive keyboard focus: {table}"
             )
             await wrapper.press("ArrowRight")
+            await page.wait_for_function(
+                "index => document.querySelectorAll('.table-scroll')[index].scrollLeft > 0", arg=table["wrapper_index"]
+            )
             scroll_left = await wrapper.evaluate("element => element.scrollLeft")
             assert scroll_left > 0, f"ArrowRight did not scroll the focused table: {table}"
             await _assert_no_horizontal_overflow(page, context="scrolling focused mobile table")
