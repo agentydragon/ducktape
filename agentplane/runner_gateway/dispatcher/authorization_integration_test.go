@@ -232,8 +232,9 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("same-owner SubmitInput: %v", err)
 	}
-	if _, err := client.GetSession(authorityContext(t, "owner-account"), &dispatcherpb.GetSessionRequest{SessionId: sessionID}); err != nil {
-		t.Fatalf("same-owner GetSession: %v", err)
+	owned, err := client.GetSession(authorityContext(t, "owner-account"), &dispatcherpb.GetSessionRequest{SessionId: sessionID})
+	if err != nil || !proto.Equal(owned.GetSession().GetExecutionIdentity(), owner) {
+		t.Fatalf("same-owner GetSession: %v, %v; want identity %v", owned, err, owner)
 	}
 	if _, err := client.GetDispatch(authorityContext(t, "owner-account"), &dispatcherpb.GetDispatchRequest{CommandId: "authority-owned-input"}); err != nil {
 		t.Fatalf("same-owner GetDispatch: %v", err)
@@ -266,8 +267,9 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	}); status.Code(err) != codes.NotFound {
 		t.Fatalf("normal write to ownerless legacy Session = %v, want NotFound", err)
 	}
-	if _, err := client.GetSession(authorityContext(t, "owner-pod"), &dispatcherpb.GetSessionRequest{SessionId: legacy.SessionID}); err != nil {
-		t.Fatalf("configured Pod-bound backend read of legacy Session: %v", err)
+	legacyRead, err := client.GetSession(authorityContext(t, "owner-pod"), &dispatcherpb.GetSessionRequest{SessionId: legacy.SessionID})
+	if err != nil || legacyRead.GetSession().GetExecutionIdentity() != nil {
+		t.Fatalf("ownerless legacy Session must not acquire an identity: %v, %v", legacyRead, err)
 	}
 	if _, err := client.SubmitInput(authorityContext(t, "owner-pod"), &dispatcherpb.SubmitInputRequest{
 		CommandId: "authority-legacy-backend-input", SessionId: legacy.SessionID, ExpectedSandboxUid: authoritySandboxUID, Text: "backend",

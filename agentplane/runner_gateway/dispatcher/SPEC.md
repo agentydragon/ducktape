@@ -268,8 +268,8 @@ commands, cursors and effect journal. History migration 8 retains a legacy archi
 environment identity or change event data/order. These migrations preserve central and History data
 while changing the live wire representation. They do not make uncertain native, provider or executor
 effects safe to replay. `Session` is deliberately a minimal authorized projection containing its
-ID, placement, creation/update timestamps and nested materialization `status`; it does not expose
-the immutable `SessionSpec` or instructions. `SESSION_MATERIALIZATION_ACCEPTED` means the placement owner admitted the
+ID, placement, creation/update timestamps, nested materialization `status` and exact execution ServiceAccount identity when established; it does not expose
+the immutable `SessionSpec` or instructions. A missing identity means no exact owner is established; callers must not infer its UID from a current same-name account. `SESSION_MATERIALIZATION_ACCEPTED` means the placement owner admitted the
 logical Session, not that the harness is ready or work completed. These descriptions specify the
 coordinated change; they do not claim that matching service images have already been deployed
 together.

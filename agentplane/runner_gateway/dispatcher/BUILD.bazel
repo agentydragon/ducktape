@@ -150,6 +150,7 @@ proto_library(
     deps = [
         "//agentplane/proto:environment_lifecycle_proto",
         "//agentplane/proto:event_log_proto",
+        "//agentplane/proto:identity_proto",
         "//agentplane/proto:session_proto",
         "@googleapis//google/api:annotations_proto",
         "@protobuf//:timestamp_proto",
@@ -165,6 +166,7 @@ ts_proto_library(
     deps = [
         "//agentplane/proto:environment_lifecycle_pb",
         "//agentplane/proto:event_log_pb",
+        "//agentplane/proto:identity_pb",
         "//agentplane/proto:session_pb",
         "//google/api:annotations_pb",
     ],
