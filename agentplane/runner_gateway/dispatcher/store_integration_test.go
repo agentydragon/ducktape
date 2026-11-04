@@ -695,6 +695,9 @@ func TestDeletedSandboxBroadcastsTerminalRowsBeforeDeletingThem(t *testing.T) {
 	if row, err := store.Settle(ctx, "deleted-delivering", *owner, []string{QueueState}, DeliveringState, "", nil); err != nil || row == nil {
 		t.Fatalf("settle: %+v %v", row, err)
 	}
+	if marked, err := store.MarkDeliveryAttempt(ctx, "deleted-delivering", *owner); err != nil || !marked {
+		t.Fatalf("mark in-flight delivery: %t %v", marked, err)
+	}
 	// Two Dispatcher replicas must both receive the committed terminal snapshots:
 	// the rows are deleted in the same transaction and cannot be read afterward.
 	subscribers := make([]*watchSubscription, 0, 2)
@@ -2923,8 +2926,9 @@ func TestDeletionAfterLostCommandReplyRemainsUnknown(t *testing.T) {
 func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 	for _, markFirst := range []bool{false, true} {
 		t.Run(fmt.Sprintf("mark-first=%t", markFirst), func(t *testing.T) {
-			ctx := t.Context()
-			store := testStore(t, 3)
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			store, databaseURL := testStoreWithURL(t, 3)
 			head, err := enqueueWithSession(t, store, ctx, "fence-order-session", "sandbox-worker", sandboxUID, input("fence-order-input", "hello"), nil)
 			if err != nil {
 				t.Fatal(err)
@@ -2936,24 +2940,91 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 			if _, err := store.Settle(ctx, head.CommandID, *owner, []string{QueueState}, DeliveringState, "", nil); err != nil {
 				t.Fatal(err)
 			}
-			if markFirst {
-				if marked, err := store.MarkDeliveryAttempt(ctx, head.CommandID, *owner); err != nil || !marked {
-					t.Fatalf("pre-delete marker: %t, %v", marked, err)
+			connect := func() (*Store, int) {
+				db, err := sql.Open("postgres", databaseURL)
+				if err != nil {
+					t.Fatal(err)
 				}
-				// Model lease recovery or a lost-reply retry after the durable mark.
-				if _, err := store.RecoverSandbox(ctx, *owner); err != nil {
+				t.Cleanup(func() { db.Close() })
+				db.SetMaxOpenConns(1)
+				var pid int
+				if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
+					t.Fatal(err)
+				}
+				return NewStore(db, 3), pid
+			}
+			marker, markerPID := connect()
+			deleter, deleterPID := connect()
+			gate, err := store.DB.BeginTx(ctx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer gate.Rollback()
+			var gatePID int
+			if err := gate.QueryRowContext(ctx, "SELECT pg_backend_pid() FROM sandbox_ownership WHERE sandbox_uid=$1 FOR UPDATE", sandboxUID).Scan(&gatePID); err != nil {
+				t.Fatal(err)
+			}
+			waitBlocked := func(waiter, blocker int) {
+				t.Helper()
+				ticker := time.NewTicker(10 * time.Millisecond)
+				defer ticker.Stop()
+				for {
+					var blocked bool
+					if err := store.DB.QueryRowContext(ctx, "SELECT $2 = ANY(pg_blocking_pids($1))", waiter, blocker).Scan(&blocked); err != nil {
+						t.Fatal(err)
+					}
+					if blocked {
+						return
+					}
+					select {
+					case <-ctx.Done():
+						t.Fatal(ctx.Err())
+					case <-ticker.C:
+					}
+				}
+			}
+			marked := make(chan bool, 1)
+			deleted := make(chan []TerminalEvent, 1)
+			errors := make(chan error, 2)
+			mark := func() {
+				value, err := marker.MarkDeliveryAttempt(ctx, head.CommandID, *owner)
+				marked <- value
+				errors <- err
+			}
+			deleteEnvironment := func() { events, err := deleter.EndSandbox(ctx, sandboxUID); deleted <- events; errors <- err }
+			// Queue the real transactions in both lock orders before opening the gate.
+			if markFirst {
+				go mark()
+				waitBlocked(markerPID, gatePID)
+				go deleteEnvironment()
+				waitBlocked(deleterPID, markerPID)
+			} else {
+				go deleteEnvironment()
+				waitBlocked(deleterPID, gatePID)
+				go mark()
+				waitBlocked(markerPID, deleterPID)
+			}
+			if err := gate.Commit(); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if err := <-errors; err != nil {
 					t.Fatal(err)
 				}
 			}
-			events, err := store.EndSandbox(ctx, sandboxUID)
-			if err != nil || len(events) != 1 || events[0].Dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN {
-				t.Fatalf("in-flight deletion: %+v, %v", events, err)
+			if got := <-marked; got != markFirst {
+				t.Fatalf("marker permission=%t, want %t", got, markFirst)
+			}
+			events := <-deleted
+			want := dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED
+			if markFirst {
+				want = dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN
+			}
+			if len(events) != 1 || events[0].Dispatch.GetState() != want {
+				t.Fatalf("ordered deletion: %+v; want %s", events, want)
 			}
 			if marked, err := store.MarkDeliveryAttempt(ctx, head.CommandID, *owner); err != nil || marked {
 				t.Fatalf("deleted worker gained permission to forward: %t, %v", marked, err)
-			}
-			if _, err := store.Settle(ctx, head.CommandID, *owner, []string{QueueState}, DeliveringState, "", nil); err != nil {
-				t.Fatal(err)
 			}
 		})
 	}

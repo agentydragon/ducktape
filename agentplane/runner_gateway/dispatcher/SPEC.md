@@ -194,7 +194,7 @@ bare RPC error cannot prove that a prior attempt had no effects. Unavailable/dea
 the existing same-ID journal reconciliation; other unproven terminal RPC errors become `UNKNOWN`.
 An actual returned Runtime admission remains admission evidence. An admitted input can have an
 unknown later execution/effect outcome on deletion; its terminal snapshot retains the admission
-entry and cursor. `UNKNOWN` does not negate that proven journal acceptance. A pristine queued command can fail
+entry and cursor. `UNKNOWN` does not negate that proven journal acceptance. An unmarked command, including a claimed row still before the forwarding marker, can fail
 as known-unsent; a requeued possibly-forwarded command becomes `UNKNOWN` on environment deletion.
 
 Deletion snapshots are transactional PostgreSQL notifications to connected `WatchDispatches`
@@ -202,6 +202,9 @@ listeners. Cleanup then removes the command and opening receipts. These notifica
 durable outcome read for a later subscriber. Runtime journals and History remain separate evidence
 owners; cleanup neither deletes retained History nor converts missing evidence into failure.
 
-The new marker requires all command writers to use this protocol before its guarantee applies.
+Treating an unmarked claim as known-unsent requires a cutover with no old command writers still
+running; overlapping old writers do not provide this evidence. A lost marker-commit reply is retried
+under ownership before any RPC. If ownership or the request is lost, no RPC is issued; a committed
+marker without a send remains conservatively uncertain.
 The migration adds the column without altering authored data or History. A rollback to old writers
 loses the forwarding-evidence guarantee even if the column remains present.
