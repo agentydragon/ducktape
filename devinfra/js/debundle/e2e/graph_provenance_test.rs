@@ -423,6 +423,18 @@ fn existing_added_and_deleted_yaml_reject_before_edit() {
 }
 
 #[test]
+fn initializer_source_only_edit_invalidates_saved_graph_authority() {
+    let fixture = GraphFixture::acyclic_pair();
+    fixture.assert_success(&["coverage", "--format", "json"]);
+    let module = fixture.modules.join("a.yaml");
+    let mut yaml = fs::read_to_string(&module).unwrap();
+    yaml.push_str("annotations:\n  alpha:\n    initializer_binding_effects: source_only\n");
+    fs::write(&module, yaml).unwrap();
+    let rejection = assert_mismatch(&fixture, "file");
+    assert_eq!(rejection["mismatch"]["path"], module.to_str().unwrap());
+}
+
+#[test]
 fn config_assumption_and_engine_change_reject() {
     let fixture = GraphFixture::acyclic_pair();
     let config = fixture.root().join("spec_config.yaml");

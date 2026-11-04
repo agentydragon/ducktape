@@ -560,7 +560,98 @@ pub struct ChunkFactAnalysis {
     pub redundant_pure_member_hints: Vec<RedundantPureMemberHint>,
 }
 
+fn apply_initializer_binding_effects(
+    fact: &mut StatementFacts,
+    source_only_bindings: &BTreeSet<String>,
+) {
+    use crate::reports::schema::InitializerBindingEffectsUse;
+
+    let Some(binding) = fact
+        .declared
+        .iter()
+        .find(|binding| source_only_bindings.contains(binding.0.as_ref()))
+    else {
+        return;
+    };
+    // Authoring admission requires one simple initialized declarator in
+    // this canonical source unit, including split comma-list declarations.
+    if fact.kind != StatementKind::VarDecl
+        || fact.declared.len() != 1
+        || (fact.var_declared.contains(binding) && !fact.var_initializers.contains(binding))
+    {
+        return;
+    }
+    let Some(effects) = fact.synchronous_calls.as_mut() else {
+        return;
+    };
+    let observed_reads: BTreeSet<String> = effects
+        .reads
+        .iter()
+        .map(|(id, _)| id)
+        .filter(|id| !fact.reads.eager.contains(*id) && effects.fallback_read(id).is_none())
+        .chain(effects.uninitialized_reads.iter().filter(|id| {
+            !fact.reads.eager.contains(*id) && effects.fallback_uninitialized_read(id).is_none()
+        }))
+        .map(|id| id.0.to_string())
+        .collect();
+    let observed_rebinds: BTreeSet<String> = effects
+        .rebinds
+        .iter()
+        .filter(|(id, _)| !fact.rebinds.eager.contains(id) && effects.fallback_rebind(id).is_none())
+        .map(|(id, _)| id.0.to_string())
+        .collect();
+    if !observed_reads.is_empty() || !observed_rebinds.is_empty() {
+        effects.initializer_binding_effects =
+            Some(Box::new(InitializerBindingEffectsUse::Contradicted {
+                binding: binding.0.to_string(),
+                reads: observed_reads,
+                rebinds: observed_rebinds,
+            }));
+        return;
+    }
+    // Every out-of-footprint effect left here has fallback provenance.
+    // Keep execution state, values, heap effects and completeness unchanged.
+    let reads_before = effects.reads.len();
+    let rebinds_before = effects.rebinds.len();
+    let uninitialized_before = effects.uninitialized_reads.len();
+    effects
+        .reads
+        .retain(|(id, _)| fact.reads.eager.contains(id));
+    effects
+        .rebinds
+        .retain(|(id, _)| fact.rebinds.eager.contains(id));
+    effects
+        .uninitialized_reads
+        .retain(|id| fact.reads.eager.contains(id));
+    effects
+        .fallback_only
+        .reads
+        .retain(|id, _| fact.reads.eager.contains(id));
+    effects
+        .fallback_only
+        .rebinds
+        .retain(|id, _| fact.rebinds.eager.contains(id));
+    effects
+        .fallback_only
+        .uninitialized_reads
+        .retain(|id, _| fact.reads.eager.contains(id));
+    effects.initializer_binding_effects = Some(Box::new(InitializerBindingEffectsUse::Applied {
+        binding: binding.0.to_string(),
+        narrowed_reads: reads_before - effects.reads.len(),
+        narrowed_rebinds: rebinds_before - effects.rebinds.len(),
+        narrowed_uninitialized_reads: uninitialized_before - effects.uninitialized_reads.len(),
+    }));
+}
+
 impl ChunkFactAnalysis {
+    /// Apply author lexical-effect boundaries after raw source execution and
+    /// receipt sealing. Source-owned coverage is never changed by this overlay.
+    pub fn apply_initializer_binding_effects(&mut self, source_only_bindings: &BTreeSet<String>) {
+        for fact in &mut self.facts {
+            apply_initializer_binding_effects(fact, source_only_bindings);
+        }
+    }
+
     pub fn validate_initializer_binding_effects(
         &self,
         source_only_bindings: &BTreeSet<String>,
@@ -769,4 +860,121 @@ pub struct StructuralChunkSourceFacts<'a> {
     pub shadowed: BTreeSet<&'static str>,
     pub per_statement: Vec<StructuralStatementFacts>,
     pub top_level_await: Option<SourceUnitOrdinal>,
+}
+
+#[cfg(test)]
+mod initializer_overlay_tests {
+    use super::*;
+    use crate::facts::sync_effects::{BindingEffectAuthority, BindingEffectCoverage};
+    use raw_js_test_support::parse;
+
+    #[test]
+    fn initializer_overlay_preserves_raw_receipts_and_other_effect_domains() {
+        // The author marker hides the source-owned receipt in graph reports;
+        // inspect that independent authority directly after real source analysis.
+        for (source, has_receipt) in [
+            (
+                "const seed = 41; function factory() { return seed; } var result = (seed, factory(), factory());",
+                true,
+            ),
+            (
+                "const seed = 41; function factory() { globalThis.host?.(() => { const value = later; later = 3; return value; }); return seed; } var result = (seed, factory(), factory()); var later = 0;",
+                false,
+            ),
+        ] {
+            let module = parse(source);
+            let mut analysis = analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None);
+            let result_index = analysis
+                .facts
+                .iter()
+                .position(|fact| fact.declared.iter().any(|binding| binding.0 == "result"))
+                .unwrap();
+            let before = analysis.facts[result_index]
+                .synchronous_calls
+                .as_ref()
+                .unwrap()
+                .clone();
+            let BindingEffectCoverage::OrderedRootInitializer { receipt, .. } =
+                &before.binding_effect_coverage
+            else {
+                panic!("the fixture must exercise ordered root receipt sealing: {before:#?}");
+            };
+            assert_eq!(receipt.is_some(), has_receipt, "{before:#?}");
+            if !has_receipt {
+                assert!(
+                    !before.fallback_only.reads.is_empty(),
+                    "raw fallback must block a source receipt"
+                );
+            }
+            let coverage = serde_json::to_value(&before.binding_effect_coverage).unwrap();
+            let selected = BTreeSet::from(["result".to_string()]);
+            analysis.apply_initializer_binding_effects(&selected);
+            analysis
+                .validate_initializer_binding_effects(&selected)
+                .unwrap();
+            let fact = &analysis.facts[result_index];
+            let after = fact.synchronous_calls.as_ref().unwrap();
+            assert_eq!(
+                serde_json::to_value(&after.binding_effect_coverage).unwrap(),
+                coverage,
+                "an author filter cannot mint, upgrade or reseal a source receipt"
+            );
+            assert_eq!(
+                after.binding_effect_authority(),
+                BindingEffectAuthority::AuthorSourceOnly
+            );
+            assert_eq!(after.complete, before.complete);
+            assert_eq!(after.heap_contents, before.heap_contents);
+            assert_eq!(
+                after.non_assumed_heap_accesses,
+                before.non_assumed_heap_accesses
+            );
+            assert_eq!(
+                serde_json::to_value(&after.completed_initialization).unwrap(),
+                serde_json::to_value(&before.completed_initialization).unwrap()
+            );
+            assert_eq!(after.precision_losses, before.precision_losses);
+            let effects = fact.initialization_effects();
+            assert!(
+                effects.reads.keys().any(
+                    |cell| matches!(cell, EffectCell::Binding(binding) if binding.0 == "seed")
+                ),
+                "the syntax-derived footprint remains in initialization effects"
+            );
+            if !has_receipt {
+                assert!(before.reads.iter().any(|(binding, _)| binding.0 == "later"));
+                assert!(
+                    before
+                        .rebinds
+                        .iter()
+                        .any(|(binding, _)| binding.0 == "later")
+                );
+                for cells in [&effects.reads, &effects.writes] {
+                    assert!(!cells.keys().any(|cell| matches!(cell, EffectCell::Binding(binding) if binding.0 == "later")),
+                        "promoted fallback effects must be narrowed before effect translation validation");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn initializer_overlay_retains_duplicate_and_consumption_guards() {
+        for (source, binding, diagnostic) in [
+            (
+                "var result = 1; var result = 2;",
+                "result",
+                "multiple source units",
+            ),
+            ("var result = 1;", "missing", "consumption mismatch"),
+        ] {
+            let module = parse(source);
+            let mut facts = analyze_chunk(&module, &AnalysisInputs::default(), None, |_| None);
+            let configured = BTreeSet::from([binding.to_string()]);
+            facts.apply_initializer_binding_effects(&configured);
+            let error = facts
+                .validate_initializer_binding_effects(&configured)
+                .unwrap_err();
+            assert!(error.to_string().contains(diagnostic), "{error:#}");
+        }
+    }
 }

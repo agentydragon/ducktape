@@ -849,10 +849,6 @@ pub struct AnalysisAssumptions {
     /// Author-trusted purity of one selected top-level variable initializer.
     /// This never participates in call or constructor classification.
     pub declared_pure_initializers: BTreeSet<String>,
-    /// Author-asserted lexical effect boundary for one selected top-level
-    /// variable initializer. The assertion is scoped to that declarator's
-    /// canonical source unit.
-    pub source_only_initializer_bindings: BTreeSet<String>,
     /// Author-declared pure member properties — keyed by binding name,
     /// value is the set of property names whose `<binding>.<prop>(args)`
     /// calls the spec author asserts are pure. The classifier consults

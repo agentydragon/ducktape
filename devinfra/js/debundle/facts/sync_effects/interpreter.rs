@@ -608,7 +608,6 @@ pub(super) struct ExecutionInputs<'source> {
     index: &'source ExecutionIndex,
     graph: &'source ChunkCodeGraph,
     facts: &'source [StatementFacts],
-    source_only_initializer_bindings: &'source BTreeSet<String>,
     /// Each statement's source-only purity transfer, before its coercions
     /// resolve against the values settled at its program point.
     statement_effects: Vec<Effects>,
@@ -12684,7 +12683,6 @@ pub(crate) fn annotate_synchronous_calls(
         index: &index,
         graph: proofs.graph,
         facts,
-        source_only_initializer_bindings: &hints.assumptions.source_only_initializer_bindings,
         statement_effects,
         flow,
         set_iterable_proof: proofs.set_iterable,
@@ -12825,91 +12823,6 @@ pub(crate) fn annotate_synchronous_calls(
 }
 
 impl Executor<'_, '_> {
-    fn apply_initializer_binding_effects(
-        &self,
-        fact: &StatementFacts,
-        effects: &mut SynchronousCalls,
-    ) {
-        use crate::reports::schema::InitializerBindingEffectsUse;
-
-        let Some(binding) = fact.declared.iter().find(|binding| {
-            self.inputs
-                .source_only_initializer_bindings
-                .contains(binding.0.as_ref())
-        }) else {
-            return;
-        };
-        // Authoring admission requires one simple initialized declarator in
-        // this canonical source unit, including split comma-list declarations.
-        if fact.kind != StatementKind::VarDecl
-            || fact.declared.len() != 1
-            || (fact.var_declared.contains(binding) && !fact.var_initializers.contains(binding))
-        {
-            return;
-        }
-        let observed_reads: BTreeSet<String> = effects
-            .reads
-            .iter()
-            .map(|(id, _)| id)
-            .filter(|id| !fact.reads.eager.contains(*id) && effects.fallback_read(id).is_none())
-            .chain(effects.uninitialized_reads.iter().filter(|id| {
-                !fact.reads.eager.contains(*id) && effects.fallback_uninitialized_read(id).is_none()
-            }))
-            .map(|id| id.0.to_string())
-            .collect();
-        let observed_rebinds: BTreeSet<String> = effects
-            .rebinds
-            .iter()
-            .filter(|(id, _)| {
-                !fact.rebinds.eager.contains(id) && effects.fallback_rebind(id).is_none()
-            })
-            .map(|(id, _)| id.0.to_string())
-            .collect();
-        if !observed_reads.is_empty() || !observed_rebinds.is_empty() {
-            effects.initializer_binding_effects =
-                Some(Box::new(InitializerBindingEffectsUse::Contradicted {
-                    binding: binding.0.to_string(),
-                    reads: observed_reads,
-                    rebinds: observed_rebinds,
-                }));
-            return;
-        }
-        // Every out-of-footprint effect left here has fallback provenance.
-        // Keep execution state, values, heap effects and completeness unchanged.
-        let reads_before = effects.reads.len();
-        let rebinds_before = effects.rebinds.len();
-        let uninitialized_before = effects.uninitialized_reads.len();
-        effects
-            .reads
-            .retain(|(id, _)| fact.reads.eager.contains(id));
-        effects
-            .rebinds
-            .retain(|(id, _)| fact.rebinds.eager.contains(id));
-        effects
-            .uninitialized_reads
-            .retain(|id| fact.reads.eager.contains(id));
-        effects
-            .fallback_only
-            .reads
-            .retain(|id, _| fact.reads.eager.contains(id));
-        effects
-            .fallback_only
-            .rebinds
-            .retain(|id, _| fact.rebinds.eager.contains(id));
-        effects
-            .fallback_only
-            .uninitialized_reads
-            .retain(|id, _| fact.reads.eager.contains(id));
-        effects.initializer_binding_effects =
-            Some(Box::new(InitializerBindingEffectsUse::Applied {
-                binding: binding.0.to_string(),
-                narrowed_reads: reads_before - effects.reads.len(),
-                narrowed_rebinds: rebinds_before - effects.rebinds.len(),
-                narrowed_uninitialized_reads: uninitialized_before
-                    - effects.uninitialized_reads.len(),
-            }));
-    }
-
     fn widen_native_effects(&mut self) {
         if !self.state.uncertain_native_execution {
             self.state.native_point_effects = self.inputs.index.all_native_point_effects.clone();
@@ -13775,7 +13688,6 @@ impl Executor<'_, '_> {
             }
             outcome.effects.initialization_coverage_refusal = initialization_coverage_refusal;
         }
-        self.apply_initializer_binding_effects(fact, &mut outcome.effects);
         if let Some(identity) = outcome.root_binding_effect_identity.take() {
             let expected_root_calls: BTreeSet<_> = calls
                 .iter()
