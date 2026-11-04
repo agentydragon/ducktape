@@ -87,10 +87,12 @@ import { CommandSchema } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
 import {
   AttachedSchema,
+  CentralSamplerV1PlacementSchema,
   Harness,
   HarnessState,
   LaunchOutcome,
   ProcessState,
+  SessionSpecSchema,
   SessionExecutionState,
   SetupState,
 } from "../../../proto/session_pb";
@@ -696,6 +698,19 @@ function notificationFrames(session: string, kind: string, delta: boolean): unkn
   ];
 }
 
+function visualNativeSpec(harness: Harness, sandboxName: string) {
+  const target = SANDBOXES.find((candidate) => candidate.target?.name === sandboxName)?.target;
+  if (!target) throw new Error(`Missing Sandbox fixture ${sandboxName}`);
+  return create(SessionSpecSchema, {
+    placement: {
+      case: "environmentHosted",
+      value: { environment: { name: target.name, uid: target.uid }, harness },
+    },
+    model: harness === Harness.CODEX ? "harness-codex-model" : "harness-claude-model",
+    cwd: "/state/work",
+  });
+}
+
 /** The store's copy of the sessions: the idle one named, the stopped one not, so both renderings are on the page. */
 const THREADS: ThreadView[] = [
   threadView(
@@ -713,7 +728,7 @@ const THREADS: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
       attached: {
         sessionId: IDLE_THREAD,
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
         lastCursor: 14n,
         harnessState: HarnessState.RUNNING,
       },
@@ -733,7 +748,7 @@ const THREADS: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
       attached: {
         sessionId: UNNAMED_STOPPED_THREAD,
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
         lastCursor: 31n,
         harnessState: HarnessState.STOPPED,
       },
@@ -754,7 +769,7 @@ const THREADS: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
       attached: {
         sessionId: RUNNING_THREAD,
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
         lastCursor: 23n,
         harnessState: HarnessState.RUNNING,
         activeTurnId: "t2",
@@ -785,7 +800,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
       attached: {
         sessionId: THREE_UNPROCESSED_THREAD,
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
         lastCursor: 7n,
         harnessState: HarnessState.RUNNING,
       },
@@ -806,7 +821,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
       attached: {
         sessionId: ONE_UNPROCESSED_THREAD,
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
         lastCursor: 7n,
         harnessState: HarnessState.RUNNING,
       },
@@ -827,7 +842,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
       attached: {
         sessionId: DELIVERY_FAILED_THREAD,
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
         lastCursor: 7n,
         harnessState: HarnessState.STOPPED,
       },
@@ -845,7 +860,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "pending-sandbox" },
       attached: {
         sessionId: "5f1c4a2e-0000-4000-8000-000000000003",
-        spec: { harness: Harness.CODEX, model: "harness-codex-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CODEX, "pending-sandbox"),
         lastCursor: 2n,
         harnessState: HarnessState.STOPPED,
       },
@@ -866,7 +881,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "suspended-sandbox" },
       attached: {
         sessionId: SUSPENDED_THREAD,
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CLAUDE, "suspended-sandbox"),
         lastCursor: 9n,
         harnessState: HarnessState.STOPPED,
         setupState: SetupState.SUCCEEDED,
@@ -889,7 +904,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "deleted-sandbox" },
       attached: {
         sessionId: "5f1c4a2e-0000-4000-8000-000000000005",
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        historicalHarness: Harness.CLAUDE,
         lastCursor: 18n,
         harnessState: HarnessState.STOPPED,
       },
@@ -910,7 +925,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
       attached: {
         sessionId: "5f1c4a2e-0000-4000-8000-000000000006",
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
         lastCursor: 3n,
         harnessState: HarnessState.STOPPED,
       },
@@ -3685,7 +3700,10 @@ const visualHarness = {
       name: target.name,
       uid: target.uid,
     });
-    spec.harness = Harness.CENTRAL_SAMPLER;
+    spec.placement = {
+      case: "centralSamplerV1",
+      value: create(CentralSamplerV1PlacementSchema, { executorEnvironment: { name: target.name, uid: target.uid } }),
+    };
     spec.model = "harness-codex-model";
   },
   mountDisclosure(props: Parameters<typeof DisclosureVisual>[0]): void {
@@ -3890,7 +3908,7 @@ const visualHarness = {
               lastTurnStatus: TurnStatus.COMPLETED,
               attached: {
                 ...thread.summary.attached!,
-                spec: { ...thread.summary.attached!.spec!, harness: Harness.CODEX },
+                spec: visualNativeSpec(Harness.CODEX, "ready-sandbox"),
                 activeTurnId: "",
               },
             },
@@ -3909,7 +3927,7 @@ const visualHarness = {
               lastTurnStatus: TurnStatus.COMPLETED,
               attached: {
                 ...thread.summary.attached!,
-                spec: { ...thread.summary.attached!.spec!, harness: Harness.CODEX },
+                spec: visualNativeSpec(Harness.CODEX, "ready-sandbox"),
                 activeTurnId: "",
               },
             },

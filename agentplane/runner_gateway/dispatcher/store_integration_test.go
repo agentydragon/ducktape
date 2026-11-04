@@ -343,7 +343,10 @@ func TestOpeningAndOwnershipFence(t *testing.T) {
 	if err != nil || again.CreatedAt != opened.CreatedAt {
 		t.Fatalf("opening retry: %+v %v", again, err)
 	}
-	if _, err := store.OpenSession(ctx, "session-b", "sandbox-b", "00000000-0000-4000-8000-000000000002", spec, nil, nil); !errors.Is(err, ErrOpeningConflict) {
+	otherUID := "00000000-0000-4000-8000-000000000002"
+	otherSpec := proto.Clone(spec).(*sessionpb.SessionSpec)
+	otherSpec.GetEnvironmentHosted().GetEnvironment().Uid = otherUID
+	if _, err := store.OpenSession(ctx, "session-b", "sandbox-b", otherUID, otherSpec, nil, nil); !errors.Is(err, ErrOpeningConflict) {
 		t.Fatalf("opening UID conflict: %v", err)
 	}
 	owner, err := store.ClaimSandboxOwner(ctx, sandboxUID, "lease", 1, "replica-a", 0)

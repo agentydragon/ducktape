@@ -17,12 +17,44 @@ from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, Trace
 
 from agentplane.app.testing import client as client_module
 from agentplane.app.testing.client import Client, SessionStreamError
+from agentplane.app.testing.models import thread_view_from_proto_json
+from agentplane.env.runtime.harness import Harness as NamedHarness
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import event_log_pb2, identity_pb2, session_pb2
 
 # A server answers one connection per call: `(after, writer)`. Raw sockets, because what is under
 # test is how the client reads a connection that dies, which an ASGI transport cannot produce.
 Connection = Callable[[int, asyncio.StreamWriter], Awaitable[None]]
+
+
+@pytest.mark.parametrize(
+    ("spec", "historical_harness", "want"),
+    [
+        (
+            {"environmentHosted": {"environment": {"name": "sandbox", "uid": "uid"}, "harness": "HARNESS_CODEX"}},
+            None,
+            NamedHarness.CODEX,
+        ),
+        (
+            {"centralSamplerV1": {"executorEnvironment": {"name": "sandbox", "uid": "uid"}}},
+            None,
+            NamedHarness.CENTRAL_SAMPLER,
+        ),
+        ({}, "HARNESS_CLAUDE", NamedHarness.CLAUDE),
+        ({}, None, None),
+    ],
+)
+def test_thread_view_preserves_typed_or_historical_harness(
+    spec: dict[str, object], historical_harness: str | None, want: NamedHarness | None
+) -> None:
+    attachment: dict[str, object] = {"spec": spec}
+    if historical_harness is not None:
+        attachment["historicalHarness"] = historical_harness
+    view = thread_view_from_proto_json(
+        {"threadId": str(uuid4()), "createdAt": "2026-11-04T00:00:00Z"},
+        {"attached": attachment, "sandbox": {"name": "sandbox", "uid": "uid"}},
+    )
+    assert view.harness == want
 
 
 def _frame(name: str, data: dict[str, object], *, cursor: int | None = None) -> bytes:

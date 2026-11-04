@@ -9,7 +9,7 @@ import { type JSX, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 
 import { displayableError } from "../client";
-import { harnessBehavior } from "../harness_behavior";
+import { attachedHarness, harnessBehavior } from "../harness_behavior";
 import { harnessLabel, models, modelsForHarness, type ModelOption } from "../model_catalog";
 import { langfuseSandboxTraceUrl, langfuseSessionTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";
@@ -262,7 +262,8 @@ function ConversationBody({
     currentSandbox,
     snapshotFresh(threadsLive) && inventoryFresh
   );
-  const { llmTraceScope } = harnessBehavior(spec?.harness);
+  const harness = attachedHarness(attachment);
+  const { llmTraceScope } = harnessBehavior(harness);
   const sandboxAutosuspend = autosuspendHint(currentSandbox, inventoryFresh, Math.max(clock, Date.now()));
   useEffect(
     () => onStatusChange({ kind: status.kind, tabLabel: status.tabLabel }),
@@ -274,7 +275,6 @@ function ConversationBody({
   const selectedModel = controls?.appliedModel ?? spec?.model;
   const effortOptions = modelOptions.find((option) => option.model === selectedModel)?.reasoning_efforts ?? [];
   useEffect(() => {
-    const harness = spec?.harness;
     // Unknown until the Thread's summary folds a runner attachment; no model fits it yet.
     if (harness === undefined || harness === Harness.UNSPECIFIED) {
       setModelOptions([]);
@@ -292,7 +292,7 @@ function ConversationBody({
     return () => {
       active = false;
     };
-  }, [spec?.harness]);
+  }, [harness]);
   const rows = historyRows(
     entities
       .filter(
@@ -435,7 +435,7 @@ function ConversationBody({
                 <Menu.Label style={{ overflowWrap: "anywhere" }}>Thread ID: {threadId}</Menu.Label>
                 {/* Always here: the topbar drops the same label when the thread's name leaves it no room. */}
                 <Menu.Label style={{ overflowWrap: "anywhere" }}>Sandbox: {sandboxName}</Menu.Label>
-                <Menu.Label>Harness: {harnessLabel(spec?.harness)}</Menu.Label>
+                <Menu.Label>Harness: {harnessLabel(harness)}</Menu.Label>
                 <Menu.Divider />
                 <Menu.Item hiddenFrom="sm" onClick={() => setNotificationsOpen(true)}>
                   Notifications

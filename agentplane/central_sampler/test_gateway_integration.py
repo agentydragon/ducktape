@@ -149,6 +149,8 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 )
                 request = open_request(tmp_path / "workspace")
                 request.executor.CopyFrom(sandbox.destination)
+                request.spec.central_sampler_v1.executor_environment.name = sandbox.destination.target.name
+                request.spec.central_sampler_v1.executor_environment.uid = sandbox.destination.target.uid
                 request.expected_incarnation_uid = sandbox.pod_uid
                 request.setup_script = (
                     "printf before > artifact.txt\n"

@@ -11,6 +11,7 @@ import { Link, useMatch, useNavigate } from "react-router";
 import { type ThreadView, archiveThread } from "./client";
 import { displayableError } from "../client";
 import { harnessLabel } from "../model_catalog";
+import { attachedHarness } from "../harness_behavior";
 import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "./live";
 import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
 import { MarkGlyph } from "../mark_glyph";
@@ -67,7 +68,7 @@ function ThreadRow({
   const label = thread.metadata.name ?? threadId;
   const archived = thread.metadata.archived;
   const summary = thread.summary;
-  const harness = summary.attached?.spec?.harness;
+  const harness = attachedHarness(summary.attached);
   const model = summary.attached?.spec?.model;
   const lastEventAt = timestampLabel(summary.lastEventAt);
   const readonly = sandbox === null;

@@ -44,7 +44,19 @@ export type ThreadViewInit = {
 export function threadView({ metadata = {}, summary = {} }: ThreadViewInit = {}): ThreadView {
   const threadId = metadata.threadId ?? summary.sessionId ?? "10000000-0000-4000-8000-000000000001";
   const sandbox = { name: "composer-test", uid: "20000000-0000-4000-8000-000000000001" };
-  const spec = { harness: Harness.CLAUDE, model: "test-model", cwd: "/test-workspace", reasoningEffort: "low" };
+  const sandboxInit = Object.hasOwn(summary, "sandbox") ? summary.sandbox : sandbox;
+  const spec = {
+    placement: {
+      case: "environmentHosted" as const,
+      value: {
+        environment: { name: sandboxInit?.name ?? sandbox.name, uid: sandboxInit?.uid ?? sandbox.uid },
+        harness: Harness.CLAUDE,
+      },
+    },
+    model: "test-model",
+    cwd: "/test-workspace",
+    reasoningEffort: "low",
+  };
   const attachedInit = Object.hasOwn(summary, "attached") ? summary.attached : {};
   const specInit = attachedInit !== undefined && Object.hasOwn(attachedInit, "spec") ? attachedInit.spec : spec;
   const attached =
@@ -60,7 +72,6 @@ export function threadView({ metadata = {}, summary = {} }: ThreadViewInit = {})
           ...attachedInit,
           spec: specInit === undefined ? undefined : create(SessionSpecSchema, { ...spec, ...specInit }),
         });
-  const sandboxInit = Object.hasOwn(summary, "sandbox") ? summary.sandbox : sandbox;
   const summaryInit = {
     sessionId: threadId,
     foldedThrough: 1n,

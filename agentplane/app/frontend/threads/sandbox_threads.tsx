@@ -6,6 +6,7 @@ import { IconDotsVertical } from "../icons";
 import type { JSX } from "react";
 
 import { harnessLabel } from "../model_catalog";
+import { attachedHarness } from "../harness_behavior";
 import { traceSearchUrl } from "../trace_search";
 
 import { TimeAgo } from "../time_ago";
@@ -91,7 +92,7 @@ export function SandboxThreadsTable({
                 {/* On a phone the other columns fold under the name, leaving room for the actions. */}
                 <Stack gap={0} px="xs" hiddenFrom="sm">
                   <Text size="xs" c="dimmed">
-                    {harnessLabel(spec?.harness)}
+                    {harnessLabel(attachedHarness(summary.attached))}
                     {spec?.model ? ` · ${spec.model}` : ""}
                   </Text>
                   <Text size="xs" c="dimmed">
@@ -100,7 +101,7 @@ export function SandboxThreadsTable({
                 </Stack>
               </Table.Td>
               <Table.Td visibleFrom="sm">
-                <Text size="sm">{harnessLabel(spec?.harness)}</Text>
+                <Text size="sm">{harnessLabel(attachedHarness(summary.attached))}</Text>
                 {spec?.model && (
                   <Text size="xs" c="dimmed">
                     {spec.model}

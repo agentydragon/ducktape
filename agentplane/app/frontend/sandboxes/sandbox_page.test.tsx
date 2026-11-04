@@ -1058,7 +1058,17 @@ it("defaults new threads to an offered harness while retaining existing Claude t
   presetDefaults = { harness: "HARNESS_CODEX", model: "test-model" };
   const sessions = vi.fn<(request: Request) => Promise<Response>>(async (request) =>
     request.method === "GET"
-      ? Response.json([{ sessionId: "old-session", spec: { harness: "HARNESS_CLAUDE" } }])
+      ? Response.json([
+          {
+            sessionId: "old-session",
+            spec: {
+              environmentHosted: {
+                environment: { name: readySandbox.target!.name, uid: readySandbox.target!.uid },
+                harness: "HARNESS_CLAUDE",
+              },
+            },
+          },
+        ])
       : Response.json({ detail: "Launch recorded" }, { status: 503 })
   );
   await render(sessions, undefined, true);
