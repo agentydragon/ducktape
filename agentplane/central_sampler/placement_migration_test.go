@@ -6,6 +6,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -21,6 +22,11 @@ func TestPlacementMigrationPreservesRetainedCentralRetryAndUnknownFields(t *test
 	}
 	legacy := proto.Clone(request).(*samplerpb.CreateSessionRequest)
 	legacy.Spec.Placement = nil
+	oldExecutor := protowire.AppendString(protowire.AppendTag(nil, 2, protowire.BytesType), legacy.Executor.Target.Name)
+	oldExecutor = protowire.AppendString(protowire.AppendTag(oldExecutor, 3, protowire.BytesType), legacy.Executor.Target.Uid)
+	futureExecutor := protowire.AppendVarint(protowire.AppendTag(nil, 97, protowire.VarintType), 9)
+	legacy.Executor.Target = nil
+	legacy.Executor.ProtoReflect().SetUnknown(append(oldExecutor, futureExecutor...))
 	oldHarness := protowire.AppendVarint(protowire.AppendTag(nil, 1, protowire.VarintType), uint64(sessionpb.Harness_HARNESS_CENTRAL_SAMPLER))
 	futureSpec := protowire.AppendBytes(protowire.AppendTag(nil, 99, protowire.BytesType), []byte("future-spec"))
 	legacy.Spec.ProtoReflect().SetUnknown(append(oldHarness, futureSpec...))
@@ -51,6 +57,8 @@ func TestPlacementMigrationPreservesRetainedCentralRetryAndUnknownFields(t *test
 		t.Fatal(err)
 	}
 	if !proto.Equal(decoded.GetSpec().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment(), request.GetSpec().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()) ||
+		!proto.Equal(decoded.GetExecutor().GetTarget(), request.GetExecutor().GetTarget()) ||
+		!bytes.Equal(decoded.GetExecutor().ProtoReflect().GetUnknown(), futureExecutor) ||
 		!bytes.Equal(decoded.GetSpec().ProtoReflect().GetUnknown(), futureSpec) ||
 		!bytes.Equal(decoded.ProtoReflect().GetUnknown(), futureRequest) {
 		t.Fatalf("migrated central configuration lost placement or unrelated fields: %v", &decoded)
@@ -69,5 +77,30 @@ func TestPlacementMigrationPreservesRetainedCentralRetryAndUnknownFields(t *test
 	}
 	if afterEvents != beforeEvents || afterCommands != beforeCommands {
 		t.Fatalf("migration or retry replayed work: events %d -> %d, commands %d -> %d", beforeEvents, afterEvents, beforeCommands, afterCommands)
+	}
+}
+
+func TestRetainedExecutorRejectsMissingOrConflictingIdentity(t *testing.T) {
+	legacy := func(name, uid string) []byte {
+		wire := protowire.AppendString(protowire.AppendTag(nil, 2, protowire.BytesType), name)
+		return protowire.AppendString(protowire.AppendTag(wire, 3, protowire.BytesType), uid)
+	}
+	for _, test := range []struct {
+		name   string
+		owner  *identitypb.ServiceAccount
+		target *identitypb.EnvironmentTarget
+		wire   []byte
+	}{
+		{"missing UID", &identitypb.ServiceAccount{Namespace: "fixture"}, nil, legacy("sandbox", "")},
+		{"missing namespace", nil, nil, legacy("sandbox", "uid")},
+		{"conflicting identity", &identitypb.ServiceAccount{Namespace: "fixture"}, &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "other", Uid: "uid"}, legacy("sandbox", "uid")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			destination := &identitypb.SandboxDestination{Owner: test.owner, Target: test.target}
+			destination.ProtoReflect().SetUnknown(test.wire)
+			if _, err := migrateRetainedExecutor(destination); err == nil {
+				t.Fatal("accepted an incomplete or conflicting executor identity")
+			}
+		})
 	}
 }
