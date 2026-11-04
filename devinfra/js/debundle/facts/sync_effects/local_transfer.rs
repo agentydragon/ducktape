@@ -474,9 +474,7 @@ fn expression(
             if values.contains(&AbstractValue::Value(Value::Unavailable)) {
                 return None;
             }
-            let Some(this_values) = frame.this_values.as_ref() else {
-                return None;
-            };
+            let this_values = frame.this_values.as_ref()?;
             let Some(AbstractValue::Value(Value::Alloc(Kind::Object, object))) =
                 this_values.first()
             else {
