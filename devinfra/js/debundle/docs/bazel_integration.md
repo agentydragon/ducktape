@@ -93,16 +93,38 @@ retain their `GATE_REJECTED` marker and exit-3 contract. Without an exported
 graph their diagnostics explain how to request one instead of naming a
 nonexistent graph file.
 
-To materialize the rule's selected execution-configuration CLI with its
-analysis artifacts:
+The `native_inputs` output group contains the exact rule inputs needed for a
+native replay: the flat spec or complete tree-shaped spec inputs, `input_data`,
+`tree_source_root`, and every `package_roots` target's `DefaultInfo` files, plus
+`ownership_subset` when set. Request it alone to materialize source, package,
+and spec artifacts without selecting analysis or pipeline actions:
 
 ```sh
-bazelisk build //path/to:debundle --output_groups=analysis,debundler
+bazelisk build //path/to:debundle \
+  --output_groups=native_inputs \
+  --remote_download_outputs=all
 ```
 
-The `debundler` group contains the exact executable selected by the rule's
-`debundler` attribute or label flag. This request does not run emission or
-request the `dependency_graphs` group.
+This can still run actions that produce source or package inputs. `native_inputs`
+does not select `DebundleProjectAnalysis`, `DebundleAnalyze`, or
+`DebundlePipeline`. The `analysis` group includes the projection and analysis
+artifact and runs Analyze; `dependency_graphs` also depends on that shared
+analysis artifact. `debundler` contains only the exact executable selected by
+the rule's `debundler` attribute or label flag.
+
+For a complete native replay packet containing inputs, analysis artifacts, and
+the matching CLI, request all three groups:
+
+```sh
+bazelisk build //path/to:debundle \
+  --output_groups=analysis,debundler,native_inputs \
+  --remote_download_outputs=all
+```
+
+This runs Analyze but not the normal Pipeline action. `run --analysis` still
+checks the engine, source digests, and canonical projection. Preserve those
+checks during replay, and point `--tree-source-root` and every `--package-root`
+at the valid roots in the relocated input tree.
 
 ## Integration boundary
 
@@ -189,11 +211,9 @@ lists paths but does not run their producing actions or materialize their
 outputs. Native `analyze` and `run --analysis` need the same complete
 source/package closure supplied through `input_data`, `tree_source_root`, and
 every `package_roots` target. `run` also needs its matching spec inputs. The
-rule's `analysis`, `debundler`, and optional `dependency_graphs` output groups
-contain no source or package inputs. Materialize them through the consuming
-adapter's existing input targets; the rule exposes no source-only output group.
-Preserve the mandatory identity checks. The local Bazel output directory's
-presence does not prove its inputs have been downloaded.
+`native_inputs` group collects this closure; the complete replay command above
+also requests the matching analysis artifact and CLI. The local Bazel output
+directory's presence does not prove its inputs have been downloaded.
 
 When serializing a warm Bazel client with a file lock, invoke it through
 `flock --close -x <lock-file> <bazel-command>`. `--close` keeps the persistent

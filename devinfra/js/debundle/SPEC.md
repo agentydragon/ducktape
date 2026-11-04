@@ -166,6 +166,11 @@ That reports-only action enables typed gate-rejection emission so it can finish
 exporting every configured chunk; exit 3 is accepted only for a gate-only
 rejection. It writes no JavaScript. Other failures still fail the action.
 
+The Bazel `native_inputs` output group exposes the rule's declared source,
+package, spec and ownership-subset inputs for native replay. Requesting it alone
+selects their producers. The `analysis` and `debundler` groups supply the
+matching analysis artifacts and executable.
+
 Staged `.analysis` headers carry `analysis_engine_sha256`, the generated
 configured compiled `staged_analysis` closure identity shared by the writer and
 reader. The closure owns source preparation, cross-module and per-chunk fact

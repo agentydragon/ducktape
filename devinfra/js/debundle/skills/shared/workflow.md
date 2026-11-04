@@ -89,8 +89,9 @@ not proof that a command ran or passed; retain each executed command's
 resolved `argv` and `cwd`, then separately save its actual exit status,
 `stdout`, `stderr` and result artifacts.
 
-For native replay of Bazel analysis artifacts, preflight the complete generated
-source and package-root inputs using the
+For native replay of Bazel analysis artifacts, materialize the complete input
+closure with the `native_inputs` output group, then preflight generated source
+and package-root inputs using the
 [Bazel replay procedure](../../docs/bazel_integration.md#preserve-the-pipeline-cli-from-rbe).
 
 Public skills must not encode private project names or fixed app taxonomies.
