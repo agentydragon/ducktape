@@ -1331,6 +1331,76 @@ console.log(value.value, unsupported);\n",
 }
 
 #[test]
+fn repeated_nested_calls_report_each_flat_operation_edge_once() {
+    let source = "function leaf() { return 1; }\n\
+function branch() { return (leaf(), leaf()); }\n\
+function root() { return (branch(), branch()); }\n\
+var result = (root(), root());\n\
+console.log(result);\n";
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("leaf"),
+                Member::new("branch"),
+                Member::new("root"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "1\n");
+
+    let graph = fixture.dependency_graph();
+    let result = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "result")
+        })
+        .expect("compound initializer source unit");
+    let execution = serde_json::to_value(
+        result
+            .synchronous_execution
+            .as_ref()
+            .expect("initializer execution summary"),
+    )
+    .expect("execution report serializes");
+    let authority = &execution["binding_effect_authority"];
+    assert_eq!(authority["authority"], "operation_receipt", "{execution:#}");
+    let calls = authority["receipt"]["calls"]
+        .as_array()
+        .expect("operation receipt call edges");
+    assert_eq!(
+        calls.len(),
+        6,
+        "two initializer-to-root, two root-to-branch, and two branch-to-leaf edges: {execution:#}"
+    );
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|call| call["caller"]["kind"] == "root_initializer")
+            .count(),
+        2,
+        "both initializer call sites remain represented: {execution:#}"
+    );
+    let unique_edges: std::collections::BTreeSet<_> = calls
+        .iter()
+        .map(|call| {
+            serde_json::to_string(&(&call["caller"], &call["call_span"], &call["target"]))
+                .expect("edge identity serializes")
+        })
+        .collect();
+    assert_eq!(
+        unique_edges.len(),
+        calls.len(),
+        "the public report contains one row per exact caller/call-site/target edge: {execution:#}"
+    );
+}
+
+#[test]
 fn discarded_uninitialized_reads_cannot_complete_initializer_coverage() {
     for (kind, expected_error) in [("const", true), ("var", false)] {
         let source = format!(
