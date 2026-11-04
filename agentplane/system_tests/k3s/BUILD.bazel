@@ -14,6 +14,18 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 package(default_testonly = True)
 
 py_test(
+    name = "test_certificates",
+    srcs = ["test_certificates.py"],
+    deps = [
+        ":certificates",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_executor_persistence",
     srcs = ["test_executor_persistence.py"],
     deps = [

@@ -2,10 +2,11 @@
 
 import os
 from collections.abc import Callable
+from time import monotonic
 from typing import Any
 
 import yaml
-from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
+from tenacity import Retrying, retry_if_exception, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.k3s.release_manifests import load_release_manifest
 from agentplane.system_tests.tracing import tracer
@@ -40,7 +41,21 @@ def _wait_for_api(kubectl: Kubectl, resource: dict[str, Any]) -> None:
 def _install(kubectl: Kubectl, objects: list[dict[str, Any]], probe: dict[str, Any]) -> None:
     kubectl("apply", "--server-side", "-f", "-", input_text=yaml.safe_dump_all(objects))
     crds = [f"crd/{doc['metadata']['name']}" for doc in objects if doc["kind"] == "CustomResourceDefinition"]
-    kubectl("wait", "--for=condition=Established", *crds, f"--timeout={READY_SECONDS}s")
+    # kubectl's condition waiter errors while a new CRD's conditions are still null.
+    deadline = monotonic() + READY_SECONDS
+    for attempt in Retrying(
+        stop=stop_after_delay(READY_SECONDS),
+        wait=wait_fixed(1),
+        retry=retry_if_exception(
+            lambda error: isinstance(error, RuntimeError) and ".status.conditions accessor error: <nil>" in str(error)
+        ),
+        reraise=True,
+    ):
+        with attempt:
+            kubectl(
+                "wait", "--for=condition=Established", *crds,
+                f"--timeout={max(0, deadline - monotonic()):.3f}s",
+            )  # fmt: skip
     for doc in objects:
         if doc["kind"] == "Deployment":
             kubectl(
