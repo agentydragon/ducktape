@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -560,6 +559,7 @@ func TestSendTakesTheTextFromStdinAndItsOptionsFromFlags(t *testing.T) {
 	c := newCLI(env, "line one\nline two\n")
 	code := c.run(sendArgs("--body-file", "-", "--from-session", "test-flag-session", "--key", "test-key")...)
 	delete(env, "AGENTPLANE_SESSION_ID")
+	env["AGENTPLANE_DESTINATION"] = `{"destination_ref":{"namespace":"n","name":"s","uid":"u"},"session_id":"old-session"}`
 	invoke(env, sendArgs("--body", "test body", "--key", "test-key-2")...)
 	sent := received[*notificationspb.SendMessageRequest](servicer)
 	if code != 0 || len(sent) != 2 {
@@ -585,10 +585,7 @@ func TestSendRefusesAMalformedCommandBeforeSending(t *testing.T) {
 		"no text":           sendArgs(),
 		"two texts":         sendArgs("--body", "x", "--body-file", "-"),
 		"missing file":      sendArgs("--body-file", t.TempDir()+"/test-missing"),
-		"missing session":   sendArgs("--body", "x"),
 	} {
-		env := maps.Clone(env)
-		delete(env, "AGENTPLANE_SESSION_ID")
 		if code, stdout, _ := invoke(env, args...); code != 2 || stdout != "" {
 			t.Errorf("%s: exit %d, stdout %q; want exit 2", name, code, stdout)
 		}
