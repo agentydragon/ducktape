@@ -19,9 +19,11 @@ explicit assumptions, a shared interpreter/effect validator, and cheap iteration
   unnecessarily discarded passing candidates.
 - Private integration and corpus evidence belong in
   [gaffer-private #814](https://github.com/agentydragon/gaffer-private/pull/814).
-  Read `devinfra/debug/debundle/2026-11-03-handoff.md` in that PR for exact
-  producer heads, roster PR, completed checks, private architecture follow-ups
-  and local worktree/artifact paths. Re-query merge/head state before resuming.
+  The detailed private handoff is
+  `devinfra/debug/debundle/2026-11-03-handoff.md` in gaffer-private; inspect
+  current main and its handoff PR for exact producer heads, roster PR, completed
+  checks, architecture follow-ups and local worktree/artifact paths. Re-query
+  merge/head state before resuming.
 
 Both selected production pipelines completed fresh analysis and configured
 builds, matching their native output byte for byte. An independent roster
