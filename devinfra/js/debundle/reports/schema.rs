@@ -752,10 +752,49 @@ pub struct LocalRecordFactoryRejection {
     /// callback set through `publish_values`; absent when no such insertion was recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_callback_publication_owner: Option<SourceUnitOrdinal>,
+    /// The first actual insertion of the returned class's members into the
+    /// escaped-callback set, when the constructor proof was refused because
+    /// those members escaped. Diagnostic context only; it is not proof
+    /// authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_class_members_publication: Option<FirstClassMembersPublication>,
     pub lexical_statement_ordinal: SourceUnitOrdinal,
     pub source_location: Option<SourceLocation>,
     #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
     pub(crate) span: swc_common::Span,
+}
+
+/// The first operation that inserted `ClassMembers(key)` into the escaped
+/// callback set. The top-level owner and source span are optional when the
+/// insertion path had no source-site context.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct FirstClassMembersPublication {
+    pub writer: ClassMembersPublicationWriter,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_level_owner: Option<SourceUnitOrdinal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub span_start: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub span_end: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+/// The operation that first exposed class members to the opaque callback pool.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClassMembersPublicationWriter {
+    GlobalOrIntrinsicMemberWrite,
+    InstanceMemberWrite,
+    OwnDescriptorMapMemberWrite,
+    UntrackedReceiverMemberWrite,
+    PublishedObjectMemberWrite,
+    MemberChainStore,
+    PossibleCallbackRetention,
+    BoundedInvocationFallback,
+    NoReentryCallRetention,
+    LocalOperationFallback,
+    ThrowValuePublication,
 }
 
 /// Why an annotated record-factory call kept the conservative path. The

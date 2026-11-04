@@ -3656,6 +3656,15 @@ It is omitted when that insertion was not recorded, and is diagnostic context,
 not proof authority. These reasons and the optional owner do not change the
 conservative effects or emitted JavaScript.
 
+When a checked returned-class construction is refused because its members
+escaped, `first_class_members_publication` may identify the first actual
+insertion of those `ClassMembers` into the escaped-callback set. Its typed
+`writer` distinguishes the publication operation; optional `top_level_owner`
+and `span_start`/`span_end` locate the operation in the analyzed chunk, and
+`source_location` names the containing source unit when available. Missing
+context remains unknown. This record is diagnostic only and does not affect
+the construction proof or conservative effects.
+
 Each record's `reach` classifies the code the conservative path stands for.
 `{"kind": "bounded"}`: known source code, namely a rejected local construction
 or an invocation truncated at a recursion, depth or expansion bound, whose

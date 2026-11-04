@@ -19,6 +19,7 @@ pub(super) enum CallbackOperation {
     InvokePossible {
         arguments: Vec<Values>,
         no_sync_arguments: bool,
+        publication_span: Option<Span>,
         outcome: Box<Outcome>,
     },
     BoundedInvocationFallback {
@@ -63,11 +64,13 @@ pub(super) fn dispatch(
         CallbackOperation::InvokePossible {
             arguments,
             no_sync_arguments,
+            publication_span,
             mut outcome,
         } => {
             executor.invoke_possible_callbacks_transfer(
                 &arguments,
                 no_sync_arguments,
+                publication_span,
                 &mut outcome,
             );
             CallbackResult::Outcome(outcome)

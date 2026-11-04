@@ -1309,6 +1309,7 @@ struct CallbackResultWrite {
     data_read_operands: bool,
     property: Option<String>,
     value: ValueExpr,
+    site: CallSite,
 }
 
 #[derive(Debug, Clone)]
@@ -12456,6 +12457,7 @@ impl Visit for ExecutionIndex {
                     },
                 property: static_prop(&member.prop),
                 value: ValueExpr::from_expr(&assignment.right),
+                site: CallSite::from(assignment.span),
             };
             if let Some(key) = self.current {
                 self.callables
