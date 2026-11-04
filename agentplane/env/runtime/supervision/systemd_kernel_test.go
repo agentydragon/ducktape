@@ -26,6 +26,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const fixtureStopGrace = 5 * time.Second
+
 type heldSystemdLaunch struct {
 	name       string
 	properties []systemd.Property
@@ -85,7 +87,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		stale := *launcher
 		stale.lifetimeMarker = filepath.Join(runtimeLifetimeDirectory, strings.ReplaceAll(uuid.NewString(), "-", ""))
 		effect := filepath.Join(dir, "stale-runner-effect")
-		p, err := stale.newSupervisor().NewProcess(ProcessConfig{Command: []string{"/bin/busybox", "touch", effect}, Dir: dir, Env: map[string]string{}, StopGrace: stopGrace})
+		p, err := stale.newSupervisor().NewProcess(ProcessConfig{Command: []string{"/bin/busybox", "touch", effect}, Dir: dir, Env: map[string]string{}, StopGrace: fixtureStopGrace})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -213,7 +215,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 			t.Helper()
 			p, err := supervisorA.NewProcess(ProcessConfig{
 				Command: []string{"/bin/sh", "-eu", "-c", `touch "$1"; exec /bin/busybox sleep 600`, "sh", effect},
-				Dir:     dir, Env: map[string]string{"PATH": "/bin:/usr/bin"}, StopGrace: stopGrace,
+				Dir:     dir, Env: map[string]string{"PATH": "/bin:/usr/bin"}, StopGrace: fixtureStopGrace,
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -372,7 +374,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		script := `printf '%s|%s|%s|%s\n' "$1" "$2" "$3" "$4"; printf 'shell:%s:%s\n' "$HOME" "${SENTINEL}"`
 		literals := []string{"$HOME", "${SENTINEL}", "%n", `single'quote"$`}
 		command := append([]string{"/bin/sh", "-eu", "-c", script, "--"}, literals...)
-		p, err := supervisor.NewProcess(ProcessConfig{Command: command, Dir: dir, Env: map[string]string{"PATH": "/bin:/usr/bin", "HOME": "/explicit/proof-home", "SENTINEL": "shell sentinel"}, StopGrace: stopGrace})
+		p, err := supervisor.NewProcess(ProcessConfig{Command: command, Dir: dir, Env: map[string]string{"PATH": "/bin:/usr/bin", "HOME": "/explicit/proof-home", "SENTINEL": "shell sentinel"}, StopGrace: fixtureStopGrace})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -392,7 +394,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		}
 	})
 	t.Run("invalid_launch_cannot_escape_fence", func(t *testing.T) {
-		p, err := supervisor.NewProcess(ProcessConfig{Command: []string{"/missing-agentplane-proof-binary"}, Dir: dir, Env: map[string]string{}, StopGrace: stopGrace})
+		p, err := supervisor.NewProcess(ProcessConfig{Command: []string{"/missing-agentplane-proof-binary"}, Dir: dir, Env: map[string]string{}, StopGrace: fixtureStopGrace})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -427,7 +429,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 				}
 				return job, context.DeadlineExceeded
 			}
-			p, err := owned.newSupervisor().NewProcess(ProcessConfig{Command: []string{"/bin/sh", "-c", "sleep 60"}, Dir: dir, Env: map[string]string{"PATH": "/bin:/usr/bin"}, StopGrace: stopGrace})
+			p, err := owned.newSupervisor().NewProcess(ProcessConfig{Command: []string{"/bin/sh", "-c", "sleep 60"}, Dir: dir, Env: map[string]string{"PATH": "/bin:/usr/bin"}, StopGrace: fixtureStopGrace})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -616,7 +618,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 }
 
 func startSystemdProof(t *testing.T, ctx context.Context, supervisor *Supervisor, dir, script string) *Process {
-	return startSystemdProofWithGrace(t, ctx, supervisor, dir, stopGrace, script)
+	return startSystemdProofWithGrace(t, ctx, supervisor, dir, fixtureStopGrace, script)
 }
 
 func startSystemdProofWithGrace(t *testing.T, ctx context.Context, supervisor *Supervisor, dir string, grace time.Duration, script string) *Process {
@@ -773,7 +775,7 @@ func assertSystemdProofEmpty(t *testing.T, ctx context.Context, conn *systemd.Co
 }
 
 func proofUnitProperties(executable string, args []string, slice string) []systemd.Property {
-	return []systemd.Property{property("Type", "exec"), property("ExecStartEx", []systemdExec{{executable, args, []string{"no-env-expand"}}}), property("Slice", slice), property("RemainAfterExit", true), property("CollectMode", "inactive"), property("KillMode", "control-group"), property("TimeoutStopUSec", uint64(stopGrace/time.Microsecond))}
+	return []systemd.Property{property("Type", "exec"), property("ExecStartEx", []systemdExec{{executable, args, []string{"no-env-expand"}}}), property("Slice", slice), property("RemainAfterExit", true), property("CollectMode", "inactive"), property("KillMode", "control-group"), property("TimeoutStopUSec", uint64(fixtureStopGrace/time.Microsecond))}
 }
 
 type systemdProofRunnerConfig struct {
