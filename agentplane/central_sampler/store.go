@@ -410,14 +410,7 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 		// request for idempotency, so a duplicate open never recomposes against changed settings.
 		instructions := request.GetSpec().GetInstructions()
 		if platformInstructions != nil {
-			instructions = sessioninstructions.Compose(*platformInstructions, sessioninstructions.Destination{
-				Sandbox: sessioninstructions.SandboxIdentity{
-					Namespace: executor.GetTarget().GetNamespace(),
-					Name:      executor.GetTarget().GetName(),
-					UID:       executor.GetTarget().GetUid(),
-				},
-				SessionID: request.GetSessionId(),
-			}, instructions)
+			instructions = sessioninstructions.Compose(*platformInstructions, request.GetSessionId(), instructions)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_conversation(id,generation,owner,lease_until,pending,stopped,
 			executor_session,context,instructions,context_tokens,api) VALUES($1,0,NULL,NULL,NULL,FALSE,NULL,NULL,$2,NULL,$3)`,

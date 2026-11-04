@@ -7,7 +7,7 @@ or source error means monitoring is not reliable. Any authenticated workload can
 accessible to the App, including private repositories.
 
 `agentplane notifications subscribe github pr OWNER/REPO#123` creates the pull-request subscription
-for your Session (`AGENTPLANE_DESTINATION`; or `--session ID`). Its repeated invocation
+for your Session (`AGENTPLANE_SESSION_ID`; or `--session ID`). Its repeated invocation
 returns the same subscription, `--event NAME[:ACTION[,ACTION]]` (a GitHub event name such as
 `issue_comment`) replaces the default events, and it exits `4` when the response is a cancelled
 subscription (pass a new `--key`). The other subjects (issue, branch, commit) take

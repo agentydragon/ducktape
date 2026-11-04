@@ -21,7 +21,6 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/agentydragon/ducktape/agentplane/session_instructions"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
@@ -70,19 +69,15 @@ func TestStoreOpeningFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 			Target: &identitypb.EnvironmentTarget{Namespace: "fixture-executor-namespace", Name: "fixture-executor", Uid: "fixture-executor-uid"},
 		},
 	}
-	checkDestination := func(prompt, sessionID string) {
+	checkSessionID := func(prompt, sessionID string) {
 		t.Helper()
-		start := strings.IndexByte(prompt, '{')
-		if start < 0 {
-			t.Fatal("stored prompt has no structured notification destination")
+		if !strings.Contains(prompt, "Your Session ID is: "+sessionID) {
+			t.Fatalf("stored prompt lacks Session ID %q: %q", sessionID, prompt)
 		}
-		var destination sessioninstructions.Destination
-		if err := json.NewDecoder(strings.NewReader(prompt[start:])).Decode(&destination); err != nil {
-			t.Fatal(err)
-		}
-		if destination.SessionID != sessionID || destination.Sandbox.Namespace != request.Executor.Target.Namespace ||
-			destination.Sandbox.Name != request.Executor.Target.Name || destination.Sandbox.UID != request.Executor.Target.Uid {
-			t.Fatalf("notification destination=%+v, want executor=%v child=%q", destination, request.Executor, sessionID)
+		for _, sandboxIdentity := range []string{request.Executor.Target.Namespace, request.Executor.Target.Name, request.Executor.Target.Uid} {
+			if strings.Contains(prompt, sandboxIdentity) {
+				t.Fatalf("stored prompt contains Sandbox identity %q: %q", sandboxIdentity, prompt)
+			}
 		}
 	}
 	opened, err := store.OpenSession(t.Context(), request, "fixture-caller-uid", protocol.APIStyleResponses, &guideA)
@@ -111,7 +106,7 @@ func TestStoreOpeningFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 		!strings.Contains(*before.Instructions, strings.TrimSpace(briefing)) {
 		t.Fatalf("stored prompt did not retain both guide and briefing: %v", before.Instructions)
 	}
-	checkDestination(*before.Instructions, request.SessionId)
+	checkSessionID(*before.Instructions, request.SessionId)
 	beforeContext, err := json.Marshal(before.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -156,7 +151,7 @@ func TestStoreOpeningFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 	if freshConversation.Instructions == nil || !strings.Contains(*freshConversation.Instructions, guideB) || strings.Contains(*freshConversation.Instructions, guideA) {
 		t.Fatal("new Session did not receive the current guide")
 	}
-	checkDestination(*freshConversation.Instructions, freshRequest.SessionId)
+	checkSessionID(*freshConversation.Instructions, freshRequest.SessionId)
 }
 
 func TestStoreOpeningWithoutPlatformGuidanceKeepsCallerPromptAcrossActivation(t *testing.T) {

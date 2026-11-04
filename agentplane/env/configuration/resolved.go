@@ -29,24 +29,8 @@ type SandboxLaunch struct {
 	PlatformInstructions string          `json:"-"`
 }
 
-// Destination is the JSON notification destination of one Session: the Sandbox and the Session ID.
-func (l SandboxLaunch) Destination(sessionID string) string {
-	return sessioninstructions.DestinationJSON(l.sessionDestination(sessionID))
-}
-
 func (l SandboxLaunch) Instructions(sessionID, additionalInstructions string) string {
-	return sessioninstructions.Compose(l.PlatformInstructions, l.sessionDestination(sessionID), additionalInstructions)
-}
-
-func (l SandboxLaunch) sessionDestination(sessionID string) sessioninstructions.Destination {
-	return sessioninstructions.Destination{
-		Sandbox: sessioninstructions.SandboxIdentity{
-			Namespace: l.Sandbox.Namespace,
-			Name:      l.Sandbox.Name,
-			UID:       l.Sandbox.UID,
-		},
-		SessionID: sessionID,
-	}
+	return sessioninstructions.Compose(l.PlatformInstructions, sessionID, additionalInstructions)
 }
 
 type Endpoint struct {

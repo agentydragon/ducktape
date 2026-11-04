@@ -13,7 +13,7 @@ agentplane notifications send THEIR_SESSION_ID --body 'The change is ready for r
 ```
 
 `--body-file FILE` takes longer text, `-` from stdin. The command names your own Session from
-`AGENTPLANE_DESTINATION` as `fromSession`; `--from-session` replaces it. Without the command,
+`AGENTPLANE_SESSION_ID` as `fromSession`; `--from-session` replaces it. Without the command,
 `POST /v1/messages`:
 
 ```json

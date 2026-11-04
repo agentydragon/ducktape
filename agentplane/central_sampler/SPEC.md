@@ -17,8 +17,8 @@ admission nor the continuation database.
 
 `spec.instructions` is the caller's briefing. Callers that expose an additive
 `additional_instructions` parameter map it to this field; it never replaces Agentplane guidance.
-At the first durable open, the Store composes the configured `platform_instructions`, the current
-executor Sandbox and child Session notification destination, then the caller briefing. It persists
+At the first durable open, the Store composes the configured `platform_instructions`, the child
+Session ID, then the caller briefing. It persists
 that effective prompt separately from the raw opening request, which remains the idempotency key.
 An exact duplicate open reuses the stored prompt even if the configured guide has changed; a new
 Session receives the current guide. Provider and harness base instructions remain separate.

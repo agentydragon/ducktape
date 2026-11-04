@@ -185,7 +185,7 @@ func TestCodexHandshakeAndUnsupportedServerRequest(t *testing.T) {
 	base := newAdapterTestHost()
 	base.SessionState.Resuming = false
 	base.SessionState.ReasoningEffort = "high"
-	base.SessionState.Environment = map[string]string{"AGENTPLANE_DESTINATION": "test-destination"}
+	base.SessionState.Environment = map[string]string{"AGENTPLANE_SESSION_ID": "test-session"}
 	host := &adapterHandshakeHost{Host: base}
 	adapter := New(host)
 	threadID, err := adapter.Handshake(ctx)
@@ -209,7 +209,7 @@ func TestCodexHandshakeAndUnsupportedServerRequest(t *testing.T) {
 		t.Fatalf("Codex thread/start effort = %v, want explicit value high", config["model_reasoning_effort"])
 	}
 	set := config["shell_environment_policy.set"].(map[string]any)
-	if set["AGENTPLANE_DESTINATION"] != "test-destination" {
+	if set["AGENTPLANE_SESSION_ID"] != "test-session" {
 		t.Fatalf("Codex thread/start lost the Session's own tool environment: %s", host.requests[0])
 	}
 	if err := adapter.OnFrame(ctx, json.RawMessage(`{"id":"server-request","method":"item/tool/requestUserInput","params":{}}`), 3); err != nil {

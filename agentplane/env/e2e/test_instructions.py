@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 import grpc
 import pytest
 import pytest_bazel
@@ -53,8 +51,9 @@ async def test_instructions_name_the_platform_the_sandbox_and_the_session_ahead_
     instructions = session.attached.spec.instructions
     assert instructions.startswith(launches.PLATFORM_INSTRUCTIONS)
     assert instructions.endswith(INSTRUCTIONS)
-    (destination,) = (json.loads(line) for line in instructions.splitlines() if line.startswith('{"destination_ref"'))
-    assert destination == {"destination_ref": launches.SANDBOX.model_dump(), "session_id": session.attached.session_id}
+    assert f"Your Session ID is: {session.attached.session_id}" in instructions
+    assert "destination_ref" not in instructions
+    assert launches.SANDBOX.uid not in instructions
 
 
 async def test_reopening_a_session_with_its_own_spec_confirms_it(

@@ -17,7 +17,7 @@ import (
 )
 
 func TestSessionReconcileSnapshotsIgnoreJournalOnlyChanges(t *testing.T) {
-	ctx, root, resources, store, manager := newSessionTestManager(t, nil, func(string) string { return "destination" })
+	ctx, root, resources, store, manager := newSessionTestManager(t, nil)
 	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
 	inputPointer := componentResource(s.id, ReconcileSnapshot{}).Metadata()
 	before, err := resources.Get(ctx, inputPointer)
@@ -67,7 +67,7 @@ type dispatchReadinessAdapter struct {
 func (a *dispatchReadinessAdapter) BlocksCommandDispatch() bool { return a.blocked }
 
 func TestSessionInputTracksNativeDispatchReadinessWithoutJournalEvent(t *testing.T) {
-	ctx, root, resources, store, manager := newSessionTestManager(t, nil, func(string) string { return "destination" })
+	ctx, root, resources, store, manager := newSessionTestManager(t, nil)
 	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
 	adapter := &dispatchReadinessAdapter{blocked: true}
 	s.mu.Lock()
@@ -87,7 +87,7 @@ func TestSessionInputTracksNativeDispatchReadinessWithoutJournalEvent(t *testing
 }
 
 func TestSessionDemandPublicationRetriesFromCurrentDemand(t *testing.T) {
-	ctx, root, resources, store, manager := newSessionTestManager(t, nil, func(string) string { return "destination" })
+	ctx, root, resources, store, manager := newSessionTestManager(t, nil)
 	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
 
 	conflictingState := &sessionDemandConflictCoreState{CoreState: resources}
@@ -107,7 +107,7 @@ func TestSessionDemandPublicationRetriesFromCurrentDemand(t *testing.T) {
 }
 
 func TestSessionDemandPublicationStartsFromZeroWhenInputIsMissing(t *testing.T) {
-	ctx, root, resources, store, manager := newSessionTestManager(t, nil, func(string) string { return "destination" })
+	ctx, root, resources, store, manager := newSessionTestManager(t, nil)
 	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
 	if err := resources.Destroy(ctx, componentResource(s.id, ReconcileSnapshot{}).Metadata(), state.WithDestroyOwner(lifecycle.EnvironmentOwner)); err != nil {
 		t.Fatal(err)
@@ -159,7 +159,7 @@ func (s *sessionDemandConflictCoreState) Update(ctx context.Context, value resou
 }
 
 func TestJournalNotificationsOnlySignalBlockerTransitions(t *testing.T) {
-	ctx, root, _, store, manager := newSessionTestManager(t, nil, func(string) string { return "destination" })
+	ctx, root, _, store, manager := newSessionTestManager(t, nil)
 	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
 	// Establish the initial notification predicates before observing transitions.
 	s.notifyBlockers()

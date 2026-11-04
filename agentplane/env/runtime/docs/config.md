@@ -191,7 +191,7 @@ placeholder. The egress proxy substitutes credentials and the authenticated LLM 
 requests. Claude uses the ingress origin; Codex uses its `/v1` API base. Claude retains its resolved
 context budget for resume; Codex obtains metadata from the ingress catalog.
 
-Environment Runtime composes platform instructions, the Session's notification destination and caller task in
+Environment Runtime composes platform instructions, the Session ID and caller task in
 that order. They are persisted and must match when reopened. Sandbox bootstrap and Session setup
 remain distinct one-time operations. Claude has one process per Session; Codex Sessions are threads
 in one shared app-server, with model/effort/cwd/instructions selected per thread.

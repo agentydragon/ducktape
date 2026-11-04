@@ -51,5 +51,5 @@ def agent_cli_environment() -> dict[str, str]:
         "AGENTPLANE_NOTIFICATIONS_CREDENTIAL": "test-notifications-bearer",
         "AGENTPLANE_EGRESS_URL": "http://egress.test",
         "AGENTPLANE_EGRESS_CREDENTIAL": "test-egress-bearer",
-        "AGENTPLANE_DESTINATION": '{"destination_ref": {"kind": "test"}, "session_id": "test-session"}',
+        "AGENTPLANE_SESSION_ID": "test-session",
     }

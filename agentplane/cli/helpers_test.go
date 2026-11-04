@@ -76,15 +76,13 @@ func notificationsEnv(baseURL string) map[string]string {
 	return map[string]string{
 		"AGENTPLANE_NOTIFICATIONS_URL":        baseURL,
 		"AGENTPLANE_NOTIFICATIONS_CREDENTIAL": testCredential,
-		"AGENTPLANE_DESTINATION":              testDestination,
+		"AGENTPLANE_SESSION_ID":               "test-session",
 	}
 }
 
 func egressEnv(baseURL string) map[string]string {
 	return map[string]string{"AGENTPLANE_EGRESS_URL": baseURL, "AGENTPLANE_EGRESS_CREDENTIAL": testCredential}
 }
-
-const testDestination = `{"destination_ref": {"namespace": "test-ns", "name": "test-sandbox", "uid": "test-uid"}, "session_id": "test-session"}`
 
 // seen is a request a fake service received.
 type seen struct {

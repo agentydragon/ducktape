@@ -65,16 +65,16 @@ async def test_codex_sessions_share_one_app_server_and_keep_their_own_turns_and_
 
     requests = await _requests_by_session(model, len(sessions))
     for session_id, request in requests.items():
-        await model.reply(request, ShellCall(f"call-{session_id}", 'printf "%s|%s" "$AGENTPLANE_DESTINATION" "$PWD"'))
+        await model.reply(request, ShellCall(f"call-{session_id}", 'printf "%s|%s" "$AGENTPLANE_SESSION_ID" "$PWD"'))
     followups = await _requests_by_session(model, len(sessions))
     for session_id, request in followups.items():
         (output,) = request.tool_outputs
         (other,) = set(SESSION_IDS) - {session_id}
-        # Each thread's tools see their own Session's destination and working directory.
+        # Each thread's tools see their own Session ID and working directory.
         own_session_id = sessions[session_id].attached.session_id
         other_session_id = sessions[other].attached.session_id
-        assert output.contains(f'"session_id":"{own_session_id}"}}|{workspace / session_id}')
-        assert not output.contains(f'"session_id":"{other_session_id}"')
+        assert output.contains(f"{own_session_id}|{workspace / session_id}")
+        assert not output.contains(f"{other_session_id}|")
         await model.reply(request, Text(f"TOOL_DONE {session_id}"))
 
     started_pids = set()

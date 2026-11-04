@@ -66,8 +66,7 @@ func TestSessionOwnerReconcilesRetainedRecord(t *testing.T) {
 	failures := make(chan error, 1)
 	m, err := NewManager(withTestSessionFacilities(t, Config{
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root),
-		Destination: func(string) string { return "test-destination" },
-		OnChange:    func() {}, OnError: func(err error) {
+		OnChange: func() {}, OnError: func(err error) {
 			if err != nil {
 				failures <- err
 			}
@@ -126,8 +125,7 @@ func TestSessionOwnerReportsRecoveryFailure(t *testing.T) {
 	failures := make(chan error, 1)
 	m, err := NewManager(withTestSessionFacilities(t, Config{
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: root,
-		Destination: func(string) string { return "test-destination" },
-		OnChange:    func() {}, OnError: func(err error) {
+		OnChange: func() {}, OnError: func(err error) {
 			if err != nil {
 				failures <- err
 			}
@@ -226,7 +224,6 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	publications := map[string][]sessionpb.SetupState{}
 	m, err := NewManager(withTestSessionFacilities(t, Config{
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root),
-		Destination: func(string) string { return "test-destination" },
 		OnError: func(err error) {
 			if err != nil {
 				publishErrors <- err
@@ -424,8 +421,7 @@ func TestReopenRetryKeepsCOSIIngressAcknowledgementAfterJournalReopened(t *testi
 	resources.fail = true
 	m, err := NewManager(withTestSessionFacilities(t, Config{
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root), Environment: func() Environment { return environment },
-		Destination: func(string) string { return "test-destination" },
-		OnChange:    func() {},
+		OnChange: func() {},
 		OnError: func(err error) {
 			if err != nil {
 				t.Errorf("session manager: %v", err)

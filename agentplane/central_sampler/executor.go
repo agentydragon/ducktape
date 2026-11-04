@@ -97,20 +97,13 @@ func NewExecutor(ctx context.Context, store *Store, owner Owner, session *Sessio
 		}
 	}
 	client := typedExecutorClient{ExecutorClient: executorpb.NewExecutorClient(connection)}
-	env, err := json.Marshal(map[string]any{"destination_ref": map[string]any{
-		"namespace": request.GetExecutor().GetTarget().GetNamespace(), "name": request.GetExecutor().GetTarget().GetName(), "uid": request.GetExecutor().GetTarget().GetUid(),
-	}, "session_id": session.ID})
-	if err != nil {
-		_ = connection.Close()
-		return nil, nil, err
-	}
 	executor := &Executor{
 		store: store, owner: owner, client: client, connection: connection,
 		scope: &executorpb.ExecutionScope{
 			Destination: request.GetExecutor(), ExpectedIncarnationUid: request.GetExpectedIncarnationUid(), SessionId: session.ID,
 		},
 		lifetime: ctx, cwd: request.GetSpec().GetCwd(), codexPath: settings.ExecutorCodex,
-		environment: map[string]string{"AGENTPLANE_DESTINATION": string(env)}, processLocks: map[string]*sync.Mutex{},
+		environment: map[string]string{"AGENTPLANE_SESSION_ID": session.ID}, processLocks: map[string]*sync.Mutex{},
 		rpcTimeout:        time.Duration(settings.RPCTimeoutSeconds) * time.Second,
 		initializeTimeout: settings.ExecutorInitializeTimeout(),
 		workspacePrepared: session.WorkspacePrepared,

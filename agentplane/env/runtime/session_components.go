@@ -57,8 +57,8 @@ func (r *Runtime) initializeSessions() error {
 	}
 	sessions, err := session.NewManager(session.Config{
 		Context: r.lifecycleContext, State: r.lifecycleState, Store: r.store,
-		WorkspaceRoot: r.config.WorkspaceRoot, Destination: r.config.Launch.Destination,
-		Claude: r.config.Claude, HarnessEnvironment: r.config.HarnessEnvironment,
+		WorkspaceRoot: r.config.WorkspaceRoot,
+		Claude:        r.config.Claude, HarnessEnvironment: r.config.HarnessEnvironment,
 		DebugCheckpoint: r.config.DebugCheckpoint, Scripts: r.sessionScripts,
 		CodexAppServer: r.codexAppServer, WaitBootstrap: r.waitBootstrapForSession,
 		EnsureWorkspace: r.ensureWorkspace,
