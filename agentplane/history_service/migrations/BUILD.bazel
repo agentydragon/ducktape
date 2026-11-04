@@ -6,6 +6,7 @@ go_library(
         "event_kind_backfill.go",
         "migrations.go",
         "session_placement.go",
+        "session_placement_repair.go",
         "thread_entity_proto.go",
         "thread_entity_v7_legacy.go",
     ],
@@ -65,6 +66,7 @@ go_test(
     size = "medium",
     srcs = [
         "event_kind_backfill_testmain_test.go",
+        "session_placement_repair_test.go",
         "session_placement_test.go",
         "session_recorded_position_test.go",
     ],
