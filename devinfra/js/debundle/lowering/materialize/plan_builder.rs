@@ -16,7 +16,8 @@ use crate::util::target_file_for_request;
 use analysis::{
     BindingCatalogue, BindingKind, ChunkId, DependencyGraphAndAtomicGroups,
     DestructuringDeclaratorGroup, DestructuringGroupOwnerClassification, ModuleId, ModuleRole,
-    SourceUnitClass, SourceUnitId, SourceUnitLayout, classify_destructuring_group_owners,
+    NestedVarDestinationClassification, NestedVarStatement, SourceUnitClass, SourceUnitId,
+    SourceUnitLayout, classify_destructuring_group_owners, classify_nested_var_placement,
     top_level_id,
 };
 use anyhow::{Context, Result, bail, ensure};
@@ -977,73 +978,68 @@ impl ChunkPlanBuilder {
     }
 
     /// A nested `var` is declared by its enclosing top-level control-flow
-    /// statement. Unlike a direct `var` declaration, that statement cannot be
-    /// split out of the entry body while leaving the surrounding control flow
-    /// behind. Route it whole only when all of its bindings and any anonymous
-    /// statement claim already agree on one destination.
+    /// statement. The shared placement kernel decides whether retained binding
+    /// owners and any explicit whole-statement request agree. Planning applies
+    /// that destination to the indivisible statement; an unclaimed statement
+    /// remains available to entry/residual routing.
     pub(super) fn route_nested_var_statements(
         &mut self,
-        body: &[ModuleItem],
-        declarations: &[TopLevelDecl],
+        nested_var_statements: &[NestedVarStatement],
     ) -> Result<()> {
-        for decl in declarations {
-            let Some(ModuleItem::Stmt(statement)) = body.get(decl.statement.0) else {
-                continue;
-            };
-            // Direct variable declarations can be split by declarator in the
-            // emitter. `TopLevelDecl`s for other direct declaration kinds do
-            // not represent hoisted nested vars either.
-            if matches!(statement, Stmt::Decl(_)) {
-                continue;
-            }
-
-            let assigned_destinations = decl
+        for nested in nested_var_statements {
+            let owners = nested
                 .bindings
                 .iter()
-                .filter_map(|(_, id)| owned_destination(&self.bindings_catalogue, id))
-                .chain(
-                    self.whole_statement_assignment
-                        .get(&decl.statement)
-                        .copied(),
-                )
-                .collect::<BTreeSet<_>>();
-            if assigned_destinations.is_empty() {
+                .filter_map(|binding| {
+                    owned_destination(&self.bindings_catalogue, binding)
+                        .map(|destination| (binding.clone(), ModuleId(destination)))
+                })
+                .collect();
+            let whole_statement_request = self
+                .whole_statement_assignment
+                .get(&nested.statement)
+                .copied()
+                .map(ModuleId);
+            let check = classify_nested_var_placement(nested, owners, whole_statement_request);
+            if check.destinations().is_empty() {
                 continue;
             }
-            let missing_bindings = decl
-                .bindings
-                .iter()
-                .filter(|(_, id)| owned_destination(&self.bindings_catalogue, id).is_none())
-                .map(|(name, _)| name.as_str())
-                .collect::<Vec<_>>();
-            if !missing_bindings.is_empty() {
-                bail!(
-                    "top-level control-flow statement at body index {} also declares unassigned \
-                     bindings ({}); assign them to the same module before extracting the statement",
-                    decl.statement,
-                    missing_bindings.join(", "),
-                );
-            }
-            if assigned_destinations.len() > 1 {
-                let destinations = assigned_destinations
+            if !check.missing_bindings.is_empty() {
+                let missing_bindings = check
+                    .missing_bindings
                     .iter()
-                    .map(|index| self.module_plans[*index].id.as_str())
+                    .map(|binding| binding.0.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
-                bail!(
-                    "top-level control-flow statement at body index {} declares bindings assigned \
-                     to different modules ({destinations}); assign all nested var bindings to one module",
-                    decl.statement,
+                let message = format!(
+                    "top-level control-flow statement at body index {} also declares unassigned \
+                     bindings ({missing_bindings}); assign them to the same module before extracting the statement",
+                    check.statement,
                 );
+                return Err(anyhow::Error::new(check).context(message));
             }
 
-            let destination = *assigned_destinations
-                .first()
-                .expect("assigned_destinations is nonempty");
+            let destination = match &check.classification {
+                NestedVarDestinationClassification::Unclaimed => continue,
+                NestedVarDestinationClassification::OneDestination { destination } => *destination,
+                NestedVarDestinationClassification::SplitDestinations { destinations } => {
+                    let module_names = destinations
+                        .iter()
+                        .map(|destination| self.module_plans[destination.0].id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let message = format!(
+                        "top-level control-flow statement at body index {} declares bindings assigned \
+                         to different modules ({module_names}); assign all nested var bindings to one module",
+                        check.statement,
+                    );
+                    return Err(anyhow::Error::new(check).context(message));
+                }
+            };
             self.whole_statement_assignment
-                .insert(decl.statement, destination);
-            let plan = &mut self.module_plans[destination];
-            plan.anonymous_statements.push(decl.statement);
+                .insert(nested.statement, destination.0);
+            let plan = &mut self.module_plans[destination.0];
+            plan.anonymous_statements.push(nested.statement);
             plan.anonymous_statements.sort_unstable();
             plan.anonymous_statements.dedup();
         }

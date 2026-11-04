@@ -3323,13 +3323,25 @@ it does not fabricate an `EmissionPlacement`. Existing earlier plan-construction
 refusals in `apply_destructuring_group_placement` and
 `route_nested_var_statements` still fail before a final assignment exists, so
 those candidates do not produce this assessment. Destructuring request planning
-and finalized projection call the same typed owner classifier over the retained
-SWC binding identities. Planning supplies explicit claims only, then applies
-the classifier's one-owner result to pull unclaimed or residual-owned siblings;
+and finalized projection call the same typed owner classifier over retained SWC
+binding identities. Planning supplies explicit claims only, then applies the
+classifier's one-owner result to pull unclaimed or residual-owned siblings;
 projection first requires complete finalized owner evidence and treats a split
 including the entry/residual destination as a blocker. The early refusal keeps
 the classifier result in the error chain, without inventing a finalized
-assignment. A legacy-gate-rejected but mappable candidate can still produce
+assignment.
+
+Nested-var routing and finalized projection likewise call the same typed
+classifier over each retained `NestedVarStatement`, its exact SWC binding
+owners, and any explicit whole-statement request. The classifier includes the
+whole-statement request when checking for split destinations. Planning leaves
+an entirely unclaimed statement to existing entry/residual routing, refuses
+missing owners or split destinations with the typed check in its error chain,
+and applies one agreed destination by claiming the statement whole. It never
+pulls nested-var bindings into a module. Final projection derives missing-owner
+and split violations from the same check and additionally requires a whole-
+statement claim when an observed destination differs from the finalized entry;
+the entry identity is not an early planning owner. A legacy-gate-rejected but mappable candidate can still produce
 marked inspection output. This scoped candidate result is not emission
 authority: the existing realizability gate remains the only authority to emit
 runnable output until later coverage domains are closed. The candidate's effect

@@ -396,13 +396,24 @@ for a finalized assignment that reaches this seam can still report typed
 blockers and unresolved checks without manufacturing an emission placement.
 Earlier plan-construction refusals in `apply_destructuring_group_placement`
 and `route_nested_var_statements` remain hard errors before a final assignment
-and do not produce a candidate assessment; the destructuring refusal carries
+and do not produce a candidate assessment. The destructuring refusal carries
 the shared typed owner-classification result in its error chain. Request
 planning supplies explicit owners to that classifier and retains the existing
 pull of unclaimed or residual-owned siblings. Final projection checks complete
 assignment ownership first, then classifies every binding destination,
-including entry/residual, with the same function. This scoped projection does
-not claim candidate-report coverage for those early failures.
+including entry/residual, with the same function.
+
+Nested-var request planning and final projection share one typed classification
+over the retained statement and exact SWC binding identities, including an
+explicit whole-statement request. Planning leaves groups with no observed
+destination to the existing entry/residual routing; otherwise it refuses
+missing owners or split destinations, or routes all owners at one destination
+by adding the whole-statement claim. It does not pull nested-var bindings.
+Final projection derives typed missing-owner and split violations from that
+same classification and requires the whole-statement claim for a non-entry
+destination. Early nested-var refusals remain outside candidate reports because
+they occur before a final assignment. This scoped projection does not claim
+candidate-report coverage for those early failures.
 Semantic-order SCCs remain distinct from structural causes such as rebind,
 co-declaration, co-location and local effects; mixed or unclassified causes
 remain blockers. `placement.projection_violations` retains typed identities for

@@ -1022,6 +1022,61 @@ fn early_destructuring_split_refusal_matches_with_saved_facts() {
 }
 
 #[test]
+fn early_nested_var_split_refusal_matches_with_saved_facts() {
+    let source = "try { var left = 10; var right = 20; } catch (e) {}\n\
+console.log(left, right);\nexport { left, right };\n";
+    // Save analysis while both nested-var bindings have one coherent owner,
+    // then change only their module assignments to create a split request.
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "left_module",
+            &[Member::new("left"), Member::new("right")],
+        )],
+    ));
+    let mut spec: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&staged.spec).unwrap()).unwrap();
+    let modules = spec["logical_modules"]["static/app"]
+        .as_mapping_mut()
+        .unwrap();
+    modules.insert(
+        serde_yaml::Value::String("left_module".into()),
+        serde_yaml::from_str(
+            "members:\n  - name: left\n    selector:\n      binding:\n        name: left\n",
+        )
+        .unwrap(),
+    );
+    modules.insert(
+        serde_yaml::Value::String("right_module".into()),
+        serde_yaml::from_str(
+            "members:\n  - name: right\n    selector:\n      binding:\n        name: right\n",
+        )
+        .unwrap(),
+    );
+    fs::write(&staged.spec, serde_yaml::to_string(&spec).unwrap()).unwrap();
+
+    let direct = staged.run(&[]);
+    staged.set_aside("direct_nested_var_refusal_output");
+    let from_artifact = staged.run(&["--analysis", path(&staged.artifact)]);
+
+    assert!(
+        !direct.status.success(),
+        "direct run unexpectedly succeeded"
+    );
+    assert_eq!(direct.status.code(), from_artifact.status.code());
+    for result in [&direct, &from_artifact] {
+        assert!(
+            result.stderr.contains("body index 0")
+                && result.stderr.contains("different modules")
+                && result.stderr.contains("left_module")
+                && result.stderr.contains("right_module"),
+            "expected the typed early nested-var placement refusal in stderr:\n{}",
+            result.stderr
+        );
+    }
+}
+
+#[test]
 fn composed_global_sites_and_dependencies_round_trip() {
     assert_staged_run_matches(
         composed_global_access_fixture(),
@@ -1818,6 +1873,39 @@ console.log(left, right);\n";
     assert_node_output(
         &staged.root().join("run-destructure/app/main/entry.js"),
         "10 20\n",
+        "",
+    );
+}
+
+#[test]
+fn nested_var_placement_preview_matches_staged_emission() {
+    let source = "try { var impl = \"primary\"; } catch (e) { var impl = \"fallback\"; }\n\
+console.log(impl);\n";
+    let staged = staged_tree(
+        &[("main", source)],
+        &[(
+            "impl.yaml",
+            "members: [{selector: {binding: {name: impl}}}]\n",
+        )],
+    );
+    let result = staged.assign(None, Some(&staged.artifact), true);
+    assert_ok(&result, "nested-var bindings assign preview");
+    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    let assessment = &outcome["effect_relocation_assessment"];
+    assert_eq!(
+        assessment["placement"]["projection_violations"],
+        json!([]),
+        "nested-var planning should yield one finalized whole-statement destination"
+    );
+    assert_eq!(
+        assessment["placement"]["coverage"]["unresolved_checks"],
+        json!([]),
+        "nested-var owners and whole-statement placement must be covered"
+    );
+    assert_candidate_assessment_matches_run(assessment, &staged, "nested_var", true, false);
+    assert_node_output(
+        &staged.root().join("run-nested_var/app/main/entry.js"),
+        "primary\n",
         "",
     );
 }
