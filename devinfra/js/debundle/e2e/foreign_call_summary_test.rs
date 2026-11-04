@@ -351,7 +351,8 @@ fn shared_local_transfer_preserves_local_bound_returned_closure_and_formal_reten
                   const later = 42;\n\
                   console.log(wrapped());\n";
     let provider = "export function make(callback, unused) {\n\
-                     const wrapped = () => callback();\n\
+                     const local = { callback };\n\
+                     const wrapped = () => local.callback();\n\
                      return wrapped;\n\
                    }\n";
     let fixture = run_fixture(

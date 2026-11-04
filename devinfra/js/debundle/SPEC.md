@@ -2642,11 +2642,37 @@ identities are never reused. Revoked audited-result descriptions remain strong
 semantic roots, so recreating an equal description cannot restore its proof.
 Owner-boundary cleanup retires a bounded batch of expired interner entries.
 
-Call-containing bodies, closure creation and captured writes remain outside the
-migrated allocation-only provider query and keep their established foreign-call
-derivation where supported, including when such a body also constructs an empty
-native collection. This whole-body classification happens before selecting a
-query; a failed migrated query never retries another evaluator.
+Anonymous function and arrow closure creation use a separate closure-capable
+provider mode over the same canonical `LocalBody` and ordered local transfer.
+It admits straight-line local initialization/assignment, sequences, returns,
+unconditional literal values, and ordinary data records whose values may
+contain those closures. The returned closure is a fresh allocation in
+`foreign_call.returns`; when the whole result is one closure, the derived
+summary also retains its exact full range from the canonical callable-span
+index for consumers that need it. A record containing closures remains a fresh
+allocation without a root-closure range. This does not infer the closure's
+result, execute its body or widen callback-factory inference: a local-bound
+returned closure does not acquire direct-wrapper evidence.
+
+When a returned closure is retained, the provider summary conservatively keeps
+every formal argument. It also follows the closure's canonical nested-callable
+read projection into the final values of its captured local cells, recursively
+traversing ordinary data records and further closures. Reached checked private
+`var` captures are reported under `retained_provider_captures`; this preserves
+capabilities held through a local heap object even when the closure does not
+read the provider capture directly. A returned graph that reaches an async or
+generator closure, an implicit-`this` closure, or a closure with an unsupported
+capture declines the summary. Closure bodies are deferred and are not executed
+by the provider transfer.
+
+Calls, field reads/writes, `this`, throws and captured writes in the provider
+body remain outside these transfer modes where their behavior is not proved.
+The returned closure body is deferred and its operations are not executed by
+this provider query. Methods, getters, setters and RegExp-related bodies still
+use the legacy whole-body derivation until their productive families migrate.
+Source classification selects one provider path before execution; refusal from
+a selected `LocalBody` query never retries another evaluator, and mixed bodies
+stay on the legacy path while they contain an unmigrated productive family.
 
 Source coverage excludes async/generator functions, defaults/rest/destructuring,
 template syntax, other operators,

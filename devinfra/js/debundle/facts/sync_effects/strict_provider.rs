@@ -657,7 +657,20 @@ mod tests {
     use super::*;
     use crate::facts::StableArraySpreadShapes;
     use crate::facts::item_views::top_level_item_views;
-    use swc_ecma_ast::{Decl, Expr, ModuleItem, Stmt};
+    use swc_ecma_ast::{Decl, Expr, FnDecl, ModuleItem, Stmt};
+    use swc_ecma_visit::{Visit, VisitWith};
+
+    #[derive(Default)]
+    struct MakeFunctionKey(Option<u32>);
+
+    impl Visit for MakeFunctionKey {
+        fn visit_fn_decl(&mut self, function: &FnDecl) {
+            if function.ident.sym == "make" {
+                self.0 = Some(function.function.span.lo.0);
+            }
+            function.visit_children_with(self);
+        }
+    }
 
     fn query(source: &str, syntax_covered: bool) -> Option<DerivedForeignCall> {
         let module = js_ast::parse_js_module("provider.js", source)
@@ -768,6 +781,49 @@ mod tests {
                 );
                 assert_eq!(summary.retained_arguments, BTreeSet::from([0]));
             }
+        });
+    }
+
+    #[test]
+    fn returned_closure_retains_capture_reached_through_final_local_heap() {
+        js_ast::with_swc_globals(|| {
+            let source = "function outer() {\n\
+                             var captured = () => 42;\n\
+                             function make() {\n\
+                               const local = { callback: captured };\n\
+                               const wrapped = () => local;\n\
+                               return wrapped;\n\
+                             }\n\
+                           }\n";
+            let module = js_ast::parse_js_module("provider.js", source)
+                .unwrap()
+                .module;
+            let mut make = MakeFunctionKey::default();
+            module.visit_with(&mut make);
+            let key = make.0.expect("canonical nested make callable");
+            let views = top_level_item_views(&module.body);
+            let prepared = super::super::prepare_callable_capabilities(
+                &views,
+                StableArraySpreadShapes::default(),
+                BTreeSet::from(["make".into()]),
+                Vec::new(),
+                Vec::new(),
+                Default::default(),
+                Default::default(),
+            );
+            let summary = derive(&prepared.index, key, &BTreeSet::new())
+                .expect("local transfer retains the checked provider capture");
+
+            assert_eq!(
+                summary.returns,
+                BTreeSet::from([ForeignReturn::FreshAllocation])
+            );
+            assert!(summary.retained_arguments.is_empty());
+            assert_eq!(
+                summary.retained_provider_captures,
+                BTreeSet::from(["captured".to_owned()]),
+                "the returned closure reaches the capture through its final local record"
+            );
         });
     }
 }
