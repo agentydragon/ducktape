@@ -118,7 +118,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _CERT_MANAGER_INSTALL + ")",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _TRUST_MANAGER_INSTALL + ")",
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + config.fixture + ")",
-        "PYTEST_PLUGINS": "agentplane.system_tests.deployment.system_test_target" + (",agentplane.system_tests.vm.pytest_plugin" if config.vm else ""),
+        "PYTEST_PLUGINS": "agentplane.system_tests.deployment.system_test_target" + (",agentplane.system_tests.vm.pytest_plugin" if config.vm else ",agentplane.system_tests.k3s.firecracker_test_target" if config.firecracker else ""),
     }
     properties = {}
     suite_tags = K3S_TAGS + tags
@@ -168,6 +168,6 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         exec_properties = K3S_EXEC_PROPERTIES | properties,
         tags = suite_tags,
         deps = deps + [
-            "//agentplane/system_tests/deployment:system_test_target",
-        ] + (["//agentplane/system_tests/vm:pytest_plugin"] if config.vm else []),
+            "//agentplane/system_tests/k3s:system_test_target",
+        ] + (["//agentplane/system_tests/vm:pytest_plugin"] if config.vm else ["//agentplane/system_tests/k3s:firecracker_test_target"] if config.firecracker else []),
     )

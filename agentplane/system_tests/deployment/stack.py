@@ -15,6 +15,7 @@ import contextlib
 import contextvars
 import json
 import logging
+import os
 import shutil
 import socket
 import sys
@@ -352,18 +353,23 @@ def running_stack(
     """Create fresh fixtures; retain infrastructure only with the executor's lifecycle permission."""
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = inputs.fixture
+    uses_virtualization = fixture.vm_sandboxes or fixture.firecracker_sandboxes
+    if fixture.firecracker_sandboxes and os.environ.get("AGENTPLANE_K3S_REQUIRE_KVM") != "1":
+        raise ValueError("the Firecracker fixture requires a KVM-enabled executor")
+    if fixture.firecracker_sandboxes and persist_infrastructure:
+        raise ValueError("the Firecracker fixture does not retain executor snapshots")
     cert_manager, trust_manager = pki_infrastructure.releases()
     pki_images = inputs.pki_image_layouts
-    if fixture.vm_sandboxes != (virtualization_factory is not None):
-        raise ValueError("VM deployment and lifecycle extension do not match")
+    if uses_virtualization != (virtualization_factory is not None):
+        raise ValueError("VM/Firecracker deployment and lifecycle extension do not match")
     work = Path(tempfile.mkdtemp())
     virtualization = virtualization_factory(work) if virtualization_factory is not None else None
     releases = virtualization.releases if virtualization is not None else []
     infrastructure_images = inputs.vm_image_layouts
     fixture_images = inputs.image_layouts
     guest_images = inputs.guest_image_layouts
-    if fixture.vm_sandboxes != bool(guest_images):
-        raise ValueError("VM deployment and guest image inputs do not match")
+    if uses_virtualization != bool(guest_images):
+        raise ValueError("VM/Firecracker deployment and guest image inputs do not match")
     for objects, images in [(cert_manager + trust_manager, pki_images), (releases, infrastructure_images)]:
         if missing := _deployment_images(objects) - images.keys():
             raise ValueError(f"Infrastructure workloads lack OCI layouts for: {sorted(missing)}")
@@ -395,16 +401,20 @@ def running_stack(
                         + releases
                         + (virtualization.baseline_objects() if virtualization is not None else []),
                         pki_images | infrastructure_images,
-                        layers_in_memory=not fixture.vm_sandboxes,
+                        layers_in_memory=not uses_virtualization,
                         helpers=virtualization.baseline_helpers() if virtualization is not None else {},
                     ),
-                    layers_in_memory=not fixture.vm_sandboxes,
+                    layers_in_memory=not uses_virtualization,
                 )
             else:
                 # An executor can restore a retained snapshot even when this action opts out.
                 # Stop its exact owned server before resetting the ordinary stack's state.
                 baseline.stop_previous()
-                process = k3s.start(layers_in_memory=not fixture.vm_sandboxes)
+                process = k3s.start(
+                    layers_in_memory=not uses_virtualization,
+                    preserve_image_store=not fixture.firecracker_sandboxes,
+                    database_in_memory=fixture.firecracker_sandboxes,
+                )
                 cleanup.callback(k3s.stop, process)
             setup.add_event("node Ready")
             k3s.report_storage("before-import")

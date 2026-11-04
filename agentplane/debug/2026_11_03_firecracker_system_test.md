@@ -339,3 +339,17 @@ now mounts its ordinary `server/db` directory on a bounded 256 MiB tmpfs, with c
 immediately and unmount after the k3s server is reaped. This keeps the default SQLite configuration
 and does not change guest/PVC/checkpoint durability. Firecracker still rejects retained cluster
 snapshots; the retained baseline path explicitly keeps its database on disk.
+
+The [sixteenth submission](https://app.buildbuddy.io/invocation/c0eaf873-c377-4386-a42a-231c9aead126)
+started successfully with its k3s database on the 256 MiB tmpfs (4.7 MiB used at the initial
+inspection). It was cancelled during setup after devel advanced and the PR conflicted with the
+landed infrastructure/runtime split; no guest was booted and no acceptance pass is claimed.
+
+The branch was rebased onto `f439c32cd69efb57c07938a90b573f8afe68c616`. K3s storage policy now
+belongs to `baseline.py`. The Firecracker pytest plugin supplies its lifecycle adapter through
+the shared virtualization extension point, independently of the VM-only loop provisioner and
+admission policies. Shared controller readiness stays in `vm_infrastructure.py`; the Firecracker
+adapter also checks the node's KVM quantity. Cold guest imports remain serialized before app
+deployment. The production Firecracker Go files, guest Nix configuration and boot artifact are
+unchanged by this rebase. [Focused adapter and baseline checks](https://app.buildbuddy.io/invocation/cd75681e-7e9d-41ae-8abc-277d47c3105c)
+passed four tests plus the explicitly named stack, baseline and pytest-plugin type/lint builds.

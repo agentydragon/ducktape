@@ -172,3 +172,42 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "firecracker_runtime",
+    srcs = ["firecracker_runtime.py"],
+    deps = [
+        ":baseline",
+        ":guest_logs",
+        ":vm_infrastructure",
+        "//agentplane/system_tests:cluster",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//kubernetes",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "firecracker_test_target",
+    srcs = ["firecracker_test_target.py"],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+    deps = [
+        ":firecracker_runtime",
+        ":virtualization",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_firecracker_runtime",
+    srcs = ["test_firecracker_runtime.py"],
+    deps = [
+        ":baseline",
+        ":firecracker_runtime",
+        ":vm_infrastructure",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
