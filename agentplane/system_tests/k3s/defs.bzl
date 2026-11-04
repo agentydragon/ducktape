@@ -15,7 +15,7 @@ K3S_EXEC_PROPERTIES = {
 K3S_PERSISTENCE_PROPERTIES = {
     "test.env-overrides": "AGENTPLANE_K3S_EXECUTOR_PERSISTENCE=1",
     "test.allow-remote-snapshots": "true",
-    "test.remote-snapshot-save-policy": "always",
+    # Leave remote-snapshot-save-policy unset: forced saves overload BuildBuddy's snapshot infrastructure.
     "test.snapshot-read-policy": "newest",
 }
 

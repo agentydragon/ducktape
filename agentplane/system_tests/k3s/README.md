@@ -34,8 +34,9 @@ identified by the ownership marker, then starts and tears down its own fresh nod
 Pod/MCP/real-model suites share one tmpfs snapshot family; VM suites share a separate disk-backed
 family with the VM resource estimate. Baseline fingerprints include the layer mode,
 installation/cleanup helpers, k3s, CRDs, PKI releases/images, and VM releases/images/configuration when
-applicable. A missing, unhealthy, dirty or incompatible baseline rebuilds cold. Remote snapshots save
-the refreshed baseline for later actions.
+applicable. A missing, unhealthy, dirty or incompatible baseline rebuilds cold. Snapshot publication
+follows BuildBuddy's default save policy; suites do not force a save after each action. Until a
+refreshed snapshot is saved, later actions can repeat the rebuild.
 
 Snapshot family keys derive from the k3s binary, PKI release/chart/Helm checksums and
 PKI image digests. The VM key also includes KubeVirt/Kyverno release checksums and image
@@ -43,8 +44,7 @@ digests. OCI pins are owned by `devinfra/image_pins.json`; HTTP artifact pins re
 `MODULE.bazel` and export their checksums through `devinfra/artifact_pins.bzl`. Repinning
 retained infrastructure automatically selects a new family. Application, runner and guest
 images remain per-action inputs. The runtime fingerprint additionally checks actual
-baseline contents, helper code and CRDs before reuse; refreshed snapshots roll forward
-after an incompatible baseline rebuilds.
+baseline contents, helper code and CRDs before reuse.
 
 Applications, PostgreSQL, model endpoints, MCP fixtures, certificates/trust and collectors are recreated.
 VM workspace claims, PVs, StorageClass and loop devices are removed before marking the baseline clean;
