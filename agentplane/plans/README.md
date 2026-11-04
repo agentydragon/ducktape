@@ -51,8 +51,8 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
   and external MCP workflows have implemented tools and scripted acceptance. Natural-agent usability
   remains open; staging tool exposure is active and fresh provisioning is deferred. Service-mediated caller
   identity follows the implemented [delegated authorization contract](../docs/delegated_authorization.md).
-- [Generated HTTP facades](grpc_http_facade.md) — what is left: History reads, the app-contract
-  question, browser error codes, attribution, and direct browser access as a later option
+- [Generated HTTP facades](grpc_http_facade.md) — remaining app contracts, Session-opening
+  follow-ups, browser error codes, attribution, and direct browser access as a later option
 - [Kubernetes API aggregation](api_aggregation_exploration.md) — held design exploration of serving
   agent-facing records through an extension apiserver, with RBAC via `SubjectAccessReview` as the
   cheaper route

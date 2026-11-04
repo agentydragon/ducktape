@@ -15,11 +15,11 @@ pinned nixpkgs harnesses. No new inference or execution-placement probe was run 
 
 ## Today
 
-- Harness Host runs one Codex app-server for all its Codex Sessions, with `CODEX_HOME` at
+- Environment Runtime runs one Codex app-server for all its Codex Sessions, with `CODEX_HOME` at
   `<state_dir>/codex` on the Sandbox's state volume, and one Claude Code process per Session
   ([harness process design](../docs/runner_delivery_and_harness_design.md#harness-process-store-and-session-identity)).
   Rollouts, compaction output and harness configuration are files the agent's own tools can read and
-  rewrite: the [isolated executor](../runner/docs/codex_executor.md) is a resource boundary, not a
+  rewrite: the [isolated executor](../env/runtime/execution/docs/codex_executor.md) is a resource boundary, not a
   trust boundary.
 - Sampling already leaves the Sandbox on the wire. The harness calls the
   [LLM ingress](../llm_ingress/README.md) with a placeholder bearer that the egress proxy substitutes;
@@ -138,7 +138,7 @@ Only the app-server's client changes it: `cwd` on `thread/start`, `thread/resume
 ([thread.rs][cwd-thread]), `cwd` or a per-environment cwd on `turn/start`, for that turn and later ones
 ([turn.rs][cwd-turn]), and `thread/settings/update` ([thread.rs][cwd-settings]). A `cd` inside a command,
 the paths of an `apply_patch` or a file a cell reads leave it alone. The Runner sends the Session spec's
-`cwd` once, on `thread/start` (`runner/codex/adapter.go`), and a Session's spec never changes
+`cwd` once, on `thread/start` (`env/runtime/codex/adapter.go`), and a Session's spec never changes
 ([Harness Host session protocol](../env/runtime/docs/session_protocol.md)), so each Session has one cwd and one chain for its whole life.
 
 Before every sampling step Codex re-reads the global file, but re-reads the project chain only when the
@@ -201,11 +201,11 @@ shared app-server would have to turn them off, or each owner gets an app-server 
   app-server, where one exit fails every hosted Session's turn and owners share `CODEX_HOME`,
   configuration and memories. The journal could stay with an in-Sandbox Runner that remains the
   app-server's client through a tunnel, but then conversation content transits the Sandbox again.
-  Either way this meets the frozen `RUNNER_STATE_BOUNDARY_RETHINK` and `RUNNER_CENTRAL_ADMISSION`
-  ([freezer](task_freezer.md)).
+  Dispatcher already durably admits commands centrally; the broader location of runner state remains
+  in the frozen `RUNNER_STATE_BOUNDARY_RETHINK` ([freezer](task_freezer.md)).
 - **The exec-server tunnel**: its per-Sandbox bearer, interrupts that cross it, and what a lost tunnel
   means. An exec-server restart already loses running processes, and Codex does not replay them
-  ([executor](../runner/docs/codex_executor.md#scope-in-codex-01621)).
+  ([executor](../env/runtime/execution/docs/codex_executor.md#scope-in-codex-01621)).
 - **Latency.** Every nested call and filesystem probe is a cluster round trip. AGENTS.md discovery
   probes ancestors concurrently (up to 256 in flight), about one round trip.
 - **Spend attribution.** The ingress attributes a request to the calling Pod, which would be the

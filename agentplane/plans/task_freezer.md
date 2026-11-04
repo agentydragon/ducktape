@@ -323,29 +323,13 @@ Conditional on thin-runner design: determine which continuation evidence require
 
 Equivalent conditional evidence for Codex; no generic success claim across harnesses.
 
-### `RUNNER_CENTRAL_ADMISSION` — durable commands at the central authority
-
-Conditional on the authority decision. Durable central admission/redelivery is distinct from storing input annotations.
-
 ### `RUNNER_OUTBOUND_CUTOVER` — migrate to thin, outbound-connected adapters
 
 Only if the thin-adapter/central-authority design is selected, after its per-harness catch-up and safe image transition. Runner control currently uses private mTLS gRPC ([runner control](../docs/runner_control.md)).
 
-### `COMMAND_QUEUE_DECISION` — where submission becomes durable
-
-Only if offline acceptance is requested. Compare runner-first with a central service queue; do not assume the integration app must own it. Metadata persistence does not select this option.
-
-### `THREAD_COMMAND_DELIVERY` — optional app command delivery queue
-
-Conditional on the queue decision; implement only at the chosen authority. Old app-outbox proposals are alternatives, not a ready implementation plan.
-
-### `THREAD_OUTBOX_CUTOVER` — one ingress if the app queue is chosen
-
-Conditional on selecting an outbox: one ingress, no competing relays. Remains behind queue implementation.
-
 ### `NEWTHREAD_DURABLE` — server-owned sandbox+thread provisioning
 
-When promising submit-and-close-browser provisioning. Review server-owned create/open/submit orchestration after idempotent creation and bootstrap receipts; only require an outbox if the chosen contract needs offline acceptance.
+When promising submit-and-close-browser provisioning. Review server-owned create/open/submit orchestration after idempotent creation and bootstrap receipts; reuse Dispatcher command admission rather than adding a second command queue.
 
 ### `UISHELL_NEWTHREAD_SANDBOX` — pre-scoped "+ New thread" on a Sandbox's page
 
