@@ -266,14 +266,15 @@ harness is ready or a turn completed. Reconcile an uncertain create by reading t
 blindly replay native or external effects. The distinct `Executor.OpenSession` stream remains the
 execution-connection handshake and is not a logical Session creation API.
 
-Dispatcher migration 11 converts retained openings in place, deriving the new variant from the
+Before the baseline squash, Dispatcher migration 11 converted retained openings in place, deriving the new variant from the
 stored harness and exact Sandbox name/UID. It preserves other `SessionSpec` fields, delivery state,
-attribution and accepted receipts; it does not requeue work. Central sampler migration 10 converts
+attribution and accepted receipts; it did not requeue work. Central sampler migration 10 converted
 the stored opening request using its retained executor target and preserves the conversation,
-commands, cursors and effect journal. History migration 8 retains a legacy archived harness as
+commands, cursors and effect journal. History migration 8 retained a legacy archived harness as
 `historical_harness` where an exact placement cannot be reconstructed; it does not invent an
-environment identity or change event data/order. These migrations preserve central and History data
-while changing the live wire representation. They do not make uncertain native, provider or executor
+environment identity or change event data/order. These migrations preserved central and History data
+while changing the live wire representation. Databases that have not completed these migrations must
+run the previous image before adopting the new baselines. The migrations do not make uncertain native, provider or executor
 effects safe to replay. `Session` is deliberately a minimal authorized projection containing its
 ID, placement, creation/update timestamps, nested materialization `status` and exact execution ServiceAccount identity when established; it does not expose
 the immutable `SessionSpec` or instructions. A missing identity means no exact owner is established; callers must not infer its UID from a current same-name account. `SESSION_MATERIALIZATION_ACCEPTED` means the placement owner admitted the

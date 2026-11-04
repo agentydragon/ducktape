@@ -609,18 +609,13 @@ restoration for Anthropic). With no replacement context, the archive is the acti
 Compaction atomically verifies the expected active context and lease before replacing it and
 settling its intent/command. It never rewrites the archive. New responses append only new records.
 
-Migration 8 is the final native-schema baseline. A fresh, empty sampler database creates native
-tables directly. An existing database is adopted only with complete Goose version-7 history and
-the native API, status constraints, columns, and indexes already installed. Adoption preserves all
-prior Goose rows, Session identities, provider payloads, raw exchange evidence, commands, events,
-and unresolved-effect state without copying data. It adds a nullable Code Mode host marker to
-the adopted conversation table in the same transaction, which briefly requires a table schema
-lock. Startup migration connections cap DDL lock waits at five seconds; timeout rolls back
-migration 8 so a later startup can retry. A partial version-7 conversion or older database fails
-startup and requires the previous image or explicit repair. Startup no longer classifies or converts
-legacy provider records. Later
-schema changes use new additive Goose migrations. Schema rollback requires restoring the
-pre-migration database backup together with the old service image.
+Baseline 11 creates the native schema on a fresh empty database. An existing database is adopted
+only with completed Goose version 10, including the earlier baseline and export checkpoint migration,
+and a validated native schema. Adoption preserves Goose history, Session identities, provider
+payloads, raw exchange evidence, commands, events, unresolved-effect state, and current export
+checkpoints without copying data. Older or partial histories fail startup and require the previous
+image to finish upgrading them. Later schema changes use new Goose migrations. Schema rollback
+requires restoring the pre-migration database backup together with the old service image.
 
 The staging sampler Deployment uses two rolling replicas. New migrations must remain compatible
-with serving old replicas during a rollout. Baseline 8's host-instance marker is nullable.
+with serving old replicas during a rollout. The host-instance marker is nullable.

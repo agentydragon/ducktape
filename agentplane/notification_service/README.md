@@ -69,11 +69,10 @@ environment. Stored prompts and History are preserved unchanged.
 Rollback rolls both API and CLI images back together. Existing subscriptions and their stored
 destination fences, entries, acknowledgements and notices are not converted or deleted.
 
-Schema changes are Goose migrations. `00010_final_schema.sql` creates the native schema directly for
-an empty database, or adopts a database that completed version 9. Its adoption step preserves Goose
-history and stored rows, removing the completed cutover checkpoint. Databases predating version 9
-must first finish the native-storage conversion with the preceding migration-capable image. Do not
-renumber this baseline; later schema changes use subsequent Goose versions.
+Schema changes are Goose migrations. `00013_baseline.sql` creates the current schema directly on an
+empty database. A database with completed version 12 and the required final schema is adopted
+without copying rows or rewriting its Goose history. A partial predecessor must first finish
+migrating with the previous image. Subsequent schema changes use new Goose versions.
 
 The Notification Deployment rolls replicas. Existing replicas continue to accept webhooks and serve
 requests while replacement replicas apply migrations and start. The migration lock serializes schema

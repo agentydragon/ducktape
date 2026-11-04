@@ -20,7 +20,6 @@ go_test(
     name = "baseline_integration_test",
     size = "medium",
     srcs = ["baseline_integration_test.go"],
-    embedsrcs = ["notifications/00010_final_schema.sql"],
     tags = ["requires_docker"],
     deps = [
         ":migrations",

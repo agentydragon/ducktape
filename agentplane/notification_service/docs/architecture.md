@@ -73,7 +73,7 @@ Shared failure observations belong to their access/subject records, not copies o
 subscription or inbox history. These are current-state records, not temporal versions. See
 [`github_state.go`](../store/github_state.go), [`github_ingest.go`](../store/github_ingest.go),
 [`github_deliveries.go`](../store/github_deliveries.go), and the
-[schema](../migrations/notifications/00010_final_schema.sql).
+[schema](../migrations/notifications/00013_baseline.sql).
 
 ## Recovery acceptance
 

@@ -19,12 +19,7 @@ func TestMain(m *testing.M) {
 		if err := postgres.EnsureElectricRole(ctx, db); err != nil {
 			return err
 		}
-		provider, err := newProvider(db)
-		if err != nil {
-			return err
-		}
-		_, err = provider.UpTo(ctx, 3)
-		return err
+		return nil
 	})
 	cancel()
 	if err != nil {

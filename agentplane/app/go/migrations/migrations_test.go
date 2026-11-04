@@ -73,54 +73,63 @@ func TestUpFreshDatabaseCreatesCurrentSchema(t *testing.T) {
 	assertGooseVersion(t, db)
 }
 
-func TestUpAdoptsPopulatedAlembicHeadWithoutChangingRows(t *testing.T) {
+func TestUpAdoptsCompletedVersionTwoWithoutChangingRows(t *testing.T) {
 	db := openDatabase(t)
 	createAlembicHeadSchema(t, db)
+	exec(t, db, `DROP TABLE alembic_version_app;
+ CREATE TABLE agentplane_app_goose_version (id SERIAL PRIMARY KEY, version_id bigint NOT NULL, is_applied boolean NOT NULL, tstamp timestamp NOT NULL DEFAULT now());
+ INSERT INTO agentplane_app_goose_version (version_id, is_applied) VALUES (0, true), (1, true), (2, true)`)
 	seedCurrentSchema(t, db)
-	beforeThreads := jsonRows(t, db, "thread")
-	beforeSessions := jsonRows(t, db, "operator_browser_session")
-
+	beforeThreads, beforeSessions := jsonRows(t, db, "thread"), jsonRows(t, db, "operator_browser_session")
 	if err := Up(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
 	if got := jsonRows(t, db, "thread"); got != beforeThreads {
-		t.Fatalf("thread rows changed during adoption:\nbefore: %s\nafter:  %s", beforeThreads, got)
+		t.Fatalf("thread rows changed: %s vs %s", got, beforeThreads)
 	}
 	if got := jsonRows(t, db, "operator_browser_session"); got != beforeSessions {
-		t.Fatalf("operator session rows changed during adoption:\nbefore: %s\nafter:  %s", beforeSessions, got)
+		t.Fatalf("session rows changed: %s vs %s", got, beforeSessions)
 	}
 	assertCurrentSchema(t, db)
 	assertNoAlembicMarker(t, db)
 	assertGooseVersion(t, db)
 }
 
-func TestUpRetiresMarkerFromAppliedVersionOneWithoutChangingRows(t *testing.T) {
+func TestUpRejectsPartialGooseHistory(t *testing.T) {
 	db := openDatabase(t)
-	provider, err := newProvider(db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := provider.UpTo(t.Context(), 1); err != nil {
-		t.Fatal(err)
-	}
-	if got := stringValue(t, db, "SELECT version_num FROM alembic_version_app"); got != "0037_drop_auto_thread_titles" {
-		t.Fatalf("version 1 Alembic marker = %q", got)
-	}
+	createAlembicHeadSchema(t, db)
+	exec(t, db, `CREATE TABLE agentplane_app_goose_version (id SERIAL PRIMARY KEY, version_id bigint NOT NULL, is_applied boolean NOT NULL, tstamp timestamp NOT NULL DEFAULT now()); INSERT INTO agentplane_app_goose_version (version_id, is_applied) VALUES (0, true), (1, true)`)
 	seedCurrentSchema(t, db)
-	beforeThreads := jsonRows(t, db, "thread")
-	beforeSessions := jsonRows(t, db, "operator_browser_session")
+	before := jsonRows(t, db, "thread")
+	if err := Up(t.Context(), db); err == nil || !strings.Contains(err.Error(), "previous image") {
+		t.Fatalf("Up = %v, want actionable rejection", err)
+	}
+	if got := jsonRows(t, db, "thread"); got != before {
+		t.Fatal("rejection changed rows")
+	}
+}
 
-	if err := Up(t.Context(), db); err != nil {
-		t.Fatal(err)
+func TestUpRejectsHistoryGap(t *testing.T) {
+	db := openDatabase(t)
+	createAlembicHeadSchema(t, db)
+	exec(t, db, `DROP TABLE alembic_version_app;
+ CREATE TABLE agentplane_app_goose_version (id SERIAL PRIMARY KEY, version_id bigint NOT NULL, is_applied boolean NOT NULL, tstamp timestamp NOT NULL DEFAULT now());
+ INSERT INTO agentplane_app_goose_version (version_id, is_applied) VALUES (0, true), (2, true)`)
+	if err := Up(t.Context(), db); err == nil {
+		t.Fatal("Up accepted a gap in predecessor history")
 	}
-	if got := jsonRows(t, db, "thread"); got != beforeThreads {
-		t.Fatalf("thread rows changed: before %s, after %s", beforeThreads, got)
+}
+
+func TestUpRejectsCorruptCompletedVersionTwo(t *testing.T) {
+	db := openDatabase(t)
+	createAlembicHeadSchema(t, db)
+	exec(t, db, `DROP TABLE alembic_version_app;
+ CREATE TABLE agentplane_app_goose_version (id SERIAL PRIMARY KEY, version_id bigint NOT NULL, is_applied boolean NOT NULL, tstamp timestamp NOT NULL DEFAULT now());
+ INSERT INTO agentplane_app_goose_version (version_id, is_applied) VALUES (0, true), (1, true), (2, true);
+ ALTER TABLE thread DROP COLUMN name`)
+	if err := Up(t.Context(), db); err == nil {
+		t.Fatal("Up accepted an incomplete version 2 schema")
 	}
-	if got := jsonRows(t, db, "operator_browser_session"); got != beforeSessions {
-		t.Fatalf("operator session rows changed: before %s, after %s", beforeSessions, got)
-	}
-	assertNoAlembicMarker(t, db)
-	assertGooseVersion(t, db)
 }
 
 func TestUpRejectsUnknownAndPartialSchemas(t *testing.T) {
@@ -339,12 +348,12 @@ func assertGooseVersion(t *testing.T, db *sql.DB) {
 	t.Helper()
 	var applied int
 	if err := db.QueryRowContext(t.Context(), `
-		SELECT count(*) FROM agentplane_app_goose_version WHERE version_id = 2 AND is_applied
+		SELECT count(*) FROM agentplane_app_goose_version WHERE version_id = 3 AND is_applied
 	`).Scan(&applied); err != nil {
 		t.Fatal(err)
 	}
 	if applied != 1 {
-		t.Fatalf("expected Goose version 2 applied once, got %d rows", applied)
+		t.Fatalf("expected Goose version 3 applied once, got %d rows", applied)
 	}
 }
 

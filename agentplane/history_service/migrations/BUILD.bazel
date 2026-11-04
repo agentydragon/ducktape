@@ -2,85 +2,21 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "migrations",
-    srcs = [
-        "event_kind_backfill.go",
-        "migrations.go",
-        "session_placement.go",
-        "session_placement_repair.go",
-        "thread_entity_proto.go",
-        "thread_entity_v7_legacy.go",
-    ],
+    srcs = ["migrations.go"],
     embedsrcs = glob(["history/*.sql"]),
     importpath = "github.com/agentydragon/ducktape/agentplane/history_service/migrations",
     visibility = ["//agentplane/history_service:__subpackages__"],
     deps = [
-        "//agentplane/history_service:history_service_go_proto",
-        "//agentplane/proto:event_go_proto",
-        "//agentplane/proto:event_log_go_proto",
-        "//agentplane/proto:session_go_proto",
-        "@com_github_lib_pq//:pq",
         "@com_github_pressly_goose_v3//:goose",
         "@com_github_pressly_goose_v3//lock",
-        "@org_golang_google_protobuf//encoding/protojson",
-        "@org_golang_google_protobuf//encoding/protowire",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 
 go_test(
-    name = "event_kind_backfill_test",
-    srcs = [
-        "event_kind_backfill_test.go",
-        "event_kind_backfill_testmain_test.go",
-    ],
-    embed = [":migrations"],
-    tags = ["requires_docker"],
-    deps = [
-        "//agentplane/proto:event_go_proto",
-        "//agentplane/proto:event_log_go_proto",
-        "//agentplane/testing/postgres",
-        "@org_golang_google_protobuf//encoding/protowire",
-        "@org_golang_google_protobuf//proto",
-    ],
-)
-
-go_test(
-    name = "thread_entity_proto_test",
+    name = "migrations_test",
     size = "medium",
-    srcs = [
-        "event_kind_backfill_testmain_test.go",
-        "thread_entity_proto_test.go",
-    ],
+    srcs = glob(["*_test.go"]),
     embed = [":migrations"],
     tags = ["requires_docker"],
-    deps = [
-        "//agentplane/history_service:history_service_go_proto",
-        "//agentplane/testing/postgres",
-        "@org_golang_google_protobuf//encoding/protojson",
-        "@org_golang_google_protobuf//proto",
-    ],
-)
-
-go_test(
-    name = "session_placement_test",
-    size = "medium",
-    srcs = [
-        "event_kind_backfill_testmain_test.go",
-        "session_placement_repair_test.go",
-        "session_placement_test.go",
-        "session_recorded_position_test.go",
-    ],
-    embed = [":migrations"],
-    tags = ["requires_docker"],
-    deps = [
-        "//agentplane/history_service:history_service_go_proto",
-        "//agentplane/history_service/reads",
-        "//agentplane/history_service/storage",
-        "//agentplane/proto:session_go_proto",
-        "//agentplane/testing/postgres",
-        "@com_github_google_uuid//:uuid",
-        "@org_golang_google_protobuf//encoding/protojson",
-        "@org_golang_google_protobuf//encoding/protowire",
-        "@org_golang_google_protobuf//proto",
-    ],
+    deps = ["//agentplane/testing/postgres"],
 )
