@@ -28,6 +28,7 @@ py_library(
     name = "visual_harness",
     srcs = ["visual_harness.py"],
     deps = [
+        ":recorded",
         "//devinfra/oci",
         "//devinfra/testing:undeclared_outputs",
         "//third_party/containers:grafana_visual",
@@ -45,7 +46,6 @@ py_test(
     srcs = ["test_recorded.py"],
     deps = [
         ":recorded",
-        ":visual_harness",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
