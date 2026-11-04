@@ -142,7 +142,6 @@ py_test(
     data = [
         "mailbox_test_profile.yaml",
         ":claude_hook",
-        "//devinfra/claude/claude_hook/container_e2e:e2e_container",
     ],
     requires_docker = True,
     tags = [

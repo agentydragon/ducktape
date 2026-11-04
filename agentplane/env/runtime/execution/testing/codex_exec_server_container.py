@@ -57,7 +57,7 @@ def inspect_codex_exec_server_container(path: Path) -> CodexExecServerContainerS
 
 @pytest.fixture
 def codex_exec_server_container(tmp_path: Path) -> Iterator[CodexExecServerContainer]:
-    load_oci_image(debian_slim.IMAGE)
+    debian_image = load_oci_image(debian_slim.IMAGE)
     execution_binary = get_required_path(launches.EXECUTION_BINARY).resolve()
     codex_binary = get_required_path(launches.CODEX_BINARY).resolve()
     socket_path = tmp_path / "executor.sock"
@@ -67,7 +67,7 @@ def codex_exec_server_container(tmp_path: Path) -> Iterator[CodexExecServerConta
         url = f"ws://127.0.0.1:{executor_listener.getsockname()[1]}"
         health_port = int(health_listener.getsockname()[1])
     container = (
-        LoggedContainer(debian_slim.IMAGE.tag, test_name="runner-executor-companion")
+        LoggedContainer(debian_image, test_name="runner-executor-companion")
         .with_kwargs(network_mode="host", mem_limit="512m", pids_limit=64, user=f"{os.getuid()}:{os.getgid()}")
         .with_volume_mapping(str(tmp_path), str(tmp_path), mode="rw")
         .with_volume_mapping(str(execution_binary), "/execution-service", mode="ro")

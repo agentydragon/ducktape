@@ -40,6 +40,14 @@
 # `oci_image_py`): the module holds the image's OciImage and its target carries the image
 # itself, so a test names it once. Generated, so there is no source file for Gazelle to
 # map the import onto -- same reason skills/BUILD.bazel pins its generated spec modules.
+# gazelle:resolve py agentplane.app.frontend.serving.testing.image //agentplane/app/frontend/serving/testing:image
+# gazelle:resolve py devinfra.claude.claude_hook.container_e2e.e2e_container_descriptor //devinfra/claude/claude_hook/container_e2e:e2e_container_descriptor
+# gazelle:resolve py devinfra.github_proxy.central.github_api_proxy_image //devinfra/github_proxy/central:github_api_proxy_image
+# gazelle:resolve py gnome.test_image.gnome_shell_test //gnome/test_image:gnome_shell_test
+# gazelle:resolve py haku.console.static_test_image //haku/console:static_test_image
+# gazelle:resolve py loom.wayback.proxy.wayback_proxy_image //loom/wayback/proxy:wayback_proxy_image
+# gazelle:resolve py skills.freecad.eval.freecad_test_image //skills/freecad/eval:freecad_test_image
+# gazelle:resolve py third_party.cli_proxy_api_tests.cli_proxy_api_image //third_party/cli_proxy_api_tests:cli_proxy_api_image
 # gazelle:resolve py third_party.containers.blackbox_exporter //third_party/containers:blackbox_exporter
 # gazelle:resolve py third_party.containers.debian_slim //third_party/containers:debian_slim
 # gazelle:resolve py third_party.containers.electric_1_8_1 //third_party/containers:electric_1_8_1

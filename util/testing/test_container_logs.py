@@ -14,8 +14,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 @pytest.fixture(scope="module")
 def image_tag() -> str:
     """Load debian-slim and return its tag."""
-    load_oci_image(debian_slim.IMAGE)
-    return debian_slim.IMAGE.tag
+    return load_oci_image(debian_slim.IMAGE)
 
 
 def _logs_dir(test_name: str) -> Path:

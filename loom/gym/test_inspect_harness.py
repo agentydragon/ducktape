@@ -34,12 +34,10 @@ from loom.gym.inspect_harness import (
 from loom.gym.monthly_series import MonthlySeries, add_months
 from loom.gym.series_tasks import SeriesTaskSpec, tasks_for_spec
 from loom.gym.task import BinaryOutcome, EvidenceItem, ScalarOutcome, ScalarQuestion, Task
-from loom.wayback.proxy import fake_ia
+from loom.wayback.proxy import fake_ia, wayback_proxy_image
 from third_party.containers import python_3_14_slim
-from util.oci import OciImage, load_oci_image
+from util.oci import load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-
-WAYBACK_PROXY_IMAGE = OciImage("_main/loom/wayback/proxy/image_info.rloc", WAYBACK_PROXY_IMAGE_TAG)
 
 # Linear ramp over 2020-01..2020-12: from anchor 2020-01 (level 100) the ramp
 # reaches 112 by +6m, crossing the 1.05x threshold (105) → outcome YES. Its
@@ -311,7 +309,7 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
     # sidecar, archived web reachable from an otherwise route-less container,
     # evidence-as-files, the served-evidence manifest landing in the score,
     # and the gym's proper loss (outcome YES → -ln(0.8)).
-    load_oci_image(WAYBACK_PROXY_IMAGE)
+    load_oci_image(wayback_proxy_image.IMAGE)
     load_oci_image(python_3_14_slim.IMAGE)
     # Bash-only tool: the agent runs python via the shell. Fetch the https://
     # evidence lead through the clamped MITM proxy unmodified — urllib honors

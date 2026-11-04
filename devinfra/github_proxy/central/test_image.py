@@ -8,13 +8,14 @@ from pathlib import Path
 import pytest_bazel
 from aiohttp import ClientConnectionError, ClientSession, ClientTimeout
 
+from devinfra.github_proxy.central import github_api_proxy_image
 from devinfra.github_proxy.central.testing.certificates import certificates
-from util.oci import OciImage, load_oci_image
+from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 
 
 async def test_image_boots_with_readonly_secrets_and_persistent_capture(tmp_path: Path) -> None:
-    tag = load_oci_image(OciImage("_main/devinfra/github_proxy/central/image_layout.rloc", "github-api-proxy:test"))
+    tag = load_oci_image(github_api_proxy_image.IMAGE)
     public_tls = tmp_path / "public-tls"
     interception_ca = tmp_path / "interception-ca"
     client = tmp_path / "client"

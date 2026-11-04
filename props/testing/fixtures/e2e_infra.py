@@ -38,23 +38,18 @@ tracer = trace.get_tracer(__name__)
 # --- Infrastructure ---
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _preload_registry_images() -> None:
-    """Preload registry:3 image once per session so per-test container startup is fast."""
-    load_oci_image(ryuk.IMAGE)
-    load_oci_image(registry_3.IMAGE)
-
-
 @pytest.fixture(scope="session")
 def _e2e_registry_container() -> Generator[DockerContainer]:
     """Session-scoped Docker registry container (internal).
 
     Use e2e_registry instead, which adds per-test cleanup.
     """
+    load_oci_image(ryuk.IMAGE)
+    registry_image = load_oci_image(registry_3.IMAGE)
     with tracer.start_as_current_span("e2e_registry startup"):
         with tracer.start_as_current_span("configure container"):
             registry = (
-                DockerContainer(registry_3.IMAGE.tag)
+                DockerContainer(registry_image)
                 .with_exposed_ports(5000)
                 .with_env("REGISTRY_HTTP_RELATIVEURLS", "true")
                 .with_env("REGISTRY_STORAGE_DELETE_ENABLED", "true")

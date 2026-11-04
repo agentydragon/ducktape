@@ -52,9 +52,8 @@ _oci_layout_rloc = rule(
 def oci_layout_rloc(name, image, visibility = None, testonly = False):
     """OCI image .rloc target: a single-line file naming the OCI layout directory.
 
-    Prefer `oci_image_py`, which wraps this in a library carrying both the Python constant
-    and the image itself. Reach for this directly only where the .rloc is consumed by
-    something other than `load_oci_image`.
+    Prefer `oci_image_py` for Python consumers. Use this for language-neutral
+    handoffs that need a file containing the layout's runfiles path.
     """
     _oci_layout_rloc(
         name = name,
@@ -67,7 +66,7 @@ _IMAGE_MODULE = """\"\"\"Auto-generated OciImage for a pre-built container image
 
 from util.oci import OciImage
 
-IMAGE = OciImage("{rloc}", "{tag}")
+IMAGE = OciImage(tag={tag}, layout_rlocation={rloc})
 """
 
 def _oci_image_py_src_impl(ctx):
@@ -77,11 +76,11 @@ def _oci_image_py_src_impl(ctx):
     # <package>/<module>.py or the import path it is generated for does not exist.
     out = ctx.actions.declare_file(ctx.attr.module + ".py")
     ctx.actions.write(out, _IMAGE_MODULE.format(
-        tag = ctx.attr.tag,
+        tag = repr(ctx.attr.tag),
         # Computed rather than written by hand: a runfiles path starts with a repository
         # name, and this one is `_main/...` inside this repo but `ducktape+/...` from a
         # module that depends on it. A literal would be right in exactly one of the two.
-        rloc = to_rlocation_path(ctx, ctx.file.rloc),
+        rloc = repr(to_rlocation_path(ctx, ctx.file.image)),
     ))
     return [DefaultInfo(files = depset([out]))]
 
@@ -89,7 +88,7 @@ _oci_image_py_src = rule(
     implementation = _oci_image_py_src_impl,
     attrs = {
         "module": attr.string(mandatory = True),
-        "rloc": attr.label(mandatory = True, allow_single_file = True),
+        "image": attr.label(mandatory = True, allow_single_file = True),
         "tag": attr.string(mandatory = True),
     },
 )
@@ -117,22 +116,17 @@ def oci_image_py(name, image, tag, visibility = None, testonly = False):
         visibility: target visibility.
         testonly: mark the image and the library testonly.
     """
-    oci_layout_rloc(
-        name = name + "_rloc",
-        image = image,
-        testonly = testonly,
-    )
     _oci_image_py_src(
         name = name + "_src",
         module = name,
-        rloc = ":" + name + "_rloc",
+        image = image,
         tag = tag,
         testonly = testonly,
     )
     py_library(
         name = name,
         srcs = [":" + name + "_src"],
-        data = [":" + name + "_rloc"],
+        data = [image],
         testonly = testonly,
         visibility = visibility,
         deps = ["//util:oci"],

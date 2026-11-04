@@ -22,12 +22,12 @@ from devinfra.bazel.runfiles import get_required_path
 from finance.plaid.spend.allowance import PeriodId
 from finance.plaid.spend.models import SpendView
 from finance.plaid.spend.testing import dashboard
+from gnome.test_image import gnome_shell_test
 from gnome.testing.fake_daemon import fake_daemon
 from gnome.testing.session import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
-from util.oci import OciImage, load_oci_image
+from util.oci import load_oci_image
 from util.testing.output_writer import BoundTestOutputs
 
-_GNOME_SHELL_TEST = OciImage("_main/gnome/test_image/gnome_shell_test.rloc", "gnome-shell-test:pinned")
 _EXTENSION_ZIP = "_main/finance/plaid/spend/gnome/plaid-spend-desktop.zip"
 _EXTENSION_UUID = "plaid-spend@allegedly.works"
 _FIXTURE_NAMES = ("ready_two_cards", "authentication_required", "offline", "retrying")
@@ -49,7 +49,7 @@ def test_extension_metadata_supports_gnome_50() -> None:
 
 @pytest.fixture(scope="module")
 def gnome_shell_test_image() -> str:
-    return load_oci_image(_GNOME_SHELL_TEST)
+    return load_oci_image(gnome_shell_test.IMAGE)
 
 
 @pytest.fixture(scope="module")

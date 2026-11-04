@@ -104,11 +104,11 @@ async def _wait_for_frontend(upstream: str) -> None:
 
 @asynccontextmanager
 async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIterator[Ingress]:
-    await asyncio.to_thread(load_oci_image, nginx_unprivileged.IMAGE)
-    await asyncio.to_thread(load_oci_image, STATIC_IMAGE)
+    ingress_image = await asyncio.to_thread(load_oci_image, nginx_unprivileged.IMAGE)
+    static_image = await asyncio.to_thread(load_oci_image, STATIC_IMAGE)
     with ExitStack() as stack:
         static_container = stack.enter_context(
-            LoggedContainer(STATIC_IMAGE.tag, test_name="conversation-static-frontend").with_exposed_ports(8080)
+            LoggedContainer(static_image, test_name="conversation-static-frontend").with_exposed_ports(8080)
         )
         static_upstream = f"http://{static_container.get_container_host_ip()}:{static_container.get_exposed_port(8080)}"
         await _wait_for_frontend(static_upstream)
@@ -120,7 +120,7 @@ async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIt
             Template(template).render(port=port, upstream=upstream, static_upstream=static_upstream) + "\n"
         )
         container = (
-            LoggedContainer(nginx_unprivileged.IMAGE.tag, test_name="conversation-http2-ingress")
+            LoggedContainer(ingress_image, test_name="conversation-http2-ingress")
             .with_kwargs(network_mode="host")
             .with_volume_mapping(str(certificate.directory), "/test", mode="ro")
             .with_command("nginx -c /test/nginx.conf -g 'daemon off;'")

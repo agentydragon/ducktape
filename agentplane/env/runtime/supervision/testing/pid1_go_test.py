@@ -14,11 +14,11 @@ from util.testing.container_logs import LoggedContainer
 
 async def test_go_suite() -> None:
     test_image = importlib.import_module(os.environ["PID1_GO_TEST_IMAGE"]).IMAGE
-    for image in (ryuk.IMAGE, test_image):
-        load_oci_image(image)
+    load_oci_image(ryuk.IMAGE)
+    image_ref = load_oci_image(test_image)
     binary = get_required_path(os.environ["PID1_GO_TEST_RUNFILE"]).resolve()
     container = (
-        LoggedContainer(test_image.tag, test_name="pid1-go-test")
+        LoggedContainer(image_ref, test_name="pid1-go-test")
         .with_kwargs(network_mode="host", user="0:0", pids_limit=512, mem_limit="1g")
         .with_volume_mapping(str(binary), "/go-test", mode="ro")
         .with_command("/go-test -test.v")

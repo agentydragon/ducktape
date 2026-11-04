@@ -30,9 +30,9 @@ from util.testing.container_logs import LoggedContainer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
-def _load_images() -> None:
-    for image in (ryuk.IMAGE, debian_slim.IMAGE):
-        load_oci_image(image)
+def _load_images() -> str:
+    load_oci_image(ryuk.IMAGE)
+    return load_oci_image(debian_slim.IMAGE)
 
 
 def _wait_ready(directory: Path) -> None:
@@ -108,12 +108,12 @@ async def acknowledging_history() -> AsyncIterator[str]:
 
 @pytest.mark.parametrize("mode", ["native-exit", "term", "escalate", "crash"])
 async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str) -> None:
-    _load_images()
+    debian_image = _load_images()
     binary = get_required_path(
         "_main/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
     ).resolve()
     container = (
-        LoggedContainer(debian_slim.IMAGE.tag, test_name=f"runner-pid1-{mode}")
+        LoggedContainer(debian_image, test_name=f"runner-pid1-{mode}")
         .with_kwargs(user=f"{os.getuid()}:{os.getgid()}", pids_limit=64, mem_limit="256m")
         .with_volume_mapping(str(tmp_path), "/proof", mode="rw")
         .with_volume_mapping(str(binary), "/pid1-proof", mode="ro")
@@ -147,7 +147,7 @@ async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str) -
 
 @pytest.mark.parametrize("abrupt", [False, True], ids=["term", "crash"])
 async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, abrupt: bool) -> None:
-    _load_images()
+    debian_image = _load_images()
     runner = get_required_path(launches.RUNTIME_BINARY).resolve()
     fixture = get_required_path(
         "_main/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
@@ -174,7 +174,7 @@ async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, 
         )
     )
     container = (
-        LoggedContainer(debian_slim.IMAGE.tag, test_name=f"production-runner-pid1-{abrupt}")
+        LoggedContainer(debian_image, test_name=f"production-runner-pid1-{abrupt}")
         .with_kwargs(network_mode="host", user=f"{os.getuid()}:{os.getgid()}", pids_limit=128, mem_limit="256m")
         .with_volume_mapping(str(tmp_path), "/proof", mode="rw")
         .with_volume_mapping(str(runner), "/environment-runtime", mode="ro")
@@ -211,7 +211,7 @@ async def test_production_pid1_embedded_host_reaps_setup(
     tmp_path: Path, gateway: Gateway, acknowledging_history: str
 ) -> None:
     """A Host-owned setup child must use Runtime's PID1 reaper and join its process group."""
-    _load_images()
+    debian_image = _load_images()
     runner = get_required_path(launches.RUNTIME_BINARY).resolve()
     fixture = get_required_path(
         "_main/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
@@ -240,7 +240,7 @@ async def test_production_pid1_embedded_host_reaps_setup(
         json.dumps({"sandbox": {"namespace": "proof", "name": "pid1-host", "uid": "pid1-host-uid"}})
     )
     container = (
-        LoggedContainer(debian_slim.IMAGE.tag, test_name="production-pid1-embedded-host")
+        LoggedContainer(debian_image, test_name="production-pid1-embedded-host")
         .with_kwargs(network_mode="host", user=f"{os.getuid()}:{os.getgid()}", pids_limit=128, mem_limit="256m")
         .with_volume_mapping(str(tmp_path), "/proof", mode="rw")
         .with_volume_mapping(str(runner), "/environment-runtime", mode="ro")

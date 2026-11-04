@@ -1,7 +1,6 @@
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "py_test")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
@@ -60,12 +59,6 @@ oci_image(
     tars = [":static_tar"],
     user = "1000:1000",
     visibility = ["//visibility:public"],
-)
-
-oci_layout_rloc(
-    name = "static_test_image",
-    testonly = True,
-    image = ":static_image",
 )
 
 py_test(

@@ -22,11 +22,8 @@ def test_load_oci_image_reconciles_pin_and_daemon_tag(tmp_path: Path, monkeypatc
         digest = "sha256:" + hashlib.sha256(name.encode()).hexdigest()
         (layout / "index.json").write_text(json.dumps({"manifests": [{"digest": digest}]}))
         rloc = f"test-layouts/{name}"
-        rloc_file = tmp_path / f"{name}.rloc"
-        rloc_file.write_text(rloc)
-        locations[str(rloc_file)] = rloc_file
         locations[rloc] = layout
-        images.append(oci.OciImage(str(rloc_file), tag))
+        images.append(oci.OciImage(tag=tag, layout_rlocation=rloc))
         wanted.append(digest)
 
     daemon_ids: dict[str, str] = {}

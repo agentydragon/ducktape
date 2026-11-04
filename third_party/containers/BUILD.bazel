@@ -10,8 +10,19 @@
 #     from third_party.containers import postgres_18
 
 load("@rules_oci//oci:defs.bzl", "oci_load")
-load("//devinfra/oci:defs.bzl", "oci_image_py")
-load("//devinfra/python:defs.bzl", "RYUK_TAG", "py_library")
+load("//devinfra/oci:defs.bzl", "oci_image_py", "oci_layout_rloc")
+load("//devinfra/python:defs.bzl", "RYUK_TAG", "py_library", "py_test")
+
+py_test(
+    name = "test_image_descriptor",
+    srcs = ["test_image_descriptor.py"],
+    deps = [
+        "//:conftest",
+        "//devinfra/bazel:runfiles",
+        "//third_party/containers:debian_slim",
+        "@pypi//pytest_bazel",
+    ],
+)
 
 oci_image_py(
     name = "grafana_visual",
@@ -47,6 +58,22 @@ oci_image_py(
     image = "@postgres_18_linux_amd64",
     tag = "postgres:18",
     visibility = ["//visibility:public"],
+)
+
+# The Go fixture passes these language-neutral layout pointers to the shared
+# Python loader. Python consumers use the generated descriptors directly.
+oci_layout_rloc(
+    name = "postgres_18_rloc",
+    testonly = True,
+    image = "@postgres_18_linux_amd64",
+    visibility = ["//agentplane:__subpackages__"],
+)
+
+oci_layout_rloc(
+    name = "ryuk_rloc",
+    testonly = True,
+    image = "@ryuk_linux_amd64",
+    visibility = ["//agentplane:__subpackages__"],
 )
 
 oci_image_py(

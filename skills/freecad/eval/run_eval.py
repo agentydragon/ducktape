@@ -19,12 +19,12 @@ from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage
 from devinfra.bazel.runfiles import get_required_path
 from mcp_infra.exec.docker.types import AlwaysSetTo, BindMount, ContainerExecServerConfig
 from skills.eval_infra.skill_staging import stage_skill
+from skills.freecad.eval import freecad_test_image
 from skills.freecad.freecad_skill_spec import SPEC as FREECAD_SKILL_SPEC
-from util.oci import OciImage, load_oci_image
+from util.oci import load_oci_image
 
 logger = logging.getLogger(__name__)
 
-FREECAD_TEST = OciImage("_main/skills/freecad/eval/freecad_test.rloc", "freecad-test:pinned")
 TASK_MD = "_main/skills/freecad/eval/baseplate/TASK.md"
 DOCKER_LAUNCHER = "_main/mcp_infra/exec/docker_launcher"
 
@@ -53,7 +53,7 @@ for any script that needs GUI/TechDraw rendering.
 
 async def run(output_dir: Path, model: str) -> None:
     logger.info("Loading FreeCAD Docker image")
-    tag = load_oci_image(FREECAD_TEST)
+    tag = load_oci_image(freecad_test_image.IMAGE)
     logger.info("Image loaded: %s", tag)
 
     workspace = output_dir / "workspace"
