@@ -634,9 +634,33 @@ pub(super) struct ClassValueFacts {
     pub(super) default_has_instance: bool,
     pub(super) static_fields: BTreeMap<String, ValueExpr>,
     pub(super) super_class: Option<ValueExpr>,
+    pub(super) lexical_heritage: Option<LexicalClassHeritage>,
     pub(super) opaque_instance: bool,
     pub(super) opaque_static: bool,
     pub(super) allocation_without_user_code: bool,
+}
+
+/// The complete canonical heritage expression is one lexical read. Lowered
+/// values alone cannot establish this: a sequence or assignment can retain
+/// its final binding while erasing earlier evaluation.
+#[derive(Debug, Clone)]
+pub(super) struct LexicalClassHeritage {
+    binding: Id,
+}
+
+impl LexicalClassHeritage {
+    pub(super) fn collect(expression: &Expr) -> Option<Self> {
+        let Expr::Ident(binding) = expression.unwrap_parens() else {
+            return None;
+        };
+        Some(Self {
+            binding: binding.to_id(),
+        })
+    }
+
+    pub(super) fn binding(&self) -> &Id {
+        &self.binding
+    }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum ClassSurface {
