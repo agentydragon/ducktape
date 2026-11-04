@@ -114,6 +114,8 @@ jobs:
       image_name: agentplane-environment-firecracker
       image: git.allegedly.works/ducktape-ci/agentplane-environment-firecracker
       attic: true
+      # A cold built-in-device kernel was still compiling drivers after 60 minutes.
+      timeout_minutes: 120
       source_commit: ${{ needs.fork-context.outputs.source_commit }}
       allow_unsafe_pr_checkout: ${{ github.event_name == 'pull_request_target' }}
       environment: ${{ needs.fork-context.outputs.environment }}
