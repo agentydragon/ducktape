@@ -453,6 +453,14 @@ its cost.
   `imported_callback_timing`, `retained_callback_factory`,
   `retained_constructor_callback`, `namespace_wrapper`,
   `descriptor_copy_factory`, `argument_input`.
+  A named import of an object followed by a static member call needs a separate
+  producer for the exact export/member/body selection and the body's actual
+  effect and normal/abrupt-completion receipts. Existing namespace identity or
+  no-reentry assertions, and allocation-only foreign summaries, do not supply
+  complete global, heap, host or lexical coverage. Reuse the shared local body
+  transfer for a bounded own-data member family; stop when export mutation,
+  live binding, captured-cell or host behavior lacks a checked premise. Only
+  the exact completed initializer may seal whole-owner coverage.
   Audit invocation-memo dependencies against heap, descriptor and native-state
   invalidation before broadening memo eligibility. Tainted functions bypass
   memos; the existing audit request does not establish a stale-result bug.
