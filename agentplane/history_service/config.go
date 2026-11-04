@@ -3,7 +3,9 @@ package main
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
@@ -11,7 +13,10 @@ import (
 	"github.com/spf13/viper"
 )
 
-const settingPrefix = "AGENTPLANE_HISTORY_SERVICE_"
+const (
+	settingPrefix                  = "AGENTPLANE_HISTORY_SERVICE_"
+	defaultMigrationTimeoutSeconds = 600
+)
 
 // config is the History Service's deployment contract: each setting is a YAML key of the file named by
 // AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE, and each top-level key also names an AGENTPLANE_HISTORY_SERVICE_*
@@ -20,7 +25,8 @@ const settingPrefix = "AGENTPLANE_HISTORY_SERVICE_"
 //
 // The database URL is a Secret, so it is an environment value.
 type config struct {
-	DatabaseURL string `mapstructure:"database_url"`
+	DatabaseURL             string  `mapstructure:"database_url"`
+	MigrationTimeoutSeconds float64 `mapstructure:"migration_timeout_s"`
 	// ReaderAccounts may call the read API; their namespaces are the ones a reader's token may come from.
 	ReaderAccounts []auth.Account `mapstructure:"reader_accounts"`
 	// Delegation is a separate Action actor grant and only applies to its listed RPC methods.
@@ -62,7 +68,7 @@ type ingressConfig struct {
 
 func defaultConfig() config {
 	return config{
-		RequestTimeoutSeconds: 15, ListenAddress: "0.0.0.0:8080",
+		RequestTimeoutSeconds: 15, MigrationTimeoutSeconds: defaultMigrationTimeoutSeconds, ListenAddress: "0.0.0.0:8080",
 		Ingress:         ingressConfig{ListenAddress: "0.0.0.0:8081", SettleDeltas: true},
 		FoldConcurrency: 4, FoldPageSize: 1000, FoldIntervalSeconds: 2,
 		NativeFrameReadBatchSize: 200, WatchLeaseSeconds: 300,
@@ -116,6 +122,9 @@ func (c *config) validate() error {
 	if c.RequestTimeoutSeconds <= 0 || c.RequestTimeoutSeconds > 60 {
 		return errors.New("request_timeout_s must be above 0 and at most 60")
 	}
+	if !validMigrationTimeout(c.MigrationTimeoutSeconds) {
+		return errors.New("migration_timeout_s must be between 0.001 and 86400 seconds")
+	}
 	if c.FoldConcurrency < 1 || c.FoldConcurrency > 64 {
 		return errors.New("fold_concurrency must be between 1 and 64")
 	}
@@ -132,3 +141,20 @@ func (c *config) validate() error {
 }
 
 func seconds(value float64) time.Duration { return time.Duration(value * float64(time.Second)) }
+
+func validMigrationTimeout(value float64) bool {
+	return !math.IsNaN(value) && value >= 0.001 && value <= 86400
+}
+
+// Migration-only mode needs only the database URL and its optional timeout, not serving settings.
+func migrationOnlyTimeout() (time.Duration, error) {
+	value := float64(defaultMigrationTimeoutSeconds)
+	if raw := os.Getenv(settingPrefix + "MIGRATION_TIMEOUT_S"); raw != "" {
+		var err error
+		value, err = strconv.ParseFloat(raw, 64)
+		if err != nil || !validMigrationTimeout(value) {
+			return 0, errors.New("migration_timeout_s must be between 0.001 and 86400 seconds")
+		}
+	}
+	return seconds(value), nil
+}

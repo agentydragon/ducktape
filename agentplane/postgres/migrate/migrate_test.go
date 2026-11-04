@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"io"
 	"net"
 	"net/url"
@@ -84,5 +85,12 @@ func TestRunRetriesTheFirstConnection(t *testing.T) {
 	}
 	if !migrated {
 		t.Fatal("Run returned without applying the migrations")
+	}
+	err = Run(ctx, database.URL, func(ctx context.Context, _ *sql.DB) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}, WithMigrationTimeout(50*time.Millisecond))
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("configured migration deadline: %v", err)
 	}
 }

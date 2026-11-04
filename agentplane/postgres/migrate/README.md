@@ -5,8 +5,9 @@ startup calls `Run(ctx, databaseURL, migrations.Up)` before starting application
 handling requests. The context is cancelled by SIGINT/SIGTERM. Migration failure exits startup;
 the process never serves against a partially initialized schema.
 
-`Run` retries initial connections for at most two minutes, then allows two minutes for migration,
-including advisory-lock waiting. Migration connections have a five-second DDL lock timeout, so
+`Run` retries initial connections for at most two minutes, then allows two minutes by default for
+migration, including advisory-lock waiting. A service may set its own migration timeout with
+`WithMigrationTimeout`; its startup probe must cover both budgets. Migration connections have a five-second DDL lock timeout, so
 schema changes fail instead of indefinitely blocking serving writers. Failed SQL is not blindly
 replayed inside `Run`; Goose transactions/history and any registered Go migration define what
 the next startup resumes. Log connection failures, migration start/completion and returned errors.

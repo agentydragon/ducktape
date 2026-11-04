@@ -64,6 +64,7 @@ class Settings(YamlFileSettings):
     )
     token_audience: str = Field(min_length=1)
     request_timeout_s: float = Field(default=15, gt=0, le=60)
+    migration_timeout_s: float = Field(default=600, ge=0.001, le=86400)
     log_levels: LogLevels
     listen_address: str = Field(default="0.0.0.0:8080", min_length=1)
     kubeconfig: Path | None = None

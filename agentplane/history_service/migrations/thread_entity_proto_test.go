@@ -149,8 +149,14 @@ func TestThreadEntityMigrationFailureRollsBackAndRestarts(t *testing.T) {
 	good := legacyRow("command", "a", `{"operation":"interrupt","outcome":"pending","outcome_cursor":null,"outcome_reason":null}`)
 	good.Pending = true
 	insertLegacy(t, db, good, 0)
+	// The bad row comes after a full batch, so the first bulk update must also roll back.
+	for n := 0; n < threadEntityBatchSize; n++ {
+		row := legacyRow("command", fmt.Sprintf("b-%03d", n), `{"operation":"interrupt","outcome":"pending","outcome_cursor":null,"outcome_reason":null}`)
+		row.Pending = true
+		insertLegacy(t, db, row, int64(n+1))
+	}
 	bad := legacyRow("command", "z", `{"operation":"interrupt","outcome":"unknown","outcome_cursor":null,"outcome_reason":null}`)
-	insertLegacy(t, db, bad, 1)
+	insertLegacy(t, db, bad, threadEntityBatchSize+1)
 	provider, err := newProvider(db)
 	if err != nil {
 		t.Fatal(err)

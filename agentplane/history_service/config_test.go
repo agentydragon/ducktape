@@ -119,6 +119,23 @@ func TestNativeFrameReadBatchSizeLoadsFromFileAndEnvironment(t *testing.T) {
 	}
 }
 
+func TestMigrationTimeoutSettings(t *testing.T) {
+	c, err := loadTestConfig(t, requiredFile+"migration_timeout_s: 45\n", settingPrefix+"MIGRATION_TIMEOUT_S=90")
+	if err != nil || c.MigrationTimeoutSeconds != 90 {
+		t.Fatalf("environment override: timeout %v, error %v", c.MigrationTimeoutSeconds, err)
+	}
+	timeout, err := migrationOnlyTimeout()
+	if err != nil || timeout != 90*time.Second {
+		t.Fatalf("migration-only timeout %v, error %v", timeout, err)
+	}
+	for _, value := range []string{"0", "NaN", "86401", "invalid"} {
+		t.Setenv(settingPrefix+"MIGRATION_TIMEOUT_S", value)
+		if _, err := migrationOnlyTimeout(); err == nil {
+			t.Errorf("migration-only accepted timeout %q", value)
+		}
+	}
+}
+
 func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	for name, file := range map[string]string{
 		"unknown key":                      requiredFile + "bogus: 1\n",

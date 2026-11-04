@@ -19,6 +19,9 @@ admission when the client reconnects.
 The service binary embeds Goose migrations and applies them during normal startup before serving
 or starting the fold. `history-service --migrate-only` initializes fixture databases using the same
 lifecycle. Its runner ingress and fold are the runtime writers.
+The `migration_timeout_s` setting defaults to 600 seconds and includes advisory-lock waiting;
+the startup probe must also cover connection retry and serving startup. Migration-only mode accepts
+the same setting through `AGENTPLANE_HISTORY_SERVICE_MIGRATION_TIMEOUT_S` without serving settings.
 
 ## While the History Service is down or rolling
 
