@@ -631,6 +631,10 @@ py_test(
     size = "medium",
     srcs = ["test_electric_window_traffic.py"],
     requires_docker = True,
+    tags = [
+        "manual",
+        "scale",
+    ],
     deps = [
         "//:conftest",
         "//agentplane/app:integration_fixtures",
