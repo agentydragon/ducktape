@@ -95,7 +95,8 @@ def grafana_dashboard(
                     GF_AUTH_ANONYMOUS_ORG_ROLE="Viewer",
                     GF_ANALYTICS_REPORTING_ENABLED="false",
                     GF_ANALYTICS_CHECK_FOR_UPDATES="false",
-                    GF_PLUGINS_PREINSTALL="",
+                    # An empty preinstall list still installs Grafana's default plugins.
+                    GF_PLUGINS_PREINSTALL_DISABLED="true",
                     GF_SECURITY_ADMIN_PASSWORD=TEST_PASSWORD,
                     GF_USERS_DEFAULT_THEME="dark",
                 )
