@@ -20,13 +20,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// openSession queues the Session's opening with the Session Dispatcher and answers with it. The app opens Sessions the
+// createSession queues the Session's session with the Session Dispatcher and answers with it. The app opens Sessions the
 // same way, and as it does, `{session_id}` in the working directory becomes the Session's ID.
-func (e *Executor) openSession(ctx context.Context, args contract.OpenSessionArgs) (json.RawMessage, error) {
+func (e *Executor) createSession(ctx context.Context, args contract.CreateSessionArgs) (json.RawMessage, error) {
 	if _, err := e.requireSandbox(ctx, args.Sandbox); err != nil {
 		return nil, err
 	}
-	request := &dispatcherpb.OpenSessionRequest{
+	request := &dispatcherpb.CreateSessionRequest{
 		SessionId: args.SessionID, SetupScript: args.SetupScript,
 		Spec: &sessionpb.SessionSpec{
 			Model:           args.Spec.Model,
@@ -41,11 +41,11 @@ func (e *Executor) openSession(ctx context.Context, args contract.OpenSessionArg
 	} else {
 		request.Spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: target, Harness: harness}}}
 	}
-	response, err := e.dispatcher.OpenSession(ctx, request)
+	response, err := e.dispatcher.CreateSession(ctx, request)
 	if err != nil {
 		return nil, dispatcherError(err)
 	}
-	return protoResult(response.GetOpening())
+	return protoResult(response.GetSession())
 }
 
 // submitInput queues user text for a Session and answers with its Dispatch.
@@ -105,7 +105,7 @@ func (e *Executor) changeReasoningEffort(ctx context.Context, args contract.Chan
 }
 
 // requireSandbox reads the named incarnation, refusing a Sandbox that is gone or is another incarnation. A grant is
-// pinned to one incarnation; commands and openings pass its UID to the Dispatcher, which checks the current UID too.
+// pinned to one incarnation; commands and sessions pass its UID to the Dispatcher, which checks the current UID too.
 func (e *Executor) requireSandbox(ctx context.Context, ref contract.SandboxRef) (*sandboxapi.Sandbox, error) {
 	var sandbox sandboxapi.Sandbox
 	err := e.kube.Get(ctx, client.ObjectKey{Namespace: e.binding.Namespace, Name: ref.Name}, &sandbox)

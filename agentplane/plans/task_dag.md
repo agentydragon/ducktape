@@ -1053,7 +1053,7 @@ Preserve harness-specific constraints: Claude
 Code naturally runs in the environment it acts in; a shared vocabulary must not pretend every
 backend supports independent placement or executor replacement.
 
-Use the current environment `OpenSession` as a concrete design case: it reserves a Session, while
+Use the current environment `CreateSession` as a concrete design case: it reserves a Session, while
 setup and native harness or process startup may happen later, and the relationship between the RPC
 result and observable harness readiness/failure needs a clearer model. Decide how Session identity
 and reservation, harness placement, environment attachment, process start and status reporting fit
@@ -2146,6 +2146,8 @@ flowchart LR
     SESSION_SPEC_PLACEMENT_CUTOVER --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     CENTRAL_SESSION_CREATION_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
+    SESSION_ATTACHMENT_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
+    SESSION_AND_INBOX_LIFETIME --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     SESSION_IDENTITY_CONTRACT --> SESSION_IDENTITY_ENFORCEMENT
     SESSION_IDENTITY_CONTRACT --> SESSION_ATTACHMENT_CONTRACT
     SESSION_ATTACHMENT_CONTRACT --> SESSION_ENV_ATTACHMENTS
@@ -2206,7 +2208,7 @@ Runtime restructuring does not wait for this decision.
 ### `SESSION_DATA_OWNERSHIP_DESIGN` — review Session data, services and databases
 
 **Later design decision; operator requested review, 2026-11-04.** Agentplane now owns globally
-addressed Session records, and Session-keyed data is spread across Dispatcher openings and commands,
+addressed Session records, and Session-keyed data is spread across Dispatcher Sessions and commands,
 History ingress and projections, Notification inboxes, central sampler state, and environment-local
 Runtime records and journals. Inventory each fact, its authoritative writer, readers, lifetime and
 recovery boundary; include the command and ingress ends separately.
@@ -2352,19 +2354,28 @@ yet need to exist: `SESSION_ENV_ATTACHMENTS` must integrate and test this gate b
 
 ### `CENTRAL_SESSION_WITHOUT_ENVIRONMENT` — central Session without an Environment
 
-**Blocked on `SESSION_IDENTITY_CONTRACT` and `CENTRAL_SESSION_CREATION_CONTRACT`.** Implement the
-reviewed zero-Environment create, resolve, command and provider-only execution path through the
-Dispatcher and central sampler. Today both opening requests require a Sandbox/executor; the sampler
-also binds executor identity, setup and stored configuration to it, and History's sampler ingress
-requires an executor. Update the relevant producers, consumers, History ingress and retained data
-in the same coherent contract cutover. A Session can open and accept authorized work while its owner
-is temporarily unavailable; admission does not prove materialization or model/tool effects.
+**Blocked on `SESSION_IDENTITY_CONTRACT`, `CENTRAL_SESSION_CREATION_CONTRACT`, `SESSION_ATTACHMENT_CONTRACT`
+and `SESSION_AND_INBOX_LIFETIME`.** Before implementation, settle the central principal and create/read/send
+authority without an Environment; Dispatcher logical admission and owner materialization when no
+executor exists; whether optional zero-to-many attachments ship in this cutover or later; notification
+subscription, pending inbox and authorized wake behavior without an attachment; and Session, inbox and
+History retention when an Environment is deleted. Coordinate notification semantics with
+`CENTRAL_SESSION_NOTIFICATIONS` and attachment implementation with `SESSION_ENV_ATTACHMENTS`.
+Then implement the reviewed zero-Environment create, resolve, command and provider-only execution
+path through Dispatcher and central Sampler. Today both creation requests require a Sandbox/executor;
+the sampler also binds executor identity, setup and stored configuration to it, and History's sampler
+ingress requires an executor. Update the relevant producers, consumers, History ingress and retained
+data in the same coherent contract cutover. A Session can be logically committed with no Environment;
+it must accept only explicitly authorized work, and commit never proves owner materialization or
+model/tool effects.
 
 An Environment-dependent operation without a target must report an actionable unavailable or
 unsupported outcome, not invent an Environment, reuse an old target or replay an uncertain effect.
-Preserve stable IDs, frozen prompt semantics, retained native/central data, source attribution and
-existing native behavior. Exact protobuf, storage and binary boundaries follow the reviewed contract;
-the optional service/database reshuffle is not a prerequisite.
+Preserve stable IDs, frozen prompt semantics, retained native/central data, source attribution, History
+ordering and existing native behavior. Migrate retained central and History data in place; never
+delete and recreate it, replay provider/tool effects, or discard unconfirmed outcomes during cutover.
+Exact protobuf, storage and binary boundaries follow the reviewed contract; the optional service/database
+reshuffle is not a prerequisite.
 
 **Exit:** end-to-end create, retry, send, provider-only continuation and History reads with zero
 Environments; owner-unavailable, missing-target, authorization and restart/unknown-outcome coverage.
@@ -2449,18 +2460,21 @@ itself. New sender grants remain a separate decision.
 
 ### `SESSION_DIRECTORY_NATIVE` — Dispatcher authority for environment-hosted Sessions
 
-**Ready for a native-first implementation; public identity and database selected.** Evolve the
-existing `session_opening` row or its replacement into the single Dispatcher PostgreSQL authority
-for live Session ID and native placement; do not add a competing writable mapping. Opening with a
-new UUID durably establishes logical existence independent of owner readiness; retain the immutable
-creation request and exact required environment UID separately from owner materialization and
-command delivery. Reuse existing native authorization for native Sessions; do not infer a central
-principal from it. Central sampler V1 remains Sandbox-backed under the in-progress placement
-cutover; environment-free central admission is tracked separately.
+**Ready for a native-first implementation; public identity and database selected.** The coordinated
+Session-resource cutover renames the existing `session_opening` row to `session` in a new migration;
+that relation remains the single Dispatcher PostgreSQL authority for live Session ID and native
+placement. Do not add a competing writable mapping. `CreateSession` with a new UUID durably
+establishes logical existence independently of owner readiness; retain the immutable creation
+request and exact required environment UID separately from owner materialization and command
+delivery. `GetSession` and `ListSessions` return the minimal authorized Session projection, not the
+full spec or instructions. Its materialization status is owner progress, not harness state, and
+owner acceptance is not native readiness. Reuse existing native authorization for native Sessions;
+do not infer a central principal from it. Central sampler V1 remains Sandbox-backed under the
+in-progress placement cutover; environment-free central admission is tracked separately.
 
 The [native opening outcome contract](../runner_gateway/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands)
 separates proven rejection from unconfirmed owner outcomes and fences dependent queued work.
-Exact receipt retry, logical-opening discovery, harness lookup, placement-checked routing and
+Exact-ID creation retry, logical Session discovery, harness lookup, placement-checked routing and
 post-cleanup environment-UID admission fencing are implemented. On cleanup Dispatcher currently forgets the
 Session; callers must not deliberately reuse a UUID, and History can retain a conflicting identity.
 This is current behavior, not a decision that Environment deletion must delete the Session: reconcile
@@ -2485,25 +2499,39 @@ read API as implementation details, and link its contract from the
 
 **In progress (Codex; coordinated hard cutover, 2026-11-04 PDT).** Replace the flat harness field and
 Dispatcher-level placement inputs with one shared `SessionPlacement` message used by
-`SessionSpec.placement` and the read-only `SessionOpening.placement`. Its oneof selects
-`environment_hosted`, which
-contains the exact environment name and UID plus native harness selection. `central_sampler_v1`
-contains one explicit, fixed required executor environment. V1 central Sessions retain Sandbox
-identity, admission, wake, notifications and deletion behavior; they have no optional attachments
-and are not independent of an environment. Native store identity and harness-native Session ID
-selection remain future work under `HARNESS_IDENTITY_DESIGN`.
+`SessionSpec.placement` and the minimal read-only `Session.placement`. Its oneof selects
+`environment_hosted`, which contains the exact environment name and UID plus native harness
+selection. `central_sampler_v1` contains one explicit, fixed required executor environment. V1
+central Sessions retain Sandbox identity, admission, wake, notifications and deletion behavior; they
+have no optional attachments and are not independent of an environment. Native store identity and
+harness-native Session ID selection remain future work under `HARNESS_IDENTITY_DESIGN`.
 
-This is a coordinated API and stored-data cutover across Dispatcher, central sampler, App, CLI,
-other clients and Runtime. Old Sandbox callers and binaries are not supported during an overlap
-period. Its migration plan preserves retained records through Dispatcher migration 11, central sampler
-migration 10 and History migration 8; it does not delete/recreate central or History data and must
-not replay commands, notifications or other effects. See the [Dispatcher cutover contract](../runner_gateway/dispatcher/SPEC.md#sessionspec-placement-cutover)
+The coordinated logical API uses `CreateSession`, `GetSession` and `ListSessions` across Dispatcher,
+App, Environment Runtime and central Sampler. `Session` contains only its ID, materialization status,
+timestamps and placement, not the immutable spec or instructions. `WAITING`, `IN_PROGRESS`,
+`ACCEPTED`, `FAILED` and `UNKNOWN` report placement-owner materialization; `ACCEPTED` means durable
+owner admission, not harness readiness or History completion. An uncertain create is reconciled by
+the same caller-chosen Session ID, never by replaying uncertain native or external effects. The
+distinct streaming `Executor.OpenSession` remains an execution-connection API. Former logical Session
+RPCs, `SessionOpening`, old CLI aliases and old Sandbox callers have no compatibility path; coordinate
+all logical Session callers and runtime images as one hard cutover.
+
+The data cutover preserves Dispatcher, central sampler and History records: Dispatcher migration 11
+converts placement and migration 12 renames `session_opening` to `session`; central sampler migration
+10 converts its stored request; History migration 8 retains `historical_harness` where exact placement cannot be reconstructed, and
+migration 9 renames the persisted ordinal `opened_position` to `recorded_position` without changing
+values, sequence ownership, ordering or indexes. History's watch cursor becomes `recorded_after` and
+its frame becomes `SessionRecorded/session_recorded`; the former wire names have no compatibility
+path. Existing IDs, commands, cursors, events, ordering and effect evidence remain intact. Do not
+delete/recreate central or History data, requeue commands, replay notifications or other effects, or
+treat a schema migration as proof that an uncertain effect is safe. See the
+[Dispatcher cutover contract](../runner_gateway/dispatcher/SPEC.md#sessionspec-placement-cutover)
 and the [Session/environment plan](session_environment_model.md#central-session-environment-independence).
 
-Exit: all callers and services use the placement oneof, existing records migrate without changing
-their identities or effect/history records, and no compatibility path accepts the former flat
-placement fields. The later removal of the required central executor environment is tracked by
-`CENTRAL_SESSION_WITHOUT_ENVIRONMENT` above.
+Exit: all callers and services use the placement oneof and logical Session API, existing records
+migrate without changing their identities or effect/history records, and no compatibility path
+accepts the former RPCs, resource projection or flat placement fields. The later removal of the
+required central executor environment is tracked by `CENTRAL_SESSION_WITHOUT_ENVIRONMENT` above.
 
 ### `DELIVERY_DESTINATION_AUTHORITY_DESIGN` — assign Session send authority and internal fences
 

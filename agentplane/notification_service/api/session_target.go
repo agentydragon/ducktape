@@ -5,13 +5,13 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 )
 
-// openingTarget selects the exact environment used by a native Session or the
+// sessionTarget selects the exact environment used by a native Session or the
 // fixed executor currently used by a central Session.
-func openingTarget(opening *dispatcherpb.SessionOpening, sessionID string) *sessionpb.ExactEnvironment {
-	if opening.GetSessionId() != sessionID {
+func sessionTarget(session *dispatcherpb.Session, sessionID string) *sessionpb.ExactEnvironment {
+	if session.GetSessionId() != sessionID {
 		return nil
 	}
-	placement := opening.GetPlacement()
+	placement := session.GetPlacement()
 	if placement == nil {
 		return nil
 	}
@@ -22,7 +22,7 @@ func openingTarget(opening *dispatcherpb.SessionOpening, sessionID string) *sess
 	case *sessionpb.SessionPlacement_CentralSamplerV1:
 		target = placement.GetCentralSamplerV1().GetExecutorEnvironment()
 	}
-	if target.GetName() == "" || target.GetUid() == "" {
+	if target == nil || target.GetName() == "" || target.GetUid() == "" {
 		return nil
 	}
 	return target

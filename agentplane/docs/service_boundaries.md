@@ -17,7 +17,7 @@ flowchart LR
     Gateway --> Kubernetes[Kubernetes API: Sandbox spec and operator grants]
     App -->|health probe| Gateway
     App -->|UID/owner-fenced live inventory and status| Proxy[Per-Sandbox Runner Proxy]
-    App -->|openings and durable commands| Dispatcher[Session Dispatcher]
+    App -->|Session creation and durable commands| Dispatcher[Session Dispatcher]
     Dispatcher -->|delivery through runner proxy| Gateway
     App --> History[History Service]
     App --> Notifications[Notification service]
@@ -201,5 +201,5 @@ service-owned APIs; the Gateway-specific Session API and the Sandbox Service API
 Thread launch defaults live in the app's configured preset catalog and are selected by the preset
 label on a Sandbox. The shared Sandbox creation request has no per-Sandbox Session defaults. The
 shared Sandbox read model carries the Sandbox's bootstrap script but no launch defaults. The app
-resolves a complete Session spec from the preset before sending its opening to the Dispatcher. No
+resolves a complete Session spec from the preset before creating the Session through the Dispatcher. No
 database schema, identities, or retained logs change with package renames.

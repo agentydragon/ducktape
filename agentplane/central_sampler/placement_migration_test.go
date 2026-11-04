@@ -14,12 +14,12 @@ import (
 
 func TestPlacementMigrationPreservesRetainedCentralRetryAndUnknownFields(t *testing.T) {
 	store := newTestStore(t)
-	request := &samplerpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}}
+	request := &samplerpb.CreateSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}}
 	opened, err := openStoreSession(t, store, request, "fixture-account", protocol.APIStyleResponses)
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := proto.Clone(request).(*samplerpb.OpenSessionRequest)
+	legacy := proto.Clone(request).(*samplerpb.CreateSessionRequest)
 	legacy.Spec.Placement = nil
 	oldHarness := protowire.AppendVarint(protowire.AppendTag(nil, 1, protowire.VarintType), uint64(sessionpb.Harness_HARNESS_CENTRAL_SAMPLER))
 	futureSpec := protowire.AppendBytes(protowire.AppendTag(nil, 99, protowire.BytesType), []byte("future-spec"))
@@ -46,7 +46,7 @@ func TestPlacementMigrationPreservesRetainedCentralRetryAndUnknownFields(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	var decoded samplerpb.OpenSessionRequest
+	var decoded samplerpb.CreateSessionRequest
 	if err := proto.Unmarshal(retained.Configuration, &decoded); err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestPlacementMigrationPreservesRetainedCentralRetryAndUnknownFields(t *test
 		t.Fatalf("migrated central configuration lost placement or unrelated fields: %v", &decoded)
 	}
 	platformInstructions := fixturePlatformInstructions
-	retried, err := store.OpenSession(t.Context(), request, "fixture-account", protocol.APIStyleResponses, &platformInstructions)
+	retried, err := store.CreateSession(t.Context(), request, "fixture-account", protocol.APIStyleResponses, &platformInstructions)
 	if err != nil || retried.ConversationID != opened.ConversationID || retried.ID != opened.ID {
 		t.Fatalf("same-ID retry after migration = %+v, %v", retried, err)
 	}

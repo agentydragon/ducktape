@@ -119,7 +119,7 @@ authority across opens, commands and resume remains under review in the
 
 A Thread is a view/fold of one durable logical Session's Event log, with its own
 operator-set presentation; it is not a second execution source. Its id is the client-minted public
-Session UUID submitted through Dispatcher `OpenSession`. History materializes an empty Thread view
+Session UUID submitted through Dispatcher `CreateSession`. History materializes an empty Thread view
 once it retains the authenticated runner admission, even before any Event exists. A catalog entry
 or Dispatcher queue receipt alone does not establish that view. At cursor zero there is no Event
 source, native process or effective model/effort to infer. The first real Event binds the fold's
@@ -248,7 +248,7 @@ History Service has.
 
 ## Command queue ownership
 
-The Session Dispatcher is the sender-facing durable queue for openings and commands. The app server
+The Session Dispatcher is the sender-facing durable queue for Session creation and commands. The app server
 stores Thread presentation state; the browser keeps unconfirmed submissions locally. The app sends
 commands to Dispatcher and reads queued/delivering/admitted results. Dispatcher wakes an eligible
 suspended Sandbox, waits for `Ready`, and delivers through the Runner Gateway proxy. A queued
@@ -362,14 +362,16 @@ next `turn/start`. The runner scheduler handles native dependencies. An interrup
 clicked turn and must not wait for queued inputs to finish. The Session Dispatcher owns sender
 delivery and ordering; the app does not maintain a second command queue.
 
-## Session opening and command ownership
+## Session creation and command ownership
 
-Sandbox creation and Session opening are separate operations. The app proxies authenticated management
+Sandbox creation and Session creation are separate operations. The app proxies authenticated management
 requests to EnvironmentService in the Runner Gateway; `POST /sandboxes/{name}/sessions` sends a client-minted Session ID, the
-expected Sandbox UID and resolved spec to Dispatcher `OpenSession`. Dispatcher checks that UID against
-the current Sandbox before recording the opening, then delivers it when the Sandbox is ready. The first
-input, if any, is a separate command with its own ID and durable Dispatcher result; there is no app
-transaction that queues an initial input with Sandbox creation.
+expected Sandbox UID and resolved spec to Dispatcher `CreateSession`. Dispatcher checks that UID against
+the current Sandbox and commits a minimal Session resource with placement and materialization status;
+it delivers creation to the placement owner when the Sandbox is ready. A returned logical Session does
+not prove owner acceptance, harness readiness or History projection. The first input, if any, is a
+separate command with its own ID and durable Dispatcher result; there is no app transaction that queues
+an initial input with Sandbox creation.
 
 ## Reconnect and catch-up
 

@@ -2003,10 +2003,10 @@ spec:
       methods:
         - POST
       paths:
-        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/OpenSession
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/CreateSession
         - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput
-        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSessionOpening
-        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ListSessionOpenings
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSession
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ListSessions
         - /agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch
         - /agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch
         - /agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn
@@ -6373,7 +6373,7 @@ data:
             bearer_file: /run/secrets/google-mcp/bearer-token
       orchestration_v1:
         title: Orchestration
-        description: "Launch Session Sandboxes and drive their Sessions: open them, send input, interrupt, change model or effort, and read their state. A launch waits for the operator and grants its caller what it names on the new Sandbox."
+        description: "Launch Session Sandboxes and drive their Sessions: create them, send input, interrupt, change model or effort, and read their state. A launch waits for the operator and grants its caller what it names on the new Sandbox."
         executor:
           kind: orchestration_v1
           description: Run by this service, on each request's Decision, with its own authority.
@@ -6408,7 +6408,7 @@ data:
                   if [ ! -f "$marker" ]; then
                     printf '%s\n' 'public-coder workspace initialized' > "$marker"
                   fi
-              open_session:
+              create_session:
                 spec:
                   harness: HARNESS_CODEX
                   model: chatgpt-sub/oai-responses/gpt-6-luna
@@ -6473,7 +6473,7 @@ data:
                 inbox_tags:
                   - haku
                 bootstrap: ""
-              open_session:
+              create_session:
                 spec:
                   harness: HARNESS_CENTRAL_SAMPLER
                   model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
@@ -6519,7 +6519,7 @@ data:
                 inbox_tags:
                   - finance-agent
                 bootstrap: ""
-              open_session:
+              create_session:
                 spec:
                   harness: HARNESS_CODEX
                   model: chatgpt-sub/oai-responses/gpt-6-luna
@@ -6673,7 +6673,7 @@ data:
                   if [ ! -f "$marker" ]; then
                     printf '%s\n' 'public-coder workspace initialized' > "$marker"
                   fi
-              open_session:
+              create_session:
                 spec:
                   harness: HARNESS_CODEX
                   model: chatgpt-sub/oai-responses/gpt-6-luna
@@ -6737,11 +6737,11 @@ data:
         direct_tools:
           - change_model
           - change_reasoning_effort
+          - create_session
           - get_session
           - interrupt_turn
           - list_launch_presets
           - list_sessions
-          - open_session
           - read_turns
           - submit_input
           - wait_for_turn
@@ -6757,7 +6757,7 @@ data:
           - resume
       sessions:
         title: Sessions
-        description: Open and control Sessions in an existing same-principal environment. Opening does not start a turn; submit input separately.
+        description: Create and control Sessions in an existing same-principal environment. Creating does not start a turn; submit input separately.
         executor:
           kind: session_delegation
           description: Forwards the authenticated caller's ServiceAccount identity to same-principal Session APIs.
@@ -7208,7 +7208,7 @@ spec:
       message: A launcher grant is owned by one Sandbox and named for it.
     - expression: request.resource.resource != 'policybindings' || object.spec.policySets == [object.metadata.name]
       message: A launcher grant's PolicyBinding binds only its own PolicySet.
-    - expression: request.resource.resource != 'policysets' || (size(variables.owners) == 1 && object.spec.rules.all(r, (r.type == 'session_inbox_access' && has(r.operations) && r.operations == ['send_message'] && has(r.targets) && !has(r.targets.inboxTags) && !has(r.targets.allSandboxes) && has(r.targets.sandboxes) && size(r.targets.sandboxes) == 1 && has(r.targets.sandboxes[0].uid) && r.targets.sandboxes[0].name == variables.owners[0].name && r.targets.sandboxes[0].uid == variables.owners[0].uid) || (r.type == 'action_auto_approve' && has(r.policy) && r.policy.type == 'argument_schema' && r.policy.actions.all(group, group == 'orchestration_v1' && r.policy.actions[group].all(action, action in ['open_session', 'submit_input', 'interrupt_turn', 'change_model', 'change_reasoning_effort', 'get_session', 'list_sessions', 'read_turns', 'wait_for_turn'])) && has(r.policy.schema) && r.policy.schema.all(key, key in ['type', 'required', 'properties']) && has(r.policy.schema.type) && r.policy.schema.type == 'object' && has(r.policy.schema.required) && r.policy.schema.required == ['sandbox'] && has(r.policy.schema.properties) && r.policy.schema.properties.all(key, key == 'sandbox') && has(r.policy.schema.properties.sandbox) && r.policy.schema.properties.sandbox.all(key, key == 'const') && 'const' in r.policy.schema.properties.sandbox && r.policy.schema.properties.sandbox['const'].all(key, key in ['name', 'uid']) && 'name' in r.policy.schema.properties.sandbox['const'] && 'uid' in r.policy.schema.properties.sandbox['const'] && r.policy.schema.properties.sandbox['const'].name == variables.owners[0].name && r.policy.schema.properties.sandbox['const'].uid == variables.owners[0].uid)))
+    - expression: request.resource.resource != 'policysets' || (size(variables.owners) == 1 && object.spec.rules.all(r, (r.type == 'session_inbox_access' && has(r.operations) && r.operations == ['send_message'] && has(r.targets) && !has(r.targets.inboxTags) && !has(r.targets.allSandboxes) && has(r.targets.sandboxes) && size(r.targets.sandboxes) == 1 && has(r.targets.sandboxes[0].uid) && r.targets.sandboxes[0].name == variables.owners[0].name && r.targets.sandboxes[0].uid == variables.owners[0].uid) || (r.type == 'action_auto_approve' && has(r.policy) && r.policy.type == 'argument_schema' && r.policy.actions.all(group, group == 'orchestration_v1' && r.policy.actions[group].all(action, action in ['create_session', 'submit_input', 'interrupt_turn', 'change_model', 'change_reasoning_effort', 'get_session', 'list_sessions', 'read_turns', 'wait_for_turn'])) && has(r.policy.schema) && r.policy.schema.all(key, key in ['type', 'required', 'properties']) && has(r.policy.schema.type) && r.policy.schema.type == 'object' && has(r.policy.schema.required) && r.policy.schema.required == ['sandbox'] && has(r.policy.schema.properties) && r.policy.schema.properties.all(key, key == 'sandbox') && has(r.policy.schema.properties.sandbox) && r.policy.schema.properties.sandbox.all(key, key == 'const') && 'const' in r.policy.schema.properties.sandbox && r.policy.schema.properties.sandbox['const'].all(key, key in ['name', 'uid']) && 'name' in r.policy.schema.properties.sandbox['const'] && 'uid' in r.policy.schema.properties.sandbox['const'] && r.policy.schema.properties.sandbox['const'].name == variables.owners[0].name && r.policy.schema.properties.sandbox['const'].uid == variables.owners[0].uid)))
       message: A launcher grant's rules name only its Sandbox, by name and UID, and only orchestration_v1 Actions.
   variables:
     - expression: object.metadata.?ownerReferences.orValue([])

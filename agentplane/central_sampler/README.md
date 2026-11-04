@@ -18,6 +18,9 @@ wake and deletion behavior. This placement does not add optional attachments or 
 central Session without an environment. Native harness store selection and harness-native IDs remain
 separate future work; environment-independent central Sessions are tracked in the
 [Session/environment plan](../plans/session_environment_model.md#central-session-environment-independence).
+The placement-owner RPC is `Sampler.CreateSession`; it receives the committed placement and retains
+these V1 admission semantics. `Executor.OpenSession` is separate: its stream owns one execution
+connection to the Runner and does not create the logical Session.
 
 The service, sampling loop, persistence and exporter are implemented in Go. The JavaScript host is
 the pinned upstream Codex binary. Python is used only by the acceptance fixtures.
@@ -48,7 +51,7 @@ rebuildable export markers: the older exporter could mark entries delivered befo
 finished committing. The next export reconciles History's retained cursor and completes that
 snapshot. Replace the old singleton exporter before enabling multiple rolling replicas, so an old
 exporter cannot repopulate markers using the former semantics.
-The placement cutover's migration 10 converts retained central opening requests to the
+The placement cutover's migration 10 converts retained central creation requests to the
 `central_sampler_v1` placement using their stored executor target. It changes no conversation,
 command, cursor or effect record, and is not a compatibility mode for old callers or Sandbox/runtime
 binaries.

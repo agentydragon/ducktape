@@ -49,7 +49,7 @@ verbs over targets, as `session_inbox_access` already does for `send_message` wi
 
 ```yaml
 - type: session_access # sketch: session_inbox_access with more verbs
-  operations: [send_message, open_session, submit_input, interrupt_turn, read_history]
+  operations: [send_message, create_session, submit_input, interrupt_turn, read_history]
   targets: { sandboxes: [{ name: worker-3f2a, uid: 9b0e… }] }
 ```
 
@@ -63,7 +63,7 @@ Where the check runs (operator, 00:18 UTC: "send message, interrupt, open sessio
 checked on the runner gateway side"): Session commands in the Runner Gateway, whose Dispatcher already authorizes
 the caller of every command; history reads in History; inbox messages in Notifications. In the original sketch, the subject was the caller's
 ServiceAccount and the object the Sandbox, never a Session (operator, 00:37 UTC: "the thing that's the
-object/subject is a SA / sandbox level"). It could be Kubernetes RBAC, with custom verbs such as `open-session`,
+object/subject is a SA / sandbox level"). It could be Kubernetes RBAC, with custom verbs such as `create-session`,
 `submit-input` and `interrupt` on `sandboxes`, checked with a `SubjectAccessReview` and granted by a Role naming the
 worker through a `kubernetes_role_binding` rule: Kubernetes' own check on who may bind what comes with it, but a Role
 cannot pin a UID, so the Gateway still compares it. Or it could be a typed `PolicySet` rule over Sandbox targets by

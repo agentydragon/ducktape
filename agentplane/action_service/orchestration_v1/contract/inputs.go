@@ -13,7 +13,7 @@ import (
 const (
 	ActionListLaunchPresets     = "list_launch_presets"
 	ActionLaunchSandbox         = "launch_sandbox"
-	ActionOpenSession           = "open_session"
+	ActionCreateSession         = "create_session"
 	ActionSubmitInput           = "submit_input"
 	ActionInterruptTurn         = "interrupt_turn"
 	ActionChangeModel           = "change_model"
@@ -53,7 +53,7 @@ type LaunchArgs struct {
 	LauncherGrants          []string "json:\"launcher_grants,omitempty\" jsonschema_description:\"What you may then do to this Sandbox without asking again, bound to your own account and deleted with the Sandbox: `send_message` to its Session inboxes, and each named Action of this group on it.\" jsonschema:\"uniqueItems=true\""
 }
 
-type OpenSessionArgs struct {
+type CreateSessionArgs struct {
 	Sandbox     SandboxRef  `json:"sandbox" jsonschema_description:"The Sandbox as launch_sandbox returned it: its name and the UID of that incarnation. A Sandbox deleted and launched again under the name is another one, and is refused."`
 	SessionID   string      `json:"session_id" jsonschema_description:"A fresh UUID you mint for the Session. Repeating a call with the same ID and fields opens it once; the same ID with other fields is refused." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
 	Spec        SessionSpec `json:"spec" jsonschema_description:"What the Session runs: its harness, model and working directory, fixed when it opens."`
@@ -70,48 +70,48 @@ type SessionSpec struct {
 
 type SubmitInputArgs struct {
 	Sandbox   SandboxRef `json:"sandbox" jsonschema_description:"The Sandbox as launch_sandbox returned it: its name and the UID of that incarnation. A Sandbox deleted and launched again under the name is another one, and is refused."`
-	SessionID string     `json:"session_id" jsonschema_description:"The Session's ID, as open_session was given it." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
+	SessionID string     `json:"session_id" jsonschema_description:"The Session's ID, as create_session was given it." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
 	CommandID string     `json:"command_id" jsonschema_description:"A fresh UUID you mint for this command. Repeating a call with the same ID and fields does not send it twice; the same ID with other fields is refused." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
 	Text      string     `json:"text" jsonschema:"minLength=1"`
 }
 
 type InterruptTurnArgs struct {
 	Sandbox   SandboxRef `json:"sandbox" jsonschema_description:"The Sandbox as launch_sandbox returned it: its name and the UID of that incarnation. A Sandbox deleted and launched again under the name is another one, and is refused."`
-	SessionID string     `json:"session_id" jsonschema_description:"The Session's ID, as open_session was given it." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
+	SessionID string     `json:"session_id" jsonschema_description:"The Session's ID, as create_session was given it." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
 	CommandID string     `json:"command_id" jsonschema_description:"A fresh UUID you mint for this command. Repeating a call with the same ID and fields does not send it twice; the same ID with other fields is refused." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
 	TurnID    string     `json:"turn_id" jsonschema_description:"The running turn to interrupt." jsonschema:"minLength=1"`
 }
 
 type ChangeModelArgs struct {
 	Sandbox   SandboxRef `json:"sandbox" jsonschema_description:"The Sandbox as launch_sandbox returned it: its name and the UID of that incarnation. A Sandbox deleted and launched again under the name is another one, and is refused."`
-	SessionID string     `json:"session_id" jsonschema_description:"The Session's ID, as open_session was given it." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
+	SessionID string     `json:"session_id" jsonschema_description:"The Session's ID, as create_session was given it." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
 	CommandID string     `json:"command_id" jsonschema_description:"A fresh UUID you mint for this command. Repeating a call with the same ID and fields does not send it twice; the same ID with other fields is refused." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
 	Model     string     `json:"model" jsonschema:"minLength=1"`
 }
 
 type ChangeReasoningEffortArgs struct {
 	Sandbox   SandboxRef `json:"sandbox" jsonschema_description:"The Sandbox as launch_sandbox returned it: its name and the UID of that incarnation. A Sandbox deleted and launched again under the name is another one, and is refused."`
-	SessionID string     `json:"session_id" jsonschema_description:"The Session's ID, as open_session was given it." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
+	SessionID string     `json:"session_id" jsonschema_description:"The Session's ID, as create_session was given it." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
 	CommandID string     `json:"command_id" jsonschema_description:"A fresh UUID you mint for this command. Repeating a call with the same ID and fields does not send it twice; the same ID with other fields is refused." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
 	Effort    string     `json:"effort" jsonschema:"minLength=1"`
 }
 
 type ReadTurnsArgs struct {
 	Sandbox   SandboxRef `json:"sandbox" jsonschema_description:"The Sandbox as launch_sandbox returned it: its name and the UID of that incarnation. A Sandbox deleted and launched again under the name is another one, and is refused."`
-	SessionID string     `json:"session_id" jsonschema_description:"The Session's ID, as open_session was given it." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
+	SessionID string     `json:"session_id" jsonschema_description:"The Session's ID, as create_session was given it." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
 	Count     int        `json:"count" jsonschema_description:"How many recent turns to read, oldest first." jsonschema:"minimum=1,maximum=100"`
 }
 
 type WaitForTurnArgs struct {
 	Sandbox     SandboxRef `json:"sandbox" jsonschema_description:"The Sandbox as launch_sandbox returned it: its name and the UID of that incarnation. A Sandbox deleted and launched again under the name is another one, and is refused."`
-	SessionID   string     `json:"session_id" jsonschema_description:"The Session's ID, as open_session was given it." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
+	SessionID   string     `json:"session_id" jsonschema_description:"The Session's ID, as create_session was given it." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
 	ResumeToken string     `json:"resume_token" jsonschema_description:"The opaque token returned by read_turns or wait_for_turn for this Session." jsonschema:"minLength=1,maxLength=2048"`
 	WaitSeconds float64    `json:"wait_seconds" jsonschema_description:"Maximum wait, also capped below the deployment direct-tool budget." jsonschema:"exclusiveMinimum=0,maximum=30"`
 }
 
 type GetSessionArgs struct {
 	Sandbox   SandboxRef `json:"sandbox" jsonschema_description:"The Sandbox as launch_sandbox returned it: its name and the UID of that incarnation. A Sandbox deleted and launched again under the name is another one, and is refused."`
-	SessionID string     `json:"session_id" jsonschema_description:"The Session's ID, as open_session was given it." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
+	SessionID string     `json:"session_id" jsonschema_description:"The Session's ID, as create_session was given it." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
 }
 
 type ListSessionsArgs struct {
@@ -121,7 +121,7 @@ type ListSessionsArgs struct {
 type Inputs struct {
 	ListLaunchPresets     catalog.Input[NoArgs]
 	LaunchSandbox         catalog.Input[LaunchArgs]
-	OpenSession           catalog.Input[OpenSessionArgs]
+	CreateSession         catalog.Input[CreateSessionArgs]
 	SubmitInput           catalog.Input[SubmitInputArgs]
 	InterruptTurn         catalog.Input[InterruptTurnArgs]
 	ChangeModel           catalog.Input[ChangeModelArgs]
@@ -138,10 +138,10 @@ func NewInputs() (Inputs, error) {
 	sandboxNote := fmt.Sprintf("The Sandbox is the one %s returned, by name and UID.", ActionLaunchSandbox)
 	commandNote := "Answers with the command's Dispatch once the Session Dispatcher has queued it, not once it ran; a " +
 		"suspended Sandbox with wake_on_send resumes for it. " + sandboxNote
-	if inputs.ListLaunchPresets, err = newInput[NoArgs](ActionListLaunchPresets, fmt.Sprintf("The reviewed launch presets, each as the %s and %s fields it stands for. Copy them into those Actions' arguments, adding your own name, launcher_grants, sandbox and session_id: a preset is not an argument of either, so what you launch is what you name.", ActionLaunchSandbox, ActionOpenSession), "List launch presets", &catalog.ToolAnnotations{ReadOnlyHint: new(true), OpenWorldHint: new(false)}, nil); err != nil {
+	if inputs.ListLaunchPresets, err = newInput[NoArgs](ActionListLaunchPresets, fmt.Sprintf("The reviewed launch presets, each as the %s and %s fields it stands for. Copy them into those Actions' arguments, adding your own name, launcher_grants, sandbox and session_id: a preset is not an argument of either, so what you launch is what you name.", ActionLaunchSandbox, ActionCreateSession), "List launch presets", &catalog.ToolAnnotations{ReadOnlyHint: new(true), OpenWorldHint: new(false)}, nil); err != nil {
 		return Inputs{}, err
 	}
-	if inputs.OpenSession, err = newInput[OpenSessionArgs](ActionOpenSession, "Open a Session in a launched Sandbox, under an ID you mint, with its spec and setup script. Answers with the opening once the Session Dispatcher has queued it; it is delivered once the Sandbox is Ready, before any command for the Session.", "Open Session", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)}, nil); err != nil {
+	if inputs.CreateSession, err = newInput[CreateSessionArgs](ActionCreateSession, "Create a Session in a launched Sandbox, under an ID you mint, with its spec and setup script. Answers with the Session resource once the Session Dispatcher records it as waiting; owner admission proceeds once the Sandbox is Ready, before any command for the Session.", "Create Session", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)}, nil); err != nil {
 		return Inputs{}, err
 	}
 	if inputs.SubmitInput, err = newInput[SubmitInputArgs](ActionSubmitInput, "Send a user message to a Session. "+commandNote, "Submit Session input", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)}, nil); err != nil {
@@ -162,13 +162,13 @@ func NewInputs() (Inputs, error) {
 	if inputs.WaitForTurn, err = newInput[WaitForTurnArgs](ActionWaitForTurn, "Wait for the first turn completion after resume_token, for at most wait_seconds within this deployment's direct-tool budget. Returns completed=false with the newest token when still running; repeat with that token. Read full messages with read_turns. "+sandboxNote, "Wait for Session turn", &catalog.ToolAnnotations{ReadOnlyHint: new(true), OpenWorldHint: new(false)}, nil); err != nil {
 		return Inputs{}, err
 	}
-	if inputs.GetSession, err = newInput[GetSessionArgs](ActionGetSession, fmt.Sprintf("A Session in a launched Sandbox: whether the Sandbox is Ready; the Session as its history records it, including whether a turn runs (its ID is what %s takes), how the last one ended and since when the harness is idle; its opening; and its %d most recent commands' Dispatches, newest first. %s", ActionInterruptTurn, RecentDispatches, sandboxNote), "Get Session", &catalog.ToolAnnotations{ReadOnlyHint: new(true), OpenWorldHint: new(false)}, nil); err != nil {
+	if inputs.GetSession, err = newInput[GetSessionArgs](ActionGetSession, fmt.Sprintf("A Session in a launched Sandbox: whether the Sandbox is Ready; the Session as History records it, including whether a turn runs (its ID is what %s takes), how the last one ended and since when the harness is idle; its owner materialization status; and its %d most recent commands' Dispatches, newest first. %s", ActionInterruptTurn, RecentDispatches, sandboxNote), "Get Session", &catalog.ToolAnnotations{ReadOnlyHint: new(true), OpenWorldHint: new(false)}, nil); err != nil {
 		return Inputs{}, err
 	}
 	if inputs.ListSessions, err = newInput[ListSessionsArgs](ActionListSessions, fmt.Sprintf("Every Session a launched Sandbox has written, newest first, as %s reads each from its history. A Session is listed once its runner has written it; %s shows one still queued. %s", ActionGetSession, ActionGetSession, sandboxNote), "List Sessions", &catalog.ToolAnnotations{ReadOnlyHint: new(true), OpenWorldHint: new(false)}, nil); err != nil {
 		return Inputs{}, err
 	}
-	if inputs.LaunchSandbox, err = newInput[LaunchArgs](ActionLaunchSandbox, fmt.Sprintf("Launch a Session Sandbox running from a template, with its own ServiceAccount bound to the PolicySets named and this deployment's defaults, and grant yourself what launcher_grants names on it. Answers with its name and UID once it exists, before it is Ready; %s queues until it is. Repeating the same launch as the same caller answers with the same Sandbox; any other launch of a taken name is refused.", ActionOpenSession), "Launch Session Sandbox", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)}, configureLauncherGrants(inputs.SandboxActions())); err != nil {
+	if inputs.LaunchSandbox, err = newInput[LaunchArgs](ActionLaunchSandbox, fmt.Sprintf("Launch a Session Sandbox running from a template, with its own ServiceAccount bound to the PolicySets named and this deployment's defaults, and grant yourself what launcher_grants names on it. Answers with its name and UID once it exists, before it is Ready; %s queues until it is. Repeating the same launch as the same caller answers with the same Sandbox; any other launch of a taken name is refused.", ActionCreateSession), "Launch Session Sandbox", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)}, configureLauncherGrants(inputs.SandboxActions())); err != nil {
 		return Inputs{}, err
 	}
 	return inputs, nil
@@ -213,7 +213,7 @@ func (inputs Inputs) Actions() map[string]catalog.ActionDefinition {
 	return map[string]catalog.ActionDefinition{
 		inputs.ListLaunchPresets.Name():     inputs.ListLaunchPresets.Definition(),
 		inputs.LaunchSandbox.Name():         inputs.LaunchSandbox.Definition(),
-		inputs.OpenSession.Name():           inputs.OpenSession.Definition(),
+		inputs.CreateSession.Name():         inputs.CreateSession.Definition(),
 		inputs.SubmitInput.Name():           inputs.SubmitInput.Definition(),
 		inputs.InterruptTurn.Name():         inputs.InterruptTurn.Definition(),
 		inputs.ChangeModel.Name():           inputs.ChangeModel.Definition(),
@@ -227,7 +227,7 @@ func (inputs Inputs) Actions() map[string]catalog.ActionDefinition {
 
 func (inputs Inputs) SandboxActions() []string {
 	return []string{
-		inputs.OpenSession.Name(), inputs.SubmitInput.Name(), inputs.InterruptTurn.Name(), inputs.ChangeModel.Name(),
+		inputs.CreateSession.Name(), inputs.SubmitInput.Name(), inputs.InterruptTurn.Name(), inputs.ChangeModel.Name(),
 		inputs.ChangeReasoningEffort.Name(), inputs.GetSession.Name(), inputs.ListSessions.Name(),
 		inputs.ReadTurns.Name(), inputs.WaitForTurn.Name(),
 	}

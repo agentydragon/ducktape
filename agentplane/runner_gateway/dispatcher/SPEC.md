@@ -37,27 +37,27 @@ It scopes existing Sessions and existing environments; it does not create enviro
 
 ## Session binding
 
-- The committed opening is Dispatcher's live Session reservation and placement authority. Its
+- The committed Session is Dispatcher's live Session reservation and placement authority. Its
   immutable `SessionSpec.placement` is a shared `SessionPlacement` message whose oneof is the
   single source of backend and placement. The
   `environment_hosted` variant contains one exact environment and the native Claude/Codex harness
   selection. The `central_sampler_v1` variant contains one exact `executor_environment`. Dispatcher
-  validates and routes from the stored spec; `SessionOpening.placement` projects that same message
-  under retained-owner policy without exposing instructions. Native harness store identity and harness-native ID
+  validates and routes from the stored spec; `Session.placement` projects that same message under
+  retained-owner policy without exposing the full spec or instructions. Native harness store identity and harness-native ID
   are not represented by this cutover and remain future work.
 - Central sampler V1 keeps today's Sandbox-backed identity, admission, notification, wake and deletion
   semantics. Its executor environment is required and fixed for the Session. This is not an optional
   attachment API, and it does not permit a central Session to open without an environment. See the
   explicit [future central Session environment-independence task](../plans/task_dag.md#central-session-environment-independence).
-- `OpenSession` requires `session_id` to be a canonical lowercase UUID before reading Sandbox state or recording an
-  opening. Callers must not deliberately reuse a Session UUID after deletion. Cleanup forgets the
+- `CreateSession` requires `session_id` to be a canonical lowercase UUID before reading Sandbox state or recording a
+  Session. Callers must not deliberately reuse a Session UUID after deletion. Cleanup forgets the
   Dispatcher record and does not retain a UUID marker: a subsequent request cannot be recognized as
   an old retry, and retained History can reject a conflicting identity. Read RPCs can still address
   retained rows by their stored IDs.
-- A new normal `OpenSession` can target only the current Sandbox-owned ServiceAccount whose namespace, name and UID
+- A new normal `CreateSession` can target only the current Sandbox-owned ServiceAccount whose namespace, name and UID
   equal the authenticated caller's reviewed ServiceAccount. The Sandbox and account are read from Kubernetes;
   callers cannot choose a different principal by supplying strings.
-- An existing `OpenSession` request is a read-only receipt retry. Before comparing its immutable request,
+- An existing `CreateSession` request is a read-only idempotent retry. Before comparing its immutable request,
   Dispatcher checks the same retained owner UID or configured Pod-bound backend authority as receipt reads;
   an unauthorized caller gets `NOT_FOUND` without conflict details. The comparison is shared with
   transactional creation and includes exact environment name/UID, deterministic spec bytes, and optional
@@ -84,7 +84,7 @@ It scopes existing Sessions and existing environments; it does not create enviro
 - Normal Session commands and CancelDispatch require the caller to match
   the opening's execution account and Sandbox UID. Normal calls also compare the authenticated UID with the
   current controller-owned account UID. A changed or missing managed account cannot authorize a write.
-- GetSessionOpening, ListSessionOpenings, GetDispatch and ListDispatches filter retained rows by the recorded target account and UID.
+- GetSession, ListSessions, GetDispatch and ListDispatches filter retained rows by the recorded target account and UID.
   These reads do not require a live Sandbox or ServiceAccount. Old rows without a trustworthy owner are hidden
   from normal account callers but remain visible through existing privileged backend behavior.
 - WatchDispatches applies the same filter to durable snapshots and deletion terminal events. The terminal
@@ -119,7 +119,11 @@ It scopes existing Sessions and existing environments; it does not create enviro
   block other downstream wake attempts while the opening remains queued, including after cancellation or
   process restart. A wake call's uncertainty is persisted before calling lifecycle; cancellation retains it.
   A later observed generation permits reassessing an uncertain wake under the existing generation rule.
-- `Dispatch` and `SessionOpening` keep delivery state separate from wake state. `delivery_blocker` and the typed
+- `Dispatch` and `Session` keep materialization state separate from wake state. `Session.status.materialization`
+  maps queued, delivering, admitted, failed and unknown outcomes to
+  `SESSION_MATERIALIZATION_WAITING`, `SESSION_MATERIALIZATION_IN_PROGRESS`,
+  `SESSION_MATERIALIZATION_ACCEPTED`, `SESSION_MATERIALIZATION_FAILED` and
+  `SESSION_MATERIALIZATION_UNKNOWN`; `reason`, `delivery_blocker` and the typed
   `wake_assessment` are persisted with the receipt and published transactionally to active watches, including updates
   that leave delivery state and reason unchanged. Disabled, denied, rate-limited, failed and uncertain wake outcomes
   remain queued; only the existing post-request readiness deadline can terminally fail work. The assessment records
@@ -153,7 +157,7 @@ manager's typed assessment; see the lifecycle manager SPEC for its policy and mu
 
 ## Deletion admission fence
 
-Once Dispatcher cleanup for an exact Sandbox UID commits, later `OpenSession` and queued-command
+Once Dispatcher cleanup for an exact Sandbox UID commits, later `CreateSession` and queued-command
 admissions for that UID fail with `FAILED_PRECONDITION`, including privileged callers using an
 inventory snapshot read before cleanup. The durable UID tombstone survives removal of the opening,
 dispatch and ownership rows and process restart. An ownership claim cannot recreate the removed
@@ -179,9 +183,9 @@ The Dispatcher retains logical existence and the immutable creation request afte
 rejects materialization. An exact opening retry reads that receipt; changing configuration requires
 a new Session UUID. Runtime admission reserves a Session, not a running native harness.
 
-A native `OpenSession` response of `INVALID_ARGUMENT` proves validation rejected the request before
+A native owner `CreateSession` response of `INVALID_ARGUMENT` proves validation rejected the request before
 reservation; `ALREADY_EXISTS` reports a conflicting retained request. Dispatcher records these as
-`FAILED` and, in the same transaction, fails commands still `QUEUED_IN_DISPATCHER` and never forwarded with
+`SESSION_MATERIALIZATION_FAILED` and, in the same transaction, fails commands still `QUEUED_IN_DISPATCHER` and never forwarded with
 `session_opening_rejected`; a previously attempted command becomes `UNKNOWN`. It does not alter delivering or admitted commands. Admission and
 settlement serialize on the Session ID, and settlement checks the current owner generation.
 A command admitted first is included; a later new queued command is refused with
@@ -235,11 +239,25 @@ loses the forwarding-evidence guarantee even if the column remains present.
 
 ## SessionSpec placement cutover
 
-The placement wire contract in this cutover is coordinated and breaking. `SessionSpec` carries
+The placement and Session-resource wire contract in this cutover is coordinated and breaking.
+`SessionSpec` carries
 `environment_hosted` or `central_sampler_v1`; the previous flat harness field and Dispatcher-level
-placement/`initial_executor` fields are not a compatibility API. Old clients and old Sandbox/runtime
+placement/`initial_executor` fields are not a compatibility API. The former Dispatcher
+`OpenSession`, `GetSessionOpening` and `ListSessionOpenings` RPCs and `SessionOpening` type are
+removed without a compatibility route or adapter. Old clients and old Sandbox/runtime
 binaries must not overlap the new contract. Update the Dispatcher, sampler, app/CLI and other callers
 with the matching environment images.
+
+The logical creation and read operations are `CreateSession`, `GetSession` and `ListSessions` across
+Dispatcher, App, Environment Runtime and central Sampler. `CreateSession` commits the Dispatcher
+Session before owner materialization; an exact retry with the same caller-chosen ID and immutable
+creation request returns that Session, and a conflicting reuse fails. The returned Dispatcher
+`Session` contains only `session_id`, `placement`, timestamps and `SessionStatus`; it does not expose
+the full spec or instructions. `SessionStatus.materialization` is owner progress, not harness state:
+`SESSION_MATERIALIZATION_ACCEPTED` means the owner durably admitted the logical Session, not that a
+harness is ready or a turn completed. Reconcile an uncertain create by reading the same ID; never
+blindly replay native or external effects. The distinct `Executor.OpenSession` stream remains the
+execution-connection handshake and is not a logical Session creation API.
 
 Dispatcher migration 11 converts retained openings in place, deriving the new variant from the
 stored harness and exact Sandbox name/UID. It preserves other `SessionSpec` fields, delivery state,
@@ -249,5 +267,9 @@ commands, cursors and effect journal. History migration 8 retains a legacy archi
 `historical_harness` where an exact placement cannot be reconstructed; it does not invent an
 environment identity or change event data/order. These migrations preserve central and History data
 while changing the live wire representation. They do not make uncertain native, provider or executor
-effects safe to replay. These descriptions specify the coordinated change; they do not claim that
-matching service images have already been deployed together.
+effects safe to replay. `Session` is deliberately a minimal authorized projection containing its
+ID, placement, creation/update timestamps and nested materialization `status`; it does not expose
+the immutable `SessionSpec` or instructions. `SESSION_MATERIALIZATION_ACCEPTED` means the placement owner admitted the
+logical Session, not that the harness is ready or work completed. These descriptions specify the
+coordinated change; they do not claim that matching service images have already been deployed
+together.

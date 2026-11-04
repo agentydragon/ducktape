@@ -66,6 +66,7 @@ go_test(
     srcs = [
         "event_kind_backfill_testmain_test.go",
         "session_placement_test.go",
+        "session_recorded_position_test.go",
     ],
     embed = [":migrations"],
     tags = ["requires_docker"],

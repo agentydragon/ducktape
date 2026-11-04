@@ -24,15 +24,15 @@ type CentralTarget struct {
 	TokenFile string `mapstructure:"token_file"`
 }
 
-func openingExecutionPrincipal(identity *ServiceAccountIdentity) *identitypb.ServiceAccountIdentity {
+func sessionExecutionPrincipal(identity *ServiceAccountIdentity) *identitypb.ServiceAccountIdentity {
 	if identity == nil {
 		return nil
 	}
 	return proto.Clone(identity).(*identitypb.ServiceAccountIdentity)
 }
 
-type openingReader interface {
-	GetOpening(context.Context, string) (*Opening, error)
+type sessionReader interface {
+	GetSession(context.Context, string) (*Session, error)
 }
 
 // RoutingRunner keeps native execution local and routes centrally persisted
@@ -40,13 +40,13 @@ type openingReader interface {
 // not the authority for the central conversation's lifetime.
 type RoutingRunner struct {
 	Native  DeliveryRunner
-	Store   openingReader
+	Store   sessionReader
 	Target  *CentralTarget
 	Timeout time.Duration
 }
 
-func validateOpeningExecutor(opening *Opening, sandbox SandboxSnapshot) error {
-	if opening.SandboxName != sandbox.Name || opening.SandboxUID != sandbox.UID {
+func validateSessionExecutor(session *Session, sandbox SandboxSnapshot) error {
+	if session.SandboxName != sandbox.Name || session.SandboxUID != sandbox.UID {
 		return status.Error(codes.FailedPrecondition, "session executor identity changed")
 	}
 	return nil
@@ -84,25 +84,25 @@ func (r *RoutingRunner) withClient(ctx context.Context, call func(context.Contex
 	return call(metadata.NewOutgoingContext(ctx, metadata.MD{}), samplerpb.NewSamplerClient(conn))
 }
 
-func (r *RoutingRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot, id string, spec *sessionpb.SessionSpec, setup *string, executionPrincipal *identitypb.ServiceAccountIdentity) error {
-	opening, err := r.Store.GetOpening(ctx, id)
+func (r *RoutingRunner) CreateSession(ctx context.Context, sandbox SandboxSnapshot, id string, spec *sessionpb.SessionSpec, setup *string, executionPrincipal *identitypb.ServiceAccountIdentity) error {
+	session, err := r.Store.GetSession(ctx, id)
 	if err != nil {
 		return err
 	}
-	if err := validateOpeningExecutor(opening, sandbox); err != nil {
+	if err := validateSessionExecutor(session, sandbox); err != nil {
 		return err
 	}
-	if err := ValidateRuntime(opening.Placement, setup, r.Target); err != nil {
+	if err := ValidateRuntime(session.Placement, setup, r.Target); err != nil {
 		return err
 	}
-	if opening.Placement == EnvironmentHosted {
-		return r.Native.OpenSession(ctx, sandbox, id, spec, setup, executionPrincipal)
+	if session.Placement == EnvironmentHosted {
+		return r.Native.CreateSession(ctx, sandbox, id, spec, setup, executionPrincipal)
 	}
 	if sandbox.Incarnation == "" {
 		return status.Error(codes.FailedPrecondition, "executor incarnation is not available")
 	}
 	return r.withClient(ctx, func(ctx context.Context, client samplerpb.SamplerClient) error {
-		_, err := client.OpenSession(ctx, &samplerpb.OpenSessionRequest{
+		_, err := client.CreateSession(ctx, &samplerpb.CreateSessionRequest{
 			SessionId: id, Spec: spec, ExpectedIncarnationUid: sandbox.Incarnation, SetupScript: setup,
 			ExecutionPrincipal: executionPrincipal,
 			Executor:           &identitypb.SandboxDestination{Owner: &identitypb.ServiceAccount{Namespace: sandbox.Namespace, Name: sandbox.Name}, Target: &identitypb.EnvironmentTarget{Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: sandbox.UID}},
@@ -112,14 +112,14 @@ func (r *RoutingRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot
 }
 
 func (r *RoutingRunner) Deliver(ctx context.Context, sandbox SandboxSnapshot, id string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
-	opening, err := r.Store.GetOpening(ctx, id)
+	session, err := r.Store.GetSession(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateOpeningExecutor(opening, sandbox); err != nil {
+	if err := validateSessionExecutor(session, sandbox); err != nil {
 		return nil, err
 	}
-	if opening.Placement == EnvironmentHosted {
+	if session.Placement == EnvironmentHosted {
 		return r.Native.Deliver(ctx, sandbox, id, command)
 	}
 	var admission *eventlogpb.EventEntry

@@ -33,7 +33,7 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 	launched := resultOf[Launched](f.attempt(t, f.caller, contract.ActionLaunchSandbox, `{
 		"name": "test-worker", "template": "test-template", "policy_sets": ["test-extra-policy"],
 		"inbox_tags": ["test-tag"], "bootstrap": "true", "wake_on_send": true, "idle_suspend_after_seconds": 600,
-		"launcher_grants": ["submit_input", "send_message", "open_session", "read_turns", "wait_for_turn"]
+		"launcher_grants": ["submit_input", "send_message", "create_session", "read_turns", "wait_for_turn"]
 	}`))
 	var sandbox sandboxapi.Sandbox
 	if err := kube.Get(t.Context(), client.ObjectKey{Namespace: f.namespace, Name: "test-worker"}, &sandbox); err != nil {
@@ -65,7 +65,7 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 		intent.Request.LaunchOrigin.Caller.Name != f.caller.Name || intent.Request.LaunchOrigin.ActionGroup != testGroup {
 		t.Errorf("launch attribution = %+v", intent)
 	}
-	if want := []string{"open_session", "read_turns", "send_message", "submit_input", "wait_for_turn"}; !slices.Equal(launched.LauncherGrants, want) {
+	if want := []string{"create_session", "read_turns", "send_message", "submit_input", "wait_for_turn"}; !slices.Equal(launched.LauncherGrants, want) {
 		t.Errorf("launch granted %q, want %q", launched.LauncherGrants, want)
 	}
 	spec := sandbox.Spec
@@ -105,7 +105,7 @@ func TestALaunchCreatesItsSandboxAndGrantsTheCallerWhatItNames(t *testing.T) {
 	if inbox == nil || !reflect.DeepEqual(inbox.Targets.Sandboxes, []policyapi.SandboxTarget{{Name: "test-worker", UID: sandbox.UID}}) {
 		t.Errorf("the inbox rule is %+v, want send_message to this Sandbox alone", inbox)
 	}
-	if actions == nil || !reflect.DeepEqual(actions.Policy.Actions, map[string]policyapi.ActionNames{testGroup: {"open_session", "read_turns", "submit_input", "wait_for_turn"}}) {
+	if actions == nil || !reflect.DeepEqual(actions.Policy.Actions, map[string]policyapi.ActionNames{testGroup: {"create_session", "read_turns", "submit_input", "wait_for_turn"}}) {
 		t.Fatalf("the Action rule is %+v, want the granted Actions of this group", actions)
 	}
 	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(actions.Policy.Schema.Raw))
@@ -199,12 +199,13 @@ func TestSessionCommandsReachTheDispatcherForTheLaunchedIncarnationOnly(t *testi
 	launched := f.launch(t, "test-worker")
 	session, command := uuid.NewString(), uuid.NewString()
 	sandbox := fmt.Sprintf(`{"name": %q, "uid": %q}`, launched.Name, launched.UID)
-	opening := resultOf[map[string]any](f.attempt(t, f.caller, contract.ActionOpenSession, fmt.Sprintf(`{
+	opening := resultOf[map[string]any](f.attempt(t, f.caller, contract.ActionCreateSession, fmt.Sprintf(`{
 		"sandbox": %s, "session_id": %q, "setup_script": "true",
 		"spec": {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/test/{session_id}", "instructions": "test"}
 	}`, sandbox, session)))
-	if opening["session_id"] != session || opening["state"] != "DELIVERY_STATE_QUEUED_IN_DISPATCHER" {
-		t.Errorf("open_session answered %v", opening)
+	status, _ := opening["status"].(map[string]any)
+	if opening["session_id"] != session || status["materialization"] != "SESSION_MATERIALIZATION_WAITING" {
+		t.Errorf("create_session answered %v", opening)
 	}
 	dispatch := resultOf[map[string]any](f.attempt(t, f.caller, contract.ActionSubmitInput,
 		fmt.Sprintf(`{"sandbox": %s, "session_id": %q, "command_id": %q, "text": "hello"}`, sandbox, session, command)))
@@ -212,7 +213,7 @@ func TestSessionCommandsReachTheDispatcherForTheLaunchedIncarnationOnly(t *testi
 		t.Errorf("submit_input answered %v", dispatch)
 	}
 	want := []proto.Message{
-		&dispatcherpb.OpenSessionRequest{
+		&dispatcherpb.CreateSessionRequest{
 			SessionId: session, SetupScript: new("true"),
 			Spec: &sessionpb.SessionSpec{
 				Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: launched.Name, Uid: string(launched.UID)}, Harness: sessionpb.Harness_HARNESS_CODEX}}}, Model: "test-model", Cwd: "/test/" + session, Instructions: "test",
@@ -243,11 +244,11 @@ func TestCentralSamplerHarnessReachesDispatcher(t *testing.T) {
 	f := newFixture(t)
 	launched := f.launch(t, "test-worker")
 	session := uuid.NewString()
-	resultOf[map[string]any](f.attempt(t, f.caller, contract.ActionOpenSession, fmt.Sprintf(`{
+	resultOf[map[string]any](f.attempt(t, f.caller, contract.ActionCreateSession, fmt.Sprintf(`{
 		"sandbox": {"name": %q, "uid": %q}, "session_id": %q,
 		"spec": {"harness": "HARNESS_CENTRAL_SAMPLER", "model": "test-model", "cwd": "/test/{session_id}"}
 	}`, launched.Name, launched.UID, session)))
-	want := &dispatcherpb.OpenSessionRequest{
+	want := &dispatcherpb.CreateSessionRequest{
 		SessionId: session,
 		Spec: &sessionpb.SessionSpec{
 			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: launched.Name, Uid: string(launched.UID)}}}}, Model: "test-model", Cwd: "/test/" + session,
@@ -279,7 +280,7 @@ func TestEnvironmentCreateUnavailableLeavesLaunchOutcomeUnknown(t *testing.T) {
 	}
 }
 
-// What list_launch_presets answers copies into launch_sandbox's and open_session's arguments as it is.
+// What list_launch_presets answers copies into launch_sandbox's and create_session's arguments as it is.
 func TestThePresetsFillTheirActionsArguments(t *testing.T) {
 	f := newFixture(t)
 	listed := resultOf[PresetList](f.attempt(t, f.caller, contract.ActionListLaunchPresets, `{}`))
@@ -301,20 +302,20 @@ func TestThePresetsFillTheirActionsArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 	launched := resultOf[Launched](f.attempt(t, f.caller, contract.ActionLaunchSandbox, string(launchArguments))).Sandbox
-	session, err := json.Marshal(map[string]any{"sandbox": launched, "session_id": uuid.NewString(), "spec": preset.OpenSession.Spec})
+	session, err := json.Marshal(map[string]any{"sandbox": launched, "session_id": uuid.NewString(), "spec": preset.CreateSession.Spec})
 	if err != nil {
 		t.Fatal(err)
 	}
-	resultOf[map[string]any](f.attempt(t, f.caller, contract.ActionOpenSession, string(session)))
+	resultOf[map[string]any](f.attempt(t, f.caller, contract.ActionCreateSession, string(session)))
 }
 
 func TestAnExecutorRefusesAPresetThatCannotFillItsActions(t *testing.T) {
 	for name, presets := range map[string]string{
 		"an unknown field": `{"p": {"title": "t", "launch": {"template": "t", "image": "i"},
-			"open_session": {"spec": {"harness": "HARNESS_CODEX", "model": "m", "cwd": "/"}}}}`,
-		"no harness": `{"p": {"title": "t", "launch": {"template": "t"}, "open_session": {"spec": {"model": "m", "cwd": "/"}}}}`,
+			"create_session": {"spec": {"harness": "HARNESS_CODEX", "model": "m", "cwd": "/"}}}}`,
+		"no harness": `{"p": {"title": "t", "launch": {"template": "t"}, "create_session": {"spec": {"model": "m", "cwd": "/"}}}}`,
 		"no template": `{"p": {"title": "t", "launch": {},
-			"open_session": {"spec": {"harness": "HARNESS_CLAUDE", "model": "m", "cwd": "/"}}}}`,
+			"create_session": {"spec": {"harness": "HARNESS_CLAUDE", "model": "m", "cwd": "/"}}}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			binding := catalog.OrchestrationBinding{Description: "d", Namespace: "test", Presets: json.RawMessage(presets)}

@@ -2,7 +2,7 @@
 
 ## Identity and admission
 
-`Sampler` is a separate authenticated gRPC API. `OpenSession` binds a canonical public Session UUID
+`Sampler` is a separate authenticated gRPC API. `CreateSession` binds a canonical public Session UUID
 to a `SessionSpec` whose placement is `central_sampler_v1` with one exact `executor_environment`,
 caller ServiceAccount UID and fixed `SandboxDestination` plus expected incarnation UID. The
 Dispatcher and sampler require the spec environment and executor destination to match. The
@@ -24,10 +24,10 @@ separate [Session/environment task](../plans/task_dag.md#central-session-environ
 
 `spec.instructions` is the caller's briefing. Callers that expose an additive
 `additional_instructions` parameter map it to this field; it never replaces Agentplane guidance.
-At the first durable open, the Store composes the configured `platform_instructions`, the child
+At first durable creation, the Store composes the configured `platform_instructions`, the child
 Session ID, then the caller briefing. It persists
-that effective prompt separately from the raw opening request, which remains the idempotency key.
-An exact duplicate open reuses the stored prompt even if the configured guide has changed; a new
+that effective prompt separately from the raw creation request, which remains the idempotency key.
+An exact duplicate create reuses the stored prompt even if the configured guide has changed; a new
 Session receives the current guide. Provider and harness base instructions remain separate.
 
 If `platform_instructions` is omitted, startup logs a warning and new Sessions retain the previous
@@ -35,7 +35,7 @@ caller-only prompt. An explicitly configured guide must be nonempty. This allows
 deploy before managed configuration enables the guide; the omission is controlled by the operator,
 never by a Session's opening request. Enabling or changing the guide affects only new Sessions.
 
-Opening or briefing a Session does not start a provider turn. Optional setup may execute first, but
+Creating or briefing a Session does not start a provider turn. Optional setup may execute first, but
 the first model turn starts only after an explicit `SubmitInput`.
 
 `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn` and `Compact` admit durable,

@@ -155,7 +155,7 @@ func (g *Gateway) Methods() auth.Methods {
 	return auth.Methods{
 		environmentruntimepb.EnvironmentRuntime_ListSessions_FullMethodName:          callers,
 		environmentruntimepb.EnvironmentRuntime_GetStatus_FullMethodName:             callers,
-		environmentruntimepb.EnvironmentRuntime_OpenSession_FullMethodName:           dispatcher,
+		environmentruntimepb.EnvironmentRuntime_CreateSession_FullMethodName:         dispatcher,
 		environmentruntimepb.EnvironmentRuntime_SubmitInput_FullMethodName:           dispatcher,
 		environmentruntimepb.EnvironmentRuntime_ChangeModel_FullMethodName:           dispatcher,
 		environmentruntimepb.EnvironmentRuntime_ChangeReasoningEffort_FullMethodName: dispatcher,

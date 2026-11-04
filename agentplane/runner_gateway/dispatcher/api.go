@@ -31,7 +31,7 @@ type SandboxReader interface {
 }
 
 // ExecutionAccountReader resolves the current controller-owned ServiceAccount for a Sandbox. The
-// UID is live delivery/write authority; retained reads use the UID recorded in session_opening.
+// UID is live delivery/write authority; retained reads use the UID recorded in session.
 type ExecutionAccountReader interface {
 	GetExecutionAccount(context.Context, SandboxSnapshot) (*ServiceAccountIdentity, bool, error)
 }
@@ -207,9 +207,9 @@ func Methods(resolver *auth.Resolver) auth.Methods {
 		dispatcherpb.SessionDispatcher_ChangeModel_FullMethodName:           rule,
 		dispatcherpb.SessionDispatcher_ChangeReasoningEffort_FullMethodName: rule,
 		dispatcherpb.SessionDispatcher_InterruptTurn_FullMethodName:         rule,
-		dispatcherpb.SessionDispatcher_OpenSession_FullMethodName:           rule,
-		dispatcherpb.SessionDispatcher_GetSessionOpening_FullMethodName:     rule,
-		dispatcherpb.SessionDispatcher_ListSessionOpenings_FullMethodName:   rule,
+		dispatcherpb.SessionDispatcher_CreateSession_FullMethodName:         rule,
+		dispatcherpb.SessionDispatcher_GetSession_FullMethodName:            rule,
+		dispatcherpb.SessionDispatcher_ListSessions_FullMethodName:          rule,
 		dispatcherpb.SessionDispatcher_GetDispatch_FullMethodName:           rule,
 		dispatcherpb.SessionDispatcher_WatchDispatches_FullMethodName:       rule,
 		dispatcherpb.SessionDispatcher_ListDispatches_FullMethodName:        rule,
@@ -289,27 +289,27 @@ func (s *Service) executionAccount(ctx context.Context, sandbox SandboxSnapshot)
 
 // requireLiveExecution checks the recorded target before applying scoped backend trust or
 // proving that a normal caller still matches its current and retained execution account.
-func (s *Service) requireLiveExecution(ctx context.Context, opening *Opening, sandbox SandboxSnapshot, caller CallerIdentity) error {
-	if opening == nil || opening.SandboxName != sandbox.Name || opening.SandboxUID != sandbox.UID {
+func (s *Service) requireLiveExecution(ctx context.Context, session *Session, sandbox SandboxSnapshot, caller CallerIdentity) error {
+	if session == nil || session.SandboxName != sandbox.Name || session.SandboxUID != sandbox.UID {
 		return status.Error(codes.PermissionDenied, "Session target does not match")
 	}
 	if caller.Privileged {
 		return nil
 	}
-	if opening.ExecutionPrincipal == nil || opening.ExecutionPrincipal.GetUid() == "" {
+	if session.ExecutionPrincipal == nil || session.ExecutionPrincipal.GetUid() == "" {
 		return status.Error(codes.PermissionDenied, "caller does not own the Session")
 	}
 	account, found, err := s.executionAccount(ctx, sandbox)
 	if err != nil {
 		return status.Error(codes.Unavailable, "sandbox execution identity unavailable")
 	}
-	if !found || account == nil || account.GetUid() != opening.ExecutionPrincipal.GetUid() {
+	if !found || account == nil || account.GetUid() != session.ExecutionPrincipal.GetUid() {
 		return status.Error(codes.FailedPrecondition, "sandbox execution identity changed")
 	}
 	if caller.ServiceAccountIdentity == nil || !sameServiceAccount(account.GetAccount(), caller.ServiceAccountIdentity.GetAccount()) ||
 		account.GetUid() != caller.ServiceAccountIdentity.GetUid() ||
-		!sameServiceAccount(opening.ExecutionPrincipal.GetAccount(), caller.ServiceAccountIdentity.GetAccount()) ||
-		opening.ExecutionPrincipal.GetUid() != caller.ServiceAccountIdentity.GetUid() {
+		!sameServiceAccount(session.ExecutionPrincipal.GetAccount(), caller.ServiceAccountIdentity.GetAccount()) ||
+		session.ExecutionPrincipal.GetUid() != caller.ServiceAccountIdentity.GetUid() {
 		return status.Error(codes.PermissionDenied, "caller does not own the Session")
 	}
 	return nil
@@ -321,12 +321,12 @@ func apiError(err error) error {
 		return nil
 	case errors.Is(err, ErrCommandConflict):
 		return status.Error(codes.AlreadyExists, "command_id was used for other work")
-	case errors.Is(err, ErrOpeningConflict):
+	case errors.Is(err, ErrSessionConflict):
 		return status.Error(codes.AlreadyExists, "session_id was opened with another request")
 	case errors.Is(err, ErrSandboxDeleted):
 		return status.Error(codes.FailedPrecondition, "sandbox was deleted")
-	case errors.Is(err, ErrOpeningUnconfirmed):
-		return status.Error(codes.FailedPrecondition, "Session opening is not confirmed")
+	case errors.Is(err, ErrSessionUnconfirmed):
+		return status.Error(codes.FailedPrecondition, "Session is not confirmed")
 	case errors.Is(err, ErrQueueFull):
 		return status.Error(codes.ResourceExhausted, err.Error())
 	case errors.Is(err, ErrNotFound):
@@ -362,22 +362,22 @@ func (s *Service) sandbox(ctx context.Context, name string) (SandboxSnapshot, er
 
 // commandTarget resolves the Session's placement and applies an optional incarnation-scoped
 // authorization precondition before checking the live Sandbox and execution account.
-func (s *Service) commandTarget(ctx context.Context, sessionID, expectedSandboxUID string, caller CallerIdentity) (*Opening, SandboxSnapshot, error) {
-	opening, err := s.Store.GetOpeningForCaller(ctx, sessionID, caller)
+func (s *Service) commandTarget(ctx context.Context, sessionID, expectedSandboxUID string, caller CallerIdentity) (*Session, SandboxSnapshot, error) {
+	session, err := s.Store.GetSessionForCaller(ctx, sessionID, caller)
 	if err != nil {
 		return nil, SandboxSnapshot{}, apiError(err)
 	}
-	if expectedSandboxUID != "" && expectedSandboxUID != opening.SandboxUID {
+	if expectedSandboxUID != "" && expectedSandboxUID != session.SandboxUID {
 		return nil, SandboxSnapshot{}, status.Error(codes.PermissionDenied, "Session target does not match")
 	}
-	current, err := s.sandbox(ctx, opening.SandboxName)
+	current, err := s.sandbox(ctx, session.SandboxName)
 	if err != nil {
 		return nil, SandboxSnapshot{}, err
 	}
-	if err := s.requireLiveExecution(ctx, opening, current, caller); err != nil {
+	if err := s.requireLiveExecution(ctx, session, current, caller); err != nil {
 		return nil, SandboxSnapshot{}, err
 	}
-	return opening, current, nil
+	return session, current, nil
 }
 
 func (s *Service) enqueue(ctx context.Context, commandID, sessionID, expectedSandboxUID string, command *commandpb.Command) (dispatch *dispatcherpb.Dispatch, resultErr error) {
@@ -393,11 +393,11 @@ func (s *Service) enqueue(ctx context.Context, commandID, sessionID, expectedSan
 	if err := required(commandID, sessionID); err != nil {
 		return nil, err
 	}
-	opening, _, err := s.commandTarget(ctx, sessionID, expectedSandboxUID, caller)
+	session, _, err := s.commandTarget(ctx, sessionID, expectedSandboxUID, caller)
 	if err != nil {
 		return nil, err
 	}
-	row, err := s.Store.EnqueueForCaller(ctx, sessionID, opening.SandboxName, opening.SandboxUID, command, nil, caller)
+	row, err := s.Store.EnqueueForCaller(ctx, sessionID, session.SandboxName, session.SandboxUID, command, nil, caller)
 	if err != nil {
 		return nil, apiError(err)
 	}
@@ -437,9 +437,9 @@ func (s *Service) ChangeReasoningEffort(ctx context.Context, request *dispatcher
 	return &dispatcherpb.ChangeReasoningEffortResponse{Dispatch: row}, nil
 }
 
-func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSessionRequest) (response *dispatcherpb.OpenSessionResponse, resultErr error) {
+func (s *Service) CreateSession(ctx context.Context, request *dispatcherpb.CreateSessionRequest) (response *dispatcherpb.CreateSessionResponse, resultErr error) {
 	ctx, span := observability.Start(
-		ctx, "Dispatcher OpenSession",
+		ctx, "Dispatcher CreateSession",
 		trace.WithAttributes(
 			attribute.String("session.id", request.GetSessionId()),
 			attribute.String("sandbox.name", requestTarget(request).GetName()),
@@ -458,24 +458,24 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 	}
 	// Recover an accepted request without consulting current owner availability. This
 	// path only reads the receipt; it never queues, wakes, binds or materializes work.
-	row, err := s.Store.GetOpening(ctx, request.GetSessionId())
+	row, err := s.Store.GetSession(ctx, request.GetSessionId())
 	if err == nil {
 		if err := row.authorizeRetry(caller); err != nil {
 			return nil, apiError(err)
 		}
 		placement, err := placementFromRequest(request)
 		if err != nil {
-			return nil, apiError(ErrOpeningConflict)
+			return nil, apiError(ErrSessionConflict)
 		}
 		target := requestTarget(request)
 		if err := row.matchRequest(target.GetName(), target.GetUid(), placement, request.GetSpec(), request.SetupScript); err != nil {
 			return nil, apiError(err)
 		}
-		opening, err := DescribeOpening(row)
+		session, err := DescribeSession(row)
 		if err != nil {
 			return nil, apiError(err)
 		}
-		return &dispatcherpb.OpenSessionResponse{Opening: opening}, nil
+		return &dispatcherpb.CreateSessionResponse{Session: session}, nil
 	}
 	if !errors.Is(err, ErrNotFound) {
 		return nil, apiError(err)
@@ -514,19 +514,19 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 		}
 		execution = account
 	}
-	row, err = s.Store.OpenSessionWithPlacementForCaller(ctx, request.GetSessionId(), target.GetName(), current.UID, placement,
+	row, err = s.Store.CreateSessionWithPlacementForCaller(ctx, request.GetSessionId(), target.GetName(), current.UID, placement,
 		request.GetSpec(), request.SetupScript, nil, execution, caller)
 	if err != nil {
 		return nil, apiError(err)
 	}
-	if _, err := s.Store.GetOpeningForCaller(ctx, row.SessionID, caller); err != nil {
+	if _, err := s.Store.GetSessionForCaller(ctx, row.SessionID, caller); err != nil {
 		return nil, apiError(err)
 	}
-	opening, err := DescribeOpening(row)
+	session, err := DescribeSession(row)
 	if err != nil {
 		return nil, apiError(err)
 	}
-	return &dispatcherpb.OpenSessionResponse{Opening: opening}, nil
+	return &dispatcherpb.CreateSessionResponse{Session: session}, nil
 }
 
 func canonicalSessionID(value string) error {
@@ -537,7 +537,7 @@ func canonicalSessionID(value string) error {
 	return nil
 }
 
-func (s *Service) GetSessionOpening(ctx context.Context, request *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error) {
+func (s *Service) GetSession(ctx context.Context, request *dispatcherpb.GetSessionRequest) (*dispatcherpb.GetSessionResponse, error) {
 	if err := required(request.GetSessionId()); err != nil {
 		return nil, err
 	}
@@ -545,18 +545,18 @@ func (s *Service) GetSessionOpening(ctx context.Context, request *dispatcherpb.G
 	if err != nil {
 		return nil, err
 	}
-	row, err := s.Store.GetOpeningForCaller(ctx, request.GetSessionId(), caller)
+	row, err := s.Store.GetSessionForCaller(ctx, request.GetSessionId(), caller)
 	if err != nil {
 		return nil, apiError(err)
 	}
-	opening, err := DescribeOpening(row)
+	session, err := DescribeSession(row)
 	if err != nil {
 		return nil, apiError(err)
 	}
-	return &dispatcherpb.GetSessionOpeningResponse{Opening: opening}, nil
+	return &dispatcherpb.GetSessionResponse{Session: session}, nil
 }
 
-func (s *Service) ListSessionOpenings(ctx context.Context, request *dispatcherpb.ListSessionOpeningsRequest) (*dispatcherpb.ListSessionOpeningsResponse, error) {
+func (s *Service) ListSessions(ctx context.Context, request *dispatcherpb.ListSessionsRequest) (*dispatcherpb.ListSessionsResponse, error) {
 	caller, err := s.caller(ctx)
 	if err != nil {
 		return nil, err
@@ -571,29 +571,29 @@ func (s *Service) ListSessionOpenings(ctx context.Context, request *dispatcherpb
 	var after string
 	if token := request.GetPageToken(); token != "" {
 		if len(token) > 128 {
-			return nil, status.Error(codes.InvalidArgument, "invalid opening page token")
+			return nil, status.Error(codes.InvalidArgument, "invalid session page token")
 		}
 		decoded, err := base64.RawURLEncoding.DecodeString(token)
 		if err != nil || canonicalSessionID(string(decoded)) != nil {
-			return nil, status.Error(codes.InvalidArgument, "invalid opening page token")
+			return nil, status.Error(codes.InvalidArgument, "invalid session page token")
 		}
 		after = string(decoded)
 	}
-	rows, err := s.Store.ListOpeningsForCaller(ctx, after, int(limit)+1, caller)
+	rows, err := s.Store.ListSessionsForCaller(ctx, after, int(limit)+1, caller)
 	if err != nil {
 		return nil, apiError(err)
 	}
-	response := &dispatcherpb.ListSessionOpeningsResponse{}
+	response := &dispatcherpb.ListSessionsResponse{}
 	if len(rows) > int(limit) {
 		rows = rows[:limit]
 		response.NextPageToken = base64.RawURLEncoding.EncodeToString([]byte(rows[len(rows)-1].SessionID))
 	}
 	for _, row := range rows {
-		opening, err := DescribeOpening(row)
+		session, err := DescribeSession(row)
 		if err != nil {
 			return nil, apiError(err)
 		}
-		response.Openings = append(response.Openings, opening)
+		response.Sessions = append(response.Sessions, session)
 	}
 	return response, nil
 }
@@ -630,15 +630,15 @@ func (s *Service) CancelDispatch(ctx context.Context, request *dispatcherpb.Canc
 		return nil, apiError(err)
 	}
 	if !caller.Privileged {
-		opening, openErr := s.Store.GetOpening(ctx, queued.SessionID)
+		session, openErr := s.Store.GetSession(ctx, queued.SessionID)
 		if openErr != nil {
 			return nil, apiError(openErr)
 		}
-		current, err := s.sandbox(ctx, opening.SandboxName)
+		current, err := s.sandbox(ctx, session.SandboxName)
 		if err != nil {
 			return nil, err
 		}
-		if err := s.requireLiveExecution(ctx, opening, current, caller); err != nil {
+		if err := s.requireLiveExecution(ctx, session, current, caller); err != nil {
 			return nil, err
 		}
 	}

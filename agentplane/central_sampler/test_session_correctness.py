@@ -20,7 +20,7 @@ import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 
 from agentplane.central_sampler import sampler_pb2, sampler_pb2_grpc
-from agentplane.central_sampler.testing import METADATA, Endpoint, open_request, service, settings
+from agentplane.central_sampler.testing import METADATA, Endpoint, create_request, service, settings
 from agentplane.central_sampler.testing_store import Store
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
@@ -224,8 +224,8 @@ async def test_turn_outcomes_preserve_safe_continuation(
             database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
-            request = open_request(tmp_path)
-            await stub.OpenSession(request, metadata=METADATA)
+            request = create_request(tmp_path)
+            await stub.CreateSession(request, metadata=METADATA)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="first", text="Start"
@@ -331,8 +331,8 @@ async def test_lost_process_read_reply_resumes_same_process_and_cursor(
             database_url, endpoint.origin, proxy.url, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
-            request = open_request(tmp_path)
-            await stub.OpenSession(request, metadata=METADATA)
+            request = create_request(tmp_path)
+            await stub.CreateSession(request, metadata=METADATA)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="read-recovery", text="Run one command."
@@ -408,8 +408,8 @@ async def test_lost_process_read_after_observed_output_is_catchable_without_repl
             database_url, endpoint.origin, proxy.url, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
-            request = open_request(tmp_path)
-            await stub.OpenSession(request, metadata=METADATA)
+            request = create_request(tmp_path)
+            await stub.CreateSession(request, metadata=METADATA)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="observed-read-fault", text="Run one command."
@@ -525,8 +525,8 @@ async def test_lost_process_start_ack_rejects_tool_and_caught_call_continues(
             database_url, endpoint.origin, proxy.url, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
-            request = open_request(tmp_path)
-            await stub.OpenSession(request, metadata=METADATA)
+            request = create_request(tmp_path)
+            await stub.CreateSession(request, metadata=METADATA)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="start-ack-lost", text="Run one command."
@@ -608,8 +608,8 @@ async def test_uncaught_lost_apply_patch_ack_reaches_model_and_thread_continues(
             database_url, endpoint.origin, proxy.url, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
-            request = open_request(tmp_path)
-            await stub.OpenSession(request, metadata=METADATA)
+            request = create_request(tmp_path)
+            await stub.CreateSession(request, metadata=METADATA)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="uncaught-patch", text="Apply one patch."
@@ -694,8 +694,8 @@ async def test_explicit_recovery_resets_javascript_session_after_host_loss(
         # affecting another test's shared fixture or host process.
         config = settings(database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, host_logs)
         async with service(config) as stub:
-            request = open_request(tmp_path)
-            await stub.OpenSession(request, metadata=METADATA)
+            request = create_request(tmp_path)
+            await stub.CreateSession(request, metadata=METADATA)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="recover-start", text="Start the operation."
@@ -802,8 +802,8 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
             update={"models": {"test-model": config.models["test-model"].model_copy(update={"exec_encoding": "json"})}}
         )
         async with service(config) as stub:
-            request = open_request(tmp_path)
-            await stub.OpenSession(request, metadata=METADATA)
+            request = create_request(tmp_path)
+            await stub.CreateSession(request, metadata=METADATA)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="stale-json-cell", text="Start a process and continue."

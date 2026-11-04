@@ -69,7 +69,7 @@ type rejectedProcessReadEvidence struct {
 
 // NewExecutor restores local executor state without contacting the execution environment.
 func NewExecutor(ctx context.Context, store *Store, owner Owner, session *Session, settings Settings) (*Executor, func() error, error) {
-	request := &samplerpb.OpenSessionRequest{}
+	request := &samplerpb.CreateSessionRequest{}
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		return nil, nil, fmt.Errorf("decode stored sampler Session: %w", err)
 	}

@@ -598,7 +598,7 @@ ENV = Environment(
             direct_tools=frozenset(
                 {
                     "list_launch_presets",
-                    "open_session",
+                    "create_session",
                     "submit_input",
                     "interrupt_turn",
                     "change_model",

@@ -158,8 +158,8 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		default:
 			return nil, refuse("unknown_action", "this executor does not expose %q", request.Action.Name)
 		}
-	case contract.ActionOpenSession:
-		args, err := e.inputs.OpenSession.Decode(request.Arguments)
+	case contract.ActionCreateSession:
+		args, err := e.inputs.CreateSession.Decode(request.Arguments)
 		if err != nil {
 			return nil, err
 		}
@@ -173,7 +173,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		if !strings.HasPrefix(args.Spec.Cwd, "/") {
 			return nil, refuse("invalid_arguments", "spec.cwd must be an absolute path")
 		}
-		request := &dispatcherpb.OpenSessionRequest{
+		request := &dispatcherpb.CreateSessionRequest{
 			SessionId:   args.SessionID,
 			SetupScript: args.SetupScript,
 			Spec: &sessionpb.SessionSpec{
@@ -188,11 +188,11 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		} else {
 			request.Spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: target, Harness: harness}}}
 		}
-		response, err := e.dispatcher.OpenSession(ctx, request)
+		response, err := e.dispatcher.CreateSession(ctx, request)
 		if err != nil {
 			return nil, writeFailure("Session Dispatcher", err)
 		}
-		return protoEnvelope("opening", response.GetOpening())
+		return protoEnvelope("session", response.GetSession())
 	case contract.ActionSubmitInput:
 		args, err := e.inputs.SubmitInput.Decode(request.Arguments)
 		if err != nil {

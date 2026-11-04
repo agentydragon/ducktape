@@ -38,7 +38,7 @@ type Options struct {
 	Reader *reads.Reader
 	// ReaderAccounts retain the existing Pod-bound backend-wide read path.
 	ReaderAccounts []auth.Account
-	// Wakeups listens to raw history, summary changes and Session openings.
+	// Wakeups listens to raw history, summary changes and Sessions.
 	Wakeups *wakeups.Hub
 	// RequestTimeout bounds a call's backend work and each write to a watch or follow stream.
 	RequestTimeout time.Duration

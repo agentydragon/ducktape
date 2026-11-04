@@ -95,13 +95,15 @@ one needs a new Sandbox. A refused, interrupted or non-zero-exit bootstrap fails
 with 409. Arbitrary user-provided shell,
 automatic reruns after source changes, and a script registry are out of scope.
 
-Thread setup is separate from Sandbox bootstrap. The app passes the selected Thread setup source
-with the runner's `OpenSession`; the runner returns `Attached` promptly and records setup output and
-its result as typed events in the Thread's durable history. It creates the resolved `SessionSpec.cwd`
-and invokes `/bin/sh -eu` there. A successful exit starts the harness in that same directory. A
-failed or interrupted setup leaves a readable Thread and workspace, but cannot be retried in that
-Thread; the operator starts a new Thread. Haku and Finance presets use this mechanism to create
-independent repository checkouts per Thread. The platform mechanism has no Git-specific fields.
+Thread setup is separate from Sandbox bootstrap. The app includes the selected Thread setup source
+in logical `CreateSession`; the Dispatcher returns the Session resource and its current materialization
+status while the placement owner handles setup. Setup output and its result become typed events in the
+Thread's durable history. The owner creates the resolved `SessionSpec.cwd` and invokes `/bin/sh -eu`
+there. A successful exit starts the harness in that same directory. Owner acceptance does not mean
+setup has finished. A failed or interrupted setup leaves a readable Thread and workspace, but cannot
+be retried in that Thread; the operator starts a new Thread. Haku and Finance presets use this
+mechanism to create independent repository checkouts per Thread. The platform mechanism has no
+Git-specific fields.
 
 ## UX
 

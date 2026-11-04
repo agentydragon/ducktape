@@ -104,9 +104,9 @@ class Runner(environment_runtime_pb2_grpc.EnvironmentRuntimeServicer):
         self._admissions: dict[str, event_log_pb2.EventEntry] = {}
 
     @override
-    async def OpenSession(
-        self, request: environment_runtime_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
-    ) -> environment_runtime_pb2.OpenSessionResponse:
+    async def CreateSession(
+        self, request: environment_runtime_pb2.CreateSessionRequest, context: grpc.aio.ServicerContext
+    ) -> environment_runtime_pb2.CreateSessionResponse:
         if (
             request.session_id != str(self.source.session_id)
             or request.spec != self.source.attached.spec
@@ -116,7 +116,7 @@ class Runner(environment_runtime_pb2_grpc.EnvironmentRuntimeServicer):
         attached = session_pb2.Attached()
         attached.CopyFrom(self.source.attached)
         attached.session_id = request.session_id
-        return environment_runtime_pb2.OpenSessionResponse(attached=attached)
+        return environment_runtime_pb2.CreateSessionResponse(attached=attached)
 
     @override
     async def GetStatus(

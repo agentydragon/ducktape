@@ -16,7 +16,7 @@ import pytest_bazel
 from PIL import Image
 
 from agentplane.central_sampler import sampler_pb2
-from agentplane.central_sampler.testing import METADATA, Endpoint, open_request, service, settings
+from agentplane.central_sampler.testing import METADATA, Endpoint, create_request, service, settings
 from agentplane.central_sampler.testing_store import Store
 from agentplane.env import config as configuration
 from agentplane.env.e2e.testing import launches
@@ -147,7 +147,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     history_target=history.ingress_target,
                     history_token_file=history_token,
                 )
-                request = open_request(tmp_path / "workspace")
+                request = create_request(tmp_path / "workspace")
                 request.executor.CopyFrom(sandbox.destination)
                 request.spec.placement.central_sampler_v1.executor_environment.name = sandbox.destination.target.name
                 request.spec.placement.central_sampler_v1.executor_environment.uid = sandbox.destination.target.uid
@@ -159,7 +159,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 )
                 session_id = request.session_id
                 async with service(sampler_settings) as stub:
-                    await stub.OpenSession(request, metadata=METADATA, timeout=10)
+                    await stub.CreateSession(request, metadata=METADATA, timeout=10)
                     await stub.SubmitInput(
                         environment_runtime_pb2.SubmitInputRequest(
                             session_id=session_id, command_id="shell-and-patch", text="Write, patch and read the file."

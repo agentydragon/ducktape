@@ -40,8 +40,8 @@ type SessionHistory interface {
 	GetSessionSummary(ctx context.Context, in *historypb.GetSessionSummaryRequest, opts ...grpc.CallOption) (*historypb.SessionSummary, error)
 }
 
-type SessionOpenings interface {
-	GetSessionOpening(context.Context, *dispatcherpb.GetSessionOpeningRequest, ...grpc.CallOption) (*dispatcherpb.GetSessionOpeningResponse, error)
+type Sessions interface {
+	GetSession(context.Context, *dispatcherpb.GetSessionRequest, ...grpc.CallOption) (*dispatcherpb.GetSessionResponse, error)
 }
 
 // GitHub authorizes a GitHub source: it returns the access the service's GitHub App reads the source under, or
@@ -68,7 +68,7 @@ type Options struct {
 	SendPolicy *inboxaccess.Policy
 	// History confirms a Session before a message opens an inbox for it.
 	History  SessionHistory
-	Openings SessionOpenings
+	Sessions Sessions
 	// MessageBodyLimit is the most UTF-8 bytes a message body may hold, at most store.MessageBodyCeiling.
 	MessageBodyLimit int
 	// OperatorReader is the name, in Namespace, of the ServiceAccount that can read Session diagnostics for the namespace.

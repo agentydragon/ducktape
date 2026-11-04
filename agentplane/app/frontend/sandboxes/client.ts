@@ -20,66 +20,77 @@ import {
   type EnvironmentRuntimeStatus,
   type SessionSpec,
 } from "../../../proto/session_pb";
-import { GetEnvironmentRuntimeStatusRequestSchema, OpenSessionRequestSchema } from "../../app_service_pb";
+import { CreateSessionRequestSchema, GetEnvironmentRuntimeStatusRequestSchema } from "../../app_service_pb";
 import {
-  GetSessionOpeningRequestSchema,
-  GetSessionOpeningResponseSchema,
-  SessionOpeningSchema,
-  type SessionOpening,
+  GetSessionRequestSchema,
+  GetSessionResponseSchema,
+  SessionSchema,
+  type Session,
 } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
 /** Submit once; an uncertain response is reconciled by the caller-minted Session ID. */
-export async function openSession(
+export async function createSession(
   target: EnvironmentTarget,
   sessionId: string,
   spec: SessionSpec,
   setupScript?: string | null
-): Promise<SessionOpening> {
-  const request = create(OpenSessionRequestSchema, {
+): Promise<Session> {
+  const request = create(CreateSessionRequestSchema, {
     name: target.name,
     sessionId,
     sandboxUid: target.uid,
     spec: toJson(SessionSpecSchema, spec) as JsonObject,
     setupScript: setupScript === undefined ? undefined : fromJson(ValueSchema, setupScript),
   });
-  const body = toJson(OpenSessionRequestSchema, request, { useProtoFieldName: true }) as JsonObject;
-  // The path supplies name. Older Huma replicas reject extra JSON properties.
+  const body = toJson(CreateSessionRequestSchema, request, { useProtoFieldName: true }) as JsonObject;
+  // The path supplies the name; the app request body carries the remaining fields.
   delete body.name;
-  return sessionOpeningJson(`/sandboxes/${encodeURIComponent(request.name)}/sessions`, {
+  const session = await sessionJson(`/sandboxes/${encodeURIComponent(request.name)}/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    // Preserve the request spelling understood by app replicas and cached bundles during rollout.
     body: JSON.stringify(body),
   });
+  if (session.sessionId !== request.sessionId) {
+    throw new Error(`App returned Session ${session.sessionId} for requested Session ${request.sessionId}`);
+  }
+  const placement = session.placement?.kind;
+  const exactTarget =
+    placement?.case === "environmentHosted"
+      ? placement.value.environment
+      : placement?.case === "centralSamplerV1"
+        ? placement.value.executorEnvironment
+        : undefined;
+  if (exactTarget?.name !== target.name || exactTarget?.uid !== target.uid) {
+    throw new Error("App acknowledged a different Environment identity");
+  }
+  return session;
 }
 
-export async function getSessionOpening(sessionId: string): Promise<SessionOpening> {
-  const request = create(GetSessionOpeningRequestSchema, { sessionId });
-  const response = await fetchWithLogin(
-    `/upstream/dispatcher/v1/sessions/${encodeURIComponent(request.sessionId)}/opening`
-  );
+export async function getSession(sessionId: string): Promise<Session> {
+  const request = create(GetSessionRequestSchema, { sessionId });
+  const response = await fetchWithLogin(`/upstream/dispatcher/v1/sessions/${encodeURIComponent(request.sessionId)}`);
   const body: unknown = await response.json();
   if (!response.ok) throw new HttpError(response, body);
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
-    throw new Error("Dispatcher opening response must be a JSON object");
+    throw new Error("Dispatcher Session response must be a JSON object");
   }
-  const opening = fromJson(GetSessionOpeningResponseSchema, body as JsonObject).opening;
-  if (!opening) throw new Error("Dispatcher returned no Session opening");
-  if (opening.sessionId !== request.sessionId) {
-    throw new Error(`Dispatcher returned Session ${opening.sessionId} for requested Session ${request.sessionId}`);
+  const session = fromJson(GetSessionResponseSchema, body as JsonObject).session;
+  if (!session) throw new Error("Dispatcher returned no Session");
+  if (session.sessionId !== request.sessionId) {
+    throw new Error(`Dispatcher returned Session ${session.sessionId} for requested Session ${request.sessionId}`);
   }
-  return opening;
+  return session;
 }
 
-async function sessionOpeningJson(path: string, init?: RequestInit): Promise<SessionOpening> {
+async function sessionJson(path: string, init?: RequestInit): Promise<Session> {
   const response = await fetchWithLogin(path, init);
   const body = await response.json();
   if (!response.ok) throw new HttpError(response, body);
-  return fromJson(SessionOpeningSchema, body);
+  return fromJson(SessionSchema, body);
 }
 
-/** During rollout an older app replica can still return its Huma HTTP error. */
-export function sessionOpeningRejected(error: unknown): boolean {
+/** Classify explicit create rejections; transport failures remain uncertain. */
+export function sessionCreateRejected(error: unknown): boolean {
   if (!(error instanceof HttpError)) return false;
   if (error.code !== undefined) {
     // INVALID_ARGUMENT, NOT_FOUND, ALREADY_EXISTS, PERMISSION_DENIED, FAILED_PRECONDITION,
@@ -89,7 +100,7 @@ export function sessionOpeningRejected(error: unknown): boolean {
   return error.status >= 400 && error.status < 500 && error.status !== 408;
 }
 
-export function sessionOpeningNotVisible(error: unknown): boolean {
+export function sessionNotVisible(error: unknown): boolean {
   return (
     error instanceof HttpError &&
     (error.code !== undefined ? error.code === 5 || error.code === 14 : error.status === 404 || error.status === 503)

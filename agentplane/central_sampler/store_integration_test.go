@@ -27,7 +27,7 @@ import (
 
 const fixturePlatformInstructions = "Fixture Agentplane platform guidance."
 
-func openStoreSession(t *testing.T, store *Store, request *samplerpb.OpenSessionRequest, ownerUID string, api protocol.APIStyle) (*Session, error) {
+func openStoreSession(t *testing.T, store *Store, request *samplerpb.CreateSessionRequest, ownerUID string, api protocol.APIStyle) (*Session, error) {
 	t.Helper()
 	if request.GetExecutor() == nil {
 		request.Executor = &identitypb.SandboxDestination{
@@ -41,12 +41,12 @@ func openStoreSession(t *testing.T, store *Store, request *samplerpb.OpenSession
 		}}}
 	}
 	platformInstructions := fixturePlatformInstructions
-	return store.OpenSession(t.Context(), request, ownerUID, api, &platformInstructions)
+	return store.CreateSession(t.Context(), request, ownerUID, api, &platformInstructions)
 }
 
 func openSessionForStore(t *testing.T, store *Store, setup string) *Session {
 	t.Helper()
-	request := &samplerpb.OpenSessionRequest{
+	request := &samplerpb.CreateSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
 			Cwd: "/fixture", Model: "fixture-model",
@@ -60,11 +60,11 @@ func openSessionForStore(t *testing.T, store *Store, setup string) *Session {
 	return session
 }
 
-func TestStoreOpeningFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) {
+func TestStoreSessionFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) {
 	store := newTestStore(t)
 	guideA, guideB := "Fixture platform guide A.", "Fixture platform guide B."
 	briefing := "\n  Fixture caller briefing.\n"
-	request := &samplerpb.OpenSessionRequest{
+	request := &samplerpb.CreateSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
 			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "fixture-executor", Uid: "fixture-executor-uid"}}}},
@@ -86,11 +86,11 @@ func TestStoreOpeningFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 			}
 		}
 	}
-	opened, err := store.OpenSession(t.Context(), request, "fixture-caller-uid", protocol.APIStyleResponses, &guideA)
+	opened, err := store.CreateSession(t.Context(), request, "fixture-caller-uid", protocol.APIStyleResponses, &guideA)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var storedRequest samplerpb.OpenSessionRequest
+	var storedRequest samplerpb.CreateSessionRequest
 	if err := proto.Unmarshal(opened.Configuration, &storedRequest); err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestStoreOpeningFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := store.OpenSession(t.Context(), proto.Clone(request).(*samplerpb.OpenSessionRequest), "fixture-caller-uid", protocol.APIStyleResponses, &guideB)
+	reopened, err := store.CreateSession(t.Context(), proto.Clone(request).(*samplerpb.CreateSessionRequest), "fixture-caller-uid", protocol.APIStyleResponses, &guideB)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,14 +135,14 @@ func TestStoreOpeningFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 	if after.Instructions == nil || *after.Instructions != *before.Instructions || !bytes.Equal(beforeContext, afterContext) {
 		t.Fatal("duplicate open changed the frozen prompt or conversation context")
 	}
-	changed := proto.Clone(request).(*samplerpb.OpenSessionRequest)
+	changed := proto.Clone(request).(*samplerpb.CreateSessionRequest)
 	changed.Spec.Instructions = "Fixture replacement briefing."
-	if _, err := store.OpenSession(t.Context(), changed, "fixture-caller-uid", protocol.APIStyleResponses, &guideB); !errors.Is(err, ErrConflict) {
+	if _, err := store.CreateSession(t.Context(), changed, "fixture-caller-uid", protocol.APIStyleResponses, &guideB); !errors.Is(err, ErrConflict) {
 		t.Fatalf("changed caller briefing error=%v, want ErrConflict", err)
 	}
-	freshRequest := proto.Clone(request).(*samplerpb.OpenSessionRequest)
+	freshRequest := proto.Clone(request).(*samplerpb.CreateSessionRequest)
 	freshRequest.SessionId = uuid.NewString()
-	fresh, err := store.OpenSession(t.Context(), freshRequest, "fixture-caller-uid", protocol.APIStyleResponses, &guideB)
+	fresh, err := store.CreateSession(t.Context(), freshRequest, "fixture-caller-uid", protocol.APIStyleResponses, &guideB)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,9 +160,9 @@ func TestStoreOpeningFreezesPlatformGuidanceAndRetainsRawBriefing(t *testing.T) 
 	checkSessionID(*freshConversation.Instructions, freshRequest.SessionId)
 }
 
-func TestStoreOpeningWithoutPlatformGuidanceKeepsCallerPromptAcrossActivation(t *testing.T) {
+func TestStoreSessionWithoutPlatformGuidanceKeepsCallerPromptAcrossActivation(t *testing.T) {
 	store := newTestStore(t)
-	request := &samplerpb.OpenSessionRequest{
+	request := &samplerpb.CreateSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
 			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "fixture-executor", Uid: "fixture-executor-uid"}}}},
@@ -173,7 +173,7 @@ func TestStoreOpeningWithoutPlatformGuidanceKeepsCallerPromptAcrossActivation(t 
 			Target: &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "fixture-executor", Uid: "fixture-executor-uid"},
 		},
 	}
-	opened, err := store.OpenSession(t.Context(), request, "fixture-caller-uid", protocol.APIStyleResponses, nil)
+	opened, err := store.CreateSession(t.Context(), request, "fixture-caller-uid", protocol.APIStyleResponses, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestStoreOpeningWithoutPlatformGuidanceKeepsCallerPromptAcrossActivation(t 
 		t.Fatal(err)
 	}
 	guide := "Fixture enabled platform guide."
-	reopened, err := store.OpenSession(t.Context(), request, "fixture-caller-uid", protocol.APIStyleResponses, &guide)
+	reopened, err := store.CreateSession(t.Context(), request, "fixture-caller-uid", protocol.APIStyleResponses, &guide)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +282,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	}
 	const previousIncarnationUID = "fixture-previous-incarnation"
 	const replacementIncarnationUID = "fixture-replacement-incarnation"
-	session, err := openStoreSession(t, store, &samplerpb.OpenSessionRequest{
+	session, err := openStoreSession(t, store, &samplerpb.CreateSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
 			Cwd: "/fixture", Model: "fixture-model",
@@ -376,7 +376,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	configuration := &samplerpb.OpenSessionRequest{}
+	configuration := &samplerpb.CreateSessionRequest{}
 	if err := proto.Unmarshal(persisted.Configuration, configuration); err != nil {
 		t.Fatal(err)
 	}
@@ -804,7 +804,7 @@ func TestStoreCodeHostLossNoticesOnceAndFencesPendingCalls(t *testing.T) {
 	for _, api := range []protocol.APIStyle{protocol.APIStyleResponses, protocol.APIStyleAnthropicMessages} {
 		t.Run(string(api), func(t *testing.T) {
 			store := newTestStore(t)
-			session, err := openStoreSession(t, store, &samplerpb.OpenSessionRequest{
+			session, err := openStoreSession(t, store, &samplerpb.CreateSessionRequest{
 				SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{
 					Cwd: "/fixture", Model: "fixture-model",
 				},
@@ -1673,7 +1673,7 @@ func TestDescribePreservesSessionConfigurationAndUpdatesModel(t *testing.T) {
 		Owner:  &identitypb.ServiceAccount{Namespace: "fixture", Name: "executor"},
 		Target: &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "fixture-sandbox", Uid: "fixture-sandbox-uid"},
 	}
-	session, err := openStoreSession(t, store, &samplerpb.OpenSessionRequest{
+	session, err := openStoreSession(t, store, &samplerpb.CreateSessionRequest{
 		SessionId: uuid.NewString(), Spec: spec, Executor: executor, ExpectedIncarnationUid: "fixture-incarnation-uid",
 	}, "fixture-account", protocol.APIStyleResponses)
 	if err != nil {
@@ -1979,8 +1979,8 @@ func TestPendingInterruptTakesPrecedenceOverSteering(t *testing.T) {
 
 func TestStoreReopeningIgnoresRetiredSessionRouting(t *testing.T) {
 	store := newTestStore(t)
-	request := &samplerpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}}
-	legacy := proto.Clone(request).(*samplerpb.OpenSessionRequest)
+	request := &samplerpb.CreateSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}}
+	legacy := proto.Clone(request).(*samplerpb.CreateSessionRequest)
 	legacy.Spec.ProtoReflect().SetUnknown([]byte{0x32, 0x00})
 	if _, err := openStoreSession(t, store, legacy, "fixture-account", protocol.APIStyleResponses); err != nil {
 		t.Fatal(err)

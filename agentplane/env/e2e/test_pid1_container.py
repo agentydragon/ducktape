@@ -254,8 +254,8 @@ async def test_production_pid1_embedded_host_reaps_setup(
         wrapped = container.get_wrapped_container()
         await gateway.control.connect(control, "pid1-host-uid")
         stub = await gateway.control.runner()
-        await stub.OpenSession(
-            environment_runtime_pb2.OpenSessionRequest(
+        await stub.CreateSession(
+            environment_runtime_pb2.CreateSessionRequest(
                 session_id=str(uuid.uuid4()),
                 spec=session_pb2.SessionSpec(
                     placement=session_pb2.SessionPlacement(

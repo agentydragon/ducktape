@@ -30,7 +30,7 @@ func placementOf(spec *sessionpb.SessionSpec) SessionPlacement {
 	}
 }
 
-func placementFromRequest(request *dispatcherpb.OpenSessionRequest) (SessionPlacement, error) {
+func placementFromRequest(request *dispatcherpb.CreateSessionRequest) (SessionPlacement, error) {
 	if request.GetSpec() == nil {
 		return "", status.Error(codes.InvalidArgument, "Session spec is required")
 	}
@@ -61,7 +61,7 @@ func validExactEnvironment(target *sessionpb.ExactEnvironment) bool {
 	return err == nil
 }
 
-func requestTarget(request *dispatcherpb.OpenSessionRequest) *sessionpb.ExactEnvironment {
+func requestTarget(request *dispatcherpb.CreateSessionRequest) *sessionpb.ExactEnvironment {
 	if request.GetSpec().GetPlacement().GetEnvironmentHosted() != nil {
 		return request.GetSpec().GetPlacement().GetEnvironmentHosted().GetEnvironment()
 	}

@@ -37,7 +37,7 @@ _SAFE_ATTRIBUTES = frozenset(
         "http.route",
         "http.response.status_code",
         "rpc.grpc.status_code",
-        "agentplane.session.opening.position",
+        "agentplane.session.recording.position",
         "agentplane.codex.generation",
         "agentplane.environment_runtime.quiesce.stage",
     }

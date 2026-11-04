@@ -140,11 +140,11 @@ func run(ctx context.Context, config Config) error {
 		return fmt.Errorf("configure History Service watcher: %w", err)
 	}
 	defer historyWatchClient.Close()
-	sessionOpeningClient, err := newHistory()
+	historySessionClient, err := newHistory()
 	if err != nil {
-		return fmt.Errorf("configure Session openings watcher: %w", err)
+		return fmt.Errorf("configure Sessions watcher: %w", err)
 	}
-	defer sessionOpeningClient.Close()
+	defer historySessionClient.Close()
 
 	history, err := historydata.New(historyReaderClient)
 	if err != nil {
@@ -225,11 +225,11 @@ func run(ctx context.Context, config Config) error {
 	if err != nil {
 		return fmt.Errorf("configure History summary watch: %w", err)
 	}
-	sessionOpeningClientAdapter := historyWatchAdapter{sessionOpeningClient}
-	sessionOpenings, err := historywatch.NewSessionOpenings(sessionOpeningClientAdapter, threadStore,
+	historySessionClientAdapter := historyWatchAdapter{historySessionClient}
+	historySessions, err := historywatch.NewSessions(historySessionClientAdapter, threadStore,
 		historywatch.Options{RetryInterval: time.Second})
 	if err != nil {
-		return fmt.Errorf("configure Session openings worker: %w", err)
+		return fmt.Errorf("configure Sessions worker: %w", err)
 	}
 
 	actionTarget, err := grpcTargetFromHTTPURL(config.ActionFederation.ServiceURL)
@@ -325,7 +325,7 @@ func run(ctx context.Context, config Config) error {
 	}
 	RegisterPolicyRoutes(server, config, environments, policies)
 	if err := RegisterSessionRoutes(server, app); err != nil {
-		return fmt.Errorf("register Session opening facade: %w", err)
+		return fmt.Errorf("register Session facade: %w", err)
 	}
 	if err := RegisterRunnerRoutes(server, app); err != nil {
 		return fmt.Errorf("register Runner status facade: %w", err)
@@ -355,7 +355,7 @@ func run(ctx context.Context, config Config) error {
 	}
 	workers := []processWorker{
 		{name: "history-watch", run: historyWatch.Run},
-		{name: "session-openings", run: sessionOpenings.Run},
+		{name: "history-sessions", run: historySessions.Run},
 	}
 	return serve(ctx, config, server, appAuth, workers)
 }

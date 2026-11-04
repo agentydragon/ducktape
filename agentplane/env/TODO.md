@@ -67,7 +67,7 @@ transaction boundaries with journals and command outcomes before changing storag
 recovery of uncertain native effects.
 
 The broader [Session/runtime model decision](../plans/task_dag.md#session_runtime_model_design--sessions-harness-placement-and-execution-attachments)
-also covers Sessions independent of environments and harnesses inside them. Use `OpenSession` as a
+also covers Sessions independent of environments and harnesses inside them. Use `CreateSession` as a
 concrete example: separate reservation, placement, native process startup and observable readiness
 or failure without assuming all harnesses support the same placement.
 

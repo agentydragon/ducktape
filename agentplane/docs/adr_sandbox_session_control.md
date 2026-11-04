@@ -2,6 +2,12 @@
 
 Status: **decided; see [Decisions](#decisions) for when each was settled.**
 
+**Logical Session RPC names were superseded on 2026-11-04:** Dispatcher, App, Environment Runtime
+and central Sampler use `CreateSession`; Dispatcher reads use `GetSession` and `ListSessions`.
+Former logical `OpenSession`/opening APIs have no compatibility path. The distinct streaming
+`Executor.OpenSession` remains an execution-connection handshake. References to the old logical
+name below preserve this ADR's historical decisions and examples.
+
 Scope: the responsibilities split across the services and custom resources that run a Sandbox (Pod
 or VM) and deliver work to the Sessions in it. This covers the control Service, readiness and
 runner health, quiesce, suspension, the Session message queue, and where each fact lives. It does

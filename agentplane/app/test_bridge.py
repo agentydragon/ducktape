@@ -35,7 +35,7 @@ from agentplane.history_service.testing.protojson import thread_entity_from_reco
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, admitted, delivered_opening
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
@@ -87,7 +87,7 @@ async def failed_bridge_state(
 
 
 async def _create(http: httpx.AsyncClient, spec: session_pb2.SessionSpec, session_id: UUID, sandbox_uid: str) -> str:
-    """Create a Session through the app, and wait for the Thread History's record of its opening gives it."""
+    """Create a Session through the app, then wait for History to project its Thread."""
     exact_spec = session_pb2.SessionSpec()
     exact_spec.CopyFrom(spec)
     if exact_spec.placement.WhichOneof("kind") != "environment_hosted":
@@ -704,7 +704,7 @@ async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
         ) as survivor_http,
     ):
         thread = UUID(await _create(http, spec, uuid4(), sandbox.uid))
-        await delivered_opening(session_dispatcher, thread)
+        await accepted_session(session_dispatcher, thread)
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
         ):
@@ -768,17 +768,17 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
     http: httpx.AsyncClient,
     spec: session_pb2.SessionSpec,
 ) -> None:
-    # No app HTTP request opened this Thread; History's Session opening creates its row.
+    # No app HTTP request created this Session; History's first ingress creates its row.
     session_id = uuid4()
     exact_spec = session_pb2.SessionSpec()
     exact_spec.CopyFrom(spec)
     exact_spec.placement.environment_hosted.environment.name = SANDBOX
     exact_spec.placement.environment_hosted.environment.uid = sandbox.destination.target.uid
     await session_dispatcher.unary(
-        session_dispatcher.stub.OpenSession,
-        session_dispatcher_pb2.OpenSessionRequest(session_id=str(session_id), spec=exact_spec),
+        session_dispatcher.stub.CreateSession,
+        session_dispatcher_pb2.CreateSessionRequest(session_id=str(session_id), spec=exact_spec),
     )
-    await delivered_opening(session_dispatcher, session_id)
+    await accepted_session(session_dispatcher, session_id)
     # The app's production History watcher creates the Thread row; no command or SSE request ran.
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
@@ -803,10 +803,10 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
     session_dispatcher: SessionDispatcherClient,
     history: History,
 ) -> None:
-    """The Dispatcher opens the Session and delivers its inputs, before and after a harness kill, while
+    """The Dispatcher creates the Session and delivers its inputs, before and after a harness kill, while
     History's ingress is held back."""
     thread_id = UUID(await _create(http, spec, uuid4(), sandbox.uid))
-    await delivered_opening(session_dispatcher, thread_id)
+    await accepted_session(session_dispatcher, thread_id)
     await history.service.settled(thread_id, lambda _summary: True)
     (runner_session,) = [row for row in await sandbox_runner.list_sessions() if row.session_id == str(thread_id)]
     opened_cursor = runner_session.last_cursor

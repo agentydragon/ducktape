@@ -29,23 +29,22 @@ service SessionDispatcher {
   rpc InterruptTurn(InterruptTurnRequest) returns (InterruptTurnResponse) {
     option (google.api.http) = {post: "/v1/sessions/{session_id}:interruptTurn" body: "*"};
   }
-  // Stores the request and answers with the Session's `SessionOpening` in
-  // `DELIVERY_STATE_QUEUED_IN_DISPATCHER`; the opening is delivered once the Sandbox is `Ready`, before any
+  // Stores the request and answers with the Session in waiting materialization; creation is delivered once the Sandbox is `Ready`, before any
   // command for the Session. The selected placement must include its exact Sandbox UID; a missing Sandbox fails
   // `NOT_FOUND`, and a different current UID fails `FAILED_PRECONDITION` before recording. `session_id` must be a
   // canonical lowercase UUID and is the idempotency key: a retry with the same placement, exact execution target and request answers
-  // with the same `SessionOpening`;
+  // with the same Session;
   // conflicting requests under that ID fail `ALREADY_EXISTS`.
-  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse) {
-    option (google.api.http) = {post: "/v1/sessions/{session_id}:open" body: "*"};
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse) {
+    option (google.api.http) = {post: "/v1/sessions" body: "*"};
   }
-  rpc GetSessionOpening(GetSessionOpeningRequest) returns (GetSessionOpeningResponse) {
-    option (google.api.http) = {get: "/v1/sessions/{session_id}/opening"};
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse) {
+    option (google.api.http) = {get: "/v1/sessions/{session_id}"};
   }
-  // Discovers current opening records, including queued and failed materialization.
+  // Discovers current Sessions, including waiting and failed materialization.
   // Uses retained owner authority and does not contact the environment or History.
-  rpc ListSessionOpenings(ListSessionOpeningsRequest) returns (ListSessionOpeningsResponse) {
-    option (google.api.http) = {get: "/v1/session-openings"};
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse) {
+    option (google.api.http) = {get: "/v1/sessions"};
   }
   rpc GetDispatch(GetDispatchRequest) returns (GetDispatchResponse) {
     option (google.api.http) = {get: "/v1/dispatches/{command_id}"};
@@ -209,7 +208,7 @@ message CancelDispatchResponse {
   Dispatch dispatch = 1;
 }
 
-message OpenSessionRequest {
+message CreateSessionRequest {
   // Caller-minted canonical lowercase UUID; never deliberately reuse it after deletion.
   string session_id = 1;
   reserved 2, 5;
@@ -220,49 +219,61 @@ message OpenSessionRequest {
   reserved "environment_hosted", "central_sampler", "initial_executor";
 }
 
-// Where a Session's opening is, in the vocabulary of `DeliveryState`: `DELIVERY_STATE_RUNNER_ADMITTED` is
-// opened.
-message SessionOpening {
+// The current materialization of a Session by its placement owner. Acceptance is durable owner
+// admission, not proof of harness readiness or completion.
+message SessionStatus {
+  enum Materialization {
+    SESSION_MATERIALIZATION_UNSPECIFIED = 0;
+    SESSION_MATERIALIZATION_WAITING = 1;
+    SESSION_MATERIALIZATION_IN_PROGRESS = 2;
+    SESSION_MATERIALIZATION_ACCEPTED = 3;
+    SESSION_MATERIALIZATION_FAILED = 4;
+    SESSION_MATERIALIZATION_UNKNOWN = 5;
+  }
+  Materialization materialization = 1;
+  optional string reason = 2;
+  agentplane.proto.DeliveryBlocker delivery_blocker = 3;
+  agentplane.proto.WakeAssessment wake_assessment = 4;
+}
+
+// A minimal authorized read projection; immutable SessionSpec instructions remain private.
+message Session {
   string session_id = 1;
   reserved 2, 3;
   reserved "sandbox", "sandbox_uid";
-  DeliveryState state = 4;
-  optional string reason = 5;
-  reserved 6;
+  SessionStatus status = 4;
+  reserved 5, 6, 9, 10;
+  reserved "state", "reason", "delivery_blocker", "wake_assessment";
   google.protobuf.Timestamp created_at = 7;
   google.protobuf.Timestamp updated_at = 8;
-  // The environment condition currently preventing delivery, independent of delivery state.
-  agentplane.proto.DeliveryBlocker delivery_blocker = 9;
-  // The latest typed automatic-wake assessment. Denied or failed wake requests do not fail the opening.
-  agentplane.proto.WakeAssessment wake_assessment = 10;
   reserved 11, 13, 14;
   reserved "harness", "initial_executor", "environment_hosted", "central_sampler_v1";
   // Read-only projection of the placement stored in SessionSpec, without exposing instructions.
   agentplane.proto.SessionPlacement placement = 12;
 }
 
-message OpenSessionResponse {
-  SessionOpening opening = 1;
+message CreateSessionResponse {
+  Session session = 1;
 }
 
-message GetSessionOpeningRequest {
+message GetSessionRequest {
   string session_id = 1;
 }
 
-message GetSessionOpeningResponse {
-  SessionOpening opening = 1;
+message GetSessionResponse {
+  Session session = 1;
 }
 
-message ListSessionOpeningsRequest {
-  // Maximum returned openings, 1-100; zero selects 50.
+message ListSessionsRequest {
+  // Maximum returned Sessions, 1-100; zero selects 50.
   uint32 limit = 1;
   // Opaque continuation from a previous page. Carries no authority.
   string page_token = 2;
 }
 
-message ListSessionOpeningsResponse {
+message ListSessionsResponse {
   // Ascending Session ID order. Pages read current records, not a frozen snapshot;
   // concurrent changes can add/remove entries, but cannot reorder existing IDs.
-  repeated SessionOpening openings = 1;
+  repeated Session sessions = 1;
   string next_page_token = 2;
 }

@@ -613,7 +613,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
         {
             "name": name,
             "template": POD_TEMPLATE,
-            "launcher_grants": ["open_session", "submit_input", "get_session", "read_turns", "wait_for_turn"],
+            "launcher_grants": ["create_session", "submit_input", "get_session", "read_turns", "wait_for_turn"],
         },
         title="Launch a test Sandbox",
         wait=False,
@@ -643,7 +643,7 @@ async def launcher_drives_only_the_sandbox_it_launched(
             "reasoning_effort": "low",
         }
         opened = await launcher.submit(
-            ORCHESTRATION_GROUP, "open_session", {**session, "spec": spec}, title="Open a test Session", wait=True
+            ORCHESTRATION_GROUP, "create_session", {**session, "spec": spec}, title="Create a test Session", wait=True
         )
         await _launcher_approved(operator_bff, opened, name)
         await client.wait_for_thread_projection(UUID(session_id), timeout_s=RUNNER_ANSWERS_SECONDS)

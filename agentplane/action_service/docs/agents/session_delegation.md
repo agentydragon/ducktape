@@ -85,7 +85,7 @@ request resume on the same exact target:
 
 Use that input with `environments__resume`. `RESUME_OUTCOME_REQUESTED` means the backend accepted
 the desired running-state update; it does not prove readiness or prior command delivery. Read the current
-snapshot again before opening a Session or submitting input:
+snapshot again before creating a Session or submitting input:
 
 ```json
 {
@@ -94,11 +94,11 @@ snapshot again before opening a Session or submitting input:
 ```
 
 Pass this input to `environments__get`. If readiness is still not `READY`, stop and reconcile with
-the operator before opening or submitting new work. An uncertain resume reply is not retried;
+the operator before creating or submitting new work. An uncertain resume reply is not retried;
 refresh the same target and use only a fresh descriptor's token for another explicit request. Never
 replay an earlier input or execution request.
 
-Call `sessions__open` with `harness` and `model` from one returned `configurations` entry, and put a
+Call `sessions__create` with `harness` and `model` from one returned `configurations` entry, and put a
 unique directory below the returned `workspace.root` in `cwd`:
 
 ```json
@@ -114,10 +114,9 @@ unique directory below the returned `workspace.root` in `cwd`:
 }
 ```
 
-Opening returns a Dispatcher receipt; admission alone does not prove the runtime accepted the model.
+`sessions__create` returns `{session: Session}`, the minimal Dispatcher projection. Its materialization status reports owner progress; `SESSION_MATERIALIZATION_ACCEPTED` means durable owner admission, not harness readiness or a completed model turn.
 `additional_instructions` can add standing context without replacing the harness/provider prompt or
-configured platform guidance; it does not start a model turn. An optional `setup_script` may run
-during opening but is not model input.
+configured platform guidance; it does not start a model turn. An optional `setup_script` may run during owner materialization but is not model input.
 
 Call `sessions__submit_input` to start the task explicitly with a separate input:
 
@@ -142,7 +141,7 @@ Call `sessions__observe_input` for that exact command (`wait_seconds` is 0–30)
 
 If observation returns `resume_token`, pass that opaque token on the next observation for the same
 IDs. A timeout ends only the read; `not_observed` does not prove work failed or finished. For the
-independent opening and History summary, call `sessions__get`:
+independent Dispatcher Session and History summary, call `sessions__get`:
 
 ```json
 { "session_id": "11111111-1111-4111-8111-111111111111" }
@@ -163,24 +162,24 @@ correlate by command ID. Preserve source states, gaps, and errors when interpret
 With direct Session/History credentials configured, the CLI sequence is:
 
 ```sh
-agentplane sessions open '11111111-1111-4111-8111-111111111111' --sandbox '<target.name>' --sandbox-uid '<target.uid>' --spec '{"harness":"<configurations[0].harness>","model":"<configurations[0].model>","cwd":"<workspace.root>/<unique-session-directory>","reasoning_effort":"<configurations[0].reasoning_efforts[0]>"}'
+agentplane sessions create '11111111-1111-4111-8111-111111111111' --sandbox '<target.name>' --sandbox-uid '<target.uid>' --spec '{"harness":"<configurations[0].harness>","model":"<configurations[0].model>","cwd":"<workspace.root>/<unique-session-directory>","reasoning_effort":"<configurations[0].reasoning_efforts[0]>"}'
 agentplane sessions submit-input '11111111-1111-4111-8111-111111111111' --command-id '22222222-2222-4222-8222-222222222222' --text '<your task>'
 agentplane sessions observe-input '11111111-1111-4111-8111-111111111111' --command-id '22222222-2222-4222-8222-222222222222' --wait-seconds 30
 agentplane sessions get '11111111-1111-4111-8111-111111111111'
 agentplane sessions read-turns '11111111-1111-4111-8111-111111111111' --count 20
 ```
 
-Replace placeholders before running. See `agentplane sessions open --help` and
+Replace placeholders before running. See `agentplane sessions create --help` and
 `agentplane sessions observe-input --help` for available flags. If direct Session/History credentials
 are absent but Action access is available, use the Action-backed operations instead. They take the
 same JSON inputs as the MCP recipe; discover each schema with `agentplane actions show GROUP/ACTION`:
 
 ```sh
-agentplane actions submit sessions/open --title 'Open a task Session' --arguments @open-session.json
+agentplane actions submit sessions/create --title 'Open a task Session' --arguments @create-session.json
 agentplane actions result '<request ID from submit>'
 ```
 
-Put the substituted `sessions__open` input in `open-session.json` first. Then use `sessions/submit_input`,
+Put the substituted `sessions__create` input in `create-session.json` first. Then use `sessions/submit_input`,
 `sessions/observe_input`, `sessions/get`, and `sessions/read_turns` with their respective recipe inputs.
 Retain each submission's Action idempotency key and request ID as well as the Session and command IDs.
 
@@ -191,7 +190,7 @@ Retain each submission's Action idempotency key and request ID as well as the Se
 - `sessions__interrupt_turn` queues an interrupt for the exact active `turn_id` you observed. It
   also needs the full target UID and a caller-minted command UUID. The Dispatch reports delivery;
   interruption is not rollback of effects.
-- If opening's reply is uncertain, read `sessions__get` with the same Session UUID. If input's reply
+- If creation's reply is uncertain, read `sessions__get` with the same Session UUID. If input's reply
   is uncertain, call `sessions__observe_input` with the same Session and command UUIDs. Continue
   read-only reconciliation and inspect any observed effects; never send the uncertain work again
   under a new ID. `not_observed`, a timeout, or a failed source read leaves the outcome unresolved.

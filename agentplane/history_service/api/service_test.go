@@ -172,7 +172,7 @@ func (s testServer) record(t *testing.T) (uuid.UUID, uint64) {
 		t.Fatal(err)
 	}
 	var position uint64
-	if err := s.db.QueryRowContext(t.Context(), "SELECT opened_position FROM session_history WHERE id = $1", sessionID).Scan(&position); err != nil {
+	if err := s.db.QueryRowContext(t.Context(), "SELECT recorded_position FROM session_history WHERE id = $1", sessionID).Scan(&position); err != nil {
 		t.Fatal(err)
 	}
 	return sessionID, position
@@ -185,7 +185,7 @@ func (s testServer) recordFor(t *testing.T, principal storage.ExecutionPrincipal
 		t.Fatal(err)
 	}
 	var position uint64
-	if err := s.db.QueryRowContext(t.Context(), "SELECT opened_position FROM session_history WHERE id = $1", sessionID).Scan(&position); err != nil {
+	if err := s.db.QueryRowContext(t.Context(), "SELECT recorded_position FROM session_history WHERE id = $1", sessionID).Scan(&position); err != nil {
 		t.Fatal(err)
 	}
 	return sessionID, position
@@ -439,7 +439,7 @@ func TestDirectAndDelegatedHistoryUseTheSameRetainedPrincipalScope(t *testing.T)
 			}
 
 			watchCtx, stopWatch := context.WithTimeout(ctx, 100*time.Millisecond)
-			watch, err := server.client.WatchSessionSummaries(watchCtx, &historypb.WatchSessionSummariesRequest{OpenedAfter: proto.Uint64(position)})
+			watch, err := server.client.WatchSessionSummaries(watchCtx, &historypb.WatchSessionSummariesRequest{RecordedAfter: proto.Uint64(position)})
 			if err != nil {
 				stopWatch()
 				t.Fatalf("open scoped watch: %v", err)
@@ -450,7 +450,7 @@ func TestDirectAndDelegatedHistoryUseTheSameRetainedPrincipalScope(t *testing.T)
 				t.Fatalf("watch changed frame: %+v %v", changed, err)
 			}
 			opened, err := watch.Recv()
-			if err != nil || opened.GetSessionOpened().GetSessionId() != owned.String() {
+			if err != nil || opened.GetSessionRecorded().GetSessionId() != owned.String() {
 				stopWatch()
 				t.Fatalf("watch leaked foreign or legacy opening: %+v %v", opened, err)
 			}
@@ -459,7 +459,7 @@ func TestDirectAndDelegatedHistoryUseTheSameRetainedPrincipalScope(t *testing.T)
 				if err != nil {
 					break
 				}
-				if opened := frame.GetSessionOpened(); opened != nil && opened.GetSessionId() != owned.String() {
+				if opened := frame.GetSessionRecorded(); opened != nil && opened.GetSessionId() != owned.String() {
 					stopWatch()
 					t.Fatalf("watch leaked another principal's opening: %v", opened)
 				}
@@ -469,7 +469,7 @@ func TestDirectAndDelegatedHistoryUseTheSameRetainedPrincipalScope(t *testing.T)
 	}
 
 	watchCtx, stopWatch := context.WithTimeout(delegated(t, readerToken, caller, callerPrincipal.UID), 5*time.Second)
-	watch, err := server.client.WatchSessionSummaries(watchCtx, &historypb.WatchSessionSummariesRequest{OpenedAfter: proto.Uint64(position)})
+	watch, err := server.client.WatchSessionSummaries(watchCtx, &historypb.WatchSessionSummariesRequest{RecordedAfter: proto.Uint64(position)})
 	if err != nil {
 		stopWatch()
 		t.Fatal(err)
@@ -478,7 +478,7 @@ func TestDirectAndDelegatedHistoryUseTheSameRetainedPrincipalScope(t *testing.T)
 		stopWatch()
 		t.Fatalf("revalidation watch changed frame: %+v %v", changed, err)
 	}
-	if opened, err := watch.Recv(); err != nil || opened.GetSessionOpened().GetSessionId() != owned.String() {
+	if opened, err := watch.Recv(); err != nil || opened.GetSessionRecorded().GetSessionId() != owned.String() {
 		stopWatch()
 		t.Fatalf("revalidation watch owner frame: %+v %v", opened, err)
 	}

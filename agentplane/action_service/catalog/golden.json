@@ -2833,7 +2833,7 @@
         "launch": {
          "template": "test-template"
         },
-        "open_session": {
+        "create_session": {
          "spec": {
           "cwd": "/test",
           "harness": "HARNESS_CODEX",
@@ -2859,7 +2859,7 @@
         "launch": {
          "template": "test-template"
         },
-        "open_session": {
+        "create_session": {
          "spec": {
           "cwd": "/test",
           "harness": "HARNESS_CODEX",

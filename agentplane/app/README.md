@@ -48,7 +48,7 @@ attachments, and app-only provisioning or prompt/bootstrap state, including in v
 Backend responsibilities needed by another service move to an independent owner, not a temporary
 app endpoint. EnvironmentService in Runner Gateway owns inventory reads, watches and management;
 the app calls its generated authenticated facade. The app retains Thread and policy composition. The [Session Dispatcher](../runner_gateway/dispatcher/README.md)
-owns opening and durable command delivery; the [Runner Gateway](../runner_gateway/README.md) owns the
+owns logical Session records and durable command delivery; the [Runner Gateway](../runner_gateway/README.md) owns the
 runner control stream and authorized live Runner proxy; the
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold.
 The app is a client of each service for its distinct operation. The browser's pure History reads
@@ -157,9 +157,10 @@ use the [Session Dispatcher](../runner_gateway/dispatcher/README.md) directly wi
 `SessionSpec` and do not depend on app orchestration. The app interface resolves the Sandbox's
 configured preset, applies the caller's overrides, validates the current Sandbox UID, expands the
 Session ID in `cwd`, and creates app-owned Thread metadata before submitting the resolved spec to
-the Dispatcher. Dispatcher owns durable admission, delivery and opening status. Opening reads use
-`GET /upstream/dispatcher/v1/sessions/{session_id}/opening`, which the app exposes only to an
-authenticated operator browser session and forwards with the app's Dispatcher service-account token.
+the Dispatcher with `CreateSession`. Dispatcher owns the durable logical Session, delivery and
+materialization status. Session reads use `GET /upstream/dispatcher/v1/sessions/{session_id}`, which
+the app exposes only to an authenticated operator browser session and forwards with the app's
+Dispatcher service-account token.
 The partial `spec` is a `Struct` validated as strict `SessionSpec` ProtoJSON: absent keys retain
 preset defaults, while explicit empty, zero and null values clear them. An omitted `setup_script`
 uses the preset; null clears it; a string (including empty) replaces it. Request envelopes and
@@ -174,12 +175,18 @@ The generated unary gateway runs the app-owned service in process after cookie-o
 admission and cookie CSRF checks. Token admission also supports explicitly authorized callers and
 integration tests; it does not make this a backend service API. The app calls the Dispatcher over gRPC.
 
-A `SessionOpening` reports queued, delivering, runner-admitted, or failed state. The browser retains
-only its caller-minted Session ID on an uncertain response and reconciles that opening without
-replaying creation or setup. Admission does not mean History has projected a Thread yet.
-The Open request keeps its snake-case body and direct opening response with POST 201 status for
-cached browser bundles and overlapping app replicas. Rollback reverts the app image and frontend
-bundle together; check that the retained opening still resolves by the same ID.
+The returned minimal `Session` contains its ID, placement, timestamps and nested `SessionStatus`; it
+does not expose the immutable spec or instructions. Its materialization state is one of
+`SESSION_MATERIALIZATION_WAITING`, `SESSION_MATERIALIZATION_IN_PROGRESS`,
+`SESSION_MATERIALIZATION_ACCEPTED`, `SESSION_MATERIALIZATION_FAILED` or
+`SESSION_MATERIALIZATION_UNKNOWN`, with reason, delivery blocker and wake assessment where present.
+This is placement-owner progress, not harness state. `SESSION_MATERIALIZATION_ACCEPTED` means the
+owner durably admitted the logical Session, not that its harness is ready or History has projected a
+Thread. The browser retains only its caller-minted Session ID after an uncertain response and
+reconciles with `GetSession`, without replaying creation or setup. The app's `CreateSession` response
+returns `session` directly with POST 201. The former opening-specific Dispatcher RPC and projection
+are removed as part of the coordinated hard cutover; this describes the proposed PR contract, not
+evidence that deployment has completed.
 
 The catalog's `HARNESS_CENTRAL_SAMPLER` model list adds **Central sampler** to the launch form alongside the
 native harness offerings. The Dispatcher selects the sampler service from deployment configuration;
@@ -416,7 +423,7 @@ consumes that budget.
 
 An unexpected background worker failure starts the same drain, then exits with that error so
 Kubernetes restarts the replica. Failures handled by a worker's retry loop keep retrying. The
-restarted Session openings worker replays openings; opening an existing Thread is idempotent.
+restarted History Session-recording worker replays recorded Sessions; creating an existing Thread is idempotent.
 
 ## Shape
 
@@ -604,14 +611,16 @@ the Thread event stream and starts the harness only after setup succeeds. A fail
 readable Thread and workspace but cannot rerun setup under the same session id. The Sandbox page
 uses the configured cwd template instead of replacing it with a hardcoded workspace path.
 
-A new Thread's id is the public Session ID the browser mints and the opening API preserves;
+A new Thread's id is the public Session ID the browser mints and the `CreateSession` API preserves;
 `{session_id}` in a cwd resolves server-side. The browser sends a fresh Session ID with the original
-overrides once and keeps only that ID in `sessionStorage`, never the spec or setup script, so it
-cannot retry the create. After a lost reply or a reload it never re-sends Open. **Check Open status**
-reads the Dispatcher opening by its globally unique Session ID through the operator-authenticated
-facade, then checks the app metadata and History summary endpoints for the projected Thread. A
-queued or runner-admitted opening is not presented as an existing Thread until History records it;
-the page keeps the status and reason visible while the projection catches up.
+overrides once and keeps only that ID in `sessionStorage`, never the spec or setup script. An uncertain
+result is reconciled by `GetSession` with the same ID; creation and setup are not replayed. **Check
+Session status** reads the minimal Dispatcher `Session` resource by its globally unique Session ID
+through the operator-authenticated facade, then checks app metadata and the independent History
+summary for the projected Thread. `Session.status.materialization` distinguishes waiting, in-progress,
+accepted, failed and unknown owner materialization; accepted does not prove native-harness readiness
+or History projection. The page keeps status and reason visible while the Thread projection catches
+up.
 
 ## Policy bindings
 

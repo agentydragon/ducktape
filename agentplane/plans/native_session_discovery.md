@@ -192,7 +192,7 @@ is insufficient to advertise an exhaustive live-native snapshot.
 ### Identity and declaration
 
 Use the same declaration model for roots and children. A root's Session ID is the UUID its client
-chooses for the current `OpenSession` request; the runner mints a UUID for each child it discovers. Either way the ID is
+chooses for the current `CreateSession` request; the runner mints a UUID for each child it discovers. Either way the ID is
 the Session's public identity on the ingress, and the History Service's index learns it from the
 announcement. The proposed harness-minted-root flow below separates requesting creation from
 observing a native conversation. Persist an opaque Agentplane logical ID and its native binding before publication.
@@ -517,22 +517,23 @@ unresolved record, not guessed identity or automatic retry of old work.
 
 #### Root creation and today's service IDs
 
-The Session Dispatcher owns openings and invokes Runner `OpenSession` through the Gateway proxy
+The Session Dispatcher owns logical Session records and invokes the placement owner's `CreateSession`
+through the Gateway proxy
 after the Sandbox is ready. The Runner owns retained execution state, while History records a
 Session after its ingress accepts Events. See the [Runner Gateway](../runner_gateway/README.md) and
-[Session Dispatcher opening contract](../runner_gateway/dispatcher/README.md).
+[Session Dispatcher Session contract](../runner_gateway/dispatcher/README.md).
 
 The native-root design does not yet choose how the Session Dispatcher and Runner should reserve a
 root ID or bind it to confirmed native creation. The example sequence below predates the current
-Dispatcher `OpenSession` path and is a proposal, not a current app path. Review the opening contract
+Dispatcher `CreateSession` path and is a proposal, not a current app path. Review the Session contract
 and identity before implementing it; a harness-minted root ID would need to bind to the public
-Session ID without treating a preselected `OpenSession.session_id` as proof of native creation.
+Session ID without treating a preselected `CreateSession.session_id` as proof of native creation.
 
 The concrete root sequences are:
 
 1. The app submits an authorized Sandbox request through Kubernetes and follows controller readiness.
-2. The client calls Session Dispatcher `OpenSession` with a fresh UUID and complete harness spec;
-   the Dispatcher passes the request to Runner `OpenSession` through the proxy. A future native-root
+2. The client calls Session Dispatcher `CreateSession` with a fresh UUID and its Session spec;
+   the Dispatcher passes creation to the placement owner through the proxy. A future native-root
    contract must decide how that ID and launch intent reserve a logical root and execution owner.
    A retry carries the same UUID; whether the runner started it is read from retained runner state
    and confirmed by history as available. An announcement is not launch success.
@@ -550,7 +551,7 @@ Omitting Claude's ID override is a later optional mode, gated by the no-input de
 experiment described above. Clients need not choose native IDs, but a uniform client API does
 not require both harnesses to mint them. Do not block the first read-only child slice on changing
 root allocation. If first input is bundled with creation in a future API, journal it once as described
-above; do not silently add such a field or a synthetic prompt to today's `OpenSession`.
+above; do not silently add such a field or a synthetic prompt to today's `CreateSession`.
 
 #### Codex v2: spawn, observation, and recovery
 

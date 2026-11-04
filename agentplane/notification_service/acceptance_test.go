@@ -106,11 +106,11 @@ type openingDispatcher struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
 }
 
-func (openingDispatcher) GetSessionOpening(_ context.Context, request *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error) {
+func (openingDispatcher) GetSession(_ context.Context, request *dispatcherpb.GetSessionRequest) (*dispatcherpb.GetSessionResponse, error) {
 	if request.GetSessionId() != testSession {
 		return nil, status.Error(codes.NotFound, "opening not found")
 	}
-	return &dispatcherpb.GetSessionOpeningResponse{Opening: &dispatcherpb.SessionOpening{
+	return &dispatcherpb.GetSessionResponse{Session: &dispatcherpb.Session{
 		SessionId: testSession, Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandboxName, Uid: sandboxUID}}}},
 	}}, nil
 }

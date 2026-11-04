@@ -26,7 +26,7 @@ callers use native gRPC at the owning backend.
 - **Error codes in the browser.** `connections/management.tsx` still branches on HTTP status
   (three times); move it to the body's gRPC `code`, which `HttpError` carries. Session-opening
   recovery uses gRPC codes with an HTTP-status fallback for overlapping app replicas.
-- **Typed Session overrides.** Replace `AppService.OpenSession`'s `Struct` spec and
+- **Typed Session overrides.** Replace `AppService.CreateSession`'s `Struct` spec and
   `Value` setup script with a typed contract, such as an override message or field mask with an
   explicit setup-clear operation. Preserve preset inheritance, explicit zero/empty/null behavior,
   strict validation and the caller-minted ID; plan the HTTP, cached-client and rollback migration.

@@ -32,7 +32,7 @@ var sessionPlacementMigration = goose.NewGoMigration(10,
 				rows.Close()
 				return err
 			}
-			request := &samplerpb.OpenSessionRequest{}
+			request := &samplerpb.CreateSessionRequest{}
 			if err := proto.Unmarshal(raw, request); err != nil {
 				rows.Close()
 				return fmt.Errorf("decode retained central Session %s: %w", id, err)

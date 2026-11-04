@@ -693,7 +693,7 @@ func TestFreshSessionAdmissionInvalidatesIdleToken(t *testing.T) {
 	if err != nil || before.GetIdleSince() == nil {
 		t.Fatalf("initial idle facts=%v, %v", before, err)
 	}
-	if _, err := client.runner.OpenSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := client.runner.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.Quiesce(context.Background(), &sessionpb.QuiesceRequest{IfIdleSince: before.IdleSince}); status.Code(err) != codes.Aborted {
@@ -823,7 +823,7 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
 	request := openLifecycleSession("session-1", filepath.Join(workspace, "project"))
 	request.SetupScript = &setup
-	if _, err := client.runner.OpenSession(client.callCtx, request); err != nil {
+	if _, err := client.runner.CreateSession(client.callCtx, request); err != nil {
 		t.Fatal(err)
 	}
 	waitForFile(t, bootstrapStarted)
@@ -862,7 +862,7 @@ func TestBootstrapAndSetupCompleteOnCloseAndDoNotRerun(t *testing.T) {
 	}
 	restarted := newLifecycleRuntime(t, config)
 	successor := startDirectExecutionTestClient(t, restarted, "test-incarnation")
-	if _, err := successor.runner.OpenSession(successor.callCtx, request); err != nil {
+	if _, err := successor.runner.CreateSession(successor.callCtx, request); err != nil {
 		t.Fatal(err)
 	}
 	sessions, err := successor.runner.ListSessions(successor.callCtx, &sessionpb.ListSessionsRequest{})

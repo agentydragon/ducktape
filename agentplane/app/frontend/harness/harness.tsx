@@ -2924,21 +2924,21 @@ routes.push(
     "POST",
     /^\/sandboxes\/([^/]+)\/sessions$/,
     (_match, _query, _signal, body) => {
-      if (!queueOpenResponses || body === undefined) throw new Error("No queued Session Open fixture is configured");
+      if (!queueCreateResponses || body === undefined)
+        throw new Error("No queued Session Create fixture is configured");
       const request = JSON.parse(body) as { session_id?: string; spec?: JsonValue };
-      if (!request.session_id || !request.spec) throw new Error("Open request has no Session ID or spec");
+      if (!request.session_id || !request.spec) throw new Error("Create request has no Session ID or spec");
       const spec = fromJson(SessionSpecSchema, request.spec);
       if (spec.placement?.kind.case !== "environmentHosted") {
         throw new Error("Queued fixture requires native placement");
       }
-      queuedOpenSessionId = request.session_id;
+      queuedSessionId = request.session_id;
       return {
         sessionId: request.session_id,
+        status: { materialization: "SESSION_MATERIALIZATION_WAITING", reason: "waiting for owner" },
         placement: {
           environmentHosted: toJson(EnvironmentHostedPlacementSchema, spec.placement.kind.value),
         },
-        state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-        reason: "waiting for runner admission",
       };
     },
   ],
@@ -3630,12 +3630,12 @@ routes.unshift(
 
 // Mutable mock service state; Python fixture methods change it before mounting React.
 let previewAction: ActionRequestView | null = null;
-let queueOpenResponses = false;
-let queuedOpenSessionId: string | null = null;
+let queueCreateResponses = false;
+let queuedSessionId: string | null = null;
 
 function projectQueuedSession(): void {
-  if (!queuedOpenSessionId) throw new Error("No queued Session Open to project");
-  const sessionId = queuedOpenSessionId;
+  if (!queuedSessionId) throw new Error("No queued Session Create to project");
+  const sessionId = queuedSessionId;
   const source = THREADS[0];
   if (!source) throw new Error("No Session fixture to copy");
   const sourceAttached = source.summary.attached;
@@ -3644,7 +3644,7 @@ function projectQueuedSession(): void {
     {
       ...source.metadata,
       threadId: sessionId,
-      name: "Queued opening thread",
+      name: "Waiting Session thread",
       createdAt: timestampFromDate(new Date(ago(0))),
     },
     {
@@ -3731,8 +3731,8 @@ const visualHarness = {
   autosuspendStarting,
   addProvisioningSandbox,
   addSuspendedSandboxes,
-  queueOpenResponse(): void {
-    queueOpenResponses = true;
+  queueCreateResponse(): void {
+    queueCreateResponses = true;
   },
   projectQueuedSession,
   set(flag: Flag, on = true): void {

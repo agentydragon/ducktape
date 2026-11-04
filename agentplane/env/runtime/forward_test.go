@@ -263,7 +263,7 @@ func TestForwardRunnerRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *
 			control.EpochMetadata, uint64String(epoch),
 		)
 	}
-	if _, err := client.OpenSession(callContext(ctx, 1, first.GetEnvironmentRuntimeBootId()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := client.CreateSession(callContext(ctx, 1, first.GetEnvironmentRuntimeBootId()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	submitCtx, cancelSubmit := context.WithCancel(ctx)

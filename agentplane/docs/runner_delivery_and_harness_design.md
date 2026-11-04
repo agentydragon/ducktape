@@ -28,7 +28,7 @@ The current runner contracts remain in [Session layering](thread_layering.md), t
 
 ## Current delivery and inventory facts
 
-The app and Notification service send Session openings and commands to the Session Dispatcher. It
+The app and Notification service create Sessions and submit commands through the Session Dispatcher. It
 records openings and commands in its own PostgreSQL database, groups delivery by Sandbox UID, and
 uses per-Sandbox Kubernetes Leases plus database generations to fence replica ownership. It watches
 Sandbox readiness and incarnation changes, then calls the Runner service through the Sandbox's
@@ -72,8 +72,10 @@ There are two different Session inventories:
 - Runner `ListSessions` asks the current runner's `retained.Store` for persisted records and reports
   them with the current harness, setup, launch and activity state. The current
   production callers are the app and Notification, through the per-Sandbox proxy with expected
-  Sandbox UID and owner. Dispatcher does not call the list RPC: an identical `OpenSession` retry
-  returns the runner's existing attachment and a conflicting spec or setup returns `ALREADY_EXISTS`. Runner test drivers use the read for lifecycle assertions.
+  Sandbox UID and owner. Dispatcher does not call the list RPC: an identical logical `CreateSession`
+  retry returns its existing Session record without rediscovering a live runner attachment; a
+  conflicting placement, spec or setup returns `ALREADY_EXISTS`. Runner test drivers use the read
+  for lifecycle assertions.
 - History `FindSessions` and summaries describe Sessions whose Events were retained and folded. They
   can include deleted Sandboxes, do not carry Sandbox UID, and can lag the runner. They are useful
   for retained history and display, but cannot answer whether a harness is running now or whether a
@@ -334,7 +336,7 @@ created before it fails to resume its thread.
 `HarnessStarted` records `resumed` and a PID, not a unique process-incarnation ID. PID is useful
 process-local diagnostic data, but may be reused and does not identify a spawn over time. The stored
 `native_session_id` survives process restart; it is a Claude session ID or Codex thread ID, not the
-Agentplane public Session ID. The public ID also keys the Runner directory, Dispatcher opening and
+Agentplane public Session ID. The public ID also keys the Runner directory, Dispatcher Session record and
 History record. These are already separate identity roles even though the current address usually
 looks like Sandbox plus public Session ID.
 
@@ -490,9 +492,9 @@ effects. Same command ID/payload returns the original admission; conflicting reu
 - The Runner API has no `ResumeSession` or `StopRunnerSession` RPC, executable stop command
   variant, or corresponding Dispatcher/client surface; the removed wire field numbers and names are
   reserved. Add no process kill/restart RPC.
-- Keep `OpenSession` as an idempotent durable Session reservation with immutable creation
+- Keep `CreateSession` as an idempotent durable Session reservation with immutable creation
   configuration. Its acknowledgement does not prove a running harness or completed native creation;
-  repeated open confirms the reservation rather than acting as a resume command.
+  repeated creation confirms the reservation rather than acting as a resume command.
 - Keep the `SubmitInput` request and admission response shapes. Return durable admission without
   waiting for startup; later startup/delivery outcomes belong in the journal.
 - Keep `InterruptTurn` and its required target `turn_id`. For a new command, atomically check the

@@ -297,7 +297,7 @@ Reads return the current snapshot immediately; they neither wait nor resume. The
 `resumePolicy` and exact Sandbox UID/generation; it creates no target or grant. The `sessions` group
 opens Sessions, submits input with caller-minted command IDs, observes input delivery and History
 facts, cancels only a queued input whose durable receipt matches the supplied Session, interrupts
-the exact observed turn, reads the retained Dispatcher opening and History summary, and reads
+the exact observed turn, reads the retained Dispatcher Session and History summary, and reads
 paginated retained turns with explicit coverage and source errors. These projections do not look up
 live environments and preserve facts already observed when another source is unavailable. Opening
 does not start a turn; `additional_instructions` is an additive standing brief and the caller submits

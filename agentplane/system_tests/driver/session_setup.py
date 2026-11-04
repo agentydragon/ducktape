@@ -41,7 +41,7 @@ async def run_setup(
         record_exception=False,
         set_status_on_exception=False,
     ):
-        await client.create_session(
+        await client.create_session_and_wait(
             sandbox_name,
             session_id,
             dispatcher=dispatcher,

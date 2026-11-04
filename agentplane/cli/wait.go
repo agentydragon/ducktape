@@ -240,7 +240,7 @@ func await(
 				return last, nil
 			}
 			if status.Code(err) == codes.Unauthenticated && sawFrame {
-				// A long-lived watch can outlive the projected token. Opening a new RPC lets the
+				// A long-lived watch can outlive the projected token. Session a new RPC lets the
 				// egress sidecar substitute its current token; refusal before a new frame is final.
 				break
 			}

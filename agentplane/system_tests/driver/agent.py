@@ -173,7 +173,7 @@ class Agent:
             session_id = uuid4()
             async for attempt in environment_runtime_startup_retries():
                 with attempt:
-                    await client.create_session(
+                    await client.create_session_and_wait(
                         sandbox,
                         session_id,
                         dispatcher=dispatcher,

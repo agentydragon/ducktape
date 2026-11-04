@@ -22,23 +22,23 @@ const sessionsHelp = `Calls the SessionDispatcher gRPC API (AGENTPLANE_SESSIONS_
 get and observe-input also read retained History (AGENTPLANE_HISTORY_URL, AGENTPLANE_HISTORY_CREDENTIAL).
 read-turns reads retained History only.
 
-This group opens and directs Sessions in an existing Sandbox and can observe an input's correlated
+This group creates and directs Sessions in an existing Sandbox and can observe an input's correlated
 History result or snapshot. It does not provision an environment or read a live environment. The caller
 must already be authorized by each backend it reads.`
 
 type sessionCall func(context.Context, dispatcherpb.SessionDispatcherClient, []string) error
 
 func (a *app) sessionsCommand() *cobra.Command {
-	return group("sessions", "Open and direct Sessions in an existing Sandbox", sessionsHelp,
-		a.openSessionCommand(), a.listSessionOpeningsCommand(), a.submitInputCommand(), a.getOpeningCommand(), a.getDispatchCommand(),
-		a.cancelInputCommand(), a.interruptTurnCommand(), a.getSessionCommand(), a.readTurnsCommand(), a.observeInputCommand())
+	return group("sessions", "Create and direct Sessions in an existing Sandbox", sessionsHelp,
+		a.createSessionCommand(), a.listSessionsCommand(), a.submitInputCommand(), a.getSessionCommand(), a.getDispatchCommand(),
+		a.cancelInputCommand(), a.interruptTurnCommand(), a.readTurnsCommand(), a.observeInputCommand())
 }
 
 func (a *app) getSessionCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "get SESSION_ID",
-		Short: "Read a Session opening and retained History summary",
-		Long: `Reads SessionDispatcher.GetSessionOpening and HistoryService.GetSessionSummary independently.
+		Short: "Read a Session and retained History summary",
+		Long: `Reads SessionDispatcher.GetSession and HistoryService.GetSessionSummary independently.
 The result keeps missing and unavailable sources distinct; it does not query a live environment.
 Both backends authorize this caller independently.`,
 		Args: cobra.ExactArgs(1),
@@ -211,18 +211,18 @@ func (a *app) sessionCommand(fn sessionCall) func(*cobra.Command, []string) erro
 	}
 }
 
-func (a *app) openSessionCommand() *cobra.Command {
+func (a *app) createSessionCommand() *cobra.Command {
 	var sandbox, sandboxUID, specSource, additionalInstructions, setupScript string
 	var setupScriptSet bool
 	command := &cobra.Command{
-		Use:   "open SESSION_ID --sandbox NAME --sandbox-uid UID --spec JSON|@FILE|- [--setup-script TEXT|@FILE|-] [--additional-instructions TEXT]",
-		Short: "Open a Session in an existing Sandbox",
-		Long: `Calls SessionDispatcher.OpenSession. SESSION_ID is a caller-supplied canonical UUID and is the idempotency key.
+		Use:   "create SESSION_ID --sandbox NAME --sandbox-uid UID --spec JSON|@FILE|- [--setup-script TEXT|@FILE|-] [--additional-instructions TEXT]",
+		Short: "Create a Session in an existing Sandbox",
+		Long: `Calls SessionDispatcher.CreateSession. SESSION_ID is a caller-supplied canonical UUID and is the idempotency key.
 --spec is a SessionSpec in ProtoJSON. --additional-instructions appends standing context to any
-instructions in the spec, separated by a blank line. Opening a Session does not create a model turn:
-the caller must send it separately with submit-input. A setup script may execute during opening, but
-is not model input. After an unknown outcome, use get-opening with the same SESSION_ID. The command
-prints the Dispatcher opening record; it does not wait for History.`,
+instructions in the spec, separated by a blank line. Creating a Session does not create a model turn:
+the caller must send it separately with submit-input. A setup script may execute during materialization, but
+is not model input. After an unknown outcome, use get with the same SESSION_ID. The command
+prints the Dispatcher Session resource; it does not wait for History.`,
 		Args: cobra.ExactArgs(1),
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			setupScriptSet = cmd.Flags().Changed("setup-script")
@@ -242,7 +242,7 @@ prints the Dispatcher opening record; it does not wait for History.`,
 			if err != nil {
 				return err
 			}
-			request := &dispatcherpb.OpenSessionRequest{
+			request := &dispatcherpb.CreateSessionRequest{
 				SessionId: args[0], Spec: spec,
 			}
 			target := spec.GetPlacement().GetEnvironmentHosted().GetEnvironment()
@@ -259,24 +259,24 @@ prints the Dispatcher opening record; it does not wait for History.`,
 				}
 				request.SetupScript = &contents
 			}
-			response, err := client.OpenSession(ctx, request)
+			response, err := client.CreateSession(ctx, request)
 			if err != nil {
 				return grpcFailure(ctx, err)
 			}
-			if response.GetOpening() == nil {
-				return invalidResponse("OpenSession returned no opening")
+			if response.GetSession() == nil {
+				return invalidResponse("CreateSession returned no Session")
 			}
-			body, err := protoJSON(response.GetOpening())
+			body, err := protoJSON(response.GetSession())
 			if err != nil {
 				return err
 			}
-			return a.showOne(body, sessionOpeningLine)
+			return a.showOne(body, sessionLine)
 		}),
 	}
 	command.Flags().StringVar(&sandbox, "sandbox", "", "name of the existing Sandbox")
 	command.Flags().StringVar(&sandboxUID, "sandbox-uid", "", "expected Kubernetes Sandbox UID")
 	command.Flags().StringVar(&specSource, "spec", "", "SessionSpec ProtoJSON, @FILE or - for stdin")
-	command.Flags().StringVar(&setupScript, "setup-script", "", "setup script text, @FILE or - for stdin; may execute during opening")
+	command.Flags().StringVar(&setupScript, "setup-script", "", "setup script text, @FILE or - for stdin; may execute during materialization")
 	command.Flags().StringVar(&additionalInstructions, "additional-instructions", "", "append standing context to spec.instructions")
 	for _, flag := range []string{"sandbox", "sandbox-uid", "spec"} {
 		_ = command.MarkFlagRequired(flag)
@@ -321,13 +321,13 @@ runner received the input. After an unknown outcome, use get-dispatch with the s
 	return command
 }
 
-func (a *app) listSessionOpeningsCommand() *cobra.Command {
+func (a *app) listSessionsCommand() *cobra.Command {
 	var limit uint32
 	var pageToken string
 	command := &cobra.Command{
 		Use:   "list [--limit N] [--after TOKEN]",
-		Short: "Discover current Dispatcher Session openings",
-		Long: `Lists one bounded page in Session ID order, including queued and failed openings.
+		Short: "Discover current Dispatcher Sessions",
+		Long: `Lists one bounded page in Session ID order, including waiting and failed Sessions.
 This reads the Dispatcher only: the environment and History may be unavailable or have no record yet.
 The caller sees only records authorized by its retained owner identity or configured backend authority.
 This is not retained History or environment-free central Session discovery.`,
@@ -336,7 +336,7 @@ This is not retained History or environment-free central Session discovery.`,
 			if limit < 1 || limit > 100 {
 				return usageFailure("--limit must be between 1 and 100")
 			}
-			response, err := client.ListSessionOpenings(ctx, &dispatcherpb.ListSessionOpeningsRequest{Limit: limit, PageToken: pageToken})
+			response, err := client.ListSessions(ctx, &dispatcherpb.ListSessionsRequest{Limit: limit, PageToken: pageToken})
 			if err != nil {
 				return grpcFailure(ctx, err)
 			}
@@ -347,11 +347,11 @@ This is not retained History or environment-free central Session discovery.`,
 				}
 				return a.showOne(body, nil)
 			}
-			items, err := protoJSONList(response.GetOpenings())
+			items, err := protoJSONList(response.GetSessions())
 			if err != nil {
 				return err
 			}
-			if err := a.show(items, sessionOpeningLine); err != nil {
+			if err := a.show(items, sessionLine); err != nil {
 				return err
 			}
 			if response.GetNextPageToken() != "" {
@@ -360,35 +360,9 @@ This is not retained History or environment-free central Session discovery.`,
 			return nil
 		}),
 	}
-	command.Flags().Uint32Var(&limit, "limit", 50, "maximum openings returned (1-100)")
+	command.Flags().Uint32Var(&limit, "limit", 50, "maximum Sessions returned (1-100)")
 	command.Flags().StringVar(&pageToken, "after", "", "continue with the previous page's nextPageToken")
 	return command
-}
-
-func (a *app) getOpeningCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "get-opening SESSION_ID",
-		Short: "Read the Dispatcher opening record",
-		Long:  "Calls SessionDispatcher.GetSessionOpening. This is only the Dispatcher record; it is not a combined History snapshot.",
-		Args:  cobra.ExactArgs(1),
-		RunE: a.sessionCommand(func(ctx context.Context, client dispatcherpb.SessionDispatcherClient, args []string) error {
-			if args[0] == "" {
-				return usageFailure("SESSION_ID must not be empty")
-			}
-			response, err := client.GetSessionOpening(ctx, &dispatcherpb.GetSessionOpeningRequest{SessionId: args[0]})
-			if err != nil {
-				return grpcFailure(ctx, err)
-			}
-			if response.GetOpening() == nil {
-				return invalidResponse("GetSessionOpening returned no opening")
-			}
-			body, err := protoJSON(response.GetOpening())
-			if err != nil {
-				return err
-			}
-			return a.showOne(body, sessionOpeningLine)
-		}),
-	}
 }
 
 func (a *app) getDispatchCommand() *cobra.Command {
@@ -517,26 +491,32 @@ func (a *app) readSessionValue(flag, source string) (string, error) {
 	return string(data), nil
 }
 
-func sessionOpeningLine(raw json.RawMessage) (string, error) {
-	opening := &dispatcherpb.SessionOpening{}
-	if err := protojson.Unmarshal(raw, opening); err != nil {
+func sessionLine(raw json.RawMessage) (string, error) {
+	session := &dispatcherpb.Session{}
+	if err := protojson.Unmarshal(raw, session); err != nil {
 		return "", invalidResponse("%v", err)
 	}
-	if opening.GetSessionId() == "" {
-		return "", invalidResponse("no session ID in the opening")
+	if session.GetSessionId() == "" {
+		return "", invalidResponse("no session ID in the Session")
 	}
-	target := opening.GetPlacement().GetEnvironmentHosted().GetEnvironment()
-	if opening.GetPlacement().GetCentralSamplerV1() != nil {
-		target = opening.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
+	if session.GetStatus() == nil {
+		return "", invalidResponse("no materialization status in the Session")
+	}
+	target := session.GetPlacement().GetEnvironmentHosted().GetEnvironment()
+	if session.GetPlacement().GetCentralSamplerV1() != nil {
+		target = session.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
+	}
+	if target.GetName() == "" || target.GetUid() == "" {
+		return "", invalidResponse("no exact environment target in the Session")
 	}
 	line := fields(
-		opening.GetSessionId(),
-		enumSuffix(opening.GetState().String(), "DELIVERY_STATE_"),
+		session.GetSessionId(),
+		enumSuffix(session.GetStatus().GetMaterialization().String(), "SESSION_MATERIALIZATION_"),
 		target.GetName(),
 		"Kubernetes Sandbox UID "+target.GetUid(),
 	)
-	if opening.Reason != nil {
-		line += fields("reason", fmt.Sprintf("%q", opening.GetReason()))
+	if session.GetStatus().Reason != nil {
+		line += fields("reason", fmt.Sprintf("%q", session.GetStatus().GetReason()))
 	}
 	return line, nil
 }
@@ -613,9 +593,9 @@ func sessionSnapshotLine(raw json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	line := fields(snapshot.SessionID.String(), "dispatcher "+string(snapshot.Opening.Kind), "history "+string(snapshot.History.Kind))
-	if snapshot.Opening.Error != nil {
-		line += fields("dispatcher error " + snapshot.Opening.Error.Code)
+	line := fields(snapshot.SessionID.String(), "dispatcher "+string(snapshot.Session.Kind), "history "+string(snapshot.History.Kind))
+	if snapshot.Session.Error != nil {
+		line += fields("dispatcher error " + snapshot.Session.Error.Code)
 	}
 	if snapshot.History.Error != nil {
 		line += fields("history error " + snapshot.History.Error.Code)

@@ -16,7 +16,7 @@ from agentplane.history_service import history_service_pb2
 from agentplane.proto import command_pb2, session_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, admitted, delivered_opening
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.testing.scripted_model import ScriptedModel, Text
@@ -57,12 +57,12 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
         json={"session_id": str(uuid4()), "sandbox_uid": sandbox.uid, "spec": MessageToDict(exact_spec)},
     )
     assert response.status_code == 201, response.text
-    opening = ParseDict(response.json(), session_dispatcher_pb2.SessionOpening())
-    await delivered_opening(session_dispatcher, UUID(opening.session_id))
+    session = ParseDict(response.json(), session_dispatcher_pb2.Session())
+    await accepted_session(session_dispatcher, UUID(session.session_id))
     (runner_session,) = await sandbox_control.runner(sandbox.destination).list_sessions()
-    assert runner_session.session_id == opening.session_id
+    assert runner_session.session_id == session.session_id
     assert launches.PLATFORM_INSTRUCTIONS in runner_session.spec.instructions
-    thread = UUID(opening.session_id)
+    thread = UUID(session.session_id)
     runner_client = sandbox_control.runner(sandbox.destination)
     status = await runner_client.status()
     assert not status.processes
@@ -187,10 +187,10 @@ async def test_dispatcher_resumes_a_dormant_session_and_proxy_reports_it(
     session_id = str(uuid4())
     exact_spec = _exact_session_spec(spec, SANDBOX, sandbox.uid)
     await session_dispatcher.unary(
-        session_dispatcher.stub.OpenSession,
-        session_dispatcher_pb2.OpenSessionRequest(session_id=session_id, spec=exact_spec),
+        session_dispatcher.stub.CreateSession,
+        session_dispatcher_pb2.CreateSessionRequest(session_id=session_id, spec=exact_spec),
     )
-    await delivered_opening(session_dispatcher, UUID(session_id))
+    await accepted_session(session_dispatcher, UUID(session_id))
     await admitted(
         session_dispatcher, await session_dispatcher.submit_input(session_id, "first", SANDBOX, sandbox.uid, "hi")
     )

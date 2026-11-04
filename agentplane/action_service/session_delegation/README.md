@@ -20,7 +20,7 @@ direct tool as `<group>__<action>`:
 | `environments/list`       | `environments__list`       | Offered          |
 | `environments/get`        | `environments__get`        | Offered          |
 | `environments/resume`     | `environments__resume`     | Offered          |
-| `sessions/open`           | `sessions__open`           | Offered          |
+| `sessions/create`         | `sessions__create`         | Offered          |
 | `sessions/submit_input`   | `sessions__submit_input`   | Offered          |
 | `sessions/observe_input`  | `sessions__observe_input`  | Offered          |
 | `sessions/get`            | `sessions__get`            | Offered          |
@@ -30,7 +30,7 @@ direct tool as `<group>__<action>`:
 
 The schemas are defined by the typed Go input records in `contract/inputs.go`; unknown fields are
 rejected. Target references include namespace, name and immutable UID. Session and command IDs are
-caller-minted UUIDs. An opening accepts one offered runtime configuration and optional setup script;
+caller-minted UUIDs. Creation accepts one offered runtime configuration and optional setup script;
 `additional_instructions` is an additive standing brief and does not start a turn. Submit the first
 task separately with `sessions__submit_input`.
 
@@ -40,15 +40,17 @@ one explicit request using the exact target and opaque token from a fresh get; i
 acceptance, not readiness. The receiving backend enforces the effective caller's current
 same-ServiceAccount policy.
 `sessions__get` returns `session_client.GetSession`'s independently sourced retained
-Dispatcher opening and History summary. It does not look up a live environment. Each source keeps
+Dispatcher Session and History summary. The Session part is the minimal authorized projection; it
+omits the creation spec and instructions and does not look up a live environment. Each source keeps
 its observed, missing or unavailable state and sanitized error; an interrupted composite read adds
 an aggregate `read_error` while preserving facts already read. `sessions__read_turns` returns
 `session_client.ReadTurns`' compact retained turns, cursor coverage, gaps, continuation cursor and
 sanitized History error. Incomplete turns remain unfinished when a read stops early. These cursors
 are continuation hints scoped to a Session and carry no authority.
 
-Open, submit and cancel results wrap the owning Dispatcher’s ProtoJSON receipt; an interrupt returns
-its typed ProtoJSON response. Observation returns `session_client.ObserveInput`'s typed source
+Create returns the minimal Dispatcher Session in a `session` result envelope; submit and cancel wrap
+the owning Dispatcher’s ProtoJSON Dispatch receipt, and interrupt returns its typed ProtoJSON
+response. Observation returns `session_client.ObserveInput`'s typed source
 projections, retaining Dispatcher and History facts, gaps, resume token and sanitized source errors
 separately. Protobuf enum strings keep their generated domain names. All successful values are
 stored and returned by MCP Edge as structured JSON with the same JSON text fallback.
@@ -60,7 +62,7 @@ change a PolicySet or caller binding. The receiving services verify the effectiv
 resource authority; neither Action approval nor this delegation path creates or changes caller
 grants.
 
-Opening and input submission retain caller-held Session/command UUIDs for backend idempotent
+Session creation and input submission retain caller-held Session/command UUIDs for backend idempotent
 lookup. Cancellation first reads the caller-authorized Dispatch receipt, checks that its command,
 Session and operation match, then asks Dispatcher to cancel it; a target UID is not needed for this
 queued-only lookup. Reads may fail with a sanitized source error. Resume refusals preserve structured

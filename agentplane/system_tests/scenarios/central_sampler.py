@@ -222,14 +222,14 @@ async def dispatcher_central_setup_tool_and_retained_answer(
             cwd=cwd,
             model=MODEL,
         )
-        interrupted_opening = await deployed.dispatcher.OpenSession(
-            session_dispatcher_pb2.OpenSessionRequest(
+        interrupted_created = await deployed.dispatcher.CreateSession(
+            session_dispatcher_pb2.CreateSessionRequest(
                 session_id=interrupted_session_id, spec=session_spec, setup_script=":\n"
             ),
             metadata=deployed.metadata,
             timeout=15,
         )
-        assert interrupted_opening.opening.placement.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
+        assert interrupted_created.session.placement.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
         interrupted_input = await deployed.dispatcher.SubmitInput(
             session_dispatcher_pb2.SubmitInputRequest(
                 session_id=interrupted_session_id,
@@ -277,8 +277,8 @@ async def dispatcher_central_setup_tool_and_retained_answer(
         assert continuation.native.client_metadata.session_id == interrupted_session_id
         await model.hold(continuation)
 
-        opening = await deployed.dispatcher.OpenSession(
-            session_dispatcher_pb2.OpenSessionRequest(
+        created = await deployed.dispatcher.CreateSession(
+            session_dispatcher_pb2.CreateSessionRequest(
                 session_id=session_id,
                 spec=session_spec,
                 setup_script="printf 'prepared-on-executor\\n' > prepared.txt\nprintf 'setup-on-executor\\n'\n",
@@ -286,7 +286,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
             metadata=deployed.metadata,
             timeout=15,
         )
-        assert opening.opening.placement.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
+        assert created.session.placement.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
         submitted = await deployed.dispatcher.SubmitInput(
             session_dispatcher_pb2.SubmitInputRequest(
                 session_id=session_id, expected_sandbox_uid=deployed.sandbox_uid, command_id=command_id, text=prompt
@@ -499,12 +499,12 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
             cwd=cwd,
             model=MODEL,
         )
-        opening = await deployed.dispatcher.OpenSession(
-            session_dispatcher_pb2.OpenSessionRequest(session_id=session_id, spec=session_spec, setup_script=":\n"),
+        created = await deployed.dispatcher.CreateSession(
+            session_dispatcher_pb2.CreateSessionRequest(session_id=session_id, spec=session_spec, setup_script=":\n"),
             metadata=deployed.metadata,
             timeout=15,
         )
-        assert opening.opening.placement.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
+        assert created.session.placement.central_sampler_v1.executor_environment.uid == deployed.sandbox_uid
         submitted = await deployed.dispatcher.SubmitInput(
             session_dispatcher_pb2.SubmitInputRequest(
                 session_id=session_id,

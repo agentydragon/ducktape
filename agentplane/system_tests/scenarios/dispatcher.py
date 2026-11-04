@@ -376,19 +376,19 @@ async def _dispatch_until(
         raise AssertionError("Dispatch watch ended before the expected state")
 
 
-async def opening_until(
-    stub: Dispatcher, caller: Caller, session: str, predicate: Callable[[pb.SessionOpening], bool]
-) -> pb.SessionOpening:
+async def session_until(
+    stub: Dispatcher, caller: Caller, session: str, predicate: Callable[[pb.Session], bool]
+) -> pb.Session:
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(BOUND_SECONDS), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
     ):
         with attempt:
-            response = await stub.GetSessionOpening(
-                pb.GetSessionOpeningRequest(session_id=session), metadata=caller.metadata, timeout=15
+            response = await stub.GetSession(
+                pb.GetSessionRequest(session_id=session), metadata=caller.metadata, timeout=15
             )
-            assert predicate(response.opening), response.opening
-            return response.opening
-    raise AssertionError("Session opening did not reach the expected state")
+            assert predicate(response.session), response.session
+            return response.session
+    raise AssertionError("Session did not reach the expected state")
 
 
 @asynccontextmanager
@@ -566,27 +566,27 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             cwd="/state/work",
             reasoning_effort="low",
         )
-        opened = await stub.OpenSession(
-            pb.OpenSessionRequest(session_id=session, spec=spec), metadata=authentication.metadata, timeout=15
+        created = await stub.CreateSession(
+            pb.CreateSessionRequest(session_id=session, spec=spec), metadata=authentication.metadata, timeout=15
         )
-        assert opened.opening.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
+        assert created.session.status.materialization == pb.SessionStatus.SESSION_MATERIALIZATION_WAITING
         queued = await stub.ChangeReasoningEffort(
             pb.ChangeReasoningEffortRequest(session_id=session, command_id=command, effort="low"),
             metadata=authentication.metadata,
             timeout=15,
         )
         assert queued.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-        waiting = await opening_until(
-            stub, authentication, session, lambda row: row.reason == "sandbox_operator_requested_stop"
+        waiting = await session_until(
+            stub, authentication, session, lambda row: row.status.reason == "sandbox_operator_requested_stop"
         )
         assert waiting.placement.environment_hosted.environment.uid == uid
-        assert waiting.delivery_blocker.kind == lifecycle_pb.DELIVERY_BLOCKER_KIND_OPERATOR_REQUESTED_STOP
-        assert waiting.wake_assessment.state == lifecycle_pb.WAKE_STATE_DENIED
-        assert waiting.wake_assessment.reason == lifecycle_pb.WAKE_REASON_OPERATOR_REQUESTED_STOP
+        assert waiting.status.delivery_blocker.kind == lifecycle_pb.DELIVERY_BLOCKER_KIND_OPERATOR_REQUESTED_STOP
+        assert waiting.status.wake_assessment.state == lifecycle_pb.WAKE_STATE_DENIED
+        assert waiting.status.wake_assessment.reason == lifecycle_pb.WAKE_REASON_OPERATOR_REQUESTED_STOP
         waiting_sandbox = json.loads(await cluster.kubectl("get", "sandbox", sandbox, "-o", "json"))
         assert waiting_sandbox["spec"].get("running") is False
         assert waiting_sandbox["spec"].get("wakeGeneration", 0) == 0
-        evidence["waiting_reason"] = waiting.reason
+        evidence["waiting_reason"] = waiting.status.reason
         caller_view = json.loads(await cluster.kubectl("get", "pod", caller, "-o", "json"))
         evidence["caller_phase"] = caller_view.get("status", {}).get("phase")
         path.write_text(json.dumps(evidence, indent=2) + "\n")
@@ -619,14 +619,14 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                 stub, authentication, session, lambda row: row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED
             )
         except (DispatchFailedError, grpc.aio.AioRpcError) as error:
-            failed_opening = await stub.GetSessionOpening(
-                pb.GetSessionOpeningRequest(session_id=session), metadata=authentication.metadata, timeout=15
+            failed_session = await stub.GetSession(
+                pb.GetSessionRequest(session_id=session), metadata=authentication.metadata, timeout=15
             )
             evidence.update(
                 {
                     "failure": str(error),
-                    "opening_state": pb.DeliveryState.Name(failed_opening.opening.state),
-                    "opening_reason": failed_opening.opening.reason,
+                    "session_materialization": failed_session.session.status.materialization,
+                    "session_reason": failed_session.session.status.reason,
                 }
             )
             path.write_text(json.dumps(evidence, indent=2) + "\n")
@@ -635,10 +635,10 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         assert admitted.sandbox_uid == uid
         assert admitted.admission.event.command_admitted.command.command_id == command
         assert admitted.admission.event.command_admitted.command.change_reasoning_effort.effort == "low"
-        opening = await stub.GetSessionOpening(
-            pb.GetSessionOpeningRequest(session_id=session), metadata=authentication.metadata, timeout=15
+        session_status = await stub.GetSession(
+            pb.GetSessionRequest(session_id=session), metadata=authentication.metadata, timeout=15
         )
-        assert opening.opening.state == pb.DELIVERY_STATE_RUNNER_ADMITTED
+        assert session_status.session.status.materialization == pb.SessionStatus.SESSION_MATERIALIZATION_ACCEPTED
         if replica_failover:
             await cluster.kubectl(
                 "patch",
@@ -658,8 +658,8 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             deletion_command = str(uuid4())
             cleanup_sessions = [session, deletion_session]
             cleanup_commands = [command, deletion_command]
-            await stub.OpenSession(
-                pb.OpenSessionRequest(session_id=deletion_session, spec=spec),
+            await stub.CreateSession(
+                pb.CreateSessionRequest(session_id=deletion_session, spec=spec),
                 metadata=authentication.metadata,
                 timeout=15,
             )
@@ -838,8 +838,8 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
             channel = dial(target)
             try:
                 stub: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
-                opened = await stub.OpenSession(
-                    pb.OpenSessionRequest(
+                created = await stub.CreateSession(
+                    pb.CreateSessionRequest(
                         session_id=session,
                         spec=session_pb2.SessionSpec(
                             placement=session_pb2.SessionPlacement(
@@ -867,7 +867,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                     metadata=notification_authentication.metadata,
                     timeout=15,
                 )
-                assert opened.opening.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
+                assert created.session.status.materialization == pb.SessionStatus.SESSION_MATERIALIZATION_WAITING
                 assert queued.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
                 await cluster.kubectl(
                     "wait",
@@ -903,19 +903,24 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                 )
                 deadline = asyncio.get_running_loop().time() + BOUND_SECONDS
                 while True:
-                    opening = await stub.GetSessionOpening(
-                        pb.GetSessionOpeningRequest(session_id=session),
-                        metadata=app_authentication.metadata,
-                        timeout=15,
+                    session_status = await stub.GetSession(
+                        pb.GetSessionRequest(session_id=session), metadata=app_authentication.metadata, timeout=15
                     )
-                    if opening.opening.state in (pb.DELIVERY_STATE_FAILED, pb.DELIVERY_STATE_UNKNOWN):
+                    if session_status.session.status.materialization in (
+                        pb.SessionStatus.SESSION_MATERIALIZATION_FAILED,
+                        pb.SessionStatus.SESSION_MATERIALIZATION_UNKNOWN,
+                    ):
                         raise DispatchFailedError(
-                            f"opening {pb.DeliveryState.Name(opening.opening.state)}: {opening.opening.reason}"
+                            f"Session materialization {session_status.session.status.materialization}: "
+                            f"{session_status.session.status.reason}"
                         )
-                    if opening.opening.state == pb.DELIVERY_STATE_RUNNER_ADMITTED:
+                    if (
+                        session_status.session.status.materialization
+                        == pb.SessionStatus.SESSION_MATERIALIZATION_ACCEPTED
+                    ):
                         break
                     if asyncio.get_running_loop().time() >= deadline:
-                        raise AssertionError("Session opening did not reach runner admission")
+                        raise AssertionError("Session did not reach owner acceptance")
                     await asyncio.sleep(1)
 
                 capture_id = uuid4().hex
@@ -1003,7 +1008,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                 evidence.update(
                     {
                         "ready_incarnation": ready_incarnation,
-                        "opening_state": pb.DeliveryState.Name(opening.opening.state),
+                        "session_materialization": session_status.session.status.materialization,
                         "dispatch_state": pb.DeliveryState.Name(admitted.state),
                         "dispatch_admission_cursor": admitted.admission.cursor,
                         "runner_data_archive": archive_manifest["archive_path"],

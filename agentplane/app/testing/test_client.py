@@ -150,7 +150,7 @@ async def test_client_propagates_active_trace_context() -> None:
 
 
 @pytest.mark.parametrize(("overrides", "setup_script"), [(None, None), ({"model": "", "instructions": None}, "")])
-async def test_open_session_preserves_override_presence(
+async def test_create_session_preserves_override_presence(
     overrides: dict[str, object] | None, setup_script: str | None
 ) -> None:
     observed: list[str] = []
@@ -163,6 +163,7 @@ async def test_open_session_preserves_override_presence(
             json.dumps(
                 {
                     "sessionId": str(session_id),
+                    "status": {"materialization": "SESSION_MATERIALIZATION_WAITING"},
                     "placement": {"environmentHosted": {"environment": {"name": "demo", "uid": sandbox_uid}}},
                 }
             ).encode(),
@@ -170,7 +171,7 @@ async def test_open_session_preserves_override_presence(
         )
 
     async with _app(opened, requests=observed) as (client, _):
-        await client.open_session(
+        await client.create_session(
             "demo", session_id, sandbox_uid=sandbox_uid, overrides=overrides, setup_script=setup_script
         )
 
@@ -532,7 +533,7 @@ async def test_create_sandbox_captures_the_exact_complete_ack_without_retrying()
     assert "POST /upstream/environments/v1/environments HTTP/1.1" in observed[0]
 
 
-async def test_open_session_rejects_a_different_sandbox_uid() -> None:
+async def test_create_session_rejects_a_different_sandbox_uid() -> None:
     async def opened(_after: int, writer: asyncio.StreamWriter) -> None:
         await _respond(
             writer,
@@ -543,7 +544,7 @@ async def test_open_session_rejects_a_different_sandbox_uid() -> None:
 
     async with _app(opened) as (client, _):
         with pytest.raises(RuntimeError, match="different Environment identity"):
-            await client.open_session("box", uuid4(), sandbox_uid="expected-uid")
+            await client.create_session("box", uuid4(), sandbox_uid="expected-uid")
         assert not client.opened_sandbox_uids
 
 

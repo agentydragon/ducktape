@@ -16,11 +16,11 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-const openingsPage = 500
+const recordingsPage = 500
 
 type watchStream = grpc.ServerStreamingServer[historypb.WatchSessionSummariesResponse]
 
-// WatchSessionSummaries sends `changed` on opening and after each change, each Session recorded since when the
+// WatchSessionSummaries sends `changed` on recording and after each change, each Session recorded since when the
 // request asks for them, and `reconnect_required` when the lease ends or the server drains while idle. If either
 // ends during a write, the handler returns without another send. A wakeup only prompts the caller to re-read: what
 // it follows is in the tables, so a notification lost on a replica or a dropped LISTEN connection costs at most a
@@ -34,24 +34,24 @@ func (s *Service) WatchSessionSummaries(request *historypb.WatchSessionSummaries
 	leased, endLease := context.WithTimeout(ctx, s.lease)
 	defer endLease()
 	defer context.AfterFunc(s.draining, endLease)()
-	// Subscribed before the opening notice, so nothing committed after it goes unannounced. A recorded Session
+	// Subscribed before the recording notice, so nothing committed after it goes unannounced. A recorded Session
 	// also wakes a stream that asked for none: a spurious `changed` is harmless.
 	changed, unsubscribe, err := s.wakeups.Subscribe(projection.ChannelSummaries, storage.ChannelSessions)
 	if err != nil {
 		return failure(ctx, err)
 	}
 	defer unsubscribe()
-	openedAfter := request.OpenedAfter
+	recordedAfter := request.RecordedAfter
 	for {
 		if err := s.send(leased, stream, &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_Changed{Changed: &emptypb.Empty{}}}); err != nil {
 			return err
 		}
-		if openedAfter != nil {
-			position, err := s.announceOpenings(leased, stream, reader, *openedAfter)
+		if recordedAfter != nil {
+			position, err := s.announceSessions(leased, stream, reader, *recordedAfter)
 			if err != nil {
 				return err
 			}
-			openedAfter = &position
+			recordedAfter = &position
 		}
 		select {
 		case <-changed:
@@ -65,33 +65,33 @@ func (s *Service) WatchSessionSummaries(request *historypb.WatchSessionSummaries
 	}
 }
 
-// announceOpenings sends `session_opened` for each Session recorded after the position, and returns the last
+// announceSessions sends `session_recorded` for each Session recorded after the position, and returns the last
 // position sent.
-func (s *Service) announceOpenings(ctx context.Context, stream watchStream, reader *reads.Reader, after uint64) (uint64, error) {
+func (s *Service) announceSessions(ctx context.Context, stream watchStream, reader *reads.Reader, after uint64) (uint64, error) {
 	for {
-		page, err := s.openedSessions(ctx, reader, after)
+		page, err := s.recordedSessions(ctx, reader, after)
 		if err != nil {
 			return 0, err
 		}
-		for _, opened := range page {
-			response := &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_SessionOpened{
-				SessionOpened: &historypb.SessionOpened{SessionId: opened.SessionID.String(), Position: opened.Position},
+		for _, recorded := range page {
+			response := &historypb.WatchSessionSummariesResponse{Observation: &historypb.WatchSessionSummariesResponse_SessionRecorded{
+				SessionRecorded: &historypb.SessionRecorded{SessionId: recorded.SessionID.String(), Position: recorded.Position},
 			}}
 			if err := s.send(ctx, stream, response); err != nil {
 				return 0, err
 			}
-			after = opened.Position
+			after = recorded.Position
 		}
-		if len(page) < openingsPage {
+		if len(page) < recordingsPage {
 			return after, nil
 		}
 	}
 }
 
-func (s *Service) openedSessions(ctx context.Context, reader *reads.Reader, after uint64) ([]storage.OpenedSession, error) {
+func (s *Service) recordedSessions(ctx context.Context, reader *reads.Reader, after uint64) ([]storage.RecordedSession, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.requestTimeout)
 	defer cancel()
-	page, err := reader.History.OpenedSessions(ctx, after, openingsPage)
+	page, err := reader.History.RecordedSessions(ctx, after, recordingsPage)
 	if err != nil {
 		return nil, failure(ctx, err)
 	}

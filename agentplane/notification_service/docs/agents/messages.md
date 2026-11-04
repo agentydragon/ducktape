@@ -26,7 +26,7 @@ agentplane notifications send THEIR_SESSION_ID --body 'The change is ready for r
 ```
 
 Use the Session ID you were given; nothing lists other agents' Sessions. The service resolves the
-Session's current exact Sandbox target through its Dispatcher opening and pins the UID in the answer.
+Session's current exact Sandbox target through its Dispatcher Session and pins the UID in the answer.
 For `central_sampler_v1` this is its fixed `executor_environment`; Central sampler V1 still requires
 that Sandbox-backed target. The body is plain text, 32 KiB at most unless the
 platform says otherwise. `fromSession` lets the recipient answer you; it is optional and nothing
@@ -36,8 +36,9 @@ Retry a failed or uncertain send with the identical body and key: a send already
 with the same message. The key reused for another body fails `ALREADY_EXISTS`. The command prints the
 key it generated on stderr; pass it back as `--key`. Keep the returned `message.id`.
 
-`NOT_FOUND` means no Dispatcher opening, a replaced Sandbox, or a Session the platform
-has no record of in that Sandbox; a Session is recorded once it has run. `UNAVAILABLE` is temporary:
+`NOT_FOUND` means no Dispatcher Session, a replaced Sandbox, or no matching History record for the
+exact Sandbox incarnation. The logical Session record can exist before its placement owner or History
+records it. `UNAVAILABLE` is temporary:
 retry later with the same key. `RESOURCE_EXHAUSTED` means too many of your messages in that inbox (128
 by default) await acknowledgement: wait for the recipient to catch up rather than sending more.
 

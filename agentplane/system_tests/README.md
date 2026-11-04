@@ -327,9 +327,9 @@ scale, preserving concurrent GitOps/operator changes. Evidence is written to
 `test.outputs/dispatcher-deployed.json`; `passed` and `cleanup_complete` are distinct. The `queue`
 case retains the original single-replica delivery check.
 
-The `opted_in` case covers send-triggered wake for both app `OpenSession` and notification
+The `opted_in` case covers send-triggered wake for both app `CreateSession` and notification
 `SubmitInput`. It creates one stopped Sandbox with `wakeOnSend: true`, then concurrently submits an app
-`OpenSession` and a notification `SubmitInput` using short-lived tokens bound to existing Pods. Both
+`CreateSession` and a notification `SubmitInput` using short-lived tokens bound to existing Pods. Both
 senders must share one `wakeGeneration`; the Dispatcher waits for a new Ready incarnation before
 admitting the Session and input. The `queue` case covers the default `wakeOnSend: false`, which
 leaves a send queued without changing Sandbox state. New Sandboxes default to false; the app's
@@ -395,7 +395,7 @@ receipt back from what the harness sent the model.
   protected tool.
 - `test_launcher_drives_only_the_sandbox_it_launched` has an agent launch a Sandbox through the
   `orchestration_v1` group with grants on it, which the operator approves through the BFF. Its
-  `open_session`, `submit_input`, `read_turns`, `wait_for_turn` and `get_session` on that incarnation
+  `create_session`, `submit_input`, `read_turns`, `wait_for_turn` and `get_session` on that incarnation
   then come back approved by the `<sandbox>.launcher` PolicySet. The test reads a token before the turn,
   checks a short wait returns without completion, then uses its updated token to wait for completion
   and reads the recorded input, tool calls and final assistant message. The launched Sandbox's

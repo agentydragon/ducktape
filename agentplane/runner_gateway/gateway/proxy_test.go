@@ -103,7 +103,7 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 		call func(context.Context) error
 	}{
 		{"open", func(ctx context.Context) error {
-			_, err := client.OpenSession(ctx, &environmentruntimepb.OpenSessionRequest{})
+			_, err := client.CreateSession(ctx, &environmentruntimepb.CreateSessionRequest{})
 			return err
 		}},
 		{"input", func(ctx context.Context) error {

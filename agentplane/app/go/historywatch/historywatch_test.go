@@ -41,8 +41,8 @@ func (c *fakeClient) WatchSessionSummaries(
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	position := requestPosition{}
-	if request.GetOpenedAfter() != 0 || request.OpenedAfter != nil {
-		position = requestPosition{present: true, value: request.GetOpenedAfter()}
+	if request.GetRecordedAfter() != 0 || request.RecordedAfter != nil {
+		position = requestPosition{present: true, value: request.GetRecordedAfter()}
 	}
 	c.requests = append(c.requests, position)
 	c.contexts = append(c.contexts, ctx)
@@ -138,8 +138,8 @@ func reconnectResponse() *historypb.WatchSessionSummariesResponse {
 
 func openedResponse(id string, position uint64) *historypb.WatchSessionSummariesResponse {
 	return &historypb.WatchSessionSummariesResponse{
-		Observation: &historypb.WatchSessionSummariesResponse_SessionOpened{
-			SessionOpened: &historypb.SessionOpened{SessionId: id, Position: position},
+		Observation: &historypb.WatchSessionSummariesResponse_SessionRecorded{
+			SessionRecorded: &historypb.SessionRecorded{SessionId: id, Position: position},
 		},
 	}
 }
@@ -240,7 +240,7 @@ func TestPlannedRenewalResetsConsecutiveFailureCount(t *testing.T) {
 	cancel()
 }
 
-func TestSessionOpeningsReplaysFailedOpenAndAdvancesPositionAfterSuccess(t *testing.T) {
+func TestSessionsReplaysFailedOpenAndAdvancesPositionAfterSuccess(t *testing.T) {
 	id1, id2 := uuid.New(), uuid.New()
 	client := &fakeClient{scripts: []streamScript{
 		{responses: []*historypb.WatchSessionSummariesResponse{changedResponse(), openedResponse(id1.String(), 1)}},
@@ -249,7 +249,7 @@ func TestSessionOpeningsReplaysFailedOpenAndAdvancesPositionAfterSuccess(t *test
 		}},
 	}}
 	store := &fakeThreadStore{failFirst: true}
-	openings, err := NewSessionOpenings(client, store, testOptions())
+	openings, err := NewSessions(client, store, testOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,7 +272,7 @@ func TestSessionOpeningsReplaysFailedOpenAndAdvancesPositionAfterSuccess(t *test
 	}
 	for i, want := range wantPositions {
 		if requests[i] != want {
-			t.Errorf("request %d opened_after = %+v, want %+v", i, requests[i], want)
+			t.Errorf("request %d recorded_after = %+v, want %+v", i, requests[i], want)
 		}
 	}
 	ids := store.snapshot()
@@ -288,14 +288,14 @@ func TestSessionOpeningsReplaysFailedOpenAndAdvancesPositionAfterSuccess(t *test
 	cancel()
 }
 
-func TestSessionOpeningsRejectsNonCanonicalSessionID(t *testing.T) {
+func TestSessionsRejectsNonCanonicalSessionID(t *testing.T) {
 	id := uuid.New()
 	nonCanonical := "{" + id.String() + "}"
 	client := &fakeClient{scripts: []streamScript{{responses: []*historypb.WatchSessionSummariesResponse{
 		openedResponse(nonCanonical, 1),
 	}}}}
 	store := &fakeThreadStore{}
-	openings, err := NewSessionOpenings(client, store, testOptions())
+	openings, err := NewSessions(client, store, testOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

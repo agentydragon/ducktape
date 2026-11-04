@@ -182,18 +182,18 @@ type fakeHistory struct {
 	asked     []string
 }
 
-type fakeOpenings struct {
-	placements map[string]*dispatcherpb.SessionOpening
+type fakeSessions struct {
+	placements map[string]*dispatcherpb.Session
 	err        error
 }
 
-func nativeOpening(sessionID, name, uid string) *dispatcherpb.SessionOpening {
-	return &dispatcherpb.SessionOpening{SessionId: sessionID, Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{
+func nativeSession(sessionID, name, uid string) *dispatcherpb.Session {
+	return &dispatcherpb.Session{SessionId: sessionID, Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{
 		EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: name, Uid: uid}},
 	}}}
 }
 
-func (o *fakeOpenings) GetSessionOpening(_ context.Context, request *dispatcherpb.GetSessionOpeningRequest, _ ...grpc.CallOption) (*dispatcherpb.GetSessionOpeningResponse, error) {
+func (o *fakeSessions) GetSession(_ context.Context, request *dispatcherpb.GetSessionRequest, _ ...grpc.CallOption) (*dispatcherpb.GetSessionResponse, error) {
 	if o.err != nil {
 		return nil, o.err
 	}
@@ -201,7 +201,7 @@ func (o *fakeOpenings) GetSessionOpening(_ context.Context, request *dispatcherp
 	if opening == nil {
 		return nil, status.Error(codes.NotFound, "opening not found")
 	}
-	return &dispatcherpb.GetSessionOpeningResponse{Opening: opening}, nil
+	return &dispatcherpb.GetSessionResponse{Session: opening}, nil
 }
 
 func (h *fakeHistory) GetSessionSummary(_ context.Context, request *historypb.GetSessionSummaryRequest, _ ...grpc.CallOption) (*historypb.SessionSummary, error) {
@@ -252,7 +252,7 @@ type testServer struct {
 	// policy is current and grants nothing until a test grants.
 	policy   *inboxaccess.Policy
 	history  *fakeHistory
-	openings *fakeOpenings
+	openings *fakeSessions
 	// kube holds the Sandboxes the service reads.
 	kube   client.Client
 	config serverConfig
@@ -315,16 +315,16 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 			testSession: {Namespace: testNamespace, Name: sandboxName, Uid: proto.String(sandboxUID)},
 		}},
 		kube: kube,
-		openings: &fakeOpenings{placements: map[string]*dispatcherpb.SessionOpening{
-			testSession:       nativeOpening(testSession, sandboxName, sandboxUID),
-			"missing-session": nativeOpening("missing-session", sandboxName, sandboxUID),
+		openings: &fakeSessions{placements: map[string]*dispatcherpb.Session{
+			testSession:       nativeSession(testSession, sandboxName, sandboxUID),
+			"missing-session": nativeSession("missing-session", sandboxName, sandboxUID),
 		}},
 	}
 	server.policy.Health.MarkSynced()
 	options := Options{
 		Store: server.store, Wakeups: hub, Resolver: resolver, Namespace: testNamespace, Sandboxes: sandboxes,
 		Runner: server.runner, Actions: server.actions, OperatorReader: config.operatorReader,
-		SendPolicy: server.policy, History: server.history, Openings: server.openings, MessageBodyLimit: config.messageBodyLimit,
+		SendPolicy: server.policy, History: server.history, Sessions: server.openings, MessageBodyLimit: config.messageBodyLimit,
 		Debounce: config.debounce, RequestTimeout: config.requestTimeout,
 	}
 	if !config.githubDisabled {
@@ -389,7 +389,7 @@ func (s testServer) subscribe(t *testing.T, key string, sessionID ...string) *no
 	request := createRequest(key)
 	if len(sessionID) > 0 {
 		request.SessionId = sessionID[0]
-		s.openings.placements[sessionID[0]] = nativeOpening(sessionID[0], sandboxName, sandboxUID)
+		s.openings.placements[sessionID[0]] = nativeSession(sessionID[0], sandboxName, sandboxUID)
 		s.runner.mu.Lock()
 		s.runner.sessions[sandboxName] = append(s.runner.sessions[sandboxName], sessionID[0])
 		s.runner.mu.Unlock()
@@ -410,7 +410,7 @@ func (s testServer) recreateSandbox(t *testing.T) {
 	if err := s.kube.Create(t.Context(), &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: sandboxName, UID: successorUID}}); err != nil {
 		t.Fatal(err)
 	}
-	s.openings.placements["another-session"] = nativeOpening("another-session", sandboxName, string(successorUID))
+	s.openings.placements["another-session"] = nativeSession("another-session", sandboxName, string(successorUID))
 }
 
 // grantSend binds a set of one rule, allowing send_message to the targets, to the account of the given name.

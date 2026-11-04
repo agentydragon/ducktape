@@ -18,7 +18,7 @@ from pydantic import SecretStr
 
 from agentplane.central_sampler import sampler_pb2, sampler_pb2_grpc
 from agentplane.central_sampler.settings import AuthConfig, ConnectionConfig, ModelConfig, ResponsesConfig
-from agentplane.central_sampler.testing import METADATA, open_request, service, settings
+from agentplane.central_sampler.testing import METADATA, create_request, service, settings
 from agentplane.central_sampler.testing_store import IntentSnapshot, Store
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.proto import event_pb2
@@ -97,11 +97,11 @@ async def test_agent_runs_a_nested_command_and_continues(
         }
     )
     token = f"sampler-live-{uuid4().hex}"
-    request = open_request(tmp_path)
+    request = create_request(tmp_path)
     request.spec.model = model
     request.spec.reasoning_effort = EFFORT
     async with service(config) as stub:
-        await stub.OpenSession(request, metadata=METADATA, timeout=10)
+        await stub.CreateSession(request, metadata=METADATA, timeout=10)
         first = await submit(
             stub,
             request.session_id,

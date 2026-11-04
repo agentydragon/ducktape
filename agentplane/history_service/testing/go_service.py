@@ -171,11 +171,11 @@ class GoHistoryService:
 
 
 async def wait_for_history_session(history: HistoryServiceClient, session_id: str) -> None:
-    """Wait for the raw ingress opening that binds a Session's History row."""
+    """Wait until History records the Session."""
     while True:
-        async with aclosing(history.watch_session_openings(after_position=0)) as openings:
-            async for opened in openings:
-                if str(opened.session_id) == session_id:
+        async with aclosing(history.watch_recorded_sessions(after_position=0)) as recorded_sessions:
+            async for recorded in recorded_sessions:
+                if str(recorded.session_id) == session_id:
                     return
 
 

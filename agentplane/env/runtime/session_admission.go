@@ -25,9 +25,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb.OpenSessionRequest) (response *environmentruntimepb.OpenSessionResponse, resultErr error) {
+func (r *Runtime) CreateSession(ctx context.Context, request *environmentruntimepb.CreateSessionRequest) (response *environmentruntimepb.CreateSessionResponse, resultErr error) {
 	ctx, span := observability.Start(
-		ctx, "Environment Runtime OpenSession",
+		ctx, "Environment Runtime CreateSession",
 		trace.WithAttributes(
 			attribute.String("session.id", request.GetSessionId()),
 			attribute.String("sandbox.name", r.config.Launch.Sandbox.Name),
@@ -106,7 +106,7 @@ func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb
 		if !proto.Equal(attached.Spec, spec) {
 			return nil, status.Errorf(codes.AlreadyExists, "session %s exists with a different spec", request.GetSessionId())
 		}
-		return &environmentruntimepb.OpenSessionResponse{Attached: attached}, nil
+		return &environmentruntimepb.CreateSessionResponse{Attached: attached}, nil
 	}
 	budget, err := r.config.ResolveModelConfig(ctx, placement.GetHarness(), spec.Model)
 	if err != nil {
@@ -144,7 +144,7 @@ func (r *Runtime) OpenSession(ctx context.Context, request *environmentruntimepb
 		return nil, rpcError(err)
 	}
 	r.changed()
-	return &environmentruntimepb.OpenSessionResponse{Attached: s.Attached()}, nil
+	return &environmentruntimepb.CreateSessionResponse{Attached: s.Attached()}, nil
 }
 
 func validateExecutionPrincipal(principal *identitypb.ServiceAccountIdentity) error {

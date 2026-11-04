@@ -47,19 +47,21 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         "system_test.launch_preset.admit_first_session", record_exception=False, set_status_on_exception=False
     ):
         first_id = uuid4()
-        opening = await client.open_session(
+        session = await client.create_session(
             view.target.name, first_id, sandbox_uid=view.target.uid, overrides={"instructions": INSTRUCTIONS}
         )
-        assert opening.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-        retried = await client.open_session(
+        assert session.status.materialization == session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_WAITING
+        retried = await client.create_session(
             view.target.name, first_id, sandbox_uid=view.target.uid, overrides={"instructions": INSTRUCTIONS}
         )
         assert (retried.session_id, retried.placement.environment_hosted.environment.name, retried.created_at) == (
-            opening.session_id,
-            opening.placement.environment_hosted.environment.name,
-            opening.created_at,
+            session.session_id,
+            session.placement.environment_hosted.environment.name,
+            session.created_at,
         )
-        await client.wait_for_session_admission(dispatcher, first_id, opening=opening, timeout_s=RUNNER_ANSWERS_SECONDS)
+        await client.wait_for_session_acceptance(
+            dispatcher, first_id, session=session, timeout_s=RUNNER_ANSWERS_SECONDS
+        )
         first = await client.wait_for_thread_feed(first_id, timeout_s=RUNNER_ANSWERS_SECONDS)
     expected_reasoning_effort = (
         preset.session_defaults.reasoning_effort if preset.session_defaults.HasField("reasoning_effort") else None
@@ -77,8 +79,8 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         dispatcher,
         thread_id=first.id,
         cursor=first.last_cursor,
-        sandbox=opening.placement.environment_hosted.environment.name,
-        sandbox_uid=opening.placement.environment_hosted.environment.uid,
+        sandbox=session.placement.environment_hosted.environment.name,
+        sandbox_uid=session.placement.environment_hosted.environment.uid,
     )
     with tracer.start_as_current_span(
         "system_test.launch_preset.initialized_turn", record_exception=False, set_status_on_exception=False
@@ -118,40 +120,46 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
             await asyncio.sleep(0.2)
 
         suspended_id = uuid4()
-        suspended_opening = await client.open_session(view.target.name, suspended_id, sandbox_uid=view.target.uid)
-        assert suspended_opening.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-        assert not suspended_opening.HasField("delivery_blocker")
-        assert suspended_opening.wake_assessment.state == environment_lifecycle_pb2.WAKE_STATE_NOT_EVALUATED
-        opening_deadline = time.monotonic() + RUNNER_ANSWERS_SECONDS
+        suspended_session = await client.create_session(view.target.name, suspended_id, sandbox_uid=view.target.uid)
+        assert (
+            suspended_session.status.materialization
+            == session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_WAITING
+        )
+        assert not suspended_session.status.HasField("delivery_blocker")
+        assert suspended_session.status.wake_assessment.state == environment_lifecycle_pb2.WAKE_STATE_NOT_EVALUATED
+        session_deadline = time.monotonic() + RUNNER_ANSWERS_SECONDS
         while True:
-            suspended_opening = await dispatcher.get_session_opening(str(suspended_id))
-            assert suspended_opening.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
+            suspended_session = await dispatcher.get_session(str(suspended_id))
+            assert (
+                suspended_session.status.materialization
+                == session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_WAITING
+            )
             if (
-                suspended_opening.HasField("delivery_blocker")
-                and suspended_opening.delivery_blocker.kind
+                suspended_session.status.HasField("delivery_blocker")
+                and suspended_session.status.delivery_blocker.kind
                 == environment_lifecycle_pb2.DELIVERY_BLOCKER_KIND_OPERATOR_REQUESTED_STOP
-                and suspended_opening.wake_assessment.state == environment_lifecycle_pb2.WAKE_STATE_DENIED
-                and suspended_opening.wake_assessment.reason
+                and suspended_session.status.wake_assessment.state == environment_lifecycle_pb2.WAKE_STATE_DENIED
+                and suspended_session.status.wake_assessment.reason
                 == environment_lifecycle_pb2.WAKE_REASON_OPERATOR_REQUESTED_STOP
             ):
                 break
-            if time.monotonic() >= opening_deadline:
-                raise TimeoutError(f"Suspended Session opening {suspended_id} had no typed operator-stop assessment")
+            if time.monotonic() >= session_deadline:
+                raise TimeoutError(f"Suspended Session {suspended_id} had no typed operator-stop assessment")
             await asyncio.sleep(0.2)
         still_suspended = await client.get_environment(view.target)
         assert still_suspended.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
         assert not still_suspended.kubernetes_diagnostics.HasField("pod")
 
     with tracer.start_as_current_span(
-        "system_test.launch_preset.resume_and_admit", record_exception=False, set_status_on_exception=False
+        "system_test.launch_preset.resume_and_accept", record_exception=False, set_status_on_exception=False
     ):
         await client.resume_sandbox(view.target)
         resumed = await wait_until_running(client, view.target)
         assert resumed.target.uid == view.target.uid
         assert resumed.kubernetes_diagnostics.HasField("pod")
         assert resumed.kubernetes_diagnostics.pod.uid != previous_incarnation
-        await client.wait_for_session_admission(
-            dispatcher, suspended_id, opening=suspended_opening, timeout_s=RUNNER_ANSWERS_SECONDS
+        await client.wait_for_session_acceptance(
+            dispatcher, suspended_id, session=suspended_session, timeout_s=RUNNER_ANSWERS_SECONDS
         )
         await client.wait_for_thread_projection(suspended_id, timeout_s=RUNNER_ANSWERS_SECONDS)
 
@@ -159,11 +167,13 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         "system_test.launch_preset.session_defaults", record_exception=False, set_status_on_exception=False
     ):
         inherited_id = uuid4()
-        await client.create_session(view.target.name, inherited_id, dispatcher=dispatcher, sandbox_uid=view.target.uid)
+        await client.create_session_and_wait(
+            view.target.name, inherited_id, dispatcher=dispatcher, sandbox_uid=view.target.uid
+        )
         inherited = await client.wait_for_thread_feed(inherited_id, timeout_s=RUNNER_ANSWERS_SECONDS)
         local_model = "systest-local-model-override"
         local_id = uuid4()
-        await client.create_session(
+        await client.create_session_and_wait(
             view.target.name,
             local_id,
             dispatcher=dispatcher,

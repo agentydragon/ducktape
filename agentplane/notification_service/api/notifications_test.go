@@ -186,17 +186,17 @@ func TestCreateSubscriptionAnswersAFaultOfACollaboratorWithoutItsText(t *testing
 	}
 }
 
-func TestSubscriptionCreationResolvesAndFencesTheOpening(t *testing.T) {
+func TestSubscriptionCreationResolvesAndFencesTheSession(t *testing.T) {
 	for _, test := range []struct {
 		name    string
-		opening *dispatcherpb.SessionOpening
+		opening *dispatcherpb.Session
 		want    codes.Code
 	}{
 		{name: "no Dispatcher opening", want: codes.NotFound},
-		{name: "different Session", opening: nativeOpening("another-session", sandboxName, sandboxUID), want: codes.Unavailable},
-		{name: "no UID", opening: nativeOpening(testSession, sandboxName, ""), want: codes.Unavailable},
-		{name: "deleted Sandbox", opening: nativeOpening(testSession, "deleted-sandbox", sandboxUID), want: codes.NotFound},
-		{name: "same-name replacement", opening: nativeOpening(testSession, sandboxName, "previous-uid"), want: codes.NotFound},
+		{name: "different Session", opening: nativeSession("another-session", sandboxName, sandboxUID), want: codes.Unavailable},
+		{name: "no UID", opening: nativeSession(testSession, sandboxName, ""), want: codes.Unavailable},
+		{name: "deleted Sandbox", opening: nativeSession(testSession, "deleted-sandbox", sandboxUID), want: codes.NotFound},
+		{name: "same-name replacement", opening: nativeSession(testSession, sandboxName, "previous-uid"), want: codes.NotFound},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			s := newServer(t)

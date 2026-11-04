@@ -56,7 +56,7 @@ def _launcher_grant(sandbox: Body) -> tuple[Body, Body]:
                 "type": "argument_schema",
                 "actions": {
                     actions.ORCHESTRATION_GROUP: [
-                        "open_session",
+                        "create_session",
                         "submit_input",
                         "get_session",
                         "read_turns",
@@ -154,7 +154,9 @@ async def test_the_action_service_writes_only_launcher_shaped_grants(scratch_cha
                     policy_set, (*_APPROVAL, "actions", "github"), ["create_branch"]
                 ),
                 "an approval of a group Action that does not take a Sandbox": _with(
-                    policy_set, (*_APPROVAL, "actions", actions.ORCHESTRATION_GROUP), ["open_session", "launch_sandbox"]
+                    policy_set,
+                    (*_APPROVAL, "actions", actions.ORCHESTRATION_GROUP),
+                    ["create_session", "launch_sandbox"],
                 ),
                 "an approval of another Sandbox": _with(policy_set, (*_SANDBOX_SCHEMA, "const"), other),
                 "an approval of any incarnation": _without(policy_set, (*_SANDBOX_SCHEMA, "const", "uid")),

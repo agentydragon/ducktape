@@ -335,7 +335,7 @@ func appendEvent(ctx context.Context, tx *sql.Tx, session *Session, event *event
 	return entry, nil
 }
 
-func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionRequest, ownerUID string, api protocol.APIStyle, platformInstructions *string) (*Session, error) {
+func (s *Store) CreateSession(ctx context.Context, request *samplerpb.CreateSessionRequest, ownerUID string, api protocol.APIStyle, platformInstructions *string) (*Session, error) {
 	if request == nil || request.GetSessionId() == "" || request.GetSpec() == nil || ownerUID == "" || (platformInstructions != nil && strings.TrimSpace(*platformInstructions) == "") {
 		return nil, protocol.ErrInvalid
 	}
@@ -375,7 +375,7 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 			if existing.AccountUID != ownerUID {
 				return ErrForbidden
 			}
-			previous := &samplerpb.OpenSessionRequest{}
+			previous := &samplerpb.CreateSessionRequest{}
 			if err := (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(existing.Configuration, previous); err != nil {
 				return err
 			}
@@ -391,7 +391,7 @@ func (s *Store) OpenSession(ctx context.Context, request *samplerpb.OpenSessionR
 			if previous.GetExecutionPrincipal() != nil && request.GetExecutionPrincipal() == nil {
 				// Older retrying Dispatchers may omit the additive field. Compare as if it were present,
 				// while leaving the already retained configuration untouched.
-				incoming = proto.Clone(request).(*samplerpb.OpenSessionRequest)
+				incoming = proto.Clone(request).(*samplerpb.CreateSessionRequest)
 				incoming.ExecutionPrincipal = proto.Clone(previous.GetExecutionPrincipal()).(*identitypb.ServiceAccountIdentity)
 			}
 			if !proto.Equal(previous, incoming) {
@@ -824,7 +824,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerUID string, expecte
 
 		previousIncarnationUID := ""
 		if replacementIncarnationUID != "" {
-			configuration := new(samplerpb.OpenSessionRequest)
+			configuration := new(samplerpb.CreateSessionRequest)
 			if err := proto.Unmarshal(session.Configuration, configuration); err != nil {
 				return err
 			}
@@ -907,7 +907,7 @@ func Describe(session *Session) (*samplerpb.GetSessionResponse, error) {
 	if session == nil {
 		return nil, protocol.ErrInvalid
 	}
-	request := &samplerpb.OpenSessionRequest{}
+	request := &samplerpb.CreateSessionRequest{}
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		return nil, fmt.Errorf("decode stored session configuration: %w", err)
 	}
@@ -1886,7 +1886,7 @@ func (s *Store) rebindExecutorIncarnation(ctx context.Context, owner Owner, sand
 		if err != nil {
 			return err
 		}
-		request := &samplerpb.OpenSessionRequest{}
+		request := &samplerpb.CreateSessionRequest{}
 		if err := proto.Unmarshal(session.Configuration, request); err != nil {
 			return err
 		}
@@ -1987,7 +1987,7 @@ func (s *Store) retireExecutorSession(ctx context.Context, tx *sql.Tx, owner Own
 }
 
 func (s *Store) environmentContext(conversation *Conversation, session *Session) (EnvironmentContext, error) {
-	request := &samplerpb.OpenSessionRequest{}
+	request := &samplerpb.CreateSessionRequest{}
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		return EnvironmentContext{}, err
 	}

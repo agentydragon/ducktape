@@ -26,11 +26,11 @@ const (
 	// ChannelHistory is notified when raw Session history committed.
 	ChannelHistory = "agentplane_session_history_changes"
 	// ChannelSessions is notified when a Session was recorded.
-	ChannelSessions = "agentplane_history_session_openings"
+	ChannelSessions = "agentplane_history_sessions"
 
-	// openingLock is held from drawing a Session's opening position to commit, so positions become
+	// sessionLock is held from drawing a Session's session position to commit, so positions become
 	// visible in order.
-	openingLock = 0x534F504E
+	sessionLock = 0x534F504E
 )
 
 var (
@@ -101,7 +101,7 @@ type Checkpoint struct {
 	Seal *sessionpb.Sealed
 }
 
-type OpenedSession struct {
+type RecordedSession struct {
 	SessionID uuid.UUID
 	Position  uint64
 }
@@ -260,9 +260,9 @@ func (s *Store) bindWriter(ctx context.Context, sessionID uuid.UUID, writer Writ
 		if err := tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM session_history WHERE id = $1)", sessionID).Scan(&exists); err != nil {
 			return err
 		}
-		// Only a first push takes the opening lock, so a reconnecting runner never waits on another's.
+		// Only a first push takes the session lock, so a reconnecting runner never waits on another's.
 		if !exists {
-			if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock($1)", openingLock); err != nil {
+			if _, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock($1)", sessionLock); err != nil {
 				return err
 			}
 			result, err := tx.ExecContext(ctx, `INSERT INTO session_history
@@ -337,21 +337,21 @@ func optionalString(value string) *string {
 	return &value
 }
 
-// OpenedSessions returns up to limit Sessions recorded after afterPosition, in recording order.
-func (s *Store) OpenedSessions(ctx context.Context, afterPosition uint64, limit int) ([]OpenedSession, error) {
+// RecordedSessions returns up to limit Sessions recorded after afterPosition, in recording order.
+func (s *Store) RecordedSessions(ctx context.Context, afterPosition uint64, limit int) ([]RecordedSession, error) {
 	if afterPosition > math.MaxInt64 || limit < 1 || limit > 1000 {
 		return nil, invalid("opened Session page")
 	}
 	predicate, scopeArgs := s.sessionPredicate("h", 2)
 	args := append([]any{afterPosition}, scopeArgs...)
 	args = append(args, limit)
-	query := fmt.Sprintf(`SELECT h.id, h.opened_position FROM session_history h
-		WHERE h.opened_position > $1 AND %s ORDER BY h.opened_position LIMIT $%d`, predicate, len(args))
+	query := fmt.Sprintf(`SELECT h.id, h.recorded_position FROM session_history h
+		WHERE h.recorded_position > $1 AND %s ORDER BY h.recorded_position LIMIT $%d`, predicate, len(args))
 	if s.readScope != nil && !s.readScope.all {
-		// The persisted opening position is global. Return an ordinal over only the caller's
-		// retained Sessions so a normal watch cursor does not reveal foreign opening gaps.
+		// The persisted session position is global. Return an ordinal over only the caller's
+		// retained Sessions so a normal watch cursor does not reveal foreign session gaps.
 		query = fmt.Sprintf(`WITH owned AS (
-			SELECT h.id, row_number() OVER (ORDER BY h.opened_position) AS position
+			SELECT h.id, row_number() OVER (ORDER BY h.recorded_position) AS position
 			FROM session_history h WHERE %s
 		)
 		SELECT owned.id, owned.position FROM owned
@@ -362,9 +362,9 @@ func (s *Store) OpenedSessions(ctx context.Context, afterPosition uint64, limit 
 		return nil, err
 	}
 	defer rows.Close()
-	var opened []OpenedSession
+	var opened []RecordedSession
 	for rows.Next() {
-		var session OpenedSession
+		var session RecordedSession
 		if err := rows.Scan(&session.SessionID, &session.Position); err != nil {
 			return nil, err
 		}
@@ -534,7 +534,7 @@ func (s *Store) RecordFeedState(ctx context.Context, sessionID uuid.UUID, feed *
 		case row.executionPrincipal == nil && identity != nil:
 			return fmt.Errorf("%w: %s", ErrExecutionPrincipalMismatch, sessionID)
 		case row.executionPrincipal != nil && identity == nil:
-			// Older Runner snapshots cannot erase a principal already pinned by the opening.
+			// Older Runner snapshots cannot erase a principal already pinned by the session.
 			next.GetAttached().ExecutionPrincipal = wireExecutionPrincipal(row.executionPrincipal)
 		case row.executionPrincipal != nil && identity != nil && !matchesExecutionPrincipal(identity, *row.executionPrincipal):
 			return fmt.Errorf("%w: %s", ErrExecutionPrincipalMismatch, sessionID)

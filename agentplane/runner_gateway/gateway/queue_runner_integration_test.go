@@ -118,7 +118,7 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, `INSERT INTO session_opening(session_id,sandbox_name,sandbox_uid,spec,state,created_at,updated_at)
+	if _, err := db.ExecContext(ctx, `INSERT INTO session(session_id,sandbox_name,sandbox_uid,spec,state,created_at,updated_at)
 		VALUES($1,$2,$3,$4,$5,now(),now())`, "session-queue", testSandbox, sandboxUID, spec, dispatcher.AdmittedState); err != nil {
 		t.Fatal(err)
 	}

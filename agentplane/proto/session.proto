@@ -69,7 +69,7 @@ message SessionSpec {
 
 // A native Session belongs to exactly one environment. Central sampler V1 owns its Session but
 // currently requires one fixed executor environment. Attachment/detachment is not supported here.
-// The same message is projected into SessionOpening without exposing other SessionSpec fields.
+// The same message is projected into the Session resource without exposing other SessionSpec fields.
 message SessionPlacement {
   oneof kind {
     EnvironmentHostedPlacement environment_hosted = 1;

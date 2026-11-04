@@ -144,7 +144,7 @@ func TestAnthropicStreamPersistsNativeHistoryObservationsWithSourceLinks(t *test
 func TestAnthropicRequestLoggingFailurePreventsDispatch(t *testing.T) {
 	store := newTestStore(t)
 	setup := ""
-	request := &samplerpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}, SetupScript: &setup}
+	request := &samplerpb.CreateSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}, SetupScript: &setup}
 	session, err := openStoreSession(t, store, request, "fixture-account", protocol.APIStyleAnthropicMessages)
 	if err != nil {
 		t.Fatal(err)

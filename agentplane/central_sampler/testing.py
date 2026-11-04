@@ -158,8 +158,8 @@ def settings(
     )
 
 
-def open_request(cwd: Path) -> sampler_pb2.OpenSessionRequest:
-    return sampler_pb2.OpenSessionRequest(
+def create_request(cwd: Path) -> sampler_pb2.CreateSessionRequest:
+    return sampler_pb2.CreateSessionRequest(
         session_id="079bd706-77b3-4b71-8c7e-605a7e19324c",
         spec=session_pb2.SessionSpec(
             placement=session_pb2.SessionPlacement(

@@ -28,7 +28,7 @@ func TestSamplingRecoveryReconcilesOnlyTheAbandonedResponse(t *testing.T) {
 		for _, cut := range []string{"no_items", "during_text", "before_terminal"} {
 			t.Run(string(api)+"/"+cut, func(t *testing.T) {
 				store := newTestStore(t)
-				session, err := openStoreSession(t, store, &samplerpb.OpenSessionRequest{
+				session, err := openStoreSession(t, store, &samplerpb.CreateSessionRequest{
 					SessionId: uuid.NewString(),
 					Spec:      &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture"},
 				}, "fixture-account", api)

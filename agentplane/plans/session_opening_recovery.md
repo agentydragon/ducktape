@@ -6,7 +6,10 @@ decisions are in [Sessions and environments](session_environment_model.md); the 
 [task DAG decision](task_dag.md#session_runtime_model_design--sessions-harness-placement-and-execution-attachments)
 tracks the work. The uncertain native reservation write identified below is addressed by a separate fix linked below. Recheck the linked code when using this inventory after changes land.
 The subsequent SessionSpec placement cutover supersedes this inventory's wire-field mapping; see the
-[current Dispatcher contract](../runner_gateway/dispatcher/SPEC.md#sessionspec-placement-cutover).
+[current Dispatcher contract](../runner_gateway/dispatcher/SPEC.md#sessionspec-placement-cutover). The
+logical RPC names and Dispatcher table name below are revision-scoped historical references; the
+hard cutover uses `CreateSession`, `GetSession`, `ListSessions` and the `session` relation. The
+separate streaming `Executor.OpenSession` remains.
 
 ```mermaid
 flowchart LR

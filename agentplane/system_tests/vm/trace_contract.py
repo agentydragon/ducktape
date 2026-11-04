@@ -107,8 +107,8 @@ def assert_vm_process_trace_contract(output_dir: Path) -> None:
         stages_by_uid,
         scenario_ready,
         {
-            "agentplane.env.runtime.control.EnvironmentRuntime/OpenSession",
-            "Environment Runtime OpenSession",
+            "agentplane.env.runtime.control.EnvironmentRuntime/CreateSession",
+            "Environment Runtime CreateSession",
             "agentplane.env.runtime.harness.start",
             "agentplane.env.runtime.harness.handshake",
         },
@@ -130,21 +130,21 @@ def assert_vm_process_trace_contract(output_dir: Path) -> None:
         "Codex VM",
     )
     environment_runtime_open = [
-        span for span in environment_runtime_spans if span.get("name") == "Environment Runtime OpenSession"
+        span for span in environment_runtime_spans if span.get("name") == "Environment Runtime CreateSession"
     ]
     rpc_open_ids = {
         (_trace_id(span), span.get("span_id"))
         for span in environment_runtime_spans
-        if span.get("name") == "agentplane.env.runtime.control.EnvironmentRuntime/OpenSession"
+        if span.get("name") == "agentplane.env.runtime.control.EnvironmentRuntime/CreateSession"
     }
     for span in environment_runtime_open:
         assert (_trace_id(span), span.get("parent_span_id")) in rpc_open_ids, (
-            "Environment Runtime OpenSession did not retain its gRPC parent span"
+            "Environment Runtime CreateSession did not retain its gRPC parent span"
         )
         name = _attributes(span).get("sandbox.name")
         if isinstance(name, str) and name in scenario_ready:
             assert _resource_uid(span) == scenario_ready[name], (
-                f"Environment Runtime OpenSession for {name} has wrong UID"
+                f"Environment Runtime CreateSession for {name} has wrong UID"
             )
 
     for span in test_spans:

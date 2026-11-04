@@ -38,14 +38,14 @@ func (c *DispatcherClient) connection(ctx context.Context, call func(context.Con
 	return translatedRPCError(call(ctx, dispatcherpb.NewSessionDispatcherClient(conn)))
 }
 
-// OpenSession calls the durable, idempotent Session-opening RPC exactly once.
+// CreateSession calls the durable, idempotent Session-session RPC exactly once.
 // A RequestTimeoutError indicates that callers must reconcile or retry with
 // the same Session ID.
-func (c *DispatcherClient) OpenSession(ctx context.Context, request *dispatcherpb.OpenSessionRequest) (*dispatcherpb.OpenSessionResponse, error) {
-	var response *dispatcherpb.OpenSessionResponse
+func (c *DispatcherClient) CreateSession(ctx context.Context, request *dispatcherpb.CreateSessionRequest) (*dispatcherpb.CreateSessionResponse, error) {
+	var response *dispatcherpb.CreateSessionResponse
 	err := c.connection(ctx, func(ctx context.Context, client dispatcherpb.SessionDispatcherClient) error {
 		var err error
-		response, err = client.OpenSession(ctx, request)
+		response, err = client.CreateSession(ctx, request)
 		return err
 	})
 	return response, err

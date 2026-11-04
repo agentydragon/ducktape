@@ -69,7 +69,7 @@ func configurationVMExecutor(environment map[string]any) {
 	resources["executor"] = map[string]any{"cpu_quota_micros": 100000, "memory_max_bytes": 67108864, "pids_max": 128, "read_bps": 52428800, "write_bps": 20971520, "read_iops": 1000, "write_iops": 500}
 }
 
-func TestConfigurationComposesBothIsolationModesWithoutOpeningState(t *testing.T) {
+func TestConfigurationComposesBothIsolationModesWithoutSessionState(t *testing.T) {
 	t.Setenv("RUNNER_TEST_PROVIDER_TOKEN", "provider-secret")
 	t.Setenv("PATH", "/image/bin")
 	t.Setenv("UNDECLARED_SECRET", "must-not-inherit")

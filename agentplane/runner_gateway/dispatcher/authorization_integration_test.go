@@ -218,22 +218,22 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	}
 
 	sessionID := uuid.NewString()
-	opened, err := client.OpenSession(authorityContext(t, "owner-account"), &dispatcherpb.OpenSessionRequest{
+	opened, err := client.CreateSession(authorityContext(t, "owner-account"), &dispatcherpb.CreateSessionRequest{
 		SessionId: sessionID, Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: caller.Name, Uid: authoritySandboxUID}, Harness: sessionpb.Harness_HARNESS_CODEX}}}},
 	})
 	if err != nil {
-		t.Fatalf("owner OpenSession: %v", err)
+		t.Fatalf("owner CreateSession: %v", err)
 	}
-	if opened.GetOpening().GetSessionId() != sessionID {
-		t.Fatalf("OpenSession returned %#v", opened.GetOpening())
+	if opened.GetSession().GetSessionId() != sessionID {
+		t.Fatalf("CreateSession returned %#v", opened.GetSession())
 	}
 	if _, err := client.SubmitInput(authorityContext(t, "owner-account"), &dispatcherpb.SubmitInputRequest{
 		CommandId: "authority-owned-input", SessionId: sessionID, ExpectedSandboxUid: authoritySandboxUID, Text: "owned",
 	}); err != nil {
 		t.Fatalf("same-owner SubmitInput: %v", err)
 	}
-	if _, err := client.GetSessionOpening(authorityContext(t, "owner-account"), &dispatcherpb.GetSessionOpeningRequest{SessionId: sessionID}); err != nil {
-		t.Fatalf("same-owner GetSessionOpening: %v", err)
+	if _, err := client.GetSession(authorityContext(t, "owner-account"), &dispatcherpb.GetSessionRequest{SessionId: sessionID}); err != nil {
+		t.Fatalf("same-owner GetSession: %v", err)
 	}
 	if _, err := client.GetDispatch(authorityContext(t, "owner-account"), &dispatcherpb.GetDispatchRequest{CommandId: "authority-owned-input"}); err != nil {
 		t.Fatalf("same-owner GetDispatch: %v", err)
@@ -242,8 +242,8 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	requireMissingSessionCommands(t, client, authorityContext(t, "foreign-account"), sessionID, caller.Name, authoritySandboxUID)
 
 	foreign := authorityContext(t, "foreign-account")
-	if _, err := client.GetSessionOpening(foreign, &dispatcherpb.GetSessionOpeningRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
-		t.Fatalf("foreign GetSessionOpening = %v, want NotFound", err)
+	if _, err := client.GetSession(foreign, &dispatcherpb.GetSessionRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
+		t.Fatalf("foreign GetSession = %v, want NotFound", err)
 	}
 	if _, err := client.GetDispatch(foreign, &dispatcherpb.GetDispatchRequest{CommandId: "authority-owned-input"}); status.Code(err) != codes.NotFound {
 		t.Fatalf("foreign GetDispatch = %v, want NotFound", err)
@@ -254,11 +254,11 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 		t.Fatalf("foreign SubmitInput = %v, want NotFound", err)
 	}
 
-	legacy, err := store.OpenSession(ctx, "authority-legacy-session", caller.Name, authoritySandboxUID, &sessionpb.SessionSpec{}, nil, nil)
+	legacy, err := store.CreateSession(ctx, "authority-legacy-session", caller.Name, authoritySandboxUID, &sessionpb.SessionSpec{}, nil, nil)
 	if err != nil || legacy.ExecutionPrincipal != nil {
 		t.Fatalf("seed legacy opening: %#v %v", legacy, err)
 	}
-	if _, err := client.GetSessionOpening(authorityContext(t, "owner-account"), &dispatcherpb.GetSessionOpeningRequest{SessionId: legacy.SessionID}); status.Code(err) != codes.NotFound {
+	if _, err := client.GetSession(authorityContext(t, "owner-account"), &dispatcherpb.GetSessionRequest{SessionId: legacy.SessionID}); status.Code(err) != codes.NotFound {
 		t.Fatalf("normal account read of ownerless legacy Session = %v, want NotFound", err)
 	}
 	if _, err := client.SubmitInput(authorityContext(t, "owner-account"), &dispatcherpb.SubmitInputRequest{
@@ -266,7 +266,7 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	}); status.Code(err) != codes.NotFound {
 		t.Fatalf("normal write to ownerless legacy Session = %v, want NotFound", err)
 	}
-	if _, err := client.GetSessionOpening(authorityContext(t, "owner-pod"), &dispatcherpb.GetSessionOpeningRequest{SessionId: legacy.SessionID}); err != nil {
+	if _, err := client.GetSession(authorityContext(t, "owner-pod"), &dispatcherpb.GetSessionRequest{SessionId: legacy.SessionID}); err != nil {
 		t.Fatalf("configured Pod-bound backend read of legacy Session: %v", err)
 	}
 	if _, err := client.SubmitInput(authorityContext(t, "owner-pod"), &dispatcherpb.SubmitInputRequest{
@@ -293,12 +293,12 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	// The retained owner UID is immutable: a replacement ServiceAccount with the same name can
 	// neither read the existing Session nor act as its old principal.
 	replacement := authorityContext(t, "owner-replaced")
-	if _, err := client.GetSessionOpening(replacement, &dispatcherpb.GetSessionOpeningRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
-		t.Fatalf("same-name replacement GetSessionOpening = %v, want NotFound", err)
+	if _, err := client.GetSession(replacement, &dispatcherpb.GetSessionRequest{SessionId: sessionID}); status.Code(err) != codes.NotFound {
+		t.Fatalf("same-name replacement GetSession = %v, want NotFound", err)
 	}
 	inventory.setAccount(serviceAccountIdentityFor(Account(caller), "replacement-uid"))
 	inventory.failSandboxRead(errors.New("inventory unavailable for retained reads"))
-	if _, err := client.GetSessionOpening(authorityContext(t, "owner-account"), &dispatcherpb.GetSessionOpeningRequest{SessionId: sessionID}); err != nil {
+	if _, err := client.GetSession(authorityContext(t, "owner-account"), &dispatcherpb.GetSessionRequest{SessionId: sessionID}); err != nil {
 		t.Fatalf("retained read required a live Sandbox after account replacement: %v", err)
 	}
 	if _, err := client.GetDispatch(authorityContext(t, "owner-account"), &dispatcherpb.GetDispatchRequest{CommandId: "authority-owned-input"}); err != nil {
@@ -362,9 +362,9 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	}
 	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true}
 	delegatedMethods := []string{
-		dispatcherpb.SessionDispatcher_OpenSession_FullMethodName,
+		dispatcherpb.SessionDispatcher_CreateSession_FullMethodName,
 		dispatcherpb.SessionDispatcher_SubmitInput_FullMethodName,
-		dispatcherpb.SessionDispatcher_GetSessionOpening_FullMethodName,
+		dispatcherpb.SessionDispatcher_GetSession_FullMethodName,
 		dispatcherpb.SessionDispatcher_GetDispatch_FullMethodName,
 		dispatcherpb.SessionDispatcher_ListDispatches_FullMethodName,
 		dispatcherpb.SessionDispatcher_CancelDispatch_FullMethodName,
@@ -384,27 +384,27 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 
 	sessionID := uuid.NewString()
 	spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: snapshot.Name, Uid: snapshot.UID}, Harness: sessionpb.Harness_HARNESS_CODEX}}}}
-	directOpening, err := client.OpenSession(authorityContext(t, "effective-token"), &dispatcherpb.OpenSessionRequest{
+	directSession, err := client.CreateSession(authorityContext(t, "effective-token"), &dispatcherpb.CreateSessionRequest{
 		SessionId: sessionID, Spec: spec,
 	})
 	if err != nil {
 		t.Fatalf("direct effective caller open: %v", err)
 	}
 	inventory.failSandboxRead(errors.New("inventory unavailable after accepted opening"))
-	openingRetry, err := client.OpenSession(delegated(), &dispatcherpb.OpenSessionRequest{
+	openingRetry, err := client.CreateSession(delegated(), &dispatcherpb.CreateSessionRequest{
 		SessionId: sessionID, Spec: spec,
 	})
-	if err != nil || openingRetry.GetOpening().GetSessionId() != sessionID {
+	if err != nil || openingRetry.GetSession().GetSessionId() != sessionID {
 		t.Fatalf("delegated idempotent opening retry: %#v %v", openingRetry, err)
 	}
 	inventory.failSandboxRead(nil)
-	opening, err := store.GetOpening(ctx, sessionID)
+	opening, err := store.GetSession(ctx, sessionID)
 	if err != nil || opening.Creator == nil || accountOfIdentity(opening.Creator) != Account(effective) || opening.Attribution == nil ||
 		accountOfIdentity(opening.Attribution.Actor) != Account(effective) || accountOfIdentity(opening.Attribution.EffectiveCaller) != Account(effective) || opening.Attribution.Action != nil {
 		t.Fatalf("delegated retry replaced direct opening admission evidence: %#v %v", opening, err)
 	}
-	if directOpening.GetOpening().GetSessionId() != sessionID || opening.WakeEligible {
-		t.Fatalf("privileged actor's wake allowlist leaked to effective caller: response=%+v durable=%+v", directOpening.GetOpening(), opening)
+	if directSession.GetSession().GetSessionId() != sessionID || opening.WakeEligible {
+		t.Fatalf("privileged actor's wake allowlist leaked to effective caller: response=%+v durable=%+v", directSession.GetSession(), opening)
 	}
 
 	first, err := client.SubmitInput(authorityContext(t, "effective-token"), &dispatcherpb.SubmitInputRequest{
@@ -445,7 +445,7 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	if stored.WakeEligible || stored.WakeCaller != nil {
 		t.Fatalf("actor's wake allowlist made effective caller's command wake-eligible: %+v", stored)
 	}
-	if _, err := client.GetSessionOpening(delegated(), &dispatcherpb.GetSessionOpeningRequest{SessionId: sessionID}); err != nil {
+	if _, err := client.GetSession(delegated(), &dispatcherpb.GetSessionRequest{SessionId: sessionID}); err != nil {
 		t.Fatalf("delegated caller could not read its own opening: %v", err)
 	}
 	if _, err := client.GetDispatch(delegated(), &dispatcherpb.GetDispatchRequest{CommandId: stored.CommandID}); err != nil {
@@ -454,7 +454,7 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 
 	// The Action actor can use its Pod-bound backend admission to access legacy rows with no
 	// retained owner. That authority must not pass through to the effective caller.
-	actorLegacy, err := store.OpenSession(ctx, "delegated-actor-legacy-session", snapshot.Name, snapshot.UID,
+	actorLegacy, err := store.CreateSession(ctx, "delegated-actor-legacy-session", snapshot.Name, snapshot.UID,
 		&sessionpb.SessionSpec{}, nil, nil)
 	if err != nil {
 		t.Fatal("seed actor-only legacy opening:", err)
@@ -464,13 +464,13 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	if err != nil {
 		t.Fatal("seed actor-only legacy dispatch:", err)
 	}
-	if _, err := client.GetSessionOpening(authorityContext(t, "actions-token"), &dispatcherpb.GetSessionOpeningRequest{SessionId: actorLegacy.SessionID}); err != nil {
+	if _, err := client.GetSession(authorityContext(t, "actions-token"), &dispatcherpb.GetSessionRequest{SessionId: actorLegacy.SessionID}); err != nil {
 		t.Fatalf("Pod-bound actor could not read its backend-only legacy opening: %v", err)
 	}
 	if _, err := client.GetDispatch(authorityContext(t, "actions-token"), &dispatcherpb.GetDispatchRequest{CommandId: actorLegacyDispatch.CommandID}); err != nil {
 		t.Fatalf("Pod-bound actor could not read its backend-only legacy dispatch: %v", err)
 	}
-	if _, err := client.GetSessionOpening(delegated(), &dispatcherpb.GetSessionOpeningRequest{SessionId: actorLegacy.SessionID}); status.Code(err) != codes.NotFound {
+	if _, err := client.GetSession(delegated(), &dispatcherpb.GetSessionRequest{SessionId: actorLegacy.SessionID}); status.Code(err) != codes.NotFound {
 		t.Errorf("delegated effective caller inherited actor's backend opening access: %v", err)
 	}
 	if _, err := client.GetDispatch(delegated(), &dispatcherpb.GetDispatchRequest{CommandId: actorLegacyDispatch.CommandID}); status.Code(err) != codes.NotFound {
@@ -486,7 +486,7 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 
 	foreignID := "delegated-foreign-session"
 	foreignIdentity := serviceAccountIdentityFor(Account(foreign), "foreign-caller-uid")
-	foreignOpening, err := store.OpenSessionForCaller(ctx, foreignID, snapshot.Name, snapshot.UID,
+	foreignSession, err := store.CreateSessionForCaller(ctx, foreignID, snapshot.Name, snapshot.UID,
 		&sessionpb.SessionSpec{}, nil, nil, foreignIdentity, CallerIdentity{ServiceAccountIdentity: foreignIdentity, Attribution: &AdmissionAttribution{Actor: foreignIdentity, EffectiveCaller: foreignIdentity}})
 	if err != nil {
 		t.Fatal(err)
@@ -499,7 +499,7 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	if err != nil {
 		t.Fatalf("seed foreign dispatch: %v", err)
 	}
-	if _, err := client.GetSessionOpening(delegated(), &dispatcherpb.GetSessionOpeningRequest{SessionId: foreignOpening.SessionID}); status.Code(err) != codes.NotFound {
+	if _, err := client.GetSession(delegated(), &dispatcherpb.GetSessionRequest{SessionId: foreignSession.SessionID}); status.Code(err) != codes.NotFound {
 		t.Errorf("privileged actor's backend membership leaked opening read: %v", err)
 	}
 	if _, err := client.GetDispatch(delegated(), &dispatcherpb.GetDispatchRequest{CommandId: foreignDispatch.CommandID}); status.Code(err) != codes.NotFound {
@@ -587,7 +587,7 @@ func TestPendingExecutionUIDBindsOnceAndReplacementStopsRunnerDelivery(t *testin
 	store := testStore(t, 3)
 	snapshot := SandboxSnapshot{Name: caller.Name, Namespace: caller.Namespace, UID: pendingSandboxUID}
 	pending := serviceAccountIdentityFor(Account(caller), "")
-	opening, err := store.OpenSessionForCaller(
+	opening, err := store.CreateSessionForCaller(
 		ctx,
 		"authority-pending-session",
 		snapshot.Name,
@@ -623,7 +623,7 @@ func TestPendingExecutionUIDBindsOnceAndReplacementStopsRunnerDelivery(t *testin
 	if catalog.calls != 2 {
 		t.Fatalf("worker read execution identity %d times, want bind then pre-delivery recheck", catalog.calls)
 	}
-	stored, err := store.GetOpening(ctx, opening.SessionID)
+	stored, err := store.GetSession(ctx, opening.SessionID)
 	if err != nil || stored.ExecutionPrincipal == nil || stored.ExecutionPrincipal.GetUid() != "managed-account-uid" {
 		t.Fatalf("opening did not retain its first bound UID: %#v %v", stored, err)
 	}
@@ -643,7 +643,7 @@ func TestPendingExecutionUIDBindsOnceAndReplacementStopsRunnerDelivery(t *testin
 	}
 }
 
-func TestOpeningRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
+func TestSessionRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 	store := testStore(t, 3)
 	owner := serviceAccountIdentityFor(caller, "durable-retry-owner-uid")
 	snapshot := SandboxSnapshot{Name: caller.Name, Namespace: caller.Namespace, UID: uuid.NewString()}
@@ -656,15 +656,15 @@ func TestOpeningRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 		"retry-backend":  {account: caller, uid: "backend-uid", pod: true},
 	}, nil)
 	setup := "echo retained"
-	request := &dispatcherpb.OpenSessionRequest{
+	request := &dispatcherpb.CreateSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec:      &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: snapshot.Name, Uid: snapshot.UID}, Harness: sessionpb.Harness_HARNESS_CODEX}}}}, SetupScript: &setup,
 	}
-	first, err := client.OpenSession(authorityContext(t, "retry-owner"), request)
+	first, err := client.CreateSession(authorityContext(t, "retry-owner"), request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	stored, err := store.GetOpening(t.Context(), request.GetSessionId())
+	stored, err := store.GetSession(t.Context(), request.GetSessionId())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -672,62 +672,62 @@ func TestOpeningRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 	inventory.mu.Lock()
 	inventory.account, inventory.accountFound = nil, false
 	inventory.mu.Unlock()
-	pendingRequest := proto.Clone(request).(*dispatcherpb.OpenSessionRequest)
+	pendingRequest := proto.Clone(request).(*dispatcherpb.CreateSessionRequest)
 	pendingRequest.SessionId = uuid.NewString()
-	pending, err := client.OpenSession(authorityContext(t, "retry-backend"), pendingRequest)
+	pending, err := client.CreateSession(authorityContext(t, "retry-backend"), pendingRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
 	inventory.failSandboxRead(errors.New("inventory unavailable"))
-	pendingRetry, err := client.OpenSession(authorityContext(t, "retry-backend"), pendingRequest)
+	pendingRetry, err := client.CreateSession(authorityContext(t, "retry-backend"), pendingRequest)
 	if err != nil || !proto.Equal(pending, pendingRetry) {
 		t.Fatalf("pending privileged retry: %v %v", pendingRetry, err)
 	}
-	if _, err := client.OpenSession(authorityContext(t, "retry-owner"), pendingRequest); status.Code(err) != codes.NotFound {
+	if _, err := client.CreateSession(authorityContext(t, "retry-owner"), pendingRequest); status.Code(err) != codes.NotFound {
 		t.Fatalf("unbound receipt granted normal authority: %v", err)
 	}
 	for _, token := range []string{"retry-owner", "retry-backend"} {
-		again, err := client.OpenSession(authorityContext(t, token), request)
+		again, err := client.CreateSession(authorityContext(t, token), request)
 		if err != nil || !proto.Equal(first, again) {
 			t.Fatalf("%s retry: %v %v", token, again, err)
 		}
 	}
 	for _, change := range []struct {
 		name  string
-		apply func(*dispatcherpb.OpenSessionRequest)
+		apply func(*dispatcherpb.CreateSessionRequest)
 	}{
-		{"environment name", func(r *dispatcherpb.OpenSessionRequest) {
+		{"environment name", func(r *dispatcherpb.CreateSessionRequest) {
 			r.GetSpec().GetPlacement().GetEnvironmentHosted().Environment.Name += "-other"
 		}},
-		{"environment UID", func(r *dispatcherpb.OpenSessionRequest) {
+		{"environment UID", func(r *dispatcherpb.CreateSessionRequest) {
 			r.GetSpec().GetPlacement().GetEnvironmentHosted().Environment.Uid = uuid.NewString()
 		}},
-		{"spec", func(r *dispatcherpb.OpenSessionRequest) { r.Spec.Instructions = "different instructions" }},
-		{"absent spec", func(r *dispatcherpb.OpenSessionRequest) { r.Spec = nil }},
-		{"setup", func(r *dispatcherpb.OpenSessionRequest) { r.SetupScript = nil }},
+		{"spec", func(r *dispatcherpb.CreateSessionRequest) { r.Spec.Instructions = "different instructions" }},
+		{"absent spec", func(r *dispatcherpb.CreateSessionRequest) { r.Spec = nil }},
+		{"setup", func(r *dispatcherpb.CreateSessionRequest) { r.SetupScript = nil }},
 	} {
-		conflict := proto.Clone(request).(*dispatcherpb.OpenSessionRequest)
+		conflict := proto.Clone(request).(*dispatcherpb.CreateSessionRequest)
 		change.apply(conflict)
-		if _, err := client.OpenSession(authorityContext(t, "retry-owner"), conflict); status.Code(err) != codes.AlreadyExists {
+		if _, err := client.CreateSession(authorityContext(t, "retry-owner"), conflict); status.Code(err) != codes.AlreadyExists {
 			t.Fatalf("%s conflict = %v", change.name, err)
 		}
 		for _, token := range []string{"retry-replaced", "retry-foreign"} {
-			for _, r := range []*dispatcherpb.OpenSessionRequest{request, conflict} {
-				if _, err := client.OpenSession(authorityContext(t, token), r); status.Code(err) != codes.NotFound {
+			for _, r := range []*dispatcherpb.CreateSessionRequest{request, conflict} {
+				if _, err := client.CreateSession(authorityContext(t, token), r); status.Code(err) != codes.NotFound {
 					t.Fatalf("%s saw %s request details: %v", token, change.name, err)
 				}
 			}
 		}
 	}
 	// Reading failed or uncertain materialization never requeues it or changes its evidence.
-	for _, state := range []string{FailedState, DeliveringState} {
-		if _, err := store.DB.ExecContext(t.Context(), "UPDATE session_opening SET state=$2,reason='retained outcome' WHERE session_id=$1", stored.SessionID, state); err != nil {
+	for _, state := range []string{SessionFailedState, SessionInProgressState} {
+		if _, err := store.DB.ExecContext(t.Context(), "UPDATE session SET state=$2,reason='retained outcome' WHERE session_id=$1", stored.SessionID, state); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := client.OpenSession(authorityContext(t, "retry-owner"), request); err != nil {
+		if _, err := client.CreateSession(authorityContext(t, "retry-owner"), request); err != nil {
 			t.Fatal(err)
 		}
-		after, err := store.GetOpening(t.Context(), stored.SessionID)
+		after, err := store.GetSession(t.Context(), stored.SessionID)
 		if err != nil || after.State != state || after.Reason != "retained outcome" || !after.UpdatedAt.Equal(stored.UpdatedAt) || after.Creator.GetUid() != stored.Creator.GetUid() {
 			t.Fatalf("receipt retry changed durable state: %+v %v", after, err)
 		}
@@ -735,14 +735,14 @@ func TestOpeningRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 	if _, err := store.EndSandbox(t.Context(), snapshot.UID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.OpenSession(authorityContext(t, "retry-owner"), request); status.Code(err) != codes.Unavailable {
+	if _, err := client.CreateSession(authorityContext(t, "retry-owner"), request); status.Code(err) != codes.Unavailable {
 		t.Fatalf("absent receipt and unavailable inventory: %v", err)
 	}
 	inventory.failSandboxRead(nil)
 	inventory.mu.Lock()
 	inventory.sandbox = SandboxSnapshot{}
 	inventory.mu.Unlock()
-	if _, err := client.OpenSession(authorityContext(t, "retry-owner"), request); status.Code(err) != codes.NotFound {
+	if _, err := client.CreateSession(authorityContext(t, "retry-owner"), request); status.Code(err) != codes.NotFound {
 		t.Fatalf("absent receipt and deleted environment: %v", err)
 	}
 	// With the merged deletion fence, even a stale live inventory cannot turn a
@@ -750,34 +750,34 @@ func TestOpeningRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 	inventory.mu.Lock()
 	inventory.sandbox, inventory.account, inventory.accountFound = snapshot, owner, true
 	inventory.mu.Unlock()
-	if _, err := client.OpenSession(authorityContext(t, "retry-owner"), request); status.Code(err) != codes.FailedPrecondition {
+	if _, err := client.CreateSession(authorityContext(t, "retry-owner"), request); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("purged receipt with stale live inventory crossed deletion fence: %v", err)
 	}
-	if _, err := store.GetOpening(t.Context(), stored.SessionID); !errors.Is(err, ErrNotFound) {
+	if _, err := store.GetSession(t.Context(), stored.SessionID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("retry recreated cleaned-up opening: %v", err)
 	}
 }
 
-func TestOpeningTransactionChecksRetainedAuthorityBeforeConflict(t *testing.T) {
+func TestSessionTransactionChecksRetainedAuthorityBeforeConflict(t *testing.T) {
 	store := testStore(t, 3)
 	owner := serviceAccountIdentityFor(caller, "transaction-owner-uid")
 	foreign := serviceAccountIdentityFor(Account{Namespace: caller.Namespace, Name: "transaction-foreign"}, "foreign-uid")
 	ownerCaller := CallerIdentity{ServiceAccountIdentity: owner, Attribution: &AdmissionAttribution{Actor: owner, EffectiveCaller: owner}}
 	foreignCaller := CallerIdentity{ServiceAccountIdentity: foreign, Attribution: &AdmissionAttribution{Actor: foreign, EffectiveCaller: foreign}}
 	id, uid := uuid.NewString(), uuid.NewString()
-	if _, err := store.OpenSessionForCaller(t.Context(), id, "transaction-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil, owner, ownerCaller); err != nil {
+	if _, err := store.CreateSessionForCaller(t.Context(), id, "transaction-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil, owner, ownerCaller); err != nil {
 		t.Fatal(err)
 	}
 	// This is the transactional path after another opener wins the Session-ID lock,
 	// including when the API's initial read did not yet see that winning opening.
 	for _, name := range []string{"transaction-sandbox", "conflicting-sandbox"} {
-		if _, err := store.OpenSessionForCaller(t.Context(), id, name, uid, &sessionpb.SessionSpec{}, nil, nil, foreign, foreignCaller); !errors.Is(err, ErrNotFound) {
+		if _, err := store.CreateSessionForCaller(t.Context(), id, name, uid, &sessionpb.SessionSpec{}, nil, nil, foreign, foreignCaller); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("transaction exposed an existing opening to foreign caller: %v", err)
 		}
 	}
 }
 
-func TestOpeningDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
+func TestSessionDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 	store := testStore(t, 3)
 	owner := serviceAccountIdentityFor(caller, "discovery-owner-uid")
 	foreignAccount := Account{Namespace: caller.Namespace, Name: "discovery-foreign"}
@@ -802,7 +802,7 @@ func TestOpeningDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 		if row.harness == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
 			spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "discovery-sandbox", Uid: uid}}}}
 		}
-		if _, err := store.OpenSessionForCaller(t.Context(), row.id, "discovery-sandbox", uid,
+		if _, err := store.CreateSessionForCaller(t.Context(), row.id, "discovery-sandbox", uid,
 			spec, nil, nil, row.principal, CallerIdentity{Privileged: true, ServiceAccountIdentity: owner, Attribution: &AdmissionAttribution{Actor: owner, EffectiveCaller: owner}}); err != nil {
 			t.Fatal(err)
 		}
@@ -811,7 +811,7 @@ func TestOpeningDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 	if err != nil || lease == nil {
 		t.Fatalf("claim: %+v %v", lease, err)
 	}
-	if row, err := store.SettleOpening(t.Context(), failedID, *lease, []string{QueueState}, FailedState, "runner_rejected"); err != nil || row == nil {
+	if row, err := store.SettleSession(t.Context(), failedID, *lease, []string{SessionWaitingState}, SessionFailedState, "runner_rejected"); err != nil || row == nil {
 		t.Fatalf("reject opening: %+v %v", row, err)
 	}
 	inventory := &authorityInventory{sandboxErr: errors.New("owner environment unavailable")}
@@ -821,30 +821,30 @@ func TestOpeningDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 		"discovery-foreign":     {account: foreignAccount, uid: foreign.GetUid()},
 		"discovery-backend":     {account: caller, uid: "backend-account-uid", pod: true},
 	}, nil)
-	first, err := client.ListSessionOpenings(authorityContext(t, "discovery-owner"), &dispatcherpb.ListSessionOpeningsRequest{Limit: 1})
-	if err != nil || len(first.GetOpenings()) != 1 || first.GetOpenings()[0].GetSessionId() != queuedID || first.GetNextPageToken() == "" {
+	first, err := client.ListSessions(authorityContext(t, "discovery-owner"), &dispatcherpb.ListSessionsRequest{Limit: 1})
+	if err != nil || len(first.GetSessions()) != 1 || first.GetSessions()[0].GetSessionId() != queuedID || first.GetNextPageToken() == "" {
 		t.Fatalf("owner first page: %v %v", first, err)
 	}
-	if first.GetOpenings()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetOpenings()[0].GetPlacement().GetEnvironmentHosted().GetEnvironment().GetUid() != uid || first.GetOpenings()[0].GetPlacement().GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CODEX {
+	if first.GetSessions()[0].GetStatus().GetMaterialization() != dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_WAITING || first.GetSessions()[0].GetPlacement().GetEnvironmentHosted().GetEnvironment().GetUid() != uid || first.GetSessions()[0].GetPlacement().GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CODEX {
 		t.Fatalf("queued opening placement/state: %v", first)
 	}
-	got, err := client.GetSessionOpening(authorityContext(t, "discovery-owner"), &dispatcherpb.GetSessionOpeningRequest{SessionId: queuedID})
-	if err != nil || got.GetOpening().GetPlacement().GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CODEX {
+	got, err := client.GetSession(authorityContext(t, "discovery-owner"), &dispatcherpb.GetSessionRequest{SessionId: queuedID})
+	if err != nil || got.GetSession().GetPlacement().GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CODEX {
 		t.Fatalf("owner opening harness: %v %v", got, err)
 	}
-	central, err := client.GetSessionOpening(authorityContext(t, "discovery-foreign"), &dispatcherpb.GetSessionOpeningRequest{SessionId: foreignID})
-	if err != nil || central.GetOpening().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment().GetUid() != uid {
+	central, err := client.GetSession(authorityContext(t, "discovery-foreign"), &dispatcherpb.GetSessionRequest{SessionId: foreignID})
+	if err != nil || central.GetSession().GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment().GetUid() != uid {
 		t.Fatalf("central opening harness: %v %v", central, err)
 	}
 	// The last row of a page can disappear between requests without invalidating its cursor.
-	if _, err := store.DB.ExecContext(t.Context(), "DELETE FROM session_opening WHERE session_id=$1", queuedID); err != nil {
+	if _, err := store.DB.ExecContext(t.Context(), "DELETE FROM session WHERE session_id=$1", queuedID); err != nil {
 		t.Fatal(err)
 	}
-	second, err := client.ListSessionOpenings(authorityContext(t, "discovery-owner"), &dispatcherpb.ListSessionOpeningsRequest{
+	second, err := client.ListSessions(authorityContext(t, "discovery-owner"), &dispatcherpb.ListSessionsRequest{
 		Limit: 1, PageToken: first.GetNextPageToken(),
 	})
-	if err != nil || len(second.GetOpenings()) != 1 || second.GetOpenings()[0].GetSessionId() != failedID || second.GetNextPageToken() != "" ||
-		second.GetOpenings()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED || second.GetOpenings()[0].GetPlacement().GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CLAUDE {
+	if err != nil || len(second.GetSessions()) != 1 || second.GetSessions()[0].GetSessionId() != failedID || second.GetNextPageToken() != "" ||
+		second.GetSessions()[0].GetStatus().GetMaterialization() != dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_FAILED || second.GetSessions()[0].GetPlacement().GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CLAUDE {
 		t.Fatalf("owner second page: %v %v", second, err)
 	}
 	// A cursor carries position only; it never grants the original caller's authority.
@@ -856,24 +856,24 @@ func TestOpeningDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 		{"discovery-foreign", []string{foreignID}},
 		{"discovery-backend", []string{foreignID, failedID, pendingID}},
 	} {
-		page, err := client.ListSessionOpenings(authorityContext(t, test.token), &dispatcherpb.ListSessionOpeningsRequest{
+		page, err := client.ListSessions(authorityContext(t, test.token), &dispatcherpb.ListSessionsRequest{
 			PageToken: first.GetNextPageToken(),
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
 		var ids []string
-		for _, opening := range page.GetOpenings() {
+		for _, opening := range page.GetSessions() {
 			ids = append(ids, opening.GetSessionId())
 		}
 		if !slices.Equal(ids, test.want) || page.GetNextPageToken() != "" {
 			t.Fatalf("%s read scope: %v, next %q; want %v", test.token, ids, page.GetNextPageToken(), test.want)
 		}
 	}
-	for _, request := range []*dispatcherpb.ListSessionOpeningsRequest{
+	for _, request := range []*dispatcherpb.ListSessionsRequest{
 		{Limit: 101}, {PageToken: "not-a-page-token"}, {PageToken: string(make([]byte, 129))},
 	} {
-		if _, err := client.ListSessionOpenings(authorityContext(t, "discovery-owner"), request); status.Code(err) != codes.InvalidArgument {
+		if _, err := client.ListSessions(authorityContext(t, "discovery-owner"), request); status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("invalid page request %v: %v", request, err)
 		}
 	}

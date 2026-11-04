@@ -32,7 +32,7 @@ from agentplane.system_tests.driver.sandbox import (
     POD_TEMPLATE,
 )
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.scenarios.dispatcher import container_mount_sources, opening_until
+from agentplane.system_tests.scenarios.dispatcher import container_mount_sources, session_until
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
@@ -273,14 +273,18 @@ async def deployed_session_command_cannot_cross_deletion(
             environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)
         )
         metadata = _metadata(gateway, cluster, name, uid)
-        await dispatcher.OpenSession(
-            session_dispatcher_pb2.OpenSessionRequest(session_id=session, spec=spec), metadata=app.metadata, timeout=15
+        await dispatcher.CreateSession(
+            session_dispatcher_pb2.CreateSessionRequest(session_id=session, spec=spec),
+            metadata=app.metadata,
+            timeout=15,
         )
-        await opening_until(
+        await session_until(
             dispatcher,
             app,
             session,
-            lambda opening: opening.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED,
+            lambda row: (
+                row.status.materialization == session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_ACCEPTED
+            ),
         )
         admitted = await runner.SubmitInput(
             environment_runtime_pb2.SubmitInputRequest(
@@ -428,8 +432,8 @@ async def deployed_session_command_cannot_cross_deletion(
         replacement_spec.CopyFrom(spec)
         replacement_spec.placement.environment_hosted.environment.uid = replacement
         # Use a fresh Session ID: the test imposes no retention policy on old Session UUIDs.
-        await dispatcher.OpenSession(
-            session_dispatcher_pb2.OpenSessionRequest(session_id=replacement_session, spec=replacement_spec),
+        await dispatcher.CreateSession(
+            session_dispatcher_pb2.CreateSessionRequest(session_id=replacement_session, spec=replacement_spec),
             metadata=app.metadata,
             timeout=15,
         )

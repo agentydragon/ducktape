@@ -401,7 +401,7 @@ class _ResumeRun:
         snapshot = await self.client.runner_status(self.view.target.name, self.view.target.uid)
         self.initial_boot_id = snapshot.environment_runtime_boot_id
         reserved = next(row for row in snapshot.sessions if row.session_id == str(agent.thread_id))
-        assert not reserved.HasField("process_id"), "OpenSession unexpectedly started a native harness"
+        assert not reserved.HasField("process_id"), "CreateSession unexpectedly started a native harness"
         self.agents[harness] = agent
         return agent
 

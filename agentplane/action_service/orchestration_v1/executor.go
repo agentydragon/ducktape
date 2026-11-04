@@ -101,12 +101,12 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 			return store.ExecutionOutcome{}, err
 		}
 		return worker.Succeeded(e.launch(ctx, request.Caller, args))
-	case contract.ActionOpenSession:
-		args, err := e.inputs.OpenSession.Decode(request.Arguments)
+	case contract.ActionCreateSession:
+		args, err := e.inputs.CreateSession.Decode(request.Arguments)
 		if err != nil {
 			return store.ExecutionOutcome{}, err
 		}
-		return worker.Succeeded(e.openSession(ctx, args))
+		return worker.Succeeded(e.createSession(ctx, args))
 	case contract.ActionSubmitInput:
 		args, err := e.inputs.SubmitInput.Decode(request.Arguments)
 		if err != nil {

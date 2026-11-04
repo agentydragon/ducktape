@@ -232,7 +232,7 @@ class Client:
             f"/upstream/environments/v1/environments/{quote(target.namespace, safe='')}/{quote(target.name, safe='')}"
         )
 
-    async def create_session(
+    async def create_session_and_wait(
         self,
         name: str,
         session_id: UUID,
@@ -246,12 +246,12 @@ class Client:
 
         Retrying with the same Session ID and overrides answers the same Session.
         """
-        opening = await self.open_session(
+        session = await self.create_session(
             name, session_id, sandbox_uid=sandbox_uid, overrides=overrides, setup_script=setup_script
         )
-        await self.wait_for_session_admission(dispatcher, session_id, opening=opening)
+        await self.wait_for_session_acceptance(dispatcher, session_id, session=session)
 
-    async def open_session(
+    async def create_session(
         self,
         name: str,
         session_id: UUID,
@@ -259,9 +259,9 @@ class Client:
         sandbox_uid: str,
         overrides: dict[str, object] | None = None,
         setup_script: str | None = None,
-    ) -> session_dispatcher_pb2.SessionOpening:
-        """Submit an opening and return its first durable state without waiting for admission."""
-        body = app_service_pb2.OpenSessionRequest(
+    ) -> session_dispatcher_pb2.Session:
+        """Create once and return its first durable materialization state."""
+        body = app_service_pb2.CreateSessionRequest(
             session_id=str(session_id), sandbox_uid=sandbox_uid, spec=overrides or {}
         )
         if setup_script is not None:
@@ -269,45 +269,49 @@ class Client:
         answered = await self._json(
             "POST", f"/sandboxes/{name}/sessions", json=MessageToDict(body, preserving_proto_field_name=True)
         )
-        opening = ParseDict(answered, session_dispatcher_pb2.SessionOpening())
-        match opening.placement.WhichOneof("kind"):
+        session = ParseDict(answered, session_dispatcher_pb2.Session())
+        match session.placement.WhichOneof("kind"):
             case "environment_hosted":
-                target = opening.placement.environment_hosted.environment
+                target = session.placement.environment_hosted.environment
             case "central_sampler_v1":
-                target = opening.placement.central_sampler_v1.executor_environment
+                target = session.placement.central_sampler_v1.executor_environment
             case _:
-                raise RuntimeError("Session opening omitted its exact Environment placement")
+                raise RuntimeError("Session omitted its exact Environment placement")
         if target.name != name or not sandbox_uid or target.uid != sandbox_uid:
-            raise RuntimeError("Session opening acknowledged a different Environment identity")
+            raise RuntimeError("Session creation acknowledged a different Environment identity")
         self.opened_sandbox_uids.add(target.uid)
-        return opening
+        return session
 
-    async def wait_for_session_admission(
+    async def wait_for_session_acceptance(
         self,
         dispatcher: SessionDispatcherClient,
         session_id: UUID,
         *,
-        opening: session_dispatcher_pb2.SessionOpening,
+        session: session_dispatcher_pb2.Session,
         timeout_s: float = REQUEST_SECONDS,
     ) -> None:
-        """Wait for the runner admission behind an already accepted Session opening."""
+        """Wait until the Dispatcher observes acceptance by the placement owner."""
         deadline = time.monotonic() + timeout_s
         while True:
-            if opening.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED:
+            if session.status.materialization == session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_ACCEPTED:
                 return
-            if opening.state in (
-                session_dispatcher_pb2.DELIVERY_STATE_FAILED,
-                session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN,
+            if session.status.materialization in (
+                session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_FAILED,
+                session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_UNKNOWN,
             ):
-                raise RuntimeError(f"Session opening {opening.session_id} ended in {opening.state}: {opening.reason}")
+                raise RuntimeError(
+                    f"Session {session.session_id} ended in {session.status.materialization}: {session.status.reason}"
+                )
             if time.monotonic() >= deadline:
-                raise TimeoutError(f"Session opening {opening.session_id} remained {opening.state}: {opening.reason}")
+                raise TimeoutError(
+                    f"Session {session.session_id} remained in {session.status.materialization}: {session.status.reason}"
+                )
             await asyncio.sleep(0.2)
             try:
-                opening = await dispatcher.get_session_opening(str(session_id))
-                if opening.session_id != str(session_id):
+                session = await dispatcher.get_session(str(session_id))
+                if session.session_id != str(session_id):
                     raise RuntimeError(
-                        f"Dispatcher returned Session {opening.session_id} while waiting for Session {session_id}"
+                        f"Dispatcher returned Session {session.session_id} while waiting for Session {session_id}"
                     )
             except ServiceError as error:
                 if error.code != grpc.StatusCode.UNAVAILABLE:

@@ -88,7 +88,7 @@ The live gate reopens only after a successor journal reopen and its acknowledgem
 publication succeed for the current Running incarnation; same-incarnation re-entry stays closed.
 
 External authentication, Sandbox/incarnation authorization and Gateway epochs remain in
-`runtime/control`. Direct Session admission uses that authority and Runtime's gate. `OpenSession`
+`runtime/control`. Direct Session admission uses that authority and Runtime's gate. `CreateSession`
 acknowledges a durable reservation, without promising process readiness. Model lookup occurs outside
 the gate; the reservation rechecks the epoch and accepted revision before its retained write.
 Accepted setup may finish after new admission closes. Canceling a setup's bootstrap waiter does

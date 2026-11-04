@@ -58,7 +58,7 @@ func TestExecutorContinuesAfterSameSandboxResumes(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					bound := &samplerpb.OpenSessionRequest{}
+					bound := &samplerpb.CreateSessionRequest{}
 					if err := proto.Unmarshal(stored.Configuration, bound); err != nil {
 						t.Fatal(err)
 					}
@@ -694,10 +694,10 @@ func TestExecCommandExpectedIncarnationDoesNotRevealUIDOnAuthorizationFailure(t 
 	assertNoUnresolvedNestedIntents(t, store, owner)
 }
 
-func resumedExecutorStore(t *testing.T, api protocol.APIStyle) (*Store, Owner, *samplerpb.OpenSessionRequest) {
+func resumedExecutorStore(t *testing.T, api protocol.APIStyle) (*Store, Owner, *samplerpb.CreateSessionRequest) {
 	t.Helper()
 	store := newTestStore(t)
-	request := &samplerpb.OpenSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}, Executor: &identitypb.SandboxDestination{Target: &identitypb.EnvironmentTarget{Namespace: "agents", Name: "sandbox", Uid: "sandbox-uid"}, Owner: &identitypb.ServiceAccount{Namespace: "agents", Name: "sandbox"}}, ExpectedIncarnationUid: "original"}
+	request := &samplerpb.CreateSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"}, Executor: &identitypb.SandboxDestination{Target: &identitypb.EnvironmentTarget{Namespace: "agents", Name: "sandbox", Uid: "sandbox-uid"}, Owner: &identitypb.ServiceAccount{Namespace: "agents", Name: "sandbox"}}, ExpectedIncarnationUid: "original"}
 	session, err := openStoreSession(t, store, request, "fixture-account", api)
 	if err != nil {
 		t.Fatal(err)
@@ -718,9 +718,9 @@ func changedIncarnationStatus(t *testing.T, sandboxUID, incarnationUID string) *
 	return st
 }
 
-func decodeResumeRequest(t *testing.T, wire []byte) *samplerpb.OpenSessionRequest {
+func decodeResumeRequest(t *testing.T, wire []byte) *samplerpb.CreateSessionRequest {
 	t.Helper()
-	request := &samplerpb.OpenSessionRequest{}
+	request := &samplerpb.CreateSessionRequest{}
 	if err := proto.Unmarshal(wire, request); err != nil {
 		t.Fatal(err)
 	}

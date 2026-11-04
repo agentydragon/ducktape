@@ -206,7 +206,7 @@ func (f samplerExportFixture) openSession(t *testing.T) *centralsampler.Session 
 	t.Helper()
 	platformInstructions := "Fixture Agentplane platform guidance."
 	executorUID := uuid.NewString()
-	session, err := f.sampler.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
+	session, err := f.sampler.CreateSession(t.Context(), &samplerpb.CreateSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
 			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{

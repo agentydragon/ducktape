@@ -62,11 +62,11 @@ service AppService {
   // SessionSpec. The app resolves Sandbox presets, applies spec and setup-script overrides,
   // expands the Session ID in cwd, and creates app-owned Thread metadata before calling
   // Dispatcher, which owns durable admission, delivery, and opening status.
-  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse) {
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse) {
     option (google.api.http) = {
       post: "/sandboxes/{name}/sessions"
       body: "*"
-      response_body: "opening"
+      response_body: "session"
     };
   }
 
@@ -160,7 +160,7 @@ message WatchThreadMetadataResponse {
   bool updates_connected = 2;
 }
 
-message OpenSessionRequest {
+message CreateSessionRequest {
   string name = 1;
   // Caller-minted UUID; reconcile an uncertain outcome with this identity, never a fresh opening.
   string session_id = 2;
@@ -178,6 +178,6 @@ message GetEnvironmentRuntimeStatusRequest {
   string sandbox_uid = 2;
 }
 
-message OpenSessionResponse {
-  agentplane.runner_gateway.dispatcher.SessionOpening opening = 1;
+message CreateSessionResponse {
+  agentplane.runner_gateway.dispatcher.Session session = 1;
 }

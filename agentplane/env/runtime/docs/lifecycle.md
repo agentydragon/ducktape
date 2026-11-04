@@ -72,7 +72,7 @@ records and journals and joins the initial native cleanup barrier before public 
 History starts after successful Session recovery. A recovery failure closes admission and prevents
 History startup. Failure or Close wakes startup waiters even while recovery is unfinished.
 
-`OpenSession` acknowledges a durable reservation. Model lookup runs outside admission; the retained
+`CreateSession` acknowledges a durable reservation. Model lookup runs outside admission; the retained
 write rechecks the accepted revision and caller epoch. Native startup and setup complete separately.
 Accepted setup may settle after the gate closes, and its operation/process barriers remain visible
 until it does. Canceling a bootstrap waiter does not cancel the accepted bootstrap operation.

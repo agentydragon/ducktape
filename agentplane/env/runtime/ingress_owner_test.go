@@ -305,7 +305,7 @@ func TestRuntimeKeepsHistoryAliveUntilExactSealedAcknowledgement(t *testing.T) {
 	r := newLifecycleRuntime(t, config)
 	t.Cleanup(func() { releaseOnce.Do(func() { close(releaseSeal) }) })
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
-	if _, err := client.runner.OpenSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := client.runner.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	ctx := ingressTestContext(t)
@@ -403,7 +403,7 @@ func TestRuntimeRetainsOwnerWhenHistoryFailsBeforeSealedAcknowledgement(t *testi
 		releaseSealOnce.Do(func() { close(releaseSeal) })
 	})
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
-	if _, err := client.runner.OpenSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := client.runner.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	ctx := ingressTestContext(t)
@@ -478,7 +478,7 @@ func TestRuntimeRetainsOwnerWhenSessionDeliveryCannotPersistSealedAcknowledgemen
 	r = newLifecycleRunnerWithState(t, config, store)
 	t.Cleanup(func() { releaseOnce.Do(func() { close(releaseSeal) }) })
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
-	if _, err := client.runner.OpenSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := client.runner.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	ctx := ingressTestContext(t)

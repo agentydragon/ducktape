@@ -113,10 +113,10 @@ CA_BUNDLE_KEY = "ca-certificates.crt"
 JAVA_TRUST_STORE_KEY = "ca-certificates.p12"
 _UPSTREAM_CA_DIR = "/etc/agentplane-egress/upstream-ca"
 _SESSION_DISPATCHER_GRPC_PATHS = (
-    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/OpenSession",
+    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CreateSession",
     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
-    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSessionOpening",
-    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListSessionOpenings",
+    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSession",
+    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListSessions",
     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch",
     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
     "/agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn",

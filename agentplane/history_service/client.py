@@ -19,7 +19,7 @@ from agentplane.history_service import history_service_pb2, history_service_pb2_
 
 
 @dataclass(frozen=True)
-class SessionOpened:
+class SessionRecorded:
     session_id: UUID
     # Recording order; a watch resumed after it misses no later Session.
     position: int
@@ -107,14 +107,14 @@ class HistoryServiceClient:
         async for _ in self._watch(history_service_pb2.WatchSessionSummariesRequest()):
             yield
 
-    async def watch_session_openings(self, *, after_position: int) -> AsyncGenerator[SessionOpened]:
+    async def watch_recorded_sessions(self, *, after_position: int) -> AsyncGenerator[SessionRecorded]:
         """Yield each Session recorded after `after_position`, in recording order, until planned renewal,
         which returns; anything else raises."""
-        request = history_service_pb2.WatchSessionSummariesRequest(opened_after=after_position)
+        request = history_service_pb2.WatchSessionSummariesRequest(recorded_after=after_position)
         async for message in self._watch(request):
-            if message.HasField("session_opened"):
-                yield SessionOpened(
-                    session_id=UUID(message.session_opened.session_id), position=message.session_opened.position
+            if message.HasField("session_recorded"):
+                yield SessionRecorded(
+                    session_id=UUID(message.session_recorded.session_id), position=message.session_recorded.position
                 )
 
     async def _watch(

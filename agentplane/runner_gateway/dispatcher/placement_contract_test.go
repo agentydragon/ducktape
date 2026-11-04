@@ -14,23 +14,23 @@ import (
 
 func TestPlacementRequestRequiresExactTargetAndNativeHarness(t *testing.T) {
 	target := &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "00000000-0000-4000-8000-000000000001"}
-	native := func(exact *sessionpb.ExactEnvironment, harness sessionpb.Harness) *dispatcherpb.OpenSessionRequest {
-		return &dispatcherpb.OpenSessionRequest{Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{
+	native := func(exact *sessionpb.ExactEnvironment, harness sessionpb.Harness) *dispatcherpb.CreateSessionRequest {
+		return &dispatcherpb.CreateSessionRequest{Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{
 			EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: exact, Harness: harness},
 		}}}}
 	}
-	central := func(exact *sessionpb.ExactEnvironment) *dispatcherpb.OpenSessionRequest {
-		return &dispatcherpb.OpenSessionRequest{Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{
+	central := func(exact *sessionpb.ExactEnvironment) *dispatcherpb.CreateSessionRequest {
+		return &dispatcherpb.CreateSessionRequest{Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{
 			CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: exact},
 		}}}}
 	}
 	for _, test := range []struct {
 		name    string
-		request *dispatcherpb.OpenSessionRequest
+		request *dispatcherpb.CreateSessionRequest
 	}{
-		{"missing spec", &dispatcherpb.OpenSessionRequest{}},
-		{"missing placement", &dispatcherpb.OpenSessionRequest{Spec: &sessionpb.SessionSpec{}}},
-		{"empty placement", &dispatcherpb.OpenSessionRequest{Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{}}}},
+		{"missing spec", &dispatcherpb.CreateSessionRequest{}},
+		{"missing placement", &dispatcherpb.CreateSessionRequest{Spec: &sessionpb.SessionSpec{}}},
+		{"empty placement", &dispatcherpb.CreateSessionRequest{Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{}}}},
 		{"native missing environment", native(nil, sessionpb.Harness_HARNESS_CODEX)},
 		{"native empty name", native(&sessionpb.ExactEnvironment{Uid: target.Uid}, sessionpb.Harness_HARNESS_CODEX)},
 		{"native empty UID", native(&sessionpb.ExactEnvironment{Name: target.Name}, sessionpb.Harness_HARNESS_CODEX)},
@@ -49,7 +49,7 @@ func TestPlacementRequestRequiresExactTargetAndNativeHarness(t *testing.T) {
 	}
 	for _, test := range []struct {
 		name    string
-		request *dispatcherpb.OpenSessionRequest
+		request *dispatcherpb.CreateSessionRequest
 		want    SessionPlacement
 	}{
 		{"environment hosted", native(target, sessionpb.Harness_HARNESS_CODEX), EnvironmentHosted},
@@ -64,11 +64,11 @@ func TestPlacementRequestRequiresExactTargetAndNativeHarness(t *testing.T) {
 				t.Fatalf("request target = %v, want %v", requestTarget(test.request), target)
 			}
 			test.request.Spec.Instructions = "private opening instructions"
-			row := &Opening{
+			row := &Session{
 				SessionID: target.Uid, SandboxName: target.Name, SandboxUID: target.Uid,
-				Placement: got, Spec: test.request.Spec, State: QueueState, CreatedAt: time.Now(), UpdatedAt: time.Now(),
+				Placement: got, Spec: test.request.Spec, State: SessionWaitingState, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 			}
-			opening, err := DescribeOpening(row)
+			opening, err := DescribeSession(row)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -79,7 +79,7 @@ func TestPlacementRequestRequiresExactTargetAndNativeHarness(t *testing.T) {
 			if bytes.Contains(wire, []byte(test.request.Spec.Instructions)) {
 				t.Fatal("opening read exposed private Session instructions")
 			}
-			decoded := &dispatcherpb.SessionOpening{}
+			decoded := &dispatcherpb.Session{}
 			if err := proto.Unmarshal(wire, decoded); err != nil {
 				t.Fatal(err)
 			}

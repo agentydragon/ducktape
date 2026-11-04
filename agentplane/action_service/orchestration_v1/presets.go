@@ -13,11 +13,11 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
 
-// Preset is one reviewed launch preset, as the launch_sandbox and open_session fields it stands for.
+// Preset is one reviewed launch preset, as the launch_sandbox and create_session fields it stands for.
 type Preset struct {
-	Title       string        `json:"title"`
-	Launch      PresetLaunch  `json:"launch"`
-	OpenSession PresetSession `json:"open_session"`
+	Title         string        `json:"title"`
+	Launch        PresetLaunch  `json:"launch"`
+	CreateSession PresetSession `json:"create_session"`
 }
 
 // PresetLaunch are launch_sandbox fields. An absent one is absent from the result too, so the fields copy into
@@ -29,7 +29,7 @@ type PresetLaunch struct {
 	Bootstrap  string   `json:"bootstrap,omitempty"`
 }
 
-// PresetSession are open_session fields.
+// PresetSession are create_session fields.
 type PresetSession struct {
 	Spec        contract.SessionSpec `json:"spec"`
 	SetupScript string               `json:"setup_script,omitempty"`
@@ -54,12 +54,12 @@ func parsePresets(document json.RawMessage) (map[string]Preset, error) {
 	}
 	for _, name := range slices.Sorted(maps.Keys(presets)) {
 		preset := presets[name]
-		spec := preset.OpenSession.Spec
+		spec := preset.CreateSession.Spec
 		if _, known := sessionpb.Harness_value[string(spec.Harness)]; !known || spec.Harness == contract.Harness(sessionpb.Harness_HARNESS_UNSPECIFIED.String()) {
-			return nil, fmt.Errorf("preset %s: open_session.spec.harness must name a harness", name)
+			return nil, fmt.Errorf("preset %s: create_session.spec.harness must name a harness", name)
 		}
 		if preset.Title == "" || preset.Launch.Template == "" || spec.Model == "" || spec.Cwd == "" {
-			return nil, fmt.Errorf("preset %s: title, launch.template, open_session.spec.model and cwd are required", name)
+			return nil, fmt.Errorf("preset %s: title, launch.template, create_session.spec.model and cwd are required", name)
 		}
 	}
 	return presets, nil

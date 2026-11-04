@@ -70,8 +70,9 @@ func (s *Store) ReserveWakeAttempt(ctx context.Context, caller *ServiceAccountId
 
 // A null incarnation means no wake cycle; the empty string means a wake before
 // any incarnation existed. The distinction is retained from the Python schema.
-func (s *Store) NoteWaking(ctx context.Context, id string, owner Owner, incarnation *string, opening bool, assessment *environmentpb.WakeAssessment) (bool, error) {
-	table, key := wakeTable(opening)
+func (s *Store) NoteWaking(ctx context.Context, id string, owner Owner, incarnation *string, isSession bool, assessment *environmentpb.WakeAssessment) (bool, error) {
+	table, key := wakeTable(isSession)
+	waiting := waitingState(isSession)
 	value := ""
 	if incarnation != nil {
 		value = *incarnation
@@ -89,7 +90,7 @@ func (s *Store) NoteWaking(ctx context.Context, id string, owner Owner, incarnat
 		// Persist uncertainty before the external wake call; cancellation must retain it.
 		result, err := tx.ExecContext(ctx, `UPDATE `+table+` SET wake_from_incarnation=COALESCE(wake_from_incarnation,$3),
 			wake_assessment=$5,updated_at=now() WHERE `+key+`=$1 AND sandbox_uid=$2 AND state=$4`,
-			id, owner.SandboxUID, value, QueueState, assessmentBytes)
+			id, owner.SandboxUID, value, waiting, assessmentBytes)
 		if err != nil {
 			return err
 		}
@@ -103,8 +104,9 @@ func (s *Store) NoteWaking(ctx context.Context, id string, owner Owner, incarnat
 	return stillQueued, err
 }
 
-func (s *Store) NoteWakeRequestedAt(ctx context.Context, id string, owner Owner, opening bool, requestedAt time.Time) (*time.Time, error) {
-	table, key := wakeTable(opening)
+func (s *Store) NoteWakeRequestedAt(ctx context.Context, id string, owner Owner, isSession bool, requestedAt time.Time) (*time.Time, error) {
+	table, key := wakeTable(isSession)
+	waiting := waitingState(isSession)
 	var result *time.Time
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		current, err := ownerMatch(ctx, tx, owner)
@@ -114,7 +116,7 @@ func (s *Store) NoteWakeRequestedAt(ctx context.Context, id string, owner Owner,
 		var requested time.Time
 		err = tx.QueryRowContext(ctx, `UPDATE `+table+` SET wake_requested_at=$3,updated_at=now()
 			WHERE `+key+`=$1 AND sandbox_uid=$2 AND state=$4 AND wake_requested_at IS NULL
-			RETURNING wake_requested_at`, id, owner.SandboxUID, requestedAt, QueueState).Scan(&requested)
+			RETURNING wake_requested_at`, id, owner.SandboxUID, requestedAt, waiting).Scan(&requested)
 		if err == nil {
 			result = &requested
 			return notify(ctx, tx)
@@ -124,7 +126,7 @@ func (s *Store) NoteWakeRequestedAt(ctx context.Context, id string, owner Owner,
 		}
 		var old sql.NullTime
 		err = tx.QueryRowContext(ctx, `SELECT wake_requested_at FROM `+table+`
-			WHERE `+key+`=$1 AND sandbox_uid=$2 AND state=$3`, id, owner.SandboxUID, QueueState).Scan(&old)
+			WHERE `+key+`=$1 AND sandbox_uid=$2 AND state=$3`, id, owner.SandboxUID, waiting).Scan(&old)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -139,8 +141,9 @@ func (s *Store) NoteWakeRequestedAt(ctx context.Context, id string, owner Owner,
 	return result, err
 }
 
-func (s *Store) ClearWakeState(ctx context.Context, id string, owner Owner, opening bool) error {
-	table, key := wakeTable(opening)
+func (s *Store) ClearWakeState(ctx context.Context, id string, owner Owner, isSession bool) error {
+	table, key := wakeTable(isSession)
+	waiting := waitingState(isSession)
 	return transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		current, err := ownerMatch(ctx, tx, owner)
 		if err != nil || !current {
@@ -149,7 +152,7 @@ func (s *Store) ClearWakeState(ctx context.Context, id string, owner Owner, open
 		result, err := tx.ExecContext(ctx, `UPDATE `+table+` SET wake_from_incarnation=NULL,
 			wake_requested_at=NULL,updated_at=now() WHERE `+key+`=$1 AND sandbox_uid=$2
 			AND state=$3 AND (wake_from_incarnation IS NOT NULL OR wake_requested_at IS NOT NULL)`,
-			id, owner.SandboxUID, QueueState)
+			id, owner.SandboxUID, waiting)
 		if err != nil {
 			return err
 		}
@@ -170,11 +173,11 @@ func (s *Store) FailExpiredWake(
 	ctx context.Context,
 	id string,
 	owner Owner,
-	opening bool,
+	isSession bool,
 	reason string,
 	blocker *environmentpb.DeliveryBlocker,
 	assessment *environmentpb.WakeAssessment,
-) (*Dispatch, *Opening, time.Duration, error) {
+) (*Dispatch, *Session, time.Duration, error) {
 	if assessment == nil {
 		return nil, nil, 0, errors.New("wake assessment is required")
 	}
@@ -186,9 +189,10 @@ func (s *Store) FailExpiredWake(
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	table, key := wakeTable(opening)
+	table, key := wakeTable(isSession)
+	waiting := waitingState(isSession)
 	var dispatch *Dispatch
-	var session *Opening
+	var session *Session
 	var remaining time.Duration
 	err = transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		current, err := ownerMatch(ctx, tx, owner)
@@ -198,7 +202,7 @@ func (s *Store) FailExpiredWake(
 		var requested time.Time
 		err = tx.QueryRowContext(ctx, `SELECT wake_requested_at FROM `+table+` WHERE `+key+`=$1
 			AND sandbox_uid=$2 AND state=$3 AND wake_requested_at IS NOT NULL FOR UPDATE`,
-			id, owner.SandboxUID, QueueState).Scan(&requested)
+			id, owner.SandboxUID, waiting).Scan(&requested)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -214,11 +218,11 @@ func (s *Store) FailExpiredWake(
 			return nil
 		}
 		remaining = 0
-		if opening {
-			session, err = scanOpening(tx.QueryRowContext(ctx, `UPDATE session_opening SET state=$3,
+		if isSession {
+			session, err = scanSession(tx.QueryRowContext(ctx, `UPDATE session SET state=$3,
 				reason=$4,updated_at=$5,delivery_blocker=COALESCE($7,delivery_blocker),wake_assessment=$8
 				WHERE session_id=$1 AND sandbox_uid=$2 AND state=$6
-				RETURNING `+openingColumns, id, owner.SandboxUID, FailedState, reason, now, QueueState, blockerBytes, assessmentBytes))
+				RETURNING `+sessionColumns, id, owner.SandboxUID, SessionFailedState, reason, now, waiting, blockerBytes, assessmentBytes))
 		} else {
 			dispatch, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state=CASE WHEN delivery_attempted THEN 'UNKNOWN' ELSE $3 END,
 				reason=$4,updated_at=$5,delivery_blocker=COALESCE($7,delivery_blocker),wake_assessment=$8
@@ -236,9 +240,16 @@ func (s *Store) FailExpiredWake(
 	return dispatch, session, remaining, err
 }
 
-func wakeTable(opening bool) (table, key string) {
-	if opening {
-		return "session_opening", "session_id"
+func wakeTable(isSession bool) (table, key string) {
+	if isSession {
+		return "session", "session_id"
 	}
 	return "dispatch", "command_id"
+}
+
+func waitingState(isSession bool) string {
+	if isSession {
+		return SessionWaitingState
+	}
+	return QueueState
 }
