@@ -30,7 +30,7 @@ variables split, are the units (`prepare_chunks.rs`, `js_ast.rs`).
 
 Analysis runs in source order and never reads the assignment. It is cached by
 source, analysis projection and engine (`staged_analysis/analysis_projection.rs`,
-<staged_pipeline.md>).
+<../docs/bazel_integration.md>).
 
 - **One abstract interpreter.** One domain and one builtin table
   (`facts/abstract_domain/`, `facts/sync_effects/`) produce a per-statement
@@ -99,7 +99,7 @@ with structural placement obligations.
 ### 6. Agent tooling
 
 - **Fast loop.** An assignment edit reruns stages 3–5 against cached analysis,
-  in seconds (<staged_pipeline.md>).
+  in seconds (<../docs/bazel_integration.md>).
 - **Explain and propose commands.** `explain-*` commands answer why a pair
   conflicts and what a premise discharged. `propose-*` commands suggest
   co-locations, premises and module splits (`cli/`, `peel/`).
@@ -134,7 +134,8 @@ with structural placement obligations.
   checking.
 - <synchronous_execution_fallback.md>: `Havoc` reach. It decides how many
   swapped opaque pairs commute.
-- <staged_pipeline.md>: remaining stage-boundary and cache-identity work.
+- <staged_pipeline.md>: when finer-grained S3 or vendor-strip actions justify
+  their added artifact and action costs.
 - <translation_validation_gate.md>: stages 3 and 4, and the migration from
   Pass 1 and Pass 2.
 - `../SPEC.md` § Host behavior and § Reentry through imported names: explicit

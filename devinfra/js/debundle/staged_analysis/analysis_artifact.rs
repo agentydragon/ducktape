@@ -1,6 +1,6 @@
 //! The analysis artifact: the program-wide (S2) and per-chunk (S3) analysis
 //! output of a run, encoded independently of the process that computed it,
-//! behind a header naming what it was computed from (plans/staged_pipeline.md).
+//! behind a header naming what it was computed from (docs/bazel_integration.md).
 //!
 //! Layout: the header's byte length (`u32`, little-endian), the header as
 //! named MessagePack, then the body as `analysis_codec` output. The header

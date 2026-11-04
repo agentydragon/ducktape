@@ -16,9 +16,11 @@ evaluates the emitted import lists as ECMA-262 does, cyclic or not, and it
 always runs on the real emitted order, never on a fallback order.
 
 The architecture this serves is <target_architecture.md>. This plan contains
-the remaining migration; the shared candidate assessment reports effects and
-typed placement together but does not decide acceptance. Four lowering checks
-remain uncovered, and the legacy gate remains authoritative.
+the remaining migration. The report-only candidate assessment pairs effect
+conflicts with typed placement evidence for the same finalized assignment; the
+shared projection also supplies emission's checked placement maps. Plan-building
+refusals before a final assignment remain outside that assessment. The legacy
+gate remains authoritative.
 
 ## Problem
 
@@ -112,33 +114,6 @@ a forward edge without one (a premise-cleared callback read, as in
 `call_registration_contract_test`) is accepted only by swapping it, which
 the effect-set check must judge.
 
-## Checking without retaining all pairs
-
-The sweep retains, per cell, already-run readers and writers ordered by source
-ordinal.
-For each statement `u`:
-
-- a write to `c` conflicts if an already-run reader or writer of `c` has a
-  larger ordinal;
-- a read of `c` conflicts if an already-run writer of `c` has a larger
-  ordinal;
-- `Havoc` against any effectful already-run statement with a larger ordinal,
-  and the reverse, also conflict.
-
-Enumerate every matching partner with a larger source ordinal. A single
-maximum is insufficient with pair-specific premises: if source 1 writes c,
-2 and 3 read c, and the emit runs 3,2,1, a premise for (1,3) must not hide
-(1,2). Collect all cells for a candidate pair before classifying its premise;
-never remove participants because another pair was covered.
-
-Traversal is output-sensitive. Ordered suffix queries cost O(A log N), and
-merging them by partner costs O(K log(A + 1)) before pair/cell aggregation,
-where A is access count and K is conflict incidence. K can be quadratic.
-Default reports count all pairs/categories but retain deterministic bounded
-examples, with explicit truncation. Opt-in `--effect-conflicts-jsonl` streams
-the full rows from the same visitor; effect-domain coverage and clean
-canonical comparisons remain necessary for the full TV2 migration.
-
 ## Effect facts the pair check needs
 
 - **Per-statement effect sets** as abstract-interpreter step 7 defines them
@@ -147,12 +122,12 @@ canonical comparisons remain necessary for the full TV2 migration.
   imports and bare var redeclarations). Today these live, in
   partial form, in `StatementFacts` (`reads`, `rebinds`, `heap_contents`,
   `global_reads`/`global_writes`, `synchronous_calls`).
-- **Complete domain coverage.** The initialized-owner collector proves only a
-  narrow binding/leaf-syntax subset, including comma-split declarators.
-  Exports, destructuring, effectful expressions, getters, calls/callbacks and
-  TDZ reads still need coverage or conservative havoc. Neither this completion
-  proof nor synchronous completeness proves arbitrary property/global/host
-  coverage.
+- **Complete domain coverage.** An `OperationReceipt` can seal typed lexical
+  reads and rebinds for one ordered root initializer; other owners can still
+  carry `LegacyExecution { complete }` or uncovered authority. This binding
+  evidence does not close property, heap, global or host domains. Unmodeled
+  effects remain conservative `Havoc`; neither execution completeness nor a
+  binding receipt proves arbitrary effect coverage.
 - **Synchronous callee effects folded into the caller**, which the interpreter
   already does for binding and collection accesses. Bounded fallback reach
   is currently report-only, without a retained effect-domain closure;
@@ -232,7 +207,7 @@ swapped conflicting pairs, not only the first.
     `Sequenced` edge.
   - The purity migration preserves one per-chunk context. TV reads the
     settled per-statement result and adds no constraint on it.
-- **Staged pipeline** (<staged_pipeline.md>):
+- **Staged pipeline** (<../docs/bazel_integration.md>):
   - TV runs in S4 on the S3 facts artifact, which must carry the effect sets.
     It already carries `StatementFacts`.
   - Commuting resolution already sits in S4.
@@ -254,7 +229,10 @@ the complete conflict enumeration.
 
 1. **Effect coverage and discrepancy audit.** Complete the missing effect
    domains in abstract-interpreter step 7 and audit the existing effect-set
-   report's differences against the edge-based verdict per category.
+   report's differences against the edge-based verdict per category. Use the
+   full conflict export for this audit: bounded examples and aggregate counts
+   do not establish effect coverage. Aggregate every conflicting cell for a
+   pair before applying its premise; covering one pair must not hide another.
    Classify each discrepancy from its source
    and effect witnesses before changing authority. A new acceptance may expose
    conservative legacy edges or missing or understated effects; it requires proof
@@ -277,10 +255,11 @@ the complete conflict enumeration.
      `AssignmentAnalysis` import order. Graph-only decomposition validation
      in `peel/propose.rs` still uses the legacy gate without that order; retain
      that boundary until an appropriate search/validation contract is proved.
-   - Close the four reported structural coverage gaps: destructuring
-     declarator grouping, source-unit/body mapping, binding/shared-var
-     destination projection and whole-statement destination projection. Keep
-     semantic-order SCC vetoes separate from structural blockers.
+   - Audit destructuring-sibling and nested-`var` routing refusals before the
+     finalized assignment. Keep those hard errors until their request-building
+     obligations can be represented. An assessment's empty blocker list does
+     not cover requests that never reached it. Preserve the shared projection's
+     distinction between structural blockers and semantic-order SCC vetoes.
 4. **Slim.** The graph build materializes hard edges only, and the full edge
    set moves behind the tooling queries that still need it.
 
