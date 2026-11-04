@@ -1,5 +1,9 @@
 # Analysis executable and compiled identity
 
+This records the earlier compiled `pipeline` boundary. The
+[analysis-stage extraction](2026_11_03_analysis_stage_identity.md) supersedes
+that boundary; the measurements below describe the earlier implementation.
+
 The Analyze action previously depended on the entire CLI executable, and its
 artifact header hashed that executable. CLI frontend edits therefore invalidated
 the expensive analysis action. A separate analyzer executable alone does not

@@ -2726,7 +2726,7 @@ dependencies:
 
 The materializer is the composition of both. Analysis (the cross-module
 pass and each chunk's facts) reads the spec only through
-`lowering::analysis_projection::AnalysisProjection`, built after the selector
+`staged_analysis::analysis_projection::AnalysisProjection`, built after the selector
 solve, so it can also run in another process:
 
 - `debundle spec project-analysis` writes the projection as canonical bytes
@@ -2735,7 +2735,7 @@ solve, so it can also run in another process:
   resolved to bindings.
 - `debundle analyze --projection` computes the analysis from the projection
   and the sources alone and writes an analysis artifact
-  (`lowering::analysis_artifact`): a header naming the engine, the projection
+  (`staged_analysis::analysis_artifact`): a header naming the engine, the projection
   and every chunk's parser-input digest, then the encoded body.
 - `debundle run --analysis` checks that header against its own engine,
   parser inputs and projection, refuses a mismatch naming the differing

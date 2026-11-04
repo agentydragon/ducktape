@@ -160,8 +160,8 @@ reader. The closure owns source preparation, cross-module and per-chunk fact
 computation, loader derivation, projection/schema code, context reconstruction,
 and artifact encoding and decoding. It includes build outputs, native link
 inputs/flags and toolchain inputs before final executable dead stripping.
-CLI, ownership planning, lowering and output reporting are outside this closure;
-shared dependencies may still invalidate analysis conservatively. Both analyzer
+The `pipeline`, `lowering` and `cli` crates are outside this closure; shared
+dependencies may still invalidate analysis conservatively. Both analyzer
 entry points use the same implementation and identity. A reader rejects another
 analysis identity before decoding facts, checks parser-input digests, and
 requires exact canonical projection equality before using the facts. Previous
