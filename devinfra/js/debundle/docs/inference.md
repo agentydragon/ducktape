@@ -214,6 +214,10 @@ Whole-owner certificates remain sealed only after binding initialization and
 normal complete execution; neither a child judgment nor an invocation memo
 carries one. Named exported variable declarations use the same transfers;
 split declarations retain each original initializer as its own source owner.
+The completed certificate retains its composed judgment's proof dependencies
+and those of an applied native root transfer. Effects borrow these conditions
+from the exact matching owner; reported native-input uses are diagnostic
+projections, not a substitute for the typed proof.
 
 Runtime expression, invoke, call, heap, callback, and model transfers use one
 shared runtime fact context. Each child is keyed by a `ProgramPoint` (owning
