@@ -105,7 +105,7 @@ async def test_native_history_and_resume_resources(
     samples: dict[str, Any] = {"harness": name, "completed_turns": history_size, "text_bytes_per_marker": 2048}
     try:
         async with RunnerDriver(gateway, history_service.reader) as driver:
-            async with running(config, gateway, history_service):
+            async with running(config, gateway, history_service) as runner:
                 session = await driver.attach(session_id, spec=spec)
                 await session.submit_input("input-0", inputs[0])
                 started = await session.until(events.is_kind("harness_started"))
@@ -118,12 +118,14 @@ async def test_native_history_and_resume_resources(
                     await model.reply(request, Text(outputs[index]))
                     done = await session.until(events.turn_completed)
                     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
-                samples["before_restart"] = asdict(sample_native(started.event.harness_started.pid, directory))
+                samples["before_restart"] = asdict(
+                    sample_native(await runner.host_pid(started.event.harness_started.pid), directory)
+                )
                 cursor = session.cursor
 
             # New runner and new native process, using their durable directories. Do not replay
             # the runner archive into the test client or substitute synthetic native resume files.
-            async with running(config, gateway, history_service):
+            async with running(config, gateway, history_service) as runner:
                 session = await driver.attach(session_id, spec=spec, after_cursor=cursor)
                 await session.submit_input("resumed-input", inputs[-1])
                 started = await session.until(events.is_kind("harness_started"))
@@ -131,7 +133,9 @@ async def test_native_history_and_resume_resources(
                 request = await model.request()
                 assert request.user_texts == inputs
                 assert request.assistant_texts == outputs[:-1]
-                samples["resumed_request"] = asdict(sample_native(started.event.harness_started.pid, directory))
+                samples["resumed_request"] = asdict(
+                    sample_native(await runner.host_pid(started.event.harness_started.pid), directory)
+                )
                 samples["resumed_user_messages"] = len(request.user_texts)
                 samples["resumed_assistant_messages"] = len(request.assistant_texts)
                 samples["resumed_conversation_utf8_bytes"] = sum(

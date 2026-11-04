@@ -271,9 +271,10 @@ async def test_codex_exec_server_container_recovers_without_restarting_app_serve
     )
     app_server = await _codex_process(driver)
     assert app_server.HasField("pid")
+    app_server_host_pid = await runner.host_pid(app_server.pid)
     quiescing = asyncio.create_task(driver.quiesce())
     await asyncio.wait_for(wait_for_exit(third_detached_host_pid), timeout=30)
-    await asyncio.wait_for(wait_for_exit(app_server.pid), timeout=30)
+    await asyncio.wait_for(wait_for_exit(app_server_host_pid), timeout=30)
     idle_after_quiesce = await _wait_for_generation(
         codex_exec_server_container.socket, owned_executor.generation, owned=False
     )
@@ -501,7 +502,7 @@ async def test_process_output_resume_files_and_incarnation_fence(runner: Running
         assert content.status.outcome == executor_pb2.ExecutionStatus.OUTCOME_COMPLETED
         assert content.data == b"authored"
         await runner.stop()
-        assert runner.process.returncode == 0
+        assert runner.process.exit_code == 0
         async with asyncio.timeout(10):
             with pytest.raises(grpc.aio.AioRpcError) as ended:
                 await _drain(resumed_responses)

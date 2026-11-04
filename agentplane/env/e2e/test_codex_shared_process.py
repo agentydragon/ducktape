@@ -10,7 +10,7 @@ import pytest_bazel
 
 from agentplane.env.e2e.testing import events
 from agentplane.env.e2e.testing.driver import RunnerDriver, SessionFollow, SessionSealedError
-from agentplane.env.e2e.testing.process import kill_harness
+from agentplane.env.e2e.testing.process import RunningRunner, kill_harness
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
@@ -118,7 +118,7 @@ async def test_interrupting_one_codex_session_leaves_the_other_running(
 
 
 async def test_a_shared_app_server_crash_loses_every_hosted_turn_and_each_session_resumes(
-    driver: RunnerDriver, model: ScriptedModel, spec: session_pb2.SessionSpec, workspace: Path
+    driver: RunnerDriver, model: ScriptedModel, spec: session_pb2.SessionSpec, workspace: Path, runner: RunningRunner
 ) -> None:
     sessions = await _open(driver, spec, workspace)
     await _submit_to_each(sessions, "input-1", "Wait; do not answer early")
@@ -128,9 +128,9 @@ async def test_a_shared_app_server_crash_loses_every_hosted_turn_and_each_sessio
         await session.until(events.is_kind("harness_user_message_confirmed"))
     crashed = await _codex_process(driver)
 
-    runner = await driver.gateway.control.runner()
+    control = await driver.gateway.control.runner()
     await kill_harness(
-        await runner.GetStatus(session_pb2.GetStatusRequest()), sessions[SESSION_IDS[0]].attached.session_id
+        runner, await control.GetStatus(session_pb2.GetStatusRequest()), sessions[SESSION_IDS[0]].attached.session_id
     )
     for session in sessions.values():
         lost = await session.until(events.turn_completed)

@@ -163,7 +163,7 @@ def command(config: RunnerTestConfig, *, control: EnvironmentRuntimeControl, ing
         control=control,
         ingress=ingress,
         platform_instructions=config.launch.platform_instructions,
-        harness_environment=EnvironmentVariables(values=config.harness_environment),
+        harness_environment=EnvironmentVariables(values={**config.harness_environment, "PATH": "/usr/bin:/bin"}),
         claude=Harness(
             binary=str(config.claude.binary), base_url=config.claude.base_url, token_env="ANTHROPIC_AUTH_TOKEN"
         )
@@ -173,7 +173,7 @@ def command(config: RunnerTestConfig, *, control: EnvironmentRuntimeControl, ing
         if config.codex
         else None,
         environment=PodEnvironment(
-            supervision="subprocess",
+            supervision="pid1",
             executor=ContainerExecutor(url=config.codex_executor_url, socket=str(config.codex_executor_socket))
             if config.codex_executor_url is not None
             else None,
