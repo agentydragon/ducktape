@@ -105,7 +105,7 @@ jobs:
   image:
     needs: [fork-context]
     if: >-
-      always() &&
+      !cancelled() &&
       (github.event_name != 'pull_request_target' || needs.fork-context.outputs.source_commit != '') &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     uses: ./.github/workflows/nix-containerdisk-publish.yml
