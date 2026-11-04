@@ -178,6 +178,15 @@ ownership selection does not hide them.
    inference, specific recognition, an audited annotation, or a different
    coherent boundary. Report partial coverage and residual code explicitly.
 
+Use normal reports to choose large first probes. Try retaining all authored
+modules in already accepted chunks together with the existing passing roster.
+For rejected chunks, cycle owners and named owners in atomic-conflict reports
+suggest groups to return to residual. Run the resulting combined assignment:
+removing every reported cycle owner can still leave atomic conflicts. Iterate
+from the actual remaining rejection, rather than treating a cycle-free result
+as acceptance. Use native module catalogs for normalized chunk-local paths;
+module-root prefixes in authored YAML are not necessarily those identities.
+
 Removal can change module cycles and selector dependencies, so do not assume
 acceptance is monotone or prune untried subsets from one failing result. A
 branch-and-bound search needs an explicit objective and justified bounds; a
@@ -301,7 +310,12 @@ or stale assertions without silently expanding the promised scope.
 - Distinguish public engine checks, private integration, accepted canonical
   output and runtime proof. A merged pin or green synthetic suite establishes
   only its own scope. Track the exact head and live job; let an existing run
-  finish before refreshing its pin merely for bookkeeping.
+  finish before refreshing its pin merely for bookkeeping. If a rebase requires
+  a shared dependency update, preserve both features in a containing revision
+  and check the intervening semantic changes. Earlier artifacts remain evidence
+  for their recorded engine; refresh matching analysis and configured-target
+  checks when the new revision changes analysis semantics. Keep patch URLs and
+  integrity values consistent with the chosen source pin.
 - Prefer direct storage/lifetime improvements when their mechanism is clear.
   Use a real profiler for an unanswered allocation or CPU question when it
   would change the decision. Bound that investigation; do not make every
