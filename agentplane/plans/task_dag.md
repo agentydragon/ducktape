@@ -2232,12 +2232,13 @@ and appropriately scoped follow-up work. This node authorizes no service move or
 
 ### `SESSION_IDENTITY_CONTRACT` — Session identity and shared-Environment admission
 
-**Decision; operator direction on the trust boundary, 2026-11-04.** Select the minimum identity,
-ownership and authority contract needed for central and native Sessions. Compare an exact
-ServiceAccount reference in the Session spec, an independent Agentplane principal mapped to
-workload accounts, and other reviewed representations; decide account/principal lifetime, who may
-create a Session as it, authenticated delegation to the central sampler, access after identity
-deletion, revocation and identity changes. An identity reference is not a credential or authority.
+**Decision; operator direction updated 2026-11-04.** Bind a Session to an exact Kubernetes
+ServiceAccount, including its UID; multiple Sessions may share one account. Support both
+Sandbox-owned and independently managed accounts. The Session identity is independent of its
+Environment; an account owned by a deleted Sandbox may itself disappear. A separate Agentplane
+identity model is deferred to its own discussion. Decide who may create a Session as an account,
+authenticated delegation to the central sampler, revocation and identity changes. An identity
+reference is not a credential or authority.
 
 **Required shared-Environment invariant:** Sessions using the same Environment must have the same
 verified identity. An Environment is a shared trust domain: co-resident agents can communicate
@@ -2627,13 +2628,18 @@ original Sandbox. The selected central Session lifetime is indefinite, independe
 app archive is separate. The selected Dispatcher identity policy is to forget its live record when
 the Session is deleted; the treatment of other services' data remains open.
 
-Compare ending an environment-hosted Session and retiring its inbox on deletion of its required
-environment with retaining an unavailable Session and inbox for an explicit lifetime or until an
-explicit end. The operator's 2026-11-04 candidate, still open for a decision, is an independent Session create/delete lifecycle:
-deleting the required environment leaves the Session and inbox present but its native harness
-unavailable; an explicit Session delete could instead coordinate cleanup of Session-associated data.
-Compare this with the other alternatives before selecting retention and deletion semantics. For central Sessions, environment loss or detachment must not by itself end the
-Session; decide whether its inbox likewise remains active, with that as the initial recommendation.
+The operator selected an independent Session lifecycle: when a native Session's required
+Environment disappears, keep its Session and inbox until explicit Session deletion, and report the
+native harness unavailable. Do not silently bind a replacement or claim lost native state is
+recoverable. Keep subscriptions active and continue collecting authorized events and messages while
+delivery is unavailable; preserve unread contents and do not deliver to a replacement without a
+separately authorized recovery path. TODO: evaluate efficiency of collecting for an unavailable
+Session when sustained accumulation or source polling cost warrants optimization; preserve the
+selected collection semantics. For central Sessions, Environment loss or detachment likewise does
+not end the Session or retire its inbox. App archive remains separate. Explicit Session deletion
+ends the Session; deletion of inbox contents and History is deferred for separate review and is not
+implied by Session deletion. Details of subscription and inbox lifecycle on explicit Session
+deletion remain to be designed.
 The operator's direction after a Sandbox-owned ServiceAccount disappears is human-operator-only
 inspection and administration through an operator-authenticated entry point, such as the app, and
 explicitly privileged service credentials; do not transfer authority to a same-name replacement or other workload.
