@@ -190,8 +190,7 @@ impl LocalExpression {
                 })
             }
             Expr::Fn(function)
-                if class_template
-                    && function.ident.is_none()
+                if function.ident.is_none()
                     && function.function.decorators.is_empty()
                     && function
                         .function
@@ -201,7 +200,7 @@ impl LocalExpression {
             {
                 Some(Self::Closure(function.function.span.lo.0))
             }
-            Expr::Arrow(arrow) if class_template => Some(Self::Closure(arrow.span.lo.0)),
+            Expr::Arrow(arrow) => Some(Self::Closure(arrow.span.lo.0)),
             Expr::Seq(sequence) => Some(Self::Sequence(
                 sequence
                     .exprs
