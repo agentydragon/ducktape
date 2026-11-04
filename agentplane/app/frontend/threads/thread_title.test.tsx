@@ -157,7 +157,8 @@ it("clears the name when a blank one is committed by moving away", async () => {
   expect(await renames()).toEqual([
     { path: `/upstream/app/v1/threads/${THREAD.id}`, method: "PATCH", body: { threadId: THREAD.id } },
   ]);
-  expect(onRenamed).toHaveBeenCalledWith(expect.objectContaining({ threadId: THREAD.id, name: undefined }));
+  expect(onRenamed).toHaveBeenCalledWith(expect.objectContaining({ threadId: THREAD.id }));
+  expect(onRenamed.mock.calls[0]?.[0].name).toBeUndefined();
 });
 
 it("shows a rename from elsewhere unless a name is being typed", async () => {
