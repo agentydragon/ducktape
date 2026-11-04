@@ -21,6 +21,11 @@ _CODE_TAR = get_required_path(f"_main/{os.environ['SPECIMEN_CODE_TAR']}")
 _DATA_YAML = get_required_path(f"_main/{os.environ['SPECIMEN_DATA_YAML']}")
 
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+
+
 def test_specimen_code_excludes_specimens_dataset() -> None:
     """props/specimens (this dataset) must never be nested inside a specimen's code."""
     with tarfile.open(_CODE_TAR) as tar:

@@ -44,7 +44,9 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//authlib",
+        "@pypi//httpx",
         "@pypi//pydantic_settings",
+        "@pypi//starlette",
     ],
 )
 
