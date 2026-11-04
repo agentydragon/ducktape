@@ -1,0 +1,46 @@
+#!/bin/sh
+# Runs inside the trusted node, concurrently with K3s, as its postStart hook.
+set -eu
+exec >>/var/log/agentplane-infrastructure-bootstrap.log 2>&1
+
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+manifests=/opt/agentplane-test-cluster
+k() { /bin/k3s kubectl --request-timeout=30s "$@"; }
+apply() { k apply --server-side --field-manager=agentplane-test-infrastructure -f "$manifests/$1.yaml"; }
+wait_for_api() {
+	attempt=0
+	until "$@"; do
+		attempt=$((attempt + 1))
+		test "$attempt" -lt 120
+		sleep 1
+	done
+}
+
+# The hook can start before K3s has written its kubeconfig or opened the API listener.
+wait_for_api k get --raw=/readyz
+test -c /dev/kvm
+
+apply agentplane-crds
+apply cert-manager
+apply kubevirt-operator
+apply kyverno
+k wait --for=condition=Established crd/issuers.cert-manager.io crd/certificates.cert-manager.io \
+	crd/kubevirts.kubevirt.io crd/clusterpolicies.kyverno.io --timeout=180s
+for deployment in cert-manager cert-manager-cainjector cert-manager-webhook; do
+	k -n cert-manager rollout status "deployment/$deployment" --timeout=180s
+done
+# Available Pods can precede the webhook CA injection. A server dry-run exercises admission.
+wait_for_api k create --dry-run=server -f "$manifests/cert-manager-probe.yaml"
+apply trust-manager
+k wait --for=condition=Established crd/bundles.trust.cert-manager.io --timeout=180s
+k -n cert-manager rollout status deployment/trust-manager --timeout=180s
+wait_for_api k create --dry-run=server -f "$manifests/trust-manager-probe.yaml"
+apply kubevirt
+k -n kubevirt wait --for=condition=Available kubevirt/kubevirt --timeout=600s
+k wait --for=create crd/virtualmachines.kubevirt.io crd/virtualmachineinstances.kubevirt.io --timeout=180s
+k wait --for=condition=Established crd/virtualmachines.kubevirt.io crd/virtualmachineinstances.kubevirt.io --timeout=180s
+k -n kyverno rollout status deployment/kyverno-admission-controller --timeout=180s
+k -n kyverno rollout status deployment/kyverno-cleanup-controller --timeout=180s
+k -n kyverno wait --for=create endpoints/kyverno-svc --timeout=180s
+k -n kyverno wait '--for=jsonpath={.subsets[0].addresses[0].ip}' endpoints/kyverno-svc --timeout=180s
+printf '%s\n' 'Shared test infrastructure ready (KVM required).'
