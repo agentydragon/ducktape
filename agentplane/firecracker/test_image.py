@@ -20,7 +20,7 @@ def _run(image: str, *args: str, entrypoint: str | None = None) -> subprocess.Co
 
 
 def test_shipped_launcher_starts_and_has_required_tools() -> None:
-    image = load_oci_image(launcher_test_image.IMAGE)
+    image = load_oci_image(launcher_test_image.LAYOUT_RLOCATION)
 
     help_result = _run(image, "--help")
     assert "-config" in help_result.stdout + help_result.stderr
