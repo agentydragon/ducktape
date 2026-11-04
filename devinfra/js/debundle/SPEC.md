@@ -636,9 +636,16 @@ writability. Freeze/integrity changes, descriptor changes, taint, escape, or
 unsettled reach invalidate that evidence. A successful selected direct local
 call records its exact caller body, source call-site, target body, and
 consumed prefix prerequisites, including each memo-reused use. A static
-module-slot callee retains its GetValue receipt before argument evaluation;
-surplus actual arguments are admitted only when the target has no formals or
-other prologue work, and their own evaluation remains separately covered.
+module-slot callee retains its GetValue receipt before argument evaluation.
+Ordinary simple parameters initialize from already evaluated arguments in
+source order; supported selected defaults execute once in the same kernel.
+All parameter cells exist in TDZ before defaults run, and each successful
+initialization and noncaptured parameter read has its own lexical receipt.
+Default-bearing bodies with body `var` or function declarations retain the
+compatibility path until separate parameter and body environments are modeled.
+Live captured-cell, rest/destructuring, `arguments`, async and generator
+prologues remain outside this receipt family. Argument evaluation keeps its
+own effects, including surplus arguments.
 The root checks that its exact root call-site set matches and that the flat
 call edges connect back to its exact body without expanding root-to-leaf paths.
 
@@ -646,9 +653,16 @@ Ordered root execution also includes an exact initializer containing one
 ordinary identifier call with zero actual arguments. Its actual call result
 travels with the child effects through the shared local kernel; the old
 effect-only call and later value projection do not execute alongside it.
-An identifier alias can enter this execution family but cannot substitute for
-the selected direct-declaration proof. A complete unreceipted alias therefore
-keeps syntactic fallback. Member, native, imported and constructor single calls
+An actual own-data read or deferred callable creation can retain a callable
+selection receipt through argument binding, parameter reads, returns and
+exact ordered root publication. A later initialized-binding read may consume
+that receipt only when its actual value still matches. Invocation memo keys
+include argument selection evidence, so equal values without the same evidence
+cannot reuse a proved result. This receipt describes the selected abstract
+callable, not fresh allocation or JavaScript reference equality.
+An alias obtained only by flat value projection has no such producer;
+singleton values and normal completion therefore keep syntactic fallback.
+Member, native, imported and constructor single calls
 retain their existing admission paths.
 
 If that exact single-call root receives an incomplete local child result, it
@@ -663,7 +677,7 @@ mint lexical coverage. The root identity is installed before ordered
 execution. Sealing additionally requires the exact source owner, binding and
 initializer span, a final initialized binding, complete execution, no unknown
 call, precision loss, uninitialized read, or fallback-only lexical effect.
-Plain callable aliases, accessors, imported or uninitialized receivers,
+Unproved callable aliases, accessors, imported or uninitialized receivers,
 activation/formal borrowed stores, unwritable stores, unsupported
 prologues/transfers, and abrupt completion remain uncovered. Any failed
 condition leaves the selected root explicitly uncovered and keeps the
@@ -2855,8 +2869,10 @@ Each activation instantiates distinct cells for its parameters and declarations
 referenced by nested callables. Cell references survive through intermediate
 closures, including references used only after suspension. Reads use current
 cell contents; declaration initialization and local stores update those contents
-at their operation positions. Lexical cells start in TDZ, while parameters and
-`var` cells start initialized. Captured writes to a `const` or definitely
+at their operation positions. Lexical cells start in TDZ. Ordered parameter
+prologues create all parameter cells in TDZ and initialize them one by one;
+compatibility prologues supply prebound parameters. `var` cells start
+initialized. Captured writes to a `const` or definitely
 uninitialized cell have abrupt completion. Other captured writes join possible
 values because general invocation queries can represent calls that are skipped.
 Those writes do not establish exact CommonJS cache state or ordered caller
