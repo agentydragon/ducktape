@@ -3,23 +3,20 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 from atomicwrites import atomic_write
 from pydantic import TypeAdapter
 
 
 class ProviderSessionStore[T]:
-    def __init__(self, directory: Path, filename: str, adapter: TypeAdapter[T], verify: Callable[..., Any]):
+    def __init__(self, directory: Path, filename: str, adapter: TypeAdapter[T]):
         self.directory = directory
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         directory.chmod(0o700)
         self.path = directory / filename
         self.lock = threading.Lock()
         self.adapter = adapter
-        self.verify = verify
 
     def load(self) -> T | None:
         with self.lock:
@@ -38,8 +35,6 @@ class ProviderSessionStore[T]:
             raise ValueError("Session file must be private")
         return self.adapter.validate_json(self.path.read_bytes())
 
-    def install(self, candidate: T, *, transport=None) -> None:
-        # Do not disturb a working session if validation fails.
-        self.verify(candidate, transport=transport)
+    def save(self, candidate: T) -> None:
         with self.lock, atomic_write(self.path, mode="wb", overwrite=True, prefix=".session-") as stream:
             stream.write(self.adapter.dump_json(candidate))

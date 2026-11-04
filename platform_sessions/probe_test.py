@@ -12,7 +12,7 @@ class Session(BaseModel):
 
 
 def test_invalid_stored_session_does_not_log_input(tmp_path, caplog):
-    store = ProviderSessionStore(tmp_path, "session.json", TypeAdapter(Session), lambda *_args, **_kwargs: None)
+    store = ProviderSessionStore(tmp_path, "session.json", TypeAdapter(Session))
     store.path.write_text('{"token":"private-invalid-value"}')
     store.path.chmod(0o600)
     event = probe_session(store, checker=lambda *_args, **_kwargs: None, provider="example")
