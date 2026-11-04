@@ -30,7 +30,7 @@ def probe_session(
         logger.info("%s", json.dumps(event))
         return event
     status = None
-    failure = None
+    failure: Exception | None = None
     try:
         checker(session, transport=transport)
         outcome = "success"
