@@ -11,6 +11,7 @@ from pathlib import Path
 
 import docker
 import httpx
+from testcontainers.core import testcontainers_config
 from testcontainers.core.network import Network
 
 from third_party.containers import grafana_visual, prometheus_visual, ryuk
@@ -49,9 +50,11 @@ def grafana_dashboard(
 ) -> Iterator[str]:
     record_stage("loading isolated service images")
     with ThreadPoolExecutor(max_workers=3) as executor:
-        grafana_image = executor.submit(load_oci_image, grafana_visual.IMAGE)
-        ryuk_image = executor.submit(load_oci_image, ryuk.IMAGE)
-        prometheus_image = None if render_fixture else executor.submit(load_oci_image, prometheus_visual.IMAGE)
+        grafana_image = executor.submit(load_oci_image, grafana_visual.LAYOUT_RLOCATION)
+        ryuk_image = executor.submit(load_oci_image, ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
+        prometheus_image = (
+            None if render_fixture else executor.submit(load_oci_image, prometheus_visual.LAYOUT_RLOCATION)
+        )
         grafana_ref = grafana_image.result()
         ryuk_image.result()
         prometheus_ref = prometheus_image.result() if prometheus_image is not None else None

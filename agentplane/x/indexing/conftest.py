@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.x.indexing.chunking import DEFAULT_CHUNK_BUDGET
 from agentplane.x.indexing.store import Store
 from third_party.containers import pgvector_pg18
-from util.oci import OciImage
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
 from util.testing.sqlalchemy_engines import postgres_async_engine
@@ -56,8 +55,8 @@ class ExplodingEmbedder(FakeEmbedder):
 
 
 @pytest.fixture(scope="session")
-def postgres_image() -> OciImage:
-    return pgvector_pg18.IMAGE
+def postgres_image() -> str:
+    return pgvector_pg18.LAYOUT_RLOCATION
 
 
 @pytest.fixture(scope="session")

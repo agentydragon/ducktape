@@ -42,7 +42,6 @@ from haku.console.identity.operator_identity import (
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.settings import Settings
 from third_party.containers import pgvector_pg18
-from util.oci import OciImage
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
 from util.testing.sqlalchemy_engines import managed_async_engine
@@ -159,9 +158,9 @@ async def _resolve_operator_identity(app: Any, external_user_key: str) -> Resolv
 
 
 @pytest.fixture(scope="session")
-def postgres_image() -> OciImage:
+def postgres_image() -> str:
     """Migrations create `vector` columns, so use the same pgvector capability as production."""
-    return pgvector_pg18.IMAGE
+    return pgvector_pg18.LAYOUT_RLOCATION
 
 
 @pytest.fixture(scope="session")

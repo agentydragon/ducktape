@@ -16,6 +16,7 @@ import io
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -60,14 +61,6 @@ async def push_bazel_image(
     digest = parse_pushed_digest(stdout, dest)
     logger.info("Pushed %s: %s", dest, digest)
     return digest
-
-
-@dataclass(frozen=True)
-class OciImage:
-    """An OCI layout in runfiles and its destination tag."""
-
-    tag: str
-    layout_rlocation: str
 
 
 # ---------------------------------------------------------------------------
@@ -173,31 +166,37 @@ def _already_loaded(tag: str, wanted: str) -> bool:
     return layout == wanted and loaded_id == daemon_image_id(tag)
 
 
-def load_oci_image(image: OciImage) -> str:
-    """Ensure the local Docker daemon holds *image*, loading it via crane if it does not.
+def load_oci_image(layout_rlocation: str, *, image_ref: str | None = None) -> str:
+    """Load an OCI layout from runfiles and return its local Docker image reference.
 
-    **Callers do not check first.** Every call site used to decide for itself whether to skip, in
-    the same three lines, and each was a place to get the question in `_already_loaded` wrong.
-
-    Checked twice on purpose: once before the lock, so a warm daemon costs a file read and one
-    `docker image inspect`, and once **inside** it, so the first waiter behind a loader finds the
-    image already there and skips the load just done for it.
+    By default the reference is derived from the manifest digest, so distinct image
+    versions cannot overwrite each other's tag. An explicit reference is for consumers
+    that require a particular name. The digest and daemon image ID are checked before
+    and after acquiring a per-reference lock, avoiding redundant concurrent loads and
+    detecting pruning or an out-of-band retag.
     """
-    oci_layout = runfiles.get_required_path(image.layout_rlocation)
+    oci_layout = runfiles.get_required_path(layout_rlocation)
     wanted = read_oci_layout_digest(oci_layout)
-    if _already_loaded(image.tag, wanted):
-        return image.tag
-    with tracer.start_as_current_span(f"load_oci_image({image.tag})"), _one_loader_at_a_time(image.tag):
-        if _already_loaded(image.tag, wanted):
-            return image.tag
+    if image_ref is None:
+        # Docker tags have a restricted alphabet and length. Preserve ordinary OCI
+        # SHA-256 digests verbatim; hash other digest strings to obtain a valid tag.
+        if re.fullmatch(r"sha256:[0-9a-f]{64}", wanted):
+            digest_tag = wanted.replace(":", "-", 1)
+        else:
+            digest_tag = "digest-" + hashlib.sha256(wanted.encode()).hexdigest()
+        image_ref = f"ducktape/oci:{digest_tag}"
+    if _already_loaded(image_ref, wanted):
+        return image_ref
+    with tracer.start_as_current_span(f"load_oci_image({image_ref})"), _one_loader_at_a_time(image_ref):
+        if _already_loaded(image_ref, wanted):
+            return image_ref
         started = time.monotonic()
-        logger.info("Loading %s (%s) into the Docker daemon (pid %d)", image.tag, wanted[:19], os.getpid())
-        push_to_daemon(oci_layout, image.tag)
-        # Written after the push and recording what the daemon actually ended up with, so a crash
-        # mid-load leaves the older truth rather than a claim about bytes it never received.
-        _loaded_marker(image.tag).write_text(f"{wanted} {daemon_image_id(image.tag)}")
-        logger.info("Loaded %s in %.1fs", image.tag, time.monotonic() - started)
-    return image.tag
+        logger.info("Loading %s (%s) into the Docker daemon (pid %d)", image_ref, wanted[:19], os.getpid())
+        push_to_daemon(oci_layout, image_ref)
+        # Record the image ID Docker actually stored, which may differ from the OCI config digest.
+        _loaded_marker(image_ref).write_text(f"{wanted} {daemon_image_id(image_ref)}")
+        logger.info("Loaded %s in %.1fs", image_ref, time.monotonic() - started)
+    return image_ref
 
 
 def push_to_daemon(oci_layout: Path, tag: str) -> None:
@@ -269,7 +268,7 @@ def main() -> None:
     parser.add_argument("tag", help="Docker image tag to load")
     args = parser.parse_args()
     layout_rlocation = runfiles.get_required_path(args.rloc_file).read_text().strip()
-    load_oci_image(OciImage(tag=args.tag, layout_rlocation=layout_rlocation))
+    load_oci_image(layout_rlocation, image_ref=args.tag)
 
 
 if __name__ == "__main__":

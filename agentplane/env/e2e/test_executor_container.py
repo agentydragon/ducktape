@@ -287,7 +287,7 @@ async def test_codex_exec_server_container_recovers_without_restarting_app_serve
 
 
 async def test_executor_exit_does_not_join_escaped_output_readers(harness: session_pb2.Harness, tmp_path: Path) -> None:
-    debian_image = load_oci_image(debian_slim.IMAGE)
+    debian_image = load_oci_image(debian_slim.LAYOUT_RLOCATION)
     execution_binary = get_required_path(launches.EXECUTION_BINARY).resolve()
     socket_path = tmp_path / "executor.sock"
     ready_path = tmp_path / "server-ready"

@@ -25,11 +25,12 @@ from _pytest.fixtures import FixtureFunctionDefinition
 from opentelemetry import trace
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import AsyncEngine
+from testcontainers.core import testcontainers_config
 from testcontainers.postgres import PostgresContainer
 
 from third_party.containers import postgres_18, ryuk
 from util.db_migrations import MigrationRunner
-from util.oci import OciImage, load_oci_image
+from util.oci import load_oci_image
 from util.testing.postgres import (
     DatabaseClones,
     DatabaseNames,
@@ -73,7 +74,7 @@ def _onto_disk() -> Iterator[None]:
         handler.close()
 
 
-def start_postgres_container(image: OciImage = postgres_18.IMAGE) -> PostgresContainer:
+def start_postgres_container(image: str = postgres_18.LAYOUT_RLOCATION) -> PostgresContainer:
     """Preload Ryuk + the Postgres image (skipping any the daemon already has), then start it.
 
     `image` selects a different Postgres build — e.g. `PGVECTOR_PG18` for packages whose schema
@@ -86,7 +87,7 @@ def start_postgres_container(image: OciImage = postgres_18.IMAGE) -> PostgresCon
     daemon's own container start, so the least this can do is name where the time went.
     """
     with _onto_disk():
-        load_oci_image(ryuk.IMAGE)
+        load_oci_image(ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
         image_ref = load_oci_image(image)
         container = PostgresContainer(image=image_ref, username="postgres", password="postgres", dbname="postgres")
         started = time.monotonic()
@@ -97,13 +98,13 @@ def start_postgres_container(image: OciImage = postgres_18.IMAGE) -> PostgresCon
 
 
 @pytest.fixture(scope="session")
-def postgres_image() -> OciImage:
+def postgres_image() -> str:
     """Default PostgreSQL image; suites can override this fixture for extensions or settings."""
-    return postgres_18.IMAGE
+    return postgres_18.LAYOUT_RLOCATION
 
 
 @pytest.fixture(scope="session")
-def postgres_container(postgres_image: OciImage) -> Generator[PostgresContainer]:
+def postgres_container(postgres_image: str) -> Generator[PostgresContainer]:
     with tracer.start_as_current_span("postgres_container fixture"):
         container = start_postgres_container(postgres_image)
     try:

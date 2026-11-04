@@ -14,6 +14,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from testcontainers.core import testcontainers_config
 
 from agentplane.env.config import Endpoint
 from agentplane.env.e2e.testing import launches
@@ -95,8 +96,8 @@ def pid1_container(
     command: list[str], directory: Path, environment: dict[str, str], allow_user_namespaces: bool = False
 ) -> LoggedContainer:
     """Run the production Runtime and its pinned harnesses in a private Pod-like PID namespace."""
-    load_oci_image(ryuk.IMAGE)
-    debian_image = load_oci_image(debian_slim.IMAGE)
+    load_oci_image(ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
+    debian_image = load_oci_image(debian_slim.LAYOUT_RLOCATION)
     config = json.loads(Path(command[2]).read_text())
     runtime = Path(command[0]).absolute()
     container: LoggedContainer = (

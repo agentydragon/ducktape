@@ -3,7 +3,7 @@ load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_b
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/oci:defs.bzl", "oci_image_py")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -207,7 +207,6 @@ py_library(
         "//haku/console/identity:operator_identity",
         "//haku/console/identity:operator_identity_store",
         "//third_party/containers:pgvector_pg18",
-        "//util:oci",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@pypi//fastapi",
@@ -339,11 +338,10 @@ oci_image(
     visibility = ["//visibility:public"],
 )
 
-oci_image_py(
+oci_layout_py(
     name = "static_test_image",
     testonly = True,
     image = ":static_image",
-    tag = "haku-console-static:test",
 )
 
 py_test(

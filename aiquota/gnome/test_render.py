@@ -63,7 +63,7 @@ def test_extension_metadata_supports_gnome_50() -> None:
 
 @pytest.fixture(scope="module")
 def gnome_shell_test_image() -> str:
-    return load_oci_image(gnome_shell_test.IMAGE)
+    return load_oci_image(gnome_shell_test.LAYOUT_RLOCATION)
 
 
 @pytest.fixture(scope="module")

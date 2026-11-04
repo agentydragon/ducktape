@@ -14,6 +14,7 @@ from typing import override
 import grpc
 import pytest
 import pytest_bazel
+from testcontainers.core import testcontainers_config
 
 from agentplane.env.config import Configuration, Endpoint, EnvironmentVariables, Harness, PodEnvironment
 from agentplane.env.e2e.testing import launches
@@ -31,8 +32,8 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 def _load_images() -> str:
-    load_oci_image(ryuk.IMAGE)
-    return load_oci_image(debian_slim.IMAGE)
+    load_oci_image(ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
+    return load_oci_image(debian_slim.LAYOUT_RLOCATION)
 
 
 def _wait_ready(directory: Path) -> None:

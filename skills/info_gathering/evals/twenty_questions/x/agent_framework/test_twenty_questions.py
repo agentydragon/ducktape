@@ -80,11 +80,11 @@ async def _run_with_replay(
     layer breaks.
     """
     client = ReplayChatClient(responses=completions)
-    load_oci_image(python_3_14_slim.IMAGE)
+    image_ref = load_oci_image(python_3_14_slim.LAYOUT_RLOCATION)
 
     staged = stage_skill(EMPTY_SKILL_SPEC, tmp_path / "skill_extract")
 
-    async with eval_sandbox(skill=staged, workspace=tmp_path / "work", inputs=None) as exec_tool:
+    async with eval_sandbox(skill=staged, workspace=tmp_path / "work", inputs=None, image=image_ref) as exec_tool:
         return await run_game(
             variant_name=variant_name,
             model="test-model",

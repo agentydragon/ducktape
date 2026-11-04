@@ -1,3 +1,4 @@
+load("@image_pins//:pins.bzl", "BLACKBOX_EXPORTER_DIGEST", "BLACKBOX_EXPORTER_IMAGE")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
@@ -427,7 +428,10 @@ py_test(
     name = "test_home_application_probes",
     srcs = ["test_home_application_probes.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    env = {
+        "BLACKBOX_EXPORTER_PIN": BLACKBOX_EXPORTER_IMAGE + "@" + BLACKBOX_EXPORTER_DIGEST,
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+    },
     requires_docker = True,
     deps = [
         ":blackbox_exporter",

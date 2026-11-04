@@ -7,7 +7,7 @@
 # trusts it through the standard SSL_CERT_FILE/CURL_CA_BUNDLE/... contract.
 services:
   agent:
-    image: python:3.14-slim
+    image: ${WAYBACK_AGENT_IMAGE:-python:3.14-slim}
     init: true
     command: tail -f /dev/null
     networks: [sandbox]
@@ -28,7 +28,7 @@ services:
         condition: service_healthy
 
   proxy:
-    image: wayback-proxy:latest
+    image: ${WAYBACK_PROXY_IMAGE:-wayback-proxy:latest}
     init: true
     # Demo-only: run as root so the proxy can populate the fresh (root-owned)
     # mitm-ca volume with its generated CA. In-cluster the CA is mounted from a

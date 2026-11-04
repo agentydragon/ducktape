@@ -126,7 +126,6 @@ py_library(
         ":chunking",
         ":store",
         "//third_party/containers:pgvector_pg18",
-        "//util:oci",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "//util/testing:sqlalchemy_engines",

@@ -57,7 +57,7 @@ def inspect_codex_exec_server_container(path: Path) -> CodexExecServerContainerS
 
 @pytest.fixture
 def codex_exec_server_container(tmp_path: Path) -> Iterator[CodexExecServerContainer]:
-    debian_image = load_oci_image(debian_slim.IMAGE)
+    debian_image = load_oci_image(debian_slim.LAYOUT_RLOCATION)
     execution_binary = get_required_path(launches.EXECUTION_BINARY).resolve()
     codex_binary = get_required_path(launches.CODEX_BINARY).resolve()
     socket_path = tmp_path / "executor.sock"

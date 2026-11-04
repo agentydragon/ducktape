@@ -6,7 +6,7 @@ import httpx
 import pytest_bazel
 from testcontainers.core.container import DockerContainer
 
-from agentplane.app.frontend.serving.testing.image import IMAGE
+from agentplane.app.frontend.serving.testing.image import LAYOUT_RLOCATION
 from util.oci import load_oci_image
 
 
@@ -23,7 +23,7 @@ def _wait_for_nginx(base_url: str) -> httpx.Response:
 
 
 def test_static_image_serves_assets_without_revalidation() -> None:
-    container = DockerContainer(load_oci_image(IMAGE)).with_exposed_ports(8080)
+    container = DockerContainer(load_oci_image(LAYOUT_RLOCATION)).with_exposed_ports(8080)
     container.with_tmpfs_mount("/tmp", "rw,noexec,nosuid,size=16m,uid=1000,gid=1000,mode=0700").with_kwargs(
         read_only=True
     )

@@ -1,6 +1,6 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("//devinfra/oci:defs.bzl", "oci_image_py")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -115,11 +115,10 @@ oci_load(
     repo_tags = ["wayback-proxy:latest"],
 )
 
-oci_image_py(
+oci_layout_py(
     name = "wayback_proxy_image",
     testonly = True,
     image = ":image",
-    tag = "wayback-proxy:latest",
     visibility = ["//loom/gym:__pkg__"],
 )
 

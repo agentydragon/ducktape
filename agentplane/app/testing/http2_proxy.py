@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from jinja2 import Template
 
-from agentplane.app.frontend.serving.testing.image import IMAGE as STATIC_IMAGE
+from agentplane.app.frontend.serving.testing.image import LAYOUT_RLOCATION
 from devinfra.bazel.runfiles import get_required_path
 from third_party.containers import nginx_unprivileged
 from util.oci import load_oci_image
@@ -104,8 +104,8 @@ async def _wait_for_frontend(upstream: str) -> None:
 
 @asynccontextmanager
 async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIterator[Ingress]:
-    ingress_image = await asyncio.to_thread(load_oci_image, nginx_unprivileged.IMAGE)
-    static_image = await asyncio.to_thread(load_oci_image, STATIC_IMAGE)
+    ingress_image = await asyncio.to_thread(load_oci_image, nginx_unprivileged.LAYOUT_RLOCATION)
+    static_image = await asyncio.to_thread(load_oci_image, LAYOUT_RLOCATION)
     with ExitStack() as stack:
         static_container = stack.enter_context(
             LoggedContainer(static_image, test_name="conversation-static-frontend").with_exposed_ports(8080)

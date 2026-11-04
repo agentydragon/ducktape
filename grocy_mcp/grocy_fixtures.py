@@ -23,7 +23,7 @@ tracer = trace.get_tracer(__name__)
 
 @contextmanager
 def run_logged_grocy_container() -> Generator[LoggedContainer]:
-    image_ref = load_oci_image(grocy.IMAGE)
+    image_ref = load_oci_image(grocy.LAYOUT_RLOCATION)
     with grocy_custom_init_dir() as init_dir:
         container = LoggedContainer(image_ref, test_name="grocy")
         configure_grocy_container(container, init_dir=init_dir, data_dir=None)

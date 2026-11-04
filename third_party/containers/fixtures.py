@@ -9,4 +9,4 @@ from util.oci import load_oci_image
 @pytest.fixture(scope="session")
 def debian_slim_image():
     """Load debian-slim image into Docker daemon and return its tag."""
-    return load_oci_image(debian_slim.IMAGE)
+    return load_oci_image(debian_slim.LAYOUT_RLOCATION)

@@ -26,8 +26,8 @@ def py_binary(imports = None, **kwargs):
         imports = repo_imports()
     _py_binary(imports = imports, **kwargs)
 
-# The tag `//third_party/containers:ryuk` loads its image into the Docker daemon under, and
-# the Ryuk image every `requires_docker` test's testcontainers starts. Testcontainers' own
+# The image name every `requires_docker` test's testcontainers starts. Tests preload the
+# pinned Ryuk layout under this name from the testcontainers configuration. Testcontainers' own
 # default (`testcontainers/ryuk:0.8.1`) is a tag nothing preloads, which the daemon pulls
 # from Docker Hub.
 RYUK_TAG = "testcontainers/ryuk:0.14.0"

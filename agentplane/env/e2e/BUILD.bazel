@@ -431,6 +431,7 @@ py_test(
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//testcontainers",
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )

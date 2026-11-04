@@ -33,4 +33,4 @@ async def scratch_container(image: str) -> AsyncGenerator[MCPToolProvider]:
 
 def load_scratch_image() -> str:
     """Load the debian-slim image into the local Docker daemon and return its tag."""
-    return load_oci_image(debian_slim.IMAGE)
+    return load_oci_image(debian_slim.LAYOUT_RLOCATION)
