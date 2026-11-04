@@ -45,12 +45,22 @@ Gateway/Dispatcher workload; its read-only diagnostics and separate Executor ser
 These checks do not by themselves prove the remaining deletion-outcome fence. Public commands now
 address the Session by ID; Dispatcher resolves and fences its placement.
 
+Dispatcher now records an immutable typed opening placement: `environment_hosted` contains one
+exact required environment, while `central_sampler` names the central owner and carries its
+currently required, fixed `initial_executor` separately. Opening reads expose the same variant;
+delivery and wake decisions use the persisted discriminator rather than inferring ownership from
+the harness enum. Existing central opening rows are backfilled without moving their conversation
+or History data. This is a placement distinction within today's opening authority, not a new
+attachment API or proof that central Sessions can open without an executor. The native harness
+store selection, native ID mapping and central principal remain unresolved.
+
 **Ready next:** a [native-first Dispatcher Session authority](task_dag.md#session_directory_native--dispatcher-authority-for-environment-hosted-sessions)
 using existing authorization. Specify deletion and uncertain-outcome fencing as part of that slice;
 do not add a second competing writable directory. The current opening table is not a general
 Session directory.
 
-**Still require design:** central Sessions with no environment or multiple attachments, the central
+**Still require design:** central Sessions with no environment or multiple attachments, attachment
+authorization and transitions, the central
 principal and its authority, moving or changing wake orchestration, and cross-store deletion and
 History semantics. The current opening table is not a general Session directory, and the central
 sampler currently requires an executor.

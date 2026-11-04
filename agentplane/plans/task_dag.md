@@ -1044,6 +1044,10 @@ Represent Sandbox-local native harnesses/state and central Sessions whose option
 execution in one shared domain vocabulary. A native harness's required local environment is a
 capability constraint of that harness, not a universal Session attachment requirement. Keep
 Session identity, durable harness stores, running hosts, placement and execution attachments distinct.
+Dispatcher now stores the owner variant for openings and exposes the native exact environment or
+central owner plus fixed current initial executor. This does not implement optional central
+attachments, environment-free central opening, independent central lifetime after executor deletion,
+or the unresolved principal and harness-store contracts.
 Preserve harness-specific constraints: Claude
 Code naturally runs in the environment it acts in; a shared vocabulary must not pretend every
 backend supports independent placement or executor replacement.
@@ -2457,6 +2461,9 @@ This is current behavior, not a decision that Environment deletion must delete t
 that boundary with `SESSION_AND_INBOX_LIFETIME`. A native-first slice may proceed, but must not
 foreclose a retained Session or silently choose its lifetime. Dispatcher is the current first owner;
 `DECLARATIVE_SESSIONS_DESIGN` retains a future CRD as an option, not a competing authority.
+The opening also stores an immutable `environment_hosted` or `central_sampler` owner variant;
+native placement contains its exact environment, while the central opening's required fixed initial
+executor is separate from its owner. This is not an attachment or lifetime implementation.
 Remaining: specify how held unconfirmed openings are explicitly resolved and how the owner selects
 and retains the specific harness store and native Session ID. Preserve authority and retained History across service-store boundaries;
 never automatically replay an uncertain native effect. The caller can select an exact

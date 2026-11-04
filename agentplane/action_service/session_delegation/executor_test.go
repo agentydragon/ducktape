@@ -612,15 +612,19 @@ func TestOpenForwardsRecordedCallerAndReturnsTypedOpening(t *testing.T) {
 	}
 	var result struct {
 		Opening struct {
-			SessionID  string `json:"session_id"`
-			SandboxUID string `json:"sandbox_uid"`
-			State      string `json:"state"`
+			SessionID         string `json:"session_id"`
+			EnvironmentHosted struct {
+				Environment struct {
+					SandboxUID string `json:"sandbox_uid"`
+				} `json:"environment"`
+			} `json:"environment_hosted"`
+			State string `json:"state"`
 		} `json:"opening"`
 	}
 	if err := json.Unmarshal(outcome.Result, &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Opening.SessionID != testSessionID || result.Opening.SandboxUID != "sandbox-uid-1" || result.Opening.State != "DELIVERY_STATE_QUEUED_IN_DISPATCHER" {
+	if result.Opening.SessionID != testSessionID || result.Opening.EnvironmentHosted.Environment.SandboxUID != "sandbox-uid-1" || result.Opening.State != "DELIVERY_STATE_QUEUED_IN_DISPATCHER" {
 		t.Fatalf("opening result = %+v", result.Opening)
 	}
 }

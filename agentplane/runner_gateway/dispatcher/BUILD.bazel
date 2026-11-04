@@ -231,9 +231,13 @@ go_proto_library(
 
 go_test(
     name = "central_runner_test",
-    srcs = ["central_runner_test.go"],
+    srcs = [
+        "central_runner_test.go",
+        "placement_contract_test.go",
+    ],
     embed = [":dispatcher"],
     deps = [
+        ":session_dispatcher_go_proto",
         "//agentplane/central_sampler:sampler_go_proto",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/proto:command_go_proto",
