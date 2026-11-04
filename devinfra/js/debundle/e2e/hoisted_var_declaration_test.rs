@@ -83,7 +83,8 @@ fn partially_claimed_nested_var_statement_is_rejected() {
         FixtureOpts::new(
             "try { var left = 10; var right = 20; } catch (e) {}\n",
             vec![logical_module("left_module", &[Member::new("left")])],
-        ),
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
         &["body index 0", "unassigned bindings", "right"],
     );
 }
