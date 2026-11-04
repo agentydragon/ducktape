@@ -5,13 +5,35 @@ The operator requested a storage probe alongside the full acceptance rerun of PR
 the PR's production guest configuration. The first phase built a smaller system closure;
 subsequent isolated NixOS and Bazel-built CI guest boot/RAM-resume proofs are recorded below.
 
+## Current policy: local checkpoints without bulk content hashes
+
+The operator subsequently chose to remove the bulk SHA-256 scans. They detected later corruption
+or file mutation and compared live disks with a checkpoint to avoid copying; they did not establish
+the paused RAM/disk boundary. This same-Pod checkpoint is published locally rather than received
+from an untrusted store or transferred between machines.
+
+Checkpoint now records file sizes after sparse copying and syncing. Before touching live disks,
+restore checks the complete file set, regular-file types and exact sizes, then copies every backing
+disk from the committed generation. There is no content comparison or live-disk reuse branch.
+The owner lock, active-continuation fence, paused capture and atomic durable manifest publication
+remain. Small configuration and VMM compatibility digests remain too. Earlier experimental
+manifests are rejected rather than migrated.
+
+Missing, truncated or nonregular generation files are rejected. Silent same-sized corruption is
+outside this contract. Unconditional restore adds disk writes compared with the previous reuse
+path; measure that tradeoff rather than inferring an end-to-end speedup from removed hash CPU.
+
+The hash profiles and benchmarks below describe earlier revisions. Their helpers and benchmark
+cases have been removed; the reproduction commands apply to the cited historical commits.
+
 ## Sparse copying is already present
 
 `agentplane/firecracker/storage.go` uses `cp --reflink=auto --sparse=always` for regular files.
 Its block-device path scans 1 MiB chunks, seeks over all-zero chunks, and truncates the result
-to the original logical size. Both paths sync the resulting file. Checkpoint's `copyDurable`
-adds a full SHA-256; the later copy-path change described below removes only hashes that callers
-discarded during initial preparation and restore repair.
+to the original logical size. Both paths sync the resulting file. The earlier checkpoint
+`copyDurable` added a full SHA-256; the first copy-path change described below removed only hashes
+discarded during initial preparation and restore repair. The current policy above removes the
+remaining bulk hashes.
 
 The production guest used for the baseline has:
 
@@ -330,9 +352,9 @@ acceptance run is a controlled latency comparison with the production NixOS gues
 
 ## Follow-on experiments
 
-1. Measure remaining copy/sync I/O on populated disks and choose the content-integrity
-   policy explicitly. Preserve the paused RAM/disk boundary, durable manifest publication
-   and boot/config/VMM identity fences; content checksums are a separate policy decision.
+1. Measure remaining copy/sync I/O on populated disks, including unconditional restore writes.
+   Preserve the paused RAM/disk boundary, durable manifest publication and boot/config/VMM identity
+   fences. Bulk content checksums have been removed from local checkpoints.
 2. Decide which agent capabilities require the omitted pre-commit tools before selecting a
    smaller production guest, or supply heavy tools through an explicit immutable tools disk.
 3. Investigate retaining large immutable inputs by verified image digest, with a small writable
@@ -345,5 +367,5 @@ acceptance run is a controlled latency comparison with the production NixOS gues
    researched but not tested; it cannot remove occupied toolchain data or the logical cost of
    hashing zeroes.
 
-Simply adding sparse copying would duplicate the existing implementation. Reducing logical
-disk size or separating immutable contents can also reduce full-file verification work.
+Simply adding sparse copying would duplicate the existing implementation. Separating immutable
+contents could reduce the remaining populated-disk copy work.

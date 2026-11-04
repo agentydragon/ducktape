@@ -20,16 +20,20 @@ and restoration along with the kernel and disks.
 
 `/var/lib/agentplane/state/firecracker/owner.lock` is held with `flock` across boot, checkpoint,
 and resume. A full checkpoint records VM state, guest RAM, and every backing disk at the same
-paused boundary, then atomically publishes a manifest with Pod, Sandbox, configuration, VMM, and
-file digests. The marker `active` is durable before any VM continuation. A launcher crash while
-it exists is an uncertain continuation and fails closed on restart. A different Pod or changed
+paused boundary, then atomically publishes a manifest with Pod/Sandbox identity, configuration
+and VMM digests, and the complete file set and sizes. The marker `active` is durable before any VM
+continuation. A launcher crash while it exists is an uncertain continuation and fails closed on
+restart. A different Pod or changed
 VMM cannot resume a checkpoint. A failed new checkpoint leaves the prior manifest intact, but
 the uncertain active marker blocks automatic retry. The current checkpoint remains on the state
 PVC across same-Pod suspension; its predecessor is removed after the next VMM exits.
 The guest thaw acknowledgement must carry the checkpoint's boot ID before network admission.
-A same-Pod restore reuses a live regular disk only after its full size and SHA-256 match the
-verified checkpoint. Missing or changed regular disks are copied back atomically; block workspaces
-are restored from the checkpoint. The owner lock and active-continuation fence still apply.
+A same-Pod restore checks that every generation file is regular and has its recorded size before
+restoring any backing disk. It always restores disks from the committed generation: regular files
+are copied, synced and atomically replaced; block workspaces are copied and synced. It does not
+compare or reuse existing live disk contents. RAM, VMM state and disk contents are not checksummed;
+same-sized corruption is outside this local checkpoint contract. The paused capture, owner lock,
+active-continuation fence and durable manifest publication establish consistency.
 VMM control requests have a 20-second deadline. Snapshot create/load requests have a separate
 two-minute deadline for RAM file I/O and synchronization; an expired request is never retried.
 For a block workspace, an existing ext4 filesystem is preserved. An unsigned all-zero device is
@@ -61,6 +65,7 @@ construction, and firewall setup. The VMM uses its built-in seccomp filters, but
 does not yet use Firecracker's jailer. The image and rule tests do not establish a KVM runtime
 boot or an end-to-end isolated tenant boundary; those require the live Pod acceptance run.
 
-Launcher configuration digests are domain-separated by implementation version. Checkpoints from
-the earlier experimental Python launcher are rejected; replace its disposable proof Pod before
-using the Go launcher. This does not enable Firecracker in staging.
+Launcher configuration digests are domain-separated by implementation version. The size-record
+manifest replaces the earlier experimental content-digest format; old manifests are rejected
+rather than migrated. Replace the disposable proof Pod before using this format. This does not
+enable Firecracker in staging.

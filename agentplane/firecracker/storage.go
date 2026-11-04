@@ -15,7 +15,6 @@ import (
 	"syscall"
 
 	"github.com/google/uuid"
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -27,12 +26,11 @@ const (
 	configSourceDirectory   = "/run/agentplane/config"
 	launchSourceDirectory   = "/run/agentplane/sandbox"
 	trustSourceDirectory    = "/run/agentplane/trust"
-	configDigestDomain      = "agentplane-firecracker-config/v1\x00"
+	configDigestDomain      = "agentplane-firecracker-config/v2\x00"
 )
 
 type FileRecord struct {
-	Size   int64  `json:"size"`
-	SHA256 string `json:"sha256"`
+	Size int64 `json:"size"`
 }
 
 type Manifest struct {
@@ -272,11 +270,11 @@ func (storage *Storage) ReadManifest() (*Manifest, error) {
 	if manifest.BootID == "" {
 		return nil, fmt.Errorf("checkpoint has no boot ID")
 	}
-	binaryRecord, err := digest(storage.firecracker)
+	binaryDigest, err := digest(storage.firecracker)
 	if err != nil {
 		return nil, err
 	}
-	if manifest.ConfigSHA256 != storage.configDigest() || manifest.FirecrackerSHA256 != binaryRecord.SHA256 {
+	if manifest.ConfigSHA256 != storage.configDigest() || manifest.FirecrackerSHA256 != binaryDigest {
 		return nil, fmt.Errorf("checkpoint configuration or Firecracker binary changed")
 	}
 	if !validGeneration(manifest.Generation) {
@@ -332,12 +330,15 @@ func (storage *Storage) Restore(ctx context.Context, manifest *Manifest) error {
 	}
 	generation := filepath.Join(storage.Work, manifest.Generation)
 	for name, record := range manifest.Files {
-		actual, err := digest(filepath.Join(generation, name))
-		if err != nil {
-			return err
+		if record.Size < 0 {
+			return fmt.Errorf("checkpoint file has negative size: %s", name)
 		}
-		if actual != record {
-			return fmt.Errorf("checkpoint file failed verification: %s", name)
+		info, err := os.Lstat(filepath.Join(generation, name))
+		if err != nil {
+			return fmt.Errorf("inspect checkpoint file %s: %w", name, err)
+		}
+		if !info.Mode().IsRegular() || info.Size() != record.Size {
+			return fmt.Errorf("checkpoint file has invalid type or size: %s", name)
 		}
 	}
 	for name, target := range storage.Paths {
@@ -351,21 +352,6 @@ func (storage *Storage) Restore(ctx context.Context, manifest *Manifest) error {
 				return err
 			}
 			continue
-		}
-		// The reaped VMM cannot have changed a live disk after its paused checkpoint.
-		// Verify the complete contents before reusing it; stale or missing files are restored.
-		info, err := os.Lstat(target)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		if err == nil && info.Mode().IsRegular() {
-			actual, err := digest(target)
-			if err != nil {
-				return err
-			}
-			if actual == manifest.Files[name] {
-				continue
-			}
 		}
 		staging := uniqueSibling(target)
 		if err := copyAndSync(ctx, source, staging); err != nil {
@@ -410,7 +396,7 @@ func (storage *Storage) Checkpoint(ctx context.Context, memory, vmstate, bootID 
 	if err := syncDirectory(directory); err != nil {
 		return nil, err
 	}
-	binaryRecord, err := digest(storage.firecracker)
+	binaryDigest, err := digest(storage.firecracker)
 	if err != nil {
 		return nil, err
 	}
@@ -419,7 +405,7 @@ func (storage *Storage) Checkpoint(ctx context.Context, memory, vmstate, bootID 
 		SandboxUID:        storage.config.SandboxUID,
 		BootID:            bootID,
 		ConfigSHA256:      storage.configDigest(),
-		FirecrackerSHA256: binaryRecord.SHA256,
+		FirecrackerSHA256: binaryDigest,
 		Generation:        generation,
 		Files:             files,
 	}
@@ -484,85 +470,33 @@ func validGeneration(generation string) bool {
 		filepath.Base(generation) == generation && strings.HasPrefix(generation, "checkpoint-")
 }
 
-func digest(path string) (FileRecord, error) {
+// The Firecracker binary is small and its exact contents determine snapshot compatibility.
+func digest(path string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return FileRecord{}, err
+		return "", err
 	}
 	hash := sha256.New()
-	count, copyErr := hashFileContents(file, hash)
+	_, copyErr := io.Copy(hash, file)
 	closeErr := file.Close()
 	if err := errors.Join(copyErr, closeErr); err != nil {
-		return FileRecord{}, err
+		return "", err
 	}
-	return FileRecord{Size: count, SHA256: hex.EncodeToString(hash.Sum(nil))}, nil
-}
-
-// Hash holes as logical zeroes without filling the filesystem page cache with them.
-// This produces the same digest as reading every byte, including for filesystems
-// that conservatively report the entire file as allocated data.
-func hashFileContents(file *os.File, hash io.Writer) (int64, error) {
-	info, err := file.Stat()
-	if err != nil {
-		return 0, err
-	}
-	buffer := make([]byte, 1024*1024)
-	if !info.Mode().IsRegular() || info.Size() == 0 {
-		return io.CopyBuffer(hash, file, buffer)
-	}
-	zeroes := make([]byte, len(buffer))
-	var offset int64
-	for offset < info.Size() {
-		data, err := unix.Seek(int(file.Fd()), offset, unix.SEEK_DATA)
-		if offset == 0 && (errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ENOTSUP) || errors.Is(err, unix.ENOSYS)) {
-			if _, err := file.Seek(0, io.SeekStart); err != nil {
-				return 0, err
-			}
-			return io.CopyBuffer(hash, file, buffer)
-		}
-		if errors.Is(err, unix.ENXIO) {
-			data = info.Size()
-		} else if err != nil {
-			return offset, err
-		}
-		if data < offset || data > info.Size() {
-			return offset, fmt.Errorf("invalid data extent at %d: %d", offset, data)
-		}
-		for offset < data {
-			count := min(int64(len(zeroes)), data-offset)
-			if _, err := hash.Write(zeroes[:count]); err != nil {
-				return offset, err
-			}
-			offset += count
-		}
-		if offset == info.Size() {
-			break
-		}
-		hole, err := unix.Seek(int(file.Fd()), data, unix.SEEK_HOLE)
-		if err != nil {
-			return offset, err
-		}
-		if hole <= data {
-			return offset, fmt.Errorf("invalid hole extent at %d: %d", data, hole)
-		}
-		end := min(hole, info.Size())
-		count, err := io.CopyBuffer(hash, io.NewSectionReader(file, data, end-data), buffer)
-		offset += count
-		if err != nil {
-			return offset, err
-		}
-		if offset != end {
-			return offset, io.ErrUnexpectedEOF
-		}
-	}
-	return offset, nil
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func copyDurable(ctx context.Context, source, destination string) (FileRecord, error) {
 	if err := copyAndSync(ctx, source, destination); err != nil {
 		return FileRecord{}, err
 	}
-	return digest(destination)
+	info, err := os.Lstat(destination)
+	if err != nil {
+		return FileRecord{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return FileRecord{}, fmt.Errorf("checkpoint copy is not a regular file: %s", destination)
+	}
+	return FileRecord{Size: info.Size()}, nil
 }
 
 func copyAndSync(ctx context.Context, source, destination string) error {

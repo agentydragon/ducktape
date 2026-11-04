@@ -7,155 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 )
-
-func TestDigestSparseFilesMatchesLogicalContents(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		size   int
-		writes map[int]string
-	}{
-		{name: "empty"},
-		{name: "all holes", size: 3*1024*1024 + 19},
-		{name: "data", size: 13, writes: map[int]string{0: "hello, world!"}},
-		{name: "leading hole", size: 3*1024*1024 + 19, writes: map[int]string{2*1024*1024 + 3: "data after hole"}},
-		{name: "trailing hole", size: 3*1024*1024 + 19, writes: map[int]string{0: "data before hole"}},
-		{name: "mixed extents", size: 6*1024*1024 + 19, writes: map[int]string{3: "first", 2*1024*1024 + 17: "middle", 6*1024*1024 + 7: "last"}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "disk.img")
-			file, err := os.Create(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			contents := make([]byte, test.size)
-			for offset, value := range test.writes {
-				if _, err := file.WriteAt([]byte(value), int64(offset)); err != nil {
-					t.Fatal(err)
-				}
-				copy(contents[offset:], value)
-			}
-			if err := file.Truncate(int64(test.size)); err != nil {
-				t.Fatal(err)
-			}
-			if err := file.Close(); err != nil {
-				t.Fatal(err)
-			}
-			actual, err := digest(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			want := sha256.Sum256(contents)
-			if actual.Size != int64(test.size) || actual.SHA256 != hex.EncodeToString(want[:]) {
-				t.Fatalf("digest = %+v, want size %d and SHA256 %x", actual, test.size, want)
-			}
-		})
-	}
-}
-
-func BenchmarkDigestSparseWorkspace(b *testing.B) {
-	path := filepath.Join(b.TempDir(), "workspace.img")
-	file, err := os.Create(path)
-	if err != nil {
-		b.Fatal(err)
-	}
-	const size = 8 * 1024 * 1024 * 1024
-	if _, err := file.WriteAt([]byte("retained workspace contents"), 1024*1024); err != nil {
-		b.Fatal(err)
-	}
-	if err := file.Truncate(size); err != nil {
-		b.Fatal(err)
-	}
-	if err := file.Close(); err != nil {
-		b.Fatal(err)
-	}
-	for _, sparse := range []bool{false, true} {
-		b.Run(fmt.Sprintf("sparse-aware=%t", sparse), func(b *testing.B) {
-			b.SetBytes(size)
-			b.ReportAllocs()
-			for b.Loop() {
-				file, err := os.Open(path)
-				if err != nil {
-					b.Fatal(err)
-				}
-				hash := sha256.New()
-				var count int64
-				if sparse {
-					count, err = hashFileContents(file, hash)
-				} else {
-					count, err = io.CopyBuffer(hash, file, make([]byte, 1024*1024))
-				}
-				closeErr := file.Close()
-				if err := errors.Join(err, closeErr); err != nil {
-					b.Fatal(err)
-				}
-				if count != size {
-					b.Fatalf("hashed %d bytes, want %d", count, size)
-				}
-			}
-		})
-	}
-}
-
-func BenchmarkCheckpointCopySparseWorkspace(b *testing.B) {
-	const size = 8 * 1024 * 1024 * 1024
-	source := filepath.Join(b.TempDir(), "workspace.img")
-	file, err := os.Create(source)
-	if err != nil {
-		b.Fatal(err)
-	}
-	if _, err := file.WriteAt([]byte("retained workspace contents"), 1024*1024); err != nil {
-		b.Fatal(err)
-	}
-	if err := file.Truncate(size); err != nil {
-		b.Fatal(err)
-	}
-	if err := file.Close(); err != nil {
-		b.Fatal(err)
-	}
-
-	for _, benchmark := range []struct {
-		name     string
-		withSync bool
-		digest   bool
-	}{
-		{name: "copy"},
-		{name: "copy+fsync", withSync: true},
-		{name: "copy+fsync+sha256", withSync: true, digest: true},
-	} {
-		b.Run(benchmark.name, func(b *testing.B) {
-			b.SetBytes(size)
-			b.ReportAllocs()
-			ctx := context.Background()
-			for i := 0; b.Loop(); i++ {
-				destination := filepath.Join(b.TempDir(), fmt.Sprintf("workspace-%d.img", i))
-				if benchmark.digest {
-					if _, err := copyDurable(ctx, source, destination); err != nil {
-						b.Fatal(err)
-					}
-					continue
-				}
-				if _, err := runCommand(ctx, "cp", "--reflink=auto", "--sparse=always", "--", source, destination); err != nil {
-					b.Fatal(err)
-				}
-				if err := os.Chmod(destination, 0o600); err != nil {
-					b.Fatal(err)
-				}
-				if benchmark.withSync {
-					if err := syncFile(destination); err != nil {
-						b.Fatal(err)
-					}
-				}
-			}
-		})
-	}
-}
 
 func TestCopyAndSyncCopiesSparseRegularFile(t *testing.T) {
 	root := t.TempDir()
@@ -308,7 +165,7 @@ func TestCheckpointRestoresMatchingMemoryAndDisks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Equal-sized stale contents must not be mistaken for the checkpoint.
+	// Equal-sized stale contents must be replaced with the checkpoint copy.
 	if err := os.WriteFile(storage.Paths["rootfs"], []byte("stale!"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -337,9 +194,13 @@ func TestCheckpointRestoresMatchingMemoryAndDisks(t *testing.T) {
 			t.Fatalf("restored %s = %q, %v", name, data, err)
 		}
 	}
-	reused, err := os.Stat(storage.Paths["runner"])
-	if err != nil || !os.SameFile(unchanged, reused) {
-		t.Fatalf("matching live runner disk was replaced: %v", err)
+	restored, err := os.Stat(storage.Paths["runner"])
+	if err != nil || os.SameFile(unchanged, restored) {
+		t.Fatalf("unchanged live runner disk was not replaced: %v", err)
+	}
+	runner, err := os.ReadFile(storage.Paths["runner"])
+	if err != nil || string(runner) != "runner" {
+		t.Fatalf("restored runner disk = %q, %v", runner, err)
 	}
 	generation := filepath.Join(storage.Work, manifest.Generation)
 	for name, want := range map[string]string{"memory": "RAM at suspended boundary", "vmstate": "VMM at suspended boundary"} {
@@ -447,26 +308,73 @@ func TestPartialCheckpointCannotReplaceCommittedManifest(t *testing.T) {
 	}
 }
 
-func TestRestoreRejectsIncompleteFileSetBeforeWriting(t *testing.T) {
-	storage := testStorage(t)
-	memory := filepath.Join(t.TempDir(), "memory")
-	vmstate := filepath.Join(t.TempDir(), "vmstate")
-	_ = os.WriteFile(memory, []byte("ram"), 0o600)
-	_ = os.WriteFile(vmstate, []byte("vmstate"), 0o600)
-	manifest, err := storage.Checkpoint(context.Background(), memory, vmstate, "boot-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	delete(manifest.Files, "workspace")
-	if err := os.WriteFile(storage.Paths["state"], []byte("current state"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := storage.Restore(context.Background(), manifest); err == nil {
-		t.Fatal("incomplete manifest file set was accepted")
-	}
-	data, err := os.ReadFile(storage.Paths["state"])
-	if err != nil || string(data) != "current state" {
-		t.Fatalf("restore wrote before validating the complete file set: %q, %v", data, err)
+func TestRestoreValidatesEveryGenerationFileBeforeWriting(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		change func(*testing.T, *Manifest, string)
+	}{
+		{name: "incomplete file set", change: func(_ *testing.T, manifest *Manifest, _ string) {
+			delete(manifest.Files, "workspace")
+		}},
+		{name: "missing disk", change: func(t *testing.T, _ *Manifest, generation string) {
+			if err := os.Remove(filepath.Join(generation, "workspace")); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "truncated RAM", change: func(t *testing.T, _ *Manifest, generation string) {
+			if err := os.Truncate(filepath.Join(generation, "memory"), 1); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "nonregular disk", change: func(t *testing.T, _ *Manifest, generation string) {
+			path := filepath.Join(generation, "workspace")
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(path, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "symlink vmstate", change: func(t *testing.T, _ *Manifest, generation string) {
+			path := filepath.Join(generation, "vmstate")
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink("memory", path); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "negative size", change: func(_ *testing.T, manifest *Manifest, _ string) {
+			manifest.Files["memory"] = FileRecord{Size: -1}
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			storage := testStorage(t)
+			memory := filepath.Join(t.TempDir(), "memory")
+			vmstate := filepath.Join(t.TempDir(), "vmstate")
+			if err := os.WriteFile(memory, []byte("ram"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(vmstate, []byte("vmstate"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			manifest, err := storage.Checkpoint(context.Background(), memory, vmstate, "boot-test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			generation := filepath.Join(storage.Work, manifest.Generation)
+			test.change(t, manifest, generation)
+			if err := os.WriteFile(storage.Paths["state"], []byte("current state"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := storage.Restore(context.Background(), manifest); err == nil {
+				t.Fatal("invalid generation was accepted")
+			}
+			data, err := os.ReadFile(storage.Paths["state"])
+			if err != nil || string(data) != "current state" {
+				t.Fatalf("restore wrote before validating all generation files: %q, %v", data, err)
+			}
+		})
 	}
 }
 
@@ -544,11 +452,11 @@ func TestReadManifestRejectsPreviousUnversionedConfigDigest(t *testing.T) {
 
 func mustDigest(t *testing.T, path string) string {
 	t.Helper()
-	record, err := digest(path)
+	hash, err := digest(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return record.SHA256
+	return hash
 }
 
 type fakeCommandError int

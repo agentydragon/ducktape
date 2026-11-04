@@ -10,14 +10,15 @@ shell when it is enabled.
 
 ## Reduce Firecracker checkpoint and restore disk I/O
 
-The production-guest acceptance captures RAM in seconds but spends minutes copying and verifying
-the backing disks, including the 8.5 GiB root image. Sparse copies and sparse-aware SHA-256 avoid
-allocating and reading holes, while still hashing their logical zeroes. The
+The production-guest acceptance captured RAM in seconds but spent minutes copying and hashing
+the backing disks, including the 8.5 GiB root image. Sparse copies already preserve holes; bulk
+content hashes have since been removed from local checkpoints. Restore now copies every backing
+disk from the committed generation, without hashing or reusing live contents. The
 [storage probe](../debug/2026_11_04_firecracker_storage_probe.md) measured the worker's I/O and
 built and booted a variant without the pre-commit bundle, reducing closure bytes by 67.2%, with
 reduced tool availability. The separate Bazel-built CI guest now passes RAM-resume acceptance
 with a 733 MB root disk; production remains unchanged. Measure remaining populated-disk copy/sync
-latency and choose the content-integrity policy explicitly. Establish required tools before selecting a smaller production guest;
+latency, including the writes from unconditional restore. Establish required tools before selecting a smaller production guest;
 consider keeping heavy tools in an immutable disk. In every case,
 preserve the paused disk/RAM boundary, durable manifest commit and identity fencing. The
 [hardware acceptance report](../debug/2026_11_03_firecracker_system_test.md) records the observed phases.

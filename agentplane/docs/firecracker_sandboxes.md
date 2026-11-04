@@ -62,7 +62,7 @@ sequenceDiagram
     C->>P: Read /state through Kubernetes pods/proxy
     P-->>C: suspended, exact Pod UID
     C->>P: annotation firecracker-running=true
-    P->>P: Verify ownership, inputs and checkpoint hashes
+    P->>P: Verify ownership, compatible inputs, complete file set and sizes
     P->>V: Restore matching disks, RAM and device state
     P->>R: vsock: set wall clock; refresh TLS and CA files
     P->>P: Open guest networking
@@ -82,6 +82,12 @@ The supervisor holds an exclusive host-side state-PVC `flock` for its lifetime. 
 manifest binds the Sandbox UID, Pod UID, launcher configuration, VMM binary and complete disk set.
 An active-continuation marker fences uncertain failures; incomplete or mismatched snapshots fail
 closed. The controller does not authorize replay by replacing a failed launcher.
+
+Restore always copies backing disks from the committed generation. It checks file types and
+sizes before starting those copies, without scanning RAM or disk contents for hashes. Configuration
+and VMM digests reject incompatible restores. Silent, same-sized content corruption is outside this
+local checkpoint contract; the paused capture, owner lock, continuation fence and durable manifest
+publication establish the RAM/disk boundary. Earlier experimental manifests are rejected.
 
 **RAM recovery is limited to the same launcher Pod.** Pod deletion, node loss, launcher failure
 while running, CPU changes, image/config changes or storage exhaustion are failures requiring
