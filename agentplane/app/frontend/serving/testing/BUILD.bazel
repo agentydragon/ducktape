@@ -1,13 +1,12 @@
-load("//devinfra/oci:defs.bzl", "oci_image_py")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
 
 package(
     default_testonly = True,
     default_visibility = ["//agentplane/app:__subpackages__"],
 )
 
-oci_image_py(
+oci_layout_py(
     name = "image",
     testonly = True,
     image = "//agentplane/app/frontend/serving:static_image",
-    tag = "agentplane-frontend:test",
 )

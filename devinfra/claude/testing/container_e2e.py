@@ -134,7 +134,7 @@ def _save_output(prefix: str, name: str, content: str) -> None:
 
 def load_e2e_image() -> str:
     started = time.monotonic()
-    image = load_oci_image(e2e_container_descriptor.IMAGE)
+    image = load_oci_image(e2e_container_descriptor.LAYOUT_RLOCATION)
     _save_output(
         "container-e2e-image",
         "load-timing.json",

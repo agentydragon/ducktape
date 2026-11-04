@@ -143,7 +143,7 @@ def wait_for_grocy_ready(container: DockerContainer, *, timeout_s: float = 60) -
 @contextmanager
 def run_grocy_container(*, data_dir: Path | None = None) -> Generator[DockerContainer]:
     """Run a fresh Grocy container with auth disabled; yield it once ready."""
-    image_ref = load_oci_image(grocy.IMAGE)
+    image_ref = load_oci_image(grocy.LAYOUT_RLOCATION)
     with grocy_custom_init_dir() as init_dir:
         container = DockerContainer(image_ref)
         configure_grocy_container(container, init_dir=init_dir, data_dir=data_dir)

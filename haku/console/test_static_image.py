@@ -25,7 +25,7 @@ def _wait_for_nginx(base_url: str) -> httpx.Response:
 
 def test_static_image_cache_contract() -> None:
     container = (
-        DockerContainer(load_oci_image(static_test_image.IMAGE))
+        DockerContainer(load_oci_image(static_test_image.LAYOUT_RLOCATION))
         .with_env("HAKU_CONSOLE_HAKU_UI_URL", "https://haku-ui.test")
         .with_env("HAKU_CONSOLE_AUTH_ORIGIN", "https://auth.test")
         # The image starts without a live API in this isolated container test;

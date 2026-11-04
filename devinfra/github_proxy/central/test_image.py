@@ -15,7 +15,7 @@ from util.testing.container_logs import LoggedContainer
 
 
 async def test_image_boots_with_readonly_secrets_and_persistent_capture(tmp_path: Path) -> None:
-    tag = load_oci_image(github_api_proxy_image.IMAGE)
+    tag = load_oci_image(github_api_proxy_image.LAYOUT_RLOCATION)
     public_tls = tmp_path / "public-tls"
     interception_ca = tmp_path / "interception-ca"
     client = tmp_path / "client"

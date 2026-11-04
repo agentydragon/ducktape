@@ -5,6 +5,7 @@ import importlib
 import os
 
 import pytest_bazel
+from testcontainers.core import testcontainers_config
 
 from devinfra.bazel.runfiles import get_required_path
 from third_party.containers import ryuk
@@ -13,8 +14,8 @@ from util.testing.container_logs import LoggedContainer
 
 
 async def test_go_suite() -> None:
-    test_image = importlib.import_module(os.environ["PID1_GO_TEST_IMAGE"]).IMAGE
-    load_oci_image(ryuk.IMAGE)
+    test_image = importlib.import_module(os.environ["PID1_GO_TEST_IMAGE"]).LAYOUT_RLOCATION
+    load_oci_image(ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
     image_ref = load_oci_image(test_image)
     binary = get_required_path(os.environ["PID1_GO_TEST_RUNFILE"]).resolve()
     container = (

@@ -1,10 +1,9 @@
-load("//devinfra/oci:defs.bzl", "oci_image_py")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/python:defs.bzl", "py_test")
 
-oci_image_py(
+oci_layout_py(
     name = "cli_proxy_api_image",
     image = "@ducktape_cli_proxy_api//:image",
-    tag = "cli-proxy-api:test",
 )
 
 py_test(

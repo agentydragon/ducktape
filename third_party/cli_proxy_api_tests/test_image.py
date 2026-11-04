@@ -28,7 +28,7 @@ def test_image_serves_bundled_ui_and_preserves_key_authentication(tmp_path: Path
     )
     with (
         LoggedContainer(
-            load_oci_image(cli_proxy_api_image.IMAGE),
+            load_oci_image(cli_proxy_api_image.LAYOUT_RLOCATION),
             test_name="cli-proxy-api-boot",
             command=["-config", "/config/config.yaml"],
             volumes=[(str(tmp_path), "/config", "ro")],

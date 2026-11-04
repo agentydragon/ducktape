@@ -309,8 +309,8 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
     # sidecar, archived web reachable from an otherwise route-less container,
     # evidence-as-files, the served-evidence manifest landing in the score,
     # and the gym's proper loss (outcome YES → -ln(0.8)).
-    load_oci_image(wayback_proxy_image.IMAGE)
-    load_oci_image(python_3_14_slim.IMAGE)
+    load_oci_image(wayback_proxy_image.LAYOUT_RLOCATION, image_ref=WAYBACK_PROXY_IMAGE_TAG)
+    agent_image = load_oci_image(python_3_14_slim.LAYOUT_RLOCATION)
     # Bash-only tool: the agent runs python via the shell. Fetch the https://
     # evidence lead through the clamped MITM proxy unmodified — urllib honors
     # https_proxy and trusts the proxy CA via SSL_CERT_FILE. The harness's rich
@@ -344,7 +344,7 @@ def test_agent_answers_in_sandbox(tmp_path: Path, fake_upstream_port: int) -> No
                 [EVIDENCE_TASK],
                 [RAMP],
                 wayback_upstream=f"http://host.docker.internal:{fake_upstream_port}",
-                agent_image="python:3.14-slim",
+                agent_image=agent_image,
                 compose_dir=tmp_path,
             ),
             model=model,

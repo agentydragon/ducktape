@@ -21,7 +21,7 @@ def test_verified_baggage_reaches_exported_litellm_span() -> None:
         image_logger.addHandler(handler)
         image_logger.setLevel(logging.INFO)
         try:
-            image = load_oci_image(upstream_test_image.IMAGE)
+            image = load_oci_image(upstream_test_image.LAYOUT_RLOCATION)
             log.write("Image loaded; starting smoke process\n")
             log.flush()
             script = Path(__file__).with_name("attribution_export_smoke.py")

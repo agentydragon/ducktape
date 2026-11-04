@@ -59,14 +59,14 @@ async def _run_with_replay(
     turn_limit: int = _TEST_TURNS,
 ) -> RunSummary:
     client = ReplayChatClient(responses=completions)
-    image_tag = load_oci_image(python_3_14_slim.IMAGE)
+    image_tag = load_oci_image(python_3_14_slim.LAYOUT_RLOCATION)
 
     # Stage the empty skill so the sandbox shape matches production: prompt
     # claims `SKILL_PATH` is mounted, and it really is.
     staged = stage_skill(EMPTY_SKILL_SPEC, tmp_path / "skill_extract")
 
     async with (
-        eval_sandbox(skill=staged, workspace=tmp_path / "work", inputs=None) as exec_tool,
+        eval_sandbox(skill=staged, workspace=tmp_path / "work", inputs=None, image=image_tag) as exec_tool,
         aiodocker.Docker() as docker,
     ):
         container = await docker.containers.run(

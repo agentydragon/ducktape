@@ -53,7 +53,7 @@ for any script that needs GUI/TechDraw rendering.
 
 async def run(output_dir: Path, model: str) -> None:
     logger.info("Loading FreeCAD Docker image")
-    tag = load_oci_image(freecad_test_image.IMAGE)
+    tag = load_oci_image(freecad_test_image.LAYOUT_RLOCATION)
     logger.info("Image loaded: %s", tag)
 
     workspace = output_dir / "workspace"

@@ -38,5 +38,6 @@ def pid1_go_test(name, srcs, embed, deps, git = False, size = "small", **kwargs)
             "//devinfra/bazel:runfiles",
             "//util/testing:container_logs",
             "@pypi//pytest_bazel",
+            "@pypi//testcontainers",
         ] + (["//agentplane/env/runtime/supervision/testing:git_tools"] if git else ["//third_party/containers:debian_slim"]),
     )

@@ -10,6 +10,7 @@ from time import monotonic, sleep
 
 import httpx
 from sqlalchemy import create_engine, text
+from testcontainers.core import testcontainers_config
 from testcontainers.core.network import Network
 
 # SQLAlchemy loads the driver selected by the URL scheme at runtime.
@@ -163,7 +164,7 @@ async def _electric_process(
     test_name: str,
     electric_storage_dir: Path | None = None,
 ) -> AsyncIterator[ElectricService]:
-    electric_image = await asyncio.to_thread(load_oci_image, electric_1_8_1.IMAGE)
+    electric_image = await asyncio.to_thread(load_oci_image, electric_1_8_1.LAYOUT_RLOCATION)
     electric = (
         LoggedContainer(electric_image, test_name=test_name)
         .with_network(network)
@@ -189,8 +190,8 @@ async def _electric_process(
 
 
 def _load_postgres_images() -> str:
-    load_oci_image(ryuk.IMAGE)
-    return load_oci_image(postgres_18.IMAGE)
+    load_oci_image(ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
+    return load_oci_image(postgres_18.LAYOUT_RLOCATION)
 
 
 def _logical_postgres_container(
