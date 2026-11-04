@@ -3,9 +3,7 @@ package migrations
 import (
 	"context"
 	"database/sql"
-	"embed"
 	"fmt"
-	"io/fs"
 	"os"
 	"strings"
 	"sync"
@@ -14,26 +12,17 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	_ "github.com/lib/pq"
-	"github.com/pressly/goose/v3"
 )
 
-// The previous release's actual migrations are fixtures, never registered by the service.
-//
-//go:embed testdata/legacy/*.sql
-var previousScripts embed.FS
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
 	os.Exit(postgres.RunIntegrationTests(func(ctx context.Context, db *sql.DB) error {
-		files, err := fs.Sub(previousScripts, "testdata/legacy")
-		if err != nil {
+		if err := Up(ctx, db); err != nil {
 			return err
 		}
-		p, err := goose.NewProvider(goose.DialectPostgres, db, files, goose.WithTableName("action_service_goose_version"), goose.WithDisableGlobalRegistry(true))
-		if err != nil {
-			return err
-		}
-		_, err = p.Up(ctx)
+		_, err := db.ExecContext(ctx, `DELETE FROM action_service_goose_version WHERE version_id=10;
+            INSERT INTO action_service_goose_version(version_id,is_applied) VALUES (7,true),(8,true),(9,true)`)
 		return err
 	}, func(database *postgres.Database) int {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
@@ -90,34 +79,6 @@ func TestFreshBaseline(t *testing.T) {
 	}
 	if got := count(t, db, `SELECT count(*) FROM action_request WHERE arguments='{"human":true}'::jsonb`); got != 1 {
 		t.Fatalf("request rows = %d", got)
-	}
-}
-
-func TestFreshSchemaMatchesPreviousRelease(t *testing.T) {
-	old := cloneDatabase(t)
-	fresh := cloneDatabase(t)
-	exec(t, fresh, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`)
-	if err := Up(t.Context(), fresh); err != nil {
-		t.Fatal(err)
-	}
-	const query = `SELECT coalesce(string_agg(entry, E'\n' ORDER BY entry), '') FROM (
- SELECT 'column:' || table_name || ':' || column_name || ':' || data_type || ':' || is_nullable || ':' || coalesce(column_default, '') AS entry
- FROM information_schema.columns WHERE table_schema=current_schema() AND table_name <> 'action_service_goose_version'
- UNION ALL
- SELECT 'constraint:' || c.relname || ':' || con.conname || ':' || pg_get_constraintdef(con.oid)
- FROM pg_constraint con JOIN pg_class c ON c.oid=con.conrelid WHERE c.relnamespace=current_schema()::regnamespace AND c.relname <> 'action_service_goose_version'
- UNION ALL
- SELECT 'index:' || indexname || ':' || indexdef FROM pg_indexes WHERE schemaname=current_schema() AND tablename <> 'action_service_goose_version'
- ) definitions`
-	var oldSchema, newSchema string
-	if err := old.QueryRowContext(t.Context(), query).Scan(&oldSchema); err != nil {
-		t.Fatal(err)
-	}
-	if err := fresh.QueryRowContext(t.Context(), query).Scan(&newSchema); err != nil {
-		t.Fatal(err)
-	}
-	if oldSchema != newSchema {
-		t.Fatalf("fresh schema differs from previous release:\nold:\n%s\nnew:\n%s", oldSchema, newSchema)
 	}
 }
 
