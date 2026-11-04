@@ -65,11 +65,12 @@ pub use ids::{
 pub use module_assignment::ModuleAssignment;
 pub use placement_projection::{
     DestructuringDeclaratorGroup, DestructuringGroupDestinationCheck,
-    DestructuringGroupOwnerClassification, NestedVarStatement, PlacementEmissionMaps,
-    PlacementProjection, PlacementProjectionAssessment, PlacementProjectionInput,
-    PlacementProjectionOutcome, PlacementProjectionViolation, SourceUnitLayout,
-    SourceUnitLayoutIssue, SourceUnitLocation, SourceUnitSyntaxLocation, StructuralPlacementCheck,
-    classify_destructuring_group_owners, project_placement,
+    DestructuringGroupOwnerClassification, NestedVarDestinationClassification,
+    NestedVarPlacementCheck, NestedVarStatement, PlacementEmissionMaps, PlacementProjection,
+    PlacementProjectionAssessment, PlacementProjectionInput, PlacementProjectionOutcome,
+    PlacementProjectionViolation, SourceUnitLayout, SourceUnitLayoutIssue, SourceUnitLocation,
+    SourceUnitSyntaxLocation, StructuralPlacementCheck, classify_destructuring_group_owners,
+    classify_nested_var_placement, project_placement,
 };
 pub use purity::{
     Purity, PurityReason, PurityRule, RedundantPureMemberHint, RedundantPureMemberReason,

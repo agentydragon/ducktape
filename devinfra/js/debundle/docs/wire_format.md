@@ -200,9 +200,11 @@ whose finalized assignment reaches the projection still emits its diagnostic
 assessment, but it does not produce emitter maps. Earlier plan-construction
 refusals in `apply_destructuring_group_placement` and
 `route_nested_var_statements` occur before candidate assessment and continue to
-return hard refusals; the destructuring refusal retains the shared typed
-owner-classification result in its error chain, but neither early refusal is a
-serialized candidate report.
+return hard refusals. Both use the shared placement decision for retained group
+identities: destructuring may pull unclaimed siblings, while nested `var`
+requires explicit coherent owners and never pulls unclaimed bindings. The final
+projection separately checks nested-var owners and whole-statement claims;
+neither early refusal is a serialized candidate report.
 The top-level candidate `status` distinguishes `blocked_by_effect`,
 `blocked_by_placement`, and `blocked_by_effect_and_placement`; `incomplete`
 means the effect decision or one of the required placement domains remains

@@ -4,7 +4,7 @@
 //! emission. It consumes the retained source-layout facts and returns the
 //! exact maps the emitter needs together with typed structural evidence.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
 
 use serde::Serialize;
@@ -100,6 +100,105 @@ pub fn classify_destructuring_group_owners(
 pub struct NestedVarStatement {
     pub statement: StatementId,
     pub bindings: Vec<Id>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum NestedVarDestinationClassification {
+    Unclaimed,
+    OneDestination { destination: ModuleId },
+    SplitDestinations { destinations: Vec<ModuleId> },
+}
+
+impl NestedVarDestinationClassification {
+    pub fn destinations(&self) -> &[ModuleId] {
+        match self {
+            Self::Unclaimed => &[],
+            Self::OneDestination { destination } => std::slice::from_ref(destination),
+            Self::SplitDestinations { destinations } => destinations,
+        }
+    }
+}
+
+/// Shared classification of the observed owners and whole-statement request
+/// for one retained nested-var statement. Planning uses the owner decision to
+/// route a complete statement; finalized projection additionally requires
+/// every binding owner and a whole-statement claim when the destination is not
+/// the entry.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct NestedVarPlacementCheck {
+    pub statement: StatementId,
+    pub missing_bindings: Vec<Id>,
+    pub whole_statement_request: Option<ModuleId>,
+    pub classification: NestedVarDestinationClassification,
+}
+
+impl NestedVarPlacementCheck {
+    pub fn destinations(&self) -> &[ModuleId] {
+        self.classification.destinations()
+    }
+
+    pub fn requires_whole_statement_claim(&self, entry: ModuleId) -> bool {
+        self.whole_statement_request.is_none()
+            && self
+                .destinations()
+                .iter()
+                .any(|destination| *destination != entry)
+    }
+}
+
+impl fmt::Display for NestedVarPlacementCheck {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "nested-var placement for statement {}: {:?}",
+            self.statement, self.classification
+        )?;
+        if !self.missing_bindings.is_empty() {
+            write!(formatter, "; missing owners: {:?}", self.missing_bindings)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for NestedVarPlacementCheck {}
+
+/// Classify nested-var placement from the retained statement identity, exact
+/// SWC binding owners, and any existing whole-statement request. The entry
+/// destination is intentionally checked by the finalized consumer only; it
+/// is not a planning owner and cannot satisfy a missing explicit owner.
+pub fn classify_nested_var_placement(
+    nested: &NestedVarStatement,
+    owners: Vec<(Id, ModuleId)>,
+    whole_statement_request: Option<ModuleId>,
+) -> NestedVarPlacementCheck {
+    let present_bindings: HashSet<_> = owners.iter().map(|(binding, _)| binding.clone()).collect();
+    let missing_bindings = nested
+        .bindings
+        .iter()
+        .filter(|binding| !present_bindings.contains(*binding))
+        .cloned()
+        .collect();
+    let destinations: BTreeSet<_> = owners
+        .iter()
+        .map(|(_, destination)| *destination)
+        .chain(whole_statement_request)
+        .collect();
+    let destinations: Vec<_> = destinations.into_iter().collect();
+    let classification = match destinations.as_slice() {
+        [] => NestedVarDestinationClassification::Unclaimed,
+        [destination] => NestedVarDestinationClassification::OneDestination {
+            destination: *destination,
+        },
+        destinations => NestedVarDestinationClassification::SplitDestinations {
+            destinations: destinations.to_vec(),
+        },
+    };
+    NestedVarPlacementCheck {
+        statement: nested.statement,
+        missing_bindings,
+        whole_statement_request,
+        classification,
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -650,30 +749,41 @@ pub fn project_placement<'a>(input: PlacementProjectionInput<'a>) -> PlacementPr
     }
 
     for nested in input.nested_var_statements {
-        let mut destinations = BTreeSet::new();
-        for binding in &nested.bindings {
-            if let Some(destination) = binding_destinations.get(binding) {
-                destinations.insert(*destination);
-            } else {
-                violations.push(PlacementProjectionViolation::NestedVarMissingOwner {
-                    statement: nested.statement,
-                    binding: binding.clone(),
-                });
-            }
+        let owners = nested
+            .bindings
+            .iter()
+            .filter_map(|binding| {
+                binding_destinations
+                    .get(binding)
+                    .copied()
+                    .map(|destination| (binding.clone(), destination))
+            })
+            .collect();
+        let whole_statement_request = input
+            .whole_statements
+            .get(&nested.statement)
+            .copied()
+            .map(ModuleId);
+        let check = classify_nested_var_placement(nested, owners, whole_statement_request);
+        for binding in &check.missing_bindings {
+            violations.push(PlacementProjectionViolation::NestedVarMissingOwner {
+                statement: check.statement,
+                binding: binding.clone(),
+            });
         }
-        if let Some(requested) = input.whole_statements.get(&nested.statement) {
-            destinations.insert(ModuleId(*requested));
-        } else if destinations.iter().any(|destination| *destination != entry) {
+        if check.requires_whole_statement_claim(entry) {
             violations.push(
                 PlacementProjectionViolation::NestedVarMissingWholeStatementClaim {
-                    statement: nested.statement,
+                    statement: check.statement,
                 },
             );
         }
-        if destinations.len() > 1 {
+        if let NestedVarDestinationClassification::SplitDestinations { destinations } =
+            &check.classification
+        {
             violations.push(PlacementProjectionViolation::NestedVarDestinationSplit {
-                statement: nested.statement,
-                destinations: destinations.into_iter().collect(),
+                statement: check.statement,
+                destinations: destinations.clone(),
             });
         }
     }

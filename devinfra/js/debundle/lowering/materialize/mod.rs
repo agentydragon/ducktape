@@ -530,7 +530,7 @@ pub(super) fn finish_logical_chunk(
     if matches!(chunk_unassigned_mode, UnassignedMode::PerAtomicGroup) {
         builder.synthesize_per_atomic_group(&precomputed, &source_unit_layout, target_dir)?;
     }
-    builder.route_nested_var_statements(&runtime_ast.module.body, &declarations)?;
+    builder.route_nested_var_statements(&ast_analysis.nested_var_statements)?;
     if matches!(chunk_unassigned_mode, UnassignedMode::CatchallFile { .. }) {
         builder.route_unclaimed_anonymous_to_catchall(&precomputed, &source_unit_layout)?;
     }
