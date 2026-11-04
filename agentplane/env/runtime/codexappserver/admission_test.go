@@ -67,4 +67,10 @@ func TestAcceptedGenerationWakesDemandRejectedDuringRunningPreparation(t *testin
 	if ready.ProcessID == "" || effects.Load() != 1 {
 		t.Fatalf("accepted demand did not launch exactly once: status=%+v effects=%d", ready, effects.Load())
 	}
+	// Drain the process while the controller and its context are still alive.
+	// Canceling the fixture first races the readers' final COSI observations.
+	if err := lifecycle.PublishEnvironmentDesired(ctx, f.store, lifecycle.EnvironmentDesired{Mode: lifecycle.Closing, Generation: 2}); err != nil {
+		t.Fatal(err)
+	}
+	waitCodexStatus(t, f, func(value Status) bool { return value.Phase == Stopped }, "app-server shutdown")
 }
