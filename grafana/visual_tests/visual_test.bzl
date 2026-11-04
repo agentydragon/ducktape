@@ -2,11 +2,12 @@
 
 load("//devinfra/python:defs.bzl", "py_test")
 
-def grafana_dashboard_visual_test(name, dashboard, src = "//grafana/visual_tests:dashboard_visual_test.py", fixture = None, fixture_data = None, deps = [], size = "small"):
+def grafana_dashboard_visual_test(name, dashboard, src = "//grafana/visual_tests:dashboard_visual_test.py", fixture = None, fixture_data = None, deps = [], size = "medium"):
     """Declare a dashboard-specific screenshot scenario and fixture.
 
     The default scenario replays dashboard-owned data. An optional custom
     scenario can import its fixture and exercise real datasource queries instead.
+    Cold image loading and Grafana startup exceed a small test's 60-second budget.
     """
     if src == "//grafana/visual_tests:dashboard_visual_test.py" and not fixture_data:
         fail("the default Grafana visual scenario requires dashboard fixture_data")
