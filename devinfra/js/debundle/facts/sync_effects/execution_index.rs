@@ -1325,10 +1325,10 @@ struct Callable {
     calls: Vec<Call>,
     local_assignments: Vec<(Id, ValueExpr)>,
     declared_locals: BTreeSet<Id>,
-    /// Catch bindings are lexical locals for closure projection but stay
-    /// separate because direct callback-factory admission inspects
-    /// `declared_locals`.
-    catch_bindings: BTreeSet<Id>,
+    /// Catch parameters and destructured declarations are locals for closure
+    /// projection. Keep them separate from `declared_locals`, whose consumers
+    /// also include direct callback-factory and class-closure admission.
+    pattern_locals: BTreeSet<Id>,
     returns: Vec<ValueExpr>,
     /// One source-ordered return covering the complete simple-parameter body.
     /// Syntax coverage is retained during the same value lowering below.
@@ -1565,7 +1565,7 @@ impl Default for Callable {
             calls: Vec::new(),
             local_assignments: Vec::new(),
             declared_locals: BTreeSet::new(),
-            catch_bindings: BTreeSet::new(),
+            pattern_locals: BTreeSet::new(),
             returns: Vec::new(),
             direct_return_site: None,
             allocation_return: None,
@@ -11350,7 +11350,7 @@ impl Visit for ExecutionIndex {
                 self.callables
                     .get_mut(&callable)
                     .unwrap()
-                    .catch_bindings
+                    .pattern_locals
                     .extend(Parameter::from_pattern(parameter).bindings);
             }
         }
@@ -11708,6 +11708,13 @@ impl Visit for ExecutionIndex {
             let mut bindings = Vec::new();
             let pattern_value = initializer.clone().unwrap_or(ValueExpr::Unknown);
             collect_pattern_assignments(&declarator.name, &pattern_value, &mut bindings);
+            if let Some(callable) = self.current {
+                self.callables
+                    .get_mut(&callable)
+                    .unwrap()
+                    .pattern_locals
+                    .extend(bindings.iter().map(|(binding, _)| binding.clone()));
+            }
             for (id, _) in bindings {
                 self.binding_declaration_writes
                     .entry(id.clone())

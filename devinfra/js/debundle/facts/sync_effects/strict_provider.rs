@@ -149,7 +149,7 @@ impl LocalContext for ProviderContext<'_> {
         });
         let unavailable_capture = body.reads.iter().any(|binding| {
             !body.declared_locals.contains(binding)
-                && !body.catch_bindings.contains(binding)
+                && !body.pattern_locals.contains(binding)
                 && !parameter_bindings.contains(binding)
                 && !self.local_bindings.contains(binding)
                 && !frame.environment.contains_key(binding)
@@ -276,7 +276,7 @@ fn closure_capture_projection(
                     .flat_map(|parameter| parameter.bindings.iter().cloned()),
             );
             closure_bindings.extend(nested.declared_locals.iter().cloned());
-            closure_bindings.extend(nested.catch_bindings.iter().cloned());
+            closure_bindings.extend(nested.pattern_locals.iter().cloned());
         }
         for (_, nested) in descendants {
             for binding in &nested.reads {
@@ -837,38 +837,43 @@ mod tests {
     #[test]
     fn returned_closure_rejects_unrepresented_enclosing_lexical_capture() {
         js_ast::with_swc_globals(|| {
-            let source = "function outer() {\n\
-                             const enclosing = 42;\n\
-                             function make(input) { return () => enclosing + input; }\n\
-                           }\n";
-            let module = js_ast::parse_js_module("provider.js", source)
-                .unwrap()
-                .module;
-            let mut make = MakeFunctionKey::default();
-            module.visit_with(&mut make);
-            let key = make.0.expect("canonical nested make callable");
-            let views = top_level_item_views(&module.body);
-            let prepared = super::super::prepare_callable_capabilities(
-                &views,
-                StableArraySpreadShapes::default(),
-                BTreeSet::from(["make".into()]),
-                Vec::new(),
-                Vec::new(),
-                Default::default(),
-                Default::default(),
-            );
+            for declaration in [
+                "const enclosing = 42;",
+                "const { value: enclosing } = { value: 42 };",
+                "const [enclosing] = [42];",
+            ] {
+                let source = format!(
+                    "function outer() {{ {declaration} function make(input) {{ return () => enclosing + input; }} }}"
+                );
+                let module = js_ast::parse_js_module("provider.js", &source)
+                    .unwrap()
+                    .module;
+                let mut make = MakeFunctionKey::default();
+                module.visit_with(&mut make);
+                let key = make.0.expect("canonical nested make callable");
+                let views = top_level_item_views(&module.body);
+                let prepared = super::super::prepare_callable_capabilities(
+                    &views,
+                    StableArraySpreadShapes::default(),
+                    BTreeSet::from(["make".into()]),
+                    Vec::new(),
+                    Vec::new(),
+                    Default::default(),
+                    Default::default(),
+                );
 
-            assert!(
-                prepared.index.callables[&key]
-                    .local_body
-                    .as_ref()
-                    .is_some_and(|body| body.closure_allocation_syntax()),
-                "the source is admitted to the shared closure transfer"
-            );
-            assert!(
-                derive(&prepared.index, key, &BTreeSet::new()).is_none(),
-                "an enclosing const that is absent from the final local frame is not a deferred module binding"
-            );
+                assert!(
+                    prepared.index.callables[&key]
+                        .local_body
+                        .as_ref()
+                        .is_some_and(|body| body.closure_allocation_syntax()),
+                    "the source is admitted to the shared closure transfer"
+                );
+                assert!(
+                    derive(&prepared.index, key, &BTreeSet::new()).is_none(),
+                    "an enclosing const that is absent from the final local frame is not a deferred module binding"
+                );
+            }
         });
     }
 }

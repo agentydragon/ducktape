@@ -2711,7 +2711,10 @@ implicit-`this` closure, or a closure with an unsupported enclosing capture
 declines the summary. Closure bodies are deferred and are not executed by the
 provider transfer. These allocation and retention facts do not establish
 deferred callback behavior; callback-factory evidence keeps its independent
-source checks.
+source checks. Catch parameters and destructured variable declarations inside
+these deferred bodies are local bindings, not captures of the factory. Their
+initializers and binding protocols still run only when the closure is invoked;
+this local-binding fact grants no provider-body or class-closure coverage.
 
 Calls, field reads/writes, `this`, throws and captured writes in the provider
 body remain outside these transfer modes where their behavior is not proved.
