@@ -17,8 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	"github.com/agentydragon/ducktape/util/netlistener"
 )
 
 const (

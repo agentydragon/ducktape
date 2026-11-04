@@ -12,7 +12,7 @@ import (
 )
 
 // The eval is built as a standalone stdlib-only module, including its garbled variant.
-// Keep the same address-or-fd startup contract as util/netlistener here.
+// Keep the same address-or-fd startup contract as agentplane/net/listener here.
 func openListener(address string) (net.Listener, error) {
 	fdText, inherited := strings.CutPrefix(address, "fd:")
 	if !inherited {
