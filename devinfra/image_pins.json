@@ -20,8 +20,8 @@
   },
   "firecracker_boot": {
     "image": "git.allegedly.works/ducktape-ci/agentplane-environment-firecracker",
-    "digest": "sha256:f1465053413c073aa5aa9c75d4c3e9fa6225021b94f48cc8cceb2a30271a05e1",
-    "tag": "spike-firecracker-ff14e8bd057d51591be67f5d94a085bb5f3f6f91",
+    "digest": "sha256:79cec82bc56731b75128797df9e9d2ef9fd954b60fbed089c5348493b58d1a97",
+    "tag": "spike-firecracker-57efc97b8c315ababd4046cd40f2bb7f58926dcf",
     "platforms": ["linux/amd64"]
   },
   "excalidraw": {

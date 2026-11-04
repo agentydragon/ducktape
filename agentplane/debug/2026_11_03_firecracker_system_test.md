@@ -244,7 +244,17 @@ RAM file and a 27,441-byte VM state file by 07:34:34, but had not acknowledged s
 when the generic 20-second HTTP client deadline expired at 07:34:54. The launcher fenced the
 network and reaped the VMM; no checkpoint was committed and no resume was attempted. Snapshot
 create/load now have their own two-minute I/O deadline, while control requests retain 20 seconds
-and uncertain requests are never retried. The app readiness, suspend and test budgets are unchanged.
+and uncertain requests are never retried. The [pinned Firecracker snapshot configuration](https://github.com/firecracker-microvm/firecracker/blob/v1.17.0/src/vmm/src/vmm_config/snapshot.rs)
+synchronizes snapshot files by default, and the [snapshot writer](https://github.com/firecracker-microvm/firecracker/blob/v1.17.0/src/vmm/src/persist.rs)
+completes that synchronization before returning. The app readiness, suspend and test budgets are unchanged.
 The [focused supervisor checks](https://app.buildbuddy.io/invocation/518686a2-f379-441d-92db-7011adacccdd)
 passed with the deadline separation and native failure diagnostics. Ordinary PR CI was green at
 `9e63208d37`; that does not cover this manual hardware acceptance target.
+
+The production boot image was rebuilt with the Nix inputs committed in `57efc97b8c`, including
+the agent-owned Codex directory. The 2,266,441,114-byte archive has SHA-256
+`c008dc2ec34e17ebf396f15d889e5e1b5646444363e0f916dbcbab512362cdd7`. It was published to the
+same workflow-owned repository under nondeployable tag
+`spike-firecracker-57efc97b8c315ababd4046cd40f2bb7f58926dcf`, manifest digest
+`sha256:79cec82bc56731b75128797df9e9d2ef9fd954b60fbed089c5348493b58d1a97`. The manual acceptance
+input now pins that digest. This publication does not enable Firecracker in staging.
