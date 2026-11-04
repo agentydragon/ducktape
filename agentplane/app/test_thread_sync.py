@@ -25,6 +25,10 @@ from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 # gazelle:include_dep @pypi//protobuf
 
 
+# gazelle:include_dep //agentplane/app:integration_fixtures
+pytest_plugins = ("agentplane.app.integration_fixtures",)
+
+
 async def test_materialized_revisions_replicate_with_restricted_role(
     db_url: str, history_on: Callable[[str], AbstractAsyncContextManager[History]], namespace: SandboxNamespace
 ) -> None:

@@ -225,7 +225,6 @@ py_test(
     deps = [
         ":client",
         "//:conftest",
-        "//agentplane/app:conftest",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:identity_pb2",
@@ -283,7 +282,6 @@ py_test(
     deps = [
         ":http2_proxy",
         "//:conftest",
-        "//agentplane/app:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

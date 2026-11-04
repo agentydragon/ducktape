@@ -1,4 +1,4 @@
-"""Real Go app, History, PostgreSQL, Kubernetes and runner fixtures."""
+"""Pytest plugin for the app integration suite's real service fixtures."""
 
 import subprocess
 from collections.abc import AsyncIterator, Iterator
@@ -19,7 +19,7 @@ from agentplane.app.testing.runner_gateway import (
     sandbox_control,
     session_dispatcher,
 )
-from agentplane.app.testing.thread_test_support import SPEC, ThreadHTTP, event_entry
+from agentplane.app.testing.thread_test_support import ThreadHTTP
 from agentplane.env.e2e.testing.failure_journal import pytest_runtest_makereport
 from agentplane.env.e2e.testing.fixtures import config, endpoint, harness, model, runner_gateway, spec, workspace
 from agentplane.history_service.client import HistoryServiceClient
@@ -50,6 +50,36 @@ from util.testing.postgres_fixtures import (
     postgres_image,
 )
 from util.testing.sqlalchemy_engines import managed_async_engine
+
+# These imported fixtures and the hook are part of this plugin's public pytest surface.
+__all__ = [
+    "api_server",
+    "app_token_file",
+    "config",
+    "database_clones",
+    "database_names",
+    "dispatcher_database_url",
+    "endpoint",
+    "gateway_service",
+    "harness",
+    "history_on",
+    "history_service",
+    "kubeconfig",
+    "model",
+    "postgres_admin_url",
+    "postgres_container",
+    "postgres_image",
+    "pytest_runtest_makereport",
+    "runner",
+    "runner_gateway",
+    "sandbox",
+    "sandbox_control",
+    "service_database_template",
+    "service_history_db_url",
+    "session_dispatcher",
+    "spec",
+    "workspace",
+]
 
 # gazelle:include_dep @pypi//psycopg
 # gazelle:include_dep @pypi//asyncpg
