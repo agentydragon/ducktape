@@ -134,6 +134,7 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         "//agentplane/env/e2e/testing:driver",
+        "//agentplane/env/e2e/testing:failure_journal",
         "//agentplane/env/e2e/testing:fixtures",
         "//agentplane/env/e2e/testing:gateway",
         "//agentplane/env/e2e/testing:process_fixtures",

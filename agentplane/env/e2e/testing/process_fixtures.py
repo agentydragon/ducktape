@@ -51,6 +51,12 @@ class RunnerProcess:
                 host_pids.append(host_pid)
         return host_pids
 
+    async def host_pid(self, namespace_pid: int) -> int:
+        pids = await asyncio.to_thread(self._host_pids, [namespace_pid])
+        if len(pids) != 1:
+            raise RuntimeError(f"namespace PID {namespace_pid} does not identify one live container process: {pids}")
+        return pids[0]
+
     async def wait(self) -> int:
         if self.exit_code is None:
             result = await asyncio.to_thread(self.container.get_wrapped_container().wait, timeout=20)
@@ -161,6 +167,7 @@ async def start_runner(
         codex_binary: Path | None = None,
         harness_env: Sequence[str] = (),
         runner_binary: Path | None = None,
+        allow_user_namespaces: bool = False,
     ) -> RunnerProcess:
         command = launches.runner_command(
             harness,
@@ -183,7 +190,15 @@ async def start_runner(
         )
         container = (
             LoggedContainer(debian_slim.IMAGE.tag, test_name=f"restart-runtime-{uuid4().hex}")
-            .with_kwargs(network_mode="host", user=f"{os.getuid()}:{os.getgid()}", pids_limit=512, mem_limit="1g")
+            .with_kwargs(
+                network_mode="host",
+                user=f"{os.getuid()}:{os.getgid()}",
+                pids_limit=512,
+                mem_limit="1g",
+                # The sparse-root experiment mounts a nested proc filesystem. Docker's
+                # default masked /proc mounts prevent that even in a new user namespace.
+                privileged=allow_user_namespaces,
+            )
             .with_volume_mapping(str(tmp_path), str(tmp_path), mode="rw")
             .with_volume_mapping(str(runtime.resolve()), str(runtime), mode="ro")
             .with_command(shlex.join(command))
