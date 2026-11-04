@@ -12,6 +12,7 @@ import (
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -188,6 +189,11 @@ func TestFirecrackerReconcileSuspendsWithoutQuiescingOrDeletingPod(t *testing.T)
 
 func TestFirecrackerDeletionWaitsForVerifiedPostResumeConnection(t *testing.T) {
 	r, c, now := idleRunner(t, nil)
+	sandbox := getSandbox(t, c)
+	sandbox.Status.Volumes.State.Layout = sandboxapi.VolumeLayout{Type: sandboxapi.RawDiskImage, Filesystem: "ext4"}
+	if err := c.Status().Update(context.Background(), sandbox); err != nil {
+		t.Fatal(err)
+	}
 	pod := getPod(t, c)
 	pod.Labels[EnvironmentBackendLabel] = "firecracker"
 	pod.Annotations[FirecrackerRunningAnnotation] = "true"
@@ -253,6 +259,33 @@ func TestFirecrackerDeletionWaitsForVerifiedPostResumeConnection(t *testing.T) {
 	}
 	if getPod(t, c) == nil {
 		t.Fatal("launcher deleted before recording the seal")
+	}
+	for attempt := 0; attempt < 6; attempt++ {
+		reconcileOnce(t, r)
+		var remaining sandboxapi.Sandbox
+		if err := c.Get(context.Background(), sandboxKey, &remaining); apierrors.IsNotFound(err) {
+			return
+		} else if err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Fatal("sealed Sandbox retained its finalizer after deliberate launcher deletion")
+}
+
+func TestFirecrackerDeletionRetainsUnsealedStateWhenLauncherIsLost(t *testing.T) {
+	r, c := runningWithRunner(t)
+	sandbox := getSandbox(t, c)
+	sandbox.Status.Volumes.State.Layout = sandboxapi.VolumeLayout{Type: sandboxapi.RawDiskImage, Filesystem: "ext4"}
+	if err := c.Status().Update(context.Background(), sandbox); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Delete(context.Background(), getPod(t, c)); err != nil {
+		t.Fatal(err)
+	}
+	deleteSandbox(t, c)
+	reconcileOnce(t, r)
+	if runningReason(t, c) != "FirecrackerLauncherLost" || getPVC(t, c) == nil {
+		t.Fatal("unsealed launcher loss discarded its retained state")
 	}
 }
 

@@ -255,7 +255,7 @@ func (r *Reconciler) pod(ctx context.Context, sandbox *sandboxapi.Sandbox) (*cor
 // be writing to it, then lets the Sandbox go. Each step's watch event runs the next. It returns why
 // the Sandbox is still there, or nil once the finalizer is removed.
 func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, w workload) (workload, *unready, error) {
-	if w.pod == nil && sandbox.Status.Volumes != nil && sandbox.Status.Volumes.State != nil &&
+	if w.pod == nil && !sandboxSessionsQuiesced(sandbox) && sandbox.Status.Volumes != nil && sandbox.Status.Volumes.State != nil &&
 		sandbox.Status.Volumes.State.Layout.Type == sandboxapi.RawDiskImage &&
 		(sandbox.Status.Incarnation != nil || (sandbox.Status.RunnerCredential != nil && sandbox.Status.RunnerCredential.PodUID != "")) {
 		return w, &unready{reason: "FirecrackerLauncherLost", message: "launcher Pod is missing; preserving checkpoint during deletion", retryAfter: 5 * time.Second}, nil
