@@ -19,7 +19,8 @@ BEGIN
            COALESCE(max(version_id) FILTER (WHERE is_applied), 0)
     INTO applied_versions, latest_version
     FROM latest;
-    IF latest_version = 10 AND applied_versions = 10 THEN
+    IF latest_version = 10 AND applied_versions = 10
+       AND NOT EXISTS (SELECT 1 FROM history_service_goose_version WHERE version_id > 10) THEN
         IF (SELECT count(*) FROM information_schema.tables
             WHERE table_schema = current_schema() AND table_type = 'BASE TABLE'
               AND table_name IN ('session_history','session_event','session_event_settlement',
@@ -79,7 +80,8 @@ BEGIN
         END IF;
         RETURN;
     END IF;
-    IF latest_version <> 0 OR applied_versions <> 0 THEN
+    IF latest_version <> 0 OR applied_versions <> 0
+       OR EXISTS (SELECT 1 FROM history_service_goose_version WHERE version_id > 0) THEN
         RAISE EXCEPTION 'History requires completed version 10 before baseline 11; run the previous image to finish migrations';
     END IF;
     IF EXISTS (
