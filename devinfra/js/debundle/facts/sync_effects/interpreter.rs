@@ -28,9 +28,10 @@ use super::runtime_inference::{
     CallOperands, CallTransfer, ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue,
 };
 use super::{
-    Call, CallKind, Callable, CallbackResultWrite, ExecutionIndex, LocalConstructor,
-    MemberValueWrite, NativeIntrinsic, NativePointEffects, Parameter, RetainedCallbackCall,
-    native_call_identity_key, native_own_data_read_slots, object_own_data_read_property,
+    Call, CallKind, Callable, CallablePrefixEffects, CallbackResultWrite, ExecutionIndex,
+    LocalConstructor, MemberValueWrite, NativeIntrinsic, NativePointEffects, Parameter,
+    RetainedCallbackCall, native_call_identity_key, native_own_data_read_slots,
+    object_own_data_read_property,
 };
 use crate::analysis_inputs::{AnalysisInputs, NativeInputKind, ProofDependencies};
 use crate::facts::ExportReentryPolicy;
@@ -618,7 +619,7 @@ pub(super) struct ExecutionInputs<'source> {
     binding_owner: BTreeMap<Id, SourceUnitOrdinal>,
     source_unit_read_closure: SourceUnitReadClosure,
     synchronous_owner_adjacency: Vec<Vec<SourceUnitOrdinal>>,
-    synchronous_owner_reads: Vec<Option<&'source BTreeSet<Id>>>,
+    synchronous_owner_effects: Vec<Option<&'source CallablePrefixEffects>>,
     exported_owners: BTreeSet<SourceUnitOrdinal>,
     /// The exports code that reenters the module during its evaluation can
     /// read: their bindings, and whether the default export is among them.
@@ -652,6 +653,18 @@ pub(super) struct OwnPropertyQuery {
 }
 
 impl ExecutionInputs<'_> {
+    fn synchronous_effects(
+        &self,
+        owner: SourceUnitOrdinal,
+        incomplete_reachability: bool,
+    ) -> (&BTreeSet<Id>, &BTreeSet<Id>) {
+        if !incomplete_reachability && let Some(effects) = self.synchronous_owner_effects[owner.0] {
+            return (&effects.reads, &effects.rebinds);
+        }
+        let fact = &self.facts[owner.0];
+        (&fact.reads.lazy, &fact.rebinds.lazy)
+    }
+
     /// The purity transfer at `owner`'s program point, `state` being the
     /// settled `Prefix(owner)`.
     pub(super) fn statement_effects(
@@ -4374,21 +4387,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         effect_owner: SourceUnitOrdinal,
         outcome: &mut Outcome,
     ) {
-        let fact = &self.inputs.facts[owner.0];
-        let prefix_reads = self.inputs.index.owner_callable_prefix_reads[owner.0].as_ref();
-        let reads = prefix_reads
-            .filter(|reads| {
-                // Without complete coverage, retain the original whole-body
-                // fallback rather than dropping a possible setter read.
-                !self.state.reachability.incomplete
-                    && !self.inputs.index.dynamic_scope_owners.contains(&owner)
-                    && !self.inputs.index.unindexed_accessor_owners.contains(&owner)
-                    && fact.reads.first_order_lazy.is_subset(reads)
-            })
-            .unwrap_or(&fact.reads.lazy);
-        // The per-Callable rebind index does not yet cover every update and
-        // destructuring target. Keep the complete raw set until it does.
-        self.promote_lazy_effects(reads, &fact.rebinds.lazy, effect_owner, outcome);
+        let (reads, rebinds) = self
+            .inputs
+            .synchronous_effects(owner, self.state.reachability.incomplete);
+        self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
     }
 
     /// Attributes `reads` and `rebinds` to `effect_owner`, assumed when a
@@ -7624,14 +7626,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             &mut BTreeSet::new(),
         );
         for owner in reached {
-            let fact = &self.inputs.facts[owner.0];
             // This coverage-checked union includes every retained callable's
             // synchronous prefix, including returned callbacks and getters.
             // Bodies past a definite await cannot run during this protocol.
-            let reads = self.inputs.synchronous_owner_reads[owner.0]
-                .unwrap_or(&fact.reads.lazy)
-                .clone();
-            let rebinds = fact.rebinds.lazy.clone();
+            let (reads, rebinds) = self.inputs.synchronous_effects(owner, false);
+            let reads = reads.clone();
+            let rebinds = rebinds.clone();
             let referenced = reads
                 .iter()
                 .flat_map(|id| {
@@ -7644,7 +7644,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 })
                 .collect();
             self.taint_objects(&referenced);
-            // Write coverage is not complete: retain all lazy rebinds.
             self.promote_lazy_effects(&reads, &rebinds, effect_owner, outcome);
         }
     }
@@ -7699,12 +7698,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 &mut BTreeSet::new(),
             );
             for owner in reached {
-                let fact = &self.inputs.facts[owner.0];
-                let reads =
-                    self.inputs.synchronous_owner_reads[owner.0].unwrap_or(&fact.reads.lazy);
-                // Retain complete rebinds: prefix coverage currently applies
-                // only to reads, not every update or destructuring write.
-                self.promote_lazy_effects(reads, &fact.rebinds.lazy, effect_owner, outcome);
+                let (reads, rebinds) = self.inputs.synchronous_effects(owner, false);
+                self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
             }
         }
     }
@@ -7826,16 +7821,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 let mut reads = BTreeSet::new();
                 let mut rebinds = BTreeSet::new();
                 for reached_owner in reached {
-                    let fact = &self.inputs.facts[reached_owner.0];
-                    reads.extend(
-                        self.inputs.synchronous_owner_reads[reached_owner.0]
-                            .unwrap_or(&fact.reads.lazy)
-                            .iter()
-                            .cloned(),
-                    );
-                    // Prefix coverage is only proved for reads. Preserve all
-                    // lazy writes, including destructuring and updates.
-                    rebinds.extend(fact.rebinds.lazy.iter().cloned());
+                    let (owner_reads, owner_rebinds) =
+                        self.inputs.synchronous_effects(reached_owner, false);
+                    reads.extend(owner_reads.iter().cloned());
+                    rebinds.extend(owner_rebinds.iter().cloned());
                 }
                 self.state
                     .class_member_effects
@@ -8396,12 +8385,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
         }
         for reached_owner in reached {
-            let fact = &self.inputs.facts[reached_owner.0];
-            let reads = if self.state.reachability.incomplete {
-                &fact.reads.lazy
-            } else {
-                self.inputs.synchronous_owner_reads[reached_owner.0].unwrap_or(&fact.reads.lazy)
-            };
+            let (reads, rebinds) = self
+                .inputs
+                .synchronous_effects(reached_owner, self.state.reachability.incomplete);
             for id in reads
                 .iter()
                 .filter(|id| self.inputs.top_bindings.contains(*id))
@@ -8410,9 +8396,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.state.callback_fallback.read_additions.push(id.clone());
                 }
             }
-            for id in fact
-                .rebinds
-                .lazy
+            for id in rebinds
                 .iter()
                 .filter(|id| self.inputs.top_bindings.contains(*id))
             {
@@ -8461,15 +8445,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 &mut self.state.fallback_local_owners,
             );
             for reached_owner in reached {
-                let fact = &self.inputs.facts[reached_owner.0];
-                let reads = self.inputs.synchronous_owner_reads[reached_owner.0]
-                    .unwrap_or(&fact.reads.lazy)
+                let (reads, rebinds) = self
+                    .inputs
+                    .synchronous_effects(reached_owner, self.state.reachability.incomplete);
+                let reads = reads
                     .difference(&self.state.callback_fallback.reads)
                     .cloned()
                     .collect();
-                let rebinds = fact
-                    .rebinds
-                    .lazy
+                let rebinds = rebinds
                     .difference(&self.state.callback_fallback.rebinds)
                     .cloned()
                     .collect();
@@ -12103,20 +12086,28 @@ pub(crate) fn annotate_synchronous_calls(
         .map(|(binding, _)| binding.clone())
         .collect();
     let source_unit_read_closure = SourceUnitReadClosure::new(facts);
-    let prefix_reads: Vec<_> = facts
+    let prefix_effects: Vec<_> = facts
         .iter()
         .map(|fact| {
-            index.owner_callable_prefix_reads[fact.ordinal.0]
+            index.owner_callable_prefix_effects[fact.ordinal.0]
                 .as_ref()
-                .filter(|reads| {
+                .filter(|effects| {
                     !index.dynamic_scope_owners.contains(&fact.ordinal)
-                        && !index.unindexed_accessor_owners.contains(&fact.ordinal)
-                        && fact.reads.first_order_lazy.is_subset(reads)
+                        && !index
+                            .uncovered_callable_effect_owners
+                            .contains(&fact.ordinal)
+                        && fact.reads.first_order_lazy.is_subset(&effects.reads)
+                        && fact.rebinds.first_order_lazy.is_subset(&effects.rebinds)
                 })
         })
         .collect();
-    let synchronous_owner_adjacency =
-        source_unit_read_closure.synchronous_adjacency(facts, &prefix_reads);
+    let synchronous_owner_adjacency = source_unit_read_closure.synchronous_adjacency(
+        facts,
+        &prefix_effects
+            .iter()
+            .map(|effects| effects.map(|effects| &effects.reads))
+            .collect::<Vec<_>>(),
+    );
     let (reentry_bindings, reentry_default) = match export_reentry_policy {
         ExportReentryPolicy::Conservative => (index.exported_bindings.clone(), true),
         ExportReentryPolicy::NoStaticImporterReentry => (BTreeSet::new(), false),
@@ -12192,7 +12183,7 @@ pub(crate) fn annotate_synchronous_calls(
             .collect(),
         source_unit_read_closure,
         synchronous_owner_adjacency,
-        synchronous_owner_reads: prefix_reads,
+        synchronous_owner_effects: prefix_effects,
         exported_owners,
         reentry_bindings,
         reentry_default,

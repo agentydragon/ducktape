@@ -1360,6 +1360,12 @@ struct Callable {
     may_fall_through: bool,
 }
 
+#[derive(Clone, Default)]
+struct CallablePrefixEffects {
+    reads: BTreeSet<Id>,
+    rebinds: BTreeSet<Id>,
+}
+
 #[derive(Debug, Clone)]
 struct LocalConstructor {
     key: Option<u32>,
@@ -5820,8 +5826,8 @@ struct ExecutionIndex {
     destructuring_member_writes: Vec<DestructuringMemberWrite>,
     setter_owners: BTreeMap<Option<String>, BTreeSet<SourceUnitOrdinal>>,
     hoisted_nested_functions: BTreeSet<u32>,
-    owner_callable_prefix_reads: Vec<Option<BTreeSet<Id>>>,
-    unindexed_accessor_owners: BTreeSet<SourceUnitOrdinal>,
+    owner_callable_prefix_effects: Vec<Option<CallablePrefixEffects>>,
+    uncovered_callable_effect_owners: BTreeSet<SourceUnitOrdinal>,
     top_calls: Vec<Vec<Call>>,
     original_statement_spans: Vec<Span>,
     /// Ordinary CallExpr syntax at lexical top level; optional calls use a
@@ -6016,8 +6022,8 @@ impl Default for ExecutionIndex {
             destructuring_member_writes: Vec::new(),
             setter_owners: BTreeMap::new(),
             hoisted_nested_functions: BTreeSet::new(),
-            owner_callable_prefix_reads: Vec::new(),
-            unindexed_accessor_owners: BTreeSet::new(),
+            owner_callable_prefix_effects: Vec::new(),
+            uncovered_callable_effect_owners: BTreeSet::new(),
             top_calls: Vec::new(),
             original_statement_spans: Vec::new(),
             ordinary_top_call_sites: BTreeSet::new(),
@@ -8735,7 +8741,7 @@ impl ExecutionIndex {
                     TopLevelItemView::Owned { provenance, .. } => provenance.parent_item.span(),
                 })
                 .collect(),
-            owner_callable_prefix_reads: vec![None; body.len()],
+            owner_callable_prefix_effects: vec![None; body.len()],
             top_property_writes: vec![Vec::new(); body.len()],
             top_dynamic_property_receivers: vec![Vec::new(); body.len()],
             top_assignments: vec![Vec::new(); body.len()],
@@ -9098,10 +9104,10 @@ impl ExecutionIndex {
         // including a nested function installed as the setter. Union each
         // retained synchronous prefix instead of using whole lazy bodies.
         for callable in index.callables.values() {
-            let reads = index.owner_callable_prefix_reads[callable.owner.0]
-                .get_or_insert_with(BTreeSet::new);
+            let effects = index.owner_callable_prefix_effects[callable.owner.0]
+                .get_or_insert_with(CallablePrefixEffects::default);
             if !callable.created_after_parent_await {
-                reads.extend(callable.reads.iter().cloned());
+                effects.reads.extend(callable.reads.iter().cloned());
             }
         }
         let owned_namespace_assignments = index
@@ -10877,6 +10883,20 @@ impl ExecutionIndex {
     }
 }
 
+impl binding_targets::TargetAccessRecorder for ExecutionIndex {
+    fn record_binding_write(&mut self, id: &Id) {
+        if !self.past_await
+            && let Some(callable) = self.current.and_then(|key| self.callables.get(&key))
+            && !callable.created_after_parent_await
+        {
+            self.owner_callable_prefix_effects[callable.owner.0]
+                .get_or_insert_with(CallablePrefixEffects::default)
+                .rebinds
+                .insert(id.clone());
+        }
+    }
+}
+
 impl Visit for ExecutionIndex {
     fn visit_named_export(&mut self, export: &NamedExport) {
         for specifier in &export.specifiers {
@@ -11018,7 +11038,7 @@ impl Visit for ExecutionIndex {
         // The Function child has its own canonical callable key. Keep this
         // owner-wide marker conservative: exact descriptor-body activation
         // and owner-local captured-write settlement are separate proofs.
-        self.unindexed_accessor_owners.insert(self.owner);
+        self.uncovered_callable_effect_owners.insert(self.owner);
         self.setter_owners
             .entry(static_property_name(&setter.key))
             .or_default()
@@ -11032,7 +11052,7 @@ impl Visit for ExecutionIndex {
         self.callable_spans.insert(getter.span.lo.0, getter.span);
         // The Function child is indexed separately, while this owner marker
         // conservatively prevents unproved accessor-write settlement.
-        self.unindexed_accessor_owners.insert(self.owner);
+        self.uncovered_callable_effect_owners.insert(self.owner);
         let previous_scope = self.variable_scope.take();
         getter.visit_children_with(self);
         self.variable_scope = previous_scope;
@@ -12215,6 +12235,11 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_pat(&mut self, pattern: &Pat) {
+        if self.assignment_target && matches!(pattern, Pat::Expr(_) | Pat::Invalid(_)) {
+            // The shared pattern target walker only certifies binding
+            // patterns. Preserve raw owner effects for expression targets.
+            self.uncovered_callable_effect_owners.insert(self.owner);
+        }
         if let Some(source) = &self.destructuring_source {
             let receiver = match pattern {
                 Pat::Expr(expression) => Some(match expression.unwrap_parens() {
@@ -12264,12 +12289,14 @@ impl Visit for ExecutionIndex {
         let mut assignments = Vec::new();
         match head {
             ForHead::Pat(pattern) => {
+                binding_targets::record_pat_write(pattern, self);
                 collect_pattern_assignments(pattern, &ValueExpr::Unknown, &mut assignments);
                 self.reassigned_bindings
                     .extend(assignments.iter().map(|(binding, _)| binding.clone()));
             }
             ForHead::VarDecl(declaration) => {
                 for declarator in &declaration.decls {
+                    binding_targets::record_pat_write(&declarator.name, self);
                     collect_pattern_assignments(
                         &declarator.name,
                         &ValueExpr::Unknown,
@@ -12302,6 +12329,10 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_assign_expr(&mut self, assignment: &AssignExpr) {
+        // Record before visiting operands: an await inside a target or RHS
+        // can only make this conservative. Reuse the complete target walker
+        // used by raw facts, including patterns and parenthesized targets.
+        binding_targets::record_assign_target(&assignment.left, self);
         let mut assigned = Vec::new();
         match &assignment.left {
             AssignTarget::Simple(SimpleAssignTarget::Ident(binding)) => {
@@ -12549,6 +12580,7 @@ impl Visit for ExecutionIndex {
     }
 
     fn visit_update_expr(&mut self, expression: &UpdateExpr) {
+        binding_targets::record_update_target(&expression.arg, self);
         if let Expr::Ident(ident) = expression.arg.unwrap_parens() {
             self.reassigned_bindings.insert(ident.to_id());
             self.property_key_assignments

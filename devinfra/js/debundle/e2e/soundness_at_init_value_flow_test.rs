@@ -2095,3 +2095,118 @@ export { bounce, publish, later };
         &[],
     );
 }
+
+#[test]
+fn bounded_callback_fallback_excludes_post_await_binding_write() {
+    let source = bounded_callback_write_source("await 0; state = 1;");
+    let fixture = run_fixture_with_args(
+        bounded_callback_write_split(&source),
+        &["--effect-conflicts-jsonl"],
+    );
+    assert_preserved_entry_output(&fixture, "326 0\n");
+    let rows = read_jsonl(
+        &fixture
+            .report_root
+            .join(&fixture.chunk_id)
+            .join("effect_conflicts.jsonl"),
+    );
+    assert!(
+        !rows.is_empty(),
+        "the emitted order must exercise effect relocation"
+    );
+    assert!(
+        rows.iter().all(|row| {
+            row["cells"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|cell| cell["cell"]["kind"] != "binding" || cell["cell"]["binding"] != "state")
+        }),
+        "deferred binding writes must not become modeled initialization conflicts: {rows:#?}"
+    );
+}
+
+fn bounded_callback_write_source(body: &str) -> String {
+    let padding = vec!["() => 3"; 64].join(", ");
+    format!(
+        "async function deferred() {{ {body} }}\n\
+         const result = JSON.stringify([deferred, {padding}]);\n\
+         var state = 0;\n\
+         console.log(result.length, state);\n"
+    )
+}
+
+fn bounded_callback_write_split(source: &str) -> FixtureOpts<'_> {
+    FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "value/state",
+                &[Member::new("deferred"), Member::new("state")],
+            ),
+            logical_module("callbacks/result", &[Member::new("result")]),
+        ],
+    )
+}
+
+#[test]
+fn bounded_callback_fallback_retains_synchronous_and_uncovered_writes() {
+    for body in [
+        "state = 1; await 0;",
+        "state++; await 0;",
+        "({ value: state } = { value: 1 }); await 0;",
+        "[state] = [1]; await 0;",
+        "for (state of [1]) {} await 0;",
+        "for (state in { key: 1 }) {} await 0;",
+        "await (state = 1);",
+        "if (globalThis.suspend) await 0; state = 1;",
+        "try { await 0; } catch {} state = 1;",
+        "globalThis.saved = () => { state = 1; }; await 0;",
+        "globalThis.saved = write; await 0; function write() { state = 1; }",
+        "state = await 0;",
+        "[(state)] = [1]; await 0;",
+        "await 0; [(state)] = [1];",
+    ] {
+        let source = bounded_callback_write_source(body);
+        expect_atomic_conflict_rejection(
+            bounded_callback_write_split(&source),
+            &["value/state", "callbacks/result"],
+            &[],
+        );
+    }
+}
+
+#[test]
+fn bounded_callback_fallback_keeps_deferred_writes_runnable() {
+    for body in [
+        "await 0; state = 1;",
+        "await 0; state++;",
+        "await 0; ({ value: state } = { value: 1 });",
+        "await 0; [state] = [1];",
+        "let value = await Promise.resolve(1); if (!value) return; state = value;",
+        "await 0; const write = () => { state = 1; }; write();",
+    ] {
+        let source = format!(
+            "{}deferred().then(() => console.log(state));\n",
+            bounded_callback_write_source(body)
+        );
+        let fixture = run_fixture(bounded_callback_write_split(&source));
+        assert_preserved_entry_output(&fixture, "326 0\n1\n");
+    }
+}
+
+#[test]
+fn bounded_callback_fallback_keeps_deferred_writer_colocated() {
+    let source = bounded_callback_write_source("await 0; state = 1;");
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("callbacks/writer", &[Member::new("deferred")]),
+                logical_module("value/state", &[Member::new("state")]),
+            ],
+        ),
+        &["callbacks/writer", "value/state"],
+        &["deferred_rebind"],
+    );
+}
