@@ -262,15 +262,14 @@ async function dispatcherCommand(path: string, body: string): Promise<JsonValue>
 function confirmedDispatch(
   dispatch: Dispatch | undefined,
   threadId: string,
-  target: CommandTarget,
+  target: CommandTarget | null,
   commandId: string
 ): Dispatch {
   if (!dispatch) throw new Error("Command receipt could not be verified: missing Dispatch");
   if (
     dispatch.commandId !== commandId ||
     dispatch.sessionId !== threadId ||
-    dispatch.sandbox !== target.sandbox ||
-    dispatch.sandboxUid !== target.sandboxUid ||
+    (target !== null && (dispatch.sandbox !== target.sandbox || dispatch.sandboxUid !== target.sandboxUid)) ||
     dispatch.state === DeliveryState.UNSPECIFIED
   )
     throw new Error("Command receipt could not be verified: mismatched Dispatcher destination or command");
@@ -279,11 +278,16 @@ function confirmedDispatch(
 
 export async function submitInput(
   threadId: string,
-  target: CommandTarget,
+  target: CommandTarget | null,
   commandId: string,
   text: string
 ): Promise<CommandSubmission> {
-  const request = create(SubmitInputRequestSchema, { sessionId: threadId, commandId, ...target, text });
+  const request = create(SubmitInputRequestSchema, {
+    sessionId: threadId,
+    commandId,
+    expectedSandboxUid: target?.sandboxUid,
+    text,
+  });
   const value = await dispatcherCommand(
     `/sessions/${encodeURIComponent(threadId)}:submitInput`,
     bodyWithoutSessionId(toJson(SubmitInputRequestSchema, request))
@@ -294,11 +298,16 @@ export async function submitInput(
 
 export async function changeModel(
   threadId: string,
-  target: CommandTarget,
+  target: CommandTarget | null,
   commandId: string,
   model: string
 ): Promise<CommandSubmission> {
-  const request = create(ChangeModelRequestSchema, { sessionId: threadId, commandId, ...target, model });
+  const request = create(ChangeModelRequestSchema, {
+    sessionId: threadId,
+    commandId,
+    expectedSandboxUid: target?.sandboxUid,
+    model,
+  });
   const value = await dispatcherCommand(
     `/sessions/${encodeURIComponent(threadId)}:changeModel`,
     bodyWithoutSessionId(toJson(ChangeModelRequestSchema, request))
@@ -309,11 +318,16 @@ export async function changeModel(
 
 export async function changeReasoningEffort(
   threadId: string,
-  target: CommandTarget,
+  target: CommandTarget | null,
   commandId: string,
   effort: string
 ): Promise<CommandSubmission> {
-  const request = create(ChangeReasoningEffortRequestSchema, { sessionId: threadId, commandId, ...target, effort });
+  const request = create(ChangeReasoningEffortRequestSchema, {
+    sessionId: threadId,
+    commandId,
+    expectedSandboxUid: target?.sandboxUid,
+    effort,
+  });
   const value = await dispatcherCommand(
     `/sessions/${encodeURIComponent(threadId)}:changeReasoningEffort`,
     bodyWithoutSessionId(toJson(ChangeReasoningEffortRequestSchema, request))
@@ -324,11 +338,16 @@ export async function changeReasoningEffort(
 
 export async function interruptTurn(
   threadId: string,
-  target: CommandTarget,
+  target: CommandTarget | null,
   commandId: string,
   turnId: string
 ): Promise<CommandSubmission> {
-  const request = create(InterruptTurnRequestSchema, { sessionId: threadId, commandId, ...target, turnId });
+  const request = create(InterruptTurnRequestSchema, {
+    sessionId: threadId,
+    commandId,
+    expectedSandboxUid: target?.sandboxUid,
+    turnId,
+  });
   const value = await dispatcherCommand(
     `/sessions/${encodeURIComponent(threadId)}:interruptTurn`,
     bodyWithoutSessionId(toJson(InterruptTurnRequestSchema, request))

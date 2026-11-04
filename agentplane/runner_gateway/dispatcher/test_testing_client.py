@@ -38,8 +38,8 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
             dispatch=session_dispatcher_pb2.Dispatch(
                 command_id=request.command_id,
                 session_id=request.session_id,
-                sandbox=request.sandbox,
-                sandbox_uid=request.sandbox_uid,
+                sandbox="original",
+                sandbox_uid=request.expected_sandbox_uid,
                 state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER,
             )
         )
@@ -84,8 +84,7 @@ async def test_native_submission_preserves_identity_and_rotates_service_credenti
             session_dispatcher_pb2.SubmitInputRequest(
                 session_id="session",
                 command_id="same-command",
-                sandbox="original",
-                sandbox_uid="original-uid",
+                expected_sandbox_uid="original-uid",
                 text="original input",
             )
         ]

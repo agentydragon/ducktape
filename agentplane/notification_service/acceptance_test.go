@@ -117,7 +117,7 @@ func (openingDispatcher) GetSessionOpening(_ context.Context, request *dispatche
 func (d *losingDispatcher) SubmitInput(_ context.Context, in *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.submitted = append(d.submitted, command{in.GetSandbox(), in.GetSessionId(), in.GetCommandId(), in.GetText()})
+	d.submitted = append(d.submitted, command{sandboxName, in.GetSessionId(), in.GetCommandId(), in.GetText()})
 	if len(d.submitted) == 1 {
 		return nil, status.Error(codes.Unavailable, "test-lost-response")
 	}

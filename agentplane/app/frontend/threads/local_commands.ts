@@ -29,6 +29,8 @@ function sameCommand(left: PendingCommand, right: PendingCommand): boolean {
 
 export interface LocalCommand {
   command: PendingCommand;
+  /** New commands are addressed by Session ID; older unscoped attempts cannot be replayed. */
+  sessionAddressed: boolean;
   /** Immutable destination captured before the first HTTP attempt. Legacy records lack it. */
   target: CommandTarget | null;
   submittedAt: number;
@@ -108,6 +110,7 @@ function decode(text: string): LocalCommand {
     submittedAt: value.submittedAt,
     attempted: value.attempted ?? true,
     command,
+    sessionAddressed: value.sessionAddressed === true,
     target: (target as CommandTarget | null | undefined) ?? null,
     admission,
     dispatch,
@@ -120,6 +123,7 @@ function encode(value: LocalCommand): string {
     submittedAt: value.submittedAt,
     attempted: value.attempted,
     command: value.command,
+    sessionAddressed: value.sessionAddressed,
     target: value.target,
     admission: value.admission ? toJson(EventEntrySchema, value.admission) : null,
     dispatch: value.dispatch ? toJson(DispatchSchema, value.dispatch) : null,
@@ -191,9 +195,6 @@ export class LocalCommands {
       }
       return existing;
     }
-    if (!this.target?.sandbox || !this.target.sandboxUid) {
-      throw new Error("Thread has no known Sandbox destination; command was not saved or sent");
-    }
     if (this.snapshot.commands.length + this.snapshot.inputEchoes.length >= MAX_RETAINED_COMMANDS) {
       throw new Error(
         `Wait for retained commands to finish before submitting another (maximum ${MAX_RETAINED_COMMANDS})`
@@ -201,6 +202,7 @@ export class LocalCommands {
     }
     const value: LocalCommand = {
       command,
+      sessionAddressed: true,
       target: this.target,
       submittedAt: Date.now(),
       attempted: false,

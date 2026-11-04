@@ -277,7 +277,7 @@ func TestServerStreamAnswersOneResultObjectPerLine(t *testing.T) {
 func TestCommandTakesSessionFromPathAndRestFromBody(t *testing.T) {
 	servicer, facade := serve(t)
 	response := send(t, http.MethodPost, facade+"/v1/sessions/session-1:submitInput", "Bearer token-1",
-		`{"commandId": "command-1", "sandbox": "sandbox-1", "text": "hello"}`)
+		`{"commandId": "command-1", "text": "hello"}`)
 	var body struct {
 		Dispatch struct{ State string } `json:"dispatch"`
 	}
@@ -289,7 +289,7 @@ func TestCommandTakesSessionFromPathAndRestFromBody(t *testing.T) {
 	}
 	servicer.mu.Lock()
 	defer servicer.mu.Unlock()
-	if got := servicer.submitted; got.GetSessionId() != "session-1" || got.GetCommandId() != "command-1" || got.GetSandbox() != "sandbox-1" || got.GetText() != "hello" {
+	if got := servicer.submitted; got.GetSessionId() != "session-1" || got.GetCommandId() != "command-1" || got.GetText() != "hello" {
 		t.Fatalf("servicer saw %v", got)
 	}
 }

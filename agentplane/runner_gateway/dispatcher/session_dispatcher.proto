@@ -112,10 +112,11 @@ message Dispatch {
 message SubmitInputRequest {
   string command_id = 1;
   string session_id = 2;
-  string sandbox = 3;
+  reserved 3;
+  reserved "sandbox", "sandbox_uid";
   string text = 4;
-  // The expected Sandbox incarnation; requests cannot cross a same-name replacement.
-  string sandbox_uid = 5;
+  // Optional authorization precondition for brokers whose grant is scoped to one incarnation.
+  string expected_sandbox_uid = 5;
 }
 
 message SubmitInputResponse {
@@ -125,9 +126,10 @@ message SubmitInputResponse {
 message ChangeModelRequest {
   string command_id = 1;
   string session_id = 2;
-  string sandbox = 3;
+  reserved 3;
+  reserved "sandbox", "sandbox_uid";
   string model = 4;
-  string sandbox_uid = 5;
+  string expected_sandbox_uid = 5;
 }
 
 message ChangeModelResponse {
@@ -137,9 +139,10 @@ message ChangeModelResponse {
 message ChangeReasoningEffortRequest {
   string command_id = 1;
   string session_id = 2;
-  string sandbox = 3;
+  reserved 3;
+  reserved "sandbox", "sandbox_uid";
   string effort = 4;
-  string sandbox_uid = 5;
+  string expected_sandbox_uid = 5;
 }
 
 message ChangeReasoningEffortResponse {
@@ -149,9 +152,10 @@ message ChangeReasoningEffortResponse {
 message InterruptTurnRequest {
   string command_id = 1;
   string session_id = 2;
-  string sandbox = 3;
+  reserved 3;
+  reserved "sandbox", "sandbox_uid";
   string turn_id = 4;
-  string sandbox_uid = 5;
+  string expected_sandbox_uid = 5;
 }
 
 message InterruptTurnResponse {

@@ -79,8 +79,8 @@ func TestWithoutDebounceTheNoticeIsPreparedAndSubmittedAtOnce(t *testing.T) {
 	requireEqual(t, notice.Attempted, true)
 	requests := h.dispatcher.submitted()
 	requireEqual(t, len(requests), 1)
-	requireEqual(t, [4]string{requests[0].GetSandbox(), requests[0].GetSessionId(), requests[0].GetCommandId(), requests[0].GetText()},
-		[4]string{testSandbox, testSession, notice.CommandID.String(), notice.Text})
+	requireEqual(t, [4]string{requests[0].GetExpectedSandboxUid(), requests[0].GetSessionId(), requests[0].GetCommandId(), requests[0].GetText()},
+		[4]string{testSandboxUID, testSession, notice.CommandID.String(), notice.Text})
 }
 
 func TestMaxWaitCapsTheQuietWindowAndANoticeInFlightIsNotExtended(t *testing.T) {

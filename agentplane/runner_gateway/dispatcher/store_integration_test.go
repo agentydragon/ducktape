@@ -811,27 +811,27 @@ func TestRPCAdmissionReturnsSameQueuedReceiptAndConflicts(t *testing.T) {
 	if _, err := store.OpenSession(ctx, "api-session", "sandbox-api", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	request := &dispatcherpb.SubmitInputRequest{CommandId: "api-a", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, Text: "hello"}
+	request := &dispatcherpb.SubmitInputRequest{CommandId: "api-a", SessionId: "api-session", Text: "hello"}
 	first, err := service.SubmitInput(ctx, request)
-	if err != nil || first.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER {
+	if err != nil || first.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetDispatch().GetSandboxUid() != sandboxUID {
 		t.Fatalf("first receipt: %+v %v", first, err)
 	}
 	again, err := service.SubmitInput(ctx, request)
 	if err != nil || again.GetDispatch().GetCreatedAt().AsTime() != first.GetDispatch().GetCreatedAt().AsTime() {
 		t.Fatalf("retry: %+v %v", again, err)
 	}
-	_, err = service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: "api-a", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, Text: "different"})
+	_, err = service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: "api-a", SessionId: "api-session", ExpectedSandboxUid: sandboxUID, Text: "different"})
 	if status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("conflict status: %v", err)
 	}
-	_, err = service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: "api-b", SessionId: "api-session", Sandbox: "deleted", SandboxUid: sandboxUID})
+	_, err = service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: "api-b", SessionId: "missing", ExpectedSandboxUid: sandboxUID})
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("missing Sandbox status: %v", err)
 	}
 	_, err = service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
-		CommandId: "api-replacement", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: "old-sandbox-uid", Text: "must not cross",
+		CommandId: "api-replacement", SessionId: "api-session", ExpectedSandboxUid: "old-sandbox-uid", Text: "must not cross",
 	})
-	if status.Code(err) != codes.FailedPrecondition {
+	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("replacement Sandbox status: %v", err)
 	}
 }
@@ -1094,7 +1094,7 @@ func TestInterruptTurnRequiresTurnAndPropagatesRunnerRejection(t *testing.T) {
 		Store: testStore(t, 3), DispatcherCallers: configuredDispatcherCallers(), Sandboxes: blockedSandbox{},
 	}
 	_, err := blocked.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
-		CommandId: "interrupt-empty-turn", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID,
+		CommandId: "interrupt-empty-turn", SessionId: "api-session", ExpectedSandboxUid: sandboxUID,
 	})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("empty turn_id status = %v, want InvalidArgument", err)
@@ -1109,7 +1109,7 @@ func TestInterruptTurnRequiresTurnAndPropagatesRunnerRejection(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err = service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
-		CommandId: "interrupt-stale-turn", SessionId: "api-session", Sandbox: "sandbox-api", SandboxUid: sandboxUID, TurnId: "turn-stale",
+		CommandId: "interrupt-stale-turn", SessionId: "api-session", ExpectedSandboxUid: sandboxUID, TurnId: "turn-stale",
 	})
 	if status.Code(err) != codes.FailedPrecondition || status.Convert(err).Message() != "runner: turn is no longer current" {
 		t.Fatalf("runner rejection = %v, want propagated FailedPrecondition", err)
@@ -2007,7 +2007,7 @@ func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 	}
 	runner := &acceptingRunner{calls: make(chan string, 1)}
 	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: blockedSandbox{}, Runner: runner}
-	result, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{CommandId: "central-interrupt", SessionId: opening.SessionID, Sandbox: "sandbox-api", SandboxUid: sandboxUID, TurnId: "active-turn"})
+	result, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{CommandId: "central-interrupt", SessionId: opening.SessionID, ExpectedSandboxUid: sandboxUID, TurnId: "active-turn"})
 	if err != nil || result.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED {
 		t.Fatalf("central interrupt: %v %v", result, err)
 	}
@@ -2127,7 +2127,7 @@ func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
 				t.Fatalf("opening after cleanup: %v", err)
 			}
 			_, err = service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
-				CommandId: uuid.NewString(), SessionId: sessionID, Sandbox: "sandbox-api", SandboxUid: uid, Text: "hello",
+				CommandId: uuid.NewString(), SessionId: sessionID, ExpectedSandboxUid: uid, Text: "hello",
 			})
 			if status.Code(err) != codes.NotFound {
 				t.Fatalf("privileged command after cleanup: %v", err)
@@ -2553,19 +2553,19 @@ func TestEveryCommandAdmissionRequiresSession(t *testing.T) {
 	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: oneSandbox{}}
 	for _, invoke := range []func() error{
 		func() error {
-			_, err := service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: "missing-input", SessionId: "missing", Sandbox: "sandbox-api", SandboxUid: sandboxUID, Text: "input"})
+			_, err := service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: "missing-input", SessionId: "missing", ExpectedSandboxUid: sandboxUID, Text: "input"})
 			return err
 		},
 		func() error {
-			_, err := service.ChangeModel(ctx, &dispatcherpb.ChangeModelRequest{CommandId: "missing-model", SessionId: "missing", Sandbox: "sandbox-api", SandboxUid: sandboxUID, Model: "model"})
+			_, err := service.ChangeModel(ctx, &dispatcherpb.ChangeModelRequest{CommandId: "missing-model", SessionId: "missing", ExpectedSandboxUid: sandboxUID, Model: "model"})
 			return err
 		},
 		func() error {
-			_, err := service.ChangeReasoningEffort(ctx, &dispatcherpb.ChangeReasoningEffortRequest{CommandId: "missing-effort", SessionId: "missing", Sandbox: "sandbox-api", SandboxUid: sandboxUID, Effort: "high"})
+			_, err := service.ChangeReasoningEffort(ctx, &dispatcherpb.ChangeReasoningEffortRequest{CommandId: "missing-effort", SessionId: "missing", ExpectedSandboxUid: sandboxUID, Effort: "high"})
 			return err
 		},
 		func() error {
-			_, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{CommandId: "missing-interrupt", SessionId: "missing", Sandbox: "sandbox-api", SandboxUid: sandboxUID, TurnId: "turn"})
+			_, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{CommandId: "missing-interrupt", SessionId: "missing", ExpectedSandboxUid: sandboxUID, TurnId: "turn"})
 			return err
 		},
 	} {
@@ -2594,19 +2594,19 @@ func TestPrivilegedCommandsCannotCrossSessionPlacement(t *testing.T) {
 	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: oneSandbox{}, Runner: runner}
 	for _, invoke := range []func() error{
 		func() error {
-			_, err := service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: uuid.NewString(), SessionId: sessionID, Sandbox: "sandbox-api", SandboxUid: sandboxUID, Text: "input"})
+			_, err := service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: uuid.NewString(), SessionId: sessionID, ExpectedSandboxUid: sandboxUID, Text: "input"})
 			return err
 		},
 		func() error {
-			_, err := service.ChangeModel(ctx, &dispatcherpb.ChangeModelRequest{CommandId: uuid.NewString(), SessionId: sessionID, Sandbox: "sandbox-api", SandboxUid: sandboxUID, Model: "model"})
+			_, err := service.ChangeModel(ctx, &dispatcherpb.ChangeModelRequest{CommandId: uuid.NewString(), SessionId: sessionID, ExpectedSandboxUid: sandboxUID, Model: "model"})
 			return err
 		},
 		func() error {
-			_, err := service.ChangeReasoningEffort(ctx, &dispatcherpb.ChangeReasoningEffortRequest{CommandId: uuid.NewString(), SessionId: sessionID, Sandbox: "sandbox-api", SandboxUid: sandboxUID, Effort: "high"})
+			_, err := service.ChangeReasoningEffort(ctx, &dispatcherpb.ChangeReasoningEffortRequest{CommandId: uuid.NewString(), SessionId: sessionID, ExpectedSandboxUid: sandboxUID, Effort: "high"})
 			return err
 		},
 		func() error {
-			_, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{CommandId: uuid.NewString(), SessionId: sessionID, Sandbox: "sandbox-api", SandboxUid: sandboxUID, TurnId: "turn"})
+			_, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{CommandId: uuid.NewString(), SessionId: sessionID, ExpectedSandboxUid: sandboxUID, TurnId: "turn"})
 			return err
 		},
 	} {
@@ -2716,7 +2716,7 @@ func TestInterruptRechecksSessionAfterLiveAuthorization(t *testing.T) {
 	}
 	runner := &rejectingRunner{}
 	service := &Service{Store: store, Sandboxes: deletingSessionInventory{store: store, sessionID: sessionID}, Runner: runner}
-	if _, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{SessionId: sessionID, Sandbox: "sandbox-api", SandboxUid: sandboxUID, CommandId: "deleted-interrupt", TurnId: "turn"}); status.Code(err) != codes.NotFound {
+	if _, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{SessionId: sessionID, ExpectedSandboxUid: sandboxUID, CommandId: "deleted-interrupt", TurnId: "turn"}); status.Code(err) != codes.NotFound {
 		t.Fatalf("deleted Session interrupt: %v", err)
 	}
 	if runner.command != nil {

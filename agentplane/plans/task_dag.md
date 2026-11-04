@@ -2047,7 +2047,7 @@ flowchart LR
     SESSION_DIRECTORY_NATIVE[Ready: Dispatcher Session directory for native placement]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: send authority and internal fencing]
     SESSION_DELETION_FENCE[In progress: bounded deletion outcome delivery]
-    DELIVERY_DESTINATION_CONTRACT[Blocked: Session-ID command addressing]
+    DELIVERY_DESTINATION_CONTRACT[In progress: Session-ID command addressing]
     SESSION_NOTIFICATION_ADDRESS[Blocked: remaining Session notification addressing]
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
     SESSION_DIRECTORY_NATIVE --> DELIVERY_DESTINATION_CONTRACT
@@ -2063,7 +2063,6 @@ flowchart LR
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement, section 3]
     CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a PostgreSQL-free K3s tier]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
-    SESSION_DELETION_FENCE --> DELIVERY_DESTINATION_CONTRACT
     RUNNER_STORE_SESSION_IDENTITY --> RUNNER_IDENTITY_LEGACY_CLEANUP
     HARNESS_IDENTITY_DESIGN --> RUNNER_STORE_SESSION_IDENTITY
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
@@ -2194,20 +2193,20 @@ keeps these outcome-evidence and authority decisions explicit.
 
 ### `DELIVERY_DESTINATION_CONTRACT` — send commands to a Session ID
 
-**Blocked on `SESSION_DIRECTORY_NATIVE`, `DELIVERY_DESTINATION_AUTHORITY_DESIGN`, and `SESSION_DELETION_FENCE`.** Migrate
-Dispatcher submit/model/effort/interrupt APIs and their app, CLI, Action and other callers to name
-the Session by UUID. Resolve placement inside Dispatcher, retaining exact UID/generation fencing
-in accepted work, owner routing and execution; environment lifecycle and execution APIs still name
-their actual environment. Require the Dispatcher Session record for every Session command, including
-privileged calls and interrupts; the requirement and public Gateway restriction are implemented, while
-the requests still carry the Sandbox name and UID.
+**In progress.** Dispatcher submit/model/effort/interrupt requests address the Session by UUID;
+Dispatcher resolves placement and retains exact UID fencing in accepted work and execution. App and CLI
+commands no longer require a Sandbox destination. Incarnation-scoped Action and Notification brokers
+retain an explicit UID authorization precondition; Action arguments still carry Sandbox references for
+existing grants. Environment lifecycle and execution APIs continue to name their actual environment.
+The deletion outcome-delivery gap is tracked separately in `SESSION_DELETION_FENCE`; the command-address
+cutover preserves its current outcome contract rather than claiming that gap is fixed.
 
 Keep command IDs, no-replay recovery, sender/receiver and wake authorization, and explicit unknown,
 failed and suspended outcomes. Cover unavailable owners, same-name replacement, concurrent deletion,
 conflicting retries and callers with distinct privileges. Follow the reviewed
 [command authority](session_send_authority.md), including queue-acceptance versus Runtime-admission
-semantics and the enforced Gateway proxy boundary. Change call sites and contracts together;
-retain History and actual harness stores. This does not decide central attachment policy.
+semantics and the enforced Gateway proxy boundary. Review remaining Action-facing grant/address contracts and rollout; retain History and actual harness
+stores. This does not decide central attachment policy.
 [Address inventory](session_environment_model.md#session-address-inventory).
 
 ### `SESSION_NOTIFICATION_ADDRESS` — address inboxes and notices by Session ID

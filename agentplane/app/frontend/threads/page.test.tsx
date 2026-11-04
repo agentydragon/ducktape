@@ -1313,7 +1313,7 @@ function admission(value: Command): EventEntry {
 
 async function admit(
   _threadId: string,
-  _target: CommandTarget,
+  _target: CommandTarget | null,
   commandId: string,
   text: string
 ): Promise<CommandSubmission> {

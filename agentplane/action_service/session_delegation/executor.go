@@ -195,8 +195,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 			return nil, err
 		}
 		response, err := e.dispatcher.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
-			CommandId: args.CommandID, SessionId: args.SessionID, Sandbox: args.Target.Name,
-			SandboxUid: args.Target.UID, Text: args.Text,
+			CommandId: args.CommandID, SessionId: args.SessionID, ExpectedSandboxUid: args.Target.UID, Text: args.Text,
 		})
 		if err != nil {
 			return nil, writeFailure("Session Dispatcher", err)
@@ -280,8 +279,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 			return nil, err
 		}
 		response, err := e.dispatcher.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
-			CommandId: args.CommandID, SessionId: args.SessionID, Sandbox: args.Target.Name,
-			SandboxUid: args.Target.UID, TurnId: args.TurnID,
+			CommandId: args.CommandID, SessionId: args.SessionID, ExpectedSandboxUid: args.Target.UID, TurnId: args.TurnID,
 		})
 		if err != nil {
 			return nil, writeFailure("Session Dispatcher", err)

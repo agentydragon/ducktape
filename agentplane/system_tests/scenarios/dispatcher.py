@@ -546,7 +546,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         with pytest.raises(grpc.aio.AioRpcError) as unregistered:
             await stub.ChangeReasoningEffort(
                 pb.ChangeReasoningEffortRequest(
-                    sandbox=sandbox, sandbox_uid=uid, session_id=session, command_id=command, effort="low"
+                    expected_sandbox_uid=uid, session_id=session, command_id=command, effort="low"
                 ),
                 metadata=authentication.metadata,
                 timeout=15,
@@ -565,9 +565,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         )
         assert opened.opening.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
         queued = await stub.ChangeReasoningEffort(
-            pb.ChangeReasoningEffortRequest(
-                sandbox=sandbox, sandbox_uid=uid, session_id=session, command_id=command, effort="low"
-            ),
+            pb.ChangeReasoningEffortRequest(session_id=session, command_id=command, effort="low"),
             metadata=authentication.metadata,
             timeout=15,
         )
@@ -661,11 +659,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             )
             await stub.ChangeReasoningEffort(
                 pb.ChangeReasoningEffortRequest(
-                    sandbox=sandbox,
-                    sandbox_uid=uid,
-                    session_id=deletion_session,
-                    command_id=deletion_command,
-                    effort="low",
+                    expected_sandbox_uid=uid, session_id=deletion_session, command_id=deletion_command, effort="low"
                 ),
                 metadata=authentication.metadata,
                 timeout=15,
@@ -856,8 +850,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                 )
                 queued = await stub.SubmitInput(
                     pb.SubmitInputRequest(
-                        sandbox=sandbox,
-                        sandbox_uid=uid,
+                        expected_sandbox_uid=uid,
                         session_id=session,
                         command_id=command,
                         text=f"LATE_DIAGNOSTIC_PAYLOAD_{sandbox} Reply with exactly OK and do not use tools.",

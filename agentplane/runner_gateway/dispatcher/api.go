@@ -362,19 +362,19 @@ func (s *Service) sandbox(ctx context.Context, name string) (SandboxSnapshot, er
 	return current, nil
 }
 
-// commandTarget verifies the caller's expected placement against both the live Sandbox and
-// Dispatcher's authoritative Session record before a command may be admitted or delivered.
-func (s *Service) commandTarget(ctx context.Context, sessionID, sandbox, sandboxUID string, caller CallerIdentity) (*Opening, SandboxSnapshot, error) {
-	current, err := s.sandbox(ctx, sandbox)
-	if err != nil {
-		return nil, SandboxSnapshot{}, err
-	}
-	if current.UID != sandboxUID {
-		return nil, SandboxSnapshot{}, status.Error(codes.FailedPrecondition, "sandbox identity changed")
-	}
+// commandTarget resolves the Session's placement and applies an optional incarnation-scoped
+// authorization precondition before checking the live Sandbox and execution account.
+func (s *Service) commandTarget(ctx context.Context, sessionID, expectedSandboxUID string, caller CallerIdentity) (*Opening, SandboxSnapshot, error) {
 	opening, err := s.Store.GetOpeningForCaller(ctx, sessionID, caller)
 	if err != nil {
 		return nil, SandboxSnapshot{}, apiError(err)
+	}
+	if expectedSandboxUID != "" && expectedSandboxUID != opening.SandboxUID {
+		return nil, SandboxSnapshot{}, status.Error(codes.PermissionDenied, "Session target does not match")
+	}
+	current, err := s.sandbox(ctx, opening.SandboxName)
+	if err != nil {
+		return nil, SandboxSnapshot{}, err
 	}
 	if err := s.requireLiveExecution(ctx, opening, current, caller); err != nil {
 		return nil, SandboxSnapshot{}, err
@@ -382,24 +382,24 @@ func (s *Service) commandTarget(ctx context.Context, sessionID, sandbox, sandbox
 	return opening, current, nil
 }
 
-func (s *Service) enqueue(ctx context.Context, commandID, sessionID, sandbox, sandboxUID string, command *commandpb.Command) (dispatch *dispatcherpb.Dispatch, resultErr error) {
+func (s *Service) enqueue(ctx context.Context, commandID, sessionID, expectedSandboxUID string, command *commandpb.Command) (dispatch *dispatcherpb.Dispatch, resultErr error) {
 	ctx, span := observability.Start(
 		ctx, "Dispatcher Enqueue",
-		trace.WithAttributes(attribute.String("session.id", sessionID), attribute.String("sandbox.name", sandbox)),
+		trace.WithAttributes(attribute.String("session.id", sessionID)),
 	)
 	defer func() { observability.End(span, resultErr) }()
 	caller, err := s.caller(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := required(commandID, sessionID, sandbox, sandboxUID); err != nil {
+	if err := required(commandID, sessionID); err != nil {
 		return nil, err
 	}
-	_, current, err := s.commandTarget(ctx, sessionID, sandbox, sandboxUID, caller)
+	opening, _, err := s.commandTarget(ctx, sessionID, expectedSandboxUID, caller)
 	if err != nil {
 		return nil, err
 	}
-	row, err := s.Store.EnqueueForCaller(ctx, sessionID, sandbox, current.UID, command, nil, caller)
+	row, err := s.Store.EnqueueForCaller(ctx, sessionID, opening.SandboxName, opening.SandboxUID, command, nil, caller)
 	if err != nil {
 		return nil, apiError(err)
 	}
@@ -407,7 +407,7 @@ func (s *Service) enqueue(ctx context.Context, commandID, sessionID, sandbox, sa
 }
 
 func (s *Service) SubmitInput(ctx context.Context, request *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
-	row, err := s.enqueue(ctx, request.GetCommandId(), request.GetSessionId(), request.GetSandbox(), request.GetSandboxUid(),
+	row, err := s.enqueue(ctx, request.GetCommandId(), request.GetSessionId(), request.GetExpectedSandboxUid(),
 		&commandpb.Command{CommandId: request.GetCommandId(), Operation: &commandpb.Command_SubmitInput{
 			SubmitInput: &commandpb.SubmitInput{Text: request.GetText()},
 		}})
@@ -418,7 +418,7 @@ func (s *Service) SubmitInput(ctx context.Context, request *dispatcherpb.SubmitI
 }
 
 func (s *Service) ChangeModel(ctx context.Context, request *dispatcherpb.ChangeModelRequest) (*dispatcherpb.ChangeModelResponse, error) {
-	row, err := s.enqueue(ctx, request.GetCommandId(), request.GetSessionId(), request.GetSandbox(), request.GetSandboxUid(),
+	row, err := s.enqueue(ctx, request.GetCommandId(), request.GetSessionId(), request.GetExpectedSandboxUid(),
 		&commandpb.Command{CommandId: request.GetCommandId(), Operation: &commandpb.Command_ChangeModel{
 			ChangeModel: &commandpb.ChangeModel{Model: request.GetModel()},
 		}})
@@ -429,7 +429,7 @@ func (s *Service) ChangeModel(ctx context.Context, request *dispatcherpb.ChangeM
 }
 
 func (s *Service) ChangeReasoningEffort(ctx context.Context, request *dispatcherpb.ChangeReasoningEffortRequest) (*dispatcherpb.ChangeReasoningEffortResponse, error) {
-	row, err := s.enqueue(ctx, request.GetCommandId(), request.GetSessionId(), request.GetSandbox(), request.GetSandboxUid(),
+	row, err := s.enqueue(ctx, request.GetCommandId(), request.GetSessionId(), request.GetExpectedSandboxUid(),
 		&commandpb.Command{CommandId: request.GetCommandId(), Operation: &commandpb.Command_ChangeReasoningEffort{
 			ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: request.GetEffort()},
 		}})
@@ -689,14 +689,14 @@ func (s *Service) ListDispatches(ctx context.Context, request *dispatcherpb.List
 }
 
 func (s *Service) InterruptTurn(ctx context.Context, request *dispatcherpb.InterruptTurnRequest) (*dispatcherpb.InterruptTurnResponse, error) {
-	if err := required(request.GetCommandId(), request.GetSessionId(), request.GetSandbox(), request.GetSandboxUid(), request.GetTurnId()); err != nil {
+	if err := required(request.GetCommandId(), request.GetSessionId(), request.GetTurnId()); err != nil {
 		return nil, err
 	}
 	caller, err := s.caller(ctx)
 	if err != nil {
 		return nil, err
 	}
-	opening, current, err := s.commandTarget(ctx, request.GetSessionId(), request.GetSandbox(), request.GetSandboxUid(), caller)
+	opening, current, err := s.commandTarget(ctx, request.GetSessionId(), request.GetExpectedSandboxUid(), caller)
 	if err != nil {
 		return nil, err
 	}

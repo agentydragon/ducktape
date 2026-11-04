@@ -278,20 +278,20 @@ prints the Dispatcher opening record; it does not wait for History.`,
 }
 
 func (a *app) submitInputCommand() *cobra.Command {
-	var sandbox, sandboxUID, commandID, text string
+	var commandID, text string
 	command := &cobra.Command{
-		Use:   "submit-input SESSION_ID --sandbox NAME --sandbox-uid UID --command-id ID --text TEXT",
+		Use:   "submit-input SESSION_ID --command-id ID --text TEXT",
 		Short: "Queue input for a Session",
 		Long: `Calls SessionDispatcher.SubmitInput. The caller supplies COMMAND_ID; it is an idempotency key and is
 never generated or replaced by this CLI. The response is the Dispatcher record, not proof that the
 runner received the input. After an unknown outcome, use get-dispatch with the same command ID.`,
 		Args: cobra.ExactArgs(1),
 		RunE: a.sessionCommand(func(ctx context.Context, client dispatcherpb.SessionDispatcherClient, args []string) error {
-			if args[0] == "" || sandbox == "" || sandboxUID == "" || commandID == "" {
-				return usageFailure("SESSION_ID, --sandbox, --sandbox-uid and --command-id must be non-empty")
+			if args[0] == "" || commandID == "" {
+				return usageFailure("SESSION_ID and --command-id must be non-empty")
 			}
 			response, err := client.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
-				SessionId: args[0], Sandbox: sandbox, SandboxUid: sandboxUID, CommandId: commandID, Text: text,
+				SessionId: args[0], CommandId: commandID, Text: text,
 			})
 			if err != nil {
 				return grpcFailure(ctx, err)
@@ -306,11 +306,9 @@ runner received the input. After an unknown outcome, use get-dispatch with the s
 			return a.showOne(body, dispatchLine)
 		}),
 	}
-	command.Flags().StringVar(&sandbox, "sandbox", "", "name of the existing Sandbox")
-	command.Flags().StringVar(&sandboxUID, "sandbox-uid", "", "expected Kubernetes Sandbox UID")
 	command.Flags().StringVar(&commandID, "command-id", "", "caller-held idempotency key for this input")
 	command.Flags().StringVar(&text, "text", "", "text to submit to the Session")
-	for _, flag := range []string{"sandbox", "sandbox-uid", "command-id", "text"} {
+	for _, flag := range []string{"command-id", "text"} {
 		_ = command.MarkFlagRequired(flag)
 	}
 	return command
@@ -441,19 +439,19 @@ lost reply. After an unknown outcome, use get-dispatch with the same COMMAND_ID.
 }
 
 func (a *app) interruptTurnCommand() *cobra.Command {
-	var sandbox, sandboxUID, commandID, turnID string
+	var commandID, turnID string
 	command := &cobra.Command{
-		Use:   "interrupt-turn SESSION_ID --sandbox NAME --sandbox-uid UID --command-id ID --turn-id ID",
+		Use:   "interrupt-turn SESSION_ID --command-id ID --turn-id ID",
 		Short: "Interrupt the Session's current turn",
 		Long: `Calls SessionDispatcher.InterruptTurn directly on a Ready Sandbox. COMMAND_ID is caller-held and is
 required for correlation; it is not generated or replaced by this CLI. This call is not queued.`,
 		Args: cobra.ExactArgs(1),
 		RunE: a.sessionCommand(func(ctx context.Context, client dispatcherpb.SessionDispatcherClient, args []string) error {
-			if args[0] == "" || sandbox == "" || sandboxUID == "" || commandID == "" || turnID == "" {
-				return usageFailure("SESSION_ID, --sandbox, --sandbox-uid, --command-id and --turn-id must be non-empty")
+			if args[0] == "" || commandID == "" || turnID == "" {
+				return usageFailure("SESSION_ID, --command-id and --turn-id must be non-empty")
 			}
 			response, err := client.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
-				SessionId: args[0], Sandbox: sandbox, SandboxUid: sandboxUID, CommandId: commandID, TurnId: turnID,
+				SessionId: args[0], CommandId: commandID, TurnId: turnID,
 			})
 			if err != nil {
 				return grpcFailure(ctx, err)
@@ -468,11 +466,9 @@ required for correlation; it is not generated or replaced by this CLI. This call
 			return a.showOne(body, interruptLine)
 		}),
 	}
-	command.Flags().StringVar(&sandbox, "sandbox", "", "name of the existing Sandbox")
-	command.Flags().StringVar(&sandboxUID, "sandbox-uid", "", "expected Kubernetes Sandbox UID")
 	command.Flags().StringVar(&commandID, "command-id", "", "caller-held correlation ID")
 	command.Flags().StringVar(&turnID, "turn-id", "", "ID of the turn to interrupt")
-	for _, flag := range []string{"sandbox", "sandbox-uid", "command-id", "turn-id"} {
+	for _, flag := range []string{"command-id", "turn-id"} {
 		_ = command.MarkFlagRequired(flag)
 	}
 	return command
