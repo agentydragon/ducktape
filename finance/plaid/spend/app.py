@@ -20,17 +20,17 @@ from fastapi.staticfiles import StaticFiles
 from finance.plaid.spend.allowance import EstimatePeriodId, PeriodId, TransactionPeriodId
 from finance.plaid.spend.configuration import load_configuration
 from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView
-from finance.plaid.spend.portfolio import CoinbaseClient
-from finance.plaid.spend.service import SpendService
-from finance.plaid.spend.settings import SpendSettings
-from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityView
-from util.oidc_login import LoginConfig, current_session_is_valid, install_login
-from util.oidc_principal import (
+from finance.plaid.spend.oidc_principal import (
     AuthentikOidcPrincipalResolver,
     InvalidOidcPrincipalError,
     OidcPrincipalVerificationUnavailableError,
     VerifiedOidcPrincipal,
 )
+from finance.plaid.spend.portfolio import CoinbaseClient
+from finance.plaid.spend.service import SpendService
+from finance.plaid.spend.settings import SpendSettings
+from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityView
+from util.oidc_login import LoginConfig, current_session_is_valid, install_login
 
 _UI_DIR = Path(__file__).resolve().parent / "ui" / "dist"
 

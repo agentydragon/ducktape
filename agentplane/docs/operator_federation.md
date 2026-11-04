@@ -176,7 +176,7 @@ The explicit `dex` profile permits this absence while still rejecting a supplied
 configured client, a nonblank subject, and valid integral `iat`/`exp`. Multiple audiences and
 cross-client Dex grants are not supported. Authentik's required `azp` contract is unchanged,
 including for Haku and MCP enrollment callers. The shared implementation lives in
-[`util/oidc_principal.py`](../../util/oidc_principal.py).
+[`finance/plaid/spend/oidc_principal.py`](../../finance/plaid/spend/oidc_principal.py).
 
 To activate Dex, first deploy app and Action Service images supporting the profile, then set
 `login_token_profile`, `target.token_profile`, and Action Service `token_profile` to `dex` in

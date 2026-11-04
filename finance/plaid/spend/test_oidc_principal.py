@@ -22,7 +22,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from util.oidc_principal import (
+from finance.plaid.spend.oidc_principal import (
     AuthentikOidcPrincipalResolver,
     DexOidcPrincipalResolver,
     InvalidOidcPrincipalError,
@@ -501,7 +501,7 @@ async def test_jwks_transport_failure_is_verification_unavailable(
     def fail(*_args: object, **_kwargs: object) -> httpx.Response:
         raise httpx.RemoteProtocolError("incomplete response")
 
-    monkeypatch.setattr("util.oidc_principal.httpx.get", fail)
+    monkeypatch.setattr("finance.plaid.spend.oidc_principal.httpx.get", fail)
     with pytest.raises(OidcPrincipalVerificationUnavailableError):
         await _resolver("https://auth.example.test/jwks").resolve(_token_response(_token(signing_keys[0])))
 
@@ -514,7 +514,7 @@ async def test_jwks_key_conversion_overflow_is_verification_unavailable(
     def fail(_document: object) -> None:
         raise OverflowError
 
-    monkeypatch.setattr("util.oidc_principal.PyJWKSet.from_dict", fail)
+    monkeypatch.setattr("finance.plaid.spend.oidc_principal.PyJWKSet.from_dict", fail)
     with pytest.raises(OidcPrincipalVerificationUnavailableError):
         await _resolver(jwks_uri).resolve(_token_response(_token(signing_keys[0])))
 
@@ -532,7 +532,7 @@ async def test_jwks_redirect_target_is_never_requested(
         assert follow_redirects is False
         return httpx.Response(302, headers={"Location": target}, request=httpx.Request("GET", url))
 
-    monkeypatch.setattr("util.oidc_principal.httpx.get", redirect)
+    monkeypatch.setattr("finance.plaid.spend.oidc_principal.httpx.get", redirect)
     with pytest.raises(OidcPrincipalVerificationUnavailableError):
         await _resolver(source).resolve(_token_response(_token(signing_keys[0])))
 

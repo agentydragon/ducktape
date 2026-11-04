@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest_bazel
 from PIL import Image
 
-from util.visual_diff import compare_pngs
+from devinfra.pr_visuals.visual_diff import compare_pngs
 
 
 def _png(path: Path, color: tuple[int, int, int, int] = (10, 20, 30, 255), size: tuple[int, int] = (8, 8)) -> Path:

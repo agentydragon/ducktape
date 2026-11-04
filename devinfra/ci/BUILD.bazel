@@ -23,6 +23,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":artifacts",
+        "@pypi//httpx",  # keep: sync-pins downloads wheel candidates
         "@pypi//pygithub",
     ],
 )
@@ -31,8 +32,10 @@ py_test(
     name = "test_sync_pins",
     srcs = ["test_sync_pins.py"],
     deps = [
+        ":artifacts",  # keep: the test constructs pin metadata
         ":sync_pins",
         "//:conftest",
+        "@pypi//pytest",  # keep: the test uses parametrization and monkeypatch
         "@pypi//pytest_bazel",
     ],
 )

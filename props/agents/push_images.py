@@ -10,8 +10,8 @@ Usage:
 import logging
 import subprocess
 
+from props.agents.env import get_required_env
 from util.bazel.runfiles import get_required_path
-from util.env import get_required_env
 from util.oci import bazel_crane, read_oci_layout_digest
 
 logger = logging.getLogger(__name__)

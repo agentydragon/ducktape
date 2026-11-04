@@ -8,6 +8,7 @@ py_library(
     deps = [
         ":dirs",
         ":event_classifier",
+        ":fmt",
         ":inbox",
         ":models",
         ":plan",
@@ -26,7 +27,6 @@ py_library(
         "//gmail_archiver/planners:spruce",
         "//gmail_archiver/planners:square",
         "//gmail_archiver/planners:usps",
-        "//util:fmt",
         "@pypi//google_api_python_client",
         "@pypi//rich",
         "@pypi//typer",
@@ -58,6 +58,8 @@ py_wheel(
     entry_points = {"console_scripts": ["gmail-archiver = gmail_archiver.main:app"]},
     python_requires = ">=3.14",
     # SYNC: propagatedBuildInputs in nix/packages/default.nix (gmail-archiver).
+    # CLEANUP(added 2026-11-03): Remove ducktape-util here and from the Nix
+    # inputs once the pinned Gmail wheel no longer imports util.fmt.
     requires = [
         "beautifulsoup4",
         "ducktape-util",
@@ -261,4 +263,10 @@ py_test(
         "//openai_utils:pydantic_strict_mode",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "fmt",
+    srcs = ["fmt.py"],
+    visibility = ["//gmail_archiver:__subpackages__"],
 )

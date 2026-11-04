@@ -10,12 +10,12 @@ py_library(
         ":allowance",
         ":configuration",
         ":models",
+        ":oidc_principal",
         ":portfolio",
         ":service",
         ":settings",
         ":sustainability",
         "//util:oidc_login",
-        "//util:oidc_principal",
         "@pypi//fastapi",
         "@pypi//uvicorn",
     ],
@@ -140,12 +140,12 @@ py_test(
         ":app",
         ":conftest",
         ":models",
+        ":oidc_principal",
         ":service",
         ":settings",
         ":sustainability",
         "//:conftest",
         "//util:oidc_login",
-        "//util:oidc_principal",
         "@pypi//httpx",
         "@pypi//itsdangerous",
         "@pypi//pydantic",
@@ -441,5 +441,35 @@ py_library(
         ":configuration",
         ":models",
         "@pypi//babel",
+    ],
+)
+
+py_library(
+    name = "oidc_principal",
+    srcs = ["oidc_principal.py"],
+    deps = [
+        "//util:urls",
+        "@pypi//cryptography",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//pyjwt",
+    ],
+)
+
+py_test(
+    name = "test_oidc_principal",
+    srcs = ["test_oidc_principal.py"],
+    deps = [
+        ":conftest",
+        ":oidc_principal",
+        "//:conftest",
+        "//util/testing:asgi",
+        "//util/testing:mock_oidc",
+        "@pypi//cryptography",
+        "@pypi//httpx",
+        "@pypi//pyjwt",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//starlette",
     ],
 )

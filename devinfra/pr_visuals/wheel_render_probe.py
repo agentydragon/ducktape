@@ -5,9 +5,8 @@ from pathlib import Path
 from PIL import Image
 
 from devinfra.buildbuddy.ci import invocation_ids
-from devinfra.pr_visuals import artifacts, collection, publisher
+from devinfra.pr_visuals import artifacts, collection, publisher, visual_diff
 from devinfra.pr_visuals.publisher import DownloadedAsset, DownloadedVariant, DownloadedVisualTest, build_bundle
-from util import visual_diff
 from util.testing import output_records
 
 

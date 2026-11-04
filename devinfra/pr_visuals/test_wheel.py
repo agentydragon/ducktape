@@ -38,7 +38,7 @@ def test_wheel_contains_import_closure_templates_and_runnable_entry_points(tmp_p
             "devinfra/pr_visuals/pr_visual_test.html.j2",
             "devinfra/pr_visuals/pr_visuals.html.j2",
             "devinfra/buildbuddy/ci/invocation_ids.py",
-            "util/visual_diff.py",
+            "devinfra/pr_visuals/visual_diff.py",
             "util/testing/output_records.py",
         } <= files
         assert "devinfra/pr_visuals/determinism.py" not in files

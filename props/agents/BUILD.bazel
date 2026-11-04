@@ -34,7 +34,7 @@ py_library(
     name = "push_images",
     srcs = ["push_images.py"],
     deps = [
-        "//util:env",
+        ":env",
         "//util:oci",
         "//util/bazel:runfiles",
     ],
@@ -108,4 +108,9 @@ py_library(
         "//props/testing/fixtures:e2e_container",
         "//props/testing/fixtures:e2e_infra",
     ],
+)
+
+py_library(
+    name = "env",
+    srcs = ["env.py"],
 )

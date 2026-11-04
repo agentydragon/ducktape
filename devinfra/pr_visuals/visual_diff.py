@@ -1,8 +1,6 @@
 """Exact-pixel PNG comparison for visual-review publishing.
 
-The pixel math is shared by the trusted visual-review publisher (production) and
-the golden-comparison test helper in ``util.testing.png_diff``. Decoded pixels
-are compared via a per-channel L-infinity norm: collapsing to luminance would
+Decoded pixels are compared via a per-channel L-infinity norm: collapsing to luminance would
 apply ITU-R weights and under-count pure red/blue diffs (a 50-unit red change
 drops to ~15 luminance, slipping under typical thresholds), so the channel-wise
 max is taken instead.

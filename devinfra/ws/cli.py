@@ -14,7 +14,7 @@ from typing import Annotated
 
 import typer
 
-from util.agent_sandbox import CLAIMS_PLURAL
+from devinfra.ws.agent_sandbox import CLAIMS_PLURAL
 
 NAMESPACE = "agent-workspaces"
 # Templates are LLM lanes (cluster/k8s/agents/agent-sandbox/): each has a

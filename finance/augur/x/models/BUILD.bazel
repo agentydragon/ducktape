@@ -258,6 +258,7 @@ py_test(
     data = ["private-equity-training-fixture.yaml"],
     deps = [
         ":conftest",
+        ":jsonl",
         ":private_equity_fit",
         ":trained_private_equity",
         "//:conftest",
@@ -265,7 +266,6 @@ py_test(
         "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
         "//util/bazel:runfiles",
-        "//util/testing:jsonl",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -857,4 +857,10 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "jsonl",
+    testonly = True,
+    srcs = ["jsonl.py"],
 )

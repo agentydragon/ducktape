@@ -606,6 +606,8 @@ rec {
     importsCheck = [ "gmail_archiver.main" ];
     entrypointChecks = [ "gmail-archiver" ];
     # SYNC: requires in //gmail_archiver:gmail_archiver_wheel.
+    # CLEANUP(added 2026-11-03): Remove ducktape-util here and from the wheel
+    # requirements once the pinned Gmail wheel no longer imports util.fmt.
     propagatedBuildInputs = with python314Packages; [
       beautifulsoup4
       ducktape-util
@@ -656,6 +658,8 @@ rec {
       importsCheck = [ "devinfra.ws.cli" ];
       entrypointChecks = [ "ws" ];
       # SYNC: requires in //devinfra/ws:ws_wheel.
+      # CLEANUP(added 2026-11-03): Remove ducktape-util here and from the wheel
+      # requirements once the pinned ws wheel no longer imports util.agent_sandbox.
       propagatedBuildInputs = [ ducktape-util ] ++ (with python314Packages; [ typer ]);
     }).overrideAttrs
       (old: {

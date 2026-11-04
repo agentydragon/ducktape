@@ -22,6 +22,7 @@ from gmail_archiver.cli.filters import filters_app
 from gmail_archiver.cli.labels import labels_app
 from gmail_archiver.dirs import get_cache_dir
 from gmail_archiver.event_classifier import EmailTemplateExtractor
+from gmail_archiver.fmt import format_truncation_suffix
 from gmail_archiver.inbox import GmailInbox
 from gmail_archiver.models import Email
 from gmail_archiver.plan import Plan, Planner
@@ -36,7 +37,6 @@ from gmail_archiver.planners.one_medical import OneMedicalPlanner
 from gmail_archiver.planners.spruce import SprucePlanner
 from gmail_archiver.planners.square import SquarePlanner
 from gmail_archiver.planners.usps import UspsPlanner
-from util.fmt import format_truncation_suffix
 
 app = typer.Typer(help="Archive old Gmail emails based on extracted dates")
 app.add_typer(filters_app, name="filters")
