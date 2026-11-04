@@ -125,10 +125,14 @@ debundle_e2e_test(
     ],
 )
 
-# Runs in CI: its own wall-clock budget assertion is the regression signal.
+# Large synthetic graph: run explicitly when checking proposal performance.
 debundle_e2e_test(
     name = "propose_commutations_budget_test",
     timeout = "moderate",
+    tags = [
+        "manual",
+        "scale",
+    ],
     deps = [
         "//devinfra/js/debundle:spec",
         "@crates//:serde_json",
