@@ -160,3 +160,43 @@ same-name replacement races; failed directory read before wake; suspended, unava
 unknown Runtime outcomes; interrupt delivery and unknown-result reconciliation; and continued
 coverage of the enforced Gateway proxy restriction. Use deterministic integration tests for the transaction and race boundary
 and a bounded system test for the actual Gateway/Runtime UID fence.
+
+## Inbox sends after the required Environment is gone
+
+**Decision for review; no permission change is selected here.** The existing
+`session_inbox_access` rules target a live Sandbox by name/UID, inbox tag or all Sandboxes.
+Notification resolves the target Session's exact placement and reads that Sandbox before applying
+those rules. When it is deleted, there is no Sandbox object or current tag set to evaluate. An
+existing subscription authorizes reading its source, not sending messages. The selected Session and
+inbox lifetime does not itself grant a sender access, and an unknown or unavailable policy view must
+still fail closed.
+
+Compare these choices:
+
+1. **Session-scoped grants and grouping (recommended):** define independently managed Session
+   targets or groups, and evaluate current PolicyBindings for each new send against the retained
+   Session and its exact owner. Manage membership independently of any Environment, define its
+   authority and revocation, and retain accepted message attribution and idempotency. A grant to send
+   grants neither inbox read/acknowledgement nor arbitrary Session commands or wake.
+2. **Exact owner only:** allow sends from the Session's exact execution ServiceAccount, and continue
+   refusing cross-account sends until Session-scoped grants are designed. This is a narrower first
+   slice, but same-account membership alone must be an explicitly approved grant, not inferred from
+   knowing the Session ID.
+3. **Retained Sandbox targets/tags:** preserve historical Sandbox membership and apply current sender
+   bindings against it. This needs an owner for edits and revocation after deletion, and its semantics
+   can outlive or broaden the original Sandbox grant; do not adopt a frozen tag snapshot as current
+   authority by default.
+
+For any choice, evaluate authorization at message acceptance, keep the sender's authenticated
+identity, retain the accepted message independently of later revocation, and preserve retries under
+its original idempotency key. Do not create a new inbox for an unproven or ownerless Session, infer
+ownership from a currently existing same-name ServiceAccount, wake a nonexistent Environment,
+retarget accepted notices to a replacement UID, or replay a possibly delivered notice. Decide how
+Session deletion affects future sends and pending notices separately from payload retention.
+
+Before implementation, review direct and delegated sender identity, same-account and cross-account
+examples, group membership edits and revocation, policy-watch failure, ServiceAccount replacement,
+concurrent deletion and send, accepted retries after revocation, unavailable placement and unknown
+notice outcomes. The operator-facing policy target and authority belong to
+[`SESSION_ACCESS_GROUPING_DESIGN`](task_dag.md#session_access_grouping_design--access-groups-across-independent-sessions-and-environments),
+not to a Notification-only interpretation of the old Sandbox rule.
