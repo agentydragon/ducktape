@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -49,6 +50,8 @@ func migrateThreadEntities(ctx context.Context, tx *sql.Tx) error {
 		if len(batch) == 0 {
 			break
 		}
+		values := make([]string, 0, len(batch))
+		updateArgs := make([]any, 0, len(batch)*5)
 		for _, row := range batch {
 			value, err := row.canonicalState()
 			if err != nil {
@@ -58,9 +61,18 @@ func migrateThreadEntities(ctx context.Context, tx *sql.Tx) error {
 			if err != nil {
 				return err
 			}
-			if _, err := tx.ExecContext(ctx, `UPDATE thread_entity SET state=$5::jsonb WHERE thread_id=$1 AND projection_epoch=$2 AND entity_kind=$3 AND entity_id=$4`, row.ThreadID, row.ProjectionEpoch, row.EntityKind, row.EntityID, string(state)); err != nil {
-				return err
-			}
+			first := len(updateArgs) + 1
+			values = append(values, fmt.Sprintf("($%d::uuid,$%d::text,$%d::text,$%d::text,$%d::jsonb)", first, first+1, first+2, first+3, first+4))
+			updateArgs = append(updateArgs, row.ThreadID, row.ProjectionEpoch, row.EntityKind, row.EntityID, string(state))
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE thread_entity AS entity SET state=converted.state FROM (VALUES `+strings.Join(values, ",")+`) AS converted(thread_id,projection_epoch,entity_kind,entity_id,state) WHERE entity.thread_id=converted.thread_id AND entity.projection_epoch=converted.projection_epoch AND entity.entity_kind=converted.entity_kind AND entity.entity_id=converted.entity_id`, updateArgs...)
+		if err != nil {
+			return err
+		}
+		if updated, err := result.RowsAffected(); err != nil {
+			return err
+		} else if updated != int64(len(batch)) {
+			return fmt.Errorf("converted %d of %d thread entities", updated, len(batch))
 		}
 		after = &batch[len(batch)-1]
 	}

@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 	"time"
 
@@ -127,7 +128,7 @@ func openListeners(c config) (net.Listener, net.Listener, error) {
 
 // run serves on the configured addresses, authenticating callers with the cluster's TokenReview API.
 func run(ctx context.Context, c config) error {
-	if err := migrate.Run(ctx, c.DatabaseURL, migrations.Up); err != nil {
+	if err := migrate.Run(ctx, c.DatabaseURL, migrations.Up, migrate.WithMigrationTimeout(seconds(c.MigrationTimeoutSeconds))); err != nil {
 		return err
 	}
 	kubeConfig, err := kubernetesConfig(c)
@@ -279,7 +280,13 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	if handled, err := migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_HISTORY_SERVICE_DATABASE_URL", migrations.Up); handled {
+	if slices.Contains(os.Args[1:], "--migrate-only") {
+		timeout, err := migrationOnlyTimeout()
+		if err != nil {
+			slog.Error("invalid History Service migration configuration", "error", err)
+			os.Exit(2)
+		}
+		_, err = migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_HISTORY_SERVICE_DATABASE_URL", migrations.Up, migrate.WithMigrationTimeout(timeout))
 		if err != nil {
 			slog.Error("History Service migration failed", "error", err)
 			os.Exit(1)

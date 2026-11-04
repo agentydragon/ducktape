@@ -21,9 +21,21 @@ const (
 	migrationBound = 2 * time.Minute
 )
 
+// Option configures the migration phase independently of connection retry.
+type Option func(*options)
+
+type options struct {
+	migrationTimeout time.Duration
+}
+
+// WithMigrationTimeout sets the maximum time for migration and advisory-lock waiting.
+func WithMigrationTimeout(timeout time.Duration) Option {
+	return func(o *options) { o.migrationTimeout = timeout }
+}
+
 // RunOnly handles the service binary's optional migration-only invocation without requiring
 // credentials or settings for its serving roles. Normal startup must still call Run.
-func RunOnly(ctx context.Context, args []string, databaseURLEnv string, up func(context.Context, *sql.DB) error) (bool, error) {
+func RunOnly(ctx context.Context, args []string, databaseURLEnv string, up func(context.Context, *sql.DB) error, opts ...Option) (bool, error) {
 	if !slices.Contains(args, "--migrate-only") {
 		return false, nil
 	}
@@ -34,12 +46,19 @@ func RunOnly(ctx context.Context, args []string, databaseURLEnv string, up func(
 	if strings.TrimSpace(databaseURL) == "" {
 		return true, fmt.Errorf("%s is required", databaseURLEnv)
 	}
-	return true, Run(ctx, databaseURL, up)
+	return true, Run(ctx, databaseURL, up, opts...)
 }
 
 // Run connects with bounded retry, then applies versioned migrations before workers or listeners
 // start. The owning provider serializes migration attempts through its stable advisory lock.
-func Run(ctx context.Context, databaseURL string, up func(context.Context, *sql.DB) error) error {
+func Run(ctx context.Context, databaseURL string, up func(context.Context, *sql.DB) error, opts ...Option) error {
+	settings := options{migrationTimeout: migrationBound}
+	for _, opt := range opts {
+		opt(&settings)
+	}
+	if settings.migrationTimeout <= 0 {
+		return fmt.Errorf("migration timeout must be positive")
+	}
 	target, err := url.Parse(strings.Replace(databaseURL, "postgresql+asyncpg://", "postgresql://", 1))
 	if err != nil || (target.Scheme != "postgresql" && target.Scheme != "postgres") {
 		return fmt.Errorf("migration database_url must be a PostgreSQL URL")
@@ -67,7 +86,7 @@ func Run(ctx context.Context, databaseURL string, up func(context.Context, *sql.
 		return fmt.Errorf("connect to PostgreSQL: %w", err)
 	}
 	cancelConnect()
-	migrationCtx, cancelMigration := context.WithTimeout(ctx, migrationBound)
+	migrationCtx, cancelMigration := context.WithTimeout(ctx, settings.migrationTimeout)
 	defer cancelMigration()
 	slog.InfoContext(ctx, "Applying database migrations")
 	if err := up(migrationCtx, db); err != nil {

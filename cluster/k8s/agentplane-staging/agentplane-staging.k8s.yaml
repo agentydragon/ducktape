@@ -2667,7 +2667,7 @@ spec:
             readOnlyRootFilesystem: false
             runAsNonRoot: true
           startupProbe:
-            failureThreshold: 60
+            failureThreshold: 180
             grpc:
               port: 8080
             initialDelaySeconds: 0

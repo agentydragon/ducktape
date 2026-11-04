@@ -166,7 +166,9 @@ class HistoryService(Construct):
             env_variables={env_name(Settings, "database_url"): database_url, **(container_env or {})},
             readiness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=3, period_seconds=10),
             liveness=grpc_probe(port=endpoint.port.number, initial_delay_seconds=20, period_seconds=30),
-            startup=grpc_probe(port=endpoint.pod_port, initial_delay_seconds=0, period_seconds=5, failure_threshold=60),
+            startup=grpc_probe(
+                port=endpoint.pod_port, initial_delay_seconds=0, period_seconds=5, failure_threshold=180
+            ),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(20)),
                 memory=MemoryResources(request=Size.mebibytes(128), limit=memory_limit),
