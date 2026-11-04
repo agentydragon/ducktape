@@ -102,7 +102,10 @@ def pid1_container(
     container: LoggedContainer = (
         LoggedContainer(debian_slim.IMAGE.tag, test_name=f"runtime-pid1-{uuid4().hex}")
         .with_kwargs(
-            network_mode="host", user=f"{os.getuid()}:{os.getgid()}", pids_limit=512, mem_limit="1g",
+            network_mode="host",
+            user=f"{os.getuid()}:{os.getgid()}",
+            pids_limit=512,
+            mem_limit="1g",
             # The sparse-root experiment mounts proc in a nested user namespace.
             privileged=allow_user_namespaces,
         )
