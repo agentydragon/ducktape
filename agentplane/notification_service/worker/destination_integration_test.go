@@ -247,3 +247,25 @@ func TestWorkerDoesNotReadSourcesForUnknownOrChangedSessionOwner(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkerEstablishesOwnerBeforeItsFirstSourceRead(t *testing.T) {
+	h := newHarness(t, debounce(0, 0))
+	subscription := h.subscribe(t, "establish-before-source")
+	h.exec(t, `UPDATE inbox SET owner_uid = NULL WHERE id = $1`, subscription.InboxID)
+	seen := false
+	h.actions.on(func(_ context.Context, claim store.Claim, _ store.DueSubscription) error {
+		seen = true
+		if claim.OwnerUID == nil || *claim.OwnerUID != "test-account-uid" {
+			t.Fatal("source read without the established owner UID")
+		}
+		return nil
+	})
+	h.step(t)
+	if !seen {
+		t.Fatal("source was not reconciled after proving its owner")
+	}
+	inbox := h.page(t, subscription.InboxID).Inbox
+	if inbox.OwnerUID == nil || *inbox.OwnerUID != "test-account-uid" {
+		t.Fatalf("owner UID was not persisted: %v", inbox.OwnerUID)
+	}
+}

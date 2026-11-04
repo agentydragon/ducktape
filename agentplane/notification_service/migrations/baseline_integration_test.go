@@ -93,7 +93,10 @@ func TestFreshBaselineSupportsNotificationStore(t *testing.T) {
 	if err != nil || len(inboxes) != 1 || inboxes[0].ID != subscription.InboxID {
 		t.Fatalf("fresh inboxes = %+v, error %v", inboxes, err)
 	}
-	assertApplied(t, db, 13)
+	assertApplied(t, db, 14)
+	if err := applyBaseline(t.Context(), db); err != nil {
+		t.Fatal("previous binary baseline provider on expanded schema:", err)
+	}
 }
 
 func TestAdoptVersion12PreservesStoredDataAndHistory(t *testing.T) {
