@@ -77,7 +77,9 @@ credentials stay in a temporary Docker config on the Bazel client, outside test 
 - [CI hash-generation probe](https://app.buildbuddy.io/invocation/f501ac71-adc9-4635-961e-2afe36623bbd):
   ordinary `bazel-diff generate-hashes` completed without Forgejo credentials on the hosted runner,
   producing an 8,280,714-byte hash file. Both private-image input targets are tagged `manual`.
-- Full Firecracker acceptance: awaiting execution; no deployed-system pass claimed yet.
+- [Post-rebase fixture checks](https://app.buildbuddy.io/invocation/86ae21db-00f3-499c-bc70-c2e4d9330670):
+  render, determinism, retained logs and all six changed library aspects passed.
+- Full Firecracker acceptance: setup attempts below; no deployed-system pass claimed yet.
 
 ## Acceptance attempts
 
@@ -107,8 +109,36 @@ ran on the replacement worker (host `57dfd687-22ab-49e8-9bad-4b0fb1bf2fb5`, exec
 deployment; devel PR #14194 already fixed that exact eligibility race. The rebase retains that fix.
 Its containerd log confirms the effective `NoNewKeyring=true` option, followed by a distinct
 `pivot_root .: operation not permitted` error from the initial system Pods. Docker's default
-seccomp profile also blocks `pivot_root`, so the same test-only drop-in now enables
+seccomp profile also blocks `pivot_root`, so the next attempt enabled
 `NoPivotRoot=true`. The [containerd 2.1 option schema](https://github.com/containerd/containerd/blob/release/2.1/api/types/runc/options/oci.proto)
 supports both settings; [runc's implementation](https://github.com/opencontainers/runc/blob/main/libcontainer/configs/config.go)
 uses MS_MOVE and chroot when pivot-root is disabled. The outer worker security profile remains
 unchanged. These setup failures still precede the Firecracker guest and app continuation proof.
+
+The [fourth attempt](https://app.buildbuddy.io/invocation/b3f4ea78-4233-4b8e-8721-45a0bca37b25)
+loaded both options, started CoreDNS, local-path, cert-manager/trust-manager, KubeVirt and Kyverno,
+and imported the real boot image (184.65 seconds) and launcher (44.55 seconds). It failed before
+Sandbox creation: every app Pod's sandbox failed in runc's no-pivot path with
+`mount dst=/proc, flags=MS_REC|MS_SLAVE: invalid argument`. Increasing deployment timeouts would
+not help. A teardown `du` timeout also obscured the primary error; the retained logs identify it.
+
+The operator approved a scoped worker policy change. An independent session concurrently landed
+[PR #14207](https://github.com/agentydragon/ducktape/pull/14207), supplying Docker 29.1.3's default
+allowlist plus the specific keyring operations required by runc. This branch rebases onto that
+owner and adds only a `pivot_root` allow rule requiring `CAP_SYS_ADMIN` to its existing
+`docker-seccomp.json`. Both fixture workarounds are removed: normal keyring creation and pivot-root
+now belong to the worker profile. No outer-cluster privileges or VM placement are changed.
+
+In the first live policy experiment, the worker was observed idle (all execution-stage gauges
+zero and only the executor container present), then its executor stopped. A reviewed default
+profile plus the pivot rule was installed in that same guest, Docker validated/restarted, and
+the executor restarted and registered healthy. A Docker action reached pathname lookup for
+`pivot_root` (`ENOENT` for intentionally absent paths), while `keyctl` remained denied (`EPERM`).
+The subsequently landed managed policy also admits runc's restricted keyring operations.
+
+An independent restart to apply PR #14207 then deleted VMI `753a973e-5f9d-4e59-a258-244567105d98`
+at 05:17:11 UTC, replacing it with `64876921-7368-43df-9064-e7256266af4b`. Its disposable work disk
+and the guest-local experimental profile were lost. The [fifth scheduling attempt](https://app.buildbuddy.io/invocation/fa701f63-849b-45bb-b5d3-34b4e988eb44)
+ran no tests because the replacement executor was not registered yet. The operator confirmed the
+other session's restart. The pivot extension must be applied and tested on this replacement;
+no acceptance pass is implied by the earlier syscall probe.
