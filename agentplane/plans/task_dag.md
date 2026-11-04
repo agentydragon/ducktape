@@ -2191,8 +2191,11 @@ Fail work proven unsent, expose unresolved in-flight outcomes as unknown, and ne
 replay uncertain effects. A lost reply can currently requeue a possibly-forwarded command; cleanup
 must not classify that row as known-unsent. Deletion terminal events currently reach connected
 `WatchDispatches` listeners through transactional PostgreSQL notifications, then receipts are
-removed. They are not durable future reads. Session-record retention and UUID reuse remain open;
-this node must not choose them. The [command authority plan](session_send_authority.md#recovery-and-decisions-for-review)
+removed. They are not durable future reads. Cleanup does not snapshot already-terminal rows: a
+connected watcher delayed behind an earlier invalidation can miss that outcome after cleanup.
+Broadcasting every retained receipt can overflow bounded terminal subscriptions and leaves no
+receipt for reconnect; close this gap with a reviewed bounded delivery design, not an unbounded
+broadcast. Session-record retention and UUID reuse remain open; this node must not choose them. The [command authority plan](session_send_authority.md#recovery-and-decisions-for-review)
 keeps these outcome-evidence and authority decisions explicit.
 
 ### `DELIVERY_DESTINATION_CONTRACT` — send commands to a Session ID

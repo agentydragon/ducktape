@@ -90,7 +90,10 @@ observable as unknown rather than claiming failure or replaying it. Preserve any
 by durable evidence, and never redirect accepted work to a replacement environment. Deletion
 terminal snapshots currently reach connected `WatchDispatches` streams through transactional
 PostgreSQL notifications; cleanup removes the receipts, so later reads cannot recover those
-snapshots. Durable post-deletion outcome visibility and retention remain open Dispatcher/History
+snapshots. A connected watcher behind an earlier terminal-row invalidation can also miss that
+outcome when cleanup removes the row; cleanup currently snapshots only outcomes it transitions.
+Broadcasting all retained receipts can overflow bounded subscriptions, so this remains a delivery
+design gap. Durable post-deletion outcome visibility and retention remain open Dispatcher/History
 decisions. Neither notification delivery nor Runtime admission proves that an uncertain effect failed.
 
 There remains a narrow race between Dispatcher's directory recheck and Runtime admission. For the
