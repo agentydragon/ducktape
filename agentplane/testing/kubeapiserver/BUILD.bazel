@@ -24,6 +24,10 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver",
     visibility = ["//agentplane:__subpackages__"],
+    x_defs = {
+        "github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver.crdsRlocation": "$(rlocationpath //agentplane/crds:crds_tree)",
+        "github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver.envtestRlocation": "$(rlocationpath :envtest_assets_tree)",
+    },
     deps = [
         "//agentplane/workload_auth/auth",
         "@io_bazel_rules_go//go/runfiles",

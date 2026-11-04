@@ -32,9 +32,6 @@ py_library(
 py_library(
     name = "export_sessions",
     srcs = ["export_sessions.py"],
-    # The page's bundle rides with the CLI that serves it; the OpenAPI exporter the bundle's types come from
-    # imports `:web`, which stays free of it.
-    data = ["//devinfra/claude/session_export/frontend:bundle"],
     deps = [
         ":api",
         ":archive",
@@ -47,6 +44,7 @@ py_library(
         ":supervisor",
         ":sync",
         ":web",
+        "//devinfra/bazel:runfiles",
         "//devinfra/bazel:workspace",
         "@pypi//httpx",
         "@pypi//uvicorn",
@@ -71,14 +69,39 @@ genrule(
 
 py_binary(
     name = "export_sessions_bin",
+    data = ["//devinfra/claude/session_export/frontend:bundle"],
+    env = {
+        "SESSION_SYNC_FRONTEND_RLOCATION": "$(rlocationpath //devinfra/claude/session_export/frontend:bundle)",
+    },
     main_module = "devinfra.claude.session_export.export_sessions",
     deps = [":export_sessions"],
 )
 
 aspect_py_binary(
     name = "export_sessions_image_bin",
+    data = ["//devinfra/claude/session_export/frontend:bundle"],
+    env = {
+        "SESSION_SYNC_FRONTEND_RLOCATION": "$(rlocationpath //devinfra/claude/session_export/frontend:bundle)",
+    },
     main = "export_sessions.py",
     deps = [":export_sessions"],
+)
+
+_image_env = py_image_env(binary_name = "export_sessions_image_bin")
+
+_image_env["SESSION_SYNC_FRONTEND_RLOCATION"] = "$(rlocationpath //devinfra/claude/session_export/frontend:bundle)"
+
+genrule(
+    name = "image_env",
+    srcs = ["//devinfra/claude/session_export/frontend:bundle"],
+    outs = ["image.env"],
+    cmd = "printf '%s\\n' {} > $@".format(" ".join([
+        "'{}={}'".format(
+            key,
+            _image_env[key],
+        )
+        for key in sorted(_image_env.keys())
+    ])),
 )
 
 py_image_layer(
@@ -92,7 +115,7 @@ oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint("export_sessions_image_bin"),
-    env = py_image_env(binary_name = "export_sessions_image_bin"),
+    env = ":image_env",
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [":image_layers"],
     user = "1000:1000",
@@ -327,7 +350,6 @@ py_library(
         ":settings",
         ":store",
         ":supervisor",
-        "//devinfra/bazel:runfiles",
         "//util:oidc_login",
         "@pypi//fastapi",
         "@pypi//httpx",

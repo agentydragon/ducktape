@@ -40,14 +40,12 @@ from aiquota.models import AllQuotas, FetchSuccess, HistorySnapshot, QuotaSnapsh
 from aiquota.providers.base import SupportsHistory
 from aiquota.render.view_model import AllQuotasView, to_view
 from aiquota.settings import Settings
-from devinfra.bazel.runfiles import find_path, own_repo_rlocation
 
 _CACHE_CONTROL = {"Cache-Control": "no-store"}
 _MAX_CAPTURE_BYTES = 1024 * 1024
 _bearer = HTTPBearer(auto_error=False)
 logger = logging.getLogger(__name__)
 
-_FRONTEND_DIR = "aiquota/frontend/dist"
 _VIEW_UPDATE_SECONDS = 1
 
 
@@ -689,21 +687,13 @@ def create_app(
             max_age=3600,
         )
 
-    if frontend_dir is None:
-        # Only the server binaries package the SPA. The API library is also imported without
-        # it — by its own tests, and by the OpenAPI exporter the frontend's types come from,
-        # which cannot depend on the bundle it generates types for.
-        frontend_dir = find_path(own_repo_rlocation(_FRONTEND_DIR))
-        if frontend_dir is None or not (frontend_dir / "index.html").is_file():
-            logger.warning("aiquota frontend bundle is not present in runfiles")
-            frontend_dir = None
     if frontend_dir is not None:
         app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 
     return app
 
 
-def main() -> None:
+def main(*, frontend_dir: Path | None = None) -> None:
     settings = Settings()
     service = QuotaAPIService(
         load_config(settings.config_path),
@@ -739,6 +729,7 @@ def main() -> None:
             collector=collector,
             history_collector=history_collector,
             metrics=metrics,
+            frontend_dir=frontend_dir,
             prepare_storage=None if sink is None else sink.apply_schema,
             browser_oauth=BrowserOAuth(
                 issuer=settings.oauth_issuer,

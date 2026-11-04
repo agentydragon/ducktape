@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"testing"
 	"time"
@@ -30,6 +29,9 @@ import (
 
 // User is who UserToken authenticates: a user that is no ServiceAccount.
 const User = "test-user"
+
+// The BUILD target supplies runfiles paths for the tree artifacts it packages.
+var crdsRlocation, envtestRlocation string
 
 // Server is a running control plane.
 type Server struct {
@@ -61,18 +63,11 @@ func WithUserAudiences(audiences ...string) Option {
 
 // Start runs a control plane until Stop.
 func Start(options ...Option) (*Server, error) {
-	repository := runfiles.CurrentRepository()
-	runfilesRepository := repository
-	if runfilesRepository == "" {
-		runfilesRepository = "_main"
-	}
-	apiServerRlocation := path.Join(runfilesRepository, "agentplane/testing/kubeapiserver/envtest_assets_tree/kube-apiserver")
-	apiServer, err := runfiles.RlocationFrom(apiServerRlocation, repository)
+	assets, err := runfiles.Rlocation(envtestRlocation)
 	if err != nil {
 		return nil, fmt.Errorf("locate kube-apiserver: %w", err)
 	}
-	crdRlocation := path.Join(runfilesRepository, "agentplane/crds/crds_tree/crd-sandboxes.yaml")
-	crd, err := runfiles.RlocationFrom(crdRlocation, repository)
+	crds, err := runfiles.Rlocation(crdsRlocation)
 	if err != nil {
 		return nil, fmt.Errorf("locate Agentplane's CRDs: %w", err)
 	}
@@ -86,8 +81,8 @@ func Start(options ...Option) (*Server, error) {
 		return nil, errors.Join(fmt.Errorf("write the static token file: %w", err), os.RemoveAll(directory))
 	}
 	environment := &envtest.Environment{
-		BinaryAssetsDirectory: filepath.Dir(apiServer),
-		CRDDirectoryPaths:     []string{filepath.Dir(crd)},
+		BinaryAssetsDirectory: assets,
+		CRDDirectoryPaths:     []string{crds},
 		ErrorIfCRDPathMissing: true,
 		UseExistingCluster:    new(false),
 	}

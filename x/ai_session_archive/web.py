@@ -13,7 +13,6 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from starlette import status
 
-from devinfra.bazel.runfiles import find_path, own_repo_rlocation
 from util.oidc_login import LoginConfig, install_login
 from x.ai_session_archive import queries
 from x.ai_session_archive.database import make_session_factory
@@ -29,8 +28,6 @@ from x.ai_session_archive.models import (
     SessionVersion,
 )
 from x.ai_session_archive.web_settings import WebSettings
-
-_FRONTEND_DIR = "x/ai_session_archive/frontend/dist"
 
 
 class Machines(BaseModel):
@@ -144,10 +141,6 @@ def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | No
             allowed_subject=settings.oidc_allowed_subject,
         ),
     )
-    if frontend_dir is None:
-        frontend_dir = find_path(own_repo_rlocation(_FRONTEND_DIR))
-        if frontend_dir is not None and not (frontend_dir / "index.html").is_file():
-            frontend_dir = None
     if frontend_dir is not None:
         index = frontend_dir / "index.html"
 

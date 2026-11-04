@@ -17,15 +17,18 @@ Usage:
 import argparse
 import asyncio
 import logging
+import os
 import statistics
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from enum import StrEnum
+from pathlib import Path
 from typing import assert_never
 
 import httpx
 import uvicorn
 
+from devinfra.bazel.runfiles import get_required_path
 from devinfra.bazel.workspace import get_build_working_directory
 from devinfra.claude.session_export.api import SessionCookie, SessionsApi
 from devinfra.claude.session_export.archive import export_all, verify_archive
@@ -47,6 +50,17 @@ from devinfra.claude.session_export.sync import sync_once
 from devinfra.claude.session_export.web import create_app, create_control_app, create_web_app
 
 logger = logging.getLogger(__name__)
+_FRONTEND_RLOCATION_ENV = "SESSION_SYNC_FRONTEND_RLOCATION"
+
+
+def _frontend_dir() -> Path:
+    rlocation = os.environ.get(_FRONTEND_RLOCATION_ENV)
+    if not rlocation:
+        raise RuntimeError(f"{_FRONTEND_RLOCATION_ENV} must be set by the session-export server's Bazel target")
+    frontend_dir = get_required_path(rlocation)
+    if not (frontend_dir / "index.html").is_file():
+        raise RuntimeError(f"session-export frontend bundle at {rlocation!r} has no index.html")
+    return frontend_dir
 
 
 class Command(StrEnum):
@@ -130,7 +144,7 @@ async def run_serve() -> None:
             supervisor = SyncSupervisor.for_settings(settings, store=store, token_client=token_client)
             server = uvicorn.Server(
                 uvicorn.Config(
-                    create_app(supervisor=supervisor, settings=settings, store=store),
+                    create_app(supervisor=supervisor, settings=settings, store=store, frontend_dir=_frontend_dir()),
                     host=settings.host,
                     port=settings.port,
                     log_level="info",
@@ -157,7 +171,12 @@ async def run_web() -> None:
         async with httpx.AsyncClient(base_url=settings.control_base_url, timeout=30) as control_client:
             server = uvicorn.Server(
                 uvicorn.Config(
-                    create_web_app(settings=settings, control_client=control_client, store=SessionStore(engine)),
+                    create_web_app(
+                        settings=settings,
+                        control_client=control_client,
+                        store=SessionStore(engine),
+                        frontend_dir=_frontend_dir(),
+                    ),
                     host=settings.host,
                     port=settings.port,
                     log_level="info",
