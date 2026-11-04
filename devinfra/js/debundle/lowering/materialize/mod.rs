@@ -50,7 +50,8 @@ use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileRole, JsFile};
 use chunk_analysis::build_chunk_graph;
 use gate::{
     AssignmentAnalysis, CandidateAssessmentSelection, RejectedAssignment, SccRejection,
-    ValidatedAssignment, render_atomic_group_conflict_summary, render_cycle_summary,
+    ValidatedAssignment, check_realizability, render_atomic_group_conflict_summary,
+    render_cycle_summary,
 };
 use graph_provenance::GraphProvenance;
 use js_ast::{ParsedJsModule, format_comment_block_lines};
@@ -623,9 +624,12 @@ pub(super) fn finish_logical_chunk(
         if !refine_coarse_residuals {
             break (sealed_renames, chunk_renames_map, assignment_analysis);
         }
-        let validation = assignment_analysis.validate_with_verdict();
+        let verdict = check_realizability(
+            assignment_analysis.inputs().dependency_graph(),
+            assignment_analysis.assignment(),
+        );
         let residual_sccs = generated_residual_mutual_sccs(
-            &validation.verdict.unrealizable_sccs,
+            &verdict.unrealizable_sccs,
             &generated_residual_plans,
             module_plans.len(),
         );
