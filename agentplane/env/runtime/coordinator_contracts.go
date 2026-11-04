@@ -40,10 +40,10 @@ type runtimeTransitionRequest struct {
 	IdleSinceMicros int64
 }
 
-type runtimeTransitionStage uint8
+type runtimeTransitionStepKind uint8
 
 const (
-	runtimeTransitionPlanning runtimeTransitionStage = iota
+	runtimeTransitionPlanning runtimeTransitionStepKind = iota
 	runtimeTransitionNativeStopping
 	runtimeTransitionExecutionStarting
 	runtimeTransitionDesiredPublishing

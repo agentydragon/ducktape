@@ -26,9 +26,8 @@ type runtimeTransitionSequence struct {
 }
 
 type runtimeTransitionStep struct {
-	stage    runtimeTransitionStage
+	kind     runtimeTransitionStepKind
 	adoption adoptionBarrier
-	quiesce  quiesceBarrierKind
 }
 
 type runtimeTransitionWorker struct {
@@ -53,7 +52,7 @@ func (c *runtimeTransitionSequence) begin(request *runtimeTransitionRequest) err
 	c.request = request
 	c.steps, c.index, c.adoption, c.quiesce = nil, -1, adoptionPlan{}, quiescePlan{}
 	c.ctx, c.cancel = context.WithCancel(request.ctx)
-	c.start(runtimeTransitionStep{stage: runtimeTransitionPlanning})
+	c.start(runtimeTransitionStep{kind: runtimeTransitionPlanning})
 	return nil
 }
 
@@ -111,17 +110,24 @@ func (c *runtimeTransitionSequence) runStep(step runtimeTransitionStep) (runtime
 	}
 	var outcome runtimeTransitionOutcome
 	var err error
-	if step.stage == runtimeTransitionPlanning {
+	switch step.kind {
+	case runtimeTransitionPlanning:
 		outcome, err = c.planTransition(c.ctx)
-	} else if step.adoption.kind != 0 {
-		outcome, err = c.runAdoptionBarrier(c.ctx, step.adoption)
-	} else if step.quiesce != 0 {
-		outcome, err = c.runQuiesceBarrier(c.ctx, step.quiesce)
-	} else {
-		err = fmt.Errorf("Runtime transition stage %d has no barrier", step.stage)
+	case runtimeTransitionQuiesceSealing:
+		outcome, err = c.runQuiesceBarrier(c.ctx)
+	case runtimeTransitionNativeStopping,
+		runtimeTransitionExecutionStarting,
+		runtimeTransitionDesiredPublishing,
+		runtimeTransitionExecutionFencing,
+		runtimeTransitionHistoryAcknowledging,
+		runtimeTransitionIncarnationAdopting,
+		runtimeTransitionBootstrapRequesting:
+		outcome, err = c.runAdoptionBarrier(c.ctx, step)
+	default:
+		err = fmt.Errorf("Runtime transition step kind %d has no barrier", step.kind)
 	}
-	if err != nil && step.stage == runtimeTransitionExecutionFencing {
-		if errors.Is(err, context.Canceled) && !c.r.isClosing() && step.adoption.kind == adoptionExecutionFence {
+	if err != nil && step.kind == runtimeTransitionExecutionFencing {
+		if errors.Is(err, context.Canceled) && !c.r.isClosing() {
 			fenceCtx, cancel := context.WithTimeout(c.engineCtx, executionFenceGrace)
 			defer cancel()
 			if settleErr := c.r.waitForExecutionFenced(fenceCtx, c.adoption.generation); settleErr == nil {
@@ -137,7 +143,7 @@ func (c *runtimeTransitionSequence) runStep(step runtimeTransitionStep) (runtime
 		}
 		return outcome, err
 	}
-	if err == nil || step.adoption.kind != adoptionExecutionStart {
+	if err == nil || step.kind != runtimeTransitionExecutionStarting {
 		return outcome, err
 	}
 	// startExecutionForUID can return on epoch cancellation while its COSI
@@ -169,7 +175,7 @@ func (c *runtimeTransitionSequence) planTransition(ctx context.Context) (runtime
 }
 
 func (c *runtimeTransitionSequence) recordOutcome(step runtimeTransitionStep, outcome runtimeTransitionOutcome) error {
-	if step.stage == runtimeTransitionPlanning {
+	if step.kind == runtimeTransitionPlanning {
 		c.steps = outcome.steps
 		if outcome.adoptionPlan != nil {
 			c.adoption = *outcome.adoptionPlan

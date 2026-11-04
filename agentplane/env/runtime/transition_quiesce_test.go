@@ -44,7 +44,7 @@ func TestRepeatedQuiesceRetriesOnlyErrorFromCurrentGeneration(t *testing.T) {
 			}
 			r := &Runtime{state: env, lifecycleState: store, desired: desired, startupComplete: true, changes: make(chan struct{}), fatal: make(chan error, 1)}
 			sequence := &runtimeTransitionSequence{r: r}
-			if _, err := sequence.runQuiesceBarrier(t.Context(), quiesceSeal); err != nil {
+			if _, err := sequence.runQuiesceBarrier(t.Context()); err != nil {
 				t.Fatal(err)
 			}
 			if r.desired.Generation != test.wantGeneration {

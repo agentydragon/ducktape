@@ -2,16 +2,11 @@ package runtime
 
 import (
 	"context"
-	"errors"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
-
-type quiesceBarrierKind uint8
-
-const quiesceSeal quiesceBarrierKind = 1
 
 type quiescePlan struct {
 	request              runtimeTransitionRequest
@@ -29,14 +24,11 @@ func (c *runtimeTransitionSequence) planQuiesce(request runtimeTransitionRequest
 		plan.factsHaveIdleSince = true
 		plan.factsIdleSinceMicros = facts.IdleSince.AsTime().UnixMicro()
 	}
-	return plan, []runtimeTransitionStep{{stage: runtimeTransitionQuiesceSealing, quiesce: quiesceSeal}}, nil
+	return plan, []runtimeTransitionStep{{kind: runtimeTransitionQuiesceSealing}}, nil
 }
 
-func (c *runtimeTransitionSequence) runQuiesceBarrier(ctx context.Context, kind quiesceBarrierKind) (runtimeTransitionOutcome, error) {
+func (c *runtimeTransitionSequence) runQuiesceBarrier(ctx context.Context) (runtimeTransitionOutcome, error) {
 	r := c.r
-	if kind != quiesceSeal {
-		return runtimeTransitionOutcome{}, errors.New("unknown quiesce barrier")
-	}
 	r.mu.Lock()
 	if r.closing || r.failed || !r.startupComplete {
 		r.mu.Unlock()
