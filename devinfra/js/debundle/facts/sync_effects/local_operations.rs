@@ -117,8 +117,15 @@ pub(super) enum LocalOperation {
 }
 
 #[derive(Debug, Clone)]
+pub(super) struct LocalParameter {
+    pub(super) binding: Id,
+    pub(super) default: Option<LocalExpression>,
+}
+
+#[derive(Debug, Clone)]
 pub(super) struct LocalBody {
     pub(super) bindings: BTreeMap<Id, LocalBinding>,
+    pub(super) parameters: Arc<[LocalParameter]>,
     pub(super) operations: Arc<[LocalOperation]>,
     /// Present only for a root variable initializer lowered from its exact
     /// canonical source expression. Callable bodies have no root-owner span.
@@ -627,16 +634,43 @@ impl LocalBody {
         Some(body)
     }
 
+    /// Exact terminal source call, with no other root operation or operand.
+    /// This selects ordered execution, never positive effect coverage.
+    pub(super) fn single_identifier_call_initializer(&self) -> Option<Span> {
+        self.initializer_span?;
+        match self.operations.as_ref() {
+            [
+                LocalOperation::Return(Some(LocalExpression::Call {
+                    callee: LocalCallee::Binding(_),
+                    arguments,
+                    span,
+                })),
+            ] if arguments.is_empty() => Some(*span),
+            _ => None,
+        }
+    }
+
     /// Called by the canonical function collector. Unsupported syntax discards
     /// the entire candidate; the ordinary conservative lanes remain available.
     pub(super) fn lower<'a>(
         parameters: impl Iterator<Item = &'a Pat>,
         body: &FunctionBody,
     ) -> Option<Self> {
-        let mut bindings = Self::parameter_bindings(parameters)?;
+        let (mut bindings, parameters) = Self::lower_parameters(parameters)?;
+        let has_defaults = parameters
+            .iter()
+            .any(|parameter| parameter.default.is_some());
         let mut operations = Vec::new();
         let mut terminal = false;
         for statement in &body.stmts {
+            // Non-simple parameters have a separate body var environment.
+            // The shared plan does not yet represent that second scope.
+            if has_defaults
+                && matches!(statement, Stmt::Decl(Decl::Var(declaration))
+                    if declaration.kind == VarDeclKind::Var)
+            {
+                return None;
+            }
             if terminal {
                 // The canonical collector supplies all declaration identities
                 // and kinds after visiting the complete body, including dead
@@ -691,7 +725,7 @@ impl LocalBody {
                 _ => return None,
             }
         }
-        Some(Self::from_operations(bindings, operations))
+        Some(Self::from_operations(bindings, parameters, operations))
     }
 
     /// A concise arrow has the same ordered return semantics as a block body.
@@ -700,8 +734,10 @@ impl LocalBody {
         parameters: impl Iterator<Item = &'a Pat>,
         expression: &Expr,
     ) -> Option<Self> {
+        let (bindings, parameters) = Self::lower_parameters(parameters)?;
         Some(Self::from_operations(
-            Self::parameter_bindings(parameters)?,
+            bindings,
+            parameters,
             vec![LocalOperation::Return(Some(LocalExpression::lower(
                 expression, false,
             )?))],
@@ -776,6 +812,7 @@ impl LocalBody {
 
         let mut bindings = BTreeMap::new();
         let mut parameters = Vec::new();
+        let mut local_parameters = Vec::new();
         let mut constructor_operations = Vec::new();
         if let Some(constructor) = constructor {
             for parameter in &constructor.params {
@@ -795,6 +832,10 @@ impl LocalBody {
                     return None;
                 }
                 parameters.push(binding.id.to_id());
+                local_parameters.push(LocalParameter {
+                    binding: binding.id.to_id(),
+                    default: None,
+                });
             }
 
             for statement in &constructor.body.as_ref()?.stmts {
@@ -850,43 +891,67 @@ impl LocalBody {
 
         field_operations.extend(constructor_operations);
         Some((
-            Self::from_operations(bindings, field_operations),
+            Self::from_operations(bindings, local_parameters, field_operations),
             parameters,
         ))
     }
 
-    fn parameter_bindings<'a>(
+    fn lower_parameters<'a>(
         parameters: impl Iterator<Item = &'a Pat>,
-    ) -> Option<BTreeMap<Id, LocalBinding>> {
+    ) -> Option<(BTreeMap<Id, LocalBinding>, Vec<LocalParameter>)> {
         let mut bindings = BTreeMap::new();
+        let mut lowered = Vec::new();
         for parameter in parameters {
+            let (binding, default) = match parameter {
+                Pat::Ident(_) => (simple_binding(parameter)?, None),
+                Pat::Assign(assignment) => (
+                    simple_binding(&assignment.left)?,
+                    Some(LocalExpression::lower(&assignment.right, false)?),
+                ),
+                _ => return None,
+            };
+            let parameter = LocalParameter { binding, default };
             if bindings
-                .insert(simple_binding(parameter)?, LocalBinding::Parameter)
+                .insert(parameter.binding.clone(), LocalBinding::Parameter)
                 .is_some()
             {
                 return None;
             }
+            lowered.push(parameter);
         }
-        Some(bindings)
+        Some((bindings, lowered))
     }
 
     fn from_operations(
         bindings: BTreeMap<Id, LocalBinding>,
+        parameters: Vec<LocalParameter>,
         operations: Vec<LocalOperation>,
     ) -> Self {
+        let expressions = || {
+            parameters
+                .iter()
+                .filter_map(|parameter| parameter.default.as_ref())
+                .chain(Self::expressions(&operations))
+        };
         let mut reads = BTreeSet::new();
-        for expression in Self::expressions(&operations) {
+        for expression in expressions() {
             expression.reads(&mut reads);
         }
         reads.retain(|binding| !bindings.contains_key(binding));
         let mut writes = BTreeSet::new();
-        for expression in Self::expressions(&operations) {
+        for expression in expressions() {
             expression.writes(&mut writes);
         }
         writes.retain(|binding| !bindings.contains_key(binding));
-        let (mut allocation_only_syntax, mut closure_allocation_syntax) = (true, true);
+        // Provider execution does not consume defaults yet. Retaining their
+        // source plan must not admit a previously refused provider summary.
+        let no_defaults = parameters
+            .iter()
+            .all(|parameter| parameter.default.is_none());
+        let (mut allocation_only_syntax, mut closure_allocation_syntax) =
+            (no_defaults, no_defaults);
         let mut closure_sites = BTreeSet::new();
-        for expression in Self::expressions(&operations) {
+        for expression in expressions() {
             let (allocation, closure) = expression.allocation_syntax(&bindings, &mut closure_sites);
             allocation_only_syntax &= allocation;
             closure_allocation_syntax &= closure;
@@ -896,10 +961,11 @@ impl LocalBody {
             .any(|operation| matches!(operation, LocalOperation::Throw(_)));
         closure_allocation_syntax &= !closure_sites.is_empty();
         let requires_keyed_collection_new =
-            Self::expressions(&operations).any(LocalExpression::requires_keyed_collection_new);
+            expressions().any(LocalExpression::requires_keyed_collection_new);
         let closure_sites: Arc<[_]> = closure_sites.into_iter().collect();
         Self {
             bindings,
+            parameters: parameters.into(),
             operations: operations.into(),
             initializer_span: None,
             free_reads: (!reads.is_empty()).then(|| reads.into_iter().collect()),

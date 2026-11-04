@@ -33,14 +33,19 @@ fn complete_execution_has_no_precision_loss() {
         vec![],
     ));
     assert_entry_output(&fixture, "3\n");
+    let result = execution(&fixture, "result");
+    assert_eq!(result["complete"], true, "{result:#}");
+    assert_eq!(result["precision_losses"], serde_json::json!([]));
     assert_eq!(
-        execution(&fixture, "result"),
-        serde_json::json!({
-            "binding_effect_authority": {
-                "authority": "legacy_execution", "complete": true
-            },
-            "complete": true, "precision_losses": []
-        })
+        result["binding_effect_authority"]["authority"],
+        "operation_receipt"
+    );
+    assert_eq!(
+        result["binding_effect_authority"]["receipt"]["calls"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
     );
 }
 
@@ -499,6 +504,69 @@ fn acyclic_call_chain_reports_the_actual_depth_bound() {
 }
 
 #[test]
+fn single_call_root_depth_limit_does_not_invent_a_caller_remainder() {
+    let mut source = String::new();
+    for index in 0..66 {
+        source.push_str(&format!(
+            "function step{index}() {{ return step{}(); }}\n",
+            index + 1
+        ));
+    }
+    source.push_str(
+        "function step66() { return 3; }\nconst result = step0();\nconsole.log(result);\n",
+    );
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+    assert_preserved_entry_output(&fixture, "3\n");
+    let result = execution(&fixture, "result");
+    let loss = assert_reason(
+        &result,
+        serde_json::json!({"code": "invocation_depth_limit", "limit": 64}),
+    );
+    assert_eq!(
+        loss["reach"],
+        serde_json::json!({"kind": "bounded"}),
+        "{result:#}"
+    );
+    assert_eq!(loss["statement_ordinal"], 64);
+    assert_eq!(loss["source_location"]["start_line"], 65);
+    assert_eq!(
+        result["precision_losses"].as_array().unwrap().len(),
+        1,
+        "the exact terminal root keeps the child's depth loss without adding an opaque/global caller remainder: {result:#}"
+    );
+}
+
+#[test]
+fn compound_call_root_keeps_its_unexecuted_remainder_fallback() {
+    let mut source = String::from("const seed = 7;\n");
+    for index in 0..66 {
+        source.push_str(&format!(
+            "function step{index}() {{ return step{}(); }}\n",
+            index + 1
+        ));
+    }
+    source.push_str("function step66() { return 3; }\nfunction tail() { return seed; }\nconst result = (step0(), tail());\nconsole.log(result);\n");
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+    assert_preserved_entry_output(&fixture, "7\n");
+    let result = execution(&fixture, "result");
+    assert_reason(
+        &result,
+        serde_json::json!({"code": "invocation_depth_limit", "limit": 64}),
+    );
+    assert!(
+        result["precision_losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|loss| {
+                loss["reason"]["code"] == "unsupported_operation"
+                    && loss["reason"]["operation"] == "opaque_execution"
+            }),
+        "the second root operand still needs conservative remainder handling: {result:#}"
+    );
+}
+
+#[test]
 fn multichunk_acyclic_call_chain_below_depth_bound_remains_complete() {
     let depth = 60;
     let mut source = String::from("const seed = 3;\n");
@@ -762,14 +830,19 @@ fn wide_acyclic_execution_below_the_expansion_bound_remains_complete() {
     source.push_str(&format!("function factory() {{ {calls} return 3; }}\nconst result = factory();\nconsole.log(result);\n"));
     let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
     assert_entry_output(&fixture, "3\n");
+    let result = execution(&fixture, "result");
+    assert_eq!(result["complete"], true, "{result:#}");
+    assert_eq!(result["precision_losses"], serde_json::json!([]));
     assert_eq!(
-        execution(&fixture, "result"),
-        serde_json::json!({
-            "binding_effect_authority": {
-                "authority": "legacy_execution", "complete": true
-            },
-            "complete": true, "precision_losses": []
-        })
+        result["binding_effect_authority"]["authority"],
+        "operation_receipt"
+    );
+    assert_eq!(
+        result["binding_effect_authority"]["receipt"]["calls"]
+            .as_array()
+            .unwrap()
+            .len(),
+        241
     );
 }
 

@@ -3,7 +3,7 @@
 
 use super::super::allocation_transfer::AllocationJudgment;
 use super::super::effect_coverage::EffectCoverageFragment;
-use super::super::local_transfer::EvaluatedCallee;
+use super::super::local_transfer::{CallableSelection, EvaluatedCallee};
 use super::super::noninvoking_initialization::{EvaluatedInitializer, OriginalInitializer};
 use super::super::property_inference::OwnPropertyProof;
 use super::super::value_model::{CapturedContext, Context, ValueExpr, Values};
@@ -73,6 +73,7 @@ pub(super) struct ProgramPoint {
 pub(super) struct CallOperands {
     pub(super) callee: EvaluatedCallee,
     pub(super) arguments: Vec<Values>,
+    pub(super) argument_selections: Vec<Option<CallableSelection>>,
 }
 
 pub(super) enum CallTransfer {
@@ -112,6 +113,7 @@ pub(super) enum RuntimeOperation {
     Invoke {
         callable: u32,
         arguments: Vec<Values>,
+        argument_selections: Vec<Option<CallableSelection>>,
         captured: Option<CapturedContext>,
         fresh_checked_constructor: bool,
     },
@@ -572,11 +574,13 @@ impl RuntimeRules<'_, '_> {
             RuntimeOperation::Invoke {
                 callable,
                 arguments,
+                argument_selections,
                 captured,
                 fresh_checked_constructor,
             } => RuntimeValue::Outcome(Box::new(executor.invoke_transfer(
                 callable,
                 arguments,
+                argument_selections,
                 captured,
                 fresh_checked_constructor,
             ))),

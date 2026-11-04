@@ -225,6 +225,7 @@ impl LocalContext for ProviderContext<'_> {
             },
             // Provider queries have no application call/execution receipt.
             effects: Default::default(),
+            selection: None,
         })
     }
     fn assign_capture(
@@ -245,13 +246,14 @@ impl LocalContext for ProviderContext<'_> {
                 judgment: AllocationJudgment::CoveredAllocationOnly(Default::default()),
             },
             effects: Default::default(),
+            selection: None,
         })
     }
     fn call(
         &mut self,
         _frame: &mut LocalFrame,
         _callee: &EvaluatedCallee,
-        _arguments: &[Values],
+        _arguments: &[local_transfer::SelectedValue],
         _span: Span,
     ) -> Option<LocalValueResult> {
         // An allocation-only query has no invocation certificate. Forwarding

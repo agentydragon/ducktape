@@ -7,7 +7,8 @@ use super::super::effect_coverage::{
 };
 use super::super::local_operations::{LocalBinding, LocalBody, LocalExpression, LocalOperation};
 use super::super::local_transfer::{
-    self, EvaluatedCallee, LocalContext, LocalFrame, LocalValueResult,
+    self, CallableSelection, EvaluatedCallee, LocalContext, LocalFrame, LocalValueResult,
+    SelectedValue,
 };
 use super::super::noninvoking_initialization::{
     CompletedInitialization, NativeConstructorCandidate, NativeConstructorForm,
@@ -115,6 +116,7 @@ pub(super) struct Outcome {
     /// never carry a root identity and cannot seal their parent's effects.
     root_binding_effect_identity: Option<RootInitializerIdentity>,
     returns: Values,
+    return_selection: Option<CallableSelection>,
     complete: bool,
     executed_owners: BTreeSet<SourceUnitOrdinal>,
     unknown_call: bool,
@@ -451,6 +453,7 @@ struct CallbackFallbackSummary {
 struct InvocationSignature {
     callable: u32,
     arguments: Vec<Values>,
+    argument_selections: Vec<Option<CallableSelection>>,
     captured_context: Option<CapturedContext>,
     fresh_checked_constructor: bool,
     reachability_revision: u64,
@@ -839,6 +842,9 @@ pub(super) struct ExecutionState {
     frozen_namespace_calls: BTreeSet<CallSite>,
     reachability: ReachabilityState,
     prefix_values: Context,
+    /// Published only from an actual ordered initializer result. A flat
+    /// projection's singleton value is not evidence of callable selection.
+    prefix_callable_selections: OrdMap<Id, CallableSelection>,
     initialized_bindings: BTreeSet<Id>,
     global_escaped_callbacks: Values,
     /// First top-level owner observed inserting each function callback into
@@ -1497,9 +1503,50 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             self.executor.state.tainted_objects.insert(allocation);
         }
     }
+    fn instantiate_parameter_bindings(&mut self, frame: &mut LocalFrame) {
+        for parameter in self.body.parameters.iter() {
+            let binding = &parameter.binding;
+            if !self
+                .executor
+                .inputs
+                .captured_local_bindings
+                .contains(binding)
+            {
+                continue;
+            }
+            let cell = self.executor.state.lexical_cells.insert(LexicalCell {
+                values: frame.environment[binding].clone(),
+                kind: LocalBinding::Parameter,
+                initialization: CellInitialization::Uninitialized,
+            });
+            self.executor
+                .state
+                .active_cells
+                .insert(binding.clone(), cell);
+            self.executor.state.prefix_revision =
+                self.executor.state.prefix_revision.wrapping_add(1);
+        }
+    }
+    fn parameter_initialization(
+        &self,
+        binding: &Id,
+        _frame: &LocalFrame,
+    ) -> EffectCoverageFragment {
+        if self.executor.state.active_cells.contains_key(binding) {
+            // Live captured-cell initialization needs its own receipt family.
+            EffectCoverageFragment::default()
+        } else {
+            EffectCoverageFragment::lexical_operation()
+        }
+    }
     fn instantiate_bindings(&mut self, frame: &mut LocalFrame) {
         let mut allocated = false;
         for (binding, kind) in &self.body.bindings {
+            if *kind == LocalBinding::Parameter && frame.parameter_inputs.is_some() {
+                // The parameter environment already exists, including cells
+                // captured while a default expression was evaluated.
+                continue;
+            }
             if self.missing_activation_binding(binding, frame) {
                 // A captured context can carry a prior activation's cell.
                 // Its source binding is not this missing function value.
@@ -1636,6 +1683,9 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             EffectCoverageFragment::default()
         };
         Some(LocalValueResult {
+            selection: effects
+                .lexical_selection_dependencies()
+                .and_then(|dependencies| CallableSelection::observed(&values, dependencies)),
             allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
             effects,
         })
@@ -1710,24 +1760,63 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         // Declarative module GetBindingValue has no property/heap/host
         // operation. This proves its effects independently of the value kind.
         // Captures, imports, globals and possible abrupt reads have no receipt.
-        let effects = if self.executor.initialized_local_binding(binding)
-            && !values.is_empty()
-            && !values.contains(&AbstractValue::Value(Value::Unavailable))
-        {
+        let normal =
+            !values.is_empty() && !values.contains(&AbstractValue::Value(Value::Unavailable));
+        let effects = if normal && self.executor.initialized_local_binding(binding) {
             EffectCoverageFragment::initialized_module_read()
+        } else if normal
+            && frame.initialized_parameters.contains(binding)
+            && !self.executor.state.active_cells.contains_key(binding)
+        {
+            EffectCoverageFragment::no_effects()
         } else {
             EffectCoverageFragment::default()
+        };
+        let selection = if self.executor.initialized_local_binding(binding) {
+            self.executor
+                .state
+                .prefix_callable_selections
+                .get(binding)
+                .filter(|selection| selection.matches(&values))
+                .cloned()
+                .or_else(|| {
+                    let key = self.executor.inputs.index.hoisted_bindings.get(binding)?;
+                    (self
+                        .executor
+                        .inputs
+                        .index
+                        .direct_top_level_functions
+                        .contains(binding)
+                        && self
+                            .executor
+                            .local_call_target(&values)
+                            .is_some_and(|(target, _)| target == *key))
+                    .then(|| {
+                        CallableSelection::observed(
+                            &values,
+                            self.executor.boxed_settled_prefix_dependencies(),
+                        )
+                    })
+                    .flatten()
+                })
+        } else {
+            frame
+                .binding_selections
+                .get(binding)
+                .filter(|selection| selection.matches(&values))
+                .cloned()
         };
         Some(LocalValueResult {
             allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
             effects,
+            selection,
         })
     }
     fn call(
         &mut self,
         frame: &mut LocalFrame,
         callee: &EvaluatedCallee,
-        arguments: &[Values],
+        arguments: &[SelectedValue],
         span: Span,
     ) -> Option<LocalValueResult> {
         let targets = callee.targets();
@@ -1735,7 +1824,12 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         if let Some(receiver) = callee.receiver() {
             reached.extend(receiver.iter().cloned());
         }
-        reached.extend(arguments.iter().flatten().cloned());
+        reached.extend(
+            arguments
+                .iter()
+                .flat_map(|argument| &argument.values)
+                .cloned(),
+        );
         frame
             .borrowed_records
             .extend(self.executor.reachable_objects(&reached));
@@ -1757,7 +1851,14 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             }),
             operands: Some(Box::new(CallOperands {
                 callee: callee.clone(),
-                arguments: arguments.to_vec(),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| argument.values.clone())
+                    .collect(),
+                argument_selections: arguments
+                    .iter()
+                    .map(|argument| argument.selection.clone())
+                    .collect(),
             })),
         });
         let RuntimeValue::Call {
@@ -1801,17 +1902,25 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 return Some(LocalValueResult {
                     allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
                     effects: outcome.effect_coverage,
+                    selection: outcome.return_selection,
                 });
             }
-            let terminal_local_call = matches!(self.scope, LocalExecutionScope::Callable(_))
-                && matches!(callee, EvaluatedCallee::Direct(_))
-                && matches!(
+            let terminal_position = match self.scope {
+                LocalExecutionScope::Callable(_) => matches!(
                     self.body.operations.last(),
                     Some(LocalOperation::Return(Some(LocalExpression::Call {
                         span: terminal_span,
                         ..
                     }))) if *terminal_span == span
-                )
+                ),
+                // This canonical root has one direct zero-argument call and
+                // no suffix. Other root expressions retain remainder fallback.
+                LocalExecutionScope::RootInitializer => {
+                    self.body.single_identifier_call_initializer() == Some(span)
+                }
+            };
+            let terminal_local_call = terminal_position
+                && matches!(callee, EvaluatedCallee::Direct(_))
                 && self
                     .executor
                     .local_call_target(targets)
@@ -8275,6 +8384,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn apply_rebind_effects(&mut self, rebinds: &BTreeSet<(Id, SourceUnitOrdinal)>) {
         for (id, _) in rebinds {
+            self.state.prefix_callable_selections.remove(id);
             if !self.inputs.top_bindings.contains(id) {
                 continue;
             }
@@ -9675,11 +9785,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &mut self,
         body: &LocalBody,
         environment: Context,
+        parameters: Option<Vec<SelectedValue>>,
         owner: SourceUnitOrdinal,
         scope: LocalExecutionScope,
         root_binding_effect_identity: Option<RootInitializerIdentity>,
     ) -> Outcome {
         let mut frame = LocalFrame::new(environment);
+        if let Some(parameters) = &parameters {
+            frame.inputs.extend(
+                parameters
+                    .iter()
+                    .flat_map(|parameter| parameter.values.iter())
+                    .cloned(),
+            );
+        }
+        frame.parameter_inputs = parameters;
         frame.borrowed_records = self.reachable_objects(&frame.inputs);
         let root_binding_effect_identity = match scope {
             LocalExecutionScope::RootInitializer => Some(
@@ -9727,6 +9847,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
         }
         outcome.returns.extend(frame.returns);
+        outcome.return_selection = frame
+            .return_selection
+            .filter(|selection| selection.matches(&outcome.returns));
         outcome
     }
 
@@ -9734,6 +9857,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &mut self,
         key: u32,
         args: Vec<Values>,
+        captured: Option<CapturedContext>,
+        fresh_checked_constructor: bool,
+    ) -> Outcome {
+        let argument_selections = vec![None; args.len()];
+        self.invoke_selected(
+            key,
+            args,
+            argument_selections,
+            captured,
+            fresh_checked_constructor,
+        )
+    }
+
+    fn invoke_selected(
+        &mut self,
+        key: u32,
+        args: Vec<Values>,
+        argument_selections: Vec<Option<CallableSelection>>,
         captured: Option<CapturedContext>,
         fresh_checked_constructor: bool,
     ) -> Outcome {
@@ -9745,6 +9886,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 RuntimeOperation::Invoke {
                     callable: key,
                     arguments: args,
+                    argument_selections,
                     captured,
                     fresh_checked_constructor,
                 },
@@ -9762,6 +9904,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &mut self,
         key: u32,
         args: Vec<Values>,
+        argument_selections: Vec<Option<CallableSelection>>,
         captured: Option<CapturedContext>,
         fresh_checked_constructor: bool,
     ) -> Outcome {
@@ -9772,7 +9915,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .map(|context| context.values.cells.clone())
                 .unwrap_or_default(),
         );
-        let mut outcome = self.invoke_with_cells(key, args, captured, fresh_checked_constructor);
+        let mut outcome = self.invoke_with_cells(
+            key,
+            args,
+            argument_selections,
+            captured,
+            fresh_checked_constructor,
+        );
         self.record_callable_heap_contents(key, &mut outcome);
         if !outcome.complete || outcome.unknown_call {
             let cells: Vec<_> = self.state.active_cells.values().copied().collect();
@@ -9786,6 +9935,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &mut self,
         key: u32,
         args: Vec<Values>,
+        argument_selections: Vec<Option<CallableSelection>>,
         captured: Option<CapturedContext>,
         fresh_checked_constructor: bool,
     ) -> Outcome {
@@ -9804,12 +9954,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .params
                 .iter()
                 .any(|parameter| parameter.binding.is_none());
-        // The local kernel starts after this prologue. Only an empty ordinary
-        // invocation can forward its body receipt without a separate parameter,
-        // arguments, capture or receiver operation receipt.
+        // Only ordinary calls with no live captures can acquire parameter
+        // receipts. Other invocation kinds retain their compatibility path.
         let callable = &self.inputs.index.callables[&key];
-        let covered_prologue = callable.params.is_empty()
-            && !uses_arguments
+        let covered_prologue = !uses_arguments
             && !callable.implicit_capture
             && !callable.generator
             && !callable.opaque
@@ -9838,6 +9986,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let signature = InvocationSignature {
             callable: key,
             arguments: args.clone(),
+            argument_selections: argument_selections.clone(),
             captured_context: captured.clone(),
             fresh_checked_constructor,
             reachability_revision: self.state.reachability.revision,
@@ -9891,7 +10040,32 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return Outcome::default();
         };
         let mut env = captured_context.clone();
-        for (index, param) in callable.params.iter().enumerate() {
+        let ordered_prologue = covered_prologue
+            && !unsupported_inputs
+            && self.state.array_iteration_depth == 0
+            && self.inputs.index.dynamic_scope_owners.is_empty()
+            && callable.member_value_writes.is_empty()
+            && callable.local_body.as_ref().is_some_and(|body| {
+                !body.requires_keyed_collection_new()
+                    && body
+                        .captured_writes()
+                        .iter()
+                        .all(|binding| self.state.active_cells.contains_key(binding))
+                    && body.free_reads().iter().all(|binding| {
+                        env.contains_key(binding)
+                            || self.inputs.top_bindings.contains(binding)
+                            || (!self.inputs.flow.is_declared(binding)
+                                && !self.inputs.shadowed.contains(binding.0.as_ref())
+                                && NativeIntrinsic::for_global_binding(binding.0.as_ref())
+                                    .is_some())
+                    })
+            });
+        for (index, param) in callable
+            .params
+            .iter()
+            .enumerate()
+            .filter(|_| !ordered_prologue)
+        {
             let mut values = args
                 .get(index)
                 .cloned()
@@ -9938,6 +10112,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if !unsupported_inputs
             && self.inputs.index.dynamic_scope_owners.is_empty()
             && let Some(body) = &callable.local_body
+            // A default-bearing plan must execute its prologue in the shared
+            // kernel. Pre-evaluating its value would omit the default's calls.
+            && (ordered_prologue || body.parameters.iter().all(|parameter| parameter.default.is_none()))
             && !body.requires_keyed_collection_new()
             && body
                 .captured_writes()
@@ -9978,11 +10155,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 let mut outcome = self.execute_local_body(
                     body,
                     env,
+                    ordered_prologue.then(|| {
+                        args.iter()
+                            .cloned()
+                            .zip(argument_selections.iter().cloned())
+                            .map(|(values, selection)| SelectedValue { values, selection })
+                            .collect()
+                    }),
                     callable.owner,
                     LocalExecutionScope::Callable(key),
                     None,
                 );
-                if !covered_prologue {
+                if !covered_prologue || (!callable.params.is_empty() && !ordered_prologue) {
                     outcome.effect_coverage = EffectCoverageFragment::default();
                 }
                 outcome.body_invoked = true;
@@ -10291,6 +10475,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     } => selection_dependencies.clone(),
                     EvaluatedCallee::Direct(_) => None,
                 });
+        let selected_value = operands
+            .as_ref()
+            .and_then(|operands| match &operands.callee {
+                EvaluatedCallee::Direct(value) => value
+                    .selection
+                    .as_ref()
+                    .filter(|selection| selection.matches(&value.values))
+                    .cloned(),
+                EvaluatedCallee::Member { .. } => None,
+            });
+        let argument_selections = operands
+            .as_ref()
+            .map(|operands| operands.argument_selections.clone())
+            .unwrap_or_else(|| vec![None; call.args.len()]);
         if let Some(operands) = &operands {
             assert!(call.kind == CallKind::Call && !call.has_spread);
             assert!(match (&call.callee, &operands.callee) {
@@ -10672,7 +10870,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             Some(operands) => {
                 assert_eq!(operands.arguments.len(), call.args.len());
                 match operands.callee {
-                    EvaluatedCallee::Direct(targets) => (targets, operands.arguments, None),
+                    EvaluatedCallee::Direct(targets) => (targets.values, operands.arguments, None),
                     EvaluatedCallee::Member {
                         receiver, targets, ..
                     } => (targets, operands.arguments, Some(receiver)),
@@ -11053,8 +11251,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // The receipt belongs to this exact selected invocation. A member
         // target is admitted only when LocalBody already consumed its
         // initialized-module own-data selection before evaluating arguments;
-        // aliases, native/imported targets and known return values do not
-        // manufacture a selection receipt.
+        // An alias instead needs the actual value-selection evidence carried
+        // by its ordered producer. Native/imported targets and raw known
+        // return values do not manufacture a selection receipt.
         let direct_binding = match &call.callee {
             ValueExpr::Binding(binding)
                 if self
@@ -11081,7 +11280,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && call.kind == CallKind::Call
             && !call.has_spread
             && !operands_may_throw
-            && (direct_binding.is_some() || member_selection)
+            && (direct_binding.is_some() || member_selection || selected_value.is_some())
             && let Some((key, callable)) = self.local_call_target(&targets)
             && let Some(caller) = self.local_body_identity_for_call(call)
             && direct_binding
@@ -11090,6 +11289,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let mut prerequisites = self.boxed_settled_prefix_dependencies();
             if let Some(selection) = &selected_member_dependencies {
                 prerequisites.extend(selection);
+            }
+            if let Some(selection) = &selected_value {
+                prerequisites.extend(&selection.dependencies);
             }
             Some((
                 key,
@@ -11103,6 +11305,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         } else {
             None
         };
+        let single_target = targets.len() == 1;
+        let mut result_selection = None;
         for target in targets {
             match target {
                 AbstractValue::CallbackFactory
@@ -11254,7 +11458,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
                     if call.kind == CallKind::Call =>
                 {
-                    let mut nested = self.invoke(key, args.clone(), None, false);
+                    let mut nested = self.invoke_selected(
+                        key,
+                        args.clone(),
+                        argument_selections.clone(),
+                        None,
+                        false,
+                    );
+                    if single_target && coverage_target.is_some() {
+                        result_selection = nested.return_selection.clone();
+                    }
                     if let Some((expected, caller, target, prerequisites)) = &coverage_target
                         && *expected == key
                     {
@@ -11279,7 +11492,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
                 }
                 AbstractValue::Closure(key, captured) if call.kind == CallKind::Call => {
-                    let mut nested = self.invoke(key, args.clone(), Some(captured), false);
+                    let mut nested = self.invoke_selected(
+                        key,
+                        args.clone(),
+                        argument_selections.clone(),
+                        Some(captured),
+                        false,
+                    );
+                    if single_target && coverage_target.is_some() {
+                        result_selection = nested.return_selection.clone();
+                    }
                     if let Some((expected, caller, target, prerequisites)) = &coverage_target
                         && *expected == key
                     {
@@ -11318,6 +11540,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
         }
+        outcome.return_selection =
+            result_selection.filter(|selection| selection.matches(&result_values));
         CallTransfer::requested(needs_value, || result_values)
     }
 }
@@ -12313,6 +12537,7 @@ pub(crate) fn annotate_synchronous_calls(
         frozen_namespace_calls: BTreeSet::new(),
         reachability: ReachabilityState::default(),
         prefix_values: initial_values,
+        prefix_callable_selections: OrdMap::new(),
         initialized_bindings,
         global_escaped_callbacks: Values::new(),
         first_callback_publication_owners: BTreeMap::new(),
@@ -12839,20 +13064,32 @@ impl Executor<'_, '_> {
             && index.top_property_writes[owner.0].is_empty()
             && index.top_member_value_writes[owner.0].is_empty()
             && index.top_callback_result_writes[owner.0].is_empty()
-            && index.top_exported_values[owner.0].is_empty()
-            // Migrate compound call/field operands first. A lone call keeps
-            // its established effect-only/result projection path; selecting
-            // it here would introduce a remainder fallback even when there
-            // is no later operand whose value needs ordered transport.
-            && (calls.iter().filter(|call| call.kind == CallKind::Call).nth(1).is_some()
-                || (calls.iter().any(|call| call.kind == CallKind::Call)
-                    && calls.iter().any(|call| call.kind == CallKind::LocalMemberRead))))
+            && index.top_exported_values[owner.0].is_empty())
         .then(|| index.ordered_initializers.get(&owner))
         .flatten()
         .filter(|body| {
             !body.requires_keyed_collection_new()
                 && body.captured_writes().is_empty()
                 && self.ordered_root_calls_are_local(calls)
+                && (calls
+                    .iter()
+                    .filter(|call| call.kind == CallKind::Call)
+                    .nth(1)
+                    .is_some()
+                    || (calls.iter().any(|call| call.kind == CallKind::Call)
+                        && calls
+                            .iter()
+                            .any(|call| call.kind == CallKind::LocalMemberRead))
+                    || body
+                        .single_identifier_call_initializer()
+                        .is_some_and(|span| {
+                            matches!(calls.as_slice(), [call]
+                            if call.kind == CallKind::Call
+                                && call.span == span
+                                && !call.has_spread
+                                && call.args.is_empty()
+                                && matches!(call.callee, ValueExpr::Binding(_)))
+                        }))
         });
         // Canonical source identity is independent of leaf/value admission.
         // Retain the exact selected body span, not a lowered-value guess.
@@ -12885,6 +13122,7 @@ impl Executor<'_, '_> {
             outcome = self.execute_local_body(
                 body,
                 Context::new(),
+                None,
                 owner,
                 LocalExecutionScope::RootInitializer,
                 Some(RootInitializerIdentity {
@@ -12893,7 +13131,10 @@ impl Executor<'_, '_> {
                     initializer_span: body.initializer_span(),
                 }),
             );
-            Some(std::mem::take(&mut outcome.returns))
+            Some(SelectedValue {
+                values: std::mem::take(&mut outcome.returns),
+                selection: outcome.return_selection.take(),
+            })
         } else {
             None
         };
@@ -13043,7 +13284,7 @@ impl Executor<'_, '_> {
             if !needed.contains(id) && initializer_source.is_none() {
                 continue;
             }
-            let values = if let Some(source) = initializer_source {
+            let (values, selection) = if let Some(source) = initializer_source {
                 let RuntimeValue::Initializer {
                     values,
                     evaluated,
@@ -13063,11 +13304,27 @@ impl Executor<'_, '_> {
                     outcome.effect_coverage = *coverage;
                 }
                 initialization_coverage_refusal = initialization_coverage_refusal.or(refusal);
-                values
-            } else if let Some(values) = ordered_initializer_result.take() {
-                values
+                (values, None)
+            } else if let Some(result) = ordered_initializer_result.take() {
+                let selection = result.selection.filter(|selection| {
+                    selection.matches(&result.values)
+                        && outcome.complete
+                        && !outcome.unknown_call
+                        && outcome.effects.precision_losses.is_empty()
+                        && outcome
+                            .root_binding_effect_identity
+                            .as_ref()
+                            .is_some_and(|identity| {
+                                identity.owner == owner
+                                    && identity.binding == *id
+                                    && ordered_initializer.is_some_and(|body| {
+                                        identity.initializer_span == body.initializer_span()
+                                    })
+                            })
+                });
+                (result.values, selection)
             } else {
-                self.evaluate(expression, &top_env, &top_captures)
+                (self.evaluate(expression, &top_env, &top_captures), None)
             };
             // A dead initializer is evaluated for coverage, while the normal
             // needed-binding policy still owns retained prefix values.
@@ -13085,11 +13342,19 @@ impl Executor<'_, '_> {
                 .or_default()
                 .extend(values.clone());
             if self.inputs.top_bindings.contains(id) {
+                self.state.prefix_callable_selections.remove(id);
                 self.state
                     .prefix_values
                     .entry(id.clone())
                     .or_default()
                     .extend(values);
+                if let Some(selection) = selection
+                    && selection.matches(&self.state.prefix_values[id])
+                {
+                    self.state
+                        .prefix_callable_selections
+                        .insert(id.clone(), selection);
+                }
                 self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
             }
         }

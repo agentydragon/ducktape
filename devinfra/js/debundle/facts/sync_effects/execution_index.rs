@@ -10494,7 +10494,12 @@ impl ExecutionIndex {
         visit(self);
         self.prototype_capture_stack.pop();
         let callable = self.callables.get_mut(&key).unwrap();
-        if let Some(body) = callable.local_body.take() {
+        if let Some(body) = callable.local_body.take()
+            // Defaults run outside the body var environment. Use the full
+            // declaration census, including dead/nested var declarations.
+            && ((callable.hoisted_vars.is_empty() && callable.local_functions.is_empty())
+                || body.parameters.iter().all(|parameter| parameter.default.is_none()))
+        {
             callable.local_body = Some(
                 body.with_declarations(
                     callable.hoisted_vars.iter().cloned(),
