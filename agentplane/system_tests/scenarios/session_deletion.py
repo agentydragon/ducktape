@@ -4,8 +4,7 @@
 
 import asyncio
 import json
-import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from uuid import uuid4
@@ -24,9 +23,14 @@ from agentplane.proto import session_pb2
 from agentplane.runner_gateway import api
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
+from agentplane.system_tests.cleanup_diagnostics import capture_without_masking
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.dispatcher_transport import Caller, bound_caller, forward
-from agentplane.system_tests.sandbox import ENVIRONMENT_RUNTIME_LEASE_SUFFIX, POD_TEMPLATE
+from agentplane.system_tests.sandbox import (
+    ENVIRONMENT_RUNTIME_CONTAINER,
+    ENVIRONMENT_RUNTIME_LEASE_SUFFIX,
+    POD_TEMPLATE,
+)
 from agentplane.system_tests.scenarios.dispatcher import container_mount_sources, opening_until
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -142,11 +146,13 @@ async def _retain_quiesced_pod(cluster: Cluster, name: str, uid: str) -> AsyncIt
             )
 
 
-async def _file(path: Path, expected: str) -> None:
+async def _file(path: Path, expected: str, *, check_failure: Callable[[], Awaitable[None]] | None = None) -> None:
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(120), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
     ):
         with attempt:
+            if check_failure is not None:
+                await check_failure()
             assert await asyncio.to_thread(path.exists), path
             assert await asyncio.to_thread(path.read_text) == expected
 
@@ -249,19 +255,38 @@ async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[s
         assert admitted.admission.event.command_admitted.command.command_id == positive
         resource = json.loads(await cluster.kubectl("get", "sandbox", name, "-o", "json"))
         incarnation = resource["status"]["incarnation"]
+
+        async def capture_runtime() -> None:
+            async with asyncio.timeout(30):
+                pod = await cluster.kubectl("get", "pod", incarnation["name"], "-o", "json")
+                (artifact / "pod.json").write_text(pod)
+                log = await cluster.kubectl("logs", incarnation["name"], "-c", ENVIRONMENT_RUNTIME_CONTAINER)
+                (artifact / "runtime.log").write_text(log)
+                await container_mount_sources(crictl_command, cluster, incarnation["name"], artifact)
+
         sources = await container_mount_sources(crictl_command, cluster, incarnation["name"], artifact)
         gate = sources["/state"] / "deletion-test-admission"
-        gate.mkdir()
-        owner = sources["/state"].stat()
-        os.chown(gate, owner.st_uid, owner.st_gid)
+        # The test Runtime creates this directory as its own UID before serving any requests.
+        if not gate.is_dir():
+            await capture_runtime()
+            raise AssertionError("The Sandbox is not running the deletion-test Runtime")
+        gate_stat = gate.stat()
+        evidence["gate_owner"] = {"uid": gate_stat.st_uid, "gid": gate_stat.st_gid, "mode": oct(gate_stat.st_mode)}
+        persist()
         (gate / "command").write_text(delayed)
         call = runner.ChangeReasoningEffort(
             environment_runtime_pb2.ChangeReasoningEffortRequest(session_id=session, command_id=delayed, effort="high"),
             metadata=metadata,
             timeout=180,
         )
+
+        async def check_call() -> None:
+            if call.done():
+                await call
+                raise RuntimeError("Command completed before the admission gate was entered")
+
         try:
-            await _file(gate / "entered", delayed)
+            await _file(gate / "entered", delayed, check_failure=check_call)
             assert not call.done()
             evidence.update({"sandbox_uid": uid, "pod_uid": incarnation["uid"], "routed_before_deletion": True})
             persist()
@@ -320,6 +345,9 @@ async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[s
                 evidence["runtime_handler_result"] = "FailedPrecondition"
                 evidence["sealed_cursor_unchanged"] = before[0]
                 persist()
+        except Exception as error:
+            await capture_without_masking(error, capture_runtime)
+            raise
         finally:
             (gate / "release").touch()
             call.cancel()

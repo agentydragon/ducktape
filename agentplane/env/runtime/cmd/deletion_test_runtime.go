@@ -18,6 +18,9 @@ import (
 // authenticated command before Runtime admission without holding control/Session locks or Quiesce.
 func newRuntime(config runtime.Config) (*runtime.Runtime, error) {
 	directory := filepath.Join(config.StateDir, "deletion-test-admission")
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return nil, err
+	}
 	config.ControlInterceptor = func(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		command, ok := request.(*environmentruntimepb.ChangeReasoningEffortRequest)
 		if !ok {
