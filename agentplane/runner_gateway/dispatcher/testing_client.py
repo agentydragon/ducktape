@@ -43,7 +43,7 @@ class SessionDispatcherClient:
         response = await self.unary(
             self.stub.SubmitInput,
             session_dispatcher_pb2.SubmitInputRequest(
-                session_id=session_id, command_id=command_id, sandbox=sandbox, sandbox_uid=sandbox_uid, text=text
+                session_id=session_id, command_id=command_id, expected_sandbox_uid=sandbox_uid, text=text
             ),
         )
         return response.dispatch

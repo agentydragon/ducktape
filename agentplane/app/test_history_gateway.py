@@ -62,8 +62,7 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
                 session_dispatcher_pb2.SubmitInputRequest(
                     command_id=first.command_id,
                     session_id=str(thread),
-                    sandbox=SANDBOX,
-                    sandbox_uid=sandbox.uid,
+                    expected_sandbox_uid=sandbox.uid,
                     text=first.submit_input.text,
                 ),
             )
@@ -108,8 +107,7 @@ async def test_production_bridge_reads_runner_history_across_gateway_restarts(
                 session_dispatcher_pb2.SubmitInputRequest(
                     command_id=second.command_id,
                     session_id=str(thread),
-                    sandbox=SANDBOX,
-                    sandbox_uid=sandbox.uid,
+                    expected_sandbox_uid=sandbox.uid,
                     text=second.submit_input.text,
                 ),
             )
@@ -218,11 +216,7 @@ async def test_dispatcher_resumes_a_dormant_session_and_proxy_reports_it(
             await session_dispatcher.unary(
                 session_dispatcher.stub.SubmitInput,
                 session_dispatcher_pb2.SubmitInputRequest(
-                    session_id=session_id,
-                    command_id="wake-on-input",
-                    sandbox=SANDBOX,
-                    sandbox_uid=sandbox.uid,
-                    text="again",
+                    session_id=session_id, command_id="wake-on-input", expected_sandbox_uid=sandbox.uid, text="again"
                 ),
             )
         ).dispatch,

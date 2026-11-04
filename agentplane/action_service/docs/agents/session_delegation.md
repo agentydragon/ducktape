@@ -164,7 +164,7 @@ With direct Session/History credentials configured, the CLI sequence is:
 
 ```sh
 agentplane sessions open '11111111-1111-4111-8111-111111111111' --sandbox '<target.name>' --sandbox-uid '<target.uid>' --spec '{"harness":"<configurations[0].harness>","model":"<configurations[0].model>","cwd":"<workspace.root>/<unique-session-directory>","reasoning_effort":"<configurations[0].reasoning_efforts[0]>"}'
-agentplane sessions submit-input '11111111-1111-4111-8111-111111111111' --sandbox '<target.name>' --sandbox-uid '<target.uid>' --command-id '22222222-2222-4222-8222-222222222222' --text '<your task>'
+agentplane sessions submit-input '11111111-1111-4111-8111-111111111111' --command-id '22222222-2222-4222-8222-222222222222' --text '<your task>'
 agentplane sessions observe-input '11111111-1111-4111-8111-111111111111' --command-id '22222222-2222-4222-8222-222222222222' --wait-seconds 30
 agentplane sessions get '11111111-1111-4111-8111-111111111111'
 agentplane sessions read-turns '11111111-1111-4111-8111-111111111111' --count 20

@@ -186,12 +186,12 @@ func authorityClientWithDelegation(
 func requireMissingSessionCommands(t *testing.T, client dispatcherpb.SessionDispatcherClient, ctx context.Context, sessionID, sandboxName, sandboxUID string) {
 	t.Helper()
 	if _, err := client.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
-		SessionId: sessionID, Sandbox: sandboxName, SandboxUid: sandboxUID, CommandId: uuid.NewString(), Text: "unregistered",
+		SessionId: sessionID, ExpectedSandboxUid: sandboxUID, CommandId: uuid.NewString(), Text: "unregistered",
 	}); status.Code(err) != codes.NotFound {
 		t.Fatalf("unregistered Session input: %v", err)
 	}
 	if _, err := client.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
-		SessionId: sessionID, Sandbox: sandboxName, SandboxUid: sandboxUID, CommandId: uuid.NewString(), TurnId: "unregistered-turn",
+		SessionId: sessionID, ExpectedSandboxUid: sandboxUID, CommandId: uuid.NewString(), TurnId: "unregistered-turn",
 	}); status.Code(err) != codes.NotFound {
 		t.Fatalf("unregistered Session interrupt: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 		t.Fatalf("OpenSession returned %#v", opened.GetOpening())
 	}
 	if _, err := client.SubmitInput(authorityContext(t, "owner-account"), &dispatcherpb.SubmitInputRequest{
-		CommandId: "authority-owned-input", SessionId: sessionID, Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Text: "owned",
+		CommandId: "authority-owned-input", SessionId: sessionID, ExpectedSandboxUid: authoritySandboxUID, Text: "owned",
 	}); err != nil {
 		t.Fatalf("same-owner SubmitInput: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 		t.Fatalf("foreign GetDispatch = %v, want NotFound", err)
 	}
 	if _, err := client.SubmitInput(foreign, &dispatcherpb.SubmitInputRequest{
-		CommandId: "authority-foreign-input", SessionId: sessionID, Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Text: "foreign",
+		CommandId: "authority-foreign-input", SessionId: sessionID, ExpectedSandboxUid: authoritySandboxUID, Text: "foreign",
 	}); status.Code(err) != codes.NotFound {
 		t.Fatalf("foreign SubmitInput = %v, want NotFound", err)
 	}
@@ -262,7 +262,7 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 		t.Fatalf("normal account read of ownerless legacy Session = %v, want NotFound", err)
 	}
 	if _, err := client.SubmitInput(authorityContext(t, "owner-account"), &dispatcherpb.SubmitInputRequest{
-		CommandId: "authority-legacy-normal-input", SessionId: legacy.SessionID, Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Text: "must remain unowned",
+		CommandId: "authority-legacy-normal-input", SessionId: legacy.SessionID, ExpectedSandboxUid: authoritySandboxUID, Text: "must remain unowned",
 	}); status.Code(err) != codes.NotFound {
 		t.Fatalf("normal write to ownerless legacy Session = %v, want NotFound", err)
 	}
@@ -270,7 +270,7 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 		t.Fatalf("configured Pod-bound backend read of legacy Session: %v", err)
 	}
 	if _, err := client.SubmitInput(authorityContext(t, "owner-pod"), &dispatcherpb.SubmitInputRequest{
-		CommandId: "authority-legacy-backend-input", SessionId: legacy.SessionID, Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Text: "backend",
+		CommandId: "authority-legacy-backend-input", SessionId: legacy.SessionID, ExpectedSandboxUid: authoritySandboxUID, Text: "backend",
 	}); err != nil {
 		t.Fatalf("configured Pod-bound backend write of legacy Session: %v", err)
 	}
@@ -312,12 +312,12 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 	}
 	inventory.failSandboxRead(nil)
 	if _, err := client.SubmitInput(authorityContext(t, "owner-account"), &dispatcherpb.SubmitInputRequest{
-		CommandId: "authority-revoked-input", SessionId: sessionID, Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Text: "revoked",
+		CommandId: "authority-revoked-input", SessionId: sessionID, ExpectedSandboxUid: authoritySandboxUID, Text: "revoked",
 	}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("old principal write after ServiceAccount replacement = %v, want FailedPrecondition", err)
 	}
 	if _, err := client.SubmitInput(replacement, &dispatcherpb.SubmitInputRequest{
-		CommandId: "authority-replacement-input", SessionId: sessionID, Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Text: "replacement",
+		CommandId: "authority-replacement-input", SessionId: sessionID, ExpectedSandboxUid: authoritySandboxUID, Text: "replacement",
 	}); status.Code(err) != codes.NotFound {
 		t.Fatalf("replacement principal write into old Session = %v, want NotFound", err)
 	}
@@ -408,7 +408,7 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	}
 
 	first, err := client.SubmitInput(authorityContext(t, "effective-token"), &dispatcherpb.SubmitInputRequest{
-		CommandId: "direct-to-action-retry", SessionId: sessionID, Sandbox: snapshot.Name, SandboxUid: snapshot.UID, Text: "same domain command",
+		CommandId: "direct-to-action-retry", SessionId: sessionID, ExpectedSandboxUid: snapshot.UID, Text: "same domain command",
 	})
 	if err != nil {
 		t.Fatalf("direct effective caller command: %v", err)
@@ -418,7 +418,7 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 		t.Fatal(err)
 	}
 	second, err := client.SubmitInput(delegated(), &dispatcherpb.SubmitInputRequest{
-		CommandId: "direct-to-action-retry", SessionId: sessionID, Sandbox: snapshot.Name, SandboxUid: snapshot.UID, Text: "same domain command",
+		CommandId: "direct-to-action-retry", SessionId: sessionID, ExpectedSandboxUid: snapshot.UID, Text: "same domain command",
 	})
 	if err != nil || second.GetDispatch().GetCommandId() != first.GetDispatch().GetCommandId() {
 		t.Fatalf("direct-to-delegated operation retry was not reconciled: first=%+v second=%+v err=%v", first, second, err)
@@ -430,7 +430,7 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	}
 
 	created, err := client.SubmitInput(delegated(), &dispatcherpb.SubmitInputRequest{
-		CommandId: "delegated-new-command", SessionId: sessionID, Sandbox: snapshot.Name, SandboxUid: snapshot.UID, Text: "Action command",
+		CommandId: "delegated-new-command", SessionId: sessionID, ExpectedSandboxUid: snapshot.UID, Text: "Action command",
 	})
 	if err != nil {
 		t.Fatalf("delegated effective caller command: %v", err)
@@ -524,14 +524,12 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 		t.Errorf("denied delegated cancellation changed the foreign operation: %+v %v", stillQueued, err)
 	}
 	if _, err := client.InterruptTurn(delegated(), &dispatcherpb.InterruptTurnRequest{
-		CommandId: "delegated-foreign-interrupt", SessionId: foreignID, Sandbox: snapshot.Name,
-		SandboxUid: snapshot.UID, TurnId: "foreign-turn",
+		CommandId: "delegated-foreign-interrupt", SessionId: foreignID, ExpectedSandboxUid: snapshot.UID, TurnId: "foreign-turn",
 	}); status.Code(err) != codes.NotFound {
 		t.Errorf("privileged actor's backend membership leaked interrupt authority: %v", err)
 	}
 	if _, err := client.ChangeModel(delegated(), &dispatcherpb.ChangeModelRequest{
-		CommandId: "delegated-unconfigured-method", SessionId: sessionID, Sandbox: snapshot.Name,
-		SandboxUid: snapshot.UID, Model: "test-model",
+		CommandId: "delegated-unconfigured-method", SessionId: sessionID, ExpectedSandboxUid: snapshot.UID, Model: "test-model",
 	}); status.Code(err) != codes.Unauthenticated {
 		t.Errorf("delegation escaped its exact RPC method list: %v", err)
 	}

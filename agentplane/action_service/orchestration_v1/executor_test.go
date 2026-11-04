@@ -219,7 +219,7 @@ func TestSessionCommandsReachTheDispatcherForTheLaunchedIncarnationOnly(t *testi
 			},
 		},
 		&dispatcherpb.SubmitInputRequest{
-			CommandId: command, SessionId: session, Sandbox: launched.Name, SandboxUid: string(launched.UID), Text: "hello",
+			CommandId: command, SessionId: session, ExpectedSandboxUid: string(launched.UID), Text: "hello",
 		},
 	}
 	if received := f.dispatcher.received(); !slices.EqualFunc(received, want, proto.Equal) {

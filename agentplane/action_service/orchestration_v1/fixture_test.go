@@ -279,8 +279,8 @@ func (d *recordingDispatcher) SubmitInput(_ context.Context, request *dispatcher
 		return nil, err
 	}
 	return &dispatcherpb.SubmitInputResponse{Dispatch: &dispatcherpb.Dispatch{
-		CommandId: request.GetCommandId(), SessionId: request.GetSessionId(), Sandbox: request.GetSandbox(),
-		SandboxUid: request.GetSandboxUid(), State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+		CommandId: request.GetCommandId(), SessionId: request.GetSessionId(),
+		SandboxUid: request.GetExpectedSandboxUid(), State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 	}}, nil
 }
 

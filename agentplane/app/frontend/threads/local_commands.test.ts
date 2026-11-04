@@ -47,6 +47,15 @@ function dispatch(
 beforeEach(() => localStorage.clear());
 afterEach(() => vi.restoreAllMocks());
 
+it("retains a new Session-addressed command without a Sandbox destination", () => {
+  const saved = new LocalCommands("thread", null).remember(COMMAND);
+  expect(saved.target).toBeNull();
+  expect(saved.sessionAddressed).toBe(true);
+  const restored = new LocalCommands("thread", null).getSnapshot().commands[0];
+  expect(restored.sessionAddressed).toBe(true);
+  expect(equals(CommandSchema, create(CommandSchema, restored.command), COMMAND)).toBe(true);
+});
+
 it("retains the exact command and immutable Thread target across a new page owner", () => {
   const store = new LocalCommands("thread", COMMAND_TARGET);
   store.remember(COMMAND);
@@ -88,6 +97,7 @@ it("keeps legacy commands without a target for History reconciliation but cannot
   const store = new LocalCommands("thread", COMMAND_TARGET);
   const legacy = store.getSnapshot().commands[0];
   expect(legacy.target).toBeNull();
+  expect(legacy.sessionAddressed).toBe(false);
   expect(store.remember(legacy.command).target).toBeNull();
   store.observePrefix([admission(9n, create(CommandSchema, legacy.command))]);
   expect(store.getSnapshot().commands).toEqual([]);

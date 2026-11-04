@@ -220,8 +220,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
         interrupted_input = await deployed.dispatcher.SubmitInput(
             session_dispatcher_pb2.SubmitInputRequest(
                 session_id=interrupted_session_id,
-                sandbox=deployed.sandbox,
-                sandbox_uid=deployed.sandbox_uid,
+                expected_sandbox_uid=deployed.sandbox_uid,
                 command_id=interrupted_command_id,
                 text="Start a long-running executor command and keep this turn active.",
             ),
@@ -279,11 +278,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
         assert opening.opening.sandbox_uid == deployed.sandbox_uid
         submitted = await deployed.dispatcher.SubmitInput(
             session_dispatcher_pb2.SubmitInputRequest(
-                session_id=session_id,
-                sandbox=deployed.sandbox,
-                sandbox_uid=deployed.sandbox_uid,
-                command_id=command_id,
-                text=prompt,
+                session_id=session_id, expected_sandbox_uid=deployed.sandbox_uid, command_id=command_id, text=prompt
             ),
             metadata=deployed.metadata,
             timeout=15,
@@ -340,8 +335,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
                 session_dispatcher_pb2.InterruptTurnRequest(
                     command_id=str(uuid4()),
                     session_id=interrupted_session_id,
-                    sandbox=deployed.sandbox,
-                    sandbox_uid=deployed.sandbox_uid,
+                    expected_sandbox_uid=deployed.sandbox_uid,
                     turn_id=interrupted_command_id,
                 ),
                 metadata=deployed.metadata,
@@ -501,8 +495,7 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         submitted = await deployed.dispatcher.SubmitInput(
             session_dispatcher_pb2.SubmitInputRequest(
                 session_id=session_id,
-                sandbox=deployed.sandbox,
-                sandbox_uid=deployed.sandbox_uid,
+                expected_sandbox_uid=deployed.sandbox_uid,
                 command_id=first_command_id,
                 text="Start a process that records one marker and remains running.",
             ),
@@ -563,8 +556,7 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         submitted = await deployed.dispatcher.SubmitInput(
             session_dispatcher_pb2.SubmitInputRequest(
                 session_id=session_id,
-                sandbox=deployed.sandbox,
-                sandbox_uid=deployed.sandbox_uid,
+                expected_sandbox_uid=deployed.sandbox_uid,
                 command_id=resumed_command_id,
                 text="Run a new exec command and report the marker file contents.",
             ),

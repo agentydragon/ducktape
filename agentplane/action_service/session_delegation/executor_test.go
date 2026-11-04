@@ -166,8 +166,8 @@ func (b *delegatedBackend) SubmitInput(ctx context.Context, request *dispatcherp
 	b.submitCalls++
 	b.gotSubmit = proto.Clone(request).(*dispatcherpb.SubmitInputRequest)
 	return &dispatcherpb.SubmitInputResponse{Dispatch: &dispatcherpb.Dispatch{
-		CommandId: request.GetCommandId(), SessionId: request.GetSessionId(), Sandbox: request.GetSandbox(),
-		SandboxUid: request.GetSandboxUid(), Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
+		CommandId: request.GetCommandId(), SessionId: request.GetSessionId(), Sandbox: "sandbox-one",
+		SandboxUid: request.GetExpectedSandboxUid(), Operation: dispatcherpb.Operation_OPERATION_SUBMIT_INPUT,
 		State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 	}}, nil
 }
@@ -703,7 +703,7 @@ func TestSubmitInputForwardsTheCallerAndDurableCommandIdentity(t *testing.T) {
 		t.Fatalf("outcome=%+v error=%v", outcome, err)
 	}
 	if backend.gotSubmit == nil || backend.gotSubmit.GetSessionId() != testSessionID || backend.gotSubmit.GetCommandId() != testCommandID ||
-		backend.gotSubmit.GetSandbox() != "sandbox-one" || backend.gotSubmit.GetSandboxUid() != "sandbox-uid-1" || backend.gotSubmit.GetText() != "Do the requested work." {
+		backend.gotSubmit.GetExpectedSandboxUid() != "sandbox-uid-1" || backend.gotSubmit.GetText() != "Do the requested work." {
 		t.Fatalf("SubmitInput request = %v", backend.gotSubmit)
 	}
 	var result struct {

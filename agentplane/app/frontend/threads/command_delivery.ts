@@ -41,14 +41,7 @@ interface ThreadCommands {
 
 export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]): ThreadCommands {
   const threadId = thread.id;
-  const store = useMemo(
-    () =>
-      new LocalCommands(
-        threadId,
-        thread.sandbox && thread.sandbox_uid ? { sandbox: thread.sandbox, sandboxUid: thread.sandbox_uid } : null
-      ),
-    [threadId, thread.sandbox, thread.sandbox_uid]
-  );
+  const store = useMemo(() => new LocalCommands(threadId, null), [threadId]);
   const local = useSyncExternalStore(store.subscribe, store.getSnapshot, () => EMPTY_LOCAL);
   const [errors, setErrors] = useState(new Map<string, CommandIssue>());
   const [submissionError, setSubmissionError] = useState<string | null>(null);
@@ -84,7 +77,7 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
           setErrors((previous) => new Map(previous).set(id, issue));
       };
       try {
-        if (!value.target) {
+        if (!value.sessionAddressed && !value.target) {
           settle({
             kind: "unconfirmed",
             message:

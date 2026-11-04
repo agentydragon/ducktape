@@ -46,8 +46,7 @@ func (e *Executor) submitInput(ctx context.Context, args contract.SubmitInputArg
 		return nil, err
 	}
 	response, err := e.dispatcher.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
-		CommandId: args.CommandID, SessionId: args.SessionID, Sandbox: args.Sandbox.Name,
-		SandboxUid: string(args.Sandbox.UID), Text: args.Text,
+		CommandId: args.CommandID, SessionId: args.SessionID, ExpectedSandboxUid: string(args.Sandbox.UID), Text: args.Text,
 	})
 	if err != nil {
 		return nil, dispatcherError(err)
@@ -61,8 +60,7 @@ func (e *Executor) interruptTurn(ctx context.Context, args contract.InterruptTur
 		return nil, err
 	}
 	answer, err := e.dispatcher.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
-		CommandId: args.CommandID, SessionId: args.SessionID, Sandbox: args.Sandbox.Name,
-		SandboxUid: string(args.Sandbox.UID), TurnId: args.TurnID,
+		CommandId: args.CommandID, SessionId: args.SessionID, ExpectedSandboxUid: string(args.Sandbox.UID), TurnId: args.TurnID,
 	})
 	if err != nil {
 		return nil, dispatcherError(err)
@@ -76,8 +74,7 @@ func (e *Executor) changeModel(ctx context.Context, args contract.ChangeModelArg
 		return nil, err
 	}
 	response, err := e.dispatcher.ChangeModel(ctx, &dispatcherpb.ChangeModelRequest{
-		CommandId: args.CommandID, SessionId: args.SessionID, Sandbox: args.Sandbox.Name,
-		SandboxUid: string(args.Sandbox.UID), Model: args.Model,
+		CommandId: args.CommandID, SessionId: args.SessionID, ExpectedSandboxUid: string(args.Sandbox.UID), Model: args.Model,
 	})
 	if err != nil {
 		return nil, dispatcherError(err)
@@ -91,8 +88,7 @@ func (e *Executor) changeReasoningEffort(ctx context.Context, args contract.Chan
 		return nil, err
 	}
 	response, err := e.dispatcher.ChangeReasoningEffort(ctx, &dispatcherpb.ChangeReasoningEffortRequest{
-		CommandId: args.CommandID, SessionId: args.SessionID, Sandbox: args.Sandbox.Name,
-		SandboxUid: string(args.Sandbox.UID), Effort: args.Effort,
+		CommandId: args.CommandID, SessionId: args.SessionID, ExpectedSandboxUid: string(args.Sandbox.UID), Effort: args.Effort,
 	})
 	if err != nil {
 		return nil, dispatcherError(err)

@@ -83,6 +83,9 @@ It scopes existing Sessions and existing environments; it does not create enviro
 - WatchDispatches applies the same filter to durable snapshots and deletion terminal events. The terminal
   event's owner association is carried through bounded PostgreSQL notification parts so a row deleted from
   storage cannot bypass the read filter.
+- Commands name the Session. Dispatcher resolves the exact placement from its Session record. A broker
+  whose grant is scoped to an incarnation supplies `expected_sandbox_uid`; a mismatch is denied before
+  admission or forwarding. The UID is a constraint on authority, not a placement chosen by the caller.
 - Queued-command admissions recheck caller, Session existence and target Sandbox binding in the same
   PostgreSQL transaction that appends work, including internal admissions and privileged backends. A row lock
   prevents Session deletion or owner changes from committing between that check and admission. Exact command

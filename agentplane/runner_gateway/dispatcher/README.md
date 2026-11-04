@@ -13,8 +13,9 @@ The manual queue, replica and wake probes are documented in the
 
 - **One RPC per command**: `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn`,
   `OpenSession`, `GetSessionOpening`, `ListSessionOpenings`, plus `GetDispatch`, `ListDispatches`, `WatchDispatches` and `CancelDispatch`
-  ([proto](session_dispatcher.proto)). Callers name the Sandbox and the Session; `command_id` is
-  the idempotency key across every command RPC.
+  ([proto](session_dispatcher.proto)). Commands name the Session; Dispatcher resolves its placement.
+  A broker with an incarnation-scoped grant supplies `expected_sandbox_uid` as an authorization
+  precondition. `command_id` is the idempotency key across every command RPC.
 - **Watching**: `WatchDispatches` sends the Dispatches in scope, then one `CaughtUp` frame, then a Dispatch
   again whenever it changes. `DispatchFilter.command_ids` (at most 1000) narrows either scope to those
   commands, so a caller holding a few of them does not replay a whole Session.
@@ -56,10 +57,10 @@ The manual queue, replica and wake probes are documented in the
   snapshot: concurrent creation before the cursor is seen on a fresh listing, and cleanup removes
   records. This includes today's environment-bound central openings without defining environment-free
   central Sessions. The CLI exposes it as `agentplane sessions list`.
-- **Wire rollout**: during mixed-version overlap, the old Dispatcher ignores the new protobuf field; an old caller
-  reaching the required-UID Dispatcher is rejected with `INVALID_ARGUMENT` when it omits `sandbox_uid`. To roll back,
-  restore the old Dispatcher before rolling back app and Action callers. Existing Session openings and running Sessions
-  are unaffected.
+- **Wire rollout**: command requests changed shape; an old Dispatcher requires fields no longer sent by new
+  callers, and an old JSON client sends fields the new facade no longer recognizes. Roll out the Dispatcher and
+  its callers together. To roll back, revert the Dispatcher and callers together and check command admission
+  and authorization. Existing Session openings and running Sessions are unaffected.
 - **Caller authority**: a normal workload token must prove the target Sandbox's exact controller-owned
   execution ServiceAccount UID. New Sessions retain that UID as their immutable logical principal, and
   retain the actual opening caller separately as creator/broker. Normal command writes, cancellation,

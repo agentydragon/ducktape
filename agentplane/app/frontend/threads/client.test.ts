@@ -371,7 +371,11 @@ it.each([
   expect(requests).toHaveLength(1);
   expect(new URL(requests[0]!.url).pathname).toBe(`/upstream/dispatcher/v1/sessions/thread:${operation}`);
   expect(requests[0]!.method).toBe("POST");
-  expect(await requests[0]!.json()).toEqual({ commandId: input.commandId, ...target, ...fields });
+  expect(await requests[0]!.json()).toEqual({
+    commandId: input.commandId,
+    expectedSandboxUid: target.sandboxUid,
+    ...fields,
+  });
 });
 
 it("keeps the generated immediate interrupt result separate from a durable Dispatch", async () => {
@@ -386,7 +390,11 @@ it("keeps the generated immediate interrupt result separate from a durable Dispa
     result: { state: DeliveryState.NO_OP, reason: "turn already ended" },
   });
   expect(new URL(requests[0]!.url).pathname).toBe("/upstream/dispatcher/v1/sessions/thread:interruptTurn");
-  expect(await requests[0]!.json()).toEqual({ commandId: "interrupt-id", ...target, turnId: "turn-id" });
+  expect(await requests[0]!.json()).toEqual({
+    commandId: "interrupt-id",
+    expectedSandboxUid: target.sandboxUid,
+    turnId: "turn-id",
+  });
 });
 
 it.each([
@@ -440,5 +448,6 @@ it("keeps the original command and Sandbox incarnation after a lost transport re
     expect(failure).not.toBeInstanceOf(CommandSubmissionRefused);
   }
   expect(requests).toHaveLength(2);
-  for (const request of requests) expect(await request.json()).toEqual({ ...input, ...target });
+  for (const request of requests)
+    expect(await request.json()).toEqual({ ...input, expectedSandboxUid: target.sandboxUid });
 });
