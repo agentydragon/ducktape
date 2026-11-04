@@ -14,6 +14,50 @@ import (
 	"testing"
 )
 
+func TestDigestSparseFilesMatchesLogicalContents(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		size   int
+		writes map[int]string
+	}{
+		{name: "empty"},
+		{name: "all holes", size: 3*1024*1024 + 19},
+		{name: "data", size: 13, writes: map[int]string{0: "hello, world!"}},
+		{name: "leading hole", size: 3*1024*1024 + 19, writes: map[int]string{2*1024*1024 + 3: "data after hole"}},
+		{name: "trailing hole", size: 3*1024*1024 + 19, writes: map[int]string{0: "data before hole"}},
+		{name: "mixed extents", size: 6*1024*1024 + 19, writes: map[int]string{3: "first", 2*1024*1024 + 17: "middle", 6*1024*1024 + 7: "last"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "disk.img")
+			file, err := os.Create(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			contents := make([]byte, test.size)
+			for offset, value := range test.writes {
+				if _, err := file.WriteAt([]byte(value), int64(offset)); err != nil {
+					t.Fatal(err)
+				}
+				copy(contents[offset:], value)
+			}
+			if err := file.Truncate(int64(test.size)); err != nil {
+				t.Fatal(err)
+			}
+			if err := file.Close(); err != nil {
+				t.Fatal(err)
+			}
+			actual, err := digest(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := sha256.Sum256(contents)
+			if actual.Size != int64(test.size) || actual.SHA256 != hex.EncodeToString(want[:]) {
+				t.Fatalf("digest = %+v, want size %d and SHA256 %x", actual, test.size, want)
+			}
+		})
+	}
+}
+
 func testStorage(t *testing.T) *Storage {
 	t.Helper()
 	root := t.TempDir()

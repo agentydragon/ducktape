@@ -15,6 +15,7 @@ import (
 	"syscall"
 
 	"github.com/google/uuid"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -460,12 +461,72 @@ func digest(path string) (FileRecord, error) {
 		return FileRecord{}, err
 	}
 	hash := sha256.New()
-	count, copyErr := io.CopyBuffer(hash, file, make([]byte, 1024*1024))
+	count, copyErr := hashFileContents(file, hash)
 	closeErr := file.Close()
 	if err := errors.Join(copyErr, closeErr); err != nil {
 		return FileRecord{}, err
 	}
 	return FileRecord{Size: count, SHA256: hex.EncodeToString(hash.Sum(nil))}, nil
+}
+
+// Hash holes as logical zeroes without filling the filesystem page cache with them.
+// This produces the same digest as reading every byte, including for filesystems
+// that conservatively report the entire file as allocated data.
+func hashFileContents(file *os.File, hash io.Writer) (int64, error) {
+	info, err := file.Stat()
+	if err != nil {
+		return 0, err
+	}
+	buffer := make([]byte, 1024*1024)
+	if !info.Mode().IsRegular() || info.Size() == 0 {
+		return io.CopyBuffer(hash, file, buffer)
+	}
+	zeroes := make([]byte, len(buffer))
+	var offset int64
+	for offset < info.Size() {
+		data, err := unix.Seek(int(file.Fd()), offset, unix.SEEK_DATA)
+		if offset == 0 && (errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ENOTSUP) || errors.Is(err, unix.ENOSYS)) {
+			if _, err := file.Seek(0, io.SeekStart); err != nil {
+				return 0, err
+			}
+			return io.CopyBuffer(hash, file, buffer)
+		}
+		if errors.Is(err, unix.ENXIO) {
+			data = info.Size()
+		} else if err != nil {
+			return offset, err
+		}
+		if data < offset || data > info.Size() {
+			return offset, fmt.Errorf("invalid data extent at %d: %d", offset, data)
+		}
+		for offset < data {
+			count := min(int64(len(zeroes)), data-offset)
+			if _, err := hash.Write(zeroes[:count]); err != nil {
+				return offset, err
+			}
+			offset += count
+		}
+		if offset == info.Size() {
+			break
+		}
+		hole, err := unix.Seek(int(file.Fd()), data, unix.SEEK_HOLE)
+		if err != nil {
+			return offset, err
+		}
+		if hole <= data {
+			return offset, fmt.Errorf("invalid hole extent at %d: %d", data, hole)
+		}
+		end := min(hole, info.Size())
+		count, err := io.CopyBuffer(hash, io.NewSectionReader(file, data, end-data), buffer)
+		offset += count
+		if err != nil {
+			return offset, err
+		}
+		if offset != end {
+			return offset, io.ErrUnexpectedEOF
+		}
+	}
+	return offset, nil
 }
 
 func copyDurable(ctx context.Context, source, destination string) (FileRecord, error) {
