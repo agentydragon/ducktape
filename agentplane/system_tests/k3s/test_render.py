@@ -23,7 +23,13 @@ from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
 from agentplane.runner_gateway.settings import Settings
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
-from agentplane.system_tests.k3s import fixture_chart, fixture_database, rendered_fixture, vm_sandboxes
+from agentplane.system_tests.k3s import (
+    fixture_chart,
+    fixture_database,
+    rendered_fixture,
+    vm_infrastructure,
+    vm_sandboxes,
+)
 from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from agentplane.system_tests.k3s.rendered_fixture import LocalModel, McpInputs, RuntimeInputs
@@ -418,11 +424,11 @@ def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling() -> No
 
 def test_kubevirt_baseline_selects_emulation_from_the_explicit_kvm_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("AGENTPLANE_K3S_REQUIRE_KVM", raising=False)
-    tcg = vm_sandboxes.baseline_objects()[0]["spec"]["configuration"]["developerConfiguration"]
+    tcg = vm_infrastructure.baseline_objects()[0]["spec"]["configuration"]["developerConfiguration"]
     assert tcg["useEmulation"] is True
 
     monkeypatch.setenv("AGENTPLANE_K3S_REQUIRE_KVM", "1")
-    kvm = vm_sandboxes.baseline_objects()[0]["spec"]["configuration"]["developerConfiguration"]
+    kvm = vm_infrastructure.baseline_objects()[0]["spec"]["configuration"]["developerConfiguration"]
     assert kvm["useEmulation"] is False
 
 

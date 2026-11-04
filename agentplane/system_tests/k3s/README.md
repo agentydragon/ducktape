@@ -32,10 +32,14 @@ If an action without permission restores a previously retained snapshot, it firs
 identified by the ownership marker, then starts and tears down its own fresh node.
 
 Pod/MCP/real-model suites share one tmpfs snapshot family; VM suites share a separate disk-backed
-family with the VM resource estimate. Baseline fingerprints include the layer mode,
-installation/cleanup helpers, k3s, CRDs, PKI releases/images, and VM releases/images/configuration when
-applicable. A missing, unhealthy, dirty or incompatible baseline rebuilds cold. Snapshot publication
-follows BuildBuddy's default save policy; suites do not force a save after each action. Until a
+family with the VM resource estimate. Baseline fingerprints include the layer mode, k3s, CRDs,
+`baseline.py`, its bootstrap, iptables and release helpers, `pki_infrastructure.py`, and PKI
+releases/images. VM stacks also include `vm_infrastructure.py` and VM releases/images/configuration. `stack.py` owns fresh workload orchestration and cleanup; `vm_runtime.py` owns per-action
+VM volumes and guest evidence. These per-action helpers do not enter infrastructure compatibility.
+Only VM suites load `vm_test_target.py`, which supplies the typed lifecycle extension; Pod/MCP
+runfiles omit VM runtime helpers.
+
+A missing, unhealthy, dirty or incompatible baseline rebuilds cold. Snapshot publication follows BuildBuddy's default save policy; suites do not force a save after each action. Until a
 refreshed snapshot is saved, later actions can repeat the rebuild.
 
 Snapshot family keys derive from the k3s binary, PKI release/chart/Helm checksums and

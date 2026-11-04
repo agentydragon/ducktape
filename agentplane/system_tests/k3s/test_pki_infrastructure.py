@@ -3,7 +3,7 @@
 import pytest
 import pytest_bazel
 
-from agentplane.system_tests.k3s import certificates
+from agentplane.system_tests.k3s import pki_infrastructure
 
 _CRDS = [{"kind": "CustomResourceDefinition", "metadata": {"name": "widgets.example.com"}}]
 _NULL_CONDITIONS = ".status.conditions accessor error: <nil> is of the type <nil>, expected []interface{}"
@@ -11,7 +11,7 @@ _NULL_CONDITIONS = ".status.conditions accessor error: <nil> is of the type <nil
 
 def test_crd_wait_retries_initial_null_conditions_with_remaining_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     clock = iter([100.0, 100.0, 108.0])
-    monkeypatch.setattr(certificates, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(pki_infrastructure, "monotonic", lambda: next(clock))
     timeouts: list[float] = []
 
     def kubectl(*args: str, **kwargs: object) -> str:
@@ -21,7 +21,7 @@ def test_crd_wait_retries_initial_null_conditions_with_remaining_budget(monkeypa
                 raise RuntimeError(_NULL_CONDITIONS)
         return ""
 
-    certificates._install(kubectl, _CRDS, {})
+    pki_infrastructure._install(kubectl, _CRDS, {})
 
     assert timeouts == [180.0, 172.0]
 
@@ -37,12 +37,12 @@ def test_crd_wait_preserves_unrelated_errors() -> None:
         return ""
 
     with pytest.raises(RuntimeError, match="Forbidden"):
-        certificates._install(kubectl, _CRDS, {})
+        pki_infrastructure._install(kubectl, _CRDS, {})
     assert waits == 1
 
 
 def test_crd_wait_stops_retrying_at_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(certificates, "READY_SECONDS", 0)
+    monkeypatch.setattr(pki_infrastructure, "READY_SECONDS", 0)
     waits = 0
 
     def kubectl(*args: str, **kwargs: object) -> str:
@@ -53,7 +53,7 @@ def test_crd_wait_stops_retrying_at_deadline(monkeypatch: pytest.MonkeyPatch) ->
         return ""
 
     with pytest.raises(RuntimeError, match="accessor error"):
-        certificates._install(kubectl, _CRDS, {})
+        pki_infrastructure._install(kubectl, _CRDS, {})
     assert waits == 1
 
 

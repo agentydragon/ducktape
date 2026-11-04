@@ -11,11 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from agentplane.system_tests.k3s import guest_logs, rendered_fixture
+from agentplane.system_tests.k3s import rendered_fixture
+from agentplane.system_tests.k3s.baseline import node_ip
 from agentplane.system_tests.k3s.rendered_fixture import Backend, LocalModel, PublicLiteLLM
-from agentplane.system_tests.k3s.stack import Stack, StackInputs, node_ip, running_stack
+from agentplane.system_tests.k3s.stack import Stack, StackInputs, running_stack
+from agentplane.system_tests.k3s.virtualization import VirtualizationFactory
 from devinfra.bazel.runfiles import get_required_path
-from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.net import Listener, listen_tcp
 
 
@@ -56,8 +57,15 @@ def _models(inputs: StackInputs, listener: Listener) -> rendered_fixture.Models:
             return PublicLiteLLM(key=os.environ["OPENAI_API_KEY"])
 
 
+@pytest.fixture(scope="session")
+def virtualization_factory() -> VirtualizationFactory | None:
+    return None
+
+
 @pytest.fixture(scope="session", autouse=True)
-def deployment(request: pytest.FixtureRequest, scripted_listener: Listener) -> Iterator[Stack]:
+def deployment(
+    request: pytest.FixtureRequest, scripted_listener: Listener, virtualization_factory: VirtualizationFactory | None
+) -> Iterator[Stack]:
     inputs = load_stack_inputs()
     required_backend = "scripted_model" if inputs.fixture.backend is Backend.LOCAL_MODEL else "real_model"
     incompatible = "real_model" if required_backend == "scripted_model" else "scripted_model"
@@ -68,12 +76,12 @@ def deployment(request: pytest.FixtureRequest, scripted_listener: Listener) -> I
         running_stack(
             inputs,
             models=_models(inputs, scripted_listener),
+            virtualization_factory=virtualization_factory,
             validate_vm_shutdown=lambda: request.session.testsfailed == 0,
             persist_infrastructure=os.environ.get("AGENTPLANE_K3S_EXECUTOR_PERSISTENCE") == "1",
         ) as stack,
         pytest.MonkeyPatch.context() as environment,
     ):
-        environment.setenv(guest_logs.CONSOLES_ENV, str(undeclared_outputs_dir() / "vm-artifacts/consoles"))
         if stack.mcp_fixtures is not None:
             environment.setenv("SSL_CERT_FILE", str(stack.mcp_fixtures.ca_bundle))
         yield stack
