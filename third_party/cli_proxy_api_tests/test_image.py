@@ -11,7 +11,6 @@ from third_party.cli_proxy_api_tests import cli_proxy_api_image
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 
-IMAGE = cli_proxy_api_image.IMAGE
 CLIENT_KEY = "synthetic-model-client-key"
 MANAGEMENT_KEY = "synthetic-management-key"
 
@@ -29,7 +28,7 @@ def test_image_serves_bundled_ui_and_preserves_key_authentication(tmp_path: Path
     )
     with (
         LoggedContainer(
-            load_oci_image(IMAGE),
+            load_oci_image(cli_proxy_api_image.IMAGE),
             test_name="cli-proxy-api-boot",
             command=["-config", "/config/config.yaml"],
             volumes=[(str(tmp_path), "/config", "ro")],

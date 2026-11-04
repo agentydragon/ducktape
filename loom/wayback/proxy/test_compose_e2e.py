@@ -26,7 +26,6 @@ from third_party.containers import python_3_14_slim
 from util.oci import load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-WAYBACK_PROXY_IMAGE = wayback_proxy_image.IMAGE
 COMPOSE_RLOCATION = "_main/loom/wayback/proxy/compose.yaml"
 
 
@@ -60,7 +59,7 @@ async def fake_upstream_port() -> AsyncIterator[int]:
 
 @pytest.fixture
 async def compose_stack(fake_upstream_port: int) -> AsyncIterator[ComposeStack]:
-    load_oci_image(WAYBACK_PROXY_IMAGE)
+    load_oci_image(wayback_proxy_image.IMAGE)
     load_oci_image(python_3_14_slim.IMAGE)
     compose_file = get_required_path(COMPOSE_RLOCATION)
     project = f"wayback-e2e-{uuid.uuid4().hex[:8]}"

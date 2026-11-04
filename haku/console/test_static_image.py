@@ -10,8 +10,6 @@ from testcontainers.core.container import DockerContainer
 from haku.console import static_test_image
 from util.oci import load_oci_image
 
-_STATIC_IMAGE = static_test_image.IMAGE
-
 
 def _wait_for_nginx(base_url: str) -> httpx.Response:
     deadline = time.monotonic() + 15
@@ -27,7 +25,7 @@ def _wait_for_nginx(base_url: str) -> httpx.Response:
 
 def test_static_image_cache_contract() -> None:
     container = (
-        DockerContainer(load_oci_image(_STATIC_IMAGE))
+        DockerContainer(load_oci_image(static_test_image.IMAGE))
         .with_env("HAKU_CONSOLE_HAKU_UI_URL", "https://haku-ui.test")
         .with_env("HAKU_CONSOLE_AUTH_ORIGIN", "https://auth.test")
         # The image starts without a live API in this isolated container test;
