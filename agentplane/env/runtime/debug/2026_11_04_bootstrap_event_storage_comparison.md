@@ -67,10 +67,10 @@ heap/RSS use decimal MB.
 | 10 MiB: allocated database after close                |      10.63 MiB |       10.09 MiB |
 | 10 MiB: open and full decode/validation, one sample   |         282 ms |           81 ms |
 | 10 MiB: peak sampled heap during full replay          |        61.2 MB |          4.1 MB |
-| 10 MiB: process high-water RSS during full replay     |         229 MB |           58 MB |
+| 10 MiB: process high-water RSS during full replay     |         235 MB |           60 MB |
 | 10 MiB: open and terminal lookup, one sample          |         217 ms |         9.1 ms* |
 | 10 MiB: peak sampled heap during terminal lookup      |        64.9 MB |         1.6 MB* |
-| 10 MiB: process high-water RSS during terminal lookup |         240 MB |          46 MB* |
+| 10 MiB: process high-water RSS during terminal lookup |         245 MB |          47 MB* |
 
 \* The SQLite terminal lookup scanned **sequence keys only** for density, then decoded the last
 row. COSI `OpenLog` decoded and validated every protobuf, including observation type, stream,
@@ -117,8 +117,8 @@ currently wired.
 
 ### Data-preserving cutover and rollback
 
-This is a proposal, not an authorized migration. Use a one-way, exclusive startup or offline
-migration before any Runtime controller or script starts. Back up the complete persistent state,
+Use a one-way, exclusive startup or offline migration before any Runtime controller or script
+starts. Back up the complete persistent state,
 including the COSI database and every Session journal, with a restore drill. While no writer is
 active, copy the COSI event prefix to SQLite, validate every ordered protobuf and its terminal,
 and commit the rows plus a complete-copy marker in one SQLite transaction. Reopen and compare the
