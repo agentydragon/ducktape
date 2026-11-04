@@ -309,3 +309,20 @@ previous test state through the existing owned-stack reset before importing curr
 inputs. Metadata and layers are discarded together. This preserves checkpoint durability and
 normal kubelet eviction thresholds, and does not retain an executor snapshot or live cluster.
 The next full run must establish that this capacity change also permits teardown to finish.
+
+The [fourteenth run](https://app.buildbuddy.io/invocation/dc167ace-6ba0-434e-b166-a95903c50f64),
+at clean source `a3989b0e97`, again passed both tool turns and the RAM assertions (child PID `585`,
+start ticks `6703`, counter `2` → `66`). The fresh image store left 20 GiB free during the final
+checkpoint, with app services still Ready and no disk-pressure eviction. The enclosing target
+still failed its cleanup budget: deletion resumes the guest to seal Session journals, so cleanup
+covered another complete checkpoint and another restore before quiescence. The controller had
+accepted deletion at 08:51:19 and was still restoring disks when the five-minute cleanup wait
+expired. The restored guest must run to seal; bypassing this fence would weaken deletion safety.
+
+Restore now verifies every checkpoint file first, then reuses each live regular disk only when
+its full size and SHA-256 equal that checkpoint. The original VMM is already reaped and the owner
+lock is held. Missing or different disks are still copied back atomically; block workspaces still
+restore from the checkpoint. This removes redundant writes and temporary disk allocation while
+preserving the paused RAM/disk boundary, active marker and identity checks. No readiness, cleanup
+or overall test deadline was increased. [Storage and supervisor tests](https://app.buildbuddy.io/invocation/c023dee1-cf28-40a9-8ddf-04d4bda41e27)
+passed, including unchanged-inode reuse, equal-sized corrupt live contents and a missing live disk.

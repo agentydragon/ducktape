@@ -23,6 +23,9 @@ VMM cannot resume a checkpoint. A failed new checkpoint leaves the prior manifes
 the uncertain active marker blocks automatic retry. The current checkpoint remains on the state
 PVC across same-Pod suspension; its predecessor is removed after the next VMM exits.
 The guest thaw acknowledgement must carry the checkpoint's boot ID before network admission.
+A same-Pod restore reuses a live regular disk only after its full size and SHA-256 match the
+verified checkpoint. Missing or changed regular disks are copied back atomically; block workspaces
+are restored from the checkpoint. The owner lock and active-continuation fence still apply.
 VMM control requests have a 20-second deadline. Snapshot create/load requests have a separate
 two-minute deadline for RAM file I/O and synchronization; an expired request is never retried.
 For a block workspace, an existing ext4 filesystem is preserved. An unsigned all-zero device is

@@ -116,6 +116,17 @@ func TestCheckpointRestoresMatchingMemoryAndDisks(t *testing.T) {
 	if err := storage.ClearActive(); err != nil {
 		t.Fatal(err)
 	}
+	unchanged, err := os.Stat(storage.Paths["runner"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Equal-sized stale contents must not be mistaken for the checkpoint.
+	if err := os.WriteFile(storage.Paths["rootfs"], []byte("stale!"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(storage.Paths["config"]); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(storage.Paths["state"], []byte("later state"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -132,11 +143,15 @@ func TestCheckpointRestoresMatchingMemoryAndDisks(t *testing.T) {
 	if err := storage.Restore(ctx, loaded); err != nil {
 		t.Fatal(err)
 	}
-	for name, want := range map[string]string{"state": "state", "workspace": "workspace"} {
+	for name, want := range map[string]string{"rootfs": "rootfs", "config": "config", "state": "state", "workspace": "workspace"} {
 		data, err := os.ReadFile(storage.Paths[name])
 		if err != nil || string(data) != want {
 			t.Fatalf("restored %s = %q, %v", name, data, err)
 		}
+	}
+	reused, err := os.Stat(storage.Paths["runner"])
+	if err != nil || !os.SameFile(unchanged, reused) {
+		t.Fatalf("matching live runner disk was replaced: %v", err)
 	}
 	generation := filepath.Join(storage.Work, manifest.Generation)
 	for name, want := range map[string]string{"memory": "RAM at suspended boundary", "vmstate": "VMM at suspended boundary"} {

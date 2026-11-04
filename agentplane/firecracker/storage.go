@@ -322,6 +322,21 @@ func (storage *Storage) Restore(ctx context.Context, manifest *Manifest) error {
 			}
 			continue
 		}
+		// The reaped VMM cannot have changed a live disk after its paused checkpoint.
+		// Verify the complete contents before reusing it; stale or missing files are restored.
+		info, err := os.Lstat(target)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err == nil && info.Mode().IsRegular() {
+			actual, err := digest(target)
+			if err != nil {
+				return err
+			}
+			if actual == manifest.Files[name] {
+				continue
+			}
+		}
 		staging := uniqueSibling(target)
 		if _, err := copyDurable(ctx, source, staging); err != nil {
 			_ = os.Remove(staging)
