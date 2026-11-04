@@ -121,7 +121,8 @@ async def complete_turn(
     request = await model.request()
     assert launches.PLATFORM_INSTRUCTIONS in request.system_text
     assert "Test task guidance." in request.system_text
-    assert destination.target.uid in request.system_text
+    assert f"Your Session ID is: {session_id}" in request.system_text
+    assert destination.target.uid not in request.system_text
     await model.reply(request, Text("GRPC_OK"))
     entries = await wait_for_entries(
         local, session_id, receipt.cursor - 1, lambda rows: any(events.turn_completed(row) for row in rows)
