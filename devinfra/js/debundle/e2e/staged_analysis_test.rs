@@ -1087,6 +1087,7 @@ export { Holder1, Holder2, instA, instB };
         "direct run with trusted dataflow summaries",
     );
     assert_same_trees(&reused.join("out"), &staged.root().join("out"));
+    staged.set_aside("trusted-direct");
 
     let mut spec: serde_yaml::Value =
         serde_yaml::from_str(&fs::read_to_string(&staged.spec).unwrap()).unwrap();
