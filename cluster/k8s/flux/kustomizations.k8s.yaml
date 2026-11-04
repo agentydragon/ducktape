@@ -3631,7 +3631,7 @@ spec:
     kind: ExternalArtifact
     name: platform-sessions
     namespace: ducktape-flux
-  suspend: true
+  suspend: false
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1

@@ -260,7 +260,7 @@ def platform_sessions(
         NAME,
         directory,
         description="Authenticated upstream sessions and scoped proxies.",
-        suspend=True,
+        suspend=False,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         depends_on=flux_kustomization_depends_on_many(external_secrets_operator, monitoring_crds),
     )
