@@ -95,6 +95,21 @@ class Runner(environment_runtime_pb2_grpc.EnvironmentRuntimeServicer):
         self._admissions: dict[str, event_log_pb2.EventEntry] = {}
 
     @override
+    async def OpenSession(
+        self, request: environment_runtime_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
+    ) -> environment_runtime_pb2.OpenSessionResponse:
+        if (
+            request.session_id != str(self.source.session_id)
+            or request.spec != self.source.attached.spec
+            or request.HasField("setup_script")
+        ):
+            await context.abort(grpc.StatusCode.ALREADY_EXISTS, "conflicting scripted Session")
+        attached = session_pb2.Attached()
+        attached.CopyFrom(self.source.attached)
+        attached.session_id = request.session_id
+        return environment_runtime_pb2.OpenSessionResponse(attached=attached)
+
+    @override
     async def GetStatus(
         self, request: session_pb2.GetStatusRequest, context: grpc.aio.ServicerContext
     ) -> session_pb2.EnvironmentRuntimeStatus:

@@ -30,6 +30,7 @@ from agentplane.app.testing.replication_source import (
     ReplicationSource,
     add_replication_source,
 )
+from agentplane.app.testing.runner_gateway import delivered_opening
 from agentplane.app.testing.thread_test_support import ThreadHTTP
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.electric_service import (
@@ -41,6 +42,8 @@ from agentplane.history_service.testing.electric_service import (
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
+from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.runner_gateway.testing.runner_server import runner_server
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
@@ -218,6 +221,7 @@ def thread_browser_session(
     gateway_service: GatewayProcess,
     sandbox_control: SandboxControlClient,
     gateway_access: GatewayAccess,
+    session_dispatcher: SessionDispatcherClient,
     tmp_path: Path,
 ) -> Callable[[Page], AbstractAsyncContextManager[ThreadBrowser]]:
     @asynccontextmanager
@@ -239,6 +243,16 @@ def thread_browser_session(
             ) as app,
             http2_proxy(app.url, certificate) as ingress,
         ):
+            await session_dispatcher.unary(
+                session_dispatcher.stub.OpenSession,
+                session_dispatcher_pb2.OpenSessionRequest(
+                    session_id=str(thread_id),
+                    sandbox=SANDBOX,
+                    sandbox_uid=sandbox.uid,
+                    spec=thread_source.attached.spec,
+                ),
+            )
+            await delivered_opening(session_dispatcher, thread_id)
             # The operator session the app's relay of the Dispatcher's watch requires.
             await app.login(page)
             async with asyncio.timeout(30):
