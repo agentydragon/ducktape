@@ -5,11 +5,48 @@ from __future__ import annotations
 import hmac
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from starlette.requests import Request
 
 from platform_sessions.routes import Route
+
+
+class RouteConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    instance: str
+    method: str
+    path: str
+
+
+class BearerConfig(BaseModel):
+    """Configure a bearer inline or load it from a mounted secret file."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    token: SecretStr | None = Field(default=None, repr=False)
+    token_file: Path | None = None
+    role: Literal["owner", "routes"]
+    allow: list[RouteConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_source(self) -> BearerConfig:
+        if (self.token is None) == (self.token_file is None):
+            raise ValueError("Set exactly one of token or token_file")
+        if self.role == "owner" and self.allow:
+            raise ValueError("Owner bearer does not need route rules")
+        return self
+
+    def load_token(self) -> SecretStr:
+        if self.token is not None:
+            token = self.token
+        else:
+            assert self.token_file is not None
+            token = SecretStr(self.token_file.read_text().strip())
+        if len(token.get_secret_value()) < 32:
+            raise ValueError("Bearer secret must contain at least 32 characters")
+        return token
 
 
 @dataclass(frozen=True)

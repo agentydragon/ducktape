@@ -9,7 +9,7 @@ from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, SecretStr
 
-from platform_sessions.auth import Bearer, BearerAuth
+from platform_sessions.auth import Bearer, BearerAuth, BearerConfig
 from platform_sessions.host import IntegrationError, create_app
 from platform_sessions.registry import IntegrationInstance
 
@@ -132,6 +132,21 @@ def test_owner_and_limited_bearer_privileges():
         assert integration.session == "ok"
     with pytest.raises(ValueError, match="duplicate"):
         BearerAuth([Bearer(SecretStr("same")), Bearer(SecretStr("same"), owner=True)])
+
+
+def test_bearer_config_reads_a_mounted_secret(tmp_path):
+    token_file = tmp_path / "token"
+    token_file.write_text("s" * 32 + "\n")
+    config = BearerConfig(role="owner", token_file=token_file)
+    assert config.load_token().get_secret_value() == "s" * 32
+    assert "s" * 32 not in repr(config)
+    with pytest.raises(ValueError, match="exactly one"):
+        BearerConfig(role="owner")
+    with pytest.raises(ValueError, match="exactly one"):
+        BearerConfig(role="owner", token=SecretStr("x" * 32), token_file=token_file)
+    token_file.write_text("short")
+    with pytest.raises(ValueError, match="at least 32"):
+        config.load_token()
 
 
 def test_failed_start_still_stops_owner():
