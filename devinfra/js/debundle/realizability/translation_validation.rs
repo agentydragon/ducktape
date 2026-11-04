@@ -133,13 +133,11 @@ impl TranslationValidation {
 pub fn translation_validate<E>(
     dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
-    emitted_modules: &BTreeSet<ModuleId>,
-    import_order: &EsmImportOrder,
+    emitted: &CandidateEmittedOrder,
     mut visitor: Option<&mut impl FnMut(TranslationValidationEvidence) -> Result<(), E>>,
 ) -> Result<TranslationValidation, E> {
-    let emitted =
-        emitted_statement_order(dependency_graph, assignment, emitted_modules, import_order);
     let positions: BTreeMap<_, _> = emitted
+        .rows()
         .iter()
         .map(|&(position, _, unit)| (unit, position))
         .collect();
@@ -152,7 +150,7 @@ pub fn translation_validate<E>(
     };
 
     let mut verdict = TranslationValidation {
-        swapped_pairs: count_inversions(emitted.iter().map(|(_, ordinal, _)| *ordinal)),
+        swapped_pairs: count_inversions(emitted.rows().iter().map(|(_, ordinal, _)| *ordinal)),
         ..TranslationValidation::default()
     };
     let mut emit = |evidence| {
@@ -205,7 +203,7 @@ pub fn translation_validate<E>(
     }
 
     sweep(
-        emitted.iter().map(|&(_, ordinal, unit)| {
+        emitted.rows().iter().map(|&(_, ordinal, unit)| {
             (
                 ordinal,
                 unit,
@@ -273,33 +271,45 @@ fn sweep<'a, E>(
     Ok(())
 }
 
-/// Exact emitter order shared by both report-only translation validators.
-pub(super) fn emitted_statement_order(
-    dependency_graph: &DependencyGraph,
-    assignment: &ModuleAssignment,
-    emitted_modules: &BTreeSet<ModuleId>,
-    import_order: &EsmImportOrder,
-) -> Vec<(usize, SourceUnitOrdinal, SourceUnitId)> {
-    let canonical = chunk_constraining_module_edges(dependency_graph, assignment);
-    let post_order = simulate_esm_post_order(
-        assignment.entry_destination().module_id(),
-        &canonical.i_successors,
-        emitted_modules,
-        import_order,
-    );
-    let module_position = |unit: SourceUnitId| {
-        let module = assignment.of(unit);
-        *post_order
-            .get(&module)
-            .unwrap_or_else(|| panic!("the entry imports every emitted module, {module:?} too"))
-    };
+/// One exact emitted order for one immutable candidate assignment. Both the
+/// edge and effect sweeps consume these same rows; graph-only callers can
+/// construct them without lowering hypothetical modules.
+pub(crate) struct CandidateEmittedOrder {
+    rows: Vec<(usize, SourceUnitOrdinal, SourceUnitId)>,
+}
 
-    let mut emitted: Vec<(usize, SourceUnitOrdinal, SourceUnitId)> = dependency_graph
-        .iter_nodes()
-        .map(|node| (module_position(node.id), node.statement_ordinal, node.id))
-        .collect();
-    emitted.sort_unstable();
-    emitted
+impl CandidateEmittedOrder {
+    pub(crate) fn from_assignment(
+        dependency_graph: &DependencyGraph,
+        assignment: &ModuleAssignment,
+        emitted_modules: &BTreeSet<ModuleId>,
+        import_order: &EsmImportOrder,
+    ) -> Self {
+        let canonical = chunk_constraining_module_edges(dependency_graph, assignment);
+        let post_order = simulate_esm_post_order(
+            assignment.entry_destination().module_id(),
+            &canonical.i_successors,
+            emitted_modules,
+            import_order,
+        );
+        let module_position = |unit: SourceUnitId| {
+            let module = assignment.of(unit);
+            *post_order
+                .get(&module)
+                .unwrap_or_else(|| panic!("the entry imports every emitted module, {module:?} too"))
+        };
+
+        let mut emitted: Vec<(usize, SourceUnitOrdinal, SourceUnitId)> = dependency_graph
+            .iter_nodes()
+            .map(|node| (module_position(node.id), node.statement_ordinal, node.id))
+            .collect();
+        emitted.sort_unstable();
+        Self { rows: emitted }
+    }
+
+    pub(crate) fn rows(&self) -> &[(usize, SourceUnitOrdinal, SourceUnitId)] {
+        &self.rows
+    }
 }
 
 /// Pairs `i < j` with `ordinals[i] > ordinals[j]`, by a Fenwick tree over

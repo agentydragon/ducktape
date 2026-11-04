@@ -339,7 +339,9 @@ fn run_bindings_assign_cmd(
         };
         moves.extend(parse_batch_json(&text)?);
     }
-    let candidate_context = args.effect_assessment.resolve(&args.edit, source_context)?;
+    let candidate_context = args
+        .effect_assessment
+        .resolve_for_verified_write(&args.edit, source_context)?;
     // `GraphEditArgs::gate` is the shared "graph or no-verify" policy
     // every mutating verb uses; no verb can silently skip the
     // realizability gate.

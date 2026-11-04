@@ -66,6 +66,7 @@ pub(crate) use effect_translation_validation::{
 use esm_simulator::EsmEvaluationSimulator;
 use incremental_quotient::{IncrementalQuotient, QuotientOverlay};
 pub use incremental_quotient::{LadderDecision, ModuleAssignmentDelta};
+pub(crate) use translation_validation::CandidateEmittedOrder;
 pub use translation_validation::{
     TranslationValidationEvidenceReport, TranslationValidationReport, TranslationValidationResult,
     translation_validate,

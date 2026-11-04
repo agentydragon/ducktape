@@ -17,6 +17,12 @@ use spec::LogicalModule;
 
 use crate::edit_gate::GraphEditArgs;
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EffectAssessmentUnavailable {
+    AnalysisNotSupplied,
+}
+
 /// Shared opt-in CLI flags used by graph-backed edits that can assess a full
 /// in-memory candidate through the canonical lowering path.
 #[derive(Debug, clap::Args, Clone, Default)]
@@ -59,6 +65,25 @@ impl CandidateEffectAssessmentArgs {
         edit: &GraphEditArgs,
         source_context: Option<&'a VerifiedGraphSourceContext>,
     ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
+        self.resolve_with_write_policy(edit, source_context, false)
+    }
+
+    /// Callers use this only when they assess final candidate documents and
+    /// enforce canonical placement before any write.
+    pub fn resolve_for_verified_write<'a>(
+        &self,
+        edit: &GraphEditArgs,
+        source_context: Option<&'a VerifiedGraphSourceContext>,
+    ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
+        self.resolve_with_write_policy(edit, source_context, true)
+    }
+
+    fn resolve_with_write_policy<'a>(
+        &self,
+        edit: &GraphEditArgs,
+        source_context: Option<&'a VerifiedGraphSourceContext>,
+        allow_write: bool,
+    ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
         let Some(analysis_path) = &self.analysis else {
             ensure!(
                 self.transform.spec.is_none()
@@ -70,7 +95,7 @@ impl CandidateEffectAssessmentArgs {
         };
 
         ensure!(
-            edit.dry_run,
+            edit.dry_run || allow_write,
             "candidate effect assessment requires --dry-run"
         );
         ensure!(
@@ -100,6 +125,25 @@ impl CandidateEffectAssessmentExistingTreeArgs {
         source_context: Option<&'a VerifiedGraphSourceContext>,
         tree_config: Option<&std::path::Path>,
     ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
+        self.resolve_with_write_policy(edit, source_context, tree_config, false)
+    }
+
+    pub fn resolve_for_verified_write<'a>(
+        &self,
+        edit: &GraphEditArgs,
+        source_context: Option<&'a VerifiedGraphSourceContext>,
+        tree_config: Option<&std::path::Path>,
+    ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
+        self.resolve_with_write_policy(edit, source_context, tree_config, true)
+    }
+
+    fn resolve_with_write_policy<'a>(
+        &self,
+        edit: &GraphEditArgs,
+        source_context: Option<&'a VerifiedGraphSourceContext>,
+        tree_config: Option<&std::path::Path>,
+        allow_write: bool,
+    ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
         let Some(analysis) = &self.analysis else {
             ensure!(
                 !self.auxiliary.has_any_inputs(),
@@ -118,7 +162,7 @@ impl CandidateEffectAssessmentExistingTreeArgs {
             },
             analysis: Some(analysis.clone()),
         };
-        args.resolve(edit, source_context)
+        args.resolve_with_write_policy(edit, source_context, allow_write)
     }
 }
 

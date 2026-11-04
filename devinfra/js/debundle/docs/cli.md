@@ -314,7 +314,9 @@ Verb-specific fields flatten in alongside the core: `moves_applied`
 When requested, `bindings assign`, `bindings unassign`, `modules apply`,
 `modules merge`, and `modules delete` also return
 `effect_relocation_assessment`, a report-only assessment of their exact
-in-memory candidate plan. It requires `--dry-run --analysis <artifact>`,
+in-memory candidate plan. Most commands require `--dry-run --analysis <artifact>`;
+`bindings assign` and `modules apply` also accept `--analysis` when writing, assessing the final
+candidate before changing YAML. It requires
 `--graph`, and the full tree transform context (`--tree-config`,
 `--tree-modules`, `--tree-vendor-marks`, `--tree-source-root`, and
 `--out-root`); `--modules` and `--tree-modules` must resolve to the same root.
@@ -327,8 +329,10 @@ The current path supports one full-tree graph chunk. It loads complete typed
 facts through the canonical pipeline and verifies source, engine and analysis
 projection identities; diagnostic reports are never decoded as facts. The
 assessment does not replace or change the legacy edit gate, and requested
-assessment failures occur before YAML writes. Omitting `--analysis` preserves
-the ordinary graph-backed edit behavior. Gate rejections replace the
+assessment failures and canonical placement refusals occur before YAML writes.
+Omitting `--analysis` preserves
+the ordinary graph-backed edit behavior; `modules apply` then reports
+`effect_assessment_unavailable: analysis_not_supplied`. Gate rejections replace the
 success object with a structured rejection object — see "Rejection
 diagnostics" below.
 

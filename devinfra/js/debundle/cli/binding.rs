@@ -27,6 +27,7 @@ use selector_outcome::SelectorKind;
 use serde::Deserialize;
 use source_identity::SourceUnitId;
 
+use crate::candidate_assessment::EffectAssessmentUnavailable;
 use pipeline::{AnalysisArtifactInput, TransformCli, assess_candidate_effect_relocation};
 use spec::{
     AnonymousStatement, BindingAnnotation, LogicalModule, Member, MemberSelectorSpec, ModulePath,
@@ -707,6 +708,8 @@ pub struct AssignOutcome {
     pub moves_applied: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect_assessment_unavailable: Option<EffectAssessmentUnavailable>,
 }
 
 #[derive(Clone, Copy)]
@@ -877,6 +880,7 @@ pub fn run_bindings_assign(
             },
             moves_applied: 0,
             effect_relocation_assessment: None,
+            effect_assessment_unavailable: Some(EffectAssessmentUnavailable::AnalysisNotSupplied),
         });
     }
 
@@ -1108,6 +1112,9 @@ pub fn run_bindings_assign(
     } else {
         None
     };
+    if let Some(assessment) = &effect_relocation_assessment {
+        pipeline::ensure_candidate_emittable_for_write(assessment, dry_run)?;
+    }
     if !no_moves {
         gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
     }
@@ -1133,6 +1140,9 @@ pub fn run_bindings_assign(
             files_deleted,
         },
         moves_applied: plan.len(),
+        effect_assessment_unavailable: effect_relocation_assessment
+            .is_none()
+            .then_some(EffectAssessmentUnavailable::AnalysisNotSupplied),
         effect_relocation_assessment,
     })
 }

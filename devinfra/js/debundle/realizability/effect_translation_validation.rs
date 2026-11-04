@@ -23,9 +23,8 @@ use source_identity::SourceUnitOrdinal;
 use spec::ModulePath;
 
 use super::translation_validation::{
-    StatementReport, TranslationValidationResult, emitted_statement_order,
+    CandidateEmittedOrder, StatementReport, TranslationValidationResult,
 };
-use crate::esm_import_order::EsmImportOrder;
 
 const EXAMPLE_LIMIT: usize = 20;
 
@@ -385,8 +384,7 @@ struct PairConflict {
 pub(crate) struct EffectTranslationValidationInputs<'a> {
     pub graph: &'a DependencyGraph,
     pub assignment: &'a ModuleAssignment,
-    pub emitted_modules: &'a BTreeSet<ModuleId>,
-    pub import_order: &'a EsmImportOrder,
+    pub emitted_order: &'a CandidateEmittedOrder,
     pub facts: &'a [StatementFacts],
     pub legacy: &'a TranslationValidationResult,
     pub module_path: &'a dyn Fn(ModuleId) -> ModulePath,
@@ -397,8 +395,7 @@ pub(crate) struct EffectTranslationValidationInputs<'a> {
 struct EffectRelocationAssessmentInputs<'a> {
     pub graph: &'a DependencyGraph,
     pub assignment: &'a ModuleAssignment,
-    pub emitted_modules: &'a BTreeSet<ModuleId>,
-    pub import_order: &'a EsmImportOrder,
+    pub emitted_order: &'a CandidateEmittedOrder,
     pub facts: &'a [StatementFacts],
 }
 
@@ -437,8 +434,7 @@ pub(crate) fn effect_translation_assess<E>(
     let EffectTranslationValidationInputs {
         graph,
         assignment,
-        emitted_modules,
-        import_order,
+        emitted_order,
         facts,
         legacy,
         module_path,
@@ -471,8 +467,7 @@ pub(crate) fn effect_translation_assess<E>(
         EffectRelocationAssessmentInputs {
             graph,
             assignment,
-            emitted_modules,
-            import_order,
+            emitted_order,
             facts,
         },
         Some(&mut diagnostic_visitor),
@@ -520,8 +515,7 @@ fn assess_effect_relocation<E>(
     let EffectRelocationAssessmentInputs {
         graph,
         assignment,
-        emitted_modules,
-        import_order,
+        emitted_order,
         facts,
     } = inputs;
     let effects: BTreeMap<_, _> = facts
@@ -573,12 +567,12 @@ fn assess_effect_relocation<E>(
         coverage.havoc_statements += usize::from(effect.has_havoc());
     }
     let mut counts = EffectConflictCounts::default();
-    let emitted = emitted_statement_order(graph, assignment, emitted_modules, import_order);
+    let emitted = emitted_order.rows();
     let has_reordering = emitted.windows(2).any(|pair| pair[0].1 > pair[1].1);
     let swapped_pairs = super::translation_validation::count_inversions(
         emitted.iter().map(|&(_, ordinal, _)| ordinal),
     );
-    let swapped_units = units_in_inversions(&emitted);
+    let swapped_units = units_in_inversions(emitted);
     let mut relocation_dependencies = ProofDependencies::default();
     for unit in &swapped_units {
         let effect = &effects[unit];

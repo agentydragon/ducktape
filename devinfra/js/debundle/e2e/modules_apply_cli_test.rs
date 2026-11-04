@@ -289,6 +289,11 @@ fn applies_fresh_proposal_with_a_structural_selector() {
     assert_eq!(dry_run["selector_reviews"][0]["kind"], "source_match");
     assert_eq!(dry_run["selector_reviews"][0]["origin"], "synthesized");
     assert_eq!(
+        dry_run["effect_assessment_unavailable"],
+        "analysis_not_supplied"
+    );
+    assert!(dry_run.get("effect_relocation_assessment").is_none());
+    assert_eq!(
         dry_run["selector_reviews"][0]["binding_ids"],
         json!(["provider"])
     );

@@ -466,6 +466,24 @@ pub fn assess_candidate_effect_relocation(
     Ok(assessment)
 }
 
+/// An edit that supplied verified staged facts may write only when the
+/// canonical placement projection yielded the maps normal emission uses.
+/// Effect conflicts remain report-only while the legacy gate is authoritative.
+pub fn ensure_candidate_emittable_for_write(
+    assessment: &CandidateRelocationAssessmentReport,
+    dry_run: bool,
+) -> Result<()> {
+    if !dry_run {
+        anyhow::ensure!(
+            assessment.placement.emission_mappable,
+            "candidate placement is unmappable for canonical emission: {:?}; unresolved checks: {:?}",
+            assessment.placement.projection_violations,
+            assessment.placement.coverage.unresolved_checks,
+        );
+    }
+    Ok(())
+}
+
 /// `debundle spec project-analysis`: the run's analysis projection, written to
 /// `out` as its canonical bytes. Runs the selector solve and nothing after it.
 pub fn project_analysis_cli(cli: &TransformCli, out: &Path) -> Result<()> {
