@@ -1,5 +1,14 @@
 """Non-secret platform-sessions integration and route policy."""
 
+THRIVE_READ_PATHS = (
+    "/products",
+    "/account/orders",
+    "/account",
+    "/carts",
+    "/autoship/items",
+    "/autoship/schedule/first",
+)
+
 INTEGRATIONS = {
     "integrations": [
         {"id": "openai", "type": "openai", "state_dir": "/data/session/openai"},
@@ -14,14 +23,12 @@ BEARERS = {
     "thrive-scraper": {
         "role": "routes",
         "token_file": "/var/run/platform-sessions/thrive-scraper",
-        "allow": [
-            {"instance": "thrive", "method": "GET", "path": "/products"},
-            {"instance": "thrive", "method": "GET", "path": "/account/orders"},
-            {"instance": "thrive", "method": "GET", "path": "/account"},
-            {"instance": "thrive", "method": "GET", "path": "/carts"},
-            {"instance": "thrive", "method": "GET", "path": "/autoship/items"},
-            {"instance": "thrive", "method": "GET", "path": "/autoship/schedule/first"},
-        ],
+        "allow": [{"instance": "thrive", "method": "GET", "path": path} for path in THRIVE_READ_PATHS],
+    },
+    "thrive-read": {
+        "role": "routes",
+        "token_file": "/var/run/platform-sessions/thrive-read",
+        "allow": [{"instance": "thrive", "method": "GET", "path": path} for path in THRIVE_READ_PATHS],
     },
     "aiquota": {
         "role": "routes",

@@ -67,6 +67,7 @@ GOOGLE_READONLY_POLICY = "google-readonly"
 ACTIVITYWATCH_READ_POLICY = "activitywatch-read"
 AIQUOTA_READ_POLICY = "aiquota-read"
 QUEST_READ_POLICY = "quest-read"
+THRIVE_READ_POLICY = "thrive-read"
 PLATFORM_SESSIONS_API = ServiceRef(
     name="platform-sessions",
     port=Port(name="http", number=8080),
@@ -100,6 +101,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     _activitywatch_read(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _aiquota_read(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _quest_read(construct, namespace=namespace)
+    _thrive_read(construct, namespace=namespace)
     _haku_mailbox(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     _buildbuddy(construct, namespace=namespace, credentials_namespace=credentials_namespace)
     _plaid_pgweb(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
@@ -648,6 +650,39 @@ def _quest_read(scope: Construct, *, namespace: str) -> None:
                     "/proxy/quest/guest/getPricing",
                 ],
             ),
+        ],
+    )
+
+
+def _thrive_read(scope: Construct, *, namespace: str) -> None:
+    _credential(
+        scope,
+        THRIVE_READ_POLICY,
+        namespace=namespace,
+        credential=THRIVE_READ_POLICY,
+        description="Read Thrive Market catalog, orders, account, cart, and autoship through Platform Sessions.",
+        secret="platform-sessions-thrive-read-bearer",
+        key="token",
+        target=_BEARER,
+    )
+    add_egress_policy(
+        scope,
+        "egresspolicy-thrive-read",
+        metadata=ApiObjectMetadata(name=THRIVE_READ_POLICY, namespace=namespace),
+        rules=[
+            _rule(
+                THRIVE_READ_POLICY,
+                "platform-sessions.allegedly.works",
+                method=PolicySetSpecRulesMethods.GET,
+                paths=[
+                    "/proxy/thrive/products",
+                    "/proxy/thrive/account/orders",
+                    "/proxy/thrive/account",
+                    "/proxy/thrive/carts",
+                    "/proxy/thrive/autoship/items",
+                    "/proxy/thrive/autoship/schedule/first",
+                ],
+            )
         ],
     )
 

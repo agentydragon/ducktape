@@ -97,6 +97,29 @@ def test_clickhouse_history_password_has_one_exact_source_reader(scratch_chart: 
     ]
 
 
+def test_thrive_read_has_scoped_bearer_and_get_rules(scratch_chart: Chart) -> None:
+    objects = _staging_credentials_resources(scratch_chart)
+    credential = next(
+        obj for obj in objects if obj["kind"] == "EgressCredential" and obj["metadata"]["name"] == "thrive-read"
+    )
+    assert credential["spec"]["source"] == {
+        "secretRef": {"name": "platform-sessions-thrive-read-bearer", "key": "token"}
+    }
+    assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}]
+    policy = next(obj for obj in objects if obj["kind"] == "PolicySet" and obj["metadata"]["name"] == "thrive-read")
+    rules = policy["spec"]["rules"]
+    assert [rule["methods"] for rule in rules] == [["GET"]]
+    assert rules[0]["hosts"] == ["platform-sessions.allegedly.works"]
+    assert set(rules[0]["paths"]) == {
+        "/proxy/thrive/products",
+        "/proxy/thrive/account/orders",
+        "/proxy/thrive/account",
+        "/proxy/thrive/carts",
+        "/proxy/thrive/autoship/items",
+        "/proxy/thrive/autoship/schedule/first",
+    }
+
+
 def test_quest_bearer_has_its_own_secret_and_network_access(scratch_chart: Chart) -> None:
     objects = _staging_credentials_resources(scratch_chart)
     credential = next(
