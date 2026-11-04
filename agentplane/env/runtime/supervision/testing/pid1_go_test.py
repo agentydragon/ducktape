@@ -1,22 +1,24 @@
 """Run a Go controller test binary as PID 1 in a private PID namespace."""
 
 import asyncio
+import importlib
 import os
 
 import pytest_bazel
 
 from devinfra.bazel.runfiles import get_required_path
-from third_party.containers import debian_slim, ryuk
+from third_party.containers import ryuk
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 
 
 async def test_go_suite() -> None:
-    for image in (ryuk.IMAGE, debian_slim.IMAGE):
+    test_image = importlib.import_module(os.environ["PID1_GO_TEST_IMAGE"]).IMAGE
+    for image in (ryuk.IMAGE, test_image):
         load_oci_image(image)
     binary = get_required_path(os.environ["PID1_GO_TEST_RUNFILE"]).resolve()
     container = (
-        LoggedContainer(debian_slim.IMAGE.tag, test_name="pid1-go-test")
+        LoggedContainer(test_image.tag, test_name="pid1-go-test")
         .with_kwargs(network_mode="host", user="0:0", pids_limit=512, mem_limit="1g")
         .with_volume_mapping(str(binary), "/go-test", mode="ro")
         .with_command("/go-test -test.v")
