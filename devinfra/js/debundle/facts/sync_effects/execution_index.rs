@@ -5,7 +5,7 @@ mod prototype_properties;
 
 use super::local_operations::LocalBody;
 use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
-use super::noninvoking_initialization::OriginalInitializer;
+use super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use super::value_model::{
     ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts, FromEntriesMappedProof,
     MemberKey, NamespaceValueFacts, OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr,
@@ -5817,6 +5817,9 @@ struct ExecutionIndex {
     top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
     ordered_initializers: BTreeMap<SourceUnitOrdinal, LocalBody>,
+    /// Canonical owner/binding/initializer identity, independent of the
+    /// legacy initializer leaf and allocation admission.
+    initialization_source_identities: BTreeMap<SourceUnitOrdinal, InitializationSourceIdentity>,
     noninvoking_initializers: BTreeMap<SourceUnitOrdinal, OriginalInitializer>,
     initialization_coverage_refusals: Vec<Option<OwnerInitializationCoverageRefusalReason>>,
     top_definite_initializers: Vec<BTreeSet<Id>>,
@@ -6001,6 +6004,7 @@ impl Default for ExecutionIndex {
             top_dynamic_property_receivers: Vec::new(),
             top_assignments: Vec::new(),
             ordered_initializers: BTreeMap::new(),
+            initialization_source_identities: BTreeMap::new(),
             noninvoking_initializers: BTreeMap::new(),
             initialization_coverage_refusals: Vec::new(),
             top_definite_initializers: Vec::new(),
@@ -8533,6 +8537,7 @@ impl ExecutionIndex {
             top_dynamic_property_receivers: vec![Vec::new(); body.len()],
             top_assignments: vec![Vec::new(); body.len()],
             ordered_initializers: BTreeMap::new(),
+            initialization_source_identities: BTreeMap::new(),
             initialization_coverage_refusals: vec![None; body.len()],
             top_definite_initializers: vec![BTreeSet::new(); body.len()],
             top_member_value_writes: vec![Vec::new(); body.len()],
@@ -8652,9 +8657,16 @@ impl ExecutionIndex {
                 && let Some(expression) = declarator.init.as_deref()
                 && let Some(body) = LocalBody::from_initializer(expression)
             {
+                debug_assert_eq!(body.initializer_span(), Some(expression.span()));
                 index.ordered_initializers.insert(owner, body);
             }
-            match OriginalInitializer::collect(item, owner) {
+            let source_identity = InitializationSourceIdentity::collect(item, owner);
+            if let Ok((identity, _)) = &source_identity {
+                index
+                    .initialization_source_identities
+                    .insert(owner, identity.clone());
+            }
+            match OriginalInitializer::collect(item, owner, source_identity) {
                 Ok(initializer) => {
                     index.noninvoking_initializers.insert(owner, initializer);
                 }

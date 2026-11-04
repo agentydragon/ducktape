@@ -583,9 +583,6 @@ impl RuntimeRules<'_, '_> {
             }
         };
         let (state, allocation_judgment, evaluation_effects) = executor.into_transfer();
-        if let AllocationJudgment::CoveredAllocationOnly(dependencies) = &allocation_judgment {
-            context.assume(dependencies);
-        }
         context.propose(
             RuntimeKey::Result(point.clone()),
             RuntimeFact::Result(Box::new(RuntimeResult {

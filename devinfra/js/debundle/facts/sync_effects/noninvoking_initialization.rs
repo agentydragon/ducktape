@@ -1,6 +1,7 @@
 //! Whole-source-unit coverage for a small, non-invoking initializer subset.
 
 use super::allocation_transfer::AllocationJudgment;
+use super::effect_coverage::EffectCoverageFragment;
 use super::value_model::{AbstractValue, CallSite, ValueExpr, Values};
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
@@ -56,9 +57,7 @@ enum Leaf {
 /// This says nothing about executing a function's lazy body.
 #[derive(Clone)]
 pub(super) struct OriginalInitializer {
-    owner: SourceUnitOrdinal,
-    binding: Id,
-    initializer_span: Span,
+    identity: InitializationSourceIdentity,
     leaf: Leaf,
 }
 
@@ -136,6 +135,25 @@ pub(crate) struct CompletedInitialization {
 }
 
 impl CompletedInitialization {
+    /// Seal only the exact normally completed root initializer. Child
+    /// operations and invocation memos carry fragments, never this evidence.
+    pub(super) fn from_root_effects(
+        source: &InitializationSourceIdentity,
+        owner: SourceUnitOrdinal,
+        binding: &Id,
+        initializer_span: Span,
+        initialized: &BTreeSet<Id>,
+        effects: &EffectCoverageFragment,
+    ) -> Option<Self> {
+        if !source.matches(owner, binding, initializer_span) || !initialized.contains(binding) {
+            return None;
+        }
+        Some(Self {
+            owner,
+            dependencies: effects.normal_dependencies()?,
+        })
+    }
+
     pub(crate) fn covers(&self, owner: SourceUnitOrdinal) -> bool {
         self.owner == owner
     }
@@ -232,6 +250,70 @@ fn original_split_declarator<'source>(
 fn ordinary_parameter(parameter: &Pat) -> bool {
     matches!(parameter, Pat::Ident(binding)
         if binding.type_ann.is_none() && !binding.id.optional)
+}
+
+/// Canonical source identity for one top-level variable initializer. This
+/// records which owner, binding, and original initializer span the syntax
+/// belongs to; it says nothing about the initializer's value or effects.
+#[derive(Clone)]
+pub(super) struct InitializationSourceIdentity {
+    owner: SourceUnitOrdinal,
+    binding: Id,
+    initializer_span: Span,
+}
+
+impl InitializationSourceIdentity {
+    fn new(owner: SourceUnitOrdinal, binding: Id, initializer_span: Span) -> Self {
+        Self {
+            owner,
+            binding,
+            initializer_span,
+        }
+    }
+
+    /// Recover the exact original initializer for a canonical source unit,
+    /// including a split view's parent/index provenance. This admits source
+    /// identity independently of the leaf forms understood below.
+    pub(super) fn collect<'source>(
+        item: &TopLevelItemView<'source>,
+        owner: SourceUnitOrdinal,
+    ) -> Result<(Self, &'source Expr), OwnerInitializationCoverageRefusalReason> {
+        let (declaration, declarator) = original_declarator(item)?;
+        let Pat::Ident(binding) = &declarator.name else {
+            return Err(OwnerInitializationCoverageRefusalReason::UnsupportedBindingShape);
+        };
+        if declaration.declare || declarator.definite || !ordinary_parameter(&declarator.name) {
+            return Err(OwnerInitializationCoverageRefusalReason::UnsupportedBindingShape);
+        }
+        let Some(initializer) = declarator.init.as_deref() else {
+            return Err(OwnerInitializationCoverageRefusalReason::MissingInitializer);
+        };
+        Ok((
+            Self::new(owner, binding.id.to_id(), initializer.span()),
+            initializer,
+        ))
+    }
+
+    pub(super) fn owner(&self) -> SourceUnitOrdinal {
+        self.owner
+    }
+
+    pub(super) fn binding(&self) -> &Id {
+        &self.binding
+    }
+
+    pub(super) fn initializer_span(&self) -> Span {
+        self.initializer_span
+    }
+
+    pub(super) fn matches(
+        &self,
+        owner: SourceUnitOrdinal,
+        binding: &Id,
+        initializer_span: Span,
+    ) -> bool {
+        self.owner == owner && self.binding == *binding && self.initializer_span == initializer_span
+    }
 }
 
 fn javascript_parameter(parameter: &Pat) -> bool {
@@ -398,9 +480,13 @@ fn set_primitive_array_constructor(
 }
 
 impl OriginalInitializer {
-    pub(super) fn collect(
-        item: &TopLevelItemView<'_>,
+    pub(super) fn collect<'source>(
+        item: &TopLevelItemView<'source>,
         owner: SourceUnitOrdinal,
+        source: Result<
+            (InitializationSourceIdentity, &'source Expr),
+            OwnerInitializationCoverageRefusalReason,
+        >,
     ) -> Result<Self, OwnerInitializationCoverageRefusalReason> {
         if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Decl(Decl::Class(declaration)))) =
             item
@@ -409,26 +495,15 @@ impl OriginalInitializer {
                 return Err(OwnerInitializationCoverageRefusalReason::UnsupportedOwnerKind);
             }
             return Ok(Self {
-                owner,
-                binding: declaration.ident.to_id(),
-                initializer_span: declaration.class.span,
+                identity: InitializationSourceIdentity::new(
+                    owner,
+                    declaration.ident.to_id(),
+                    declaration.class.span,
+                ),
                 leaf: Leaf::Class(declaration.class.span.lo.0),
             });
         }
-        // For split views, recover only the exact original child named by the
-        // canonical view's parent/index provenance. The child's own evaluation
-        // remains one source-unit owner; sibling initializers are separate
-        // owners and keep separate effect records.
-        let (declaration, declarator) = original_declarator(item)?;
-        let Pat::Ident(binding) = &declarator.name else {
-            return Err(OwnerInitializationCoverageRefusalReason::UnsupportedBindingShape);
-        };
-        if declaration.declare || declarator.definite || !ordinary_parameter(&declarator.name) {
-            return Err(OwnerInitializationCoverageRefusalReason::UnsupportedBindingShape);
-        }
-        let Some(initializer) = declarator.init.as_deref() else {
-            return Err(OwnerInitializationCoverageRefusalReason::MissingInitializer);
-        };
+        let (identity, initializer) = source?;
         let leaf = match initializer.unwrap_parens() {
             Expr::New(_) => {
                 if let Some((callee, call_site, kind)) = empty_native_constructor(initializer) {
@@ -486,16 +561,11 @@ impl OriginalInitializer {
                 Leaf::Composed(expression)
             }
         };
-        Ok(Self {
-            owner,
-            binding: binding.id.to_id(),
-            initializer_span: initializer.span(),
-            leaf,
-        })
+        Ok(Self { identity, leaf })
     }
 
     pub(super) fn matches_binding(&self, owner: SourceUnitOrdinal, binding: &Id) -> bool {
-        self.owner == owner && self.binding == *binding
+        self.identity.owner() == owner && self.identity.binding() == binding
     }
 
     /// The expression and coverage come from the same canonical lowering.
@@ -537,7 +607,7 @@ impl OriginalInitializer {
             return None;
         }
         Some(NativeConstructorCandidate {
-            owner: self.owner,
+            owner: self.identity.owner(),
             call_site: *call_site,
             kind: *kind,
             form: *form,
@@ -596,8 +666,8 @@ impl OriginalInitializer {
             dependencies.extend(&transfer.dependencies);
         }
         Some(EvaluatedInitializer {
-            owner: self.owner,
-            initializer_span: self.initializer_span,
+            owner: self.identity.owner(),
+            initializer_span: self.identity.initializer_span(),
             dependencies,
         })
     }
@@ -608,13 +678,93 @@ impl OriginalInitializer {
         owner: SourceUnitOrdinal,
         initialized: &BTreeSet<Id>,
     ) -> Option<CompletedInitialization> {
-        (self.owner == owner
+        (self
+            .identity
+            .matches(owner, self.identity.binding(), evaluated.initializer_span)
             && evaluated.owner == owner
-            && evaluated.initializer_span == self.initializer_span
-            && initialized.contains(&self.binding))
+            && initialized.contains(self.identity.binding()))
         .then_some(CompletedInitialization {
             owner,
             dependencies: evaluated.dependencies,
         })
+    }
+}
+
+#[cfg(test)]
+mod source_identity_tests {
+    use super::{InitializationSourceIdentity, OriginalInitializer};
+    use crate::facts::OwnerInitializationCoverageRefusalReason;
+    use crate::facts::item_views::top_level_item_views;
+    use source_identity::SourceUnitOrdinal;
+    use swc_common::{Spanned, SyntaxContext};
+    use swc_ecma_ast::Id;
+
+    fn id(name: &str) -> Id {
+        (name.into(), SyntaxContext::empty())
+    }
+
+    #[test]
+    fn exact_split_sibling_identity_survives_leaf_refusal() {
+        let module =
+            raw_js_test_support::parse("const first = 1, unsupported = new Date(), last = 3;");
+        let views = top_level_item_views(&module.body);
+        assert_eq!(views.len(), 3);
+
+        let first = InitializationSourceIdentity::collect(&views[0], SourceUnitOrdinal(0))
+            .expect("first split child has exact source identity");
+        let unsupported = InitializationSourceIdentity::collect(&views[1], SourceUnitOrdinal(1))
+            .expect("unsupported initializer still has exact source identity");
+        let last = InitializationSourceIdentity::collect(&views[2], SourceUnitOrdinal(2))
+            .expect("last split child has exact source identity");
+
+        let (unsupported_identity, unsupported_expression) = unsupported;
+        assert_eq!(unsupported_identity.owner(), SourceUnitOrdinal(1));
+        assert_eq!(unsupported_identity.binding(), &id("unsupported"));
+        assert_eq!(
+            unsupported_identity.initializer_span(),
+            unsupported_expression.span()
+        );
+        assert!(unsupported_identity.matches(
+            SourceUnitOrdinal(1),
+            &id("unsupported"),
+            unsupported_expression.span()
+        ));
+        assert!(!first.0.matches(
+            SourceUnitOrdinal(1),
+            &id("unsupported"),
+            unsupported_expression.span()
+        ));
+        assert!(!last.0.matches(
+            SourceUnitOrdinal(1),
+            &id("unsupported"),
+            unsupported_expression.span()
+        ));
+
+        assert!(matches!(
+            OriginalInitializer::collect(
+                &views[1],
+                SourceUnitOrdinal(1),
+                Ok((unsupported_identity, unsupported_expression)),
+            ),
+            Err(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer)
+        ));
+    }
+
+    #[test]
+    fn exported_initializer_identity_does_not_admit_unsupported_leaf() {
+        let module = raw_js_test_support::parse("export const result = new Date();");
+        let views = top_level_item_views(&module.body);
+        let (identity, expression) =
+            InitializationSourceIdentity::collect(&views[0], SourceUnitOrdinal(0))
+                .expect("export wrapper still identifies the original binding and initializer");
+        assert!(identity.matches(SourceUnitOrdinal(0), &id("result"), expression.span()));
+        assert!(matches!(
+            OriginalInitializer::collect(
+                &views[0],
+                SourceUnitOrdinal(0),
+                Ok((identity, expression))
+            ),
+            Err(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer)
+        ));
     }
 }

@@ -581,6 +581,7 @@ rust_library(
         "facts/statement_facts.rs",
         "facts/sync_effects.rs",
         "facts/sync_effects/allocation_transfer.rs",
+        "facts/sync_effects/effect_coverage.rs",
         "facts/sync_effects/execution_index.rs",
         "facts/sync_effects/execution_index/callback_arguments.rs",
         "facts/sync_effects/execution_index/prototype_properties.rs",

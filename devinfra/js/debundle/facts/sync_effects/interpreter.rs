@@ -1,11 +1,14 @@
 //! Call-site execution effects distinguish function values from function bodies: returning a closure never executes it.
 
 use super::super::allocation_transfer::AllocationContext;
+use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::local_operations::{LocalBinding, LocalBody};
-use super::super::local_transfer::{self, EvaluatedCallee, LocalContext, LocalFrame};
+use super::super::local_transfer::{
+    self, EvaluatedCallee, LocalContext, LocalFrame, LocalValueResult,
+};
 use super::super::noninvoking_initialization::{
-    NativeConstructorCandidate, NativeConstructorForm, NativeConstructorKind,
-    NativeConstructorTransfer, OriginalInitializer,
+    CompletedInitialization, NativeConstructorCandidate, NativeConstructorForm,
+    NativeConstructorKind, NativeConstructorTransfer, OriginalInitializer,
 };
 use super::super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataRead};
 use super::super::value_model::{
@@ -95,6 +98,8 @@ fn unknown() -> Values {
 #[derive(Debug, Clone, Default)]
 pub(super) struct Outcome {
     effects: SynchronousCalls,
+    /// Nonterminal operation receipts, never a whole-owner certificate.
+    effect_coverage: EffectCoverageFragment,
     returns: Values,
     complete: bool,
     executed_owners: BTreeSet<SourceUnitOrdinal>,
@@ -734,8 +739,8 @@ impl ExecutionInputs<'_> {
 
 #[derive(Default)]
 pub(super) struct ExecutionState {
-    /// Conservative accumulated conditions of prefix values, retained across
-    /// owner boundaries for report-only operation provenance.
+    /// Conservative conditions under which settled prefix values hold,
+    /// retained across owner/child boundaries. Prerequisites are not coverage.
     ledger_dependencies: ProofDependencies,
     native_integrity_checks: RefCell<BTreeSet<NativeIntegrityCheck>>,
     native_prototype_property_checks: RefCell<BTreeMap<String, NativePrototypePropertyCheck>>,
@@ -1370,11 +1375,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         );
         None
     }
-    fn read_binding(
-        &mut self,
-        binding: &Id,
-        frame: &mut LocalFrame,
-    ) -> Option<super::super::allocation_transfer::AllocationValue> {
+    fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<LocalValueResult> {
         if self.executor.inputs.top_bindings.contains(binding) {
             self.executor
                 .promote_top_effects(vec![binding], Vec::new(), self.owner, self.outcome);
@@ -1392,10 +1393,21 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             // an already captured reference, so preserve its capabilities.
             frame.inputs.extend(values.iter().cloned());
         }
-        // Timing is covered; the read alone cannot certify a closed input.
-        Some(super::super::allocation_transfer::AllocationValue::opaque(
-            values,
-        ))
+        // Declarative module GetBindingValue has no property/heap/host
+        // operation. This proves its effects independently of the value kind.
+        // Captures, imports, globals and possible abrupt reads have no receipt.
+        let effects = if self.executor.initialized_local_binding(binding)
+            && !values.is_empty()
+            && !values.contains(&AbstractValue::Value(Value::Unavailable))
+        {
+            EffectCoverageFragment::no_effects()
+        } else {
+            EffectCoverageFragment::default()
+        };
+        Some(LocalValueResult {
+            allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
+            effects,
+        })
     }
     fn call(
         &mut self,
@@ -1403,7 +1415,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         callee: &EvaluatedCallee,
         arguments: &[Values],
         span: Span,
-    ) -> Option<super::super::allocation_transfer::AllocationValue> {
+    ) -> Option<LocalValueResult> {
         let targets = callee.targets();
         let mut reached = targets.clone();
         if let Some(receiver) = callee.receiver() {
@@ -1472,9 +1484,10 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 .extend(self.executor.reachable_objects(&values));
             if complete {
                 // A complete call is not an allocation-only certificate.
-                return Some(super::super::allocation_transfer::AllocationValue::opaque(
-                    values,
-                ));
+                return Some(LocalValueResult {
+                    allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
+                    effects: outcome.effect_coverage,
+                });
             }
             reached.extend(values);
         }
@@ -1624,6 +1637,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         super::super::allocation_transfer::AllocationJudgment,
         EvaluationEffects,
     ) {
+        if let super::super::allocation_transfer::AllocationJudgment::CoveredAllocationOnly(
+            dependencies,
+        ) = &self.allocation_judgment
+        {
+            self.queries.assume(dependencies);
+        }
         self.state
             .ledger_dependencies
             .extend(&self.queries.dependencies());
@@ -1648,6 +1667,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             super::super::allocation_transfer::AllocationJudgment::CoveredAllocationOnly(
                 ProofDependencies::default(),
             );
+    }
+
+    /// Conditions of the settled prefix, including value-producing child
+    /// transfers, plus queries used by the current target selection. This is
+    /// a conservative prerequisite set, never operation coverage evidence.
+    fn settled_prefix_dependencies(&self) -> ProofDependencies {
+        let mut dependencies = self.state.ledger_dependencies.clone();
+        dependencies.extend(&self.queries.dependencies());
+        dependencies
     }
 
     fn request(&mut self, operation: RuntimeOperation) -> RuntimeValue {
@@ -8887,6 +8915,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             coverage.is_some() || !outcome.complete,
             "covered local values use shared transfers or an explicit conservative fallback"
         );
+        if let Some(coverage) = coverage {
+            outcome.effect_coverage = coverage.effects;
+        }
         for value in &frame.returns {
             if let AbstractValue::OwnDescriptorMap(site) = value {
                 self.invalidate_own_descriptor_map(*site);
@@ -8969,6 +9000,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .params
                 .iter()
                 .any(|parameter| parameter.binding.is_none());
+        // The local kernel starts after this prologue. Only an empty ordinary
+        // invocation can forward its body receipt without a separate parameter,
+        // arguments, capture or receiver operation receipt.
+        let callable = &self.inputs.index.callables[&key];
+        let covered_prologue = args.is_empty()
+            && callable.params.is_empty()
+            && !uses_arguments
+            && !callable.implicit_capture
+            && !callable.generator
+            && !callable.opaque
+            && !self.inputs.index.async_callables.contains(&key)
+            && !fresh_checked_constructor
+            && captured
+                .as_ref()
+                .is_none_or(|context| context.values.is_empty());
         // Implicit arguments can alias any actual input even without a
         // corresponding formal parameter. Invalidate input capabilities before
         // consulting cached outcomes, including calls outside array iteration.
@@ -9126,12 +9172,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 .any(|(binding, _)| binding == &write.receiver)
                         }));
             if !established_writes {
-                let outcome = self.execute_local_body(
+                let mut outcome = self.execute_local_body(
                     body,
                     env,
                     callable.owner,
                     LocalExecutionScope::Callable(key),
                 );
+                if !covered_prologue {
+                    outcome.effect_coverage = EffectCoverageFragment::default();
+                }
                 self.state.active.remove(&active_invocation);
                 self.state.invocation_depth -= 1;
                 self.remember_invocation(signature, &outcome);
@@ -10224,6 +10273,28 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             result_values.insert(AbstractValue::Value(Value::Unavailable));
         }
+        // The receipt belongs to this exact direct invocation, using the
+        // operands already evaluated by LocalBody. Retain canonical ordinary
+        // declaration provenance; methods/aliases and native/imported targets
+        // do not acquire coverage from a known returned value.
+        let coverage_target = if needs_value
+            && call.kind == CallKind::Call
+            && args.is_empty()
+            && !operands_may_throw
+            && prepared_receiver.is_none()
+            && let ValueExpr::Binding(binding) = &call.callee
+            && self
+                .inputs
+                .index
+                .direct_top_level_functions
+                .contains(binding)
+            && let Some((key, _)) = self.local_call_target(&targets)
+            && self.inputs.index.hoisted_bindings.get(binding) == Some(&key)
+        {
+            Some((key, self.settled_prefix_dependencies()))
+        } else {
+            None
+        };
         for target in targets {
             match target {
                 AbstractValue::CallbackFactory
@@ -10376,6 +10447,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     if call.kind == CallKind::Call =>
                 {
                     let mut nested = self.invoke(key, args.clone(), None, false);
+                    if let Some((expected, prerequisites)) = &coverage_target
+                        && *expected == key
+                    {
+                        outcome.effect_coverage = nested.effect_coverage.clone();
+                        outcome.effect_coverage.depend_on(prerequisites);
+                    }
                     if needs_value {
                         result_values.extend(nested.returns.iter().cloned());
                     }
@@ -10388,6 +10465,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 AbstractValue::Closure(key, captured) if call.kind == CallKind::Call => {
                     let mut nested = self.invoke(key, args.clone(), Some(captured), false);
+                    if let Some((expected, prerequisites)) = &coverage_target
+                        && *expected == key
+                    {
+                        outcome.effect_coverage = nested.effect_coverage.clone();
+                        outcome.effect_coverage.depend_on(prerequisites);
+                    }
                     if needs_value {
                         result_values.extend(nested.returns.iter().cloned());
                     }
@@ -11903,6 +11986,18 @@ impl Executor<'_, '_> {
                 && body.captured_writes().is_empty()
                 && self.ordered_root_calls_are_local(calls)
         });
+        // Canonical source identity is independent of leaf/value admission.
+        // Retain the exact selected body span, not a lowered-value guess.
+        let effect_initializer_source = ordered_initializer.and_then(|body| {
+            let [(binding, _)] = assignments.as_slice() else {
+                return None;
+            };
+            let span = body.initializer_span()?;
+            let source = index.initialization_source_identities.get(&owner)?;
+            source
+                .matches(owner, binding, span)
+                .then_some((source, binding, span))
+        });
         // Keep the selected result in this owner until publication. Operands
         // and calls execute once, at their position in the shared local plan.
         let mut ordered_initializer_result = if let Some(body) = ordered_initializer {
@@ -12240,6 +12335,22 @@ impl Executor<'_, '_> {
         {
             outcome.effects.completed_initialization =
                 source.complete(evaluated, owner, &self.state.initialized_bindings);
+        }
+        if outcome.effects.completed_initialization.is_none()
+            && outcome.complete
+            && !outcome.unknown_call
+            && outcome.effects.precision_losses.is_empty()
+            && outcome.effects.uninitialized_reads.is_empty()
+            && let Some((source, binding, span)) = effect_initializer_source
+        {
+            outcome.effects.completed_initialization = CompletedInitialization::from_root_effects(
+                source,
+                owner,
+                binding,
+                span,
+                &self.state.initialized_bindings,
+                &outcome.effect_coverage,
+            );
         }
         if outcome.effects.completed_initialization.is_none() {
             if initialization_coverage_refusal.is_none() {

@@ -564,6 +564,27 @@ including exact-site native identity inputs. The effect report projects their
 union as `coverage.covered_owner_dependencies`; an empty access ledger does
 not erase the conditions of an absence proof.
 
+An ordered simple variable initializer can separately compose effect-domain
+receipts from exact initialized module-local cell reads and direct ordinary
+top-level function-declaration calls with zero actual and formal arguments.
+The invocation prologue must use no `arguments`, implicit receiver or captured
+cells. The existing ordered kernel composes each executed operation's receipt,
+independently for global properties, general heap and host effects; missing
+receipts remain unknown even when execution is complete or the result is known.
+The returned value may remain allocation-opaque. An actual call receipt also
+retains the settled prefix's typed value-proof conditions and current
+target-selection conditions as prerequisites; those conditions alone cannot
+create coverage. Child outcomes and invocation memos carry only nonterminal
+receipts. Only the root owner can seal normal,
+fully covered execution against its exact canonical owner, binding and
+initializer span after its result binding becomes initialized. Parameters,
+actual arguments, captures, local stores, property/native/global operations,
+unsupported transfers and abrupt completion remain uncovered by this route.
+Existing leaf/value initializer proofs keep their independent admission.
+These three domains do not establish completeness of source binding reads or
+rebinds. Closing them does not discharge unresolved-call closure or authorize
+skipping its binding-effect fallback.
+
 An original simple variable declarator may also close those
 coverage domains for a direct bare `new Map()` or `new Set()` with exactly zero
 arguments. The original AST and lowered `New` site must identify the same

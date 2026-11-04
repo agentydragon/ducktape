@@ -4,7 +4,7 @@ use super::value_model::{ValueExpr, object_data_property_name, static_property_n
 use crate::facts::abstract_domain::value::Kind;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use swc_common::Span;
+use swc_common::{Span, Spanned};
 use swc_ecma_ast::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,6 +79,9 @@ pub(super) enum LocalOperation {
 pub(super) struct LocalBody {
     pub(super) bindings: BTreeMap<Id, LocalBinding>,
     pub(super) operations: Arc<[LocalOperation]>,
+    /// Present only for a root variable initializer lowered from its exact
+    /// canonical source expression. Callable bodies have no root-owner span.
+    initializer_span: Option<Span>,
     /// Sorted source reads outside this body's parameters and declarations.
     /// Shared across body clones and reused by every invocation/provider query.
     free_reads: Option<Arc<[Id]>>,
@@ -516,7 +519,9 @@ impl LocalExpression {
 
 impl LocalBody {
     pub(super) fn from_initializer(expression: &Expr) -> Option<Self> {
-        Self::lower_expression(std::iter::empty(), expression)
+        let mut body = Self::lower_expression(std::iter::empty(), expression)?;
+        body.initializer_span = Some(expression.span());
+        Some(body)
     }
 
     /// Called by the canonical function collector. Unsupported syntax discards
@@ -793,6 +798,7 @@ impl LocalBody {
         Some(Self {
             bindings,
             operations: operations.into(),
+            initializer_span: None,
             free_reads: (!reads.is_empty()).then(|| reads.into_iter().collect()),
             captured_writes: (!writes.is_empty()).then(|| writes.into_iter().collect()),
             allocation_only_syntax,
@@ -804,6 +810,10 @@ impl LocalBody {
 
     pub(super) fn free_reads(&self) -> &[Id] {
         self.free_reads.as_deref().unwrap_or_default()
+    }
+
+    pub(super) fn initializer_span(&self) -> Option<Span> {
+        self.initializer_span
     }
 
     pub(super) fn captured_writes(&self) -> &[Id] {
