@@ -85,7 +85,7 @@ fn partially_claimed_nested_var_statement_is_rejected() {
             vec![logical_module("left_module", &[Member::new("left")])],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
-        &["body index 0", "unassigned bindings", "right"],
+        &["NestedVarMissingOwner", "right"],
     );
 }
 
@@ -99,12 +99,7 @@ fn nested_var_explicit_and_residual_owners_must_agree() {
             vec![logical_module("left_module", &[Member::new("left")])],
         )
         .with_unassigned_mode(unassigned_mode_catchall_file(None)),
-        &[
-            "body index 0",
-            "different modules",
-            "left_module",
-            "residual",
-        ],
+        &["NestedVarDestinationSplit", "left_module", "residual"],
     );
 }
 
@@ -125,8 +120,7 @@ fn nested_var_whole_statement_request_must_match_binding_owner() {
             ],
         ),
         &[
-            "body index 0",
-            "different modules",
+            "NestedVarDestinationSplit",
             "binding_module",
             "statement_module",
         ],

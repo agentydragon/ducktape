@@ -1070,7 +1070,7 @@ fn gate_rejected_split_matches_a_direct_run() {
 }
 
 #[test]
-fn early_destructuring_split_refusal_matches_with_saved_facts() {
+fn destructuring_split_refusal_matches_with_saved_facts() {
     let source = "const source = { left: 1, right: 2 };\n\
          const { left, right } = source;\n\
          console.log(left, right);\n\
@@ -1122,7 +1122,7 @@ fn early_destructuring_split_refusal_matches_with_saved_facts() {
 }
 
 #[test]
-fn early_nested_var_split_refusal_matches_with_saved_facts() {
+fn nested_var_split_refusal_matches_with_saved_facts() {
     let source = "try { var left = 10; var right = 20; } catch (e) {}\n\
 console.log(left, right);\nexport { left, right };\n";
     // Save analysis while both nested-var bindings have one coherent owner,
@@ -1166,11 +1166,10 @@ console.log(left, right);\nexport { left, right };\n";
     assert_eq!(direct.status.code(), from_artifact.status.code());
     for result in [&direct, &from_artifact] {
         assert!(
-            result.stderr.contains("body index 0")
-                && result.stderr.contains("different modules")
+            result.stderr.contains("NestedVarDestinationSplit")
                 && result.stderr.contains("left_module")
                 && result.stderr.contains("right_module"),
-            "expected the typed early nested-var placement refusal in stderr:\n{}",
+            "expected the shared typed nested-var placement refusal in stderr:\n{}",
             result.stderr
         );
     }
