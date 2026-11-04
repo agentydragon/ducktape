@@ -305,7 +305,8 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
         oidc_session_secret="fake-session-secret",
         oidc_allowed_subject="fake-owner",
     )
-    client = TestClient(create_app(engine=engine, settings=settings))
+    app = create_app(engine=engine, settings=settings)
+    client = TestClient(app)
     assert client.get("/healthz").status_code == 200
     assert client.get("/api/machines").status_code == 401
     assert client.get("/api/import-progress").status_code == 401
@@ -341,9 +342,9 @@ def test_session_archive_requires_owner_and_serves_machine_list() -> None:
         with alternate_factory() as db:
             yield db
 
-    client.app.dependency_overrides[_archive_session] = alternate_session
+    app.dependency_overrides[_archive_session] = alternate_session
     assert client.get("/api/machines").json() == {"data": [{"id": "override-host", "display_name": "Override host"}]}
-    del client.app.dependency_overrides[_archive_session]
+    del app.dependency_overrides[_archive_session]
     alternate_engine.dispose()
     progress = client.get("/api/import-progress")
     assert progress.headers["cache-control"] == "no-store"
