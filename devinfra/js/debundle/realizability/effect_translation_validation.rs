@@ -43,7 +43,7 @@ pub struct EffectConflictCounts {
 #[derive(Debug, Clone, Serialize)]
 pub struct EffectCoverageReport {
     pub statement_count: usize,
-    pub covered_owner_dependencies: crate::analysis_inputs::ProofDependencies,
+    pub covered_owner_dependencies: analysis::analysis_inputs::ProofDependencies,
     pub unknown_coverage: BTreeMap<UnknownEffectCoverage, usize>,
     pub owner_coverage_refusals: BTreeMap<OwnerInitializationCoverageRefusalReason, usize>,
     pub legacy_dataflow_opaque_statements: usize,
