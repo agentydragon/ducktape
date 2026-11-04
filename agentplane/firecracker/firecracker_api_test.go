@@ -199,9 +199,9 @@ func waitForFile(t *testing.T, path string) {
 	ticker := time.NewTicker(5 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		if _, err := os.Stat(path); err == nil {
+		if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
 			return
-		} else if !errors.Is(err, os.ErrNotExist) {
+		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 			t.Fatal(err)
 		}
 		select {
