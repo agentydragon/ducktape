@@ -167,7 +167,7 @@ so a provider reading several endpoints in one cycle keeps every body.
 
 The current Codex usage response also carries
 `rate_limit_reset_credits.available_count`. AIQuota displays this authoritative
-live count as banked resets in the CLI, GNOME popup, ; it never
+live count as banked resets in the CLI, GNOME popup and browser; it never
 redeems a credit. When the companion detail endpoint names an expiry for a
 currently available credit, those surfaces display it as a _known_ expiry. The
 historical credit rows above remain available for analytics, but their detail
@@ -180,7 +180,7 @@ false.
 The same usage response can include a separate `credits` balance for paid
 usage beyond the included quota. AIQuota shows that balance in provider credits
 (not dollars) on the browser board, CLI, and GNOME popup. An exhausted Codex
-window with a positive balance is marked as using paid credits; the balance is
+window with a positive balance is marked as having paid credits available; the balance is
 the provider's latest reading, not a per-request charge ledger. Earned resets
 remain separate from this balance.
 

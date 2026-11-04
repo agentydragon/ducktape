@@ -31,10 +31,7 @@
   --aiquota-shadow: 0 1px 2px rgb(16 20 28 / 6%), 0 8px 24px rgb(16 20 28 / 4%);
 }
 
-/*
- * The console mounts this under Mantine's `defaultColorScheme="auto"`, which follows the same
- * system preference, so host and board never disagree about the theme.
- */
+/* Follow the viewer's system color preference. */
 @media (prefers-color-scheme: dark) {
   .aiquota-scope {
     --aiquota-surface: #171d28;
