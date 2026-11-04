@@ -30,7 +30,6 @@ from agentplane.app.testing.replication_source import (
     ReplicationSource,
     add_replication_source,
 )
-from agentplane.app.testing.runner_gateway import delivered_opening
 from agentplane.app.testing.thread_test_support import ThreadHTTP
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.electric_service import (
@@ -43,7 +42,7 @@ from agentplane.history_service.testing.history import History
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, delivered_opening
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.runner_gateway.testing.runner_server import runner_server
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster

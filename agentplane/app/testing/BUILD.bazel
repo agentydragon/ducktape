@@ -147,7 +147,6 @@ py_library(
         ":http2_proxy",
         ":replication_process",
         ":replication_source",
-        ":runner_gateway",
         ":thread_test_support",
         ":thread_view_marks",
         "//agentplane/history_service:client",
