@@ -1636,8 +1636,7 @@ rust_binary(
     crate_root = "main.rs",
     edition = "2024",
     rustc_env = {"RUSTC_BOOTSTRAP": "1"},
-    rustc_flags = ["-Cstrip=symbols"],
-    rustc_flags = ["-Ztime-passes"],
+    rustc_flags = ["-Cstrip=symbols", "-Ztime-passes"],
     visibility = ["//devinfra/js/debundle/e2e:__pkg__"],
     zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
