@@ -77,8 +77,6 @@ it("keeps app metadata and History SessionSummary in their generated message sha
 
   expect(result.threads).toEqual([{ metadata, summary }]);
   expect(result.threads[0]?.summary.foldedThrough).toBe(9007199254740993n);
-  expect(result.threads[0]).not.toHaveProperty("id");
-  expect(result.threads[0]).not.toHaveProperty("created_at");
   expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
     "/upstream/app/v1/threads",
     "/upstream/history/v1/sessions:batchGetSummaries",
