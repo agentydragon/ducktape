@@ -419,7 +419,7 @@ func TestProcessControllerPublishesSystemdEvidenceWhileStartIsBlocked(t *testing
 // to teardown between COSI's initial read and its phase-checked update.
 type teardownPhaseRace struct {
 	state.State
-	once sync.Once
+	once          sync.Once
 	phaseConflict atomic.Bool
 }
 
