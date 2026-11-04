@@ -12,7 +12,7 @@ use analysis::reports::author_inputs::AuthorInputLocations;
 use artifact::paths::normalize_module_path;
 use artifact::reports::SelectedModuleLowering;
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId};
-use gate::EffectRelocationAssessment;
+use gate::CandidateRelocationAssessmentReport;
 
 use output_layout::MODULES_REPORT;
 use reconstruction::{ChunkGateRejection, UnmatchedSpecClaim};
@@ -280,7 +280,7 @@ pub enum AnalysisMode {
 pub enum Materialized {
     Lowered(MaterializeLogicalModulesResult),
     Projected(AnalysisSpec),
-    Assessed(Vec<(String, EffectRelocationAssessment)>),
+    Assessed(Vec<(String, CandidateRelocationAssessmentReport)>),
 }
 
 /// Spec-derived inputs to [`materialize_logical_modules`], all keyed by

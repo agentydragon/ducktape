@@ -18,24 +18,30 @@ mod report_builders;
 mod validation;
 
 pub use assignment_analysis::{
-    AssignmentAnalysis, AssignmentAnalysisBuildError, RejectedAssignment, ValidatedAssignment,
+    AssignmentAnalysis, AssignmentAnalysisBuildError, AtomicGroupPlacementClass,
+    AtomicGroupPlacementObligation, CandidateRelocationAssessment,
+    CandidateRelocationAssessmentReport, CandidateRelocationStatus,
+    CrossDestinationRebindObligation, RejectedAssignment, SemanticOrderSccObligation,
+    StructuralPlacementAssessment, StructuralPlacementCheck, StructuralPlacementCoverage,
+    StructuralPlacementStatus, ValidatedAssignment,
 };
 pub use assignment_inputs::AssignmentInputs;
 pub use esm_import_order::EsmImportOrder;
 pub use realizability::{
-    EffectConflictCell, EffectConflictDiagnosticRow, EffectConflictDisposition, EffectConflictRow,
-    EffectCoverageReport, EffectOpacity, EffectRelocationAcceptanceScope,
-    EffectRelocationAssessment, EffectRelocationAssessmentInputs, EffectRelocationConflict,
-    EffectRelocationDecision, EffectTranslationValidationReport, LadderDecision,
+    CrossRebindEdge, EffectConflictCell, EffectConflictDiagnosticRow, EffectConflictDisposition,
+    EffectConflictRow, EffectCoverageReport, EffectOpacity, EffectRelocationAcceptanceScope,
+    EffectRelocationAssessment, EffectRelocationConflict, EffectRelocationDecision,
+    EffectTranslationValidationReport, EffectTranslationValidationResult, LadderDecision,
     LegacyEdgeComparisonCounts, ModuleAssignmentDelta, RealizabilityIndex, RealizabilityVerdict,
     SccDiagnosis, SccRejection, TranslationValidationEvidenceReport, TranslationValidationReport,
-    TranslationValidationResult, assess_effect_relocation, check_realizability,
-    check_realizability_touching, simulated_evaluation_post_order,
+    TranslationValidationResult, check_realizability, check_realizability_touching,
+    simulated_evaluation_post_order,
 };
 pub use validation::{
-    AssignmentReport, AtInitReadPosition, BlockingRejection, BlockingSccEntry, CutEdgeExplanation,
-    CycleEdge, CycleReport, render_atomic_group_conflict_summary, render_cycle_summary,
-    render_explanations, validate_assignment,
+    AssignmentReport, AssignmentValidation, AtInitReadPosition, BlockingRejection,
+    BlockingSccEntry, CutEdgeExplanation, CycleEdge, CycleReport,
+    render_atomic_group_conflict_summary, render_cycle_summary, render_explanations,
+    validate_assignment, validate_assignment_with_verdict,
 };
 
 #[cfg(test)]

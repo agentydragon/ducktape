@@ -45,6 +45,16 @@ pub struct AssignmentReport {
     pub cross_rebinds: Vec<String>,
 }
 
+/// Canonical in-memory validation for one settled assignment. The typed
+/// verdict is authoritative; `report` is its rendered diagnostic projection.
+/// This value is deliberately not deserializable, so a missing typed verdict
+/// can never default to acceptance when reading a report from disk.
+#[derive(Debug, Clone)]
+pub struct AssignmentValidation {
+    pub verdict: RealizabilityVerdict,
+    pub report: AssignmentReport,
+}
+
 /// Validator's rendered projection of one unrealizable SCC. The shared
 /// "modules in the SCC + edges in the SCC" core is
 /// [`analysis::reports::SccCore`]; the in-memory primitive that carries
@@ -607,14 +617,28 @@ pub fn validate_assignment(
     assignment: &ModuleAssignment,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
 ) -> AssignmentReport {
+    validate_assignment_with_verdict(dependency_graph, assignment, module_path).report
+}
+
+/// Validate once and retain both the canonical typed verdict and its rendered
+/// report for in-memory consumers that need to pair it with candidate-order
+/// analyses. Callers must not infer gate facts from rendered strings.
+pub fn validate_assignment_with_verdict(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+    module_path: &dyn Fn(ModuleId) -> ModulePath,
+) -> AssignmentValidation {
     let verdict = check_realizability(dependency_graph, assignment);
     let cross_rebinds = render_cross_rebinds(dependency_graph, &verdict, module_path);
     if verdict.unrealizable_sccs.is_empty() {
-        return AssignmentReport {
-            cycles: Vec::new(),
-            atomic_group_conflicts: Vec::new(),
-            linker_order: Vec::new(),
-            cross_rebinds,
+        return AssignmentValidation {
+            verdict,
+            report: AssignmentReport {
+                cycles: Vec::new(),
+                atomic_group_conflicts: Vec::new(),
+                linker_order: Vec::new(),
+                cross_rebinds,
+            },
         };
     }
     // statement_ordinal → first declared binding of the source_unit that
@@ -723,11 +747,14 @@ pub fn validate_assignment(
             }
         }
     }
-    AssignmentReport {
-        cycles,
-        atomic_group_conflicts: Vec::new(),
-        linker_order: Vec::new(),
-        cross_rebinds,
+    AssignmentValidation {
+        verdict,
+        report: AssignmentReport {
+            cycles,
+            atomic_group_conflicts: Vec::new(),
+            linker_order: Vec::new(),
+            cross_rebinds,
+        },
     }
 }
 

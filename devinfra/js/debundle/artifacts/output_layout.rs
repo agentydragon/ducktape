@@ -36,6 +36,7 @@ pub const EXPORT_REENTRY_FULL_REPORT: &str = "export_reentry.full.json";
 /// Translation validation beside the gate's verdict; report only.
 pub const EFFECT_CONFLICTS_JSONL: &str = "effect_conflicts.jsonl";
 pub const EFFECT_TRANSLATION_VALIDATION_REPORT: &str = "effect_translation_validation.json";
+pub const CANDIDATE_RELOCATION_ASSESSMENT_REPORT: &str = "candidate_relocation_assessment.json";
 pub const TRANSLATION_VALIDATION_REPORT: &str = "translation_validation.json";
 pub const TRANSLATION_VALIDATION_FULL_REPORT: &str = "translation_validation.full.jsonl";
 pub const INDEX_REPORT: &str = "index.json";

@@ -168,6 +168,10 @@ impl RejectedFixture {
         self.read_report("effect_translation_validation.json")
     }
 
+    pub fn candidate_relocation_assessment(&self) -> Value {
+        self.read_report("candidate_relocation_assessment.json")
+    }
+
     /// `atomic_group_conflicts.json`: one entry per atomic group the spec splits, with its
     /// `claims` (source_unit, binding names, module) and `causes`.
     pub fn atomic_group_conflicts(&self) -> Vec<Value> {
@@ -943,6 +947,23 @@ pub fn assert_node_output(path: &Path, expected_stdout: &str, expected_stderr: &
     );
     assert_eq!(result.stdout, expected_stdout, "stdout mismatch");
     assert_eq!(result.stderr, expected_stderr, "stderr mismatch");
+}
+
+pub fn assert_node_error(path: &Path, expected_error: &str) {
+    let result = run_node_script(path);
+    assert!(
+        !result.status.success(),
+        "node {} unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        path.display(),
+        result.stdout,
+        result.stderr,
+    );
+    assert!(
+        result.stderr.contains(expected_error),
+        "node {} stderr did not contain {expected_error:?}:\n{}",
+        path.display(),
+        result.stderr,
+    );
 }
 
 /// Real source files plus a serialized spec, ready for any CLI execution mode.

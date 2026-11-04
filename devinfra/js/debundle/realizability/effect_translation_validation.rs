@@ -381,7 +381,7 @@ struct PairConflict {
 }
 
 /// One settled assignment and the runtime facts used to diagnose its effects.
-pub struct EffectTranslationValidationInputs<'a> {
+pub(crate) struct EffectTranslationValidationInputs<'a> {
     pub graph: &'a DependencyGraph,
     pub assignment: &'a ModuleAssignment,
     pub emitted_modules: &'a BTreeSet<ModuleId>,
@@ -393,7 +393,7 @@ pub struct EffectTranslationValidationInputs<'a> {
 
 /// Trusted in-memory inputs for one candidate-order effect assessment.
 /// Reports decoded from disk are deliberately not accepted here.
-pub struct EffectRelocationAssessmentInputs<'a> {
+struct EffectRelocationAssessmentInputs<'a> {
     pub graph: &'a DependencyGraph,
     pub assignment: &'a ModuleAssignment,
     pub emitted_modules: &'a BTreeSet<ModuleId>,
@@ -416,11 +416,23 @@ pub struct EffectRelocationAssessment {
     pub coverage: EffectCoverageReport,
 }
 
-/// Only reports; neither the legacy gate nor its oracle consumes this result.
-pub fn effect_translation_validate<E>(
+/// One effect sweep's typed assessment and rendered report. The caller can
+/// pair the typed assessment with structural placement obligations without
+/// repeating the sweep.
+#[derive(Debug, Clone)]
+pub struct EffectTranslationValidationResult {
+    pub assessment: EffectRelocationAssessment,
+    pub report: EffectTranslationValidationReport,
+}
+
+/// Run the candidate-order effect sweep once and return both its typed result
+/// and the existing report projection. This does not alter the legacy gate or
+/// its oracle. The visitor still receives the same bounded report rows in the
+/// same order.
+pub(crate) fn effect_translation_assess<E>(
     inputs: EffectTranslationValidationInputs<'_>,
     mut visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
-) -> Result<EffectTranslationValidationReport, E> {
+) -> Result<EffectTranslationValidationResult, E> {
     let EffectTranslationValidationInputs {
         graph,
         assignment,
@@ -466,7 +478,7 @@ pub fn effect_translation_validate<E>(
     )?;
     legacy_comparison.legacy_edge_only_pairs = legacy_pairs.len() as u64;
     let examples_truncated = assessment.counts.pairs > examples.len() as u64;
-    Ok(EffectTranslationValidationReport {
+    let report = EffectTranslationValidationReport {
         report_only: true,
         // Closed domains still contain may-effects and do not establish every
         // runtime property such as heap identity or conditional execution.
@@ -475,12 +487,12 @@ pub fn effect_translation_validate<E>(
         legacy_gate_accepts: legacy.report.gate_accepts,
         legacy_tv_accepts: legacy.report.accepts,
         swapped_pairs: assessment.swapped_pairs,
-        emitted_order: assessment.emitted_order,
-        counts: assessment.counts,
+        emitted_order: assessment.emitted_order.clone(),
+        counts: assessment.counts.clone(),
         legacy_edge_comparison: legacy_comparison,
-        relocation_dependencies: assessment.relocation_dependencies,
-        premise_dependencies: assessment.premise_dependencies,
-        coverage: assessment.coverage,
+        relocation_dependencies: assessment.relocation_dependencies.clone(),
+        premise_dependencies: assessment.premise_dependencies.clone(),
+        coverage: assessment.coverage.clone(),
         examples,
         example_limit: EXAMPLE_LIMIT,
         cell_example_limit: EXAMPLE_LIMIT,
@@ -493,13 +505,14 @@ pub fn effect_translation_validate<E>(
             "Counts cover every conflicting swapped pair; examples are bounded and deterministic. Request --effect-conflicts-jsonl for full rows.",
             "The edge comparison excludes forward-edge and placement diagnostics; this assessment does not change acceptance or prove emission placement/rebinding obligations.",
         ],
-    })
+    };
+    Ok(EffectTranslationValidationResult { assessment, report })
 }
 
 /// Sweep every conflicting inversion in the exact emitter order. The decision
 /// is computed while those full rows are streamed, never from report samples or
 /// aggregate counts.
-pub fn assess_effect_relocation<E>(
+fn assess_effect_relocation<E>(
     inputs: EffectRelocationAssessmentInputs<'_>,
     mut visitor: Option<&mut impl FnMut(&EffectRelocationConflict<'_>) -> Result<(), E>>,
 ) -> Result<EffectRelocationAssessment, E> {

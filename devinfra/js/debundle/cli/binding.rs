@@ -705,7 +705,7 @@ pub struct AssignOutcome {
     pub outcome: MutationOutcome,
     pub moves_applied: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub effect_relocation_assessment: Option<gate::EffectRelocationAssessment>,
+    pub effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
 }
 
 #[derive(Clone, Copy)]
@@ -1152,7 +1152,7 @@ pub struct SourceUnitRefineOutcome {
     pub outcome: MutationOutcome,
     pub source_units_reassigned: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub effect_relocation_assessment: Option<gate::EffectRelocationAssessment>,
+    pub effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
 }
 
 pub struct SourceUnitRefineOptions<'a> {
@@ -2087,7 +2087,7 @@ pub struct UnassignOutcome {
     pub outcome: MutationOutcome,
     pub unassigned: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub effect_relocation_assessment: Option<gate::EffectRelocationAssessment>,
+    pub effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
 }
 
 /// Remove one or more bindings from their current modules as one validated batch.
