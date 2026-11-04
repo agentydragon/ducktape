@@ -88,6 +88,75 @@ fn class_fields_keep_typed_empty_keyed_collection_constructions() {
 }
 
 #[test]
+fn callable_factories_use_shared_empty_keyed_collection_transfers() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { makeCache, makeRecord } from './peer.js';\nfunction localCache() { return new Map(); }\nconst cache = makeCache();\nconst record = makeRecord();\nconsole.log(cache instanceof Map, cache.size, record.nested.cache instanceof Map, record.nested.cache.size, localCache().size);\n",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/peer",
+            "export function makeCache() { const cache = new Map(); return cache; }\nexport function makeRecord() { const cache = new Map(); return { nested: { cache } }; }\n",
+        )]),
+    );
+    assert_preserved_entry_output(&fixture, "true 0 true 0 0\n");
+
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    for name in ["makeCache", "makeRecord"] {
+        let summary = &report["imported_callables"][name]["foreign_call"];
+        assert_eq!(
+            summary["returns"],
+            serde_json::json!([{"kind": "fresh_allocation"}])
+        );
+        assert_eq!(summary["retained_arguments"], serde_json::json!([]));
+        assert_eq!(summary["native_constructions"], serde_json::json!(["map"]));
+    }
+    assert!(fixture.dependency_graph().nodes.iter().any(|node| {
+        node.synchronous_execution
+            .as_ref()
+            .is_some_and(|execution| {
+                execution
+                    .inference_uses
+                    .iter()
+                    .any(|usage| usage.conclusion == InferenceRule::ForeignCallSummary)
+            })
+    }));
+}
+
+#[test]
+fn callable_native_constructor_refusals_keep_node_behavior() {
+    for (provider, entry, expected) in [
+        (
+            "export function makeCache() { const cache = new Map([[1, 'value']]); return cache; }\n",
+            "try { console.log(makeCache().get(1)); } catch (error) { console.log(error.name); }\n",
+            "value\n",
+        ),
+        (
+            "export function makeCache() { const cache = new Map(); const Map = null; return cache; }\n",
+            "try { makeCache(); } catch (error) { console.log(error.name); }\n",
+            "ReferenceError\n",
+        ),
+        (
+            "const NativeMap = Map;\nglobalThis.Map = class extends NativeMap {};\nexport function makeCache() { const cache = new Map(); return cache; }\n",
+            "console.log(makeCache() instanceof Map);\n",
+            "true\n",
+        ),
+    ] {
+        let source = format!("import {{ makeCache }} from './peer.js';\n{entry}");
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        let report: serde_json::Value =
+            read_json(&fixture.report_root.join("static/app/modules.json"));
+        assert!(
+            report["imported_callables"]["makeCache"]["foreign_call"].is_null(),
+            "refused provider must not publish a summary: {provider}"
+        );
+    }
+}
+
+#[test]
 fn class_constructor_does_not_treat_a_getter_as_a_data_field() {
     let fixture = run_fixture(
         FixtureOpts::new(

@@ -83,6 +83,59 @@ pub(super) struct LocalBody {
     free_reads: Option<Arc<[Id]>>,
     captured_writes: Option<Arc<[Id]>>,
     allocation_only_syntax: bool,
+    /// These operations have a shared provider transfer, but the application
+    /// interpreter has no keyed-collection heap lane. Keep that interpreter on
+    /// its existing flat path when the body contains one.
+    requires_keyed_collection_new: bool,
+}
+
+fn is_keyed_collection_new(value: &ValueExpr) -> bool {
+    matches!(
+        value,
+        ValueExpr::New(callee, arguments, _)
+            if arguments.is_empty()
+                && matches!(callee.as_ref(), ValueExpr::Binding(binding)
+                    if matches!(binding.0.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet"))
+    )
+}
+
+fn value_contains_keyed_collection_new(value: &ValueExpr) -> bool {
+    match value {
+        ValueExpr::New(callee, arguments, _) => {
+            is_keyed_collection_new(value)
+                || value_contains_keyed_collection_new(callee)
+                || arguments.iter().any(value_contains_keyed_collection_new)
+        }
+        ValueExpr::Member(object, ..)
+        | ValueExpr::ArrayIteratorPrototype(object)
+        | ValueExpr::SetIteratorPrototype(object)
+        | ValueExpr::LogicalNot(object)
+        | ValueExpr::Void(object) => value_contains_keyed_collection_new(object),
+        ValueExpr::Call(callee, arguments, _) => {
+            value_contains_keyed_collection_new(callee)
+                || arguments.iter().any(value_contains_keyed_collection_new)
+        }
+        ValueExpr::Primitive(operands)
+        | ValueExpr::Sequence(operands)
+        | ValueExpr::Alternatives(operands) => {
+            operands.iter().any(value_contains_keyed_collection_new)
+        }
+        ValueExpr::ObjectLiteral(_, properties) => properties
+            .iter()
+            .any(|(_, value)| value_contains_keyed_collection_new(value)),
+        ValueExpr::StrictEquality(left, right) => {
+            value_contains_keyed_collection_new(left) || value_contains_keyed_collection_new(right)
+        }
+        ValueExpr::Conditional { test, alternatives } => {
+            value_contains_keyed_collection_new(test)
+                || alternatives.iter().any(value_contains_keyed_collection_new)
+        }
+        ValueExpr::Binding(_)
+        | ValueExpr::Alloc(..)
+        | ValueExpr::Undefined
+        | ValueExpr::NonCallable(_)
+        | ValueExpr::Unknown => false,
+    }
 }
 
 fn simple_binding(pattern: &Pat) -> Option<Id> {
@@ -99,13 +152,7 @@ fn simple_binding(pattern: &Pat) -> Option<Id> {
 fn unconditional_value(value: &ValueExpr) -> bool {
     match value {
         ValueExpr::Binding(_) | ValueExpr::NonCallable(_) | ValueExpr::Undefined => true,
-        ValueExpr::New(callee, arguments, _)
-            if arguments.is_empty()
-                && matches!(callee.as_ref(), ValueExpr::Binding(binding)
-                    if matches!(binding.0.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet")) =>
-        {
-            true
-        }
+        ValueExpr::New(..) if is_keyed_collection_new(value) => true,
         ValueExpr::ObjectLiteral(_, properties) => properties
             .iter()
             .all(|(_, value)| unconditional_value(value)),
@@ -294,15 +341,8 @@ impl LocalExpression {
             Expr::This(_) if class_template => Some(Self::This),
             _ => {
                 let (value, covered) = ValueExpr::from_expr_with_coverage(expression);
-                let class_native_constructor = class_template
-                    && matches!(
-                        &value,
-                        ValueExpr::New(callee, arguments, _)
-                            if arguments.is_empty()
-                                && matches!(callee.as_ref(), ValueExpr::Binding(binding)
-                                    if matches!(binding.0.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet"))
-                    );
-                (covered || class_native_constructor)
+                let keyed_collection_new = is_keyed_collection_new(&value);
+                (covered || keyed_collection_new)
                     .then(|| unconditional_value(&value).then_some(Self::Value(value)))
                     .flatten()
             }
@@ -388,6 +428,25 @@ impl LocalExpression {
                 value.allocation_only_syntax(bindings)
             }
             Self::Value(_) | Self::This | Self::ReadField { .. } => true,
+        }
+    }
+
+    fn requires_keyed_collection_new(&self) -> bool {
+        match self {
+            Self::Value(value) => value_contains_keyed_collection_new(value),
+            Self::Record { properties, .. } => properties
+                .iter()
+                .any(|(_, value)| value.requires_keyed_collection_new()),
+            Self::Sequence(expressions) => {
+                expressions.iter().any(Self::requires_keyed_collection_new)
+            }
+            Self::Assign { value, .. }
+            | Self::AssignField { value, .. }
+            | Self::DefineThisField { value, .. } => value.requires_keyed_collection_new(),
+            Self::Call { arguments, .. } => {
+                arguments.iter().any(Self::requires_keyed_collection_new)
+            }
+            Self::This | Self::Closure(_) | Self::ReadField { .. } => false,
         }
     }
 
@@ -680,12 +739,15 @@ impl LocalBody {
         writes.retain(|binding| !bindings.contains_key(binding));
         let allocation_only_syntax = Self::expressions(&operations)
             .all(|expression| expression.allocation_only_syntax(&bindings));
+        let requires_keyed_collection_new =
+            Self::expressions(&operations).any(LocalExpression::requires_keyed_collection_new);
         Some(Self {
             bindings,
             operations: operations.into(),
             free_reads: (!reads.is_empty()).then(|| reads.into_iter().collect()),
             captured_writes: (!writes.is_empty()).then(|| writes.into_iter().collect()),
             allocation_only_syntax,
+            requires_keyed_collection_new,
         })
     }
 
@@ -702,6 +764,10 @@ impl LocalBody {
     /// proof; a failed migrated query still never retries another evaluator.
     pub(super) fn allocation_only_syntax(&self) -> bool {
         self.allocation_only_syntax
+    }
+
+    pub(super) fn requires_keyed_collection_new(&self) -> bool {
+        self.requires_keyed_collection_new
     }
 
     fn expressions(operations: &[LocalOperation]) -> impl Iterator<Item = &LocalExpression> {

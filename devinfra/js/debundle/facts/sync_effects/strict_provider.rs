@@ -236,7 +236,17 @@ pub(super) fn derive(
     if let Some(expression) = &body.allocation_return {
         expression.bindings(&mut reads);
     } else {
-        reads.extend(body.local_body.as_ref()?.free_reads().iter().cloned());
+        let local_body = body.local_body.as_ref()?;
+        reads.extend(
+            local_body
+                .free_reads()
+                .iter()
+                .filter(|binding| {
+                    !local_body.requires_keyed_collection_new()
+                        || !matches!(binding.0.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet")
+                })
+                .cloned(),
+        );
     }
     for binding in bindings.keys() {
         reads.remove(binding);
@@ -290,13 +300,8 @@ pub(super) fn derive(
     let AllocationJudgment::CoveredAllocationOnly(dependencies) = result.judgment else {
         return None;
     };
-    // Generic function and arrow summaries remain limited to closed inputs
-    // and literal semantics. Constructor summaries carry checked native-row
-    // dependencies through DerivedForeignCall; this query does not widen its
-    // admission policy to premise-dependent transfers.
-    if !dependencies.is_empty() {
-        return None;
-    }
+    // Native constructor identity is conditional on the exact census proof;
+    // transport every consumed row dependency to the summary's importer.
     let mut returns = BTreeSet::new();
     let mut retained_arguments = BTreeSet::new();
     let mut retained_provider_captures = BTreeSet::new();
@@ -312,6 +317,11 @@ pub(super) fn derive(
             }
             AbstractValue::Value(Value::Prim(_)) => {
                 returns.insert(ForeignReturn::Primitive);
+            }
+            AbstractValue::Value(Value::Alloc(kind, _)) if kind.is_keyed_collection() => {
+                // Empty native construction has no user argument references
+                // to traverse. Preserve its typed identity as a fresh leaf.
+                returns.insert(ForeignReturn::FreshAllocation);
             }
             AbstractValue::Value(Value::Alloc(Kind::Object, allocation)) => {
                 returns.insert(ForeignReturn::FreshAllocation);
@@ -337,6 +347,8 @@ pub(super) fn derive(
                             AbstractValue::Value(Value::Alloc(Kind::Object, nested)) => {
                                 pending.push(*nested)
                             }
+                            AbstractValue::Value(Value::Alloc(kind, _))
+                                if kind.is_keyed_collection() => {}
                             AbstractValue::Value(Value::Prim(_)) => {}
                             _ => return None,
                         }

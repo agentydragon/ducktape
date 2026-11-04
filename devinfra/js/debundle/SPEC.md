@@ -2592,9 +2592,9 @@ Owner-boundary cleanup retires a bounded batch of expired interner entries.
 
 Call-containing bodies, closure creation and captured writes remain outside the
 migrated allocation-only provider query and keep their established foreign-call
-derivation where supported.
-This classification happens before selecting a query; a failed migrated
-query still never retries another evaluator.
+derivation where supported, including when such a body also constructs an empty
+native collection. This whole-body classification happens before selecting a
+query; a failed migrated query never retries another evaluator.
 
 Source coverage excludes async/generator functions, defaults/rest/destructuring,
 template syntax, other operators,
@@ -2617,8 +2617,12 @@ bindings (`var` reads before initialization yield `undefined`; lexical TDZ
 reads have no summary). It may create primitives, closures, and object or array literals with
 literal keys other than `__proto__`. It may construct an argument-free
 `Map`/`Set`/`WeakMap`/`WeakSet` whose global slot is intact in every analyzed
-chunk's census. A class may also define instance fields and write its declared
-private fields. Straight-line statements only. A class qualifies only without
+chunk's census. The shared provider operation accepts only a direct
+zero-argument `new` of that unshadowed global binding and retains the native-row
+proof dependencies in the summary; argumentful, aliased, shadowed or replaced
+constructors remain uncovered. A class may also define instance fields and
+write its declared private fields. Straight-line statements only. A class
+qualifies only without
 `extends`, decorators, parameter properties or an explicit `return`. Any other
 operation, including a provider binding read outside the private `var` rule,
 leaves the callee unknown.

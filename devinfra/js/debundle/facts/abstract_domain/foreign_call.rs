@@ -379,6 +379,10 @@ impl<'a, F: Fn(NativeIntrinsic) -> bool> Evaluator<'a, F> {
                     ..Value::fresh(reaches)
                 })
             }
+            // This remains available to whole bodies not yet represented by
+            // the shared local plan, such as returned method records. The
+            // index selects this path before the provider query; it is never a
+            // retry after shared-transfer refusal.
             Expr::New(NewExpr { callee, args, .. })
                 if args.as_deref().is_none_or(<[ExprOrSpread]>::is_empty) =>
             {
