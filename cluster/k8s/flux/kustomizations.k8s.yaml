@@ -3623,6 +3623,8 @@ spec:
       namespace: ducktape-flux
     - name: monitoring-crds
       namespace: ducktape-flux
+    - name: flux-image-automation-ghcr
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/platform-sessions
   prune: true
