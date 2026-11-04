@@ -91,9 +91,8 @@ It scopes existing Sessions and existing environments; it does not create enviro
   prevents Session deletion or owner changes from committing between that check and admission. Exact command
   retries still return the original receipt after authorization, including terminal opening outcomes.
   Cancellation keeps its existing retained-receipt authority, including privileged backend access.
-  Immediate interrupts recheck the retained Session and target immediately before forwarding, without holding
-  database locks across the Runtime RPC. A deletion after that check can race forwarding; this is not an
-  atomic deletion fence or proof of native effects.
+  Interrupts use this same durable admission, delivery and cancellation path, with the target turn ID
+  checked by the Runtime at admission. A delayed interrupt cannot target a successor turn.
 - The worker checks the live managed account before binding a pending owner and again
   immediately before Runner delivery. Source errors fail closed; missing pending accounts remain queued, while
   a changed bound account fails queued work instead of delivering it under the replacement identity.

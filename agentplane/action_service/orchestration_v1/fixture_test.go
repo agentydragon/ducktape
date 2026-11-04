@@ -321,7 +321,7 @@ func (d *recordingDispatcher) InterruptTurn(_ context.Context, request *dispatch
 	if err := d.record(request); err != nil {
 		return nil, err
 	}
-	return &dispatcherpb.InterruptTurnResponse{State: dispatcherpb.DeliveryState_DELIVERY_STATE_NO_OP}, nil
+	return &dispatcherpb.InterruptTurnResponse{Dispatch: &dispatcherpb.Dispatch{CommandId: request.GetCommandId(), SessionId: request.GetSessionId(), State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER}}, nil
 }
 
 // fakeHistory is a History Service holding the summaries a test gives it, or refusing every read while refusal is set.

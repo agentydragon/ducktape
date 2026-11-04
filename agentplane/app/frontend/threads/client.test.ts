@@ -378,16 +378,23 @@ it.each([
   });
 });
 
-it("keeps the generated immediate interrupt result separate from a durable Dispatch", async () => {
+it("returns a durable Dispatch for an interrupt", async () => {
   const requests: Request[] = [];
   vi.stubGlobal("fetch", (url: RequestInfo | URL, init?: RequestInit) => {
     requests.push(new Request(url, init));
-    return Response.json({ state: "DELIVERY_STATE_NO_OP", reason: "turn already ended" });
+    return Response.json({
+      dispatch: {
+        commandId: "interrupt-id",
+        sessionId: "thread",
+        ...target,
+        state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+      },
+    });
   });
   const result = await interruptTurn("thread", target, "interrupt-id", "turn-id");
   expect(result).toMatchObject({
-    kind: "interrupt_result",
-    result: { state: DeliveryState.NO_OP, reason: "turn already ended" },
+    kind: "dispatch",
+    dispatch: { state: DeliveryState.QUEUED_IN_DISPATCHER },
   });
   expect(new URL(requests[0]!.url).pathname).toBe("/upstream/dispatcher/v1/sessions/thread:interruptTurn");
   expect(await requests[0]!.json()).toEqual({

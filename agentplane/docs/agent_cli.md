@@ -84,12 +84,11 @@ It never replays earlier input or exec.
 
 Session mutations require caller-supplied IDs; the CLI does not mint or replace them and gRPC retries
 are disabled. `SESSION_ID` is the idempotency key for `open`; `COMMAND_ID` is the caller's key for
-`submit-input` and the correlation ID for `interrupt-turn`. After an unknown open or input outcome,
+`submit-input` and `interrupt-turn`. After an unknown open or input outcome,
 inspect it with `get-opening` or `get-dispatch` using the same ID before deciding what to do. `open`
 returns the Dispatcher opening record and does not create a model turn; the caller sends input separately.
-An optional setup script may execute during opening. `interrupt-turn` is delivered directly to a Ready
-Sandbox and is not queued; its response contains the result of that call, while `get-dispatch` cannot
-observe it. `--sandbox-uid` is the expected UID of the Kubernetes Sandbox object, not a Pod or VM
+An optional setup script may execute during opening. `interrupt-turn` queues an exact-turn command
+and returns its Dispatch; use `get-dispatch` to observe delivery. `--sandbox-uid` is the expected UID of the Kubernetes Sandbox object, not a Pod or VM
 incarnation identifier. `get-opening` reports only the Dispatcher record, not a combined History snapshot.
 `observe-input` uses the caller-held `COMMAND_ID` from `submit-input`, reads its Dispatcher receipt, then
 follows retained History from that receipt's admission cursor. `--wait-seconds` is bounded to 30 seconds;
@@ -151,7 +150,7 @@ Left out on purpose:
   `ACTION_STATE_DENIED`, `ACTION_STATE_DISPATCHING`, `ACTION_STATE_RUNNING`, `ACTION_STATE_SUCCEEDED`,
   `ACTION_STATE_FAILED`, `ACTION_STATE_CANCELLED` and `ACTION_STATE_EXECUTION_UNKNOWN`. Other enum
   fields use their generated protobuf value names too (for example, `mcp` becomes `EXECUTOR_KIND_MCP`).
-  Session JSON preserves the full returned `SessionOpening`, `Dispatch` or `InterruptTurnResponse`, including
+  Session JSON preserves the full returned `SessionOpening` or `Dispatch`, including
   UID, delivery state, reason and timestamps where present. `sessions get` emits source-part states and
   each observed opening or summary as its service's ProtoJSON; `sessions read-turns` emits UUID command IDs,
   opaque provider turn/item IDs, ProtoJSON enum names and decimal-string cursor values. `observe-input`
@@ -399,8 +398,8 @@ mutations. `events` has no `--follow` because the service has no push source for
 
 `SIGINT` and `SIGTERM` end the local command and exit `128 + signal`; they do not issue a remote cancel,
 and a mutation's outcome may be unknown. Use the command's caller-held ID to inspect the result where a
-read operation exists before deciding what to do next. `sessions interrupt-turn` has no `get-dispatch`
-record; its direct response is the only result returned by that RPC. `actions cancel` and
+read operation exists before deciding what to do next. `sessions get-dispatch` also reads interrupt
+receipts. `actions cancel` and
 `notifications cancel` are explicit operations, and neither implies the other.
 
 ## What the CLI relies on in the Action Service

@@ -147,7 +147,7 @@ func NewInputs() (Inputs, error) {
 	if inputs.SubmitInput, err = newInput[SubmitInputArgs](ActionSubmitInput, "Send a user message to a Session. "+commandNote, "Submit Session input", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)}, nil); err != nil {
 		return Inputs{}, err
 	}
-	if inputs.InterruptTurn, err = newInput[InterruptTurnArgs](ActionInterruptTurn, "Interrupt a Session's running turn. Delivered at once rather than queued, so it reaches only a Ready Sandbox; answers with whether the runner admitted it or found nothing to do. "+sandboxNote, "Interrupt Session turn", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(true), IdempotentHint: new(true)}, nil); err != nil {
+	if inputs.InterruptTurn, err = newInput[InterruptTurnArgs](ActionInterruptTurn, "Queue an interrupt for the exact observed Session turn and return its Dispatch. "+sandboxNote, "Interrupt Session turn", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(true), IdempotentHint: new(true)}, nil); err != nil {
 		return Inputs{}, err
 	}
 	if inputs.ChangeModel, err = newInput[ChangeModelArgs](ActionChangeModel, "Change the model a Session's next turns run on. "+commandNote, "Change Session model", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)}, nil); err != nil {

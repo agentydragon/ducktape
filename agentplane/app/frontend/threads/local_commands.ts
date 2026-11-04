@@ -2,13 +2,7 @@ import { create, equals, fromJson, toJson, type JsonValue } from "@bufbuild/prot
 
 import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
-import {
-  DeliveryState,
-  DispatchSchema,
-  InterruptTurnResponseSchema,
-  type Dispatch,
-  type InterruptTurnResponse,
-} from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import { DeliveryState, DispatchSchema, type Dispatch } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 import type { CommandTarget } from "./client";
 
 /** A typed operation retained for lost-response recovery; Command protobuf belongs to the journal. */
@@ -40,8 +34,8 @@ export interface LocalCommand {
   admission: EventEntry | null;
   /** Dispatcher state is durable queue evidence, not proof of a harness effect. */
   dispatch: Dispatch | null;
-  /** Interrupt is an immediate RPC result, not a durable Dispatcher queue row. */
-  interruptResult?: InterruptTurnResponse | null;
+  /** Previously stored immediate interrupt evidence prevents replay of an old command. */
+  interruptResult?: Dispatch | null;
 }
 
 export interface LocalCommandSnapshot {
@@ -94,7 +88,7 @@ function decode(text: string): LocalCommand {
   if (value.attempted !== undefined && typeof value.attempted !== "boolean") {
     throw new Error("Invalid locally retained delivery state");
   }
-  let interruptResult: InterruptTurnResponse | null = null;
+  let interruptResult: Dispatch | null = null;
   if (value.interruptResult !== undefined && value.interruptResult !== null) {
     if (
       command.operation.case !== "interruptTurn" ||
@@ -103,7 +97,7 @@ function decode(text: string): LocalCommand {
     ) {
       throw new Error("Invalid locally retained interrupt result");
     }
-    interruptResult = fromJson(InterruptTurnResponseSchema, value.interruptResult as JsonValue);
+    interruptResult = fromJson(DispatchSchema, value.interruptResult as JsonValue);
     if (interruptResult.admission) checkAdmission(command, interruptResult.admission);
   }
   return {
@@ -127,7 +121,7 @@ function encode(value: LocalCommand): string {
     target: value.target,
     admission: value.admission ? toJson(EventEntrySchema, value.admission) : null,
     dispatch: value.dispatch ? toJson(DispatchSchema, value.dispatch) : null,
-    interruptResult: value.interruptResult ? toJson(InterruptTurnResponseSchema, value.interruptResult) : null,
+    interruptResult: value.interruptResult ? toJson(DispatchSchema, value.interruptResult) : null,
   });
 }
 
@@ -305,44 +299,6 @@ export class LocalCommands {
       this.snapshot = {
         commands: this.snapshot.commands.map((value) =>
           value.command.commandId === command.commandId ? { ...value, admission, dispatch } : value
-        ),
-        inputEchoes: this.snapshot.inputEchoes,
-        error: String(error),
-      };
-      for (const listener of this.listeners) listener();
-      return;
-    }
-    this.reload();
-  }
-
-  acknowledgeInterrupt(command: PendingCommand, result: InterruptTurnResponse): void {
-    if (command.operation.case !== "interruptTurn") throw new Error("Interrupt result belongs to another operation");
-    if (result.admission) {
-      checkAdmission(command, result.admission);
-      this.checkKnownAdmission(command, result.admission);
-    }
-    const stored = localStorage.getItem(this.key(command.commandId));
-    if (stored === null) return;
-    const existing = decode(stored);
-    if (!sameCommand(existing.command, command)) throw new Error("Local command payload changed");
-    if (
-      existing.interruptResult &&
-      (existing.interruptResult.state !== result.state ||
-        existing.interruptResult.reason !== result.reason ||
-        (existing.interruptResult.admission === undefined) !== (result.admission === undefined) ||
-        (existing.interruptResult.admission !== undefined &&
-          result.admission !== undefined &&
-          !equals(EventEntrySchema, existing.interruptResult.admission, result.admission)))
-    ) {
-      throw new Error("Conflicting interrupt result evidence");
-    }
-    const admission = result.admission ?? existing.admission;
-    try {
-      localStorage.setItem(this.key(command.commandId), encode({ ...existing, admission, interruptResult: result }));
-    } catch (error) {
-      this.snapshot = {
-        commands: this.snapshot.commands.map((value) =>
-          value.command.commandId === command.commandId ? { ...value, admission, interruptResult: result } : value
         ),
         inputEchoes: this.snapshot.inputEchoes,
         error: String(error),

@@ -366,14 +366,23 @@ async def _interrupt_and_recover(
         response = await http.post(
             f"/upstream/dispatcher/v1/sessions/{thread_id}:interruptTurn",
             json={
-                "sandbox": SANDBOX,
-                "sandboxUid": sandbox_runner.destination.target.uid,
+                "expectedSandboxUid": sandbox_runner.destination.target.uid,
                 "commandId": "interrupt-for-recovery",
                 "turnId": turn_id,
             },
         )
         assert response.status_code == 200, response.text
-        assert response.json()["state"] == "DELIVERY_STATE_RUNNER_ADMITTED"
+        assert response.json()["dispatch"]["state"] == "DELIVERY_STATE_QUEUED_IN_DISPATCHER"
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                receipt = await http.get("/upstream/dispatcher/v1/dispatches/interrupt-for-recovery")
+                assert receipt.status_code == 200, receipt.text
+                dispatch = receipt.json()["dispatch"]
+                assert dispatch["commandId"] == "interrupt-for-recovery"
+                assert dispatch["sessionId"] == thread_id
+                assert dispatch["state"] == "DELIVERY_STATE_RUNNER_ADMITTED", dispatch
     else:
         await runner.restart()
     expected = "TURN_STATUS_PROCESS_LOST" if mode == "kill" else "TURN_STATUS_INTERRUPTED"

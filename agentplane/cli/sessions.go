@@ -443,8 +443,8 @@ func (a *app) interruptTurnCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "interrupt-turn SESSION_ID --command-id ID --turn-id ID",
 		Short: "Interrupt the Session's current turn",
-		Long: `Calls SessionDispatcher.InterruptTurn directly on a Ready Sandbox. COMMAND_ID is caller-held and is
-required for correlation; it is not generated or replaced by this CLI. This call is not queued.`,
+		Long: `Queues an interrupt for the exact turn. COMMAND_ID is caller-held and is
+the idempotency key; it is not generated or replaced by this CLI.`,
 		Args: cobra.ExactArgs(1),
 		RunE: a.sessionCommand(func(ctx context.Context, client dispatcherpb.SessionDispatcherClient, args []string) error {
 			if args[0] == "" || commandID == "" || turnID == "" {
@@ -456,17 +456,17 @@ required for correlation; it is not generated or replaced by this CLI. This call
 			if err != nil {
 				return grpcFailure(ctx, err)
 			}
-			if response == nil {
-				return invalidResponse("InterruptTurn returned no response")
+			if response.GetDispatch() == nil {
+				return invalidResponse("InterruptTurn returned no dispatch")
 			}
-			body, err := protoJSON(response)
+			body, err := protoJSON(response.GetDispatch())
 			if err != nil {
 				return err
 			}
-			return a.showOne(body, interruptLine)
+			return a.showOne(body, dispatchLine)
 		}),
 	}
-	command.Flags().StringVar(&commandID, "command-id", "", "caller-held correlation ID")
+	command.Flags().StringVar(&commandID, "command-id", "", "caller-held idempotency key")
 	command.Flags().StringVar(&turnID, "turn-id", "", "ID of the turn to interrupt")
 	for _, flag := range []string{"command-id", "turn-id"} {
 		_ = command.MarkFlagRequired(flag)
@@ -643,18 +643,6 @@ func turnPageLine(raw json.RawMessage) (string, error) {
 		if turn.FinalAssistantMessage != nil {
 			line += fields("message", strconv.Quote(firstLine(*turn.FinalAssistantMessage)))
 		}
-	}
-	return line, nil
-}
-
-func interruptLine(raw json.RawMessage) (string, error) {
-	response := &dispatcherpb.InterruptTurnResponse{}
-	if err := protojson.Unmarshal(raw, response); err != nil {
-		return "", invalidResponse("%v", err)
-	}
-	line := enumSuffix(response.GetState().String(), "DELIVERY_STATE_")
-	if response.Reason != nil {
-		line += fields("reason", fmt.Sprintf("%q", response.GetReason()))
 	}
 	return line, nil
 }

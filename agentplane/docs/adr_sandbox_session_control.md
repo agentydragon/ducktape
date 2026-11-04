@@ -322,12 +322,12 @@ the invariant that makes `Quiesced` safe, and option 2 would need option 1's pat
 **Commands that meet lameduck.** Three states differ. A command admitted but not yet dispatched stays pending in
 the journal (#10341); the next incarnation does not dispatch it, since the conversation has moved on, and the
 Dispatcher fails it with the reason `ended_by_teardown`. A command dispatched and in flight ends its turn as
-`ended_by_teardown`. A refused send is retried after Sandbox resume. Dispatcher does not queue interrupts; it returns
-immediate delivery/no-op evidence. Runner admission and outcome remain durable.
+`ended_by_teardown`. A refused send is retried after Sandbox resume. Dispatcher queues interrupts with the other
+commands. Runner admission and outcome remain durable.
 
-**Order per Session.** Inputs and model changes deliver in FIFO order. `InterruptTurn` bypasses the
-Dispatcher queue, names the exact active turn and never wakes a Sandbox. A stale target is rejected
-with `FAILED_PRECONDITION` before runner admission. An admitted interrupt cannot affect a successor.
+**Order per Session.** Inputs, model changes and interrupts deliver in FIFO order. `InterruptTurn`
+names the exact active turn; a stale target is rejected before runner admission. An admitted interrupt
+cannot affect a successor.
 
 Sequence for suspend and delete:
 
@@ -418,16 +418,16 @@ Sandbox's name, the gateway and the Kubernetes API. Idle policy is the controlle
 senders use the Dispatcher's command RPCs, so ordinary message delivery has one set of semantics:
 accepted, then delivered, or failed with a reason. The runner proxy at the Gateway remains the
 network path to the runner. Dispatcher owns ordinary work submissions (`OpenSession`, `SubmitInput`,
-`ChangeModel`, `ChangeReasoningEffort`); the runner owns native preparation after admission. The
-controller calls `Quiesce`; guarded `InterruptTurn` and reads remain separately authorized.
+`ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn`); the runner owns native preparation after
+admission. The controller calls `Quiesce`; reads remain separately authorized.
 
-| `Runner` method                                       | Caller/path                                 |
-| ----------------------------------------------------- | ------------------------------------------- |
-| `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` | Dispatcher ordinary command delivery        |
-| `InterruptTurn`                                       | Immediate guarded delivery; no Sandbox wake |
-| `OpenSession`                                         | Dispatcher durable Session reservation      |
-| `Quiesce`                                             | Sandbox Controller only                     |
-| `ListSessions`, `GetStatus`                           | Authorized direct reads; no wake            |
+| `Runner` method                                       | Caller/path                            |
+| ----------------------------------------------------- | -------------------------------------- |
+| `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` | Dispatcher ordinary command delivery   |
+| `InterruptTurn`                                       | Dispatcher exact-turn command delivery |
+| `OpenSession`                                         | Dispatcher durable Session reservation |
+| `Quiesce`                                             | Sandbox Controller only                |
+| `ListSessions`, `GetStatus`                           | Authorized direct reads; no wake       |
 
 ### D5. Where each fact lives
 
@@ -616,7 +616,7 @@ sequenceDiagram
 | Suspend waits for the bootstrap and every Session's setup; delete does not                                       | Decided | 2026-10-13 | D3             |
 | A waiting suspend holds `Ready` False with `SuspendPending`                                                      | Decided | 2026-10-14 | D3             |
 | Refusal codes: `ABORTED` for lameduck and a failed conditional `Quiesce`, `FAILED_PRECONDITION` terminal         | Decided | 2026-10-14 | D3             |
-| `InterruptTurn` bypasses the queue and retains its exact-turn guard                                              | Decided | 2026-10-14 | D3             |
+| `InterruptTurn` uses the queue and retains its exact-turn guard                                                  | Decided | 2026-11-03 | D3             |
 | Delivery state names (`QUEUED_IN_DISPATCHER` and the rest)                                                       | Decided | 2026-10-14 | D4             |
 | `ChangeModel` and `ChangeReasoningEffort` start a stopped harness                                                | Decided | 2026-10-14 | D4             |
 | The Dispatcher watches the Sandbox CR                                                                            | Decided | 2026-10-14 | D4             |

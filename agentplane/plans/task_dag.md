@@ -2146,7 +2146,7 @@ queued-work revocation remain in
 Notification, Dispatcher, Gateway and Runtime and recommends one transactional native admission
 boundary, persisted exact UID, rechecks before wake and forwarding, and no replay of an uncertain
 effect. The operator selected a Dispatcher Session record as a prerequisite for every
-Session-targeted command, including privileged calls and immediate interrupts. Dispatcher now enforces
+Session-targeted command, including privileged calls and interrupts. Dispatcher now enforces
 that prerequisite for queued commands and interrupts; the Gateway limits direct Runtime Session mutations
 to the combined Gateway/Dispatcher workload. See the [Dispatcher contract](../runner_gateway/dispatcher/SPEC.md#method-scope)
 and [Gateway proxy contract](../runner_gateway/gateway/SPEC.md). On deletion, fail commands known not to

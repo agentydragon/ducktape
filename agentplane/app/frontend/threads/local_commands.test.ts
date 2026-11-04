@@ -7,12 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { LocalCommands, MAX_RETAINED_COMMANDS } from "./local_commands";
-import {
-  DeliveryState,
-  DispatchSchema,
-  InterruptTurnResponseSchema,
-  type Dispatch,
-} from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import { DeliveryState, DispatchSchema, type Dispatch } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
 const COMMAND = create(CommandSchema, {
   commandId: "input-1",
@@ -124,29 +119,6 @@ it("retains ahead-of-prefix HTTP admission evidence until matching replay takes 
     { commandId: COMMAND.commandId, text: "  exact text\nsecond line  " },
   ]);
   expect(new LocalCommands("thread", COMMAND_TARGET).getSnapshot().commands).toEqual([]);
-});
-
-it("retains an immediate interrupt result without recording a durable Dispatch", () => {
-  const interrupted = create(CommandSchema, {
-    commandId: "interrupt-1",
-    operation: { case: "interruptTurn", value: { turnId: "turn-1" } },
-  });
-  const store = new LocalCommands("thread", COMMAND_TARGET);
-  store.remember(interrupted);
-  store.acknowledgeInterrupt(
-    interrupted,
-    fromJson(InterruptTurnResponseSchema, {
-      state: "DELIVERY_STATE_NO_OP",
-      reason: "turn already ended",
-    })
-  );
-
-  const retained = new LocalCommands("thread", COMMAND_TARGET).getSnapshot().commands[0];
-  expect(retained.dispatch).toBeNull();
-  expect(retained.interruptResult?.state).toBe(DeliveryState.NO_OP);
-  expect(retained.interruptResult?.reason).toBe("turn already ended");
-  expect(retained.interruptResult?.admission).toBeUndefined();
-  expect(store.markAttempted(interrupted.commandId)).toBe(false);
 });
 
 it("does not resurrect local input when replay wins the race with its HTTP response", () => {

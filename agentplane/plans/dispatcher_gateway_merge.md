@@ -1,7 +1,8 @@
 # Dispatcher and Gateway as one service
 
 > **Historical proposal:** on 2026-11-02 the operator selected a mandatory Dispatcher database
-> and queue. All queue-off alternatives and rollout steps below are superseded, including the
+> and queue. Interrupts now also use that queue; the immediate-interrupt descriptions below are
+> historical. All queue-off alternatives and rollout steps below are superseded, including the
 > assumption that a database-free K3s tier can include Dispatcher admission. Gateway now restricts
 > Runtime Session mutations to the Gateway/Dispatcher workload; see its [authorization contract](../runner_gateway/gateway/SPEC.md).
 > Service topology,

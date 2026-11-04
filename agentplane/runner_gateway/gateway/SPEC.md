@@ -25,7 +25,7 @@ Pod-UID proof. All calls retain Sandbox UID/owner and current Runtime incarnatio
   on Dispatcher and EnvironmentService methods. Explicit resume and automatic wake retain their
   own lifecycle authorization.
 
-Runtime Session creation and commands, including immediate interrupts, are writes: the Gateway
+Runtime Session creation and commands, including queued interrupts, are writes: the Gateway
 refuses forwarding once its synchronized inventory observes `Quiescing` or deletion. Diagnostics
 remain available while quiescing, and the controller's authorized `Quiesce` can still complete the
 seal. Cache observation is asynchronous; this routing check does not make Kubernetes

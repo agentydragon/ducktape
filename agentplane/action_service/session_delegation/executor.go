@@ -284,7 +284,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		if err != nil {
 			return nil, writeFailure("Session Dispatcher", err)
 		}
-		return protoResult(response)
+		return protoEnvelope("dispatch", response.GetDispatch())
 	default:
 		return nil, refuse("unknown_action", "this executor does not expose %q", request.Action.Name)
 	}

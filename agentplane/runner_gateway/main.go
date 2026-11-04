@@ -362,7 +362,7 @@ func serve(ctx context.Context, c config, listener, httpListener net.Listener) e
 	}
 	service := &dispatcher.Service{
 		Store: store, DispatcherCallers: accountSet(c.DispatcherCallers),
-		Sandboxes: catalog, Runner: runner,
+		Sandboxes:     catalog,
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
 	dispatcherMethods := dispatcher.Methods(dispatchAuth)

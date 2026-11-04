@@ -286,6 +286,8 @@ func operation(command *commandpb.Command) (string, error) {
 		return "change_model", nil
 	case *commandpb.Command_ChangeReasoningEffort:
 		return "change_reasoning_effort", nil
+	case *commandpb.Command_InterruptTurn:
+		return "interrupt_turn", nil
 	default:
 		return "", errors.New("not a stored command operation")
 	}
@@ -951,17 +953,6 @@ func (s *Store) BindExecutionPrincipal(ctx context.Context, sessionID, sandboxUI
 		return notify(ctx, tx)
 	})
 	return result, err
-}
-
-func (s *Store) AuthorizeTarget(ctx context.Context, sessionID, sandboxName, sandboxUID string, caller CallerIdentity) error {
-	opening, err := s.GetOpeningForCaller(ctx, sessionID, caller)
-	if err != nil {
-		return err
-	}
-	if opening.SandboxName != sandboxName || opening.SandboxUID != sandboxUID {
-		return ErrNotAuthorized
-	}
-	return nil
 }
 
 func (s *Store) OpeningHeads(ctx context.Context) ([]*Opening, error) {

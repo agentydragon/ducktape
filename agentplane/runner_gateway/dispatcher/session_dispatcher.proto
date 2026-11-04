@@ -25,8 +25,7 @@ service SessionDispatcher {
   rpc ChangeReasoningEffort(ChangeReasoningEffortRequest) returns (ChangeReasoningEffortResponse) {
     option (google.api.http) = {post: "/v1/sessions/{session_id}:changeReasoningEffort" body: "*"};
   }
-  // Not stored or queued: delivered at once to a Ready Sandbox. A stale turn is rejected
-  // by the runner with FAILED_PRECONDITION; unavailable Sandbox behavior remains explicit below.
+  // The exact turn is checked at Runtime admission, including after delayed delivery.
   rpc InterruptTurn(InterruptTurnRequest) returns (InterruptTurnResponse) {
     option (google.api.http) = {post: "/v1/sessions/{session_id}:interruptTurn" body: "*"};
   }
@@ -85,6 +84,7 @@ enum Operation {
   OPERATION_SUBMIT_INPUT = 1;
   OPERATION_CHANGE_MODEL = 2;
   OPERATION_CHANGE_REASONING_EFFORT = 3;
+  OPERATION_INTERRUPT_TURN = 5;
   reserved 4;
   reserved "OPERATION_STOP_RUNNER_SESSION";
 }
@@ -159,10 +159,7 @@ message InterruptTurnRequest {
 }
 
 message InterruptTurnResponse {
-  // `DELIVERY_STATE_RUNNER_ADMITTED` with `admission`, or `DELIVERY_STATE_NO_OP` with `reason`.
-  DeliveryState state = 1;
-  optional string reason = 2;
-  optional agentplane.proto.EventEntry admission = 3;
+  Dispatch dispatch = 1;
 }
 message GetDispatchRequest {
   string command_id = 1;
