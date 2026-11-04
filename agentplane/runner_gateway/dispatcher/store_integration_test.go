@@ -2583,6 +2583,45 @@ func TestEveryCommandAdmissionRequiresSession(t *testing.T) {
 	}
 }
 
+func TestPrivilegedCommandsCannotCrossSessionPlacement(t *testing.T) {
+	ctx := admitted(t)
+	store := testStore(t, 3)
+	sessionID := uuid.NewString()
+	if _, err := store.OpenSession(ctx, sessionID, "different-sandbox", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	runner := &rejectingRunner{}
+	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: oneSandbox{}, Runner: runner}
+	for _, invoke := range []func() error{
+		func() error {
+			_, err := service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: uuid.NewString(), SessionId: sessionID, Sandbox: "sandbox-api", SandboxUid: sandboxUID, Text: "input"})
+			return err
+		},
+		func() error {
+			_, err := service.ChangeModel(ctx, &dispatcherpb.ChangeModelRequest{CommandId: uuid.NewString(), SessionId: sessionID, Sandbox: "sandbox-api", SandboxUid: sandboxUID, Model: "model"})
+			return err
+		},
+		func() error {
+			_, err := service.ChangeReasoningEffort(ctx, &dispatcherpb.ChangeReasoningEffortRequest{CommandId: uuid.NewString(), SessionId: sessionID, Sandbox: "sandbox-api", SandboxUid: sandboxUID, Effort: "high"})
+			return err
+		},
+		func() error {
+			_, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{CommandId: uuid.NewString(), SessionId: sessionID, Sandbox: "sandbox-api", SandboxUid: sandboxUID, TurnId: "turn"})
+			return err
+		},
+	} {
+		if err := invoke(); status.Code(err) != codes.PermissionDenied {
+			t.Fatalf("cross-placement command: %v", err)
+		}
+	}
+	if runner.command != nil {
+		t.Fatal("cross-placement interrupt reached runner")
+	}
+	if rows, err := store.ListDispatches(ctx, sessionID, "", nil); err != nil || len(rows) != 0 {
+		t.Fatalf("cross-placement command left work: %+v %v", rows, err)
+	}
+}
+
 func TestCommandAdmissionRechecksSessionAfterConcurrentDeletion(t *testing.T) {
 	for _, privileged := range []bool{false, true} {
 		t.Run(fmt.Sprint(privileged), func(t *testing.T) {
