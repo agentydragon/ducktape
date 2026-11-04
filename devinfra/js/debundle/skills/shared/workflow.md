@@ -152,6 +152,17 @@ cannot serve as the passing baseline.
 Use divide-and-conquer when a large spec rejects or the next semantic repair
 has an uncertain payoff. Work in a scratch spec, preserving the authored target:
 
+For ownership-only probes with `inline_in_entry`, prefer
+[`run --ownership-subset`](../../docs/cli.md#ownership-subsets-with-full-selector-context)
+with the complete canonical tree and its matching analysis. This retains joint
+selector anchors and assertions while returning omitted claims to entry. An
+empty `modules` list is the no-extraction assignment under that full contract;
+the separate empty spec above remains the baseline without optional assertions.
+Record the selected chunk-local module paths and inspect the resulting ordinary
+gate and emission. Full graph export and other residual policies are unsupported
+for this operation. Repair invalid full-spec selectors or claims separately;
+ownership selection does not hide them.
+
 1. Reduce the rejecting spec by returning suspected groups of claims to
    residual until a useful subset passes. That candidate is a known passing
    lower bound. Alternatively start from an existing passing partial spec or

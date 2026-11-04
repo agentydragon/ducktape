@@ -178,6 +178,7 @@ mod tests {
             },
             report: ChunkModulesReport {
                 chunk_id: "first".to_string(),
+                ownership_subset: None,
                 counts: ChunkModulesCounts {
                     applied: 0,
                     selected_bindings: 0,

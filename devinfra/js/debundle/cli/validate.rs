@@ -148,6 +148,7 @@ fn run_spec_validate(args: ValidateArgs) -> Result<ValidateReport> {
     let pass = run_transform_cli(
         &cli,
         TransformRunOptions {
+            ownership_subset: None,
             output: RunOutput::DryRun,
             artifacts: pipeline::RunArtifacts::Program,
             graph_reports: lowering::GraphReportSelection::None,

@@ -643,6 +643,7 @@ fn is_path_argument(name: &str, env: Option<&OsStr>) -> bool {
             | "modules"
             | "modules_root"
             | "out_root"
+            | "ownership_subset"
             | "reports_only"
             | "analysis"
             | "packages_root"
