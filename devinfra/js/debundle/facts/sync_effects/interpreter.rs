@@ -2187,6 +2187,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .native_operation_input_evidence
                 .get(&site)?
                 .clone();
+            self.record_proof_dependencies(
+                NativeIntegrityGuard::NativeCallIdentity,
+                &premise.dependencies,
+            );
             return Some((
                 row,
                 NativeIdentitySource::AuthorInput {
@@ -2739,7 +2743,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && row.returns == expected_return
             && row.throws == Throws::Never
         {
-            self.native_initializer_transfer = Some(NativeConstructorTransfer::applied(candidate));
+            let mut dependencies = self.state.proof_dependencies.borrow().clone();
+            dependencies.extend(&self.queries.dependencies());
+            self.native_initializer_transfer =
+                Some(NativeConstructorTransfer::applied(candidate, dependencies));
         }
     }
 

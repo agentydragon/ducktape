@@ -435,6 +435,10 @@ generic values or an empty ledger cannot mint coverage. Composed child judgments
 never propagate a whole-owner certificate, and invocation memos carry none.
 The owner certificate survives staged analysis. Binding/allocation cells, other opacity
 flags, purity and the authoritative legacy gates retain their existing rules.
+Coverage certificates retain the composed transfer's typed proof dependencies,
+including exact-site native identity inputs. The effect report projects their
+union as `coverage.covered_owner_dependencies`; an empty access ledger does
+not erase the conditions of an absence proof.
 
 An original simple variable declarator may also close those
 coverage domains for a direct bare `new Map()` or `new Set()` with exactly zero

@@ -1063,6 +1063,14 @@ console.log(earlierMap, earlierSet, later);\n";
     );
 
     let report = fixture.effect_translation_validation();
+    assert_eq!(
+        report["coverage"]["covered_owner_dependencies"]["native_operation_inputs"],
+        serde_json::json!([
+            {"defining_chunk": "static/app", "input_index": 0},
+            {"defining_chunk": "static/app", "input_index": 1},
+        ]),
+        "coverage of the two native owners retains their exact author premises: {report:#}"
+    );
     for domain in ["global_properties", "general_heap", "host_effects"] {
         assert_eq!(
             report["coverage"]["unknown_coverage"][domain], 4,

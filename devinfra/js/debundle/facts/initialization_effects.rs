@@ -11,6 +11,7 @@ use source_identity::SourceUnitOrdinal;
 
 use super::evaluation_effects::{GlobalAccessKind, GlobalMayAccess};
 use super::{DataflowOpacityCause, EffectCell, StatementFacts, StatementKind};
+use crate::analysis_inputs::ProofDependencies;
 use crate::reports::schema::SourceLocation;
 use crate::reports::schema::{AssumedEffectReason, ExecutionPrecisionLoss};
 
@@ -111,6 +112,9 @@ pub struct InitializationEffects<'a> {
     pub reads: BTreeMap<EffectCell, InitializationEffectEvidence>,
     pub writes: BTreeMap<EffectCell, InitializationEffectEvidence>,
     pub allocates: BTreeSet<EffectCell>,
+    /// Conditions of the exact owner's whole-evaluation coverage proof. An
+    /// import or direct function declaration executes no body and needs none.
+    pub coverage_dependencies: Option<&'a ProofDependencies>,
     /// Missing semantic domains; independent of legacy timing opacity.
     pub unknown_coverage: BTreeSet<UnknownEffectCoverage>,
     pub dataflow_opacity: BTreeSet<DataflowOpacityCause>,
@@ -154,6 +158,7 @@ impl StatementFacts {
             reads: BTreeMap::new(),
             writes: BTreeMap::new(),
             allocates: self.heap_contents.allocations.clone(),
+            coverage_dependencies: None,
             unknown_coverage: BTreeSet::new(),
             dataflow_opacity: self.havoc.clone(),
             incomplete_execution: false,
@@ -169,12 +174,13 @@ impl StatementFacts {
             effects.opaque_heap = false;
             return effects;
         }
-        if !self.synchronous_calls.as_ref().is_some_and(|calls| {
-            calls
-                .completed_initialization
-                .as_ref()
-                .is_some_and(|proof| proof.covers(self.ordinal))
-        }) {
+        let completed = self
+            .synchronous_calls
+            .as_ref()
+            .and_then(|calls| calls.completed_initialization.as_ref())
+            .filter(|proof| proof.covers(self.ordinal));
+        effects.coverage_dependencies = completed.map(|proof| proof.dependencies());
+        if completed.is_none() {
             effects.unknown_coverage.extend([
                 UnknownEffectCoverage::GlobalProperties,
                 UnknownEffectCoverage::GeneralHeap,

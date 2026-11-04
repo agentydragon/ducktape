@@ -2,6 +2,7 @@
 
 use super::allocation_transfer::AllocationJudgment;
 use super::value_model::{AbstractValue, CallSite, ValueExpr, Values};
+use crate::analysis_inputs::ProofDependencies;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::item_views::{SplitDeclaratorProvenance, TopLevelItemView, var_decl_of_item};
@@ -64,6 +65,7 @@ pub(super) struct OriginalInitializer {
 pub(super) struct EvaluatedInitializer {
     owner: SourceUnitOrdinal,
     initializer_span: Span,
+    dependencies: ProofDependencies,
 }
 
 /// A candidate exists only while one dedicated root initializer is evaluated.
@@ -79,25 +81,30 @@ pub(super) struct NativeConstructorCandidate {
 /// Evidence that the exact root New dispatch selected and applied the native
 /// constructor row for its collected source form. This is not a value identity
 /// or a heap-shape fact.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) struct NativeConstructorTransfer {
     owner: SourceUnitOrdinal,
     call_site: CallSite,
     kind: NativeConstructorKind,
     form: NativeConstructorForm,
+    dependencies: ProofDependencies,
 }
 
 impl NativeConstructorTransfer {
-    pub(super) fn applied(candidate: NativeConstructorCandidate) -> Self {
+    pub(super) fn applied(
+        candidate: NativeConstructorCandidate,
+        dependencies: ProofDependencies,
+    ) -> Self {
         Self {
             owner: candidate.owner,
             call_site: candidate.call_site,
             kind: candidate.kind,
             form: candidate.form,
+            dependencies,
         }
     }
 
-    fn matches(self, candidate: NativeConstructorCandidate) -> bool {
+    fn matches(&self, candidate: NativeConstructorCandidate) -> bool {
         self.owner == candidate.owner
             && self.call_site == candidate.call_site
             && self.kind == candidate.kind
@@ -125,11 +132,16 @@ impl NativeConstructorCandidate {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct CompletedInitialization {
     owner: SourceUnitOrdinal,
+    dependencies: ProofDependencies,
 }
 
 impl CompletedInitialization {
     pub(crate) fn covers(&self, owner: SourceUnitOrdinal) -> bool {
         self.owner == owner
+    }
+
+    pub(crate) fn dependencies(&self) -> &ProofDependencies {
+        &self.dependencies
     }
 }
 
@@ -552,7 +564,7 @@ impl OriginalInitializer {
             }
             (Leaf::NativeConstructor { .. }, _, AbstractValue::Value(Value::Top)) => self
                 .native_constructor_candidate(expression)
-                .zip(native_constructor_transfer)
+                .zip(native_constructor_transfer.as_ref())
                 .is_some_and(|(candidate, transfer)| {
                     values.len() == 1 && transfer.matches(candidate)
                 }),
@@ -573,9 +585,20 @@ impl OriginalInitializer {
             ) => values.len() == 1 && expected == lowered && expected == evaluated,
             _ => false,
         };
-        matches.then_some(EvaluatedInitializer {
+        if !matches {
+            return None;
+        }
+        let mut dependencies = match judgment {
+            AllocationJudgment::CoveredAllocationOnly(dependencies) => dependencies.clone(),
+            AllocationJudgment::Opaque => ProofDependencies::default(),
+        };
+        if let Some(transfer) = native_constructor_transfer {
+            dependencies.extend(&transfer.dependencies);
+        }
+        Some(EvaluatedInitializer {
             owner: self.owner,
             initializer_span: self.initializer_span,
+            dependencies,
         })
     }
 
@@ -589,6 +612,9 @@ impl OriginalInitializer {
             && evaluated.owner == owner
             && evaluated.initializer_span == self.initializer_span
             && initialized.contains(&self.binding))
-        .then_some(CompletedInitialization { owner })
+        .then_some(CompletedInitialization {
+            owner,
+            dependencies: evaluated.dependencies,
+        })
     }
 }

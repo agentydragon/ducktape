@@ -43,6 +43,7 @@ pub struct EffectConflictCounts {
 #[derive(Debug, Clone, Serialize)]
 pub struct EffectCoverageReport {
     pub statement_count: usize,
+    pub covered_owner_dependencies: analysis::analysis_inputs::ProofDependencies,
     pub unknown_coverage: BTreeMap<UnknownEffectCoverage, usize>,
     pub owner_coverage_refusals: BTreeMap<OwnerInitializationCoverageRefusalReason, usize>,
     pub legacy_dataflow_opaque_statements: usize,
@@ -278,6 +279,7 @@ pub fn effect_translation_validate<E>(
     );
     let mut coverage = EffectCoverageReport {
         statement_count: effects.len(),
+        covered_owner_dependencies: Default::default(),
         unknown_coverage: BTreeMap::new(),
         owner_coverage_refusals: BTreeMap::new(),
         legacy_dataflow_opaque_statements: 0,
@@ -287,6 +289,9 @@ pub fn effect_translation_validate<E>(
         havoc_statements: 0,
     };
     for effect in effects.values() {
+        if let Some(dependencies) = effect.coverage_dependencies {
+            coverage.covered_owner_dependencies.extend(dependencies);
+        }
         for domain in &effect.unknown_coverage {
             *coverage.unknown_coverage.entry(*domain).or_default() += 1;
         }
