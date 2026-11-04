@@ -174,7 +174,7 @@ func (f *sessionListFixture) ListSessionOpenings(_ context.Context, request *dis
 	f.requests <- request
 	return &dispatcherpb.ListSessionOpeningsResponse{
 		Openings: []*dispatcherpb.SessionOpening{{
-			SessionId: "58cae82c-453d-4de7-ae5b-17a8f7596077", Sandbox: "queued-sandbox", SandboxUid: "queued-sandbox-uid",
+			SessionId: "58cae82c-453d-4de7-ae5b-17a8f7596077", Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: "queued-sandbox", SandboxUid: "queued-sandbox-uid"}}},
 			State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 		}},
 		NextPageToken: "next-page",

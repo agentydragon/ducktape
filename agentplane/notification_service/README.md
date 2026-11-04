@@ -10,8 +10,9 @@ connect directly to runners.
 Agents subscribe with a Session ID and an idempotence key, then retrieve stored
 payloads when notified. Reads are non-destructive; acknowledgement explicitly advances the handled
 contiguous prefix. Unacknowledged entries do not cause repeated reminders.
-Creating a subscription resolves the existing Dispatcher opening and retains current Sandbox ownership,
-exact UID and live Runtime membership checks. Sessions opened only through Runtime have no Dispatcher
+Creating a subscription resolves the existing Dispatcher opening and retains its exact Sandbox target,
+UID and live Runtime membership checks. The target is the native opening's required environment or the
+central opening's currently fixed initial executor; this does not add an attachment API. Sessions opened only through Runtime have no Dispatcher
 opening and cannot create subscriptions or receive new messages. Message sends also resolve the opening,
 then evaluate the sender's current scoped grant against its exact Sandbox. Persisted subscriptions,
 inbox cursors and notices remain intact.

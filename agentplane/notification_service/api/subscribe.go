@@ -23,11 +23,11 @@ func (s *Notifications) subscribe(ctx context.Context, owner model.ServiceAccoun
 	if err != nil {
 		return store.Subscription{}, unavailable("session opening", err)
 	}
-	ref := opening.GetOpening()
-	if ref.GetSessionId() != body.SessionID || ref.GetSandbox() == "" || ref.GetSandboxUid() == "" {
+	target := openingTarget(opening.GetOpening(), body.SessionID)
+	if target == nil {
 		return store.Subscription{}, unavailable("session opening", errors.New("incomplete Session placement"))
 	}
-	body.DestinationRef = model.DestinationRef{Namespace: s.namespace, Name: ref.GetSandbox(), UID: ref.GetSandboxUid()}
+	body.DestinationRef = model.DestinationRef{Namespace: s.namespace, Name: target.GetSandbox(), UID: target.GetSandboxUid()}
 	if err := body.Validate(); err != nil {
 		return store.Subscription{}, err
 	}

@@ -49,14 +49,14 @@ func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAcc
 	if err != nil {
 		return nil, unavailable("session opening", err)
 	}
-	placement := opening.GetOpening()
-	if placement.GetSessionId() != request.GetSessionId() || placement.GetSandbox() == "" || placement.GetSandboxUid() == "" {
+	target := openingTarget(opening.GetOpening(), request.GetSessionId())
+	if target == nil {
 		return nil, unavailable("session opening", errors.New("incomplete Session placement"))
 	}
 	message := store.Message{
 		Sender: sender,
 		DestinationRef: model.DestinationRef{
-			Namespace: s.namespace, Name: placement.GetSandbox(), UID: placement.GetSandboxUid(),
+			Namespace: s.namespace, Name: target.GetSandbox(), UID: target.GetSandboxUid(),
 		},
 		SessionID: request.GetSessionId(), IdempotencyKey: request.GetIdempotencyKey(), Body: request.GetBody(),
 		FromSession: request.FromSession,

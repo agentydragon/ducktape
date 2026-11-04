@@ -193,10 +193,10 @@ func TestSubscriptionCreationResolvesAndFencesTheOpening(t *testing.T) {
 		want    codes.Code
 	}{
 		{name: "no Dispatcher opening", want: codes.NotFound},
-		{name: "different Session", opening: &dispatcherpb.SessionOpening{SessionId: "another-session", Sandbox: sandboxName, SandboxUid: sandboxUID}, want: codes.Unavailable},
-		{name: "no UID", opening: &dispatcherpb.SessionOpening{SessionId: testSession, Sandbox: sandboxName}, want: codes.Unavailable},
-		{name: "deleted Sandbox", opening: &dispatcherpb.SessionOpening{SessionId: testSession, Sandbox: "deleted-sandbox", SandboxUid: sandboxUID}, want: codes.NotFound},
-		{name: "same-name replacement", opening: &dispatcherpb.SessionOpening{SessionId: testSession, Sandbox: sandboxName, SandboxUid: "previous-uid"}, want: codes.NotFound},
+		{name: "different Session", opening: nativeOpening("another-session", sandboxName, sandboxUID), want: codes.Unavailable},
+		{name: "no UID", opening: nativeOpening(testSession, sandboxName, ""), want: codes.Unavailable},
+		{name: "deleted Sandbox", opening: nativeOpening(testSession, "deleted-sandbox", sandboxUID), want: codes.NotFound},
+		{name: "same-name replacement", opening: nativeOpening(testSession, sandboxName, "previous-uid"), want: codes.NotFound},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			s := newServer(t)

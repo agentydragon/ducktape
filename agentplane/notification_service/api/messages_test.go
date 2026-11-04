@@ -196,8 +196,8 @@ func TestAMessageToNoSuchSessionOrSandboxIncarnationIsNotFound(t *testing.T) {
 	server := newServer(t)
 	server.grantSend(otherSandboxName, policyapi.SandboxTargets{AllSandboxes: true})
 	for name, placement := range map[string]*dispatcherpb.SessionOpening{
-		"missing Sandbox":     {SessionId: testSession, Sandbox: "test-missing-sandbox", SandboxUid: sandboxUID},
-		"another incarnation": {SessionId: testSession, Sandbox: sandboxName, SandboxUid: "test-former-sandbox-uid"},
+		"missing Sandbox":     nativeOpening(testSession, "test-missing-sandbox", sandboxUID),
+		"another incarnation": nativeOpening(testSession, sandboxName, "test-former-sandbox-uid"),
 	} {
 		t.Run(name, func(t *testing.T) {
 			server.openings.placements[testSession] = placement
@@ -216,9 +216,9 @@ func TestAMessageNeedsACompleteDispatcherOpening(t *testing.T) {
 	server := newServer(t)
 	server.grantSend(otherSandboxName, toSandbox)
 	for name, placement := range map[string]*dispatcherpb.SessionOpening{
-		"missing UID":     {SessionId: testSession, Sandbox: sandboxName},
-		"wrong Session":   {SessionId: "another-session", Sandbox: sandboxName, SandboxUid: sandboxUID},
-		"missing Sandbox": {SessionId: testSession, SandboxUid: sandboxUID},
+		"missing UID":     nativeOpening(testSession, sandboxName, ""),
+		"wrong Session":   nativeOpening("another-session", sandboxName, sandboxUID),
+		"missing Sandbox": nativeOpening(testSession, "", sandboxUID),
 	} {
 		t.Run(name, func(t *testing.T) {
 			server.openings.placements[testSession] = placement
@@ -232,6 +232,35 @@ func TestAMessageNeedsACompleteDispatcherOpening(t *testing.T) {
 	server.requireNoInbox(t)
 	if asked := server.history.questions(); len(asked) != 0 {
 		t.Errorf("History asked about %v without a valid opening", asked)
+	}
+}
+
+func TestOpeningTargetUsesTypedPlacement(t *testing.T) {
+	central := &dispatcherpb.SessionOpening{
+		SessionId:       testSession,
+		Placement:       &dispatcherpb.SessionOpening_CentralSampler{CentralSampler: &dispatcherpb.CentralSamplerPlacement{}},
+		InitialExecutor: &dispatcherpb.ExactSandbox{Sandbox: sandboxName, SandboxUid: sandboxUID},
+	}
+	for _, test := range []struct {
+		name    string
+		opening *dispatcherpb.SessionOpening
+		want    bool
+	}{
+		{"native environment", nativeOpening(testSession, sandboxName, sandboxUID), true},
+		{"central initial executor", central, true},
+		{"missing placement", &dispatcherpb.SessionOpening{SessionId: testSession, InitialExecutor: central.InitialExecutor}, false},
+		{"missing central executor", &dispatcherpb.SessionOpening{SessionId: testSession, Placement: central.Placement}, false},
+		{"wrong Session", nativeOpening("other", sandboxName, sandboxUID), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			target := openingTarget(test.opening, testSession)
+			if (target != nil) != test.want {
+				t.Fatalf("openingTarget(%v) = %v, want present %t", test.opening, target, test.want)
+			}
+			if test.want && (target.GetSandbox() != sandboxName || target.GetSandboxUid() != sandboxUID) {
+				t.Fatalf("wrong exact target: %v", target)
+			}
+		})
 	}
 }
 
@@ -273,7 +302,7 @@ func TestAMessageOpensAnInboxOnlyForSessionHistoryOfTheExactSandbox(t *testing.T
 		"History Session without UID": "test-session-without-history-uid",
 	} {
 		t.Run(name, func(t *testing.T) {
-			server.openings.placements[session] = &dispatcherpb.SessionOpening{SessionId: session, Sandbox: sandboxName, SandboxUid: sandboxUID}
+			server.openings.placements[session] = nativeOpening(session, sandboxName, sandboxUID)
 			request := sendRequest("unrecorded")
 			request.SessionId = session
 			_, err := server.client.SendMessage(bearing(t, otherSandboxToken), request)

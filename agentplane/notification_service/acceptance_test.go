@@ -110,7 +110,7 @@ func (openingDispatcher) GetSessionOpening(_ context.Context, request *dispatche
 		return nil, status.Error(codes.NotFound, "opening not found")
 	}
 	return &dispatcherpb.GetSessionOpeningResponse{Opening: &dispatcherpb.SessionOpening{
-		SessionId: testSession, Sandbox: sandboxName, SandboxUid: sandboxUID,
+		SessionId: testSession, Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: sandboxName, SandboxUid: sandboxUID}}},
 	}}, nil
 }
 

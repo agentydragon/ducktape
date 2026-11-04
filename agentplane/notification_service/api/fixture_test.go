@@ -186,6 +186,12 @@ type fakeOpenings struct {
 	err        error
 }
 
+func nativeOpening(sessionID, name, uid string) *dispatcherpb.SessionOpening {
+	return &dispatcherpb.SessionOpening{SessionId: sessionID, Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{
+		EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: name, SandboxUid: uid}},
+	}}
+}
+
 func (o *fakeOpenings) GetSessionOpening(_ context.Context, request *dispatcherpb.GetSessionOpeningRequest, _ ...grpc.CallOption) (*dispatcherpb.GetSessionOpeningResponse, error) {
 	if o.err != nil {
 		return nil, o.err
@@ -309,8 +315,8 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 		}},
 		kube: kube,
 		openings: &fakeOpenings{placements: map[string]*dispatcherpb.SessionOpening{
-			testSession:       {SessionId: testSession, Sandbox: sandboxName, SandboxUid: sandboxUID},
-			"missing-session": {SessionId: "missing-session", Sandbox: sandboxName, SandboxUid: sandboxUID},
+			testSession:       nativeOpening(testSession, sandboxName, sandboxUID),
+			"missing-session": nativeOpening("missing-session", sandboxName, sandboxUID),
 		}},
 	}
 	server.policy.Health.MarkSynced()
@@ -382,7 +388,7 @@ func (s testServer) subscribe(t *testing.T, key string, sessionID ...string) *no
 	request := createRequest(key)
 	if len(sessionID) > 0 {
 		request.SessionId = sessionID[0]
-		s.openings.placements[sessionID[0]] = &dispatcherpb.SessionOpening{SessionId: sessionID[0], Sandbox: sandboxName, SandboxUid: sandboxUID}
+		s.openings.placements[sessionID[0]] = nativeOpening(sessionID[0], sandboxName, sandboxUID)
 		s.runner.mu.Lock()
 		s.runner.sessions[sandboxName] = append(s.runner.sessions[sandboxName], sessionID[0])
 		s.runner.mu.Unlock()
@@ -403,7 +409,7 @@ func (s testServer) recreateSandbox(t *testing.T) {
 	if err := s.kube.Create(t.Context(), &sandboxapi.Sandbox{ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: sandboxName, UID: successorUID}}); err != nil {
 		t.Fatal(err)
 	}
-	s.openings.placements["another-session"] = &dispatcherpb.SessionOpening{SessionId: "another-session", Sandbox: sandboxName, SandboxUid: successorUID}
+	s.openings.placements["another-session"] = nativeOpening("another-session", sandboxName, string(successorUID))
 }
 
 // grantSend binds a set of one rule, allowing send_message to the targets, to the account of the given name.
