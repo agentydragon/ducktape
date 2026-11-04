@@ -6,9 +6,8 @@ public Session ID. Every normal caller is authenticated by projected ServiceAcco
 ServiceAccount namespace, name and UID. This read authority does not depend on a live Sandbox.
 Configured backend readers retain their explicit Pod-bound, service-wide read path; a ServiceAccount
 token alone does not grant it. A Session UUID by itself grants nothing. Consumers use `client.py`;
-`testing/go_service.py` runs the built Go service over a test
-database for their tests, which read the fold's tables through `fold/models.py` and validate the rows
-browsers sync with `fold/views.py`.
+`testing/go_service.py` runs the built Go service over a test database. Tests can inspect the fold's
+storage through `fold/models.py` and use the generated Thread entity messages for semantic reads.
 
 An optional, separate `delegation` setting names the Actions actor, caller namespaces and exact full
 History RPC method names that admit delegated reads. The shared workload-auth middleware rechecks the
@@ -211,9 +210,17 @@ Thread for Sessions it did not start. The binding draws the Session's `opened_po
 transaction advisory lock held to commit, so positions become visible in ascending order and a caller
 that reconnects after the last position it handled misses none.
 
-`ReadThreadEntities` serves a window of a Session's fold rows, by entity index or by key, each as
-the `ThreadEntityView` JSON browsers sync. A caller holding rows of a replaced epoch gets
-`FAILED_PRECONDITION`.
+`ReadThreadEntities` serves a window of a Session's fold rows, by entity index or by key, as typed
+`ThreadEntity` values. Common identity and cursor metadata sits on the entity; its oneof identifies
+view state, item, confirmed input, lifecycle Event, or command. Payload references keep their
+64-bit positions as `uint64`. Electric remains the row and payload synchronization source for the
+browser. A caller holding rows of a replaced epoch gets `FAILED_PRECONDITION`.
+The entity table keeps its indexed identity, ordering and pending columns; `state` is ProtoJSON of
+that entity's oneof variant, including its payload references. The migration preserves existing
+entities and payload chunks, converting rows in one transaction. Deployments must stop old History
+writers and old app instances for the schema and consumer cutover: old binaries cannot use the new
+row shape. The conversion locks the entity table until it commits, so migration time grows with the
+number of retained entities. A malformed row aborts and rolls back the entire conversion.
 `ReadEntityEvidence` pages the observation cursors an entity was folded from, and
 `ReadNativeFrames` the native harness frames linked to one of them, read from the raw log.
 `native_frame_read_batch_size` (default `200`, set by the YAML key or

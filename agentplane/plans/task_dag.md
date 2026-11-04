@@ -1037,9 +1037,9 @@ does not block current thread work or authorize implementation.
 dag".** Tool results become ordered parts (text, image) in the harness-neutral vocabulary instead of one string.
 Today `event.proto` carries `ToolResult.output`, `ToolOutputDelta.text` and `RecoveredContent.output` as strings,
 the Claude adapter's `resultText()` (`runner/claude/protocol.go`) joins text blocks and drops images, and the
-History fold's `FieldOutput` is one text field that deltas append to. Scope: the proto, both runner adapters, the
-History fold with its storage and reads, the app API, the frontend tool cards, and the fold, span and visual
-fixtures. Archived event logs and History rows hold `output` strings and sealed archives cannot be rewritten; the
+History fold's `THREAD_PAYLOAD_FIELD_OUTPUT` is one text field that deltas append to. Scope: the proto, both
+runner adapters, the History fold with its storage and reads, the app API, the frontend tool cards, and the fold,
+span and visual fixtures. Archived event logs and History rows hold `output` strings and sealed archives cannot be rewritten; the
 default under "deployed state is disposable" is to drop that data in its own data-deletion PR, which is the
 operator's call. Exit: an image a Claude tool returns renders in its tool card.
 

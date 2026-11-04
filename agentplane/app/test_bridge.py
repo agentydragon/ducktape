@@ -27,9 +27,11 @@ from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.env.e2e.testing.failure_journal import FailureEvidence
 from agentplane.env.e2e.testing.process import RunningRunner, kill_harness
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.history_service.testing.history import History
+from agentplane.history_service.testing.protojson import thread_entity_from_record
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
@@ -66,11 +68,11 @@ async def failed_bridge_state(
                 thread_id = UUID(session_id)
                 observed["history_cursor"] = await event_logs.last_cursor(thread_id)
                 observed["history_watermark"] = await event_logs.read_watermark(thread_id)
-                summary = await event_logs.session_summary(thread_id)
+                scope = await event_logs.current_scope(thread_id)
                 observed["history_scope"] = (
                     None
-                    if summary is None or not summary.HasField("projection_epoch")
-                    else {"projection_epoch": summary.projection_epoch, "through_cursor": summary.folded_through}
+                    if scope is None
+                    else {"projection_epoch": scope.projection_epoch, "through_cursor": scope.folded_through}
                 )
                 page = await event_logs.reader.read_session_events(session_id, after_cursor=0, limit=1)
                 observed["history_cursor"] = page.last_cursor
@@ -181,7 +183,9 @@ async def _stored_events(
     return entries
 
 
-async def _folded_items(history: History, thread_id: str) -> tuple[dict[str, ThreadEntity], list[ThreadPayloadChunk]]:
+async def _folded_items(
+    history: History, thread_id: str
+) -> tuple[dict[str, history_service_pb2.ThreadEntity], list[ThreadPayloadChunk]]:
     """The current item rows and payload chunks from the History Service's thread fold."""
     async with history.sessions() as session:
         checkpoint = await session.get(ThreadCheckpoint, UUID(thread_id))
@@ -200,27 +204,28 @@ async def _folded_items(history: History, thread_id: str) -> tuple[dict[str, Thr
                 ThreadPayloadChunk.projection_epoch == checkpoint.projection_epoch,
             )
         )
-        return {row.entity_id: row for row in rows}, list(chunks)
+        return {row.entity_id: thread_entity_from_record(row) for row in rows}, list(chunks)
 
 
-def _folded_body(chunks: list[ThreadPayloadChunk], reference: dict[str, Any] | None) -> str:
-    if reference is None:
-        return ""
+def _folded_body(chunks: list[ThreadPayloadChunk], reference: history_service_pb2.ThreadPayloadReference) -> str:
+    field = history_service_pb2.ThreadPayloadField.Name(reference.field).removeprefix("THREAD_PAYLOAD_FIELD_").lower()
     indexed = {
         chunk.chunk_index: chunk.text
         for chunk in chunks
-        if chunk.projection_epoch == reference["projection_epoch"]
-        and chunk.owner_cursor == int(reference["owner_cursor"])
-        and chunk.owner_id == reference["owner_id"]
-        and chunk.field == reference["field"]
-        and str(chunk.generation) == str(reference["generation"])
+        if chunk.projection_epoch == reference.projection_epoch
+        and chunk.owner_cursor == reference.owner_cursor
+        and chunk.owner_id == reference.owner_id
+        and chunk.field == field
+        and chunk.generation == reference.generation
     }
-    return "".join(indexed[index] for index in range(int(reference["chunk_count"])) if index in indexed)
+    return "".join(indexed[index] for index in range(reference.chunk_count) if index in indexed)
 
 
 async def _wait_for_folded_items(
-    history: History, thread_id: str, matches: Callable[[dict[str, ThreadEntity], list[ThreadPayloadChunk]], bool]
-) -> tuple[dict[str, ThreadEntity], list[ThreadPayloadChunk]]:
+    history: History,
+    thread_id: str,
+    matches: Callable[[dict[str, history_service_pb2.ThreadEntity], list[ThreadPayloadChunk]], bool],
+) -> tuple[dict[str, history_service_pb2.ThreadEntity], list[ThreadPayloadChunk]]:
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(10), wait=wait_fixed(0.2), retry=retry_if_exception_type(AssertionError)
     ):
@@ -228,10 +233,10 @@ async def _wait_for_folded_items(
             items, chunks = await _folded_items(history, thread_id)
             details = {
                 item_id: {
-                    "state": item.state,
-                    "text": _folded_body(chunks, item.text_ref),
-                    "arguments": _folded_body(chunks, item.arguments_ref),
-                    "output": _folded_body(chunks, item.output_ref),
+                    "state": MessageToDict(item.item),
+                    "text": _folded_body(chunks, item.item.text_ref),
+                    "arguments": _folded_body(chunks, item.item.arguments_ref),
+                    "output": _folded_body(chunks, item.item.output_ref),
                 }
                 for item_id, item in items.items()
             }
@@ -305,10 +310,10 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
         items, chunks = await _wait_for_folded_items(
             history,
             thread_id,
-            lambda rows, payloads: any(_folded_body(payloads, row.text_ref) == partial for row in rows.values()),
+            lambda rows, payloads: any(_folded_body(payloads, row.item.text_ref) == partial for row in rows.values()),
         )
-        item_id = next(row.entity_id for row in items.values() if _folded_body(chunks, row.text_ref) == partial)
-        assert items[item_id].state["completion"] is None
+        item_id = next(row.entity_id for row in items.values() if _folded_body(chunks, row.item.text_ref) == partial)
+        assert items[item_id].item.WhichOneof("completion") is None
         turn_id, before = await _interrupt_and_recover(http, runner, sandbox_runner, thread_id, stop_mode)
         accepted = await http.post(
             f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
@@ -327,12 +332,12 @@ async def test_stream_recovery_reports_the_content_the_model_receives(
             thread_id,
             lambda rows, payloads: (
                 rows[item_id].revision_cursor >= recovery_cursor
-                and rows[item_id].state["recovery"]
+                and rows[item_id].item.recovery
                 in {event_pb2.RECOVERY_DISPOSITION_RETAINED, event_pb2.RECOVERY_DISPOSITION_ABSENT}
             ),
         )
-        assert _folded_body(chunks, items[item_id].text_ref) == partial
-        disposition = items[item_id].state["recovery"]
+        assert _folded_body(chunks, items[item_id].item.text_ref) == partial
+        disposition = items[item_id].item.recovery
         assert seed_prompt in request.user_texts
         assert seed_answer in request.assistant_texts
         assert (partial in request.assistant_texts) == (disposition == event_pb2.RECOVERY_DISPOSITION_RETAINED)
@@ -481,17 +486,17 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
             history,
             thread_id,
             lambda rows, payloads: any(
-                row.state["completion"] is None and token in _folded_body(payloads, row.arguments_ref)
+                row.item.WhichOneof("completion") is None and token in _folded_body(payloads, row.item.arguments_ref)
                 for row in rows.values()
             ),
         )
         incomplete_tools = [
             row
             for row in items.values()
-            if row.state["completion"] is None and token in _folded_body(chunks, row.arguments_ref)
+            if row.item.WhichOneof("completion") is None and token in _folded_body(chunks, row.item.arguments_ref)
         ]
         assert len(incomplete_tools) == 1
-        assert _folded_body(chunks, incomplete_tools[0].output_ref) == ""
+        assert _folded_body(chunks, incomplete_tools[0].item.output_ref) == ""
 
         item_id = incomplete_tools[0].entity_id
         turn_id, before = await _interrupt_and_recover(http, runner, sandbox_runner, thread_id, stop_mode)
@@ -511,23 +516,23 @@ async def test_tool_recovery_reports_context_without_repeating_side_effects(
             history,
             thread_id,
             lambda rows, payloads: (
-                rows[item_id].revision_cursor >= recovery_cursor and rows[item_id].state["recovery"] in expected
+                rows[item_id].revision_cursor >= recovery_cursor and rows[item_id].item.recovery in expected
             ),
         )
         recovered = items[item_id]
-        assert recovered.state["tool_succeeded"] is not True
+        assert not (recovered.item.WhichOneof("completion") == "tool" and recovered.item.tool.succeeded)
         if stop_mode == "kill":
-            assert recovered.state["completion"] is None
+            assert recovered.item.WhichOneof("completion") is None
         assert marker.read_text().splitlines() == [token]
         assert seed_prompt in request.user_texts
         assert seed_answer in request.assistant_texts
         assert ("inflight-tool" in request.tool_calls) == (
-            recovered.state["recovery"] != event_pb2.RECOVERY_DISPOSITION_ABSENT
+            recovered.item.recovery != event_pb2.RECOVERY_DISPOSITION_ABSENT
         )
-        recovered_output = _folded_body(chunks, recovered.output_ref)
+        recovered_output = _folded_body(chunks, recovered.item.output_ref)
         # Codex's display history cannot establish the synthetic model output of an
         # interrupted command. Preserve the observed output without presenting it as retained.
-        if not codex and recovered_output and recovered.state["recovery"] != event_pb2.RECOVERY_DISPOSITION_ABSENT:
+        if not codex and recovered_output and recovered.item.recovery != event_pb2.RECOVERY_DISPOSITION_ABSENT:
             assert any(output.contains(recovered_output) for output in request.tool_outputs)
         assert marker.read_text().splitlines() == [token]
         await model.reply(request, Text("TOOL_RECOVERY_DONE"))
@@ -596,13 +601,13 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
             thread_id,
             lambda rows, payloads: (
                 any(
-                    row.state["completion"] == "tool"
-                    and row.state["tool_succeeded"] is True
-                    and tool_output in _folded_body(payloads, row.output_ref)
+                    row.item.WhichOneof("completion") == "tool"
+                    and row.item.tool.succeeded
+                    and tool_output in _folded_body(payloads, row.item.output_ref)
                     for row in rows.values()
                 )
                 and any(
-                    row.state["completion"] is None and _folded_body(payloads, row.text_ref) == partial
+                    row.item.WhichOneof("completion") is None and _folded_body(payloads, row.item.text_ref) == partial
                     for row in rows.values()
                 )
             ),
@@ -613,10 +618,10 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
         completed_tools = [
             row
             for row in items.values()
-            if row.state["completion"] == "tool" and tool_output in _folded_body(chunks, row.output_ref)
+            if row.item.WhichOneof("completion") == "tool" and tool_output in _folded_body(chunks, row.item.output_ref)
         ]
         assert len(completed_tools) == 1
-        assert completed_tools[0].state["tool_succeeded"] is True
+        assert completed_tools[0].item.tool.succeeded
         accepted = await http.post(
             f"/upstream/dispatcher/v1/sessions/{thread_id}:submitInput",
             json={
@@ -637,15 +642,16 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
                 thread_id,
                 lambda rows, payloads: (
                     rows[completed_tools[0].entity_id].revision_cursor >= recovery_cursor
-                    and rows[completed_tools[0].entity_id].state["recovery"]
+                    and rows[completed_tools[0].entity_id].item.recovery
                     in {event_pb2.RECOVERY_DISPOSITION_RETAINED, event_pb2.RECOVERY_DISPOSITION_ABSENT}
                 ),
             )
             recovered_tool = items[completed_tools[0].entity_id]
-            assert recovered_tool.state["tool_succeeded"] is True
-            assert tool_output in _folded_body(chunks, recovered_tool.output_ref)
+            assert recovered_tool.item.WhichOneof("completion") == "tool"
+            assert recovered_tool.item.tool.succeeded
+            assert tool_output in _folded_body(chunks, recovered_tool.item.output_ref)
             assert any(result.contains(tool_output) for result in request.tool_outputs) == (
-                recovered_tool.state["recovery"] == event_pb2.RECOVERY_DISPOSITION_RETAINED
+                recovered_tool.item.recovery == event_pb2.RECOVERY_DISPOSITION_RETAINED
             )
             assert marker.read_text().splitlines() == [token]
             await exchange.send(*model.stream(request, [Text("COMPLETED_TOOL_RECOVERY_DONE")]))

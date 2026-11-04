@@ -1,10 +1,12 @@
 import { type JSX, type ReactNode, memo, useCallback } from "react";
 import { VirtualizedHistory as History } from "../../../../util/frontend/transcript/virtualized_history";
-import { type ThreadEntity, type ThreadWindow } from "./thread_sync";
+import type { ThreadEntity } from "../../../history_service/history_service_pb";
+import { type ThreadWindow } from "./thread_sync";
 import { rowKey, type HistoryRow } from "./history_rows";
 import { HistoryRowView } from "./history_row_views";
 import { revealEvidenceOnTap } from "./thread_evidence";
 import { threadViewRecorder } from "./thread_view_recorder";
+import { threadEntityKind, threadEntityTurnId } from "./thread_entity";
 
 const MemoizedHistoryRowView = memo(HistoryRowView);
 
@@ -29,7 +31,10 @@ export function VirtualizedHistory({
   activeTurn,
   history,
 }: VirtualizedHistoryProps): JSX.Element {
-  const live = useCallback((entity: ThreadEntity) => running && entity.turnId === activeTurn, [running, activeTurn]);
+  const live = useCallback(
+    (entity: ThreadEntity) => running && threadEntityTurnId(entity) === activeTurn,
+    [running, activeTurn]
+  );
   return (
     <History
       scopeId={threadId}
@@ -45,11 +50,12 @@ export function VirtualizedHistory({
           `${row.kind}:` +
           row.entities
             .map(
-              (entity) => `${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:${entity.revisionCursor}`
+              (entity) =>
+                `${entity.projectionEpoch}:${threadEntityKind(entity)}:${entity.entityId}:${entity.revisionCursor}`
             )
             .join("|"),
         value: row,
-        anchorKeys: row.entities.map((entity) => `${entity.entityKind}:${entity.entityId}`),
+        anchorKeys: row.entities.map((entity) => `${threadEntityKind(entity)}:${entity.entityId}`),
         dataAttributes: { "data-thread-anchor": row.entities[0].cursor.toString() },
         presentation: { kind: row.kind, entityCount: row.entities.length },
       }))}

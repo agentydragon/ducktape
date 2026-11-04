@@ -11,7 +11,8 @@ import { harnessBehavior } from "../harness_behavior";
 import { harnessLabel, models, modelsForHarness, type ModelOption } from "../model_catalog";
 import { langfuseSandboxTraceUrl, langfuseSessionTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";
-import { decimalBigInt, useThreadSync, type ThreadEntity, type ThreadWindow } from "./thread_sync";
+import { useThreadSync, type ThreadWindow } from "./thread_sync";
+import { ThreadFeedStatus, type ThreadEntity } from "../../../history_service/history_service_pb";
 import { historyRows } from "./history_rows";
 import { useRequiredThreadsLive } from "./live";
 import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
@@ -221,20 +222,23 @@ function ConversationBody({
     [commands.store]
   );
   const openDebug = useOpenChronologicalDebug();
-  const view = entities.find((row) => row.entityKind === "view_state");
-  const controls = view && "controls" in view.state ? view.state.controls : null;
-  const operational = view && "controls" in view.state ? view.state.operational : null;
+  const view = entities.find((row) => row.entity.case === "viewState");
+  const controls = view?.entity.case === "viewState" ? view.entity.value.controls : null;
+  const operational = view?.entity.case === "viewState" ? view.entity.value.operational : null;
   const syncWritable = sync.window?.caughtUp === true && sync.window.error === null;
   const threadCanAcceptInput =
     syncWritable &&
     !thread.archived &&
     !["SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED"].includes(thread.setup_state ?? "") &&
-    operational?.status !== "failed";
+    operational?.status !== ThreadFeedStatus.FAILED;
   const running =
-    available && threadCanAcceptInput && operational?.status === "active" && controls?.harness_state === "running";
+    available &&
+    threadCanAcceptInput &&
+    operational?.status === ThreadFeedStatus.ACTIVE &&
+    controls?.harnessState === "running";
   // Dispatcher admission does not require a running native harness.
   const canSend = threadCanAcceptInput && (available || canQueueCommands);
-  const activeTurn = controls?.active_turn_id ?? null;
+  const activeTurn = controls?.activeTurnId ?? null;
   const threadsLive = useRequiredThreadsLive();
   const sandboxesLive = useRequiredSandboxesLive();
   const inventoryFresh = sandboxInventoryFresh(sandboxesLive);
@@ -255,7 +259,7 @@ function ConversationBody({
   useEffect(() => installThreadFavicon(status.kind), [status.kind]);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
-  const selectedModel = controls?.applied_model ?? thread.model;
+  const selectedModel = controls?.appliedModel ?? thread.model;
   const effortOptions = modelOptions.find((option) => option.model === selectedModel)?.reasoning_efforts ?? [];
   useEffect(() => {
     const harness = thread.harness;
@@ -281,17 +285,12 @@ function ConversationBody({
     entities
       .filter(
         (row) =>
-          ["item", "confirmed_input", "lifecycle"].includes(row.entityKind) ||
-          (row.entityKind === "command" &&
-            (pendingSentMessage(row) || ("operation" in row.state && row.state.operation !== "submit_input")))
+          row.entity.case === "item" ||
+          row.entity.case === "confirmedInput" ||
+          row.entity.case === "lifecycle" ||
+          (row.entity.case === "command" && (pendingSentMessage(row) || row.entity.value.operation !== "submit_input"))
       )
-      .sort((left, right) =>
-        decimalBigInt(left.cursor) < decimalBigInt(right.cursor)
-          ? -1
-          : decimalBigInt(left.cursor) > decimalBigInt(right.cursor)
-            ? 1
-            : 0
-      )
+      .sort((left, right) => (left.cursor < right.cursor ? -1 : left.cursor > right.cursor ? 1 : 0))
   );
   const localCommands = commands.local.commands;
   const inputEchoes = new Map(commands.local.inputEchoes.map(({ commandId, text }) => [commandId, text]));
@@ -331,10 +330,7 @@ function ConversationBody({
 
   return (
     <RetainedDisclosureProvider>
-      <Stack
-        style={{ flex: 1, minHeight: 0 }}
-        data-projection-cursor={view ? decimalBigInt(view.revisionCursor).toString() : undefined}
-      >
+      <Stack style={{ flex: 1, minHeight: 0 }} data-projection-cursor={view?.revisionCursor.toString()}>
         <VirtualizedHistory
           threadId={threadId}
           rows={rows}
@@ -345,11 +341,11 @@ function ConversationBody({
           activeTurn={activeTurn}
           history={history}
         />
-        {operational?.feed_error && (
+        {operational?.feedError && (
           <Text role="alert" c="red">
-            {operational.feed_error.cursor === null
-              ? `Projection failed: ${operational.feed_error.message}. Showing verified history through event ${operational.last_verified_cursor}.`
-              : `Rejected event ${operational.feed_error.cursor}: ${operational.feed_error.message}. Showing verified history through event ${operational.last_verified_cursor}.`}
+            {operational.feedError.cursor === undefined
+              ? `Projection failed: ${operational.feedError.message}. Showing verified history through event ${operational.lastVerifiedCursor}.`
+              : `Rejected event ${operational.feedError.cursor}: ${operational.feedError.message}. Showing verified history through event ${operational.lastVerifiedCursor}.`}
           </Text>
         )}
         {modelError && (
@@ -384,9 +380,9 @@ function ConversationBody({
               aria-label="Model"
               className="agentplane-composer-model"
               data={modelOptions.map((option) => ({ value: option.model, label: option.display_name }))}
-              value={controls?.applied_model ?? null}
+              value={controls?.appliedModel ?? null}
               placeholder={
-                sync.window?.error || operational?.status === "failed"
+                sync.window?.error || operational?.status === ThreadFeedStatus.FAILED
                   ? "Model unavailable"
                   : !sync.window?.caughtUp
                     ? "Catching up…"
@@ -400,7 +396,7 @@ function ConversationBody({
                 aria-label="Reasoning effort"
                 className="agentplane-composer-effort"
                 data={effortOptions}
-                value={controls?.applied_reasoning_effort ?? thread.reasoning_effort ?? null}
+                value={controls?.appliedReasoningEffort ?? thread.reasoning_effort ?? null}
                 placeholder="Effort"
                 disabled={!canSend}
                 onChange={(effort) => effort && commands.changeReasoningEffort(effort)}

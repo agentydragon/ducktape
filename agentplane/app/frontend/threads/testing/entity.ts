@@ -1,44 +1,44 @@
-import type { ItemKind } from "../../../../proto/event_pb";
-import type { ThreadEntity } from "../thread_sync";
+import { create, type MessageInitShape } from "@bufbuild/protobuf";
 
-type ItemState = Extract<ThreadEntity["state"], { kind: number }>;
+import {
+  ThreadEntitySchema,
+  ThreadItemSchema,
+  ThreadItemTextCompletionSchema,
+  type ThreadItem,
+  type ThreadEntity,
+} from "../../../../history_service/history_service_pb";
+import type { ItemKind } from "../../../../proto/event_pb";
 
 export function testEntity(
   cursor: number,
-  entityKind: ThreadEntity["entityKind"],
-  state: ThreadEntity["state"],
-  overrides: Partial<ThreadEntity> = {}
+  entity: MessageInitShape<typeof ThreadEntitySchema>["entity"],
+  overrides: MessageInitShape<typeof ThreadEntitySchema> = {}
 ): ThreadEntity {
-  return {
-    threadId: "test-thread",
+  return create(ThreadEntitySchema, {
+    sessionId: "test-thread",
     projectionEpoch: "test-epoch",
-    entityKind,
     entityId: `test-entity-${cursor}`,
-    entityIndex: String(cursor),
-    cursor: String(cursor),
-    revisionCursor: String(cursor),
-    pending: false,
-    turnId: "test-turn",
-    state,
-    textRef: null,
-    argumentsRef: null,
-    outputRef: null,
-    inputRef: null,
+    entityIndex: BigInt(cursor),
+    cursor: BigInt(cursor),
+    revisionCursor: BigInt(cursor),
+    entity,
     ...overrides,
-  };
+  });
 }
 
-/** A completed item unless `state` says otherwise. */
+/** A completed item unless `item` says otherwise. */
 export function testItem(
   cursor: number,
   kind: ItemKind,
-  state: Partial<ItemState> = {},
-  overrides: Partial<ThreadEntity> = {}
+  item: MessageInitShape<typeof ThreadItemSchema> = {},
+  references: Pick<Partial<ThreadItem>, "textRef" | "argumentsRef" | "outputRef"> = {}
 ): ThreadEntity {
-  return testEntity(
-    cursor,
-    "item",
-    { kind, tool_name: "", completion: "text", tool_succeeded: null, recovery: null, recovery_reason: null, ...state },
-    overrides
-  );
+  const value = create(ThreadItemSchema, item);
+  value.kind = kind;
+  value.turnId ??= "test-turn";
+  if (item.completion === undefined) {
+    value.completion = { case: "text", value: create(ThreadItemTextCompletionSchema) };
+  }
+  Object.assign(value, references);
+  return testEntity(cursor, { case: "item", value });
 }

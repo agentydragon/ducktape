@@ -433,23 +433,21 @@ async def dispatcher_central_setup_tool_and_retained_answer(
                 session_id=session_id, range=history_service_pb2.EntityRange(limit=200)
             )
         )
-        views = [json.loads(entity.view_json) for entity in entities.entities]
-        assert all(view["thread_id"] == session_id for view in views)
+        assert all(entity.session_id == session_id for entity in entities.entities)
         for text in (reasoning, answer):
             (item,) = [entry for entry in completed if entry.event.item_completed.text == text]
-            (view,) = [
-                view
-                for view in views
-                if view["entity_kind"] == "item" and view["entity_id"] == item.event.item_completed.item_id
+            (entity,) = [
+                entity
+                for entity in entities.entities
+                if entity.HasField("item") and entity.entity_id == item.event.item_completed.item_id
             ]
-            assert view["state"]["completion"] == "text"
-            assert view["text_ref"] is not None
-            assert not view["pending"]
+            assert entity.item.HasField("text")
+            assert entity.item.HasField("text_ref")
         for kind in (event_pb2.ITEM_KIND_REASONING, event_pb2.ITEM_KIND_ASSISTANT_TEXT, event_pb2.ITEM_KIND_TOOL_CALL):
-            assert any(view["entity_kind"] == "item" and view["state"]["kind"] == kind for view in views)
+            assert any(entity.HasField("item") and entity.item.kind == kind for entity in entities.entities)
         assert any(
-            view["entity_kind"] == "confirmed_input" and command_id in view["state"]["origin_command_ids"]
-            for view in views
+            entity.HasField("confirmed_input") and command_id in entity.confirmed_input.origin_command_ids
+            for entity in entities.entities
         )
         (undeclared_outputs_dir() / "central-sampler-k3s.json").write_text(
             json.dumps(

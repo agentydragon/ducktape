@@ -12,7 +12,7 @@ import { displayableError } from "../client";
 import { watchDispatches } from "./dispatch_watch";
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot, type PendingCommand } from "./local_commands";
-import { type ThreadEntity } from "./thread_sync";
+import type { ThreadEntity } from "../../../history_service/history_service_pb";
 import type { ThreadView } from "../schema";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], inputEchoes: [], error: null };
@@ -60,7 +60,9 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
   }, [local.commands]);
   const effectedCommandIds = useMemo(
     () =>
-      new Set([...entities.flatMap((row) => ("origin_command_ids" in row.state ? row.state.origin_command_ids : []))]),
+      new Set(
+        entities.flatMap((row) => (row.entity.case === "confirmedInput" ? row.entity.value.originCommandIds : []))
+      ),
     [entities]
   );
   useEffect(() => store.observeCommandIds(effectedCommandIds), [effectedCommandIds, store]);

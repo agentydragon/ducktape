@@ -38,20 +38,15 @@ export interface ElectricShapeMessage {
 
 const ELECTRIC_SCHEMAS: Record<string, Record<string, Record<string, string | boolean | number>>> = {
   thread_entity: {
-    arguments_ref: { type: "jsonb" },
     cursor: { type: "int8", not_null: true },
     entity_id: { type: "text", not_null: true, pk_index: 3 },
     entity_index: { type: "int8", not_null: true },
     entity_kind: { type: "text", not_null: true, pk_index: 2 },
-    input_ref: { type: "jsonb" },
-    output_ref: { type: "jsonb" },
     pending: { type: "bool", not_null: true },
     projection_epoch: { type: "text", not_null: true, pk_index: 1 },
     revision_cursor: { type: "int8", not_null: true },
     state: { type: "jsonb", not_null: true },
-    text_ref: { type: "jsonb" },
     thread_id: { type: "uuid", not_null: true, pk_index: 0 },
-    turn_id: { type: "text" },
   },
   thread_payload_chunk: {
     chunk_index: { type: "int8", not_null: true, pk_index: 6 },

@@ -300,8 +300,18 @@ message EntityRange {
   uint32 limit = 2;
 }
 
+enum ThreadEntityKind {
+  THREAD_ENTITY_KIND_UNSPECIFIED = 0;
+  THREAD_ENTITY_KIND_VIEW_STATE = 1;
+  THREAD_ENTITY_KIND_ITEM = 2;
+  THREAD_ENTITY_KIND_CONFIRMED_INPUT = 3;
+  THREAD_ENTITY_KIND_LIFECYCLE = 4;
+  THREAD_ENTITY_KIND_COMMAND = 5;
+}
+
 message EntityKey {
-  string entity_kind = 1;
+  // Unspecified and unrecognized kinds are invalid.
+  ThreadEntityKind entity_kind = 1;
   string entity_id = 2;
 }
 
@@ -318,10 +328,126 @@ message ReadThreadEntitiesResponse {
   repeated ThreadEntity entities = 3;
 }
 
+// PayloadField names the immutable body a Thread entity references.
+enum ThreadPayloadField {
+  THREAD_PAYLOAD_FIELD_UNSPECIFIED = 0;
+  THREAD_PAYLOAD_FIELD_TEXT = 1;
+  THREAD_PAYLOAD_FIELD_ARGUMENTS = 2;
+  THREAD_PAYLOAD_FIELD_OUTPUT = 3;
+  THREAD_PAYLOAD_FIELD_CONFIRMED_INPUT = 4;
+  THREAD_PAYLOAD_FIELD_COMMAND_INPUT = 5;
+}
+
+// The result of a Thread command. PENDING also means the synchronized command row is pending.
+enum ThreadCommandOutcome {
+  THREAD_COMMAND_OUTCOME_UNSPECIFIED = 0;
+  THREAD_COMMAND_OUTCOME_PENDING = 1;
+  THREAD_COMMAND_OUTCOME_EFFECTED = 2;
+  THREAD_COMMAND_OUTCOME_FAILED = 3;
+  THREAD_COMMAND_OUTCOME_NOOP = 4;
+}
+
+enum ThreadFeedStatus {
+  THREAD_FEED_STATUS_UNSPECIFIED = 0;
+  THREAD_FEED_STATUS_ACTIVE = 1;
+  THREAD_FEED_STATUS_ENDED = 2;
+  THREAD_FEED_STATUS_FAILED = 3;
+}
+
+// A reference to an immutable payload revision. ProtoJSON renders each uint64 as a decimal string.
+message ThreadPayloadReference {
+  string projection_epoch = 1;
+  uint64 owner_cursor = 2;
+  string owner_id = 3;
+  ThreadPayloadField field = 4;
+  uint64 revision_cursor = 5;
+  uint64 generation = 6;
+  // How many chunks of the generation this revision spans; a reader renders at most these.
+  uint64 chunk_count = 7;
+}
+
+message ThreadFeedError {
+  optional uint64 cursor = 1;
+  string message = 2;
+}
+
+message ThreadControls {
+  optional string applied_model = 1;
+  optional string applied_reasoning_effort = 2;
+  optional string active_turn_id = 3;
+  optional string harness_state = 4;
+}
+
+// Feed lifecycle has an independent version and does not fabricate a runner cursor.
+message ThreadOperational {
+  ThreadFeedStatus status = 1;
+  uint64 last_verified_cursor = 2;
+  ThreadFeedError feed_error = 3;
+}
+
+message ThreadViewState {
+  ThreadControls controls = 1;
+  ThreadOperational operational = 2;
+}
+
+message ThreadItemTextCompletion {}
+
+message ThreadItemToolCompletion {
+  bool succeeded = 1;
+}
+
+message ThreadItem {
+  agentplane.proto.ItemKind kind = 1;
+  string tool_name = 2;
+  oneof completion {
+    ThreadItemTextCompletion text = 3;
+    ThreadItemToolCompletion tool = 4;
+  }
+  optional agentplane.proto.RecoveryDisposition recovery = 5;
+  optional string recovery_reason = 6;
+  optional string turn_id = 7;
+  ThreadPayloadReference text_ref = 8;
+  ThreadPayloadReference arguments_ref = 9;
+  ThreadPayloadReference output_ref = 10;
+}
+
+message ThreadConfirmedInput {
+  string harness_message_id = 1;
+  repeated string origin_command_ids = 2;
+  optional string turn_id = 3;
+  ThreadPayloadReference input_ref = 4;
+}
+
+// Event's observation oneof carries the lifecycle kind; no duplicate string discriminator is needed.
+message ThreadLifecycle {
+  agentplane.proto.Event event = 1;
+}
+
+message ThreadCommand {
+  string operation = 1;
+  ThreadCommandOutcome outcome = 2;
+  optional uint64 outcome_cursor = 3;
+  optional string outcome_reason = 4;
+  optional string requested_value = 5;
+  ThreadPayloadReference input_ref = 6;
+}
+
+// The canonical typed contract for the rows that History folds and readers synchronize through
+// Electric. EntityKey names a row by its entity kind and ID.
 message ThreadEntity {
-  uint64 entity_index = 1;
-  // A `ThreadEntityView` JSON document (`agentplane.history_service.fold.views`), the row browsers sync.
-  string view_json = 2;
+  string session_id = 1;
+  string projection_epoch = 2;
+  string entity_id = 3;
+  uint64 entity_index = 4;
+  uint64 cursor = 5;
+  uint64 revision_cursor = 6;
+  oneof entity {
+    ThreadViewState view_state = 10;
+    ThreadItem item = 11;
+    ThreadConfirmedInput confirmed_input = 12;
+    ThreadLifecycle lifecycle = 13;
+    ThreadCommand command = 14;
+  }
 }
 
 message ReadEntityEvidenceRequest {

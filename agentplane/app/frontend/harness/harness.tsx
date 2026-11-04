@@ -31,7 +31,6 @@ import {
   type Decision,
 } from "../../../egress/egress_admin_pb";
 import { GetActionPolicyResponseSchema } from "../../../action_service/action_service_pb";
-import { ReadThreadEntitiesRequestSchema } from "../../../history_service/history_service_pb";
 import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fixture";
 import { DurationSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { ServiceAccountIdentitySchema } from "../../../proto/identity_pb";
@@ -50,7 +49,7 @@ import { testSandbox } from "../testing/sandbox";
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import "@mantine/core/styles.css";
 
-import { clone, create, fromJson, toJson, type MessageInitShape } from "@bufbuild/protobuf";
+import { clone, create, fromJson, toJson, type JsonValue, type MessageInitShape } from "@bufbuild/protobuf";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -83,13 +82,32 @@ import {
   WatchInboxEntriesResponseSchema,
   WatchSubscriptionsResponseSchema,
 } from "../../../notification_service/notifications_pb";
-import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
+import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus, type Event } from "../../../proto/event_pb";
 import { CommandSchema } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
 import { Harness, ProcessState, SessionExecutionState } from "../../../proto/session_pb";
+import {
+  ReadThreadEntitiesRequestSchema,
+  ReadThreadEntitiesResponseSchema,
+  ThreadCommandOutcome,
+  ThreadCommandSchema,
+  ThreadConfirmedInputSchema,
+  ThreadFeedStatus,
+  ThreadItemSchema,
+  ThreadItemToolCompletionSchema,
+  ThreadItemTextCompletionSchema,
+  ThreadLifecycleSchema,
+  ThreadPayloadField,
+  ThreadPayloadReferenceSchema,
+  ThreadViewStateSchema,
+  WatchSessionSummariesResponseSchema,
+  type ThreadEntity,
+  type ThreadPayloadReference,
+} from "../../../history_service/history_service_pb";
 import { DisclosureVisual } from "./disclosure_visual";
 import { OperationPresentationVisual } from "./operation_presentation_visual";
 import { LocalCommands } from "../threads/local_commands";
+import { electricEntityVariant } from "../threads/testing/electric_entity";
 import { rememberRowHeight } from "../../../../util/frontend/transcript/history_sizes";
 import { streamRegistry } from "../stream_status";
 import { ThemeProvider } from "../theme";
@@ -1275,94 +1293,81 @@ const CONVERSATION_SOURCE = "visual-runner";
 const CONVERSATION_EPOCH = "20260921";
 const payloadBodies = new Map<string, string>();
 
-function payloadKey(ownerId: string, field: string, generation: string): string {
-  return `${ownerId}:${field}:${generation}`;
+function payloadKey(ownerId: string, field: ThreadPayloadField, generation: string): string {
+  return `${ownerId}:${ThreadPayloadField[field].toLowerCase()}:${generation}`;
 }
 
 function payload(
   ownerCursor: number,
   ownerId: string,
-  field: string,
+  field: ThreadPayloadField,
   body: string,
   revisionCursor = ownerCursor
-): Record<string, string> {
-  const reference = {
-    projection_epoch: CONVERSATION_EPOCH,
-    owner_cursor: String(ownerCursor),
-    owner_id: ownerId,
+): ThreadPayloadReference {
+  const reference = create(ThreadPayloadReferenceSchema, {
+    projectionEpoch: CONVERSATION_EPOCH,
+    ownerCursor: BigInt(ownerCursor),
+    ownerId,
     field,
-    generation: "1",
-    revision_cursor: String(revisionCursor),
-    chunk_count: "1",
-  };
-  payloadBodies.set(payloadKey(ownerId, field, reference.generation), body);
+    generation: BigInt(ownerCursor),
+    revisionCursor: BigInt(revisionCursor),
+    chunkCount: 1n,
+  });
+  payloadBodies.set(payloadKey(ownerId, field, ownerCursor.toString()), body);
   return reference;
 }
 
 function entity(
-  kind: "view_state" | "item" | "confirmed_input" | "lifecycle" | "command",
   id: string,
   cursor: number,
-  state: Record<string, unknown>,
-  extra: Record<string, unknown> = {}
+  entity: ThreadEntity["entity"],
+  extra: { threadId?: string } = {}
 ): Record<string, unknown> {
+  const { kind, pending, state } = electricEntityVariant(entity);
   return {
-    thread_id: extra.thread_id ?? THREADS[0].id,
+    thread_id: extra.threadId ?? THREADS[0].id,
     projection_epoch: CONVERSATION_EPOCH,
     entity_kind: kind,
     entity_id: id,
     cursor: String(cursor),
-    revision_cursor: String(extra.revision_cursor ?? cursor),
-    pending: extra.pending ?? false,
-    turn_id: extra.turn_id ?? null,
+    revision_cursor: String(cursor),
+    pending,
     state,
-    text_ref: extra.text_ref ?? null,
-    arguments_ref: extra.arguments_ref ?? null,
-    output_ref: extra.output_ref ?? null,
-    input_ref: extra.input_ref ?? null,
   };
 }
 
 function viewState(
   throughCursor: number,
   activeTurn: string | null,
-  operational: Record<string, unknown> = {},
+  status: ThreadFeedStatus = ThreadFeedStatus.ACTIVE,
   appliedModel: string | null = "harness-claude-model"
 ): Record<string, unknown> {
-  return entity(
-    "view_state",
-    "current",
-    throughCursor,
-    {
+  return entity("current", throughCursor, {
+    case: "viewState",
+    value: create(ThreadViewStateSchema, {
       controls: {
-        applied_model: appliedModel,
-        applied_reasoning_effort: null,
-        active_turn_id: activeTurn,
-        harness_state: activeTurn === null ? "stopped" : "running",
+        appliedModel: appliedModel ?? undefined,
+        activeTurnId: activeTurn ?? undefined,
+        harnessState: activeTurn === null ? "stopped" : "running",
       },
       operational: {
-        status: "active",
-        last_verified_cursor: String(throughCursor),
-        feed_error: null,
-        ...operational,
+        status,
+        lastVerifiedCursor: BigInt(throughCursor),
       },
-    },
-    { revision_cursor: throughCursor }
-  );
+    }),
+  });
 }
 
-function lifecycle(
-  cursor: number,
-  observation: string,
-  eventValue: Record<string, unknown>,
-  threadId?: string
-): Record<string, unknown> {
+function fixtureEvent(observation: MessageInitShape<typeof EventSchema>["observation"]): Event {
+  return create(EventSchema, { observation });
+}
+
+function lifecycle(cursor: number, event: Event, threadId?: string): Record<string, unknown> {
   return entity(
-    "lifecycle",
-    `${observation}:${cursor}`,
+    String(cursor),
     cursor,
-    { observation, event: eventValue },
-    { thread_id: threadId }
+    { case: "lifecycle", value: create(ThreadLifecycleSchema, { event }) },
+    { threadId }
   );
 }
 
@@ -1383,24 +1388,38 @@ function item(
     threadId?: string;
   } = {}
 ): Record<string, unknown> {
+  const completion =
+    extra.complete === false
+      ? undefined
+      : kind === ItemKind.TOOL_CALL
+        ? {
+            case: "tool" as const,
+            value: create(ThreadItemToolCompletionSchema, { succeeded: extra.failed !== true }),
+          }
+        : { case: "text" as const, value: create(ThreadItemTextCompletionSchema, {}) };
   return entity(
-    "item",
     id,
     cursor,
     {
-      kind,
-      tool_name: extra.tool ?? "",
-      completion: extra.complete === false ? null : kind === ItemKind.TOOL_CALL ? "tool" : "text",
-      tool_succeeded: extra.output === undefined ? null : !extra.failed,
-      recovery: extra.recovery ?? null,
-      recovery_reason: extra.recoveryReason ?? null,
+      case: "item",
+      value: create(ThreadItemSchema, {
+        kind,
+        toolName: extra.tool ?? "",
+        completion,
+        recovery: extra.recovery,
+        recoveryReason: extra.recoveryReason,
+        turnId: extra.turn,
+        textRef: text === null ? undefined : payload(cursor, id, ThreadPayloadField.TEXT, text),
+        argumentsRef:
+          extra.arguments === undefined
+            ? undefined
+            : payload(cursor, id, ThreadPayloadField.ARGUMENTS, extra.arguments),
+        outputRef:
+          extra.output === undefined ? undefined : payload(cursor, id, ThreadPayloadField.OUTPUT, extra.output),
+      }),
     },
     {
-      thread_id: extra.threadId,
-      turn_id: extra.turn ?? "turn-visual",
-      text_ref: text === null ? null : payload(cursor, id, "text", text),
-      arguments_ref: extra.arguments === undefined ? null : payload(cursor, id, "arguments", extra.arguments),
-      output_ref: extra.output === undefined ? null : payload(cursor, id, "output", extra.output),
+      threadId: extra.threadId,
     }
   );
 }
@@ -1409,22 +1428,45 @@ function command(
   cursor: number,
   id: string,
   operation: string,
-  outcome: "pending" | "effected" | "failed" | "noop",
-  reason: string | null = null,
-  text: string | null = null
+  outcome: ThreadCommandOutcome,
+  options: { reason?: string; text?: string; requestedValue?: string } = {}
 ): Record<string, unknown> {
-  return entity(
-    "command",
-    id,
-    cursor,
-    {
+  return entity(id, cursor, {
+    case: "command",
+    value: create(ThreadCommandSchema, {
       operation,
       outcome,
-      outcome_cursor: outcome === "pending" ? null : String(cursor),
-      outcome_reason: reason,
-      requested_value: null,
+      outcomeCursor: outcome === ThreadCommandOutcome.PENDING ? undefined : BigInt(cursor),
+      outcomeReason: options.reason,
+      requestedValue: options.requestedValue,
+      inputRef:
+        options.text === undefined ? undefined : payload(cursor, id, ThreadPayloadField.COMMAND_INPUT, options.text),
+    }),
+  });
+}
+
+function confirmedInput(
+  cursor: number,
+  entityId: string,
+  harnessMessageId: string,
+  originCommandIds: string[],
+  text: string,
+  { threadId, turnId }: { threadId?: string; turnId?: string } = {}
+): Record<string, unknown> {
+  const ownerId = harnessMessageId || `confirmed:${cursor}`;
+  return entity(
+    entityId,
+    cursor,
+    {
+      case: "confirmedInput",
+      value: create(ThreadConfirmedInputSchema, {
+        harnessMessageId,
+        originCommandIds,
+        turnId,
+        inputRef: payload(cursor, ownerId, ThreadPayloadField.CONFIRMED_INPUT, text),
+      }),
     },
-    { pending: outcome === "pending", input_ref: text === null ? null : payload(cursor, id, "command_input", text) }
+    { threadId }
   );
 }
 
@@ -1443,18 +1485,16 @@ function standardRows(
   const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === threadId);
   if (!thread) throw new Error(`Unknown fixture Thread: ${threadId}`);
   const rows = [
-    viewState(34, suspended ? null : "turn-visual", suspended ? { status: "ended" } : {}, thread.model),
-    entity(
-      "confirmed_input",
-      "user-1",
-      4,
-      { harness_message_id: "user-1", origin_command_ids: ["input-1"] },
-      {
-        thread_id: threadId,
-        turn_id: "turn-visual",
-        input_ref: payload(4, "user-1", "confirmed_input", "List the repository files."),
-      }
+    viewState(
+      34,
+      suspended ? null : "turn-visual",
+      suspended ? ThreadFeedStatus.ENDED : ThreadFeedStatus.ACTIVE,
+      thread.model
     ),
+    confirmedInput(4, "user-1", "user-1", ["input-1"], "List the repository files.", {
+      threadId,
+      turnId: "turn-visual",
+    }),
     item(10, "tool-0", ItemKind.TOOL_CALL, null, {
       threadId,
       tool: "Read",
@@ -1475,15 +1515,7 @@ function standardRows(
       { threadId }
     ),
     item(28, "m-1", ItemKind.ASSISTANT_TEXT, "I found the project files and the relevant tests.", { threadId }),
-    lifecycle(
-      31,
-      "harness_stderr",
-      toJson(
-        EventSchema,
-        create(EventSchema, { observation: { case: "harnessStderr", value: { text: "warning: fixture stderr" } } })
-      ) as Record<string, unknown>,
-      threadId
-    ),
+    lifecycle(31, fixtureEvent({ case: "harnessStderr", value: { text: "warning: fixture stderr" } }), threadId),
     item(34, "m-2", ItemKind.ASSISTANT_TEXT, "Next I will read the focused implementation.", {
       threadId,
       complete: false,
@@ -1516,25 +1548,16 @@ function consecutiveReasoningRows(threadId: string): Record<string, unknown>[] {
 
 function failedRows(threadId: string, afterContent: boolean): Record<string, unknown>[] {
   const error = "Test model request failed: HTTP 429. Quota exhausted for this fixture.";
-  const event = toJson(
-    EventSchema,
-    create(EventSchema, {
-      observation: { case: "turnCompleted", value: { turnId: "failed-turn", status: TurnStatus.FAILED, error } },
-    })
-  ) as Record<string, unknown>;
+  const event = fixtureEvent({
+    case: "turnCompleted",
+    value: { turnId: "failed-turn", status: TurnStatus.FAILED, error },
+  });
   const rows = [
     viewState(afterContent ? 8 : 6, null),
-    entity(
-      "confirmed_input",
-      "failed-input",
-      4,
-      { harness_message_id: "failed-input", origin_command_ids: ["input-failed"] },
-      {
-        thread_id: threadId,
-        turn_id: "failed-turn",
-        input_ref: payload(4, "failed-input", "confirmed_input", "Inspect the test repository."),
-      }
-    ),
+    confirmedInput(4, "failed-input", "failed-input", ["input-failed"], "Inspect the test repository.", {
+      threadId,
+      turnId: "failed-turn",
+    }),
     ...(afterContent
       ? [
           item(
@@ -1546,7 +1569,7 @@ function failedRows(threadId: string, afterContent: boolean): Record<string, unk
           ),
         ]
       : []),
-    lifecycle(afterContent ? 8 : 6, "turn_completed", event, threadId),
+    lifecycle(afterContent ? 8 : 6, event, threadId),
   ];
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
@@ -1570,16 +1593,13 @@ function interleavedRows(threadId: string): Record<string, unknown>[] {
         turn: "interleaved-turn",
       }
     ),
-    entity(
-      "confirmed_input",
-      "coalesced-message",
+    confirmedInput(
       10,
-      { harness_message_id: "coalesced-message", origin_command_ids: ["input-B", "input-C"] },
-      {
-        thread_id: threadId,
-        turn_id: "interleaved-turn",
-        input_ref: payload(10, "coalesced-message", "confirmed_input", "Also inspect tests.\nKeep the patch small."),
-      }
+      "coalesced-message",
+      "coalesced-message",
+      ["input-B", "input-C"],
+      "Also inspect tests.\nKeep the patch small.",
+      { threadId, turnId: "interleaved-turn" }
     ),
     item(15, "after-input", ItemKind.ASSISTANT_TEXT, "Continuing with the new model…", {
       threadId,
@@ -1587,16 +1607,10 @@ function interleavedRows(threadId: string): Record<string, unknown>[] {
     }),
     lifecycle(
       18,
-      "turn_completed",
-      toJson(
-        EventSchema,
-        create(EventSchema, {
-          observation: {
-            case: "turnCompleted",
-            value: { turnId: "interleaved-turn", status: TurnStatus.INTERRUPTED, interruptedByCommandId: "interrupt" },
-          },
-        })
-      ) as Record<string, unknown>,
+      fixtureEvent({
+        case: "turnCompleted",
+        value: { turnId: "interleaved-turn", status: TurnStatus.INTERRUPTED, interruptedByCommandId: "interrupt" },
+      }),
       threadId
     ),
   ];
@@ -1605,35 +1619,45 @@ function interleavedRows(threadId: string): Record<string, unknown>[] {
 
 /** Close-packed command states so the semaphore and its real labels can be inspected on a phone. */
 function commandProgressRows(threadId: string): Record<string, unknown>[] {
-  const model = command(2, "progress-model", "change_model", "pending");
-  const effort = command(3, "progress-effort", "change_reasoning_effort", "failed", "Not supported by harness");
-  const noop = command(4, "progress-noop", "change_model", "noop", "Model already selected");
-  const effected = command(5, "progress-effected", "change_model", "effected");
+  const model = command(2, "progress-model", "change_model", ThreadCommandOutcome.PENDING, {
+    requestedValue: "test-model-next",
+  });
+  const effort = command(3, "progress-effort", "change_reasoning_effort", ThreadCommandOutcome.FAILED, {
+    reason: "Not supported by harness",
+    requestedValue: "high",
+  });
+  const noop = command(4, "progress-noop", "change_model", ThreadCommandOutcome.NOOP, {
+    reason: "Model already selected",
+    requestedValue: "current-model",
+  });
+  const effected = command(5, "progress-effected", "change_model", ThreadCommandOutcome.EFFECTED, {
+    requestedValue: "applied-model",
+  });
   return [
     { ...viewState(5, "t-progress"), thread_id: threadId },
-    { ...model, state: { ...(model.state as object), requested_value: "test-model-next" } },
-    { ...effort, state: { ...(effort.state as object), requested_value: "high" } },
-    { ...noop, state: { ...(noop.state as object), requested_value: "current-model" } },
-    { ...effected, state: { ...(effected.state as object), requested_value: "applied-model" } },
-    command(9, "progress-applied-input", "submit_input", "effected", null, "Applied input."),
-    command(6, "progress-input", "submit_input", "pending", null, "Please review this change."),
-    command(7, "progress-noop-input", "submit_input", "noop", "Nothing to do", "Already handled."),
+    model,
+    effort,
+    noop,
+    effected,
+    command(9, "progress-applied-input", "submit_input", ThreadCommandOutcome.EFFECTED, { text: "Applied input." }),
+    command(6, "progress-input", "submit_input", ThreadCommandOutcome.PENDING, { text: "Please review this change." }),
+    command(7, "progress-noop-input", "submit_input", ThreadCommandOutcome.NOOP, {
+      reason: "Nothing to do",
+      text: "Already handled.",
+    }),
   ];
 }
 
 /** Local and remote pending inputs whose payload references are present but bodies are withheld. */
 function pendingInputEchoRows(threadId: string): Record<string, unknown>[] {
-  const local = command(
-    15,
-    "locally-retained",
-    "submit_input",
-    "pending",
-    null,
-    "This browser already knows the text it sent."
-  );
-  const remote = command(16, "remote-pending", "submit_input", "pending", null, "This text is still unknown here.");
-  payloadBodies.delete(payloadKey("locally-retained", "command_input", "1"));
-  payloadBodies.delete(payloadKey("remote-pending", "command_input", "1"));
+  const local = command(15, "locally-retained", "submit_input", ThreadCommandOutcome.PENDING, {
+    text: "This browser already knows the text it sent.",
+  });
+  const remote = command(16, "remote-pending", "submit_input", ThreadCommandOutcome.PENDING, {
+    text: "This text is still unknown here.",
+  });
+  payloadBodies.delete(payloadKey("locally-retained", ThreadPayloadField.COMMAND_INPUT, "15"));
+  payloadBodies.delete(payloadKey("remote-pending", ThreadPayloadField.COMMAND_INPUT, "16"));
   return [{ ...viewState(16, "t-input-echo"), thread_id: threadId }, local, remote];
 }
 
@@ -1648,7 +1672,7 @@ function pendingInputEchoRows(threadId: string): Record<string, unknown>[] {
 function statesRows(threadId: string, outcomes = false): Record<string, unknown>[] {
   const suspended = threadId === SUSPENDED_THREAD;
   const rows = [
-    viewState(28, suspended ? null : "t2", suspended ? { status: "ended" } : {}),
+    viewState(28, suspended ? null : "t2", suspended ? ThreadFeedStatus.ENDED : ThreadFeedStatus.ACTIVE),
     item(7, "tool-0", ItemKind.TOOL_CALL, null, {
       threadId,
       tool: "Bash",
@@ -1669,33 +1693,29 @@ function statesRows(threadId: string, outcomes = false): Record<string, unknown>
       output: "42 passed",
       turn: "t2",
     }),
-    command(24, "queued-model", "change_model", outcomes ? "failed" : "pending", outcomes ? "Model unavailable" : null),
+    command(24, "queued-model", "change_model", outcomes ? ThreadCommandOutcome.FAILED : ThreadCommandOutcome.PENDING, {
+      reason: outcomes ? "Model unavailable" : undefined,
+    }),
     command(
       25,
       "queued-interrupt",
       "interrupt_turn",
-      outcomes ? "noop" : "pending",
-      outcomes ? "Target turn already ended" : null
+      outcomes ? ThreadCommandOutcome.NOOP : ThreadCommandOutcome.PENDING,
+      { reason: outcomes ? "Target turn already ended" : undefined }
     ),
     // Admitted and still pending, so it renders inline as a pending message bubble rather than in
     // the pending-commands box below -- see conversation.tsx's pendingSentMessage.
-    command(26, "queued-submit", "submit_input", "pending", null, "Continue past the failing test once it lands."),
-    command(
-      27,
-      "failed-submit",
-      "submit_input",
-      "failed",
-      "Runner could not start this turn.",
-      "Run the rejected input."
-    ),
-    command(
-      28,
-      "noop-submit",
-      "submit_input",
-      "noop",
-      "The harness was already stopping.",
-      "Run the input that was not applied."
-    ),
+    command(26, "queued-submit", "submit_input", ThreadCommandOutcome.PENDING, {
+      text: "Continue past the failing test once it lands.",
+    }),
+    command(27, "failed-submit", "submit_input", ThreadCommandOutcome.FAILED, {
+      reason: "Runner could not start this turn.",
+      text: "Run the rejected input.",
+    }),
+    command(28, "noop-submit", "submit_input", ThreadCommandOutcome.NOOP, {
+      reason: "The harness was already stopping.",
+      text: "Run the input that was not applied.",
+    }),
   ];
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
@@ -1777,20 +1797,17 @@ function streamingInterleavedRows(threadId: string): Record<string, unknown>[] {
 /** Three mundane observations that collapse into one comma-joined row, then a prominent one
  * (harness lost) that stands alone, then one final mundane one -- lone, so it groups with nothing. */
 function lifecycleGroupRows(threadId: string): Record<string, unknown>[] {
-  const event = (value: MessageInitShape<typeof EventSchema>["observation"]): Record<string, unknown> =>
-    toJson(EventSchema, create(EventSchema, { observation: value })) as Record<string, unknown>;
   const rows = [
     viewState(50, null),
-    lifecycle(10, "turn_started", event({ case: "turnStarted", value: { turnId: "turn-visual" } }), threadId),
-    lifecycle(20, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+    lifecycle(10, fixtureEvent({ case: "turnStarted", value: { turnId: "turn-visual" } }), threadId),
+    lifecycle(20, fixtureEvent({ case: "harnessStarted", value: {} }), threadId),
     lifecycle(
       30,
-      "turn_completed",
-      event({ case: "turnCompleted", value: { turnId: "turn-visual", status: TurnStatus.COMPLETED } }),
+      fixtureEvent({ case: "turnCompleted", value: { turnId: "turn-visual", status: TurnStatus.COMPLETED } }),
       threadId
     ),
-    lifecycle(40, "harness_lost", event({ case: "harnessLost", value: {} }), threadId),
-    lifecycle(50, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+    lifecycle(40, fixtureEvent({ case: "harnessLost", value: {} }), threadId),
+    lifecycle(50, fixtureEvent({ case: "harnessStarted", value: {} }), threadId),
   ];
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
 }
@@ -1799,17 +1816,14 @@ function shortThreadSwitchRows(threadId: string): Record<string, unknown>[] {
   if (threadId !== IDLE_THREAD && threadId !== UNNAMED_STOPPED_THREAD) {
     return [{ ...viewState(80, null), thread_id: threadId }];
   }
-  const event = (value: MessageInitShape<typeof EventSchema>["observation"]): Record<string, unknown> =>
-    toJson(EventSchema, create(EventSchema, { observation: value })) as Record<string, unknown>;
   const rekey = (row: Record<string, unknown>, id: string) => ({ ...row, entity_id: id });
   return [
     { ...viewState(80, null), thread_id: threadId },
-    rekey(lifecycle(1, "setup_started", event({ case: "setupStarted", value: {} }), threadId), "visual-setup"),
+    rekey(lifecycle(1, fixtureEvent({ case: "setupStarted", value: {} }), threadId), "visual-setup"),
     rekey(
       lifecycle(
         2,
-        "setup_output",
-        event({
+        fixtureEvent({
           case: "setupOutput",
           value: { stream: { case: "stdout", value: new TextEncoder().encode("Workspace sync complete\n") } },
         }),
@@ -1818,40 +1832,24 @@ function shortThreadSwitchRows(threadId: string): Record<string, unknown>[] {
       "visual-setup-output"
     ),
     rekey(
-      lifecycle(3, "setup_finished", event({ case: "setupFinished", value: { exitCode: 0 } }), threadId),
+      lifecycle(3, fixtureEvent({ case: "setupFinished", value: { exitCode: 0 } }), threadId),
       "visual-setup-finished"
     ),
     rekey(
-      lifecycle(10, "turn_started", event({ case: "turnStarted", value: { turnId: "visual-turn" } }), threadId),
+      lifecycle(10, fixtureEvent({ case: "turnStarted", value: { turnId: "visual-turn" } }), threadId),
       "visual-lifecycle-before"
     ),
-    rekey(
-      lifecycle(11, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
-      "visual-harness-before"
-    ),
-    entity(
-      "confirmed_input",
-      "visual-input",
-      20,
-      { harness_message_id: "visual-input", origin_command_ids: [] },
-      {
-        thread_id: threadId,
-        input_ref: payload(20, "visual-input", "confirmed_input", "Check the short thread after switching."),
-      }
-    ),
+    rekey(lifecycle(11, fixtureEvent({ case: "harnessStarted", value: {} }), threadId), "visual-harness-before"),
+    confirmedInput(20, "visual-input", "visual-input", [], "Check the short thread after switching.", { threadId }),
     rekey(
       lifecycle(
         30,
-        "turn_completed",
-        event({ case: "turnCompleted", value: { turnId: "visual-turn", status: TurnStatus.COMPLETED } }),
+        fixtureEvent({ case: "turnCompleted", value: { turnId: "visual-turn", status: TurnStatus.COMPLETED } }),
         threadId
       ),
       "visual-lifecycle-after"
     ),
-    rekey(
-      lifecycle(31, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
-      "visual-harness-after"
-    ),
+    rekey(lifecycle(31, fixtureEvent({ case: "harnessStarted", value: {} }), threadId), "visual-harness-after"),
     item(40, "visual-reasoning", ItemKind.REASONING, "The history has seven compact rows.", { threadId }),
     item(50, "visual-answer", ItemKind.ASSISTANT_TEXT, "The short thread is ready.", { threadId }),
     item(60, "visual-tool", ItemKind.TOOL_CALL, null, {
@@ -1910,13 +1908,10 @@ function historyProfileRows(threadId: string, rowCount: number): Record<string, 
 }
 
 function setupRows(threadId: string, running = false): Record<string, unknown>[] {
-  const event = (value: MessageInitShape<typeof EventSchema>["observation"]): Record<string, unknown> =>
-    toJson(EventSchema, create(EventSchema, { observation: value })) as Record<string, unknown>;
   const output = (cursor: number, channel: "stdout" | "stderr", text: string) =>
     lifecycle(
       cursor,
-      "setup_output",
-      event({
+      fixtureEvent({
         case: "setupOutput",
         value: { stream: { case: channel, value: new TextEncoder().encode(text) } },
       }),
@@ -1924,7 +1919,7 @@ function setupRows(threadId: string, running = false): Record<string, unknown>[]
     );
   return [
     { ...viewState(7, null), thread_id: threadId },
-    lifecycle(1, "setup_started", event({ case: "setupStarted", value: {} }), threadId),
+    lifecycle(1, fixtureEvent({ case: "setupStarted", value: {} }), threadId),
     output(2, "stderr", "Cloning into project...\nUpdating files: 10%\r"),
     output(3, "stdout", "Workspace ready\n"),
     output(4, "stderr", "Updating files: 80%\r"),
@@ -1932,8 +1927,8 @@ function setupRows(threadId: string, running = false): Record<string, unknown>[]
     ...(running
       ? []
       : [
-          lifecycle(6, "setup_finished", event({ case: "setupFinished", value: { exitCode: 0 } }), threadId),
-          lifecycle(7, "harness_started", event({ case: "harnessStarted", value: {} }), threadId),
+          lifecycle(6, fixtureEvent({ case: "setupFinished", value: { exitCode: 0 } }), threadId),
+          lifecycle(7, fixtureEvent({ case: "harnessStarted", value: {} }), threadId),
         ]),
   ];
 }
@@ -1943,17 +1938,10 @@ function setupRows(threadId: string, running = false): Record<string, unknown>[]
 function codeFenceRows(threadId: string): Record<string, unknown>[] {
   const rows = [
     viewState(20, null),
-    entity(
-      "confirmed_input",
-      "user-1",
-      4,
-      { harness_message_id: "user-1", origin_command_ids: ["input-1"] },
-      {
-        thread_id: threadId,
-        turn_id: "turn-visual",
-        input_ref: payload(4, "user-1", "confirmed_input", "Add type hints to the greet function."),
-      }
-    ),
+    confirmedInput(4, "user-1", "user-1", ["input-1"], "Add type hints to the greet function.", {
+      threadId,
+      turnId: "turn-visual",
+    }),
     item(
       20,
       "m-code",
@@ -1999,17 +1987,10 @@ function standaloneReasoningRows(
         : "Weighing which path to try next.";
   const rows = [
     viewState(24, null),
-    entity(
-      "confirmed_input",
-      "user-1",
-      4,
-      { harness_message_id: "user-1", origin_command_ids: ["input-1"] },
-      {
-        thread_id: threadId,
-        turn_id: "turn-visual",
-        input_ref: payload(4, "user-1", "confirmed_input", "What should we try next?"),
-      }
-    ),
+    confirmedInput(4, "user-1", "user-1", ["input-1"], "What should we try next?", {
+      threadId,
+      turnId: "turn-visual",
+    }),
     item(20, "r-solo", ItemKind.REASONING, reasoning, { threadId }),
     item(24, "m-1", ItemKind.ASSISTANT_TEXT, "Let's fix the root cause.", { threadId }),
   ];
@@ -2039,17 +2020,10 @@ const LONG_SCRIPT = [
 function shellCallRows(threadId: string): Record<string, unknown>[] {
   const rows = [
     viewState(60, null),
-    entity(
-      "confirmed_input",
-      "user-1",
-      4,
-      { harness_message_id: "user-1", origin_command_ids: ["input-1"] },
-      {
-        thread_id: threadId,
-        turn_id: "turn-visual",
-        input_ref: payload(4, "user-1", "confirmed_input", "Check the containers and the holdings."),
-      }
-    ),
+    confirmedInput(4, "user-1", "user-1", ["input-1"], "Check the containers and the holdings.", {
+      threadId,
+      turnId: "turn-visual",
+    }),
     item(10, "claude-bash", ItemKind.TOOL_CALL, null, {
       threadId,
       tool: "Bash",
@@ -2107,6 +2081,7 @@ function unfinishedReasoningRows(threadId: string): Record<string, unknown>[] {
     item(30, "r-running", ItemKind.REASONING, "A step the running turn is still working through.", {
       threadId,
       complete: false,
+      turn: "turn-visual",
     }),
   ];
   return rows.map((row) => (row.entity_kind === "view_state" ? { ...row, thread_id: threadId } : row));
@@ -2194,7 +2169,16 @@ function recoveryRows(threadId: string, kind: "messages" | "tools" | "quiet"): R
             }
           ),
         ];
-  if (kind === "tools") rows[0].output_ref = payload(10, "revised-tool", "output", "aborted");
+  if (kind === "tools") {
+    const state = fromJson(ThreadItemSchema, rows[0].state as JsonValue);
+    rows[0].state = toJson(
+      ThreadItemSchema,
+      create(ThreadItemSchema, {
+        ...state,
+        outputRef: payload(10, "revised-tool", ThreadPayloadField.OUTPUT, "aborted"),
+      })
+    );
+  }
   return [{ ...viewState(40, null), thread_id: threadId }, ...rows];
 }
 
@@ -2211,13 +2195,7 @@ function realisticRolloutRows(
     const turn = `rollout-turn-${entry.turn}`;
     if (entry.kind === "input") {
       if (entry.text === null) throw new Error("Rollout input requires text");
-      return entity(
-        "confirmed_input",
-        id,
-        cursor,
-        { harness_message_id: id, origin_command_ids: [] },
-        { thread_id: threadId, turn_id: turn, input_ref: payload(cursor, id, "confirmed_input", entry.text) }
-      );
+      return confirmedInput(cursor, id, id, [], entry.text, { threadId, turnId: turn });
     }
     let kind: ItemKind;
     switch (entry.kind) {
@@ -2247,7 +2225,13 @@ function realisticRolloutRows(
 
 function threadScope(threadId: string): Record<string, unknown> {
   const through = threadEntityRows(threadId).find((row) => row.entity_kind === "view_state")?.revision_cursor ?? "0";
-  return { projection_epoch: CONVERSATION_EPOCH, through_cursor: String(through), entities: [] };
+  return toJson(
+    ReadThreadEntitiesResponseSchema,
+    create(ReadThreadEntitiesResponseSchema, {
+      projectionEpoch: CONVERSATION_EPOCH,
+      throughCursor: BigInt(String(through)),
+    })
+  ) as Record<string, unknown>;
 }
 
 function rememberPendingInput(): void {
@@ -2483,7 +2467,7 @@ type Flag =
   | "inventoryStreamDropped"
   | "entityStreamDisconnected"
   | "entitySegmentsWithheld"
-  | "threadScopeUnavailable"
+  | "syncScopeUnavailable"
   | "commandAdmissionTimedOut"
   | "pendingActions"
   | "pendingActionOverflow"
@@ -2857,9 +2841,7 @@ routes.push(
 /** Encode the database-facing Electric row, including PostgreSQL JSONB and bool columns. */
 function electricEntity(row: Record<string, unknown>): Record<string, unknown> {
   const value = { ...row };
-  for (const field of ["state", "text_ref", "arguments_ref", "output_ref", "input_ref"] as const) {
-    if (value[field] !== null) value[field] = JSON.stringify(value[field]);
-  }
+  value.state = JSON.stringify(value.state);
   value.pending = String(value.pending);
   return value;
 }
@@ -3063,7 +3045,7 @@ routes.push(
     /^\/upstream\/history\/v1\/sessions\/([0-9a-f-]+)\/entities$/,
     (match, _query, _signal, body) => {
       if (body === undefined) throw new Error("ReadThreadEntities must use a JSON request body");
-      const request = fromJson(ReadThreadEntitiesRequestSchema, JSON.parse(body));
+      const request = fromJson(ReadThreadEntitiesRequestSchema, JSON.parse(body) as JsonValue);
       if (
         request.projectionEpoch !== "" ||
         request.window.case !== "range" ||
@@ -3072,8 +3054,10 @@ routes.push(
       ) {
         throw new Error("scope read must request range 0 with limit 1 at the current projection");
       }
-      return flags.has("threadScopeUnavailable")
-        ? Response.json({ detail: "thread fold is temporarily unavailable" }, { status: 503 })
+      return flags.has("syncScopeUnavailable")
+        ? // A persistent service failure is distinct from a retired epoch's 410, which the
+          // production store resolves by reading the scope again.
+          Response.json({ detail: "thread fold is temporarily unavailable" }, { status: 503 })
         : Response.json(threadScope(match[1]));
     },
   ],
@@ -3092,7 +3076,9 @@ routes.push(
     /^\/threads\/([0-9a-f-]+)\/sync\/entities$/,
     (match, query, _signal, body) => {
       const rows = threadRows(match[1]).map((row) =>
-        flags.has("entitySegmentsWithheld") && row.entity_kind === "view_state" ? { ...row, revision_cursor: "8" } : row
+        flags.has("entitySegmentsWithheld") && row.entity_kind === "view_state"
+          ? { ...row, cursor: "8", revision_cursor: "8" }
+          : row
       );
       return electricSubset(
         entitySubset(rows, subsetOf(query, body)).map((row) => shapeRow("thread_entity", row)),
@@ -3118,7 +3104,7 @@ routes.push(
         ownerId: params[String(2 * index + 1)],
         generation: params[String(2 * index + 2)],
       })).flatMap(({ ownerId, generation }) => {
-        const text = payloadBodies.get(payloadKey(ownerId, match[2], generation));
+        const text = payloadBodies.get(`${ownerId}:${match[2]}:${generation}`);
         return text === undefined
           ? []
           : [
@@ -3549,8 +3535,18 @@ routes.unshift(
     (_match, _query, signal) =>
       liveNdjsonWatch(
         "/upstream/history/v1/session-summaries:watch",
-        [{ changed: {} }],
-        () => [{ changed: {} }],
+        [
+          toJson(
+            WatchSessionSummariesResponseSchema,
+            create(WatchSessionSummariesResponseSchema, { observation: { case: "changed", value: {} } })
+          ),
+        ],
+        () => [
+          toJson(
+            WatchSessionSummariesResponseSchema,
+            create(WatchSessionSummariesResponseSchema, { observation: { case: "changed", value: {} } })
+          ),
+        ],
         signal,
         flags.has("threadStreamDropped")
       ),

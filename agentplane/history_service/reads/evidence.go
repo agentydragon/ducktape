@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
@@ -151,6 +152,10 @@ func (r *Reader) ReadNativeFrames(ctx context.Context, request *historypb.ReadNa
 
 // findEntity returns the entity's cursor and the Session's runner source, in the caller's still-current epoch.
 func findEntity(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, projectionEpoch string, key *historypb.EntityKey) (uint64, string, error) {
+	kind, err := threadfold.StoredEntityKind(key.GetEntityKind())
+	if err != nil {
+		return 0, "", invalid("entity kind")
+	}
 	current, err := readCheckpoint(ctx, tx, sessionID)
 	if err != nil {
 		return 0, "", err
@@ -164,7 +169,7 @@ func findEntity(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, projection
 	var cursor uint64
 	err = tx.QueryRowContext(ctx, `SELECT cursor FROM thread_entity
 		WHERE thread_id = $1 AND projection_epoch = $2 AND entity_kind = $3 AND entity_id = $4`,
-		sessionID, projectionEpoch, key.GetEntityKind(), key.GetEntityId()).Scan(&cursor)
+		sessionID, projectionEpoch, string(kind), key.GetEntityId()).Scan(&cursor)
 	if errors.Is(err, sql.ErrNoRows) || err == nil && !current.sourceID.Valid {
 		return 0, "", fmt.Errorf("%w: %s", ErrEvidenceNotFound, sessionID)
 	}

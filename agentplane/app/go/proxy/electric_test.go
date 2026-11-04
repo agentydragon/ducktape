@@ -14,20 +14,20 @@ import (
 	"testing"
 )
 
-type fakeThreadEpochStore struct {
+type fakeThreadScopeStore struct {
 	mu       sync.Mutex
-	epoch    string
-	hasEpoch bool
+	scope    string
+	hasScope bool
 }
 
-func newFakeThreadEpochStore(epoch string, hasEpoch bool) *fakeThreadEpochStore {
-	return &fakeThreadEpochStore{epoch: epoch, hasEpoch: hasEpoch}
+func newFakeThreadScopeStore(scope string, hasScope bool) *fakeThreadScopeStore {
+	return &fakeThreadScopeStore{scope: scope, hasScope: hasScope}
 }
 
-func (s *fakeThreadEpochStore) CurrentEpoch(context.Context, string) (string, bool, error) {
+func (s *fakeThreadScopeStore) CurrentEpoch(context.Context, string) (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.epoch, s.hasEpoch, nil
+	return s.scope, s.hasScope, nil
 }
 
 func mustElectricProxy(t *testing.T, client *http.Client, serverURL string, store ThreadEpochStore) *ElectricProxy {
@@ -59,7 +59,7 @@ func TestElectricEntityForwardPinsThreadAndStreamsFilteredResponse(t *testing.T)
 		_, _ = io.WriteString(w, "streamed electric body")
 	}))
 	defer server.Close()
-	store := newFakeThreadEpochStore(epoch, true)
+	store := newFakeThreadScopeStore(epoch, true)
 	mux := http.NewServeMux()
 	mustElectricProxy(t, server.Client(), server.URL, store).Register(mux)
 
@@ -134,7 +134,7 @@ func TestElectricSubsetIsValidatedAndForwarded(t *testing.T) {
 		w.WriteHeader(http.StatusNotModified)
 	}))
 	defer server.Close()
-	store := newFakeThreadEpochStore(epoch, true)
+	store := newFakeThreadScopeStore(epoch, true)
 	mux := http.NewServeMux()
 	mustElectricProxy(t, server.Client(), server.URL, store).Register(mux)
 	for _, test := range []struct{ where, value string }{
@@ -179,7 +179,7 @@ func TestElectricChunksPinsFieldAndAcceptsBoundedBodySubset(t *testing.T) {
 		_, _ = io.WriteString(w, "[]")
 	}))
 	defer server.Close()
-	store := newFakeThreadEpochStore(epoch, true)
+	store := newFakeThreadScopeStore(epoch, true)
 	mux := http.NewServeMux()
 	mustElectricProxy(t, server.Client(), server.URL, store).Register(mux)
 	where := "(owner_id = $1 AND generation = $2) OR (owner_id = $3 AND generation = $4)"
@@ -206,7 +206,7 @@ func TestElectricRejectsUnpinnedRequestsBeforeUpstream(t *testing.T) {
 	var calls int
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
 	defer server.Close()
-	store := newFakeThreadEpochStore(epoch, true)
+	store := newFakeThreadScopeStore(epoch, true)
 	mux := http.NewServeMux()
 	mustElectricProxy(t, server.Client(), server.URL, store).Register(mux)
 	for _, test := range []struct {
@@ -264,7 +264,7 @@ func TestSubsetLimitsAndRequestSize(t *testing.T) {
 	}
 
 	const threadID = "00000000-0000-0000-0000-000000000007"
-	store := newFakeThreadEpochStore("epoch", true)
+	store := newFakeThreadScopeStore("epoch", true)
 	mux := http.NewServeMux()
 	mustElectricProxy(t, nil, "https://electric.invalid", store).Register(mux)
 	largeBody := `{"where":"` + strings.Repeat("x", MaxSubsetRequestBytes) + `"}`

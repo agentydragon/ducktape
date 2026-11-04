@@ -14,7 +14,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var reply = &historypb.EntityKey{EntityKind: "item", EntityId: "test-reply"}
+var reply = &historypb.EntityKey{EntityKind: historypb.ThreadEntityKind_THREAD_ENTITY_KIND_ITEM, EntityId: "test-reply"}
 
 const (
 	firstFrame  = `{"test": "first native frame"}`
@@ -120,7 +120,7 @@ func TestAFrameSettledBeforeTheFoldForgetsItsLinkIsUnavailable(t *testing.T) {
 
 	frames := nativeFrames(t, f, &historypb.ReadNativeFramesRequest{
 		SessionId: sessionID.String(), ProjectionEpoch: testEpoch,
-		Entity:            &historypb.EntityKey{EntityKind: "item", EntityId: "msg_test#0"},
+		Entity:            &historypb.EntityKey{EntityKind: historypb.ThreadEntityKind_THREAD_ENTITY_KIND_ITEM, EntityId: "msg_test#0"},
 		ObservationCursor: 4, Limit: 10,
 	})
 
@@ -173,7 +173,7 @@ func TestEvidenceNamesOnlyWhatTheFoldHolds(t *testing.T) {
 	}{
 		{"stale epoch", sessionID, "v1", reply, ErrScopeReset},
 		{"Session not folded", unfolded, testEpoch, reply, ErrEvidenceNotFound},
-		{"entity the fold never made", sessionID, testEpoch, &historypb.EntityKey{EntityKind: "item", EntityId: "test-never-made"}, ErrEvidenceNotFound},
+		{"entity the fold never made", sessionID, testEpoch, &historypb.EntityKey{EntityKind: historypb.ThreadEntityKind_THREAD_ENTITY_KIND_ITEM, EntityId: "test-never-made"}, ErrEvidenceNotFound},
 	} {
 		_, evidenceErr := f.reader.ReadEntityEvidence(t.Context(), &historypb.ReadEntityEvidenceRequest{
 			SessionId: test.sessionID.String(), ProjectionEpoch: test.epoch, Entity: test.entity, Limit: 10,
@@ -210,11 +210,11 @@ func TestAFoldFromAnAttachmentAloneHasNoSourceToServeEvidenceFrom(t *testing.T) 
 	}
 	f.fold(t, sessionID)
 	window := readEntities(t, f, &historypb.ReadThreadEntitiesRequest{SessionId: sessionID.String(), Window: entityRange(0, 10)})
-	view := views(t, window)[0]
+	view := window.Entities[0]
 
 	_, err := f.reader.ReadEntityEvidence(t.Context(), &historypb.ReadEntityEvidenceRequest{
 		SessionId: sessionID.String(), ProjectionEpoch: testEpoch, Limit: 10,
-		Entity: &historypb.EntityKey{EntityKind: view["entity_kind"].(string), EntityId: view["entity_id"].(string)},
+		Entity: &historypb.EntityKey{EntityKind: entityKind(t, view), EntityId: view.EntityId},
 	})
 
 	if !errors.Is(err, ErrEvidenceNotFound) {

@@ -15,15 +15,6 @@ py_library(
 )
 
 py_library(
-    name = "views",
-    srcs = ["views.py"],
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
@@ -45,9 +36,10 @@ py_test(
     deps = [
         ":conftest",
         ":models",
-        ":views",
         "//:conftest",
+        "//agentplane/history_service:history_service_pb2",
         "//agentplane/history_service/testing:history",
+        "//agentplane/history_service/testing:protojson",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",

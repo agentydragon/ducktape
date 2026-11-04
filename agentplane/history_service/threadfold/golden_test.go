@@ -11,10 +11,11 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 // golden.json holds scenarios folded by the Python thread fold this one replaced: the entries of each
-// batch, and the rows, payload writes and evidence the Python fold produced for them, or the error it
+// batch, and the protobuf rows, payload writes and evidence the Python fold produced for them, or the error it
 // raised. Each batch's prior state is read back from the rows the golden earlier batches stored, so the
 // row readers are held to what Python wrote as well as the builders to what it would write.
 //
@@ -40,10 +41,10 @@ type goldenScenario struct {
 type goldenBatch struct {
 	Entries     []json.RawMessage `json:"entries"`
 	Settled     [][2]uint64       `json:"settled"`
-	Operational *Operational      `json:"operational"`
+	Operational json.RawMessage   `json:"operational"`
 	Extents     []struct {
-		Ref   goldenRef `json:"ref"`
-		Count uint64    `json:"count"`
+		Ref   json.RawMessage `json:"ref"`
+		Count uint64          `json:"count"`
 	} `json:"extents"`
 	Expected *struct {
 		Rows          []json.RawMessage `json:"rows"`
@@ -56,24 +57,27 @@ type goldenBatch struct {
 	} `json:"error"`
 }
 
-type goldenRef struct {
-	ProjectionEpoch string       `json:"projection_epoch"`
-	OwnerCursor     uint64       `json:"owner_cursor"`
-	OwnerID         string       `json:"owner_id"`
-	Field           PayloadField `json:"field"`
-	RevisionCursor  uint64       `json:"revision_cursor"`
-	Generation      uint64       `json:"generation"`
-}
-
-func (r goldenRef) ref() PayloadRef {
-	return PayloadRef{r.ProjectionEpoch, r.OwnerCursor, r.OwnerID, r.Field, r.RevisionCursor, r.Generation}
-}
-
 type goldenWrite struct {
-	Kind      string     `json:"kind"`
-	Base      *goldenRef `json:"base"`
-	Reference goldenRef  `json:"reference"`
-	Text      string     `json:"text"`
+	Kind      string           `json:"kind"`
+	Base      *json.RawMessage `json:"base"`
+	Reference json.RawMessage  `json:"reference"`
+	Text      string           `json:"text"`
+}
+
+func goldenPayloadRef(t *testing.T, data json.RawMessage) PayloadRef {
+	t.Helper()
+	var reference historypb.ThreadPayloadReference
+	if err := protojson.Unmarshal(data, &reference); err != nil {
+		t.Fatal(err)
+	}
+	return PayloadRef{
+		ProjectionEpoch: reference.ProjectionEpoch,
+		OwnerCursor:     reference.OwnerCursor,
+		OwnerID:         reference.OwnerId,
+		Field:           reference.Field,
+		RevisionCursor:  reference.RevisionCursor,
+		Generation:      reference.Generation,
+	}
 }
 
 // normalized round-trips a value through JSON, so numbers and maps compare the way the golden file's do.
@@ -90,26 +94,32 @@ func normalized(t *testing.T, value any) any {
 	return decoded
 }
 
-func refJSON(reference PayloadRef) map[string]any {
-	return map[string]any{
-		"projection_epoch": reference.ProjectionEpoch,
-		"owner_cursor":     reference.OwnerCursor,
-		"owner_id":         reference.OwnerID,
-		"field":            reference.Field,
-		"revision_cursor":  reference.RevisionCursor,
-		"generation":       reference.Generation,
+func refJSON(t *testing.T, reference PayloadRef) json.RawMessage {
+	t.Helper()
+	encoded, err := protojson.Marshal(&historypb.ThreadPayloadReference{
+		ProjectionEpoch: reference.ProjectionEpoch,
+		OwnerCursor:     reference.OwnerCursor,
+		OwnerId:         reference.OwnerID,
+		Field:           reference.Field,
+		RevisionCursor:  reference.RevisionCursor,
+		Generation:      reference.Generation,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
+	return encoded
 }
 
-func writeJSON(write PayloadWrite) map[string]any {
+func writeJSON(t *testing.T, write PayloadWrite) map[string]any {
+	t.Helper()
 	if appended, ok := write.(AppendPayload); ok {
 		var base any
 		if appended.Base != nil {
-			base = refJSON(*appended.Base)
+			base = refJSON(t, *appended.Base)
 		}
-		return map[string]any{"kind": "append", "base": base, "reference": refJSON(appended.Reference), "text": appended.Text}
+		return map[string]any{"kind": "append", "base": base, "reference": refJSON(t, appended.Reference), "text": appended.Text}
 	}
-	return map[string]any{"kind": "replace", "reference": refJSON(write.Ref()), "text": write.Fragment()}
+	return map[string]any{"kind": "replace", "reference": refJSON(t, write.Ref()), "text": write.Fragment()}
 }
 
 func evidenceJSON(evidence EvidenceAssociation) map[string]any {
@@ -121,33 +131,43 @@ func evidenceJSON(evidence EvidenceAssociation) map[string]any {
 	}
 }
 
+// Golden rows use the same protobuf representation as the runtime fold.
+func goldenEntity(t *testing.T, raw json.RawMessage) *historypb.ThreadEntity {
+	t.Helper()
+	entity := &historypb.ThreadEntity{}
+	if err := protojson.Unmarshal(raw, entity); err != nil {
+		t.Fatal(err)
+	}
+	return entity
+}
+
 // goldenRows keeps the rows a scenario's golden batches stored, which the next batch's prior state is read from.
 type goldenRows struct {
 	sourceID string
-	view     EntityRow
-	items    map[string]EntityRow
-	commands map[string]EntityRow
+	view     *historypb.ThreadEntity
+	items    map[string]*historypb.ThreadEntity
+	commands map[string]*historypb.ThreadEntity
 	payloads map[PayloadRef]string
 }
 
 func (g *goldenRows) viewState(t *testing.T) ViewState {
 	t.Helper()
-	if g.view.State == nil {
+	if g.view == nil {
 		state, err := Initial(g.sourceID, "test-epoch")
 		if err != nil {
 			t.Fatal(err)
 		}
 		return state
 	}
-	stored, err := ReadViewState(g.view.State)
-	if err != nil {
-		t.Fatal(err)
+	stored := g.view.GetViewState()
+	if stored == nil || stored.Controls == nil {
+		t.Fatal("missing view state")
 	}
 	return ViewState{
 		Position: Position{SourceID: g.sourceID, ProjectionEpoch: g.view.ProjectionEpoch, ThroughCursor: g.view.Cursor},
 		Controls: Controls{
 			AppliedModel:           stored.Controls.AppliedModel,
-			ActiveTurnID:           stored.Controls.ActiveTurnID,
+			ActiveTurnID:           stored.Controls.ActiveTurnId,
 			HarnessState:           stored.Controls.HarnessState,
 			AppliedReasoningEffort: stored.Controls.AppliedReasoningEffort,
 		},
@@ -165,7 +185,7 @@ func (g *goldenRows) prior(t *testing.T, batch EventBatch) PriorEntities {
 	for _, id := range keys.ItemIDs {
 		prior.Items[id] = nil
 		if row, ok := g.items[id]; ok {
-			item, err := row.Item()
+			item, err := ItemFromEntity(row)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -175,7 +195,7 @@ func (g *goldenRows) prior(t *testing.T, batch EventBatch) PriorEntities {
 	for _, id := range keys.CommandIDs {
 		prior.Commands[id] = nil
 		if row, ok := g.commands[id]; ok {
-			command, err := row.CommandSummary()
+			command, err := CommandFromEntity(row)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -195,17 +215,14 @@ func (g *goldenRows) prior(t *testing.T, batch EventBatch) PriorEntities {
 func (g *goldenRows) store(t *testing.T, batch goldenBatch) {
 	t.Helper()
 	for _, raw := range batch.Expected.Rows {
-		var row EntityRow
-		if err := json.Unmarshal(raw, &row); err != nil {
-			t.Fatal(err)
-		}
-		switch row.EntityKind {
-		case KindViewState:
+		row := goldenEntity(t, raw)
+		switch row.Entity.(type) {
+		case *historypb.ThreadEntity_ViewState:
 			g.view = row
-		case KindItem:
-			g.items[row.EntityID] = row
-		case KindCommand:
-			g.commands[row.EntityID] = row
+		case *historypb.ThreadEntity_Item:
+			g.items[row.EntityId] = row
+		case *historypb.ThreadEntity_Command:
+			g.commands[row.EntityId] = row
 		}
 	}
 	for _, raw := range batch.Expected.PayloadWrites {
@@ -215,9 +232,9 @@ func (g *goldenRows) store(t *testing.T, batch goldenBatch) {
 		}
 		text := write.Text
 		if write.Base != nil {
-			text = g.payloads[write.Base.ref()] + text
+			text = g.payloads[goldenPayloadRef(t, *write.Base)] + text
 		}
-		g.payloads[write.Reference.ref()] = text
+		g.payloads[goldenPayloadRef(t, write.Reference)] = text
 	}
 }
 
@@ -233,8 +250,8 @@ func TestGoldenVectors(t *testing.T) {
 		t.Run(scenario.Name, func(t *testing.T) {
 			stored := &goldenRows{
 				sourceID: vectors.SourceID,
-				items:    map[string]EntityRow{},
-				commands: map[string]EntityRow{},
+				items:    map[string]*historypb.ThreadEntity{},
+				commands: map[string]*historypb.ThreadEntity{},
 				payloads: map[PayloadRef]string{},
 			}
 			for number, golden := range scenario.Batches {
@@ -274,22 +291,38 @@ func TestGoldenVectors(t *testing.T) {
 				}
 				extents := map[PayloadRef]uint64{}
 				for _, extent := range golden.Extents {
-					extents[extent.Ref.ref()] = extent.Count
+					extents[goldenPayloadRef(t, extent.Ref)] = extent.Count
 				}
-				rows, err := OrderedEntityRows(vectors.ThreadID, result, extents, golden.Operational)
+				var operational *historypb.ThreadOperational
+				if len(golden.Operational) != 0 && string(golden.Operational) != "null" {
+					operational = &historypb.ThreadOperational{}
+					if err := protojson.Unmarshal(golden.Operational, operational); err != nil {
+						t.Fatal(err)
+					}
+				}
+				rows, err := OrderedEntityRows(vectors.ThreadID, result, extents, operational)
 				if err != nil {
 					t.Fatalf("batch %d: %v", number, err)
 				}
 				writes, evidence := []any{}, []any{}
 				for _, write := range result.PayloadWrites {
-					writes = append(writes, writeJSON(write))
+					writes = append(writes, writeJSON(t, write))
 				}
 				for _, association := range result.EvidenceUpserts {
 					evidence = append(evidence, evidenceJSON(association))
 				}
 				want := golden.Expected
+				if len(rows) != len(want.Rows) {
+					t.Errorf("batch %d: got %d rows, want %d", number, len(rows), len(want.Rows))
+				} else {
+					for i, raw := range want.Rows {
+						expected := goldenEntity(t, raw)
+						if !proto.Equal(rows[i], expected) {
+							t.Errorf("batch %d row %d: got %v want %v", number, i, rows[i], expected)
+						}
+					}
+				}
 				for name, pair := range map[string][2]any{
-					"rows":          {normalized(t, rows), normalized(t, want.Rows)},
 					"payload write": {normalized(t, writes), normalized(t, want.PayloadWrites)},
 					"evidence":      {normalized(t, evidence), normalized(t, want.Evidence)},
 				} {

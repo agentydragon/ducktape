@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 	authenticationv1 "k8s.io/api/authentication/v1"
@@ -136,6 +138,88 @@ func TestHistoryFacadeRequiresAnAuthenticatedCaller(t *testing.T) {
 	}
 	if gotPath != "v1/sessions/9b6d568a-2253-43d7-a7d4-190e98359594/observations" || gotBearer != "" {
 		t.Fatalf("History upstream path/bearer = %q/%q", gotPath, gotBearer)
+	}
+}
+
+type typedHistoryServer struct {
+	historypb.UnimplementedHistoryServiceServer
+	requests chan *historypb.ReadThreadEntitiesRequest
+}
+
+func (s *typedHistoryServer) ReadThreadEntities(_ context.Context, request *historypb.ReadThreadEntitiesRequest) (*historypb.ReadThreadEntitiesResponse, error) {
+	s.requests <- request
+	return &historypb.ReadThreadEntitiesResponse{
+		ProjectionEpoch: "history-v1", ThroughCursor: 1<<53 + 7,
+		Entities: []*historypb.ThreadEntity{{
+			SessionId: request.SessionId, EntityId: "tool", EntityIndex: 2,
+			Entity: &historypb.ThreadEntity_Item{Item: &historypb.ThreadItem{
+				Kind:       eventpb.ItemKind_ITEM_KIND_TOOL_CALL,
+				Completion: &historypb.ThreadItem_Tool{Tool: &historypb.ThreadItemToolCompletion{Succeeded: false}},
+			}},
+		}},
+	}, nil
+}
+
+func TestHistoryEntityGeneratedFacade(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	grpcServer := grpc.NewServer()
+	servicer := &typedHistoryServer{requests: make(chan *historypb.ReadThreadEntitiesRequest, 1)}
+	historypb.RegisterHistoryServiceServer(grpcServer, servicer)
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(grpcServer.Stop)
+	generated, err := facade.NewHandler(t.Context(), listener.Addr().String(), time.Second, historypb.RegisterHistoryServiceHandlerFromEndpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authentication := newStreamTestAuth(t)
+	app := NewHTTPServer(authentication)
+	RegisterStreamingRoutes(app, StreamingDependencies{HistoryHTTP: proxy.NewHandlerUpstream(generated, "")})
+	const id = "9b6d568a-2253-43d7-a7d4-190e98359594"
+	body, err := protojson.Marshal(&historypb.ReadThreadEntitiesRequest{Window: &historypb.ReadThreadEntitiesRequest_Range{
+		Range: &historypb.EntityRange{StartEntityIndex: 2, Limit: 1},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/upstream/history/v1/sessions/"+id+"/entities", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer accepted")
+	response := httptest.NewRecorder()
+	app.Handler(authentication).ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("entity facade status = %d: %s", response.Code, response.Body.String())
+	}
+	got := &historypb.ReadThreadEntitiesResponse{}
+	if err := protojson.Unmarshal(response.Body.Bytes(), got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ThroughCursor != 1<<53+7 || len(got.Entities) != 1 || got.Entities[0].GetItem().GetTool() == nil || got.Entities[0].GetItem().GetTool().Succeeded {
+		t.Fatalf("entity facade lost protobuf data: %v", got)
+	}
+	received := <-servicer.requests
+	if received.SessionId != id || received.GetRange().GetStartEntityIndex() != 2 || received.GetRange().GetLimit() != 1 {
+		t.Fatalf("entity request = %v", received)
+	}
+	body, err = protojson.Marshal(&historypb.ReadThreadEntitiesRequest{Window: &historypb.ReadThreadEntitiesRequest_Keys{
+		Keys: &historypb.EntityKeys{Keys: []*historypb.EntityKey{{EntityKind: historypb.ThreadEntityKind_THREAD_ENTITY_KIND_ITEM, EntityId: "tool"}}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request = httptest.NewRequest(http.MethodPost, "/upstream/history/v1/sessions/"+id+"/entities", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer accepted")
+	response = httptest.NewRecorder()
+	app.Handler(authentication).ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("keyed entity facade status = %d: %s", response.Code, response.Body.String())
+	}
+	received = <-servicer.requests
+	if len(received.GetKeys().GetKeys()) != 1 || received.GetKeys().GetKeys()[0].GetEntityKind() != historypb.ThreadEntityKind_THREAD_ENTITY_KIND_ITEM {
+		t.Fatalf("keyed entity request = %v", received)
 	}
 }
 

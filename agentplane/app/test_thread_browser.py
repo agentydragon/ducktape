@@ -57,9 +57,9 @@ from agentplane.history_service.fold.models import (
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
-from agentplane.history_service.fold.views import ThreadFeedErrorState, ThreadOperationalState, ThreadViewState
 from agentplane.history_service.testing.electric_service import ElectricService
 from agentplane.history_service.testing.history import History
+from agentplane.history_service.testing.protojson import thread_entity_from_record, thread_entity_state_json
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
@@ -510,8 +510,13 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
     release = asyncio.Event()
     finished = asyncio.Event()
 
-    def rebuilt_reference(reference: dict[str, object] | None) -> dict[str, object] | None:
-        return {**reference, "projection_epoch": "test-rebuilt-epoch"} if reference is not None else None
+    def rebuilt_reference(
+        reference: history_service_pb2.ThreadPayloadReference,
+    ) -> history_service_pb2.ThreadPayloadReference:
+        rebuilt = history_service_pb2.ThreadPayloadReference()
+        rebuilt.CopyFrom(reference)
+        rebuilt.projection_epoch = "test-rebuilt-epoch"
+        return rebuilt
 
     async def hold_old_evidence(route: Route) -> None:
         response = await route.fetch()
@@ -535,11 +540,19 @@ async def test_projection_epoch_replacement_retires_old_requests_and_preserves_d
         async with thread_browser.history.sessions() as session, session.begin():
             rows = list(await session.scalars(select(ThreadEntity).where(ThreadEntity.thread_id == thread)))
             for row in rows:
+                entity = thread_entity_from_record(row)
                 row.projection_epoch = "test-rebuilt-epoch"
-                row.text_ref = rebuilt_reference(row.text_ref)
-                row.arguments_ref = rebuilt_reference(row.arguments_ref)
-                row.output_ref = rebuilt_reference(row.output_ref)
-                row.input_ref = rebuilt_reference(row.input_ref)
+                variant = entity.WhichOneof("entity")
+                if variant == "item":
+                    item = entity.item
+                    for field in ("text_ref", "arguments_ref", "output_ref"):
+                        if item.HasField(field):
+                            getattr(item, field).CopyFrom(rebuilt_reference(getattr(item, field)))
+                elif variant == "confirmed_input" and entity.confirmed_input.HasField("input_ref"):
+                    entity.confirmed_input.input_ref.CopyFrom(rebuilt_reference(entity.confirmed_input.input_ref))
+                elif variant == "command" and entity.command.HasField("input_ref"):
+                    entity.command.input_ref.CopyFrom(rebuilt_reference(entity.command.input_ref))
+                row.state = thread_entity_state_json(entity)
             for model in (
                 ThreadCheckpoint,
                 ThreadPayloadManifest,
@@ -756,8 +769,8 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
         async with asyncio.timeout(10):
             while True:
-                summary = await content.session_summary(thread)
-                if summary is not None and summary.folded_through >= source.entries[-1].cursor:
+                scope = await content.current_scope(thread)
+                if scope is not None and scope.folded_through >= source.entries[-1].cursor:
                     break
                 await asyncio.sleep(0.01)
         # Whether or not the delta beat the drop, nothing shown is withdrawn.
@@ -2325,16 +2338,12 @@ async def test_unknown_projection_failure_keeps_verified_history_and_stops_brows
         assert view is not None
         feed = await session.get(ThreadHistorySummary, thread.id)
         assert feed is not None
-        state = ThreadViewState.model_validate(view.state)
-        view.state = state.model_copy(
-            update={
-                "operational": ThreadOperationalState(
-                    status="failed",
-                    last_verified_cursor=str(checkpoint.through_cursor),
-                    feed_error=ThreadFeedErrorState(cursor=None, message="batch-wide projection invariant failed"),
-                )
-            }
-        ).model_dump(mode="json")
+        entity = thread_entity_from_record(view)
+        operational = entity.view_state.operational
+        operational.status = history_service_pb2.THREAD_FEED_STATUS_FAILED
+        operational.last_verified_cursor = checkpoint.through_cursor
+        operational.feed_error.message = "batch-wide projection invariant failed"
+        view.state = thread_entity_state_json(entity)
         feed.end = {"message": "batch-wide projection invariant failed"}
         await session.execute(select(func.pg_notify(Channel.SUMMARIES, "")))
 

@@ -10,6 +10,7 @@ import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy import select
 
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.fold.models import (
     FOLD_EPOCH,
     ThreadCheckpoint,
@@ -19,8 +20,8 @@ from agentplane.history_service.fold.models import (
     ThreadPayloadChunk,
     ThreadPayloadManifest,
 )
-from agentplane.history_service.fold.views import EntityKind, ThreadOperationalState
 from agentplane.history_service.testing.history import History
+from agentplane.history_service.testing.protojson import thread_entity_from_record
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -37,8 +38,8 @@ async def view_state(history: History, thread: UUID) -> tuple[ThreadCheckpoint, 
     return checkpoint, view
 
 
-def operational_state(view: ThreadEntity) -> dict[str, object]:
-    return ThreadOperationalState.model_validate(view.state["operational"]).model_dump()
+def operational_state(view: ThreadEntity) -> history_service_pb2.ThreadOperational:
+    return thread_entity_from_record(view).view_state.operational
 
 
 def event_entry(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
@@ -68,26 +69,32 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
     checkpoint_after, view_after = await view_state(history, thread)
     assert checkpoint_after.through_cursor == checkpoint_before.through_cursor == 1
     assert (view_after.cursor, view_after.revision_cursor) == semantic_revision == (1, 1)
-    assert operational_state(view_after) == {
-        "status": "failed",
-        "last_verified_cursor": "1",
-        "feed_error": {"cursor": "3", "message": "expected runner cursor 2, received 3"},
-    }
+    failed = operational_state(view_after)
+    assert failed.status == history_service_pb2.THREAD_FEED_STATUS_FAILED
+    assert failed.last_verified_cursor == 1
+    assert failed.HasField("feed_error")
+    assert failed.feed_error.HasField("cursor")
+    assert failed.feed_error.cursor == 3
+    assert failed.feed_error.message == "expected runner cursor 2, received 3"
 
     await history.set_attached(
         thread, session_pb2.Attached(session_id=str(thread), spec=session_pb2.SessionSpec(), last_cursor=1)
     )
     _, view_reset = await view_state(history, thread)
     assert (view_reset.cursor, view_reset.revision_cursor) == semantic_revision
-    assert operational_state(view_reset) == {"status": "active", "last_verified_cursor": "1", "feed_error": None}
+    reset = operational_state(view_reset)
+    assert reset.status == history_service_pb2.THREAD_FEED_STATUS_ACTIVE
+    assert reset.last_verified_cursor == 1
+    assert not reset.HasField("feed_error")
 
     await history.fail_feed(thread, error="projection invariant failed")
     _, unknown_failure = await view_state(history, thread)
-    assert operational_state(unknown_failure) == {
-        "status": "failed",
-        "last_verified_cursor": "1",
-        "feed_error": {"cursor": None, "message": "projection invariant failed"},
-    }
+    unknown = operational_state(unknown_failure)
+    assert unknown.status == history_service_pb2.THREAD_FEED_STATUS_FAILED
+    assert unknown.last_verified_cursor == 1
+    assert unknown.HasField("feed_error")
+    assert not unknown.feed_error.HasField("cursor")
+    assert unknown.feed_error.message == "projection invariant failed"
 
 
 async def test_raw_native_event_and_nul_tool_output_reach_the_persisted_thread_payload(history: History) -> None:
@@ -152,16 +159,15 @@ async def test_record_materializes_exact_payload_revisions_and_stalls_on_unknown
             await session.scalars(select(ThreadNativeLink).where(ThreadNativeLink.thread_id == thread))
         ).all()
     assert item is not None
-    assert item.text_ref == {
-        "projection_epoch": FOLD_EPOCH,
-        "owner_cursor": "1",
-        "owner_id": "old",
-        "field": "text",
-        "revision_cursor": "3",
-        "generation": "1",
-        # The revision spans both chunks its generation has so far: what a reader may render.
-        "chunk_count": "2",
-    }
+    text_ref = thread_entity_from_record(item).item.text_ref
+    assert text_ref.projection_epoch == FOLD_EPOCH
+    assert text_ref.owner_cursor == 1
+    assert text_ref.owner_id == "old"
+    assert text_ref.field == history_service_pb2.THREAD_PAYLOAD_FIELD_TEXT
+    assert text_ref.revision_cursor == 3
+    assert text_ref.generation == 1
+    # The revision spans both chunks its generation has so far: what a reader may render.
+    assert text_ref.chunk_count == 2
     assert [(manifest.revision_cursor, manifest.generation, manifest.chunk_count) for manifest in manifests] == [
         (2, 1, 1),
         (3, 1, 2),
@@ -185,15 +191,15 @@ async def test_record_materializes_exact_payload_revisions_and_stalls_on_unknown
     assert replacement is not None
     assert replacement.chunk_count == replacement.content_bytes == 0
     assert item is not None
-    assert item.text_ref is not None
-    assert item.text_ref["generation"] == item.text_ref["revision_cursor"] == "4"
-    assert item.text_ref["chunk_count"] == "0"
+    text_ref = thread_entity_from_record(item).item.text_ref
+    assert text_ref.generation == text_ref.revision_cursor == 4
+    assert text_ref.chunk_count == 0
 
     # The fold stalls on what it does not model: nothing of the batch applies and the view reports it.
     await history.record_unmodeled(thread, [event_entry(5)])
     assert (await history.service.reader.get_session_summary(str(thread))).folded_through == 4
     _, view = await view_state(history, thread)
-    assert operational_state(view)["status"] == "failed"
+    assert operational_state(view).status == history_service_pb2.THREAD_FEED_STATUS_FAILED
 
 
 async def test_a_completion_that_is_the_streamed_text_keeps_the_body_and_stores_nothing(history: History) -> None:
@@ -224,9 +230,7 @@ async def test_a_completion_that_is_the_streamed_text_keeps_the_body_and_stores_
         items = {
             row.entity_id: row
             for row in await session.scalars(
-                select(ThreadEntity).where(
-                    ThreadEntity.thread_id == thread, ThreadEntity.entity_kind == EntityKind.ITEM
-                )
+                select(ThreadEntity).where(ThreadEntity.thread_id == thread, ThreadEntity.entity_kind == "item")
             )
         }
         chunks = (
@@ -236,11 +240,10 @@ async def test_a_completion_that_is_the_streamed_text_keeps_the_body_and_stores_
                 .order_by(ThreadPayloadChunk.owner_id, ThreadPayloadChunk.chunk_index)
             )
         ).all()
-    answer, tool = items["answer"].text_ref, items["tool"].output_ref
-    assert answer is not None
-    assert tool is not None
-    assert (answer["generation"], answer["revision_cursor"], answer["chunk_count"]) == ("1", "4", "2")
-    assert (tool["generation"], tool["revision_cursor"], tool["chunk_count"]) == ("2", "5", "1")
+    answer = thread_entity_from_record(items["answer"]).item.text_ref
+    tool = thread_entity_from_record(items["tool"]).item.output_ref
+    assert (answer.generation, answer.revision_cursor, answer.chunk_count) == (1, 4, 2)
+    assert (tool.generation, tool.revision_cursor, tool.chunk_count) == (2, 5, 1)
     assert [(chunk.owner_id, chunk.generation, chunk.text) for chunk in chunks] == [
         ("answer", 1, "hello"),
         ("answer", 1, " world"),
@@ -302,18 +305,19 @@ async def test_record_projects_confirmed_input_and_parallel_tool_revisions(histo
                 .order_by(ThreadPayloadManifest.owner_id, ThreadPayloadManifest.revision_cursor)
             )
         ).all()
-    first, second = entities[("item", "tool-a")], entities[("item", "tool-b")]
-    assert (first.cursor, first.revision_cursor, second.cursor, second.revision_cursor) == (3, 7, 4, 5)
-    assert first.arguments_ref is not None
-    assert first.arguments_ref["revision_cursor"] == "6"
-    assert first.output_ref is not None
-    assert first.output_ref["revision_cursor"] == "7"
-    assert first.output_ref["generation"] == "7"
-    assert second.output_ref is not None
-    assert second.output_ref["revision_cursor"] == "5"
-    assert entities[("confirmed_input", "2")].input_ref is not None
+    first_row, second_row = entities[("item", "tool-a")], entities[("item", "tool-b")]
+    first = thread_entity_from_record(first_row).item
+    second = thread_entity_from_record(second_row).item
+    assert (first_row.cursor, first_row.revision_cursor, second_row.cursor, second_row.revision_cursor) == (3, 7, 4, 5)
+    assert first.arguments_ref.revision_cursor == 6
+    assert first.output_ref.revision_cursor == 7
+    assert first.output_ref.generation == 7
+    assert second.output_ref.revision_cursor == 5
+    confirmed_entity = thread_entity_from_record(entities[("confirmed_input", "2")])
+    assert confirmed_entity.confirmed_input.input_ref.owner_id == "message"
     assert entities[("command", "input")].pending is False
-    assert entities[("command", "input")].state["outcome"] == "effected"
+    command_entity = thread_entity_from_record(entities[("command", "input")]).command
+    assert command_entity.outcome == history_service_pb2.THREAD_COMMAND_OUTCOME_EFFECTED
     assert [(manifest.owner_id, manifest.revision_cursor, manifest.chunk_count) for manifest in manifests] == [
         ("input", 1, 1),
         ("message", 2, 1),
@@ -347,12 +351,14 @@ async def test_a_later_batch_touching_a_completed_item_keeps_its_completion(hist
     )
     async with history.sessions() as session:
         rows = await session.scalars(
-            select(ThreadEntity).where(ThreadEntity.thread_id == thread, ThreadEntity.entity_kind == EntityKind.ITEM)
+            select(ThreadEntity).where(ThreadEntity.thread_id == thread, ThreadEntity.entity_kind == "item")
         )
-        completions = {
-            row.entity_id: (row.revision_cursor, row.state["completion"], row.state["tool_succeeded"]) for row in rows
-        }
-    assert completions == {"answer": (3, "text", None), "tool": (4, "tool", False)}
+        completions = {row.entity_id: (row.revision_cursor, thread_entity_from_record(row).item) for row in rows}
+    assert completions["answer"][0] == 3
+    assert completions["answer"][1].WhichOneof("completion") == "text"
+    assert completions["tool"][0] == 4
+    assert completions["tool"][1].WhichOneof("completion") == "tool"
+    assert completions["tool"][1].tool.succeeded is False
 
 
 async def test_every_row_is_numbered_densely_in_thread_order_and_never_renumbered(history: History) -> None:

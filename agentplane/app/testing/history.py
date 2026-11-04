@@ -52,10 +52,11 @@ class SessionHistory:
     async def read_watermark(self, thread_id: UUID) -> int:
         return (await self.reader.get_session_summary(str(thread_id))).committed_cursor
 
-    async def session_summary(self, thread_id: UUID) -> history_service_pb2.SessionSummary | None:
+    async def current_scope(self, thread_id: UUID) -> history_service_pb2.SessionSummary | None:
         try:
-            return await self.reader.get_session_summary(str(thread_id))
+            summary = await self.reader.get_session_summary(str(thread_id))
         except ServiceError as error:
             if error.code != grpc.StatusCode.NOT_FOUND:
                 raise
             return None
+        return summary if summary.HasField("projection_epoch") else None
