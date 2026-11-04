@@ -298,13 +298,13 @@ Current native settings: [Claude adapter](https://github.com/agentydragon/duckta
 
 ## Do not collapse independent state machines
 
-| State                         | Owned by                                   | Meaning                                                                                                                                                                                                                                                    |
-| ----------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Session existence             | Dispatcher Session record                  | A durable logical reservation, not a running process or successful setup. Central Sessions persist indefinitely for now; app archive does not end one. Native live records follow their required environment’s deletion under the proposed cleanup policy. |
-| Harness observation           | Session owner's harness controller         | Dormant, preparing, ready/running, unavailable or failed, with backend-specific details. A host can serve multiple Sessions.                                                                                                                               |
-| Environment desired lifecycle | Environment owner/controller               | Run, suspend/quiesce or delete the exact environment. This is independent of a central Session's desired lifecycle.                                                                                                                                        |
-| Environment observation       | Session owner, informed by the environment | Availability and current incarnation for the required native placement or a central attachment. It is not a second authority for environment state.                                                                                                        |
-| Execution operation           | Executor plus Session journal/receipt      | Not dispatched, dispatched/unknown, or proved outcome. Process/output handles belong to an executor lifetime, not to the long-lived binding.                                                                                                               |
+| State                         | Owned by                                   | Meaning                                                                                                                                                                                                                                        |
+| ----------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Session existence             | Dispatcher Session record                  | A durable logical reservation, not a running process or successful setup. Central Sessions persist indefinitely for now; app archive does not end one. Whether native Sessions survive deletion of their required environment is under review. |
+| Harness observation           | Session owner's harness controller         | Dormant, preparing, ready/running, unavailable or failed, with backend-specific details. A host can serve multiple Sessions.                                                                                                                   |
+| Environment desired lifecycle | Environment owner/controller               | Run, suspend/quiesce or delete the exact environment. This is independent of a central Session's desired lifecycle.                                                                                                                            |
+| Environment observation       | Session owner, informed by the environment | Availability and current incarnation for the required native placement or a central attachment. It is not a second authority for environment state.                                                                                            |
+| Execution operation           | Executor plus Session journal/receipt      | Not dispatched, dispatched/unknown, or proved outcome. Process/output handles belong to an executor lifetime, not to the long-lived binding.                                                                                                   |
 
 ### Native harness
 
@@ -363,6 +363,26 @@ Equality is an _admission rule_, not a complete authorization design or an isola
 ### Why the per-environment ServiceAccount exists
 
 The operator clarified that each Sandbox gets a separate ServiceAccount so PolicyBinding CRs can attach and detach permission sets for that individual agent at the Sandbox level. An account is not just a way to authenticate a Pod: it is currently the subject at which per-agent egress, Actions, inbox and Kubernetes grants are assigned.
+
+**Ownership remains a design question:** should an agent's ServiceAccount always be owned by an
+Environment, be managed independently of Environments, or support both modes? A central-sampler
+Session may need the same agent identity and permissions while it has no Environment attached and
+across attachment changes. Compare a long-lived SA with an Agentplane principal mapped to workload
+identities; neither a shared SA nor a new identity service is selected. Define who creates and
+deletes the identity, its permission bindings and credentials, and how Session and Environment
+attachment lifetimes relate to it.
+
+**Candidate Session spec:** the operator suggests putting the agent ServiceAccount in the Session's
+spec. This could make the Session's intended identity explicit at creation and keep it independent
+of whether a central Session has an attached Environment. Compare a UID-pinned
+`ServiceAccountIdentity` reference in the spec with an Agentplane-principal reference or a separate
+Session-owned identity association. Today `SessionSpec` has no identity field: the Dispatcher
+opening names a Sandbox, while other records carry an `execution_principal` separately. Decide
+whether the field is required, how the caller is authorized to select it, whether it can change,
+and how its account lifetime and permissions are managed. A spec reference does not by itself grant
+impersonation authority or supply a credential; define authenticated delegation for central work
+and validate compatible identity when an Environment is attached. No wire or storage change is
+selected by this candidate.
 
 **Changing permissions is different from changing identity.** The Sandbox controller already updates its PolicyBinding when `spec.policySets` changes without replacing the running Pod. Policy readers converge independently, so revocation is not globally instantaneous; existing connections and already obtained information have their own behavior. This preserves an individual Sandbox’s permission handle while keeping its current SA and Pod.
 
@@ -436,7 +456,7 @@ Give Sessions and environments a durable logical principal while keeping distinc
 
 **Working direction, not settled:** seriously consider an Agentplane-owned principal with independently managed permission bindings and Kubernetes identity as an adapter. Compare that with directly using a long-lived SA, after accounting for desired per-agent PolicyBinding granularity. Keep principal distinct from Session UUID, requester, service broker, workload authentication and journal writer. Establish how all relevant paths enforce the mapping; do not assume immutable association or an online identity-switch feature.
 
-For a central Session with no environment, the principal still exists and the sampler must exercise authorized capabilities under that principal through an appropriate authenticated delegation or broker path. A stored ServiceAccount name is neither a bearer token nor authority to impersonate it; the central sampler’s own ServiceAccount must not silently become the agent’s. Calls made _inside_ an environment use that environment’s actual Pod/relay and egress identity; verify that this agrees with the Session principal and each destination’s authorization contract.
+For a central Session with no environment, the principal still exists and the sampler must exercise authorized capabilities under that principal through an appropriate authenticated delegation or broker path. A stored ServiceAccount name is neither a bearer token nor authority to impersonate it; the central sampler’s own ServiceAccount must not silently become the agent’s. Calls made _inside_ an environment use that environment’s actual Pod/relay and egress identity; verify that this agrees with the Session principal and each destination’s authorization contract. Losing an Environment alone does not imply the agent identity disappeared: the human-operator-only fallback applies when the relevant Sandbox-owned ServiceAccount has actually disappeared, not merely when a Session has no attached Environment. The rights of a surviving independent identity still need their reviewed authorization contract.
 
 **Open cases:** which principal owns a Session when the creator is a human or another agent; who grants acting as P; whether, how and when Session or environment SA associations may change; whether absence is a supported state or only a cardinality limit; deletion/recreation and replacement of P; historical access when P is absent; central Session creation without any environment; multiple exact environments for P; and what is allowed when policies are revoked or an environment is replaced. Preserve UID fencing and retained data without making a same-name replacement inherit authority accidentally.
 
@@ -511,11 +531,33 @@ Keep a durable service-owned directory and central attachment state in PostgreSQ
 
 ### Separate control and history databases
 
-Use Dispatcher PostgreSQL for the live directory and Session control records; use the environment-local COSI store for native reconciliation and the existing History database for retained views. Keep History’s database separate for now, even though the two Session records are natural candidates for future consolidation. Avoid a Kubernetes object merely to mirror control state.
+Use Dispatcher PostgreSQL for the live directory and Session control records; use the environment-local COSI store for native reconciliation and the existing History database for retained views. Keeping History's database separate is the current working direction; the later Session-data review below will reconsider that boundary. Avoid a Kubernetes object merely to mirror control state.
 
 **Boundary:** the Dispatcher record is authoritative for live admission, placement and desired attachment state; History retains independently stored evidence and provenance for historical reads. Shared Session UUIDs correlate them without granting either service write access to the other’s database. The detailed ownership of native continuation and attachment reconciliation remains to be specified. Different logical records and services do not require a decision about whether to merge tables, databases, or services later; each would be a separate design choice.
 
 **Consistency:** there is no transaction across the databases. A live Session or command receipt can exist before History has received it. Normal journal export and the existing environment-seal barrier provide the History handoff for managed Sandbox deletion; app archive does not trigger a new cross-database protocol. Decide how History learns enough metadata about reservations with no exported snapshot, and how the UI represents delayed History. Cleanup of a Dispatcher record must not claim that History has recorded facts that were never exported.
+
+### Session-keyed data and storage boundaries
+
+The operator asked to reconsider how Session-keyed state is divided now that Agentplane has a
+globally addressed Session and must retain its placement. Today Dispatcher stores openings and
+commands, History ingests Session logs and owns retained projections, Notification stores inboxes
+and subscriptions, the central sampler retains its conversation and execution state, and the
+environment Runtime owns native Session records, journals and harness continuation data. Command
+admission and History ingress are distinct ends with different contracts; their data need not share
+an owner merely because they name the same Session.
+
+Compare the current modular databases and APIs with moving selected Session state from Environment
+Runtime into Dispatcher or another owner, a single database with linked Session-keyed tables, and
+other groupings of services and databases. A shared database could offer transactions and foreign
+keys where writes actually share a transaction, but neither requires nor proves a shared service or
+shared write authority. Conversely, separate stores need explicit handoff and failure recovery.
+For each alternative, map canonical records and writers, ingress and command flows, placement and
+availability, authorization, scaling and failure domains, native store constraints, migrations and
+delete/retention behavior. Preserve journal and native-effect recovery; a retained transcript alone
+does not make a native harness resumable. This is a later design question, not a selected move or
+database consolidation. The [task DAG](task_dag.md#session_data_ownership_design--review-session-data-services-and-databases)
+tracks it independently of the current native-first implementation.
 
 **Database and queue are mandatory:** the combined Gateway already requires the Dispatcher PostgreSQL URL and initializes the database before serving. The repository also contains an unimplemented proposal for a database-free / queue-off mode; this direction supersedes that proposal. Do not build a second stateless command-admission mode. Direct Runtime proxy and Environment Service operations keep their own contracts; this decision does not mean every operation must be queued. Decide separately whether callers need an explicit immediate-or-fail option while the database and queue remain present.
 
@@ -539,9 +581,9 @@ Environment loss affects native and central Sessions differently: native Session
 
 The operator asked to resolve Dispatcher Session-record lifetime and Notification inbox lifetime together. Today the Notification worker [checks the stored Sandbox name and UID and its owner](../notification_service/worker/destination.go), then [retires an inbox and cancels its subscriptions](../notification_service/store/claims.go) after confirming a missing or replaced destination. Dispatcher independently [deletes opening records by Sandbox UID](../runner_gateway/dispatcher/terminal.go). These separate asynchronous decisions can end an inbox because an environment disappeared even when its central Session should survive.
 
-For an environment-hosted Session, compare removing its live Dispatcher record and retiring its inbox when its required environment is deleted with retaining an unavailable Session and its inbox for an explicitly chosen lifetime or until an explicit end. For a central Session, preserve the selected indefinite Session lifetime: deleting, detaching or replacing an environment alone must not end the Session. Decide whether its inbox should remain active independently as well; the initial recommendation is not to retire it solely because an environment disappeared. Specify whether subscriptions continue collecting while delivery is unavailable, what happens to pending messages and notices, and whether and when any inbox is retired or purged. Suspension, an unavailable Runtime, and a deleted or replaced Sandbox are distinct observations; none proves an in-flight effect failed.
+For an environment-hosted Session, compare removing its live Dispatcher record and retiring its inbox when its required environment is deleted with retaining an unavailable Session and its inbox for an explicitly chosen lifetime or until an explicit end. The operator's 2026-11-04 candidate is to give Sessions their own create/delete lifecycle: deleting a required environment leaves the Session, inbox and History present, while the native harness cannot be reached or continued without its actual state and a supported recovery path. An explicit Session delete could instead coordinate cleanup of its associated inbox, History and other data. This is a candidate to review, including which data is retained or deleted, not a selected deletion policy. For a central Session, preserve the selected indefinite Session lifetime: deleting, detaching or replacing an environment alone must not end the Session. Decide whether its inbox should remain active independently as well; the initial recommendation is not to retire it solely because an environment disappeared. Specify whether subscriptions continue collecting while delivery is unavailable, what happens to pending messages and notices, and whether and when any inbox is retired or purged. Suspension, an unavailable Runtime, and a deleted or replaced Sandbox are distinct observations; none proves an in-flight effect failed.
 
-Decide which component owns and observes each transition, how Dispatcher and Notification converge without a cross-database transaction, and how retries, deletion races, exact-UID fencing, authorization and History handoff work. The current Sandbox-owned ServiceAccount may itself disappear; define who can still read or administer a retained Session and inbox without silently transferring authority to a replacement. Preserve retained messages and History unless their own reviewed policy permits cleanup. App archive remains separate. Complete forgetting **when a Session is deleted** and the caller's UUID non-reuse obligation remain the selected identity policy; this question is when, if ever, environment deletion ends that Session and what inbox lifecycle follows. The separate command-receipt retention question is deferred, with no period selected.
+Decide which component owns and observes each transition, how Dispatcher and Notification converge without a cross-database transaction, and how retries, deletion races, exact-UID fencing, authorization and History handoff work. The operator's direction for a retained Session whose Sandbox-owned ServiceAccount has disappeared is human-operator-only read and administration, through an operator-authenticated entry point such as the app using explicitly privileged service credentials, as with other privileged operations. Do not grant access to a same-name replacement account or to other workload callers merely because the original account disappeared. Backend maintenance and reconciliation retain their own narrowly authorized service operations; this direction does not itself select deletion scope or retention. Preserve retained messages and History unless their own reviewed policy permits cleanup. App archive remains separate. Complete forgetting **in Dispatcher when a Session is deleted** and the caller's UUID non-reuse obligation remain the selected identity policy; that does not by itself decide whether other stores retain or delete their data. The separate command-receipt retention question is deferred, with no period selected.
 
 Track the decision and its scoped implementation gate in [the task DAG](task_dag.md#session_and_inbox_lifetime--decide-session-and-inbox-lifetimes).
 
@@ -1000,6 +1042,39 @@ Dispatcher opening and independently retires a stale inbox after confirmation. R
 and coordination of both records together, distinguishing native placement from central attachment.
 The selected indefinite lifetime of central Sessions and complete forgetting on Session deletion
 remain unchanged. Command-receipt retention is a separate deferred topic; no retention period was chosen.
+
+**2026-11-04 · Session data ownership and independent lifetimes**
+
+The operator suggested revisiting the boundaries among Session-keyed data and services, including
+Dispatcher commands/openings, History ingress, Notification inboxes and Runtime-local state. A
+single database with linked tables and moving some Runtime data into Dispatcher are possibilities,
+not decisions. They also proposed for consideration that Sessions have their own create/delete
+lifecycle: removing a native Session's environment could leave the Session and associated inbox and
+History present but unable to run, while an explicit Session delete could coordinate cleanup. The
+retention policy, deletion scope, authorization and data/service placement remain to be reviewed.
+
+**2026-11-04 · Access after the Sandbox-owned ServiceAccount disappears**
+
+The operator's direction is that retained Sessions and inboxes become accessible for human
+inspection and administration through privileged service credentials, as in other operator paths.
+Disappearance of the original ServiceAccount must not transfer its authority to a replacement or
+other workload caller. This access direction does not decide Session deletion or retention.
+
+**2026-11-04 · Agent identity ownership across Environment attachments**
+
+The operator asked whether agent ServiceAccounts should always be Sandbox-owned or could have an
+independent lifetime. A central-sampler agent may have no attached Environment yet still need to
+keep its identity and permissions. Compare independently managed SAs, Sandbox-owned SAs and a
+separate principal with mapped workload accounts; ownership, cardinality, authority and credential
+delivery are not selected. The privileged human fallback above applies when the relevant SA is
+actually gone, not to every Session without an attached Environment.
+
+**2026-11-04 · Identity in the Session spec**
+
+The operator suggested making the ServiceAccount part of a Session's spec. This is a candidate for
+an explicit, stable Session identity, including for a central Session with no Environment. Account
+ownership, exact identity form, selection and change authority, and credential delivery remain to be
+designed; a Session spec does not itself authenticate its caller or create an account.
 
 **2026-11-04 · Session-facing APIs and service topology**
 
