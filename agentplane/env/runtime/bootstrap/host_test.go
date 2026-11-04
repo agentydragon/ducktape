@@ -45,6 +45,38 @@ type initialOperationFailureState struct {
 	err error
 }
 
+type operationSignalState struct {
+	state.State
+	revision   uint64
+	err        error
+	publishing chan struct{}
+	release    <-chan struct{}
+	once       sync.Once
+}
+
+func (s *operationSignalState) UpdateWithConflicts(ctx context.Context, ptr resource.Pointer, update state.UpdaterFunc, opts ...state.UpdateOption) (resource.Resource, error) {
+	return s.State.UpdateWithConflicts(ctx, ptr, func(value resource.Resource) error {
+		if err := update(value); err != nil {
+			return err
+		}
+		signal, ok := value.(*typed.Resource[operationSignal, componentExtension[operationSignal]])
+		if !ok || signal.TypedSpec().Revision != s.revision {
+			return nil
+		}
+		if s.publishing != nil {
+			s.once.Do(func() { close(s.publishing) })
+		}
+		if s.release != nil {
+			select {
+			case <-s.release:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		return s.err
+	}, opts...)
+}
+
 type selectionPublicationFailureState struct {
 	state.State
 	err error
@@ -128,11 +160,16 @@ func TestSelectionPublicationFailureDoesNotLaunch(t *testing.T) {
 	}
 }
 
-func (s initialOperationFailureState) Modify(ctx context.Context, value resource.Resource, update func(resource.Resource) error, opts ...state.UpdateOption) error {
-	if result, ok := value.(*typed.Resource[operationState, componentExtension[operationState]]); ok && !result.TypedSpec().Done {
-		return s.err
-	}
-	return s.State.Modify(ctx, value, update, opts...)
+func (s initialOperationFailureState) UpdateWithConflicts(ctx context.Context, ptr resource.Pointer, update state.UpdaterFunc, opts ...state.UpdateOption) (resource.Resource, error) {
+	return s.State.UpdateWithConflicts(ctx, ptr, func(value resource.Resource) error {
+		if err := update(value); err != nil {
+			return err
+		}
+		if result, ok := value.(*typed.Resource[operationSignal, componentExtension[operationSignal]]); ok && result.TypedSpec().Revision == 1 {
+			return s.err
+		}
+		return nil
+	}, opts...)
 }
 
 func TestControllerInitialOperationPublicationFailureBecomesTerminal(t *testing.T) {
@@ -229,15 +266,17 @@ func TestControllerInitialOperationPublicationFailureBecomesTerminal(t *testing.
 }
 
 type hostTestRuntime struct {
-	ctx         context.Context
-	cancel      context.CancelFunc
-	state       state.State
-	storeCloser io.Closer
-	host        *Host
-	workers     *sync.WaitGroup
-	done        chan struct{}
-	failures    chan error
-	closeOnce   sync.Once
+	ctx          context.Context
+	cancel       context.CancelFunc
+	state        state.State
+	storeCloser  io.Closer
+	host         *Host
+	processes    *supervision.Host
+	workers      *sync.WaitGroup
+	engineCancel context.CancelFunc
+	done         chan struct{}
+	failures     chan error
+	closeOnce    sync.Once
 }
 
 func newHostTestRuntime(t *testing.T, script *string, stateDir string, admission lifecycle.EnvironmentAdmissionGuard) *hostTestRuntime {
@@ -302,31 +341,49 @@ func newHostTestRuntime(t *testing.T, script *string, stateDir string, admission
 		cancel()
 		t.Fatal(err)
 	}
-	engine, err := runtime.NewRuntime(store, zap.L().Named("bootstrap-component-test"))
-	if err != nil {
-		cancel()
-		t.Fatal(err)
-	}
-	if err := engine.RegisterQController(host.Controller()); err != nil {
-		cancel()
-		t.Fatal(err)
-	}
-	if err := engine.RegisterQController(processes.Controller()); err != nil {
-		cancel()
-		t.Fatal(err)
-	}
 	testRuntime := &hostTestRuntime{
-		ctx: ctx, cancel: cancel, state: store, storeCloser: storeCloser, host: host, workers: workers,
+		ctx: ctx, cancel: cancel, state: store, storeCloser: storeCloser, host: host, processes: processes, workers: workers,
 		done: make(chan struct{}), failures: failures,
 	}
-	go func() {
-		defer close(testRuntime.done)
-		if err := engine.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			reportError(err)
-		}
-	}()
+	testRuntime.startController(t)
 	t.Cleanup(func() { testRuntime.close(t) })
 	return testRuntime
+}
+
+func (r *hostTestRuntime) startController(t *testing.T) {
+	t.Helper()
+	engine, err := runtime.NewRuntime(r.state, zap.L().Named("bootstrap-component-test"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.RegisterQController(r.host.Controller()); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.RegisterQController(r.processes.Controller()); err != nil {
+		t.Fatal(err)
+	}
+	engineCtx, engineCancel := context.WithCancel(r.ctx)
+	r.engineCancel = engineCancel
+	r.done = make(chan struct{})
+	go func() {
+		defer close(r.done)
+		if err := engine.Run(engineCtx); err != nil && !errors.Is(err, context.Canceled) {
+			select {
+			case r.failures <- err:
+			default:
+			}
+		}
+	}()
+}
+
+func (r *hostTestRuntime) stopController(t *testing.T) {
+	t.Helper()
+	r.engineCancel()
+	select {
+	case <-r.done:
+	case <-time.After(bootstrapTestTimeout):
+		t.Fatal("bootstrap controller runtime did not stop")
+	}
 }
 
 func (r *hostTestRuntime) close(t *testing.T) {
@@ -400,6 +457,136 @@ func TestWaitCancellationDoesNotCancelAttemptAndDurableSuccessDoesNotRerun(t *te
 	bootstrapStatus, found, err := ReadStatus(ctx, second.state)
 	if err != nil || !found || bootstrapStatus.Phase != Succeeded {
 		t.Fatalf("restored bootstrap status = (%+v, found=%t, err=%v), want succeeded", bootstrapStatus, found, err)
+	}
+}
+
+func TestConcurrentBootstrapWaitersShareOneAttempt(t *testing.T) {
+	stateDir := t.TempDir()
+	started := filepath.Join(stateDir, "started")
+	release := filepath.Join(stateDir, "release")
+	count := filepath.Join(stateDir, "count")
+	script := fmt.Sprintf(": > %q\nwhile [ ! -f %q ]; do sleep 0.01; done\nprintf b >> %q\nprintf ready", started, release, count)
+	r := newHostTestRuntime(t, &script, stateDir, nil)
+	t.Cleanup(func() { _ = os.WriteFile(release, nil, 0o600) })
+	initialSignal, found, err := componentRead[operationSignal](t.Context(), r.state, ResourceID)
+	if err != nil || !found || initialSignal.Revision != 0 {
+		t.Fatalf("bootstrap operation signal before admission = (%+v, found=%t, err=%v), want initialized revision 0", initialSignal, found, err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), bootstrapTestTimeout)
+	defer cancel()
+	const waiters = 8
+	results := make(chan error, waiters)
+	for range waiters {
+		go func() { results <- r.host.Wait(ctx) }()
+	}
+	waitForFile(t, started)
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for range waiters {
+		if err := <-results; err != nil {
+			t.Fatalf("concurrent bootstrap waiter: %v", err)
+		}
+	}
+	r.workers.Wait()
+	if data, err := os.ReadFile(count); err != nil || string(data) != "b" {
+		t.Fatalf("bootstrap script count = %q, %v; want one execution", data, err)
+	}
+	signal, found, err := componentRead[operationSignal](ctx, r.state, ResourceID)
+	if err != nil || !found || signal.Revision != 2 {
+		t.Fatalf("bootstrap operation signal = (%+v, found=%t, err=%v), want revision 2", signal, found, err)
+	}
+}
+
+func TestCompletedBootstrapSignalSurvivesControllerRestart(t *testing.T) {
+	stateDir := t.TempDir()
+	count := filepath.Join(stateDir, "count")
+	script := fmt.Sprintf("printf b >> %q", count)
+	r := newHostTestRuntime(t, &script, stateDir, nil)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releasePublication := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releasePublication)
+	signalState := &operationSignalState{
+		State: r.state, revision: 2, publishing: make(chan struct{}), release: release,
+	}
+	r.host.state = signalState
+	if err := r.host.Request(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-signalState.publishing:
+	case <-time.After(bootstrapTestTimeout):
+		t.Fatal("bootstrap completion signal was not published")
+	}
+	r.stopController(t)
+	releasePublication()
+	r.workers.Wait()
+	if op := r.host.completedOperation(); op == nil || op.Err() != nil {
+		t.Fatalf("completed bootstrap slot = %v, want successful result retained", op)
+	}
+
+	r.startController(t)
+	ctx, cancel := context.WithTimeout(context.Background(), bootstrapTestTimeout)
+	defer cancel()
+	if err := r.host.Wait(ctx); err != nil {
+		t.Fatalf("wait after controller restart: %v", err)
+	}
+	status, found, err := ReadStatus(ctx, r.state)
+	if err != nil || !found || status.Phase != Succeeded {
+		t.Fatalf("bootstrap status after controller restart = (%+v, found=%t, err=%v), want succeeded", status, found, err)
+	}
+	signal, found, err := componentRead[operationSignal](ctx, r.state, ResourceID)
+	if err != nil || !found || signal.Revision != 2 {
+		t.Fatalf("bootstrap operation signal after controller restart = (%+v, found=%t, err=%v), want retained revision 2", signal, found, err)
+	}
+	if data, err := os.ReadFile(count); err != nil || string(data) != "b" {
+		t.Fatalf("bootstrap script count after controller restart = %q, %v; want one execution", data, err)
+	}
+}
+
+func TestCompletionSignalPublicationFailureKeepsBootstrapFailClosed(t *testing.T) {
+	stateDir := t.TempDir()
+	count := filepath.Join(stateDir, "count")
+	script := fmt.Sprintf("printf b >> %q", count)
+	r := newHostTestRuntime(t, &script, stateDir, nil)
+	publicationErr := errors.New("bootstrap completion signal failed")
+	r.host.state = &operationSignalState{State: r.state, revision: 2, err: publicationErr}
+	if err := r.host.Request(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	r.workers.Wait()
+	select {
+	case err := <-r.failures:
+		if !errors.Is(err, publicationErr) {
+			t.Fatalf("reported bootstrap error = %v, want signal publication failure", err)
+		}
+	case <-time.After(bootstrapTestTimeout):
+		t.Fatal("completion signal publication failure was not reported")
+	}
+	status, found, err := ReadStatus(t.Context(), r.state)
+	if err != nil || !found || status.Phase != Running {
+		t.Fatalf("bootstrap status after completion signal failure = (%+v, found=%t, err=%v), want fail-closed running state", status, found, err)
+	}
+	op := r.host.completedOperation()
+	if op == nil || !errors.Is(op.Err(), publicationErr) {
+		t.Fatalf("completed bootstrap result = %v, want publication error retained in operation slot", op)
+	}
+	signal, found, err := componentRead[operationSignal](t.Context(), r.state, ResourceID)
+	if err != nil || !found || signal.Revision != 1 {
+		t.Fatalf("bootstrap operation signal after failed completion publication = (%+v, found=%t, err=%v), want revision 1", signal, found, err)
+	}
+	r.close(t)
+
+	restarted := newHostTestRuntime(t, &script, stateDir, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), bootstrapTestTimeout)
+	defer cancel()
+	if err := restarted.host.Wait(ctx); err != nil {
+		t.Fatalf("recover durable bootstrap outcome after signal publication failure: %v", err)
+	}
+	if data, err := os.ReadFile(count); err != nil || string(data) != "b" {
+		t.Fatalf("bootstrap script count after signal publication recovery = %q, %v; want no replay", data, err)
 	}
 }
 
@@ -565,6 +752,9 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 	if err := publish(t.Context(), store, ResourceID, Status{Phase: Running}); err != nil {
 		t.Fatal(err)
 	}
+	if err := publish(t.Context(), store, ResourceID, operationSignal{Revision: 2}); err != nil {
+		t.Fatal(err)
+	}
 	if err := closer.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -573,6 +763,9 @@ func TestOnlyDurableResourcesAreRestored(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = restoredCloser.Close() })
+	if _, found, err := componentRead[operationSignal](t.Context(), restored, ResourceID); err != nil || found {
+		t.Fatalf("restored bootstrap operation signal = (%t, %v), want live-only signal absent", found, err)
+	}
 	for i, item := range metadata {
 		value, err := restored.Get(t.Context(), &item.pointer)
 		if err != nil {

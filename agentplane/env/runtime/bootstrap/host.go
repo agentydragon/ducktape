@@ -87,7 +87,13 @@ func (h *Host) Controller() controller.QController {
 func (h *Host) Configured() bool { return h != nil && h.config.Script != nil }
 
 func (h *Host) Initialize(ctx context.Context) error {
-	return publish(ctx, h.state, ResourceID, Request{})
+	if err := publish(ctx, h.state, ResourceID, Request{}); err != nil {
+		return err
+	}
+	if !h.Configured() {
+		return nil
+	}
+	return publish(ctx, h.state, ResourceID, operationSignal{})
 }
 
 // Request records accepted bootstrap demand while Runtime's admission guard
@@ -253,7 +259,7 @@ func (h *Host) startOperation(work func(context.Context) error) error {
 
 	err := op.Start(
 		&h.mu,
-		func(done bool) error { return h.publishOperation(op, done) },
+		func(bool) error { return h.publishOperationSignal() },
 		h.onError,
 		work,
 		func() { h.runtimeChanged(true) },
@@ -269,40 +275,30 @@ func (h *Host) startOperation(work func(context.Context) error) error {
 	return err
 }
 
-func (h *Host) publishOperation(op *oneoff.Operation, done bool) error {
-	return publish(h.ctx, h.state, op.ID(), operationState{Done: done})
-}
-
-func (h *Host) forgetOperation(ctx context.Context, op *oneoff.Operation) error {
-	err := h.state.Destroy(ctx, resource.NewMetadata(lifecycle.Namespace, OperationStateType, op.ID(), resource.VersionUndefined), state.WithDestroyOwner(HostOwner))
-	if state.IsNotFoundError(err) {
+func (h *Host) publishOperationSignal() error {
+	_, err := safe.StateUpdateWithConflicts(h.ctx, h.state, componentResource(ResourceID, operationSignal{}).Metadata(), func(current *typed.Resource[operationSignal, componentExtension[operationSignal]]) error {
+		current.TypedSpec().Revision++
 		return nil
-	}
+	}, state.WithUpdateOwner(HostOwner))
 	return err
 }
 
-func (h *Host) takeOperation(ctx context.Context) (*oneoff.Operation, bool, error) {
+func (h *Host) completedOperation() *oneoff.Operation {
 	h.mu.Lock()
+	defer h.mu.Unlock()
 	op := h.operation
-	if op == nil {
-		h.mu.Unlock()
-		return nil, false, nil
+	if op == nil || !op.Finished() {
+		return nil
 	}
-	if !op.Finished() {
-		h.mu.Unlock()
-		return nil, false, nil
-	}
-	h.mu.Unlock()
+	return op
+}
 
-	if err := h.forgetOperation(ctx, op); err != nil {
-		return nil, false, err
-	}
+func (h *Host) consumeOperation(op *oneoff.Operation) {
 	h.mu.Lock()
 	if h.operation == op {
 		h.operation = nil
 	}
 	h.mu.Unlock()
-	return op, true, nil
 }
 
 func (h *Host) runtimeChanged(changed bool) {
