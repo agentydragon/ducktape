@@ -145,8 +145,7 @@ class Settings(YamlFileSettings):
         default=TOKEN_AUDIENCE, description="Audience required when TokenReview authenticates callers of this API."
     )
     operator_reader_account: str | None = Field(
-        default=None,
-        description="ServiceAccount name allowed to read UID-pinned operator diagnostics, not inbox payloads.",
+        default=None, description="ServiceAccount name allowed to inspect Session inbox diagnostics and entry payloads."
     )
     quotas: QuotaSettings = Field(default_factory=QuotaSettings)
     notice_debounce: NoticeDebounceSettings = Field(default_factory=NoticeDebounceSettings)

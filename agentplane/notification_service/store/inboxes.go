@@ -201,6 +201,25 @@ func (s *Store) ListInboxes(ctx context.Context, owner Owner) ([]Inbox, error) {
 // first, with the latest notice. The inbox is locked for the read, so entries and prefix metadata are one
 // snapshot. Reading acknowledges nothing.
 func (s *Store) Read(ctx context.Context, owner Owner, inboxID uuid.UUID, after int64, limit int) (InboxPage, error) {
+	return s.read(ctx, after, limit, func(tx *sql.Tx) (Inbox, error) {
+		return owned(ctx, tx, inboxID, owner, true)
+	})
+}
+
+// ReadSession gives the operator a namespace-scoped, non-destructive view of a retained inbox.
+// It does not depend on the current Sandbox or the continued existence of its ServiceAccount.
+func (s *Store) ReadSession(ctx context.Context, namespace, sessionID string, after int64, limit int) (InboxPage, error) {
+	return s.read(ctx, after, limit, func(tx *sql.Tx) (Inbox, error) {
+		inbox, err := scanInbox(tx.QueryRowContext(ctx, `SELECT `+inboxColumns+` FROM inbox
+			WHERE destination_namespace = $1 AND session_id = $2 FOR UPDATE`, namespace, sessionID))
+		if errors.Is(err, sql.ErrNoRows) {
+			return Inbox{}, ErrNotFound
+		}
+		return inbox, err
+	})
+}
+
+func (s *Store) read(ctx context.Context, after int64, limit int, inboxForRead func(*sql.Tx) (Inbox, error)) (InboxPage, error) {
 	if after < 0 {
 		return InboxPage{}, model.Invalid("after_cursor must not be negative")
 	}
@@ -209,7 +228,7 @@ func (s *Store) Read(ctx context.Context, owner Owner, inboxID uuid.UUID, after 
 	}
 	var page InboxPage
 	err := s.transaction(ctx, func(tx *sql.Tx) error {
-		inbox, err := owned(ctx, tx, inboxID, owner, true)
+		inbox, err := inboxForRead(tx)
 		if err != nil {
 			return err
 		}
@@ -219,7 +238,7 @@ func (s *Store) Read(ctx context.Context, owner Owner, inboxID uuid.UUID, after 
 			return err
 		}
 		page.Entries = entries
-		notice, err := latestNotice(ctx, tx, inboxID)
+		notice, err := latestNotice(ctx, tx, inbox.ID)
 		page.Notice = notice
 		return err
 	})

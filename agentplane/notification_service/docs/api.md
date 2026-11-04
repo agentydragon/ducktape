@@ -37,8 +37,10 @@ retained History data remain subject to their current UID-pinned retirement and 
   or idempotently cancel. Cancelling never cancels an Action or erases accepted entries.
 - `GET /v1/inboxes`: the account's qualified session inboxes.
 - `GET /v1/sessions/{session_id}/inbox/entries?after_cursor=0&limit=128`: non-destructive, contiguous paging, prefix
-  metadata, and the latest notice's admission/confirmation state. Payloads are stored provider event
-  snapshots, not fetched at read time or promoted to operator instructions.
+  metadata, and the latest notice's admission/confirmation state. The configured app account may inspect
+  retained entries by Session ID through its authenticated operator facade, including after the original
+  Sandbox disappears. It cannot acknowledge or retire them. Payloads are stored provider event snapshots,
+  not fetched at read time or promoted to operator instructions.
 - `PUT /v1/sessions/{session_id}/inbox/acknowledgement` with `through_cursor`: monotonically acknowledge the handled
   prefix. Future cursors are refused. Delivery and reads never acknowledge.
 - `DELETE /v1/sessions/{session_id}/inbox`: explicit retirement; no future matching, messages or delivery. An already
