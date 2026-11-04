@@ -18,7 +18,6 @@ py_library(
         "//agentplane/env/e2e/testing:failure_journal",
         "//agentplane/env/e2e/testing:fixtures",
         "//agentplane/env/e2e/testing:process_fixtures",
-        "//agentplane/env/runtime/execution/testing:codex_exec_server_container",
         "//agentplane/history_service/testing:fixtures",
         "//agentplane/testing:kubernetes_apiserver_fixtures",
         "//util/testing:postgres_fixtures",
