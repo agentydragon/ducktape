@@ -480,6 +480,7 @@ fn captured_local_bindings(index: &ExecutionIndex) -> FxHashSet<Id> {
         .callables
         .iter()
         .filter_map(|(key, callable)| Some((*key, callable.local_body.as_ref()?)))
+        .filter(|(_, body)| !body.requires_keyed_collection_new())
         .flat_map(|(key, body)| body.bindings.keys().map(move |binding| (binding, key)))
         .collect();
     let mut captured = FxHashSet::default();
@@ -8885,6 +8886,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if !unsupported_inputs
             && self.inputs.index.dynamic_scope_owners.is_empty()
             && let Some(body) = &callable.local_body
+            && !body.requires_keyed_collection_new()
             && body
                 .captured_writes()
                 .iter()
