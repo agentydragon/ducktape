@@ -42,6 +42,12 @@ def main() -> None:
         root.mkdir()
         tools.mkdir()
         subprocess.run(["tar", "--numeric-owner", "--same-owner", "-xf", archive, "-C", root], check=True)
+        # Debian's package closure supplies empty directories here. Replace them after
+        # extraction; rmdir refuses to discard unexpected package contents.
+        for name, target in {"var/lock": "/run/lock", "var/run": "/run"}.items():
+            path = root / name
+            path.rmdir()
+            path.symlink_to(target)
         subprocess.run(["tar", "-xf", closure, "-C", tools], check=True)
 
         libdir = tools / "usr/lib/x86_64-linux-gnu"
