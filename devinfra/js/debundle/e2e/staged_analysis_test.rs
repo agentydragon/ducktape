@@ -976,17 +976,31 @@ fn gate_rejected_split_matches_a_direct_run() {
 
 #[test]
 fn early_destructuring_split_refusal_matches_with_saved_facts() {
-    let opts = FixtureOpts::new(
-        "const source = { left: 1, right: 2 };\n\
+    let source = "const source = { left: 1, right: 2 };\n\
          const { left, right } = source;\n\
          console.log(left, right);\n\
-         export { left, right };\n",
-        vec![
-            logical_module("left_module", &[Member::new("left")]),
-            logical_module("right_module", &[Member::new("right")]),
-        ],
-    );
-    let (staged, _fixture) = staged(opts);
+         export { left, right };\n";
+    // Build a matching analysis artifact while the source has one explicit
+    // destructuring owner, then change only the module assignment to create the
+    // conflicting request. Assignment edits do not change these saved facts.
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        source,
+        vec![logical_module("left_module", &[Member::new("left")])],
+    ));
+    let mut spec: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&staged.spec).unwrap()).unwrap();
+    let right_module = serde_yaml::from_str(
+        "members:\n  - name: right\n    selector:\n      binding:\n        name: right\n",
+    )
+    .unwrap();
+    spec["logical_modules"]["static/app"]
+        .as_mapping_mut()
+        .unwrap()
+        .insert(
+            serde_yaml::Value::String("right_module".into()),
+            right_module,
+        );
+    fs::write(&staged.spec, serde_yaml::to_string(&spec).unwrap()).unwrap();
     let direct = staged.run(&[]);
     let from_artifact = staged.run(&["--analysis", path(&staged.artifact)]);
 
@@ -1677,8 +1691,7 @@ fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
 
 #[test]
 fn destructuring_placement_preview_matches_staged_emission() {
-    let source = "const source = { left: 10, right: 20 };\n\
-const { left, right } = source;\n\
+    let source = "const { left, right } = { left: 10, right: 20 };\n\
 console.log(left, right);\n";
     let staged = staged_tree(
         &[("main", source)],
