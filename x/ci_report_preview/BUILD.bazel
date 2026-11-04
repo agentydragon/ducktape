@@ -1,0 +1,39 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/python:defs.bzl", "py_test")
+
+js_library(
+    name = "report_audit_js",
+    testonly = True,
+    srcs = ["report-audit.js"],
+)
+
+filegroup(
+    name = "reports",
+    srcs = [
+        "latency.html",
+    ],
+)
+
+py_test(
+    name = "visual_test",
+    srcs = ["visual_test.py"],
+    data = [
+        "report-audit.js",
+        ":report_audit_js",
+        ":reports",
+    ],
+    tags = ["visual"],
+    deps = [
+        "//:conftest",
+        "//devinfra/bazel:runfiles",
+        "//devinfra/testing:output_writer",
+        "//devinfra/testing:undeclared_outputs",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:context",
+        "//util/testing/frontend_visual:fixtures",
+        "//util/testing/frontend_visual:page_capture",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
