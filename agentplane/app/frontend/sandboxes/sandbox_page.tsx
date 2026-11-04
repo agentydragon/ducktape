@@ -1,8 +1,6 @@
-import { archiveThread } from "../threads/client";
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 import { clone, create } from "@bufbuild/protobuf";
 
-import type { ThreadView } from "../threads/client";
 import { NotificationStatus } from "../notification_status";
 import {
   ActionIcon,
@@ -22,8 +20,8 @@ import { IconDotsVertical, IconPlus, IconTrash } from "../icons";
 import { type JSX, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { api, displayableError } from "../client";
-import { findThread, getThread } from "../threads/client";
+import { displayableError } from "../client";
+import { archiveThread, findThread, getThread, type ThreadView } from "../threads/client";
 import {
   deleteEnvironment,
   getSessionOpening,

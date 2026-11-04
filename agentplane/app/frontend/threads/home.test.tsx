@@ -8,9 +8,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import type { ThreadView } from "./client";
-import type * as ThreadClientModule from "./client";
-import { listThreadWindow } from "./client";
+import { type ThreadView, listThreadWindow } from "./client";
 import { Home } from "./home";
 import { RoutedThreadsLiveProvider } from "./live";
 import { SandboxesLiveProvider } from "../sandboxes/live";
@@ -18,7 +16,7 @@ import { Sidebar } from "../sidebar";
 import { ServedWatch, serveEventStreams } from "../testing/watch";
 
 vi.mock("./client", async (importOriginal) => ({
-  ...(await importOriginal<typeof ThreadClientModule>()),
+  ...(await importOriginal<typeof import("./client")>()),
   listThreadWindow: vi.fn(),
 }));
 

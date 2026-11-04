@@ -3,13 +3,12 @@
  * Sandbox no longer exists: the sidebar's navigation and the landing page's whole content.
  */
 import { ActionIcon, Button, Switch, Text, TextInput, Tooltip } from "@mantine/core";
-import type { ThreadView } from "./client";
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { IconArchive, IconArchiveOff, IconSearch } from "../icons";
 import { type JSX, useState } from "react";
 import { Link, useMatch, useNavigate } from "react-router";
 
-import { archiveThread } from "./client";
+import { type ThreadView, archiveThread } from "./client";
 import { displayableError } from "../client";
 import { harnessLabel } from "../model_catalog";
 import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "./live";

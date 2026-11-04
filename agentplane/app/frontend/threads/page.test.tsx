@@ -22,7 +22,6 @@ import {
 
 import { clone, create, toJson } from "@bufbuild/protobuf";
 import type { LangfuseSearchSettings, TraceSearchSettings } from "../schema";
-import type { ThreadView } from "./client";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
 import { MantineProvider } from "@mantine/core";
 import { act, type JSX } from "react";
@@ -33,12 +32,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
-import type * as ThreadClientModule from "./client";
 import type * as ModelCatalogModule from "../model_catalog";
 import type * as SandboxClientModule from "../sandboxes/client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { api } from "../client";
 import {
+  type ThreadView,
   type CommandSubmission,
   type CommandTarget,
   dispatchFromJson,
@@ -70,7 +69,7 @@ import { reconnected, serveEventStreams, ServedWatch, stubWatchFetch } from "../
 const COMMAND_TARGET = { sandbox: THREAD.sandbox, sandboxUid: "20000000-0000-4000-8000-000000000001" };
 
 vi.mock("./client", async (importOriginal) => ({
-  ...(await importOriginal<typeof ThreadClientModule>()),
+  ...(await importOriginal<typeof import("./client")>()),
   submitInput: vi.fn(),
   changeModel: vi.fn(),
   changeReasoningEffort: vi.fn(),

@@ -1,10 +1,9 @@
 import { Box, Group, Stack, Text } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import type { ThreadView } from "./client";
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { displayableError } from "../client";
-import { getThread } from "./client";
+import { type ThreadView, getThread } from "./client";
 import { harnessBehavior } from "../harness_behavior";
 import { harnessLabel } from "../model_catalog";
 import { resumeSandbox } from "../sandboxes/client";
