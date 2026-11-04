@@ -338,7 +338,7 @@ func TestPayloadsExpireOnlyUpToTheFirstEntryYoungerThanThirtyDays(t *testing.T) 
 }
 
 func TestUnreadProviderAndMessagePayloadsSurviveThirtyDayCleanup(t *testing.T) {
-	f := newFixture(t, defaultQuotas())
+	f := newFixture(t, messageQuotas())
 	creation := f.body("first")
 	subscription := f.subscribe(t, creation)
 	event := actionsEvents(creation.Source.(model.ActionsSource).RequestID, 1)[0]
