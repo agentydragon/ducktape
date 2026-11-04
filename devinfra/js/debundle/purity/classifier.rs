@@ -1190,9 +1190,9 @@ pub(crate) fn classify_new_expr_purity(
         )
         .then(purity);
     }
-    // The remaining Set proof family covers borrowed aliases and static-member
-    // operands. It remains a distinct source certificate because these inputs
-    // do not have the immediate array-literal origin projected above.
+    // Other Set proof families, including borrowed aliases and arrays of
+    // primitive static-member reads, remain outside the selected/inferred
+    // top-level source projection above.
     if callee.sym.as_ref() == "Set"
         && !shadowed.contains("Set")
         && !local_shadowed.contains("Set")
