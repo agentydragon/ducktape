@@ -136,7 +136,7 @@ class History:
                 {"id": session_id},
             )
         if result.rowcount != 1:
-            raise ValueError("open the Session first")
+            raise ValueError("record the Session first")
 
     async def fail_feed(self, session_id: UUID, *, error: str, error_cursor: int | None = None) -> None:
         """A folded failure state for UI tests, not a fake archive failure."""
@@ -197,7 +197,7 @@ class History:
     async def _bound_writer(self, session_id: UUID) -> ServiceAccountRef:
         writer = await self._writer(session_id)
         if writer is None:
-            raise ValueError("open the Session first")
+            raise ValueError("record the Session first")
         return writer
 
     async def _operational_status_is_failed(self, session_id: UUID) -> bool:

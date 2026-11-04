@@ -1,7 +1,7 @@
 # Agentplane system tests
 
 The system test scenarios are **vertical tests of a running deployment**: they create real
-sandboxes through the app's HTTP API, open sessions on the real harnesses, and assert on
+Sandboxes through the app's HTTP API, create Sessions, run them on the real harnesses and assert on
 cross-component behavior and durable system evidence. They are not unit tests with a live backend —
 they are the checks that the deployed system does what <../egress/SPEC.md> says it does and that a
 session's standing instructions reach the model that serves it.
@@ -155,7 +155,7 @@ same for Claude and Codex, so the same scenario function covers both. Both `offe
 `run_harness_pair` ask the deployment which models it offers for each harness. The presets scenario instead exercises a Codex launch preset's
 defaults, Sandbox binding, bootstrap marker, inherited fields, and local override, with the scripted
 model only. The k3s fixture configures that preset (`launch_preset.py`) in place of the deployment's.
-Initial session Open uses a 120-second retry budget for HTTP 503, retaining the same session id;
+Initial `CreateSession` uses a 120-second retry budget for HTTP 503, retaining the same Session ID;
 refusals and other server failures are not startup readiness signals.
 
 ## Thread stream
@@ -177,8 +177,8 @@ interval. Each run writes its timings to
 
 All k3s suites use the shared [`tracing.py`](driver/tracing.py) tracer and the test OTel provider.
 `test.outputs/test-spans.jsonl` flushes each completed driver span immediately, including setup,
-per-image imports, PKI, manifest application, Deployment readiness, scenarios, session opening, turn
-collection, diagnostics, Sandbox cleanup and k3s teardown. Import worker threads inherit the setup
+per-image imports, PKI, manifest application, Deployment readiness, scenarios, Session creation and
+materialization, turn collection, diagnostics, Sandbox cleanup and k3s teardown. Import worker threads inherit the setup
 trace context. The pytest log prints the longest stages from these same spans; totals are inclusive
 and concurrent spans overlap. A killed test retains completed spans, but its unfinished spans cannot
 be exported. No separate stopwatch/timeline recorder is needed.
@@ -464,8 +464,8 @@ bazelisk test //agentplane/system_tests/suites/live:test_thread_latency --test_o
 `//agentplane/system_tests/suites/live:test_ollama_routes` exercises every configured Ollama chat
 route offered by the committed staging app ConfigMap, on each harness that offers it (Codex alone today),
 with the 128k cases first. Collection reads the generated manifest, not cdk8s Python;
-each case still checks that the live app offers the route before opening a session. Each cell creates a Sandbox,
-opens a real session, and requires recorded shell-tool output. It has an absolute
+each case still checks that the live app offers the route before creating a Session. Each cell creates a Sandbox,
+creates a Session, runs a real turn and requires recorded shell-tool output. It has an absolute
 300-second turn limit; a backend that never completes still leaves an interrupted
 turn rather than a model verdict. To run just one cell, set `OLLAMA_SMOKE_CASE` to
 its pytest id, for example

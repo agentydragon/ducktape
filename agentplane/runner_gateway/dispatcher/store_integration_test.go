@@ -2370,6 +2370,8 @@ func TestNativeSessionOutcomesFenceQueuedWork(t *testing.T) {
 			}
 			if retry, err := store.CreateSession(ctx, sessionID, sandbox.Name, uid, spec, nil, nil); err != nil || retry.State != test.openingState {
 				t.Fatalf("opening receipt retry: %+v %v", retry, err)
+			} else if test.openingState == SessionUnknownState && (!strings.HasPrefix(retry.Reason, "session_materialization_unconfirmed: ") || !strings.Contains(retry.Reason, "test owner response")) {
+				t.Fatalf("uncertain Session reason lost owner evidence: %q", retry.Reason)
 			}
 			if test.openingState == FailedState || test.openingState == UnknownState {
 				if _, err := enqueueWithSession(t, store, ctx, sessionID, sandbox.Name, uid, input(uuid.NewString(), "after owner response"), nil); !errors.Is(err, ErrSessionUnconfirmed) || status.Code(apiError(err)) != codes.FailedPrecondition {

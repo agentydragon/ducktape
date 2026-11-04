@@ -113,7 +113,7 @@ async def _open(
 ) -> UUID:
     """A Thread whose runner feed is attached, so a tab's first frame is `attached`."""
     thread_id = (
-        await Agent.open(
+        await Agent.create(
             client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=model
         )
     ).thread_id

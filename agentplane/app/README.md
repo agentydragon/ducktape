@@ -2,7 +2,7 @@
 
 The human-facing API is a Go service built from `//agentplane/app/go:agentplane-app` and packaged as
 `//agentplane/app:image`. It proxies Sandbox management through the Runner Gateway's
-`EnvironmentService` with its Pod-bound service token, opens Sessions and submits commands through
+`EnvironmentService` with its Pod-bound service token, creates Sessions and submits commands through
 the Session Dispatcher, and uses the Runner
 Gateway for UID-fenced live checks and read-only runner status diagnostics. It reads archived Session
 history and Threads (each Session's conversation projection) from the History Service and synchronizes
@@ -579,7 +579,7 @@ ProtoJSON routes `/upstream/app-config/v1/models` and `/upstream/app-config/v1/p
 in-process handlers share the app's caller authentication boundary; the service and HTTP mapping are
 defined in `app_service.proto`. `POST /upstream/environments/v1/environments` stores the selected preset
 label alongside the concrete Sandbox choices; it does not
-store per-Sandbox Session defaults. On a new Thread open, the app resolves the defaults from its
+store per-Sandbox Session defaults. When creating a new Thread, the app resolves the defaults from its
 configured preset catalog using that Sandbox label, then overlays fields explicitly supplied for
 the Thread. `policy_sets` are the Sandbox's grants beside the deployment's defaults, and a set name
 the namespace does not hold is refused with 422 before the Sandbox exists.
@@ -594,9 +594,10 @@ idle-suspend values the form starts with whatever the preset; the EnvironmentSer
 caller sends, so an API caller that omits them gets neither. A preset's `inbox_tags` likewise prefill the form, and the create request writes the submitted
 ones as the Sandbox's initial `spec.inboxTags`: editing a preset changes only later launches.
 
-Before opening a session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap
+Before creating a Session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap
 content to the runner under a stable preset identity. The runner executes it idempotently on the
-persistent state volume; a failure refuses the session open. The selected Sandbox preset determines
+persistent state volume; a failure prevents logical Session creation. The selected Sandbox preset
+determines
 the complete default `SessionSpec` even though the Sandbox stores only its preset label. An explicit
 request can override those defaults, including with empty strings. The app composes the Session's preset and task instructions. The Runner composes those with the
 deployment-wide platform instructions before starting the harness, including for direct
@@ -605,10 +606,10 @@ the platform's egress and Actions Service protocol and how to query their effect
 permissions; a preset and the per-turn task remain the place for workload-specific constraints and
 the requested outcome.
 
-Thread defaults may also include a one-time setup script. A new Thread sends its resolved cwd and
-setup source on the runner's first `Open`; the runner records setup stdout, stderr, and completion in
-the Thread event stream and starts the harness only after setup succeeds. A failure leaves a
-readable Thread and workspace but cannot rerun setup under the same session id. The Sandbox page
+Thread defaults may also include a one-time setup script. The app includes the resolved cwd and
+setup source in `CreateSession`; the placement owner records setup stdout, stderr and completion in
+the Thread event stream, then starts the harness only after setup succeeds. A setup failure is
+recorded against the Session and setup cannot be replayed under the same Session ID. The Sandbox page
 uses the configured cwd template instead of replacing it with a hardcoded workspace path.
 
 A new Thread's id is the public Session ID the browser mints and the `CreateSession` API preserves;

@@ -153,7 +153,7 @@ Malformed requests and nonempty cursors from ordinary callers fail `INVALID_ARGU
 
 All use the existing `AGENTPLANE_SESSIONS_URL` / `AGENTPLANE_SESSIONS_CREDENTIAL` connection. A
 resume response is acceptance, not readiness, and an uncertain reply is never retried automatically.
-Reconcile current readiness and any uncertain effect before opening a new Session or submitting
+Reconcile current readiness and any uncertain effect before creating a new Session or submitting
 input. CLI and Action/MCP wait adapters over `WatchEnvironment` remain follow-up work.
 
 ## Resume and ownership

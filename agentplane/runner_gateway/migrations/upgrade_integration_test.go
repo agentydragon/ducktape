@@ -90,9 +90,13 @@ func TestSessionResourceUpgradeRetainsMaterializationEvidence(t *testing.T) {
 		if err := insertCurrentSessionWriterRow(t.Context(), db, id); err != nil {
 			t.Fatal(err)
 		}
+		reason := "retained " + state.before
+		if state.before == "UNKNOWN" {
+			reason = "runner_opening_unconfirmed: original upstream detail"
+		}
 		legacyCentral := protowire.AppendVarint(protowire.AppendTag(nil, 1, protowire.VarintType), uint64(sessionpb.Harness_HARNESS_CENTRAL_SAMPLER))
 		if _, err := db.ExecContext(t.Context(), `UPDATE session_opening SET state=$2,reason=$3,spec=$4,delivery_blocker=$5,wake_assessment=$6
-			WHERE session_id=$1`, id, state.before, "retained "+state.before, legacyCentral, blocker, wake); err != nil {
+			WHERE session_id=$1`, id, state.before, reason, legacyCentral, blocker, wake); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -108,6 +112,10 @@ func TestSessionResourceUpgradeRetainsMaterializationEvidence(t *testing.T) {
 	}
 	for _, state := range states {
 		id := "retained-" + state.after
+		wantReason := "retained " + state.before
+		if state.before == "UNKNOWN" {
+			wantReason = "runner_opening_unconfirmed: original upstream detail"
+		}
 		var materialization, reason string
 		var gotBlocker, gotWake, raw []byte
 		if err := db.QueryRowContext(t.Context(), `SELECT state,reason,delivery_blocker,wake_assessment,spec FROM session WHERE session_id=$1`, id).
@@ -118,7 +126,7 @@ func TestSessionResourceUpgradeRetainsMaterializationEvidence(t *testing.T) {
 		if err := proto.Unmarshal(raw, &spec); err != nil {
 			t.Fatal(err)
 		}
-		if materialization != state.after || reason != "retained "+state.before || !bytes.Equal(gotBlocker, blocker) || !bytes.Equal(gotWake, wake) ||
+		if materialization != state.after || reason != wantReason || !bytes.Equal(gotBlocker, blocker) || !bytes.Equal(gotWake, wake) ||
 			spec.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment().GetUid() != "00000000-0000-0000-0000-000000000001" {
 			t.Fatalf("%s after upgrade: state=%q reason=%q blocker=%x wake=%x placement=%v", id, materialization, reason, gotBlocker, gotWake, spec.GetPlacement())
 		}

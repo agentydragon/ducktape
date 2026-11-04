@@ -46,7 +46,7 @@ RUNNER_ANSWERS_SECONDS = 120.0
 
 def _runner_not_answering(error: BaseException) -> bool:
     """The app's `503`, and only that: it means the runner has not answered yet. Its `409`s -- an
-    unreachable sandbox, a refused Open -- are verdicts, not delays, and must fail immediately."""
+    unreachable sandbox, a refused Create -- are verdicts, not delays, and must fail immediately."""
     return isinstance(error, httpx.HTTPStatusError) and error.response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
 
 
@@ -134,7 +134,7 @@ class Agent:
         return self._thread_id
 
     @classmethod
-    async def open(
+    async def create(
         cls,
         client: Client,
         dispatcher: SessionDispatcherClient,
@@ -146,16 +146,16 @@ class Agent:
         instructions: str = "",
         cwd: str = WORKING_DIRECTORY,
     ) -> Agent:
-        """Open a session, waiting out a runner that is up but not yet connected.
+        """Create a Session, waiting out a runner that is up but not yet connected.
 
         A Running Sandbox's runner may not answer yet. Retry that `503` with the same
         Session ID; other HTTP errors fail immediately.
 
         `instructions` are the session's standing orders, in front of the model on every turn; empty
-        is the proto's own default and opens the session the runner would open without the field.
+        is the proto's own default and creates the session the runner would create without the field.
         """
         with tracer.start_as_current_span(
-            "system_test.session.open",
+            "system_test.session.create",
             attributes={"sandbox.name": sandbox, "harness": session_pb2.Harness.Name(harness)},
         ):
             spec = session_pb2.SessionSpec(
@@ -169,7 +169,7 @@ class Agent:
                 reasoning_effort="low",
                 instructions=instructions,
             )
-            # Retry the same desired session even if an earlier Open reached the runner.
+            # Retry the same desired Session even if an earlier create reached the runner.
             session_id = uuid4()
             async for attempt in environment_runtime_startup_retries():
                 with attempt:

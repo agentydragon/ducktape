@@ -135,7 +135,7 @@ message Attached {
   // Absent on legacy retained Sessions without a trustworthy association.
   ServiceAccountIdentity execution_principal = 9;
   // Preserves an archived pre-placement harness when exact historical placement cannot be
-  // reconstructed. New Session openings leave this unset and use spec.placement.
+  // reconstructed. New Sessions leave this unset and use spec.placement.
   Harness historical_harness = 10;
 }
 

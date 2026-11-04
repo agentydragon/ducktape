@@ -242,7 +242,7 @@ class Client:
         overrides: dict[str, object] | None = None,
         setup_script: str | None = None,
     ) -> None:
-        """Open a Session, then wait for the Dispatcher admission by its global ID.
+        """Create a Session, then wait for the Dispatcher admission by its global ID.
 
         Retrying with the same Session ID and overrides answers the same Session.
         """

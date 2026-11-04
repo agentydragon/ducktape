@@ -538,7 +538,7 @@ func (w *DeliveryWorker) sessionFailure(session *Session, sandbox SandboxSnapsho
 		state, reason := w.deliveryFailure(session.SessionID, key, session.SandboxUID, sandbox.Incarnation, err)
 		return sessionMaterializationFromDelivery(state), reason, nil
 	default:
-		return SessionUnknownState, "runner_opening_unconfirmed: " + err.Error(), nil
+		return SessionUnknownState, "session_materialization_unconfirmed: " + err.Error(), nil
 	}
 }
 

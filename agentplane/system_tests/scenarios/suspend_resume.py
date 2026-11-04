@@ -200,7 +200,7 @@ async def agent_resumes_an_idle_suspended_pod_with_its_execution_account(
 
     harness = session_pb2.HARNESS_CODEX
     model_name = (await client.models()).harnesses[Harness.CODEX][0]
-    agent = await Agent.open(
+    agent = await Agent.create(
         client,
         dispatcher,
         sandbox=target.name,
@@ -383,12 +383,12 @@ class _ResumeRun:
         assert self.view.kubernetes_diagnostics.HasField("pod")
         return self.view.kubernetes_diagnostics.pod.name
 
-    async def open(self, harness: session_pb2.Harness, *, cwd: str, instructions: str = "") -> Agent:
+    async def create(self, harness: session_pb2.Harness, *, cwd: str, instructions: str = "") -> Agent:
         """A Thread on the first model the deployment offers `harness`, with no native process yet."""
         harness_name = session_pb2.Harness.Name(harness)
         offered = (await self.client.models()).harnesses[Harness(harness_name)]
         assert offered, f"the deployment offers no model for {harness_name}"
-        agent = await Agent.open(
+        agent = await Agent.create(
             self.client,
             self.dispatcher,
             sandbox=self.view.target.name,
@@ -539,7 +539,7 @@ async def two_harness_threads_keep_their_context_after_sandbox_suspend_resume(
     markers = {harness: _marker(harness) for harness in (session_pb2.HARNESS_CLAUDE, session_pb2.HARNESS_CODEX)}
     models = {harness: scripted.model(run.pod_name, harness) for harness in markers}
     for harness, marker in markers.items():
-        agent = await run.open(harness, cwd=cwd)
+        agent = await run.create(harness, cwd=cwd)
         async with asyncio.TaskGroup() as turns:
             seed = turns.create_task(agent.run(SEED_PROMPT.format(marker=marker)))
             await models[harness].reply(await models[harness].request(), Text("ACK"))
@@ -572,7 +572,7 @@ async def codex_standing_instructions_after_suspend_and_compact(
 ) -> None:
     standing = "SESSION_STANDING_ORDER: consult Agentplane before declaring access unavailable."
     run = await _ResumeRun.start(cluster, client, dispatcher, sandbox, template=POD_TEMPLATE)
-    agent = await run.open(session_pb2.HARNESS_CODEX, cwd=WORKING_DIRECTORY, instructions=standing)
+    agent = await run.create(session_pb2.HARNESS_CODEX, cwd=WORKING_DIRECTORY, instructions=standing)
     model = scripted.model(run.pod_name, session_pb2.HARNESS_CODEX)
     assert isinstance(model, CodexModel)
     async with asyncio.TaskGroup() as turns:

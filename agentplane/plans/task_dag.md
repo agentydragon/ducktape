@@ -742,7 +742,7 @@ does not grant history read, messaging, credentials or execution of another prin
 **Blocked; one operation at a time as each backend rule lands.** The
 [`orchestration_v1` group](../action_service/orchestration_v1/README.md) runs every operation as the operator's act,
 with the Action Service trusted by the Dispatcher and History ([ADR](../docs/adr_orchestration_v1.md)). Move each to
-a grant its backend checks: Session open and commands after `THREAD_CREATE_AUTHORIZATION` and
+a grant its backend checks: Session creation and commands after `THREAD_CREATE_AUTHORIZATION` and
 `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`, Session reads after `THREAD_READ_POLICY`, launch after
 `AGENT_SANDBOX_LAUNCH`. The executor then calls as the caller, launcher grants write the backend rule instead of an
 `argument_schema` auto-approval ([target shape](mcp_orchestration.md#shape-matched-approval-is-the-v1-expedient)), and
@@ -942,13 +942,13 @@ Do not lengthen the test timeout or automatically replay executor effects as a s
 
 ### `SESSION_LAUNCH_FRICTION` — fewer clicks to start useful work
 
-**Selected alongside P0/P1; operator, 2026-10-30 PDT.** Make opening a Session on an existing
+**Selected alongside P0/P1; operator, 2026-10-30 PDT.** Make creating a Session on an existing
 environment with its own working directory a short path with useful defaults. Preserve explicit
 harness/model/access choices without requiring users to reconstruct ordinary settings each time.
 Separate this flow from provisioning a fresh environment. Review the actual click path and
 candidate UX first; do not require new agent/conversation entities to improve it.
 
-Exit: the agreed common path needs fewer decisions/clicks and opens a useful Session in the chosen
+Exit: the agreed common path needs fewer decisions/clicks and creates a useful Session in the chosen
 directory, with intended defaults and override behavior visible. Include the normal visual review.
 
 ### `VM_STARTUP_LATENCY` — measure production time to a useful fresh VM Session

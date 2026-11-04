@@ -369,7 +369,7 @@ async def test_external_connection_delegates_without_the_integration_app(
                 cwd = f"{workspace['root'].rstrip('/')}/external-delegation-{uuid4()}"
                 session_id = str(uuid4())
                 guidance_marker = f"EXTERNAL-SESSION-GUIDANCE-{uuid4()}"
-                created = await _tool(
+                session_created = await _tool(
                     session,
                     "sessions__create",
                     {
@@ -384,7 +384,7 @@ async def test_external_connection_delegates_without_the_integration_app(
                         "additional_instructions": guidance_marker,
                     },
                 )
-                assert isinstance(created.get("session"), dict)
+                assert isinstance(session_created.get("session"), dict)
 
                 model = scripted.model(view.kubernetes_diagnostics.pod.name, session_pb2.HARNESS_CODEX)
                 first_command = str(uuid4())

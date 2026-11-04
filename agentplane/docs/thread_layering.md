@@ -111,10 +111,10 @@ a “session”; it already spans process restarts. That existing name does not 
 the target product Thread/incarnation relationship. The Gateway has no Session placement registry;
 it resolves proxy destinations from current Sandbox identity and connection state. History separately
 records the writer's namespace and name.
-The app sends the expected Sandbox UID on Session opens and commands, and Dispatcher checks it against
+The app sends the expected Sandbox UID on `CreateSession` requests and commands, and Dispatcher checks it against
 the current Sandbox before accepting the request. This fences same-name replacement at the request
 boundary; it does not validate a Session's earlier association. The complete Session-to-incarnation
-authority across opens, commands and resume remains under review in the
+authority across creation, commands and resume remains under review in the
 [service-boundary contract](service_boundaries.md).
 
 A Thread is a view/fold of one durable logical Session's Event log, with its own

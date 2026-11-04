@@ -340,7 +340,7 @@ func optionalString(value string) *string {
 // RecordedSessions returns up to limit Sessions recorded after afterPosition, in recording order.
 func (s *Store) RecordedSessions(ctx context.Context, afterPosition uint64, limit int) ([]RecordedSession, error) {
 	if afterPosition > math.MaxInt64 || limit < 1 || limit > 1000 {
-		return nil, invalid("opened Session page")
+		return nil, invalid("recorded Session page")
 	}
 	predicate, scopeArgs := s.sessionPredicate("h", 2)
 	args := append([]any{afterPosition}, scopeArgs...)

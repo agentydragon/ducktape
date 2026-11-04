@@ -370,7 +370,7 @@ advances the durable JavaScript epoch and appends a model-visible notice that pr
 `load()` values and live handles were lost. Pending model tool calls proven undispatched receive
 failed outputs paired to their exact call IDs before the notice; unrelated calls follow their
 ordinary dispatcher path. The transaction clears the old host marker, so a retry cannot duplicate
-the notice. The marker is set again only after a logical Session opens on a real host. With an
+the notice. The marker is set again only after a logical Session is created on a real host. With an
 unresolved cell, tool, executor or live handle, host loss remains an unknown outcome requiring
 explicit recovery; it is never interpreted as a known no-dispatch call. A first use with no marker
 and an ordinary same-host reacquisition do not add a notice.

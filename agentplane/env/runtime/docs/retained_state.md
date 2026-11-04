@@ -71,7 +71,7 @@ from opening it. Session metadata and native resume files remain beside the data
 ### Bounded session history
 
 The SQLite journal stores a recovery checkpoint in the same transaction as each event.
-Opening a session reads that checkpoint and validates the last event, without decoding
+Starting or resuming native execution reads that checkpoint and validates the last event, without decoding
 historical frames. Journal follows, such as a session's ingress push, query exclusive-cursor pages of
 128 events on the retained journal connection under its transaction lock, limited to the published
 cursor. Reads close their SQL rows before releasing that lock to a native callback. A slow

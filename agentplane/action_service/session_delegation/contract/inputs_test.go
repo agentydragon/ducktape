@@ -19,7 +19,7 @@ func TestInputsUseApprovedActionNamesAndSchemas(t *testing.T) {
 	if got, want := sortedKeys(environments), []string{"get", "list", "resume"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("environment actions = %v, want %v", got, want)
 	}
-	if got, want := sortedKeys(sessions), []string{"cancel_input", "get", "interrupt_turn", "observe_input", "create", "read_turns", "submit_input"}; !reflect.DeepEqual(got, want) {
+	if got, want := sortedKeys(sessions), []string{"cancel_input", "create", "get", "interrupt_turn", "observe_input", "read_turns", "submit_input"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("session actions = %v, want %v", got, want)
 	}
 	assertProperties(t, inputs.ListEnvironments.Definition().InputSchema, []string{"after", "limit"}, []string{"limit"})

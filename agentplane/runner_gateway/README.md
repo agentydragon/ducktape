@@ -114,8 +114,8 @@ The optional `central_sampler` configures one gRPC target and rotating caller to
 Omitting it disables central Session admission. `SessionSpec.placement` records either the exact
 native environment and harness (`environment_hosted`) or the exact required central executor
 environment (`central_sampler_v1`); callers do not choose a service endpoint. The Dispatcher sends
-central opens and commands to the configured sampler; wrapped native Sessions continue through
-ProxyRunner. Central controls bypass executor readiness/wake checks after open.
+central creation requests and commands to the configured sampler; wrapped native Sessions continue through
+ProxyRunner. Central controls bypass executor readiness/wake checks after Session creation.
 Central sampler V1 retains the existing Sandbox identity and requires the bound Sandbox object; it
 does not support optional attachments or environment-free Sessions.
 

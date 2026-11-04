@@ -152,7 +152,7 @@ async def test_sandboxes(view: VisualPage, app: AgentplaneFixture) -> None:
     [
         ("suspended-sandbox", False, "Resume it or enable wake on send"),
         ("pending-sandbox", False, "ImagePullBackOff"),
-        ("ready-sandbox", True, "Check Session status"),
+        ("ready-sandbox", True, "Check its status"),
     ],
     ids=["suspended", "not-ready", "unconfirmed-create"],
 )

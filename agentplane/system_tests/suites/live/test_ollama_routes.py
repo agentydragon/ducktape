@@ -41,7 +41,7 @@ async def _exercise_case(
         assert route in offered, f"route absent from offered models for {case_id}"
         view = await sandbox("systest-ollama-smoke")
         evidence["sandbox"] = view.target.name
-        agent = await Agent.open(
+        agent = await Agent.create(
             client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=route
         )
         evidence["thread_id"] = str(agent.thread_id)

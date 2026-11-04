@@ -438,7 +438,7 @@ The runner creates or reuses a store under its selected policy. Public store ope
 only if callers truly need to choose or manage stores; the ordinary API opens Sessions, sends input,
 interrupts an exact turn and changes model/effort unless a harness proves an option is necessarily
 shared. A process has only ephemeral start/health/hosted-Session status and runner-selected capacity; it is never the
-API target for opening a Session. The runner may restart or replace a process without
+API target for Session creation or control. The runner may restart or replace a process without
 changing the store or public Session address. A dormant Session keeps its mapping and data for
 runner-managed resume on input. Retiring a store stops new Sessions and requires an explicit policy
 for existing ones; deleting its authored native files is a separate, explicitly authorized data operation, never a

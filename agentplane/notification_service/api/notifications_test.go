@@ -480,7 +480,7 @@ func TestASandboxRecreatedUnderTheNameSeesNoneOfItsPredecessorsInboxes(t *testin
 	request := createRequest("successor")
 	_, err = server.client.CreateSubscription(bearing(t, sandboxToken), request)
 	requireCode(t, err, codes.NotFound)
-	// A different Session opened by the successor has its own inbox.
+	// A different Session created by the successor has its own inbox.
 	request.SessionId = "another-session"
 	created, err := server.client.CreateSubscription(bearing(t, sandboxToken), request)
 	if err != nil {

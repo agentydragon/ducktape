@@ -20,16 +20,16 @@ from agentplane.testing.scripted_model import ScriptedModel
 # gazelle:include_dep @pypi//protobuf
 
 
-async def test_agent_open_retries_unavailable_without_creating_another_session() -> None:
+async def test_agent_create_retries_unavailable_without_creating_another_session() -> None:
     request = httpx.Request("POST", "https://app.test.invalid/sandboxes/test-sandbox/sessions")
     unavailable = httpx.HTTPStatusError(
         "runner is not listening", request=request, response=httpx.Response(503, request=request)
     )
     client = create_autospec(Client, instance=True)
     dispatcher = create_autospec(SessionDispatcherClient, instance=True)
-    client.create_session.side_effect = [unavailable, None]
+    client.create_session_and_wait.side_effect = [unavailable, None]
 
-    await Agent.open(
+    await Agent.create(
         client,
         dispatcher,
         sandbox="test-sandbox",
@@ -38,7 +38,7 @@ async def test_agent_open_retries_unavailable_without_creating_another_session()
         model="test-model",
     )
 
-    first, retry = client.create_session.call_args_list
+    first, retry = client.create_session_and_wait.call_args_list
     assert first == retry
     assert first.args[0] == "test-sandbox"
     assert first.kwargs["sandbox_uid"] == "00000000-0000-4000-8000-000000000001"
@@ -52,14 +52,16 @@ async def test_agent_open_retries_unavailable_without_creating_another_session()
 
 
 @pytest.mark.parametrize("status", [409, 500, 502])
-async def test_startup_refusals_and_other_server_failures_are_not_retried(status: int) -> None:
+async def test_create_refusals_and_other_server_failures_are_not_retried(status: int) -> None:
     request = httpx.Request("POST", "https://app.test.invalid/sandboxes/test-sandbox/sessions")
     response = httpx.Response(status, request=request)
     client = create_autospec(Client, instance=True)
     dispatcher = create_autospec(SessionDispatcherClient, instance=True)
-    client.create_session.side_effect = httpx.HTTPStatusError("open refused", request=request, response=response)
+    client.create_session_and_wait.side_effect = httpx.HTTPStatusError(
+        "open refused", request=request, response=response
+    )
     with pytest.raises(httpx.HTTPStatusError) as caught:
-        await Agent.open(
+        await Agent.create(
             client,
             dispatcher,
             sandbox="test-sandbox",
@@ -68,7 +70,7 @@ async def test_startup_refusals_and_other_server_failures_are_not_retried(status
             model="test-model",
         )
     assert caught.value.response is response
-    client.create_session.assert_awaited_once()
+    client.create_session_and_wait.assert_awaited_once()
     client.thread.assert_not_awaited()
 
 

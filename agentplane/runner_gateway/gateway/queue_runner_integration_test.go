@@ -119,7 +119,7 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `INSERT INTO session(session_id,sandbox_name,sandbox_uid,spec,state,created_at,updated_at)
-		VALUES($1,$2,$3,$4,$5,now(),now())`, "session-queue", testSandbox, sandboxUID, spec, dispatcher.AdmittedState); err != nil {
+		VALUES($1,$2,$3,$4,$5,now(),now())`, "session-queue", testSandbox, sandboxUID, spec, dispatcher.SessionAcceptedState); err != nil {
 		t.Fatal(err)
 	}
 	queued, err := store.Enqueue(ctx, "session-queue", testSandbox, sandboxUID, command, nil)

@@ -9,13 +9,13 @@ import pytest_bazel
 from agentplane.system_tests.vm.trace_contract import _codex_session_uids, _read_jsonl
 
 
-def test_driver_session_open_requires_ready_sandbox_identity() -> None:
-    session_open: dict[str, object] = {
-        "name": "system_test.session.open",
+def test_driver_session_create_requires_ready_sandbox_identity() -> None:
+    session_create: dict[str, object] = {
+        "name": "system_test.session.create",
         "attributes": {"harness": "HARNESS_CODEX", "sandbox.name": "missing-ready-span"},
     }
     with pytest.raises(AssertionError, match="has no ready identity"):
-        _codex_session_uids([session_open], {})
+        _codex_session_uids([session_create], {})
 
 
 def test_jsonl_reader_ignores_only_an_incomplete_trailing_record(tmp_path: Path) -> None:

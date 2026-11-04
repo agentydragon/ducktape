@@ -243,7 +243,7 @@ Candidate operation families, not an API or policy schema:
 | Correspondence       | Send to a recipient; authorize the reverse direction separately.           |
 | Inbox                | Read received messages; acknowledge handled work; administer the mailbox.  |
 | Control              | Interrupt a specified turn, stop a Session, change model, change effort.   |
-| Provisioning         | Open a Session; create/manage a Sandbox; select bounded configuration.     |
+| Provisioning         | Create a Session; create/manage a Sandbox; select bounded configuration.   |
 | Grant administration | Assign roles, change grants and authorize further delegation.              |
 
 A manager can send work without reading a contributor's transcript. Reading a contributor need not
@@ -509,9 +509,9 @@ a known Session address need not have enumeration permission. Keep live runner s
 Session identity/history and a standing recipient directory distinct; listing Sessions does not
 grant arbitrary Kubernetes inventory access.
 
-Opening Sessions in an agent's own Sandbox is a desired early use case. Define what “own” means,
+Creating Sessions in an agent's own Sandbox is a desired early use case. Define what “own” means,
 allowed models/settings, quota, setup authority, creator visibility and revocation. It adds no
-isolation from co-resident Sessions. Launch-and-open can compose grants without implicitly granting
+isolation from co-resident Sessions. Launch-and-create can compose grants without implicitly granting
 history reads, unrestricted messaging or grant administration.
 
 Sandbox creation must bound the effective authority, not only the chosen template: images, mounts,

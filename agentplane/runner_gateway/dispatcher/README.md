@@ -67,10 +67,10 @@ The manual queue, replica and wake probes are documented in the
   when needed; it is not the logical Session creation call. A
   matching runner retry returns its durable Session reservation; native preparation waits for work.
   A reservation does not assert a running harness; `ALREADY_EXISTS` means a requested spec or
-  setup conflicts, which the Dispatcher records as a failed opening.
-  Native opening rejection and unconfirmed outcomes fence dependent queued commands; see
+  setup conflicts, which the Dispatcher records as failed Session materialization.
+  Native creation rejection and unconfirmed owner outcomes fence dependent queued commands; see
   [the outcome contract](SPEC.md#native-opening-outcomes-and-dependent-commands).
-  Openings follow the deletion and retention rules below.
+  Session records follow the deletion and retention rules below.
 - **Discovering Sessions**: `ListSessions` (`GET /v1/sessions`) returns one bounded
   page of current Session records, including waiting and failed materialization before
   any Runtime or History record exists. It uses the same retained-owner read scope as
@@ -100,10 +100,10 @@ The manual queue, replica and wake probes are documented in the
   filter by the retained UID and do not require a live Sandbox or account. The configured backend
   accounts keep their existing privileged behavior only when TokenReview also proves a Pod binding;
   an account-only token for the same name uses normal per-Session authority.
-- **Open before Ready**: a configured Pod-bound backend can open a Session before the controller has
-  created the execution ServiceAccount. The opening stores the expected target account with its UID
-  pending. Delivery binds that UID only after confirming the account has a controller OwnerReference
-  to the exact Sandbox UID. Legacy openings with no recorded owner remain unowned by normal callers and
+- **Create before Ready**: a configured Pod-bound backend can create a Session before the controller
+  has created the execution ServiceAccount. The Session record stores the expected target account with
+  its UID pending. Delivery binds that UID only after confirming the account has a controller OwnerReference
+  to the exact Sandbox UID. Legacy Session records with no recorded owner remain unowned by normal callers and
   are never adopted based on a matching current account name.
 - **Queue**: no TTL; at most `max_queued_per_session` queued commands per Session, then
   `RESOURCE_EXHAUSTED`. A command for a Sandbox that does not exist is refused `NOT_FOUND` and stores nothing.
@@ -114,7 +114,7 @@ The manual queue, replica and wake probes are documented in the
   gap or incomplete event fails active streams with `UNAVAILABLE`; terminal events have no durable replay,
   so a later read or watch is `NOT_FOUND`/empty.
 - **Deletion admission fence**: cleanup retains an exact-UID tombstone in Dispatcher PostgreSQL.
-  Later openings, queued commands and ownership claims cannot recreate deleted state, even from
+  Later Session creation requests, queued commands and ownership claims cannot recreate deleted state, even from
   another replica's stale inventory. Admissions that commit before cleanup are included in cleanup.
   This starts at Dispatcher cleanup, not the Kubernetes deletion instant; see
   [the deletion contract](SPEC.md#deletion-admission-fence).
@@ -128,7 +128,8 @@ The manual queue, replica and wake probes are documented in the
 - **Runner statuses**: `ABORTED` (quiescing) returns the command to the queue until the Sandbox has a new
   incarnation; `UNAVAILABLE` and deadline retry with backoff;
   other command errors are `FAILED` with the runner's status. The runner deduplicates redelivery on `command_id`.
-  Native openings use the separate outcome contract above; an arbitrary error is not proof of rejection.
+  Native Session materialization uses the separate outcome contract above; an arbitrary error is not
+  proof of rejection.
 - **Automatic wake**: `wakeOnSend` opts a Sandbox into wake attempts; it is not a permission grant.
   Before each automatic attempt, the shared lifecycle service checks the live target UID, current
   execution ServiceAccount UID and `resumePolicy`, or the separately configured trusted wake broker

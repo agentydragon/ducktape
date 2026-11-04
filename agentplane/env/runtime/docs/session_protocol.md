@@ -281,7 +281,7 @@ cross-turn ownership, mode and cursor failures, compaction barriers, and stdout/
 ## Standing instructions across a resume
 
 The Runtime supplies the Session's stored standing instructions at every native start or cold resume,
-so they remain model-visible after later compaction. Reopening a Session still requires the same
+so they remain model-visible after later compaction. Resuming native execution for a Session still uses the same stored
 spec; the Runtime does not expose instruction editing.
 
 - **Claude Code:** `appendSystemPrompt` in each `initialize` request.

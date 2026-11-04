@@ -3,7 +3,7 @@
 ## Thread creation
 
 When Create thread is disabled, hovering it or focusing its wrapper shows the current reason:
-Sandbox availability, an unconfirmed open attempt, opening in progress, or model availability.
+Sandbox availability, an unconfirmed Session creation, Session materialization in progress, or model availability.
 
 ## Thread names
 

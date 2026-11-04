@@ -1,6 +1,6 @@
 """The real Go app's Runner Gateway path under faults a deployment cannot be made to produce: a
 harness killed or a runner restarted mid-turn, an app replica exiting, History's archive held back,
-and a Session opened behind the app's back. The fault-free flows a browser sees are scenarios in
+and a Session created behind the app's back. The fault-free flows a browser sees are scenarios in
 `agentplane/system_tests/scenarios/thread_stream.py`."""
 
 from __future__ import annotations
