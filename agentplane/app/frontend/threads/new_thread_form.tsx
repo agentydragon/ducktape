@@ -225,7 +225,7 @@ export function NewThreadForm({
                         harness === "HARNESS_CENTRAL_SAMPLER"
                           ? { centralSamplerV1: { executorEnvironment: { name: target.name, uid: target.uid } } }
                           : { environmentHosted: { environment: { name: target.name, uid: target.uid }, harness } },
-                      cwd: cwdTemplate, // The app resolves {session_id} before it opens the Session.
+                      cwd: cwdTemplate, // The app resolves {session_id} before it creates the Session.
                       model,
                       reasoningEffort: effort,
                       instructions,

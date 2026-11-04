@@ -74,7 +74,7 @@ class AppSettingsConfig(YamlFileSettings):
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_", cli_parse_args=True, cli_kebab_case=True)
 
     models: ModelCatalog = Field(
-        description="Every model agentplane can open a session with and which harnesses accept it, as JSON: "
+        description="Every model Agentplane can create a Session with and which harnesses accept it, as JSON: "
         '{"models": [{"model": "...", "display_name": "...", "reasoning_efforts": [...]}], '
         '"harnesses": {"HARNESS_CLAUDE": ["..."], "HARNESS_CODEX": ["..."]}}.'
     )
@@ -163,7 +163,7 @@ class Settings(AppSettingsConfig):
     shutdown_timeout: int = Field(
         default=5,
         description="Seconds the HTTP server waits after SIGTERM for open requests and streams before cancelling "
-        "them; the rest of the Deployment's grace period is stopping Session openings and closing the database.",
+        "them; the rest of the Deployment's grace period stops Session creation and closes the database.",
     )
     token_audience: str = Field(
         default="agentplane",

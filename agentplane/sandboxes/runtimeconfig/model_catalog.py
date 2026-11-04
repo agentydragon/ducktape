@@ -18,7 +18,7 @@ class ModelOption(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    model: str = Field(description="The route name a session opens with; opaque to the operator.")
+    model: str = Field(description="The route name a Session is created with; opaque to the operator.")
     display_name: str = Field(description='Short human name for the session form, e.g. "Sonnet 5".')
     reasoning_efforts: list[str] = Field(
         description="Reasoning effort values configured for this model; empty means unsupported."

@@ -460,10 +460,10 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
                     "environments": ["get", "list", "resume"],
                     "sessions": [
                         "cancel_input",
+                        "create",
                         "get",
                         "interrupt_turn",
                         "observe_input",
-                        "open",
                         "read_turns",
                         "submit_input",
                     ],

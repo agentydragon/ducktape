@@ -169,6 +169,10 @@ async def test_create_thread_disabled_tooltip(
     await expect(page.get_by_role("combobox", name="Model")).not_to_have_value("")
     button = page.get_by_role("button", name="Create thread", exact=True)
     await expect(button).to_be_disabled()
+    if pending:
+        await expect(
+            page.get_by_role("button", name="Forget attempt; Session creation may still complete")
+        ).to_be_visible()
     wrapper = button.locator("..")
     await wrapper.hover()
     tooltip = page.get_by_role("tooltip")

@@ -91,10 +91,10 @@ def test_basic_policy_auto_approves_only_same_principal_session_actions(
                 "environments": ["get", "list", "resume"],
                 "sessions": [
                     "cancel_input",
+                    "create",
                     "get",
                     "interrupt_turn",
                     "observe_input",
-                    "open",
                     "read_turns",
                     "submit_input",
                 ],

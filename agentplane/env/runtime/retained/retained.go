@@ -110,7 +110,7 @@ func NewRecord(spec *sessionpb.SessionSpec, setupScript string, totalContextBudg
 }
 
 // MatchesSetupScript compares a supplied script against the retained source.
-// Callers should skip this check when the OpenSession request omits setup_script.
+// Callers should skip this check when the CreateSession request omits setup_script.
 func MatchesSetupScript(record *Record, script string) bool {
 	return string(record.SetupScript) == script
 }

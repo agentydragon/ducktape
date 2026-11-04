@@ -1,4 +1,4 @@
-"""Standing instructions a session is opened with, checked against a deployed Agentplane.
+"""Standing instructions a Session is created with, checked against a deployed Agentplane.
 
 `SessionSpec.instructions` is carried by the app as proto-JSON, put in front of the model by the
 runner -- appended to Claude's system prompt, given to Codex as the thread's developer instructions
@@ -43,12 +43,12 @@ INSTRUCTIONS = (
 PROMPT = "In one short sentence, say what a checksum is. Do not use any tool."
 
 
-async def the_model_obeys_the_standing_instruction_its_session_was_opened_with(
+async def the_model_obeys_the_standing_instruction_its_session_was_created_with(
     client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes, harness: session_pb2.Harness, model: str
 ) -> None:
     """The instruction reaches the model, and the marker is the model's own doing rather than its
-    habit: two sessions on one sandbox, the same prompt, differing only in whether the session was
-    opened with instructions. Sharing the sandbox is what makes them comparable -- same image, same
+    habit: two sessions on one sandbox, the same prompt, differing only in whether the Session was
+    created with instructions. Sharing the sandbox is what makes them comparable -- same image, same
     model, same deployment -- and neither turn uses a tool, so nothing the first leaves behind can
     reach the second.
     """

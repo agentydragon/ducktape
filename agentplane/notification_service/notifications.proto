@@ -27,8 +27,8 @@ service Notifications {
   // Subscribes a Session's inbox to a source. The inbox is the Session's inbox for the caller's account; it is
   // created with its first subscription.
   //
-  // `session_id` must have a Dispatcher opening whose exact Sandbox UID belongs to the caller and whose Runtime
-  // currently holds the Session, else `NOT_FOUND`. Direct Runtime-only Sessions have no Dispatcher opening.
+  // `session_id` must have a Dispatcher Session whose exact Sandbox UID belongs to the caller and whose Runtime
+  // currently holds the Session, else `NOT_FOUND`. Direct Runtime-only Sessions have no Dispatcher resource.
   // A creation is identified by `idempotency_key` within the inbox: an identical retry answers with
   // the same subscription, the key reused for other arguments fails `ALREADY_EXISTS`, and the key of a cancelled
   // subscription answers with that cancelled subscription rather than creating a replacement. An Action request

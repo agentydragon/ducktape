@@ -1,6 +1,6 @@
 """App-owned form presets.
 
-A Sandbox preset also names the configured session defaults the app applies when opening new Sessions.
+A Sandbox preset also names the configured session defaults the app applies when creating new Sessions.
 Kubernetes stores only the preset label, concrete Sandbox template, policy sets, inbox tags, and bootstrap source.
 """
 

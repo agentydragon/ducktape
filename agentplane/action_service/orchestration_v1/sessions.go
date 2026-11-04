@@ -20,8 +20,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// createSession queues the Session's session with the Session Dispatcher and answers with it. The app opens Sessions the
-// same way, and as it does, `{session_id}` in the working directory becomes the Session's ID.
+// createSession asks Dispatcher to create a Session and returns its current resource state.
+// As in App creation, `{session_id}` in the working directory becomes the Session's ID.
 func (e *Executor) createSession(ctx context.Context, args contract.CreateSessionArgs) (json.RawMessage, error) {
 	if _, err := e.requireSandbox(ctx, args.Sandbox); err != nil {
 		return nil, err

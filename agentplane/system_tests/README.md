@@ -75,7 +75,7 @@ Each harness still creates its own Sandboxes and runs every scenario assertion. 
 and four MCP pairs overlap; the messaging and launcher pairs each peak at four Sandbox Pods.
 The Pod suite also runs two independent cases concurrently on that same stack. Model proxy,
 standing-instruction isolation, tab/reconnect and unwatched-turn cases lease at most two reusable
-Claude/Codex Pod pairs. Each call opens fresh Sessions, clients, HTTP streams and model queues;
+Claude/Codex Pod pairs. Each call creates fresh Sessions, clients, HTTP streams and model queues;
 the lease outlives model-response settlement. Runner reuse verifies that the Sandbox and Pod UIDs
 have not changed. A failed or cancelled lease deletes its pair instead of returning it to the pool.
 The suite owns successful pairs until all selected cases finish, then deletes them before stopping
@@ -225,7 +225,7 @@ exported identities, request parentage and native harness stages in `process-spa
 ## VM workspace ownership
 
 The `vm_workspace_ownership` scenario creates one uniquely named VM Sandbox and
-opens two Codex Sessions without sending a model turn. The first setup checks that the
+creates two Codex Sessions without sending a model turn. The first setup checks that the
 second Session's workspace path is absent; the second exercises normal runner setup, checks UID/GID
 107 ownership, then runs `git init` and `git rev-parse` with global and system Git config disabled.
 Fixture teardown suspends and deletes only the Sandbox created by that invocation.

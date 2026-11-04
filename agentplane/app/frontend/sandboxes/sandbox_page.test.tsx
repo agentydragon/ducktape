@@ -948,6 +948,7 @@ it("reload retains only the Session ID, never the Create spec or bootstrap", asy
   await render(sessions);
   expect(container.textContent).toContain(original.session_id);
   expect(createThreadButton().disabled).toBe(true);
+  expect(button("Forget attempt; Session creation may still complete")).toBeTruthy();
   await act(async () => button("Check Session status").click());
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   await act(async () => button("Forget attempt").click());

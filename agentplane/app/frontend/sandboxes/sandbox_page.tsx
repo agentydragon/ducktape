@@ -104,19 +104,19 @@ export function SandboxPage({
   const requestedTab = searchParams.get("tab");
   const [error, setError] = useState<string | null>(null);
   const [creatingThread, setCreatingThread] = useState(false);
-  const [pendingOpen, setPendingOpen] = useState<PendingCreate | null>(() => {
+  const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(() => {
     const threadId = sessionStorage.getItem(pendingCreateKey(name));
     return threadId ? { threadId } : null;
   });
-  const resolvingOpen = useRef<string | null>(null);
+  const resolvingCreateAttempt = useRef<string | null>(null);
   useEffect(() => {
     const threadId = sessionStorage.getItem(pendingCreateKey(name));
-    setPendingOpen(threadId ? { threadId } : null);
+    setPendingCreate(threadId ? { threadId } : null);
   }, [name]);
-  function rememberOpen(attempt: PendingCreate | null): void {
+  function rememberCreateAttempt(attempt: PendingCreate | null): void {
     if (attempt) sessionStorage.setItem(pendingCreateKey(name), attempt.threadId);
     else sessionStorage.removeItem(pendingCreateKey(name));
-    setPendingOpen(attempt);
+    setPendingCreate(attempt);
   }
   const [launching, setLaunching] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState<EnvironmentTarget | null>(null);
@@ -157,7 +157,7 @@ export function SandboxPage({
   const threads = currentThreads?.threads ?? [];
   const ready = sandboxReady(sandbox);
   const canWakeForThread = sandboxSuspended(sandbox) && sandbox?.configuration?.wakeOnSend === true;
-  const threadUnavailableReason = pendingOpen
+  const threadUnavailableReason = pendingCreate
     ? "An earlier Session creation is unconfirmed. Check its status before creating another thread."
     : !sandbox
       ? deleted
@@ -177,7 +177,7 @@ export function SandboxPage({
   const threadById: Record<string, ThreadView> = Object.fromEntries(
     threads.map((thread) => [thread.metadata.threadId, thread])
   );
-  const pendingThreadId = pendingOpen?.threadId;
+  const pendingThreadId = pendingCreate?.threadId;
   const projectedPendingThread = pendingThreadId ? threadById[pendingThreadId] : undefined;
   const visibleThreads = threads.filter((thread) => includeArchived || !thread.metadata.archived);
   const openProjectedPending = useEffectEvent((threadId: string) => {
@@ -188,7 +188,7 @@ export function SandboxPage({
   // it. Match by the client-minted Thread ID; unrelated Threads never resolve the pending attempt.
   useEffect(() => {
     if (!pendingThreadId) {
-      resolvingOpen.current = null;
+      resolvingCreateAttempt.current = null;
       return;
     }
     if (projectedPendingThread) openProjectedPending(pendingThreadId);
@@ -231,10 +231,10 @@ export function SandboxPage({
   }
 
   async function createThread(spec: SessionSpec, setupScript: string): Promise<void> {
-    if (!sandbox || creatingThread || pendingOpen) return;
+    if (!sandbox || creatingThread || pendingCreate) return;
     const threadId = crypto.randomUUID();
     // Only the Session ID survives reload. In particular, never persist instructions or bootstrap.
-    rememberOpen({ threadId });
+    rememberCreateAttempt({ threadId });
     beginSessionCreate(threadId, name);
     setLaunching(false);
     setCreatingThread(true);
@@ -252,7 +252,7 @@ export function SandboxPage({
         finishSessionCreate(threadId, "unknown");
         return;
       }
-      rememberOpen({ threadId, state: session.status?.materialization, reason: session.status?.reason });
+      rememberCreateAttempt({ threadId, state: session.status?.materialization, reason: session.status?.reason });
       if (session.status?.materialization === SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED)
         finishSessionCreate(threadId, "failed");
       if (
@@ -273,18 +273,18 @@ export function SandboxPage({
     }
   }
 
-  async function checkPendingOpen(): Promise<void> {
-    if (!pendingOpen || creatingThread) return;
+  async function checkPendingCreate(): Promise<void> {
+    if (!pendingCreate || creatingThread) return;
     setCreatingThread(true);
     setError(null);
     try {
-      const { threadId } = pendingOpen;
+      const { threadId } = pendingCreate;
       if (threadById[threadId] || (await withinSessionCreate(threadId, () => findThread(threadId)))) {
         await openThread(threadId, threadId);
       } else {
         try {
           const session = await withinSessionCreate(threadId, () => getSession(threadId));
-          rememberOpen({ threadId, state: session.status?.materialization, reason: session.status?.reason });
+          rememberCreateAttempt({ threadId, state: session.status?.materialization, reason: session.status?.reason });
           if (session.status?.materialization === SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED)
             finishSessionCreate(threadId, "failed");
           const state = session.status?.materialization;
@@ -309,8 +309,9 @@ export function SandboxPage({
     const attempt =
       resolvedAttempt ?? (sessionStorage.getItem(pendingCreateKey(name)) === threadId ? threadId : undefined);
     if (attempt) {
-      if (sessionStorage.getItem(pendingCreateKey(name)) !== attempt || resolvingOpen.current === attempt) return;
-      resolvingOpen.current = attempt;
+      if (sessionStorage.getItem(pendingCreateKey(name)) !== attempt || resolvingCreateAttempt.current === attempt)
+        return;
+      resolvingCreateAttempt.current = attempt;
     }
     try {
       const thread = attempt
@@ -318,14 +319,14 @@ export function SandboxPage({
         : (threadById[threadId] ?? (await getThread(threadId)));
       if (attempt) {
         if (sessionStorage.getItem(pendingCreateKey(name)) !== attempt) {
-          resolvingOpen.current = null;
+          resolvingCreateAttempt.current = null;
           return;
         }
-        rememberOpen(null);
+        rememberCreateAttempt(null);
       }
       onOpenThread(thread.metadata.threadId);
     } catch (reason: unknown) {
-      if (attempt) resolvingOpen.current = null;
+      if (attempt) resolvingCreateAttempt.current = null;
       setError(displayableError(reason));
     }
   }
@@ -454,16 +455,16 @@ export function SandboxPage({
             : "New threads need a ready Sandbox or a suspended Sandbox with wake on send enabled."}
         </Alert>
       )}
-      {pendingOpen && (
+      {pendingCreate && (
         <Alert color="yellow" role="status" title="Session creation">
           <Stack gap="xs">
             <Text size="sm">
-              Session {pendingOpen.threadId}: {sessionStateLabel(pendingOpen.state)}
-              {pendingOpen.reason ? ` — ${pendingOpen.reason}` : ""}. Check before creating another thread. An
+              Session {pendingCreate.threadId}: {sessionStateLabel(pendingCreate.state)}
+              {pendingCreate.reason ? ` — ${pendingCreate.reason}` : ""}. Check before creating another thread. An
               unconfirmed attempt is never retried automatically.
             </Text>
             <Group gap="xs">
-              <Button disabled={creatingThread} variant="light" onClick={() => void checkPendingOpen()}>
+              <Button disabled={creatingThread} variant="light" onClick={() => void checkPendingCreate()}>
                 Check Session status
               </Button>
               <Button
@@ -471,11 +472,11 @@ export function SandboxPage({
                 variant="subtle"
                 color="red"
                 onClick={() => {
-                  rememberOpen(null);
+                  rememberCreateAttempt(null);
                   setError(null);
                 }}
               >
-                Forget attempt; it may still open
+                Forget attempt; Session creation may still complete
               </Button>
             </Group>
           </Stack>

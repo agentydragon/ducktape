@@ -103,7 +103,7 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
         direct_tools_by_group={
             actions.ENVIRONMENTS_GROUP: frozenset({"list", "get", "resume"}),
             actions.SESSIONS_GROUP: frozenset(
-                {"open", "submit_input", "observe_input", "get", "read_turns", "cancel_input", "interrupt_turn"}
+                {"create", "submit_input", "observe_input", "get", "read_turns", "cancel_input", "interrupt_turn"}
             ),
         }
     )
@@ -134,7 +134,7 @@ def test_session_delegation_offers_all_reviewed_direct_tools(scratch_app: App) -
         "get",
         "interrupt_turn",
         "observe_input",
-        "open",
+        "create",
         "read_turns",
         "submit_input",
     }

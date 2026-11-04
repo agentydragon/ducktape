@@ -2032,10 +2032,10 @@ spec:
             - resume
           sessions:
             - cancel_input
+            - create
             - get
             - interrupt_turn
             - observe_input
-            - open
             - read_turns
             - submit_input
         type: exact_actions
@@ -6763,10 +6763,10 @@ data:
           description: Forwards the authenticated caller's ServiceAccount identity to same-principal Session APIs.
         direct_tools:
           - cancel_input
+          - create
           - get
           - interrupt_turn
           - observe_input
-          - open
           - read_turns
           - submit_input
 immutable: false

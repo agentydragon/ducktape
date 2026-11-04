@@ -177,7 +177,7 @@ class History:
                 text("SELECT 1 FROM session_history WHERE id = :id FOR UPDATE"), {"id": session_id}
             )
             if row.first() is None:
-                raise ValueError(f"open Session {session_id} before fencing its ingress")
+                raise ValueError(f"create Session {session_id} before fencing its ingress")
             yield
 
     async def announce_fold_commit(self) -> None:
