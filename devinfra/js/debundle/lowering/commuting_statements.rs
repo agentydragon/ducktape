@@ -19,7 +19,7 @@ use spec::{CommutingStatementsContract, ResolvedMemberSelector, SourceUnitSelect
 use swc_ecma_ast::{Module, ModuleItem};
 
 use super::cross_module::select_one_declared_binding;
-use super::materialize::ResolvedMemberSite;
+use staged_analysis::ResolvedMemberSite;
 
 /// Resolve every `commuting_statements` pair of `chunk_name` to two distinct
 /// post-split source units of `body`. Resolution failures, ambiguity, a foreign

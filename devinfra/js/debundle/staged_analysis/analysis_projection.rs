@@ -21,12 +21,12 @@ use spec::{
     LoadJsChunksArgs, ProgramPremises, SourceUnitSelector, TransformSpec, VendorLevel, VendorMark,
 };
 
-use super::materialize::ResolvedMemberSite;
+use super::ResolvedMemberSite;
 
 /// Resolve a premise member in the requesting provider chunk's namespace.
 /// Returns both the indexed sites (for the serialized projection) and the
 /// unique site owned by the requested chunk (for analysis).
-pub(super) fn resolve_premise_member_site<'a>(
+pub fn resolve_premise_member_site<'a>(
     resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
     request_id: &str,
     chunk_name: &str,
@@ -58,27 +58,27 @@ pub(super) fn resolve_premise_member_site<'a>(
     Ok((sites, site))
 }
 
-pub(super) struct AnalysisProjection<'a> {
+pub struct AnalysisProjection<'a> {
     /// Analysis reads every field but `commuting_statements` and
     /// `dataflow_aware_s_chain`, which only the chunk graph build reads.
-    pub(super) chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
+    pub chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
     /// With source-marker export policies already resolved.
-    pub(super) chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
-    pub(super) host_behavior: &'a HostBehavior,
+    pub chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
+    pub host_behavior: &'a HostBehavior,
     /// Narrows the native census (SPEC.md § Intrinsics never written).
-    pub(super) intrinsics_never_written: Option<&'a IntrinsicsNeverWritten>,
+    pub intrinsics_never_written: Option<&'a IntrinsicsNeverWritten>,
     /// Per analysed chunk: member and chunk-rename annotations and
     /// `no_reentry_call` premises, keyed by the bindings the selector solve
     /// resolved them to.
-    pub(super) declared_assumptions: BTreeMap<String, AnalysisAssumptions>,
+    pub declared_assumptions: BTreeMap<String, AnalysisAssumptions>,
     /// The logical-module members that `native_operation_inputs` name
     /// through `resolved_member`, keyed by `(module, name)`, with the
     /// declaration each resolved to. No other member reaches analysis.
-    pub(super) premise_members: BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
+    pub premise_members: BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 }
 
 impl<'a> AnalysisProjection<'a> {
-    pub(super) fn new(
+    pub fn new(
         chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
         chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
         host_behavior: &'a HostBehavior,
@@ -118,7 +118,7 @@ impl<'a> AnalysisProjection<'a> {
 
     /// `purity: pure_new` annotations, the only declared assumptions the
     /// cross-module pass reads.
-    pub(super) fn declared_pure_new(&self) -> BTreeMap<String, BTreeSet<String>> {
+    pub fn declared_pure_new(&self) -> BTreeMap<String, BTreeSet<String>> {
         self.declared_assumptions
             .iter()
             .map(|(chunk, assumptions)| (chunk.clone(), assumptions.declared_pure_new.clone()))
@@ -132,22 +132,22 @@ impl<'a> AnalysisProjection<'a> {
 /// them leaves the encoding unchanged.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisSpec {
-    pub(super) inputs: LoadJsChunksArgs,
-    pub(super) host_behavior: HostBehavior,
-    pub(super) program_premises: ProgramPremises,
-    pub(super) vendor: BTreeMap<String, VendorMark>,
+    pub inputs: LoadJsChunksArgs,
+    pub host_behavior: HostBehavior,
+    pub program_premises: ProgramPremises,
+    pub vendor: BTreeMap<String, VendorMark>,
     /// As authored; source-marker policies are resolved against the parsed
     /// program.
-    pub(super) chunk_export_purity: BTreeMap<String, ChunkExportPurity>,
-    pub(super) chunk_analysis_options: BTreeMap<String, DependencyGraphOptions>,
+    pub chunk_export_purity: BTreeMap<String, ChunkExportPurity>,
+    pub chunk_analysis_options: BTreeMap<String, DependencyGraphOptions>,
     /// `TransformSpec::materialize_chunk_ids`, in order.
-    pub(super) analysed_chunks: Vec<String>,
+    pub analysed_chunks: Vec<String>,
     /// `materialize_logical_modules.file`.
-    pub(super) entry_file: Option<String>,
+    pub entry_file: Option<String>,
     /// `materialize_logical_modules.prune_other_chunks`.
-    pub(super) prune_other_chunks: bool,
-    pub(super) declared_assumptions: BTreeMap<String, AnalysisAssumptions>,
-    pub(super) premise_members: BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
+    pub prune_other_chunks: bool,
+    pub declared_assumptions: BTreeMap<String, AnalysisAssumptions>,
+    pub premise_members: BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 }
 
 impl AnalysisSpec {
@@ -216,7 +216,7 @@ impl AnalysisSpec {
         &self.analysed_chunks
     }
 
-    pub(super) fn with_premises(
+    pub fn with_premises(
         mut self,
         declared_assumptions: BTreeMap<String, AnalysisAssumptions>,
         premise_members: BTreeMap<(String, String), Vec<ResolvedMemberSite>>,

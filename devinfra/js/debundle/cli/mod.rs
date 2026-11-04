@@ -28,9 +28,10 @@ use graph_provenance::{GraphMismatch, GraphMismatchReason};
 use lowering::FullReportKind;
 use peel::{AtomicGroupsArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs, print_report};
 use pipeline::{
-    AnalyzeArgs, GATE_REJECTED_EXIT_CODE, GateRejected, RunArtifacts, RunOutput, TransformArgs,
-    TransformRunOptions, analyze_cli, run_transform_with_analysis,
+    GATE_REJECTED_EXIT_CODE, GateRejected, RunArtifacts, RunOutput, TransformArgs,
+    TransformRunOptions, run_transform_with_analysis,
 };
+use staged_analysis::{AnalyzeArgs, analyze_cli};
 use std::process::ExitCode;
 
 use crate::bindings_commands::BindingsNs;
@@ -321,7 +322,7 @@ pub struct DebundleArgs {
     #[arg(long, global = true, env = "DEBUNDLE_GRAPH_SOURCE_ROOT")]
     graph_source_root: Option<std::path::PathBuf>,
     /// Relocated package root used by graph compatibility; repeat for each package.
-    #[arg(long = "graph-package-root", global = true, value_name = "NAME=DIR", value_parser = pipeline::parse_package_root_kv)]
+    #[arg(long = "graph-package-root", global = true, value_name = "NAME=DIR", value_parser = staged_analysis::parse_package_root_kv)]
     graph_package_roots: Vec<(String, std::path::PathBuf)>,
     #[command(flatten)]
     invocation: InvocationArgs,
@@ -506,7 +507,7 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
             return Ok(());
         }
     }
-    let graph_package_roots = pipeline::collect_package_roots(args.graph_package_roots)?;
+    let graph_package_roots = staged_analysis::collect_package_roots(args.graph_package_roots)?;
     let describe_query = match &args.command {
         DebundleCommand::Describe(describe_args) => {
             Some(inspection_commands::validate_describe_query(describe_args)?)

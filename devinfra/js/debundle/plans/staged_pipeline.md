@@ -1,11 +1,23 @@
 # Staged pipeline
 
 The projection, serialized analysis artifact, CLI split, and Bazel actions are
-implemented in `lowering/analysis_projection.rs`,
-`lowering/analysis_artifact.rs`, `pipeline.rs`, and `pipeline.bzl`. Artifact
+implemented in `staged_analysis/analysis_projection.rs`,
+`staged_analysis/analysis_artifact.rs`, `staged_analysis/command.rs`,
+`pipeline.rs`, and `pipeline.bzl`. Artifact
 identity includes the analysis engine, canonical projection, and parser source
 digests. Physical parser-file/spec paths and author notes are report context;
 content digests and normalized source paths remain analysis identity.
+
+## Compiled compatibility boundaries
+
+The dedicated analyzer and the standalone CLI share the configured compiled
+`:staged_analysis` identity. This closure owns the fact producer, artifact
+schema/codec and loaded-fact reader, including source preparation and hygiene
+context reconstruction. It excludes `:pipeline`, `:lowering` and `:cli`.
+Emission changes confined to those crates can reuse analysis when the sources
+and canonical projection remain identical. Shared artifact/vendor dependencies
+still invalidate analysis conservatively; splitting those further is separate
+work. Saved graphs and snapshots retain their full executable digest.
 
 ## Remaining selector-identity decision
 

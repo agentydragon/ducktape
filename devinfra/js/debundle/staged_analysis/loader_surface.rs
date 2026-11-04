@@ -80,7 +80,7 @@ impl ExportReentryLoaderDerivation {
         }
     }
 
-    pub(super) fn from_closure(
+    pub fn from_closure(
         target: ChunkId,
         closure: &LoaderClosure<LoaderSiteWitness>,
         surfaces: &LoaderSurfaces,
@@ -263,7 +263,7 @@ pub enum LoaderSite {
     TopLevelAwait,
 }
 
-pub(super) struct LoaderSurfaces {
+pub struct LoaderSurfaces {
     pub chunks: BTreeMap<ChunkId, ChunkLoaderSurface<LoaderSiteWitness>>,
     pub requests: Vec<ExportReentryLoaderRequest>,
     /// Loader sites no reachable code can enter, excluded from the closure.
@@ -545,14 +545,14 @@ impl Classifier<'_> {
 /// when a loader request evaluates it.
 /// The author assertions and input facts the loader-closed derivation reads.
 #[derive(Clone, Copy)]
-pub(super) struct LoaderAssumptions<'a> {
+pub struct LoaderAssumptions<'a> {
     pub host_behavior: &'a spec::HostBehavior,
     pub program_premises: &'a spec::ProgramPremises,
     /// Host loader per embedded input file (`inputs.embedded_loaders_path`).
     pub embedded_loaders: &'a BTreeMap<String, spec::BunLoader>,
 }
 
-pub(super) fn loader_surfaces(
+pub fn loader_surfaces(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
     assumptions: LoaderAssumptions<'_>,

@@ -95,9 +95,10 @@ def _analysis_identity_inputs_test_impl(ctx):
     actions = [action for action in analysistest.target_actions(env) if action.mnemonic == "DebundleAnalysisIdentity"]
     asserts.equals(env, 1, len(actions))
     files = actions[0].inputs.to_list()
-    for crate in ["pipeline", "lowering", "analysis_codec", "analysis"]:
+    for crate in ["staged_analysis", "prepare_chunks", "vendor", "analysis_codec", "analysis"]:
         asserts.true(env, any([file.basename.startswith("lib" + crate + "-") and file.extension == "rlib" for file in files]))
-    asserts.false(env, any([file.basename.startswith("libdebundle_cli-") for file in files]))
+    for crate in ["pipeline", "lowering", "debundle_cli"]:
+        asserts.false(env, any([file.basename.startswith("lib" + crate + "-") for file in files]))
     return analysistest.end(env)
 
 analysis_identity_inputs_test = analysistest.make(_analysis_identity_inputs_test_impl)
