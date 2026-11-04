@@ -10,6 +10,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
+	"github.com/cosi-project/runtime/pkg/controller"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -212,28 +213,33 @@ func (r *Runtime) waitForNativeStopped(ctx context.Context, generation uint64) e
 
 func (r *Runtime) waitForNativeStop(ctx context.Context, generation uint64, closing bool) error {
 	return r.waitForLifecycle(ctx, func() (bool, error) {
-		current, found, err := r.readSessionStatus(ctx)
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		if r.desired.Generation != generation {
-			return false, status.Error(codes.Aborted, "native-stop generation was superseded")
-		}
-		if err != nil {
-			return false, err
-		}
-		if found && current.Generation == generation {
-			if current.Error != "" {
-				return false, errors.New(current.Error)
-			}
-			if current.NativeStopped {
-				return true, nil
-			}
-		}
-		if closing {
-			return false, nil
-		}
-		return false, r.failureLocked()
+		return r.observeNativeStop(ctx, r.lifecycleState, generation, closing)
 	})
+}
+
+// Close and transition waits use the same exact-generation native cleanup proof.
+func (r *Runtime) observeNativeStop(ctx context.Context, reader controller.Reader, generation uint64, closing bool) (bool, error) {
+	current, found, err := lifecycle.ReadStatus(ctx, reader)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.desired.Generation != generation {
+		return false, status.Error(codes.Aborted, "native-stop generation was superseded")
+	}
+	if err != nil {
+		return false, err
+	}
+	if found && current.Generation == generation {
+		if current.Error != "" {
+			return false, errors.New(current.Error)
+		}
+		if current.NativeStopped {
+			return true, nil
+		}
+	}
+	if closing {
+		return false, nil
+	}
+	return false, r.failureLocked()
 }
 
 func (r *Runtime) waitForLifecycle(ctx context.Context, predicate func() (bool, error)) error {

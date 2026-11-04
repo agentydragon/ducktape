@@ -29,6 +29,124 @@ import (
 
 type uncertainCloseExecution struct{ fences atomic.Int32 }
 
+type nativeStopReadProbe struct {
+	state.State
+	value resource.Resource
+	err   error
+	onGet func()
+}
+
+func (p *nativeStopReadProbe) Get(ctx context.Context, ptr resource.Pointer, opts ...state.GetOption) (resource.Resource, error) {
+	if ptr.Type() == lifecycle.AggregateStatusType {
+		if p.onGet != nil {
+			p.onGet()
+		}
+		if p.err != nil {
+			return nil, p.err
+		}
+		return p.value.DeepCopy(), nil
+	}
+	return p.State.Get(ctx, ptr, opts...)
+}
+
+func TestCloseNativeStopObservationPreservesStatusAndDeadlineOrdering(t *testing.T) {
+	config := lifecycleConfig(t, modelConfigServer(t).URL, t.TempDir(), nil, "/bin/false")
+	r := newLifecycleRuntime(t, config)
+	ctx := t.Context()
+	waitRuntime(t, r, func() bool {
+		_, found, err := lifecycle.ReadStatus(ctx, r.lifecycleState)
+		return err == nil && found
+	}, "initial aggregate Session status")
+	ptr := resource.NewMetadata(lifecycle.Namespace, lifecycle.AggregateStatusType, lifecycle.ResourceID, resource.VersionUndefined)
+	base, err := r.lifecycleState.Get(ctx, ptr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	generation := r.desired.Generation
+	r.mu.Unlock()
+	statusValue := func(status lifecycle.Status) resource.Resource {
+		value := base.DeepCopy()
+		*value.(interface{ TypedSpec() *lifecycle.Status }).TypedSpec() = status
+		return value
+	}
+	expired, cancel := context.WithDeadline(ctx, time.Now().Add(-time.Second))
+	defer cancel()
+	failure := errors.New("aggregate status read failed")
+	for _, tc := range []struct {
+		name            string
+		status          lifecycle.Status
+		readErr         error
+		fenceCtx        context.Context
+		generation      uint64
+		sessionsStarted bool
+		wantSettled     bool
+		wantErr         error
+		wantCode        codes.Code
+	}{
+		{name: "pending", status: lifecycle.Status{Generation: generation}, fenceCtx: ctx, generation: generation, sessionsStarted: true},
+		{name: "already stopped at deadline", status: lifecycle.Status{Generation: generation, NativeStopped: true}, fenceCtx: expired, generation: generation, sessionsStarted: true, wantSettled: true},
+		{name: "stale status", status: lifecycle.Status{Generation: generation - 1, NativeStopped: true}, fenceCtx: ctx, generation: generation, sessionsStarted: true},
+		{name: "aggregate error before deadline", status: lifecycle.Status{Generation: generation, Error: "native cleanup failed"}, fenceCtx: expired, generation: generation, sessionsStarted: true, wantSettled: true},
+		{name: "status read error before deadline", readErr: failure, fenceCtx: expired, generation: generation, sessionsStarted: true, wantSettled: true, wantErr: failure},
+		{name: "generation superseded before read error", readErr: failure, fenceCtx: expired, generation: generation - 1, sessionsStarted: true, wantSettled: true, wantCode: codes.Aborted},
+		{name: "deadline without status", status: lifecycle.Status{Generation: generation}, fenceCtx: expired, generation: generation, sessionsStarted: true, wantSettled: true, wantErr: context.DeadlineExceeded},
+		{name: "no Session component", readErr: failure, fenceCtx: expired, generation: generation, wantSettled: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			probe := &nativeStopReadProbe{State: r.lifecycleState, value: statusValue(tc.status), err: tc.readErr}
+			c := &runtimeLifecycleController{r: r, plan: closePlan{generation: tc.generation, sessionsStarted: tc.sessionsStarted, fenceCtx: tc.fenceCtx}}
+			settled, err := c.nativeStopSettled(ctx, probe)
+			if settled != tc.wantSettled {
+				t.Fatalf("settled = %t, want %t; err=%v", settled, tc.wantSettled, err)
+			}
+			if tc.wantCode != codes.OK {
+				if status.Code(err) != tc.wantCode {
+					t.Fatalf("error code = %v, want %v", status.Code(err), tc.wantCode)
+				}
+			} else if tc.status.Error != "" {
+				if err == nil || err.Error() != tc.status.Error {
+					t.Fatalf("aggregate error = %v, want %q", err, tc.status.Error)
+				}
+			} else if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("error = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	probe := &nativeStopReadProbe{State: r.lifecycleState, value: statusValue(lifecycle.Status{Generation: generation})}
+	probe.onGet = func() { close(entered); <-release }
+	c := &runtimeLifecycleController{r: r, plan: closePlan{generation: generation, sessionsStarted: true, fenceCtx: expired}}
+	result := make(chan struct {
+		settled bool
+		err     error
+	}, 1)
+	go func() {
+		settled, err := c.nativeStopSettled(ctx, probe)
+		result <- struct {
+			settled bool
+			err     error
+		}{settled, err}
+	}()
+	select {
+	case <-entered:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("Close did not enter aggregate status read")
+	}
+	probe.value.(interface{ TypedSpec() *lifecycle.Status }).TypedSpec().NativeStopped = true
+	close(release)
+	select {
+	case got := <-result:
+		if !got.settled || got.err != nil {
+			t.Fatalf("status settled during read at deadline = (%t, %v), want settled", got.settled, got.err)
+		}
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("Close did not finish aggregate status observation")
+	}
+}
+
 func (*uncertainCloseExecution) Executor() executorpb.ExecutorServer {
 	return &executorpb.UnimplementedExecutorServer{}
 }

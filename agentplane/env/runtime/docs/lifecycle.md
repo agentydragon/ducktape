@@ -111,6 +111,11 @@ Close observes the accepted bootstrap request and terminal status directly throu
 request holds the bootstrap settlement stage until a status change wakes reconciliation; a terminal
 failure or interruption is settled because the bootstrap owner has completed cleanup.
 
+Close observes the exact-generation aggregate Session status for `NativeStopped` directly through
+COSI. Its existing fence deadline wakes reconciliation if that status never arrives. Native-stop
+errors are saved while Close attempts the Execution fence and reported at the History barrier if
+that fence succeeds.
+
 A seal request waits for native cleanup and the exact Execution fence before journals seal. The
 Session lifecycle controller closes the final admission gate, settles accepted commands, commits
 the seal and observes the exact durable acknowledgement. Its generation-qualified status reports
