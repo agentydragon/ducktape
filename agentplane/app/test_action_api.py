@@ -13,8 +13,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import httpx
 import jwt
@@ -26,20 +25,18 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service import action_service_pb2
 from agentplane.app.testing.fake_action_service import FakeActionService, served_action_service
-from agentplane.app.testing.replication_process import (
-    AppProcess,
-    GatewayAccess,
-    OIDCProviderOptions,
-    SandboxesAccess,
-    app_process,
-)
+from agentplane.app.testing.replication_process import AppProcess, OIDCProviderOptions, SandboxesAccess, app_process
 from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.testing.go_service import WRITER
+from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
 # gazelle:include_dep //agentplane/app:integration_fixtures
 pytest_plugins = ("agentplane.app.integration_fixtures",)
 
 ACTION_AUDIENCE = "test-actions"
 ACTION_REQUESTS = "/upstream/actions/v1/action-requests"
+ACTION_POLICY_SUBJECT_NAMESPACE = "action-federation-tests"
+ACTION_POLICY_SUBJECT_NAME = "test-runner"
 
 
 @dataclass
@@ -48,7 +45,6 @@ class FederationReview:
     service: FakeActionService
     provider: OIDCProviderOptions
     issuer: str
-    sandbox: Any
 
 
 @pytest.fixture
@@ -62,12 +58,16 @@ def reject_refresh_token() -> bool:
 
 
 @pytest.fixture
+def history_writer_namespaces() -> tuple[str, ...]:
+    """These tests have no Sandbox writer; retain only the scripted test writer."""
+    return (WRITER.namespace,)
+
+
+@pytest.fixture
 async def federation_review(
     db_url: str,
     history_client: HistoryServiceClient,
-    sandbox: Any,
-    gateway_service: Any,
-    app_token_file: Path,
+    api_server: KubernetesApiServer,
     token_renew_before_seconds: int,
     reject_refresh_token: bool,
 ) -> AsyncIterator[FederationReview]:
@@ -103,14 +103,14 @@ async def federation_review(
         async with app_process(
             db_url,
             history_client,
-            sandboxes=SandboxesAccess(sandbox.server.kubeconfig, sandbox.namespace),
-            gateway=GatewayAccess(gateway_service.target, app_token_file),
+            sandboxes=SandboxesAccess(api_server.kubeconfig, ACTION_POLICY_SUBJECT_NAMESPACE),
+            gateway=None,
             oidc_provider_options=provider,
             config_for_oidc_issuer=action_federation,
             oidc_env={"AGENTPLANE_OIDC_TOKEN_RENEW_BEFORE_SECONDS": str(token_renew_before_seconds)},
         ) as app:
             assert app.oidc_issuer is not None
-            yield FederationReview(app, service, provider, app.oidc_issuer, sandbox)
+            yield FederationReview(app, service, provider, app.oidc_issuer)
 
 
 async def _list_action_requests(review: FederationReview) -> httpx.Response:
@@ -210,7 +210,7 @@ async def test_refused_refresh_requires_a_new_operator_login(
 
 async def test_action_policy_watch_uses_generated_facade(federation_review: FederationReview) -> None:
     review = federation_review
-    subject = {"subject.namespace": review.sandbox.namespace, "subject.name": review.sandbox.name}
+    subject = {"subject.namespace": ACTION_POLICY_SUBJECT_NAMESPACE, "subject.name": ACTION_POLICY_SUBJECT_NAME}
     review.service.policy.action_policy.synced = True
     async with (
         httpx.AsyncClient(base_url=review.app.url, cookies=review.app.cookies, timeout=None) as browser,
@@ -220,8 +220,8 @@ async def test_action_policy_watch_uses_generated_facade(federation_review: Fede
         lines = response.aiter_lines()
         initial = ParseDict(json.loads(await anext(lines))["result"], action_service_pb2.GetActionPolicyResponse())
         assert initial.action_policy.synced
-        assert initial.action_policy.subject.namespace == review.sandbox.namespace
-        assert initial.action_policy.subject.name == review.sandbox.name
+        assert initial.action_policy.subject.namespace == ACTION_POLICY_SUBJECT_NAMESPACE
+        assert initial.action_policy.subject.name == ACTION_POLICY_SUBJECT_NAME
         changed = action_service_pb2.GetActionPolicyResponse()
         changed.action_policy.subject.CopyFrom(initial.action_policy.subject)
         changed.action_policy.synced = False
