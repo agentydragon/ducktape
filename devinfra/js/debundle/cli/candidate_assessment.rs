@@ -31,11 +31,10 @@ pub struct CandidateEffectAssessmentArgs {
 
 /// Candidate assessment options for a command that already owns its tree
 /// config and module root arguments. The auxiliary transform inputs are the
-/// same shared group used by [`TransformContextArgs`]. `modules refine`
-/// disables the source/output environment defaults for these options so a
-/// supplied value always came from the CLI.
+/// same shared group used by [`TransformContextArgs`]. The command registration
+/// decides whether source/output environment defaults are available.
 #[derive(Debug, clap::Args, Clone, Default)]
-pub struct CandidateEffectAssessmentRefineArgs {
+pub struct CandidateEffectAssessmentExistingTreeArgs {
     /// Verified staged analysis artifact for the candidate effect assessment.
     #[arg(long)]
     pub analysis: Option<PathBuf>,
@@ -92,8 +91,8 @@ impl CandidateEffectAssessmentArgs {
     }
 }
 
-impl CandidateEffectAssessmentRefineArgs {
-    /// Resolve assessment inputs using the refine command's existing tree
+impl CandidateEffectAssessmentExistingTreeArgs {
+    /// Resolve assessment inputs using the command's existing tree
     /// config and module-root flags, so each option has one CLI owner.
     pub fn resolve<'a>(
         &self,
@@ -109,7 +108,7 @@ impl CandidateEffectAssessmentRefineArgs {
             return Ok(None);
         };
         let tree_config = tree_config
-            .context("candidate effect assessment requires the refine command's --tree-config")?;
+            .context("candidate effect assessment requires the command's --tree-config")?;
         let args = CandidateEffectAssessmentArgs {
             transform: TransformContextArgs {
                 spec: None,

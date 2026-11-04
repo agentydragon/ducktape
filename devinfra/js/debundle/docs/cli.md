@@ -294,14 +294,14 @@ Description proposal fields and residual dependency names are defined in
 <../SPEC.md#authoring-reports>; truncation metadata uses the same section names.
 
 The mutating verbs (`bindings assign`, `bindings unassign`,
-`bindings rename`, `modules merge`, `modules delete`) take the same
+`bindings rename`, `modules apply`, `modules merge`, `modules delete`) take the same
 `--format` flag with the same tty/pipe default. Under `text` they print a
 one-line verdict (`<action>` plus move/file counts). Under a JSON format
 each verb prints **one outcome object** sharing a common schema core:
 
 | Field           | Values                                                                                                                             |
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `verb`          | `assign` \| `unassign` \| `rename` \| `merge` \| `delete`                                                                          |
+| `verb`          | `assign` \| `unassign` \| `rename` \| `apply` \| `merge` \| `delete`                                                               |
 | `action`        | `applied` \| `dry-run` \| `noop` \| `unchanged` \| `rejected`                                                                      |
 | `gate`          | `passed` \| `names_only` \| `skipped` (`--no-verify`) \| `not_required` (edit cannot change the assignment); success outcomes only |
 | `files_written` | Files written (or, under `--dry-run`, that would be written)                                                                       |
@@ -309,14 +309,20 @@ each verb prints **one outcome object** sharing a common schema core:
 
 Verb-specific fields flatten in alongside the core: `moves_applied`
 (assign), `unassigned` (unassign), `identity` / `old_readable` /
-`new_readable` (rename), `target` (single merge) / `targets` (merge batch).
-When requested, `bindings assign`, `bindings unassign`, `modules merge`, and
-`modules delete` also return `effect_relocation_assessment`, a report-only
-assessment of their exact
+`new_readable` (rename), `proposals_applied` / `bindings_claimed` /
+`selector_reviews` (apply), `target` (single merge) / `targets` (merge batch).
+When requested, `bindings assign`, `bindings unassign`, `modules apply`,
+`modules merge`, and `modules delete` also return
+`effect_relocation_assessment`, a report-only assessment of their exact
 in-memory candidate plan. It requires `--dry-run --analysis <artifact>`,
-`--graph`, and the full tree transform inputs (`--tree-config`,
+`--graph`, and the full tree transform context (`--tree-config`,
 `--tree-modules`, `--tree-vendor-marks`, `--tree-source-root`, and
 `--out-root`); `--modules` and `--tree-modules` must resolve to the same root.
+`modules apply` and `modules refine` reuse their existing `--modules` root as
+`--tree-modules` and their existing `--tree-config`, avoiding a second
+root/config argument. These two commands require the auxiliary tree inputs to
+be explicit; they do not inherit `DEBUNDLE_TREE_SOURCE_ROOT` or `DEBUNDLE_OUT`.
+Other existing assessment commands retain their transform environment defaults.
 The current path supports one full-tree graph chunk. It loads complete typed
 facts through the canonical pipeline and verifies source, engine and analysis
 projection identities; diagnostic reports are never decoded as facts. The
@@ -1006,7 +1012,11 @@ debundle bindings unassign XOe \
   --out-root "$OUT_ROOT" --analysis analysis.dba --dry-run --format json
 ```
 
-The same opt-in applies to `bindings assign` and `modules merge`.
+The same opt-in applies to `bindings assign`, `modules apply`, and
+`modules merge`. For `modules apply` and `modules refine`, the existing
+`--modules` root and `--tree-config` arguments also supply the transform's
+tree modules and config; the command does not accept duplicate root/config
+flags.
 
 This assessment currently supports one materialized graph chunk whose
 `--tree-config` assigns the full module tree to that chunk (no scoped
@@ -1110,6 +1120,23 @@ or relational selector, provenance, and rebuild-anchor review warning. It
 reports planned files without writing the spec. Uniqueness is proved against
 the current source snapshot; review the retained literals and property names
 before applying. Omit a proposal from the batch to leave it in residual.
+
+For a report-only relocation assessment of the exact post-claim candidate, add
+`--dry-run --analysis <staged-artifact>`, the existing `--tree-config`, and
+`--tree-vendor-marks`, `--tree-source-root`, and `--out-root`. The existing
+`--modules` root also supplies the transform's `--tree-modules`. Use
+`--format json` to receive the structured assessment. The config must
+assign one full module root to the graph chunk, and the transform must
+materialize only that chunk. These auxiliary transform flags are explicit-only
+for `modules apply`: ambient `DEBUNDLE_TREE_SOURCE_ROOT` and `DEBUNDLE_OUT`
+values do not alter ordinary apply, and an explicitly supplied auxiliary flag
+without `--analysis` is rejected. After the existing expected-member and
+realizability gates pass, the command assesses the exact typed documents that
+would be written. A missing, stale, or mismatched context fails before YAML
+writes. The JSON `effect_relocation_assessment` reports statement-order
+commutation only; it does not change edit acceptance or prove replacement,
+privacy, or singleton obligations. Scoped `--tree-config` behavior remains
+available without `--analysis`.
 
 Optional `selectors` entries choose a reviewed selector for a binding; bindings
 without an entry use synthesis. A `source_match` entry uses the normal
