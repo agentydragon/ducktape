@@ -1373,6 +1373,159 @@ fn later_rebinding_does_not_erase_an_earlier_local_call_receipt() {
 }
 
 #[test]
+fn local_declaration_operations_compose_lexical_receipts() {
+    for body in [
+        "const local = seed; return local;",
+        "let local = seed; return local;",
+        "const first = seed, second = first; return second;",
+        "let local; return (local, seed);",
+        "return seed; let unreached;",
+    ] {
+        let source = format!(
+            "const seed = 41;\nfunction readSeed() {{ {body} }}\nvar result = readSeed();\nconsole.log(result);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("seed"),
+                    Member::new("readSeed"),
+                    Member::new("result"),
+                ],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, "41\n");
+        let execution = binding_execution_report(&fixture, "result");
+        assert_eq!(execution["complete"], true, "{body}: {execution:#}");
+        assert_eq!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "actual declaration creation/initialization and reads compose: {body}: {execution:#}"
+        );
+        let graph = fixture.dependency_graph();
+        let result = source_unit_for_binding(&graph, "result");
+        let seed = source_unit_for_binding(&graph, "seed");
+        assert!(
+            graph.edges.iter().any(|edge| {
+                edge.source == result
+                    && edge.target == seed
+                    && edge.binding.as_deref() == Some("seed")
+                    && edge.constrains_init_order
+            }),
+            "the initializer's module read remains ordered: {body}"
+        );
+        let report = fixture.effect_translation_validation();
+        for domain in ["global_properties", "general_heap", "host_effects"] {
+            assert_eq!(
+                report["coverage"]["unknown_coverage"][domain], 2,
+                "lexical declarations cannot certify another effect domain: {body}: {report:#}"
+            );
+        }
+    }
+}
+
+#[test]
+fn local_declaration_receipts_preserve_callable_selection_requirements() {
+    for (selection, authority) in [
+        ("readSeed", "operation_receipt"),
+        ("alias", "ordered_root_initializer_uncovered"),
+    ] {
+        let source = format!(
+            "const seed = 41;\nfunction readSeed() {{ return seed; }}\nconst alias = {{run: readSeed}}.run;\nfunction invoke() {{ const selected = {selection}; return selected(); }}\nvar result = invoke();\nconsole.log(result);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("seed"),
+                    Member::new("readSeed"),
+                    Member::new("alias"),
+                    Member::new("invoke"),
+                    Member::new("result"),
+                ],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, "41\n");
+        let execution = binding_execution_report(&fixture, "result");
+        assert_eq!(
+            execution["binding_effect_authority"]["authority"], authority,
+            "a local declaration transports actual selection but cannot mint it from an equal value: {selection}: {execution:#}"
+        );
+    }
+}
+
+#[test]
+fn local_declaration_receipts_refuse_captured_cells_and_rebinding() {
+    for body in [
+        "var local = seed; return local;",
+        "let local = seed; local = seed; return local;",
+        "const local = seed; const read = () => local; return read();",
+    ] {
+        let source = format!(
+            "const seed = 41;\nfunction readSeed() {{ {body} }}\nvar result = readSeed();\nconsole.log(result);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("seed"),
+                    Member::new("readSeed"),
+                    Member::new("result"),
+                ],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, "41\n");
+        let execution = binding_execution_report(&fixture, "result");
+        assert_eq!(
+            execution["binding_effect_authority"]["authority"],
+            "ordered_root_initializer_uncovered",
+            "other cell kinds and assignment effects need their own receipts: {body}: {execution:#}"
+        );
+    }
+}
+
+#[test]
+fn abrupt_local_declarations_cannot_seal_binding_effects() {
+    for (body, error) in [
+        (
+            "const first = later; let later = seed; return first;",
+            "ReferenceError",
+        ),
+        ("const local = local; return local;", "ReferenceError"),
+        ("const local = throwSeed(); return local;", "41"),
+        (
+            "const local = seed; local = seed; return local;",
+            "TypeError",
+        ),
+    ] {
+        let source = format!(
+            "const seed = 41;\nfunction throwSeed() {{ throw seed; }}\nfunction readSeed() {{ {body} }}\nvar result = readSeed();\nconsole.log(result);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("seed"),
+                    Member::new("throwSeed"),
+                    Member::new("readSeed"),
+                    Member::new("result"),
+                ],
+            )],
+        ));
+        assert_preserved_entry_error(&fixture, error);
+        let execution = binding_execution_report(&fixture, "result");
+        assert_eq!(
+            execution["binding_effect_authority"]["authority"],
+            "ordered_root_initializer_uncovered",
+            "TDZ, abrupt initialization and immutable stores cannot seal a normal root: {body}: {execution:#}"
+        );
+    }
+}
+
+#[test]
 fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
     for (seed, helper, invocation, lexical_authority) in [
         (
@@ -1409,7 +1562,7 @@ fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
             "41",
             "function readSeed() { const local = seed; return local; }",
             "readSeed()",
-            "ordered_root_initializer_uncovered",
+            "operation_receipt",
         ),
         (
             "({value: 41})",
