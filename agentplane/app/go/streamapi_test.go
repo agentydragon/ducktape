@@ -696,8 +696,8 @@ func TestThreadEventStreamWaitsForCommittedCursorCoverage(t *testing.T) {
 			}
 			stream.send(&historypb.FollowSessionResponse{ThroughCursor: 6, Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
 			waitForStreamText(t, response, "event: "+test.event)
-			if test.status == historypb.FeedStatus_FEED_STATUS_FAILED && !strings.Contains(response.String(), failure) {
-				t.Fatalf("failed feed did not include its error: %s", response.String())
+			if test.status == historypb.FeedStatus_FEED_STATUS_FAILED {
+				waitForStreamText(t, response, failure)
 			}
 			select {
 			case <-done:
