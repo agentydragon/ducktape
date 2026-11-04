@@ -1,33 +1,29 @@
-import sqlite3
 from types import SimpleNamespace
 
 import pytest
 import pytest_bazel
 
 from platform_sessions.chrome.profile import ChromeProfile
+from platform_sessions.chrome.testing.cookie_db import CookieRow, create_cookie_db
 
 
 def test_cookie_selection_uses_network_database_and_preserves_metadata(tmp_path):
     network = tmp_path / "Network"
     network.mkdir()
     database = network / "Cookies"
-    with sqlite3.connect(database) as db:
-        db.execute("CREATE TABLE meta (key TEXT, value TEXT)")
-        db.execute("INSERT INTO meta VALUES ('version', '24')")
-        db.execute(
-            "CREATE TABLE cookies (host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB, "
-            "path TEXT, expires_utc INTEGER, is_secure INTEGER, is_httponly INTEGER, "
-            "samesite INTEGER, top_frame_site_key TEXT)"
-        )
-        db.executemany(
-            "INSERT INTO cookies VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [
-                (".example.com", "session", "secret", b"", "/", 0, 1, 1, 2, "https://example.com"),
-                (".example.com", "session", "other-partition", b"", "/", 0, 1, 1, 2, "https://other.com"),
-                (".other.com", "session", "other-host", b"", "/", 0, 1, 1, 2, ""),
-                (".example.com", "other", "other-name", b"", "/", 0, 1, 1, 2, ""),
-            ],
-        )
+    create_cookie_db(
+        database,
+        [
+            CookieRow(
+                host=".example.com", name="session", value="secret", same_site=2, partition="https://example.com"
+            ),
+            CookieRow(
+                host=".example.com", name="session", value="other-partition", same_site=2, partition="https://other.com"
+            ),
+            CookieRow(host=".other.com", name="session", value="other-host", same_site=2),
+            CookieRow(host=".example.com", name="other", value="other-name", same_site=2),
+        ],
+    )
 
     cookies = ChromeProfile(tmp_path).cookies(
         hosts=(".example.com",), names=("session",), partitions=("https://example.com",)

@@ -30,6 +30,7 @@ py_test(
     deps = [
         ":profile",
         "//:conftest",
+        "//platform_sessions/chrome/testing:cookie_db",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

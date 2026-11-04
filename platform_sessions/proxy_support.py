@@ -1,22 +1,20 @@
 """Reusable configuration and HTTP transport for the session proxy."""
 
 from collections.abc import Callable
-from typing import Annotated
 
 import httpx2
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 from starlette.concurrency import run_in_threadpool
 
 from platform_sessions.auth import BearerAuth
+from platform_sessions.http_types import HttpToken
 from platform_sessions.proxy import HeaderPolicy, ProxyInstance, ProxyResponse
-
-HeaderName = Annotated[str, Field(pattern=r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")]
 
 
 class HeaderConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    request: frozenset[HeaderName] = frozenset()
-    response: frozenset[HeaderName] = frozenset()
+    request: frozenset[HttpToken] = frozenset()
+    response: frozenset[HttpToken] = frozenset()
 
 
 class HttpSessionTransport:

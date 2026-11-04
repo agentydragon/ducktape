@@ -3,6 +3,24 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "http_types",
+    srcs = ["http_types.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "http_types_test",
+    srcs = ["http_types_test.py"],
+    deps = [
+        ":http_types",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "registry",
     srcs = ["registry.py"],
     deps = ["@pypi//pydantic"],
@@ -146,6 +164,7 @@ py_library(
     srcs = ["proxy_support.py"],
     deps = [
         ":auth",
+        ":http_types",
         ":proxy",
         "@pypi//httpx2",
         "@pypi//pydantic",

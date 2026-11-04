@@ -18,7 +18,7 @@ from platform_sessions.routes import _encoded_path, _segments, authorize_route
 # The transport owns upstream authentication and session rotation. These are
 # always removed regardless of the additional provider-configured rules.
 _HOP = frozenset(
-    {
+    (
         b"connection",
         b"keep-alive",
         b"proxy-authenticate",
@@ -27,11 +27,11 @@ _HOP = frozenset(
         b"trailer",
         b"transfer-encoding",
         b"upgrade",
-    }
+    )
 )
-_REQUEST_PRIVATE = frozenset({b"authorization", b"cookie", b"cookie2", b"host"})
+_REQUEST_PRIVATE = frozenset((b"authorization", b"cookie", b"cookie2", b"host"))
 _RESPONSE_PRIVATE = frozenset(
-    {b"authorization", b"authentication-info", b"proxy-authentication-info", b"set-cookie", b"set-cookie2"}
+    (b"authorization", b"authentication-info", b"proxy-authentication-info", b"set-cookie", b"set-cookie2")
 )
 
 

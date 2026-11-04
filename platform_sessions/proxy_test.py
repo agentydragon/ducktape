@@ -32,7 +32,7 @@ def make_client():
         "example", "fake", True, "https://upstream.test/api", PurePosixPath("/data/example"), 900, Settings()
     )
     transport = Transport()
-    policy = HeaderPolicy(request=frozenset({"X-Private-Request"}), response=frozenset({"X-Private-Response"}))
+    policy = HeaderPolicy(request=frozenset(("X-Private-Request",)), response=frozenset(("X-Private-Response",)))
     consumer = Bearer(
         SecretStr("consumer-secret"), routes={"example": (Route("GET", "/orders/*"), Route("FROB", "/orders"))}
     )
