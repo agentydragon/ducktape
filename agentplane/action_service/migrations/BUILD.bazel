@@ -19,6 +19,7 @@ go_test(
     name = "baseline_integration_test",
     size = "medium",
     srcs = ["baseline_integration_test.go"],
+    embedsrcs = glob(["testdata/legacy/*.sql"]),
     embed = [":migrations"],
     tags = ["requires_docker"],
     deps = [
