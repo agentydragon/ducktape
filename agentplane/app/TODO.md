@@ -9,9 +9,17 @@
       defaults from it; preserve that behavior until the ownership and replacement data flow are settled.
 - [ ] Migrate browser-retained command destinations to the canonical Environment target. Preserve
       unconfirmed user input and its original Sandbox UID fence; never replay an uncertain command.
-- [ ] Bound Environment-filtered Thread metadata queries without constructing full Thread views just
-      to project metadata, repeating History lookups, or scanning every metadata page for archived
-      counts on each refresh. Preserve service ownership and pagination semantics.
 - [ ] Investigate generated HTTP clients and reusable per-language reducers for protobuf watches.
       EnvironmentService clients repeat route spelling and snapshot, upsert and removal assembly;
       preserve authentication, cancellation, stream errors and reconnect behavior.
+
+## Session and Environment listings
+
+- [ ] Revisit the Environment-filtered Thread metadata query with
+      [`SESSION_HISTORY_PRESENTATION`](../plans/task_dag.md#session_history_presentation--represent-sessions-without-a-required-sandbox),
+      once the central Session and principal/attachment contracts in the
+      [Session and Environment model](../plans/session_environment_model.md#two-relationships-one-session)
+      are reviewed. The current path repeats History lookups and scans metadata pages for archived
+      counts. Design bounded pagination and counting for the selected Session and Environment
+      relationships, preserving exact Environment UID attribution and service ownership. Avoid
+      optimizing the current single-Sandbox assumption as a standalone migration.

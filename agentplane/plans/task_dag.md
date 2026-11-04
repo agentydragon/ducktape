@@ -2262,7 +2262,9 @@ readiness controls and environment-filtered lists for central Sessions with zero
 attachments; do not make historical reads depend on a live directory. Record time-qualified
 attachment transitions as previously requested, with a recoverable History handoff and explicit
 read authority. Preserve retained history, UX visibility and exact UID attribution.
-[Address inventory](session_environment_model.md#session-address-inventory).
+The [app's listing follow-up](../app/TODO.md#session-and-environment-listings) covers bounded
+pagination and archived counts under that model, rather than optimizing the current single-Sandbox
+query as a separate migration. [Address inventory](session_environment_model.md#session-address-inventory).
 
 ### Service API transport tracks
 
