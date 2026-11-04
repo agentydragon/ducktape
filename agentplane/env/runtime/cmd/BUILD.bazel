@@ -4,7 +4,10 @@ package(default_visibility = ["//visibility:public"])
 
 go_binary(
     name = "agentplane-environment-runtime",
-    srcs = ["main.go"],
+    srcs = [
+        "main.go",
+        "new_runtime.go",
+    ],
     pure = "on",
     deps = [
         "//agentplane/env/configuration",
@@ -13,6 +16,31 @@ go_binary(
         "//agentplane/env/runtime/workspace",
         "//agentplane/observability",
         "@io_opentelemetry_go_otel//attribute",
+        "@org_uber_go_zap//:zap",
+        "@org_uber_go_zap//zapcore",
+    ],
+)
+
+# The admission gate is compiled into this system-test binary only.
+go_binary(
+    name = "deletion-test-environment-runtime",
+    testonly = True,
+    srcs = [
+        "deletion_test_runtime.go",
+        "main.go",
+    ],
+    pure = "on",
+    deps = [
+        "//agentplane/env/configuration",
+        "//agentplane/env/runtime",
+        "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/env/runtime/supervision",
+        "//agentplane/env/runtime/workspace",
+        "//agentplane/observability",
+        "@io_opentelemetry_go_otel//attribute",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
         "@org_uber_go_zap//:zap",
         "@org_uber_go_zap//zapcore",
     ],

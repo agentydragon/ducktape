@@ -778,3 +778,36 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+# Pod-only variant: the command gate is absent from every production disk and executable.
+pkg_files(
+    name = "deletion_test_runtime_file",
+    srcs = ["//agentplane/env/runtime/cmd:deletion-test-environment-runtime"],
+    attributes = pkg_attributes(mode = "0755"),
+    renames = {"//agentplane/env/runtime/cmd:deletion-test-environment-runtime": "agentplane-environment-runtime"},
+)
+
+pkg_tar(
+    name = "deletion_test_disk_bin",
+    srcs = [
+        ":deletion_test_runtime_file",
+        "//agentplane/cli:agentplane",
+        "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",
+    ],
+    mode = "0755",
+    package_dir = "/bin",
+)
+
+oci_image(
+    name = "deletion_test_disk_image",
+    architecture = "amd64",
+    os = "linux",
+    tars = [":deletion_test_disk_bin"],
+    user = "107:107",
+)
+
+oci_image_manifest(
+    name = "deletion_test_disk",
+    images = {":deletion_test_disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"},
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+)

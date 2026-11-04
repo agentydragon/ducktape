@@ -32,6 +32,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -43,6 +44,8 @@ const (
 
 // Config contains the resolved environment configuration.
 type Config struct {
+	// ControlInterceptor is an in-process control transport interceptor.
+	ControlInterceptor          grpc.UnaryServerInterceptor
 	Control                     configuration.EnvironmentRuntimeControlConfiguration
 	StateDir                    string
 	Launch                      configuration.SandboxLaunch
@@ -265,6 +268,7 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 		ListenAddress: config.Control.ListenAddress, Security: config.Control.Security,
 		IsClosing: r.isClosing, AdoptIncarnation: r.adoptIncarnation,
 		Facts: r.facts, Changes: r.changesSince,
+		Interceptor: config.ControlInterceptor,
 	}, r)
 	r.executorProxy = newExecutionProxy(r)
 	return r, nil
