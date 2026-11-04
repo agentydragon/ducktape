@@ -410,6 +410,12 @@ fn absorb_effects<T: Ord>(
     target.extend(source);
 }
 
+/// A suboperation proof, never whole-owner initialization coverage.
+struct NonInvokingClassHeritageRead<'a> {
+    binding: &'a Id,
+    dependencies: ProofDependencies,
+}
+
 #[derive(Debug, Clone, Default)]
 struct ReachabilityState {
     unknown_call_seen: bool,
@@ -4640,12 +4646,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             roots.insert(fact.ordinal);
         }
-        // A pure class definition evaluates its superclass value, but merely
-        // reading a known ordinary class does not run that class's constructor
-        // or methods. The eager read remains in StatementFacts for the owner
-        // graph. Calls/static initializers and actual capability publication
-        // still enter reachability through their own executor paths.
-        let inert_heritage = self.inert_class_heritage_binding(fact);
+        // Reading an initialized ordinary class as heritage does not invoke
+        // its constructor or methods. This proof covers only that operation;
+        // eager class work and publication retain their ordinary roots.
+        let heritage_read = self.noninvoking_class_heritage_read(fact);
+        if let Some(proof) = &heritage_read {
+            self.consume_proof_dependencies(&proof.dependencies);
+        }
+        let inert_heritage = heritage_read.map(|proof| proof.binding);
         roots.extend(
             self.inputs
                 .source_unit_read_closure
@@ -5358,9 +5366,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         true
     }
 
-    fn inert_class_heritage_binding<'a>(&'a self, fact: &StatementFacts) -> Option<&'a Id> {
+    fn noninvoking_class_heritage_read<'a>(
+        &'a self,
+        fact: &StatementFacts,
+    ) -> Option<NonInvokingClassHeritageRead<'a>> {
         if !matches!(fact.kind, StatementKind::ClassDecl)
-            || !self.queries.prepared_statement_is_pure(fact.ordinal)
             || self.inputs.exported_owners.contains(&fact.ordinal)
             || self.state.reachability.incomplete
         {
@@ -5375,16 +5385,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.inputs.index.class_owners.get(key) == Some(&fact.ordinal)
                     && fact.declared.contains(binding)
             })?;
-        let ValueExpr::Binding(base) = self
+        let base = self
             .inputs
             .index
             .class_values
             .get(class_key)?
-            .super_class
+            .lexical_heritage
             .as_ref()?
-        else {
-            return None;
-        };
+            .binding();
         let values = self.state.prefix_values.get(base)?;
         let Some(AbstractValue::Value(Value::Alloc(Kind::Class, base_key))) = values.first() else {
             return None;
@@ -5394,14 +5402,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || !fact.reads.eager.contains(base)
             || self.inputs.index.class_bindings.get(base_key) != Some(base)
             || base_owner.0 >= fact.ordinal.0
-            || !self.queries.completed_statement_is_pure(base_owner)
             || self.state.tainted_classes.contains(base_key)
             || self.state.escaped_class_capabilities.contains(base_key)
             || values.len() != 1
         {
             return None;
         }
-        Some(base)
+        // ClassDefinitionEvaluation checks IsConstructor and reads the own
+        // non-writable, non-configurable `prototype` data property of this source
+        // class. Neither operation executes its bodies. Effects from creating
+        // either class are separate operations, not prerequisites of this read.
+        Some(NonInvokingClassHeritageRead {
+            binding: base,
+            dependencies: self.state.ledger_dependencies.clone(),
+        })
     }
 
     fn extend_reachable_owners(

@@ -8,8 +8,9 @@ use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
 use super::value_model::{
     ArrayElement, ArrayIteration, CallSite, ClassSurface, ClassValueFacts, FromEntriesMappedProof,
-    MemberKey, NamespaceValueFacts, OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr,
-    infer_namespace_aliases, object_data_property_name, static_prop, static_property_name,
+    LexicalClassHeritage, MemberKey, NamespaceValueFacts, OwnPropertyDescriptorSyntax,
+    OwnPropertyShape, ValueExpr, infer_namespace_aliases, object_data_property_name, static_prop,
+    static_property_name,
 };
 use crate::analysis_inputs::{
     AnalysisInputs, BundleGlobalNames, HostBehaviorKey, InferredSetConstruction,
@@ -626,6 +627,10 @@ fn add_class_field(facts: &mut ClassValueFacts, is_static: bool, name: String, v
 fn collect_class_value_facts(class: &Class) -> ClassValueFacts {
     let mut facts = ClassValueFacts {
         super_class: class.super_class.as_deref().map(ValueExpr::from_expr),
+        lexical_heritage: class
+            .super_class
+            .as_deref()
+            .and_then(LexicalClassHeritage::collect),
         allocation_without_user_code: class.super_class.is_none() && class.decorators.is_empty(),
         default_has_instance: class.super_class.is_none() && class.decorators.is_empty(),
         ..ClassValueFacts::default()

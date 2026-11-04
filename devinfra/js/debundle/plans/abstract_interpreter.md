@@ -371,9 +371,12 @@ its cost.
 
 ### Step 4 — purity as empty effect set
 
-- Project statement _n_'s purity from executing it. First audit every
-  `prepared_statement_is_pure` reader in `interpreter.rs` so replacing the
-  pre-execution admission facts does not introduce a dependency cycle.
+- Project statement _n_'s purity from executing it. The
+  [admission prerequisite audit](../docs/prepared_purity_prerequisites.md) separates
+  every `prepared_statement_is_pure` consumer. Lexical class heritage now uses
+  canonical source and settled class-identity evidence. Migrate the remaining
+  whole-owner publication and factory/namespace evaluation premises without
+  introducing a dependency on the current completed verdict.
   `Purity::Pure` requires no observable write, invocation, unresolved coercion,
   possible throw or havoc;
   `PurityRule` reasons project the offending effects.

@@ -866,6 +866,33 @@ fn accepted_split_matches_a_direct_run() {
 }
 
 #[test]
+fn lexical_and_compound_class_heritage_match_saved_analysis() {
+    for heritage in ["Core", "(globalThis.saved = Core, Core)", "holder.Base"] {
+        let source = format!(
+            "class Core {{ read() {{ return later; }} }}\n\
+             const holder = {{ get Base() {{ return Core; }} }};\n\
+             class Derived extends {heritage} {{ static snapshot = 1; }}\n\
+             const later = 42;\nconsole.log(new Derived().read(), Derived.snapshot);\n"
+        );
+        assert_staged_run_matches(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "classes",
+                    &[
+                        Member::new("Core"),
+                        Member::new("holder"),
+                        Member::new("Derived"),
+                        Member::new("later"),
+                    ],
+                )],
+            ),
+            &["--effect-conflicts-jsonl"],
+        );
+    }
+}
+
+#[test]
 fn standalone_cli_and_dedicated_analyzer_write_identical_artifacts() {
     let (staged, _fixture) = staged(split_with_pure_import());
     let dedicated = fs::read(&staged.artifact).unwrap();
