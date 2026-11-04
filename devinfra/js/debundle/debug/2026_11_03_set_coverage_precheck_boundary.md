@@ -50,5 +50,5 @@ or validating lane equivalence is separate work. This investigation stopped
 before adding either. No CPU or memory saving is established.
 
 No tests, builds, Analyze runs, benchmarks, profiles or BuildBuddy queries were
-performed. The earlier bounded source and receipt audit is commit
-`277410dbf115750d37a1ec2be6d95c83c19a0a68`.
+performed. The [bounded source and receipt audit](2026_11_03_set_owner_cpu_audit.md)
+records the measured comparison and the remaining profiler question.

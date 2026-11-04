@@ -29,11 +29,11 @@ Saved receipts are under
 `executions-current.json`, and `comparison.json`. They are temporary local
 evidence, not durable public attachments.
 
-| Action | Previous CPU | Combined CPU | Previous peak | Combined peak |
-| --- | ---: | ---: | ---: | ---: |
-| `DebundleAnalyze` | 3,607.959199 s | 5,599.337200 s | 8,217,931,776 B | 8,192,528,384 B |
-| `DebundleProjectAnalysis` | 106.656542 s | 96.828786 s | 3,056,386,048 B | 3,059,621,888 B |
-| `DebundleCachedPipeline` | 258.556272 s | 259.728764 s | 7,519,420,416 B | 7,427,022,848 B |
+| Action                    |   Previous CPU |   Combined CPU |   Previous peak |   Combined peak |
+| ------------------------- | -------------: | -------------: | --------------: | --------------: |
+| `DebundleAnalyze`         | 3,607.959199 s | 5,599.337200 s | 8,217,931,776 B | 8,192,528,384 B |
+| `DebundleProjectAnalysis` |   106.656542 s |    96.828786 s | 3,056,386,048 B | 3,059,621,888 B |
+| `DebundleCachedPipeline`  |   258.556272 s |   259.728764 s | 7,519,420,416 B | 7,427,022,848 B |
 
 Analyze CPU increased about 55%; execution wall time increased from 35m29.2s
 to 52m15.6s. The current execution timestamps exclude input download and output
@@ -98,7 +98,9 @@ an Analyze input or a computation in its command.
 
 ## Decision and remaining uncertainty
 
-Keep #14118 draft. Do not remove the dedicated evaluation, skip an iterable
+#14118 subsequently merged with green CI. The CPU observation remains open;
+the [precheck boundary](2026_11_03_set_coverage_precheck_boundary.md) records
+why the first proposed shortcut was not implemented. Do not remove the dedicated evaluation, skip an iterable
 guard, cache a proof across sites, or use a refusal label as a completion proof
 to recover CPU: those changes could violate exact-site native integrity,
 dependency transport, conservative throwing behavior, or owner coverage.
