@@ -20,7 +20,7 @@ type Log struct {
 	state        state.State
 	mu           sync.Mutex
 	lastSequence uint64
-	ended        bool
+	terminal     *sessionpb.InitializationEvent
 	poisoned     error
 }
 
@@ -32,7 +32,9 @@ func OpenLog(ctx context.Context, store state.State) (*Log, error) {
 	log := &Log{state: store}
 	if len(events) > 0 {
 		log.lastSequence = events[len(events)-1].GetSequence()
-		log.ended = isTerminalEvent(events[len(events)-1])
+		if isTerminalEvent(events[len(events)-1]) {
+			log.terminal = events[len(events)-1]
+		}
 	}
 	return log, nil
 }
@@ -46,28 +48,22 @@ func (l *Log) LastSequence() uint64 {
 func (l *Log) Ended() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.ended
+	return l.terminal != nil
 }
 
-// Since returns the durable suffix after afterSequence in event sequence order.
-// COSI List order is unspecified, so ordering is derived from the persisted sequence field.
-func (l *Log) Since(ctx context.Context, afterSequence uint64) ([]*sessionpb.InitializationEvent, error) {
+func (l *Log) terminalEvent(ctx context.Context) (*sessionpb.InitializationEvent, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.terminal == nil {
+		return nil, nil
+	}
 	if l.poisoned != nil {
 		return nil, fmt.Errorf("bootstrap event sequence is unavailable after uncertain write: %w", l.poisoned)
 	}
-	events, err := readEvents(ctx, l.state)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	result := make([]*sessionpb.InitializationEvent, 0, len(events))
-	for _, event := range events {
-		if event.GetSequence() > afterSequence {
-			result = append(result, proto.Clone(event).(*sessionpb.InitializationEvent))
-		}
-	}
-	return result, nil
+	return proto.Clone(l.terminal).(*sessionpb.InitializationEvent), nil
 }
 
 func readEvents(ctx context.Context, reader controller.Reader) ([]*sessionpb.InitializationEvent, error) {
@@ -142,7 +138,7 @@ func (l *Log) AppendInterrupted(ctx context.Context, attempt uint32) error {
 func (l *Log) append(ctx context.Context, attempt uint32, event *sessionpb.InitializationEvent) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.ended {
+	if l.terminal != nil {
 		return errors.New("bootstrap event sequence is terminal")
 	}
 	if l.poisoned != nil {
@@ -172,7 +168,9 @@ func (l *Log) append(ctx context.Context, attempt uint32, event *sessionpb.Initi
 
 func (l *Log) recordAppend(event *sessionpb.InitializationEvent) {
 	l.lastSequence = event.GetSequence()
-	l.ended = isTerminalEvent(event)
+	if isTerminalEvent(event) {
+		l.terminal = proto.Clone(event).(*sessionpb.InitializationEvent)
+	}
 }
 
 func validateEventObservation(event *sessionpb.InitializationEvent) error {
