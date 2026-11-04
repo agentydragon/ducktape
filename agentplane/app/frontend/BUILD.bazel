@@ -676,7 +676,10 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/threads:thread_groups",
         "//agentplane/app/frontend/threads:thread_status",
         "//agentplane/app/frontend/threads:thread_view_recorder",
+        "//agentplane/app/frontend/threads/testing:state",
         "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/history_service:history_service_pb",
+        "//agentplane/proto:session_pb",
     ],
 )
 
@@ -904,6 +907,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//agentplane/action_service:action_service_pb",
+        "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions/rendering:index",
         "//agentplane/app/frontend/actions/testing:proto_fixtures",
@@ -1061,7 +1065,10 @@ ts_library(
     name = "harness_behavior",
     srcs = ["harness_behavior.ts"],
     tsconfig = TSCONFIG,
-    deps = [":model_catalog"],
+    deps = [
+        ":model_catalog",
+        "//agentplane/proto:session_pb",
+    ],
 )
 
 ts_library(
@@ -1070,6 +1077,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":app_config_client",
+        "//agentplane/proto:session_pb",
     ],
 )
 

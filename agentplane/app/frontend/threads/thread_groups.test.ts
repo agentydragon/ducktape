@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
 
-import type { ThreadView } from "./client";
 import {
   SandboxPhase,
   OperatingMode,
@@ -9,42 +8,26 @@ import {
 
 import { testSandbox } from "../testing/sandbox";
 import { groupThreads } from "./thread_groups";
+import { threadView } from "./testing/state";
 
-function sandbox(name: string, overrides: Partial<EnvironmentDescriptor> = {}): EnvironmentDescriptor {
-  const value = testSandbox(name, `00000000-0000-4000-8000-${name.padStart(12, "0")}`);
+function sandbox(name: string, uid = `00000000-0000-4000-8000-${name.padStart(12, "0")}`): EnvironmentDescriptor {
+  const value = testSandbox(name, uid);
   value.observedState!.operatingMode = OperatingMode.RUNNING;
   value.observedState!.phase = SandboxPhase.CREATING;
-  return Object.assign(value, overrides);
+  return value;
 }
 
-function threadView(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbox">): ThreadView {
-  return {
-    harness: "HARNESS_CLAUDE",
-    model: "test-model",
-    cwd: "/work",
-    created_at: "2026-01-01T00:00:00Z",
-    name: null,
-    archived: false,
-    last_cursor: 0,
-    sandbox_uid: null,
-    last_event_at: null,
-    last_model_activity_at: null,
-    idle_since: null,
-    harness_state: "HARNESS_STATE_UNSPECIFIED",
-    setup_state: null,
-    launch_outcome: null,
-    active_turn_id: null,
-    reasoning_effort: null,
-    feed_status: null,
-    last_turn_status: null,
-    ...overrides,
-  };
+function thread(id: string, sandboxName: string, uid: string, archived = false) {
+  return threadView({
+    metadata: { threadId: id, archived },
+    summary: { sandbox: { name: sandboxName, uid } },
+  });
 }
 
-it("groups threads by sandbox, newest thread first fixing each group's order", () => {
-  const newest = threadView({ id: "t-newest", sandbox: "sb-b" });
-  const middle = threadView({ id: "t-middle", sandbox: "sb-a" });
-  const oldest = threadView({ id: "t-oldest", sandbox: "sb-a" });
+it("groups threads by exact Sandbox identity, newest thread first fixing each group's order", () => {
+  const newest = thread("t-newest", "sb-b", `00000000-0000-4000-8000-${"sb-b".padStart(12, "0")}`);
+  const middle = thread("t-middle", "sb-a", `00000000-0000-4000-8000-${"sb-a".padStart(12, "0")}`);
+  const oldest = thread("t-oldest", "sb-a", `00000000-0000-4000-8000-${"sb-a".padStart(12, "0")}`);
   const suspended = sandbox("sb-b");
   suspended.observedState!.operatingMode = OperatingMode.SUSPENDED;
   suspended.observedState!.phase = SandboxPhase.SUSPENDED;
@@ -58,8 +41,8 @@ it("groups threads by sandbox, newest thread first fixing each group's order", (
 });
 
 it("hides archived Threads without hiding their existing Sandbox", () => {
-  const archived = threadView({ id: "t-1", sandbox: "sb-a", archived: true });
-  const kept = threadView({ id: "t-2", sandbox: "sb-b" });
+  const archived = thread("t-1", "sb-a", `00000000-0000-4000-8000-${"sb-a".padStart(12, "0")}`, true);
+  const kept = thread("t-2", "sb-b", `00000000-0000-4000-8000-${"sb-b".padStart(12, "0")}`);
   const sandboxes = { "sb-a": sandbox("sb-a"), "sb-b": sandbox("sb-b") };
 
   const hidden = groupThreads([archived, kept], sandboxes, false, null);
@@ -71,11 +54,36 @@ it("hides archived Threads without hiding their existing Sandbox", () => {
 });
 
 it("keeps the open Thread in its group even when it is archived and archived Threads are hidden", () => {
-  const open = threadView({ id: "t-1", sandbox: "sb-a", archived: true });
-  const other = threadView({ id: "t-2", sandbox: "sb-a", archived: true });
-  const kept = threadView({ id: "t-3", sandbox: "sb-a" });
+  const uid = `00000000-0000-4000-8000-${"sb-a".padStart(12, "0")}`;
+  const open = thread("t-1", "sb-a", uid, true);
+  const other = thread("t-2", "sb-a", uid, true);
+  const kept = thread("t-3", "sb-a", uid);
 
   const groups = groupThreads([open, other, kept], { "sb-a": sandbox("sb-a") }, false, "t-1");
 
   expect(groups.map((group) => group.threads)).toEqual([[open, kept]]);
+});
+
+it("does not attach retained history to a recreated Sandbox with the same name", () => {
+  const oldThread = thread("old", "sb-a", "old-sandbox-uid");
+  const currentSandbox = sandbox("sb-a");
+
+  const groups = groupThreads([oldThread], { "sb-a": currentSandbox }, false, null);
+
+  expect(groups.map((group) => [group.sandboxName, group.sandbox, group.threads])).toEqual([
+    ["sb-a", null, [oldThread]],
+    ["sb-a", currentSandbox, []],
+  ]);
+});
+
+it("does not attach history without a nonempty UID to a live Sandbox", () => {
+  const legacyThread = thread("legacy", "sb-a", "");
+  const currentSandbox = sandbox("sb-a");
+
+  const groups = groupThreads([legacyThread], { "sb-a": currentSandbox }, false, null);
+
+  expect(groups.map((group) => [group.sandboxName, group.sandbox, group.threads])).toEqual([
+    ["sb-a", null, [legacyThread]],
+    ["sb-a", currentSandbox, []],
+  ]);
 });

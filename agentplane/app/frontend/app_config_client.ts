@@ -65,7 +65,7 @@ async function call(path: string): Promise<ProtoJsonValue> {
   return payload;
 }
 
-function harnessName(harness: ProtoHarness): Harness {
+export function harnessName(harness: ProtoHarness): Harness {
   switch (harness) {
     case ProtoHarness.CLAUDE:
       return "HARNESS_CLAUDE";

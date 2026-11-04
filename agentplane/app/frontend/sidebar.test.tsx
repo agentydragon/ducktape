@@ -20,12 +20,15 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { listThreadWindow } from "./threads/client";
+import { FeedStatus } from "../../history_service/history_service_pb";
+import { HarnessState, LaunchOutcome, SetupState } from "../../proto/session_pb";
 import { RoutedThreadsLiveProvider } from "./threads/live";
 import { SandboxesLiveProvider } from "./sandboxes/live";
 import { Sidebar } from "./sidebar";
 import { threadViewRecorder } from "./threads/thread_view_recorder";
 import { ConnectionIndicator, DEGRADED_AFTER_MS } from "./stream_status";
 import { latestOn, reconnected, ServedWatch, serveEventStreams } from "./testing/watch";
+import { threadView, type ThreadViewInit } from "./threads/testing/state";
 
 type ThreadView = ThreadClientModule.ThreadView;
 
@@ -76,28 +79,33 @@ function sandbox(name: string, overrides: SandboxChanges = {}): EnvironmentDescr
   return value;
 }
 
-function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "sandbox">): ThreadView {
-  return {
-    harness: "HARNESS_CLAUDE",
-    model: "test-model",
-    cwd: "/work",
-    created_at: "2026-01-01T00:00:00Z",
-    name: null,
-    archived: false,
-    last_cursor: 0,
-    sandbox_uid: null,
-    last_event_at: null,
-    last_model_activity_at: null,
-    idle_since: null,
-    harness_state: "HARNESS_STATE_UNSPECIFIED",
-    setup_state: null,
-    launch_outcome: null,
-    active_turn_id: null,
-    reasoning_effort: null,
-    feed_status: "active",
-    last_turn_status: null,
-    ...overrides,
-  };
+function thread({ metadata = {}, summary = {} }: ThreadViewInit): ThreadView {
+  const sandboxName = summary.sandbox?.name ?? "test-sandbox";
+  const uid = summary.sandbox?.uid ?? sandbox(sandboxName).target!.uid;
+  const sandboxRef = Object.hasOwn(summary, "sandbox")
+    ? summary.sandbox === undefined
+      ? undefined
+      : { name: sandboxName, uid, ...summary.sandbox }
+    : { name: sandboxName, uid };
+  const attachment = Object.hasOwn(summary, "attached") ? summary.attached : {};
+  const attached =
+    attachment === undefined
+      ? undefined
+      : {
+          harnessState: HarnessState.UNSPECIFIED,
+          setupState: SetupState.UNSPECIFIED,
+          launchOutcome: LaunchOutcome.UNSPECIFIED,
+          ...attachment,
+        };
+  return threadView({
+    metadata: { archived: false, ...metadata },
+    summary: {
+      ...summary,
+      sandbox: sandboxRef,
+      feedStatus: FeedStatus.ACTIVE,
+      attached,
+    },
+  });
 }
 
 function LocationProbe(): JSX.Element {
@@ -230,16 +238,18 @@ async function render(
   vi.mocked(listThreadWindow).mockImplementation(async (listing, openThreadId) => {
     const matching = listedThreads.filter(
       (candidate) =>
-        (listing.includeArchived || !candidate.archived) &&
-        (listing.search === null || (candidate.name ?? "").toLowerCase().includes(listing.search.toLowerCase()))
+        (listing.includeArchived || !candidate.metadata.archived) &&
+        (listing.search === null ||
+          (candidate.metadata.name ?? "").toLowerCase().includes(listing.search.toLowerCase()))
     );
     const visible = matching.slice(0, listing.limit);
-    const openThread = listedThreads.find((candidate) => candidate.id === openThreadId);
-    if (openThread && !visible.some((candidate) => candidate.id === openThread.id)) visible.push(openThread);
+    const openThread = listedThreads.find((candidate) => candidate.metadata.threadId === openThreadId);
+    if (openThread && !visible.some((candidate) => candidate.metadata.threadId === openThread.metadata.threadId))
+      visible.push(openThread);
     return {
       threads: visible,
       more: matching.length > listing.limit,
-      archived_count: listedThreads.filter((candidate) => candidate.archived).length,
+      archived_count: listedThreads.filter((candidate) => candidate.metadata.archived).length,
     };
   });
   fetchMock.mockImplementation((request: Request) => {
@@ -312,16 +322,24 @@ function location(): string | null | undefined {
 
 it("applies pushed renames and Sandbox state without marking a suspended harness live", async () => {
   const running = thread({
-    id: "t-1",
-    sandbox: "test-sandbox",
-    name: "Before rename",
-    harness_state: "HARNESS_STATE_RUNNING",
+    metadata: {
+      threadId: "t-1",
+      name: "Before rename",
+    },
+    summary: {
+      sandbox: {
+        name: "test-sandbox",
+      },
+      attached: {
+        harnessState: HarnessState.RUNNING,
+      },
+    },
   });
   const sandboxes = { "test-sandbox": sandbox("test-sandbox") };
   const { stream, sandboxStream } = await render([running], sandboxes, { initialPath: "/threads/t-1" });
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(1);
 
-  const renamed = { ...running, name: "Renamed in another replica" };
+  const renamed = { ...running, metadata: { ...running.metadata, name: "Renamed in another replica" } };
   listedThreads = [renamed];
   await pushThreadChange(stream);
   await pushSandboxChanges(sandboxStream, [
@@ -332,7 +350,7 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
     sandbox("test-threadless", { kubernetesDiagnostics: { pod: undefined } }),
   ]);
   expect(container.textContent).not.toContain("Before rename");
-  expect(row(renamed.name).className).toContain("current");
+  expect(row(renamed.metadata.name!).className).toContain("current");
   expect(container.querySelector(".agentplane-thread-list-state-icon[data-status='suspended']")).not.toBeNull();
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);
   expect(container.textContent).toContain("test-threadless");
@@ -341,17 +359,25 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
 
   await pushSandboxChanges(sandboxStream, [], [sandbox("test-sandbox"), sandbox("test-threadless")]);
   expect(container.querySelector('a[href="/sandboxes/test-sandbox"]')).toBeNull();
-  await act(async () => row(renamed.name).click());
+  await act(async () => row(renamed.metadata.name!).click());
   expect(location()).toBe("/threads/t-1");
 });
 
 it("shows chevrons in the shared status indicator when a fresh sidebar thread has an active turn", async () => {
   const active = thread({
-    id: "t-1",
-    sandbox: "test-sandbox",
-    name: "Active thread",
-    harness_state: "HARNESS_STATE_RUNNING",
-    active_turn_id: "turn-1",
+    metadata: {
+      threadId: "t-1",
+      name: "Active thread",
+    },
+    summary: {
+      sandbox: {
+        name: "test-sandbox",
+      },
+      attached: {
+        harnessState: HarnessState.RUNNING,
+        activeTurnId: "turn-1",
+      },
+    },
   });
   const { stream } = await render([active], { "test-sandbox": sandbox("test-sandbox") });
   const indicator = container.querySelector('.agentplane-thread-status-indicator[aria-label^="Turn running"]');
@@ -368,10 +394,18 @@ it("shows chevrons in the shared status indicator when a fresh sidebar thread ha
 it("keeps retained rows but withdraws live indicators when any update source is unavailable", async () => {
   const threads = [
     thread({
-      id: "t-1",
-      sandbox: "test-sandbox",
-      name: "Retained thread",
-      harness_state: "HARNESS_STATE_RUNNING",
+      metadata: {
+        threadId: "t-1",
+        name: "Retained thread",
+      },
+      summary: {
+        sandbox: {
+          name: "test-sandbox",
+        },
+        attached: {
+          harnessState: HarnessState.RUNNING,
+        },
+      },
     }),
   ];
   const sandboxes = { "test-sandbox": sandbox("test-sandbox") };
@@ -394,7 +428,7 @@ it("keeps retained rows but withdraws live indicators when any update source is 
   );
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);
 
-  listedThreads = [{ ...threads[0], name: "Current thread" }];
+  listedThreads = [{ ...threads[0], metadata: { ...threads[0].metadata, name: "Current thread" } }];
   await pushThreadChange(stream, true);
   expect(container.textContent).not.toContain("Retained thread");
   expect(container.querySelector("[data-connection]")).toBeNull();
@@ -404,9 +438,39 @@ it("keeps retained rows but withdraws live indicators when any update source is 
 it("groups threads by sandbox, showing each group's state, name and visible thread count", async () => {
   await render(
     [
-      thread({ id: "t-1", sandbox: "demo-a1b2", name: "List the repository files" }),
-      thread({ id: "t-2", sandbox: "demo-a1b2", name: "Clean up the stale branch" }),
-      thread({ id: "t-3", sandbox: "prod-x7f2", name: "Investigate flaky CI" }),
+      thread({
+        metadata: {
+          threadId: "t-1",
+          name: "List the repository files",
+        },
+        summary: {
+          sandbox: {
+            name: "demo-a1b2",
+          },
+        },
+      }),
+      thread({
+        metadata: {
+          threadId: "t-2",
+          name: "Clean up the stale branch",
+        },
+        summary: {
+          sandbox: {
+            name: "demo-a1b2",
+          },
+        },
+      }),
+      thread({
+        metadata: {
+          threadId: "t-3",
+          name: "Investigate flaky CI",
+        },
+        summary: {
+          sandbox: {
+            name: "prod-x7f2",
+          },
+        },
+      }),
     ],
     {
       "demo-a1b2": sandbox("demo-a1b2"),
@@ -429,7 +493,22 @@ it("groups threads by sandbox, showing each group's state, name and visible thre
 });
 
 it("opens retained Thread history even when its Sandbox is gone", async () => {
-  await render([thread({ id: "t-1", sandbox: "old-debug-3f9c", name: "Why did the migration hang" })], {});
+  await render(
+    [
+      thread({
+        metadata: {
+          threadId: "t-1",
+          name: "Why did the migration hang",
+        },
+        summary: {
+          sandbox: {
+            name: "old-debug-3f9c",
+          },
+        },
+      }),
+    ],
+    {}
+  );
 
   const label = [...container.querySelectorAll(".agentplane-thread-list-group-name")].find(
     (node) => node.textContent === "old-debug-3f9c"
@@ -489,11 +568,24 @@ it("renders only a suspended Sandbox's name in its icon's gray, not the link blu
 });
 
 it("dims only the rows of threads whose harness is stopped", async () => {
-  const live = { sandbox: "test-sandbox", feed_status: "active" } as const;
   await render(
     [
-      thread({ ...live, id: "t-1", name: "Idle thread", harness_state: "HARNESS_STATE_RUNNING" }),
-      thread({ ...live, id: "t-2", name: "Stopped thread", harness_state: "HARNESS_STATE_STOPPED" }),
+      thread({
+        metadata: { threadId: "t-1", name: "Idle thread" },
+        summary: {
+          sandbox: { name: "test-sandbox" },
+          attached: { harnessState: HarnessState.RUNNING },
+          feedStatus: FeedStatus.ACTIVE,
+        },
+      }),
+      thread({
+        metadata: { threadId: "t-2", name: "Stopped thread" },
+        summary: {
+          sandbox: { name: "test-sandbox" },
+          attached: { harnessState: HarnessState.STOPPED },
+          feedStatus: FeedStatus.ACTIVE,
+        },
+      }),
     ],
     { "test-sandbox": sandbox("test-sandbox") }
   );
@@ -514,7 +606,19 @@ it("opens the details of a provisioning Sandbox with no Threads", async () => {
 
 it("links a Sandbox name to its details without changing Thread navigation", async () => {
   await render(
-    [thread({ id: "t-1", sandbox: "demo-a1b2", name: "First thread" })],
+    [
+      thread({
+        metadata: {
+          threadId: "t-1",
+          name: "First thread",
+        },
+        summary: {
+          sandbox: {
+            name: "demo-a1b2",
+          },
+        },
+      }),
+    ],
     { "demo-a1b2": sandbox("demo-a1b2") },
     { initialPath: "/threads/t-1" }
   );
@@ -532,7 +636,19 @@ it("links a Sandbox name to its details without changing Thread navigation", asy
 it("highlights only the current Sandbox group on its details route", async () => {
   const name = "demo a1b2";
   await render(
-    [thread({ id: "t-1", sandbox: name, name: "First thread" })],
+    [
+      thread({
+        metadata: {
+          threadId: "t-1",
+          name: "First thread",
+        },
+        summary: {
+          sandbox: {
+            name: name,
+          },
+        },
+      }),
+    ],
     { [name]: sandbox(name), other: sandbox("other") },
     { initialPath: "/sandboxes/demo%20a1b2?tab=status" }
   );
@@ -553,8 +669,28 @@ it("highlights only the current Sandbox group on its details route", async () =>
 it("opens the stable Thread route and highlights that Thread", async () => {
   await render(
     [
-      thread({ id: "t-1", sandbox: "demo-a1b2", name: "First thread" }),
-      thread({ id: "t-2", sandbox: "demo-a1b2", name: "Second thread" }),
+      thread({
+        metadata: {
+          threadId: "t-1",
+          name: "First thread",
+        },
+        summary: {
+          sandbox: {
+            name: "demo-a1b2",
+          },
+        },
+      }),
+      thread({
+        metadata: {
+          threadId: "t-2",
+          name: "Second thread",
+        },
+        summary: {
+          sandbox: {
+            name: "demo-a1b2",
+          },
+        },
+      }),
     ],
     { "demo-a1b2": sandbox("demo-a1b2") },
     { initialPath: "/threads/t-2" }
@@ -570,8 +706,29 @@ it("opens the stable Thread route and highlights that Thread", async () => {
 it("hides archived threads until the switch is toggled, and archives a thread from its row action", async () => {
   await render(
     [
-      thread({ id: "t-1", sandbox: "demo-a1b2", name: "Active thread" }),
-      thread({ id: "t-2", sandbox: "demo-a1b2", name: "Old spike", archived: true }),
+      thread({
+        metadata: {
+          threadId: "t-1",
+          name: "Active thread",
+        },
+        summary: {
+          sandbox: {
+            name: "demo-a1b2",
+          },
+        },
+      }),
+      thread({
+        metadata: {
+          threadId: "t-2",
+          name: "Old spike",
+          archived: true,
+        },
+        summary: {
+          sandbox: {
+            name: "demo-a1b2",
+          },
+        },
+      }),
     ],
     { "demo-a1b2": sandbox("demo-a1b2") }
   );
@@ -597,7 +754,17 @@ it("hides archived threads until the switch is toggled, and archives a thread fr
 
 it("grows the window a page at a time and narrows it to a search", async () => {
   const threads = Array.from({ length: 51 }, (_, index) =>
-    thread({ id: `t-${index}`, sandbox: "demo", name: `Listed thread ${index}` })
+    thread({
+      metadata: {
+        threadId: `t-${index}`,
+        name: `Listed thread ${index}`,
+      },
+      summary: {
+        sandbox: {
+          name: "demo",
+        },
+      },
+    })
   );
   await render(threads, { demo: sandbox("demo") });
   expect(container.textContent).not.toContain("Listed thread 50");
@@ -623,9 +790,41 @@ it("grows the window a page at a time and narrows it to a search", async () => {
 it("keeps the open Thread in the list while it is archived and the archived switch is off", async () => {
   await render(
     [
-      thread({ id: "t-1", sandbox: "demo-a1b2", name: "Active thread" }),
-      thread({ id: "t-2", sandbox: "demo-a1b2", name: "Open archive", archived: true }),
-      thread({ id: "t-3", sandbox: "demo-a1b2", name: "Other archive", archived: true }),
+      thread({
+        metadata: {
+          threadId: "t-1",
+          name: "Active thread",
+        },
+        summary: {
+          sandbox: {
+            name: "demo-a1b2",
+          },
+        },
+      }),
+      thread({
+        metadata: {
+          threadId: "t-2",
+          name: "Open archive",
+          archived: true,
+        },
+        summary: {
+          sandbox: {
+            name: "demo-a1b2",
+          },
+        },
+      }),
+      thread({
+        metadata: {
+          threadId: "t-3",
+          name: "Other archive",
+          archived: true,
+        },
+        summary: {
+          sandbox: {
+            name: "demo-a1b2",
+          },
+        },
+      }),
     ],
     { "demo-a1b2": sandbox("demo-a1b2") },
     { initialPath: "/threads/t-2" }
@@ -643,10 +842,18 @@ it("archives an idle Session while its harness process remains running", async (
   await render(
     [
       thread({
-        id: "t-1",
-        sandbox: "demo",
-        name: "Live thread",
-        harness_state: "HARNESS_STATE_RUNNING",
+        metadata: {
+          threadId: "t-1",
+          name: "Live thread",
+        },
+        summary: {
+          sandbox: {
+            name: "demo",
+          },
+          attached: {
+            harnessState: HarnessState.RUNNING,
+          },
+        },
       }),
     ],
     { demo: sandbox("demo") }
@@ -665,11 +872,19 @@ it("archives a reserved dormant Session before its first input", async () => {
   await render(
     [
       thread({
-        id: "t-1",
-        sandbox: "demo",
-        name: "Reserved thread",
-        harness_state: "HARNESS_STATE_STOPPED",
-        launch_outcome: "LAUNCH_OUTCOME_PENDING",
+        metadata: {
+          threadId: "t-1",
+          name: "Reserved thread",
+        },
+        summary: {
+          sandbox: {
+            name: "demo",
+          },
+          attached: {
+            harnessState: HarnessState.STOPPED,
+            launchOutcome: LaunchOutcome.PENDING,
+          },
+        },
       }),
     ],
     { demo: sandbox("demo") }
@@ -685,17 +900,17 @@ it("archives a reserved dormant Session before its first input", async () => {
 });
 
 it.each([
-  [{ active_turn_id: "turn-1" }, "Wait for the active turn to finish before archiving"],
-  [{ setup_state: "SETUP_STATE_RUNNING" }, "Wait for setup to finish before archiving"],
+  [{ activeTurnId: "turn-1" }, "Wait for the active turn to finish before archiving"],
+  [{ setupState: SetupState.RUNNING }, "Wait for setup to finish before archiving"],
 ] as const)("blocks archiving while Session work is visible: %o", async (overrides, reason) => {
   await render(
     [
       thread({
-        id: "t-1",
-        sandbox: "demo",
-        name: "Live thread",
-        harness_state: "HARNESS_STATE_RUNNING",
-        ...overrides,
+        metadata: { threadId: "t-1", name: "Live thread" },
+        summary: {
+          sandbox: { name: "demo" },
+          attached: { harnessState: HarnessState.RUNNING, ...overrides },
+        },
       }),
     ],
     { demo: sandbox("demo") }
@@ -706,9 +921,24 @@ it.each([
 });
 
 it("keeps the last snapshot when archiving fails and reports the error", async () => {
-  await render([thread({ id: "t-1", sandbox: "demo", name: "Keep this thread" })], {
-    demo: sandbox("demo"),
-  });
+  await render(
+    [
+      thread({
+        metadata: {
+          threadId: "t-1",
+          name: "Keep this thread",
+        },
+        summary: {
+          sandbox: {
+            name: "demo",
+          },
+        },
+      }),
+    ],
+    {
+      demo: sandbox("demo"),
+    }
+  );
   fetchMock.mockResolvedValueOnce(Response.json({ detail: "Archive unavailable" }, { status: 503 }));
   const archiveButton = container.querySelector('button[aria-label="Archive Keep this thread"]');
   if (!(archiveButton instanceof HTMLButtonElement)) throw new Error("missing archive button");
@@ -845,7 +1075,19 @@ it("closes the phone-width overlay, but leaves the desktop column open, on openi
   for (const phone of [true, false]) {
     stubPhoneWidth(phone);
     const { onClose: closeOnOpenThread } = await render(
-      [thread({ id: "t-1", sandbox: "demo-a1b2", name: "First thread" })],
+      [
+        thread({
+          metadata: {
+            threadId: "t-1",
+            name: "First thread",
+          },
+          summary: {
+            sandbox: {
+              name: "demo-a1b2",
+            },
+          },
+        }),
+      ],
       { "demo-a1b2": sandbox("demo-a1b2") },
       { open: true }
     );
@@ -897,13 +1139,49 @@ it("keeps the scroll recorder in the lower-left sidebar across a threadless rout
 it("counts each listed thread's unprocessed notifications and flags failed delivery without acknowledging any", async () => {
   const sandboxes = { box: sandbox("box") };
   const threads = [
-    thread({ id: "00000000-0000-4000-8000-000000000001", sandbox: "box", name: "Three unprocessed thread" }),
-    thread({ id: "00000000-0000-4000-8000-000000000002", sandbox: "box", name: "One unprocessed thread" }),
-    thread({ id: "00000000-0000-4000-8000-000000000003", sandbox: "box", name: "Delivery-failed thread" }),
     thread({
-      id: "00000000-0000-4000-8000-000000000004",
-      sandbox: "box",
-      name: "Empty-inbox thread",
+      metadata: {
+        threadId: "00000000-0000-4000-8000-000000000001",
+        name: "Three unprocessed thread",
+      },
+      summary: {
+        sandbox: {
+          name: "box",
+        },
+      },
+    }),
+    thread({
+      metadata: {
+        threadId: "00000000-0000-4000-8000-000000000002",
+        name: "One unprocessed thread",
+      },
+      summary: {
+        sandbox: {
+          name: "box",
+        },
+      },
+    }),
+    thread({
+      metadata: {
+        threadId: "00000000-0000-4000-8000-000000000003",
+        name: "Delivery-failed thread",
+      },
+      summary: {
+        sandbox: {
+          name: "box",
+        },
+      },
+    }),
+    thread({
+      metadata: {
+        threadId: "00000000-0000-4000-8000-000000000004",
+        name: "Empty-inbox thread",
+      },
+      summary: {
+        sandbox: {
+          name: "box",
+        },
+      },
     }),
   ];
   const { noticeUrls } = await render(threads, sandboxes, {
@@ -926,7 +1204,7 @@ it("counts each listed thread's unprocessed notifications and flags failed deliv
   await act(async () => {});
   expect(
     noticeUrls.map((url) => decodeURIComponent(new URL(url, "http://test").pathname.split("/").at(-2)!)).sort()
-  ).toEqual(threads.map(({ id }) => id).sort());
+  ).toEqual(threads.map(({ metadata }) => metadata.threadId).sort());
   const badge = (name: string): [string | null, string | null] | undefined => {
     const element = row(name).querySelector(".agentplane-thread-list-row-notices");
     return element === null ? undefined : [element.getAttribute("data-state"), element.textContent];

@@ -7,7 +7,7 @@ import {
   harnessOptions,
   listSandboxPresets,
   models as fetchModelCatalog,
-  modelsForHarness,
+  modelsForHarnessName,
   type Harness,
   type ModelCatalog,
   type SessionDefaultsView,
@@ -50,7 +50,10 @@ export function NewThreadForm({
   // Create-form offerings; existing threads retain their harness and model.
   const [harness, setHarness] = useState<Harness>("HARNESS_CLAUDE");
   const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
-  const models = useMemo(() => (modelCatalog ? modelsForHarness(modelCatalog, harness) : []), [modelCatalog, harness]);
+  const models = useMemo(
+    () => (modelCatalog ? modelsForHarnessName(modelCatalog, harness) : []),
+    [modelCatalog, harness]
+  );
   const [model, setModel] = useState<string | null>(null);
   const reportError = useEffectEvent(onError);
 

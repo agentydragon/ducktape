@@ -287,6 +287,7 @@ agentplane_vitest_test(
         ":client",
         ":live",
         ":sandbox_page",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
@@ -294,6 +295,7 @@ agentplane_vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend:app",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:langfuse_search",
@@ -307,7 +309,10 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/testing:sandbox",
         "//agentplane/app/frontend/testing:watch",
         "//agentplane/app/frontend/threads:client",
+        "//agentplane/app/frontend/threads/testing:state",
         "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/history_service:history_service_pb",
+        "//agentplane/proto:session_pb",
     ],
 )
 

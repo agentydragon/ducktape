@@ -20,6 +20,7 @@ import { finishSessionCreate, withinSessionCreate } from "../tracing";
 import { useFrontendConfig } from "../frontend_config";
 import { appDocumentTitle, CONNECTING_TAB_STATUS, threadDocumentTitle } from "../tab_metadata";
 import { useThreadSync } from "./thread_sync";
+import { timestampLabel } from "./thread_presentation";
 import { ThreadConversation } from "./conversation";
 import { DEFAULT_COMPOSER_PLACEHOLDER } from "./composer";
 import "./page.css";
@@ -63,7 +64,7 @@ export interface ThreadPageProps {
 export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps): JSX.Element {
   const sync = useThreadSync();
   const threadsLive = useRequiredThreadsLive();
-  const snapshotThread = threadsLive.snapshot?.threads.find((candidate) => candidate.id === threadId);
+  const snapshotThread = threadsLive.snapshot?.threads.find((candidate) => candidate.metadata.threadId === threadId);
   const [thread, setThread] = useState<ThreadView | null>(snapshotThread ?? null);
   const notices = useThreadNotices(thread === null ? [] : [threadId]);
   const [tabStatus, setTabStatus] = useState(CONNECTING_TAB_STATUS);
@@ -73,16 +74,17 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
   const sandbox = environment.snapshot?.find(
     (candidate) =>
       thread !== null &&
+      Boolean(thread.summary.sandbox?.uid) &&
       candidate.target !== undefined &&
-      candidate.target.name === thread.sandbox &&
-      candidate.target.uid === thread.sandbox_uid
+      candidate.target.name === thread.summary.sandbox?.name &&
+      candidate.target.uid === thread.summary.sandbox?.uid
   );
   const topbarStatus = threadStatusFromSnapshot(snapshotThread, sandbox, snapshotFresh(threadsLive) && inventoryFresh);
   const [error, setError] = useState<string | null>(null);
   const frontendConfig = useFrontendConfig();
   const traceSearch = frontendConfig?.trace_search ?? null;
   const langfuseSearch = frontendConfig?.langfuse_search ?? null;
-  const { commandsRequireReadySandbox } = harnessBehavior(thread?.harness);
+  const { commandsRequireReadySandbox } = harnessBehavior(thread?.summary.attached?.spec?.harness);
   const notice =
     !commandsRequireReadySandbox && sandbox && inventoryFresh && !sandboxReady(sandbox)
       ? "Execution Sandbox is unavailable. Central sampling controls remain available."
@@ -124,8 +126,8 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
   useEffect(() => {
     document.title = settingsOpen
       ? appDocumentTitle("/", true)
-      : threadDocumentTitle(thread?.name, threadId, tabStatus);
-  }, [thread?.name, tabStatus, threadId, settingsOpen]);
+      : threadDocumentTitle(thread?.metadata.name, threadId, tabStatus);
+  }, [thread?.metadata.name, tabStatus, threadId, settingsOpen]);
   return (
     <ChronologicalDebugProvider key={threadId} threadId={threadId}>
       <TopbarTitle>
@@ -134,8 +136,8 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
             <ThreadStatusIndicator
               kind={topbarStatus.kind}
               label={topbarStatus.label}
-              inbox={notices.bySession.get(thread.id)}
-              live={notices.live.has(thread.id)}
+              inbox={notices.bySession.get(thread.metadata.threadId)}
+              live={notices.live.has(thread.metadata.threadId)}
             />
           )}
           <Box className="agentplane-thread-heading">
@@ -145,16 +147,14 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
               thread={thread}
               onRenamed={(metadata) =>
                 setThread((current) =>
-                  current && current.id === metadata.threadId
-                    ? { ...current, name: metadata.name ?? null, archived: metadata.archived }
-                    : current
+                  current && current.metadata.threadId === metadata.threadId ? { ...current, metadata } : current
                 )
               }
               onError={setError}
             />
             {thread && (
               <Text size="xs" c="dimmed" className="agentplane-thread-heading-sandbox">
-                {thread.sandbox} · {harnessLabel(thread.harness)}
+                {thread.summary.sandbox?.name ?? ""} · {harnessLabel(thread.summary.attached?.spec?.harness)}
               </Text>
             )}
           </Box>
@@ -166,7 +166,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
             {error}
           </Text>
         )}
-        {thread?.archived && (
+        {thread?.metadata.archived && (
           <Text role="status" c="dimmed">
             Thread archived. Showing retained thread history; controls are disabled.
           </Text>

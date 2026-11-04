@@ -1,10 +1,15 @@
 import { create, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
-import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
 
 import { displayableError, fetchWithLogin, HttpError } from "../client";
-import type { Harness } from "../app_config_client";
 import { TurnStatusSchema } from "../../../proto/event_pb";
-import { HarnessSchema, HarnessStateSchema, LaunchOutcomeSchema, SetupStateSchema } from "../../../proto/session_pb";
+import {
+  Harness,
+  HarnessSchema,
+  HarnessState,
+  HarnessStateSchema,
+  LaunchOutcomeSchema,
+  SetupStateSchema,
+} from "../../../proto/session_pb";
 import {
   ListThreadMetadataResponseSchema,
   RenameThreadRequestSchema,
@@ -15,6 +20,7 @@ import {
 import {
   BatchGetSessionSummariesRequestSchema,
   BatchGetSessionSummariesResponseSchema,
+  FeedStatus,
   FeedStatusSchema,
   FindSessionsResponseSchema,
   GetSessionSummaryRequestSchema,
@@ -54,28 +60,10 @@ import {
 
 export type CommandTarget = { sandbox: string; sandboxUid: string };
 
-// UI projection of app-owned metadata joined with the History Session summary.
+/** App metadata and its History projection stay in their generated wire shapes. */
 export interface ThreadView {
-  id: ThreadMetadata["threadId"];
-  sandbox: string;
-  sandbox_uid: string | null;
-  harness: Harness | null;
-  model: string | null;
-  cwd: string | null;
-  created_at: string;
-  name: string | null;
-  archived: ThreadMetadata["archived"];
-  last_cursor: number;
-  last_event_at: string | null;
-  last_model_activity_at: string | null;
-  idle_since: string | null;
-  harness_state: string;
-  setup_state: string | null;
-  launch_outcome: string | null;
-  active_turn_id: string | null;
-  reasoning_effort: string | null;
-  feed_status: string | null;
-  last_turn_status: string | null;
+  metadata: ThreadMetadata;
+  summary: SessionSummary;
 }
 export interface ThreadListing {
   limit: number;
@@ -429,7 +417,8 @@ export async function findThread(threadId: string, signal?: AbortSignal): Promis
     ),
   ]);
   if (!metadata || !summary || !summary.sandbox?.name) return null;
-  return composeThreadView(metadata, summary);
+  validateThread(metadata, summary);
+  return { metadata, summary };
 }
 
 async function fetchProto<T>(
@@ -452,69 +441,35 @@ async function fetchProto<T>(
   return parse((await response.json()) as JsonValue);
 }
 
-function timestampISO(value: Timestamp | undefined): string | null {
-  if (!value) return null;
-  const json = toJson(TimestampSchema, value);
-  if (typeof json !== "string") throw new Error("History Service returned an invalid timestamp");
-  return json;
-}
-
-function enumName(
+function assertKnownEnum(
   value: number,
   schema: { values: readonly { number: number; name: string }[] },
   label: string
-): string {
-  const name = schema.values.find((member) => member.number === value)?.name;
-  if (!name) throw new Error(`History Service returned an unknown ${label}: ${value}`);
-  return name;
+): void {
+  if (!schema.values.some((member) => member.number === value)) {
+    throw new Error(`History Service returned an unknown ${label}: ${value}`);
+  }
 }
 
-function composeThreadView(metadata: ThreadMetadata, summary: SessionSummary): ThreadView {
+function validateThread(metadata: ThreadMetadata, summary: SessionSummary): void {
+  if (!metadata.createdAt) throw new Error("App returned Thread metadata without created_at");
   const attachment = summary.attached;
   const spec = attachment?.spec;
-  const sandboxUID = summary.sandbox?.uid;
-  const createdAt = timestampISO(metadata.createdAt);
-  if (!createdAt) throw new Error("App returned Thread metadata without created_at");
-  const feedStatusNames: Record<string, string> = {
-    FEED_STATUS_ACTIVE: "active",
-    FEED_STATUS_ENDED: "ended",
-    FEED_STATUS_FAILED: "failed",
-  };
-  // An attached Session can precede the first runner feed observation. History represents
-  // that valid state with FEED_STATUS_UNSPECIFIED, which the old Thread view exposed as null.
-  const feedStatusName =
-    attachment && summary.feedStatus !== 0 ? enumName(summary.feedStatus, FeedStatusSchema, "FeedStatus") : null;
-  const feedStatus = feedStatusName === null ? null : feedStatusNames[feedStatusName];
-  if (feedStatusName !== null && !feedStatus) {
-    throw new Error(`History Service returned an unknown FeedStatus: ${feedStatusName}`);
+  if (spec) {
+    assertKnownEnum(spec.harness, HarnessSchema, "Harness");
+    if (spec.harness === Harness.UNSPECIFIED) throw new Error("History Service returned an unspecified Harness");
   }
-
-  const harness = spec ? enumName(spec.harness, HarnessSchema, "Harness") : null;
-  if (harness === "HARNESS_UNSPECIFIED") throw new Error("History Service returned an unspecified Harness");
-
-  return {
-    id: metadata.threadId,
-    sandbox: summary.sandbox?.name ?? "",
-    sandbox_uid: sandboxUID || null,
-    harness: harness as Harness | null,
-    model: spec?.model ?? null,
-    cwd: spec?.cwd ?? null,
-    created_at: createdAt,
-    name: metadata.name ?? null,
-    archived: metadata.archived,
-    last_cursor: Number(summary.foldedThrough),
-    last_event_at: timestampISO(summary.lastEventAt),
-    last_model_activity_at: timestampISO(summary.lastModelActivityAt),
-    idle_since: timestampISO(summary.idleSince),
-    harness_state: enumName(attachment?.harnessState ?? 0, HarnessStateSchema, "HarnessState"),
-    setup_state: attachment ? enumName(attachment.setupState, SetupStateSchema, "SetupState") : null,
-    launch_outcome: attachment ? enumName(attachment.launchOutcome, LaunchOutcomeSchema, "LaunchOutcome") : null,
-    active_turn_id: attachment?.activeTurnId || null,
-    reasoning_effort: spec?.reasoningEffort ?? null,
-    feed_status: feedStatus ?? null,
-    last_turn_status:
-      summary.lastTurnStatus === undefined ? null : enumName(summary.lastTurnStatus, TurnStatusSchema, "TurnStatus"),
-  };
+  assertKnownEnum(attachment?.harnessState ?? HarnessState.UNSPECIFIED, HarnessStateSchema, "HarnessState");
+  if (attachment) {
+    assertKnownEnum(attachment.setupState, SetupStateSchema, "SetupState");
+    assertKnownEnum(attachment.launchOutcome, LaunchOutcomeSchema, "LaunchOutcome");
+  }
+  // An attached Session can precede the first runner feed observation. History represents
+  // that valid state with FEED_STATUS_UNSPECIFIED; preserve the former validation boundary.
+  if (attachment && summary.feedStatus !== FeedStatus.UNSPECIFIED) {
+    assertKnownEnum(summary.feedStatus, FeedStatusSchema, "FeedStatus");
+  }
+  if (summary.lastTurnStatus !== undefined) assertKnownEnum(summary.lastTurnStatus, TurnStatusSchema, "TurnStatus");
 }
 
 /** Pages app-owned Thread rows, joins History summaries, and keeps the former live-list semantics. */
@@ -581,7 +536,8 @@ export async function listThreadWindow(
         sandboxMatches.has(metadataRow.threadId);
       if (!matchesSearch) continue;
       if (!summary.sandbox?.name) throw new Error("History Session has no Sandbox identity");
-      threads.push(composeThreadView(metadataRow, summary));
+      validateThread(metadataRow, summary);
+      threads.push({ metadata: metadataRow, summary });
       if (threads.length > listing.limit) {
         more = true;
         break;
@@ -596,7 +552,7 @@ export async function listThreadWindow(
   }
 
   const visible = threads.slice(0, listing.limit);
-  if (openThreadId !== null && !visible.some((thread) => thread.id === openThreadId)) {
+  if (openThreadId !== null && !visible.some((thread) => thread.metadata.threadId === openThreadId)) {
     try {
       const opened = await findThread(openThreadId, signal);
       if (opened) visible.push(opened);

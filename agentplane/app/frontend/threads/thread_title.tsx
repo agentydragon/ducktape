@@ -25,7 +25,7 @@ export function ThreadTitle({
   async function rename(name: string | null): Promise<void> {
     if (thread === null) return;
     try {
-      onRenamed(await renameThread(thread.id, name));
+      onRenamed(await renameThread(thread.metadata.threadId, name));
     } catch (reason: unknown) {
       onError(displayableError(reason));
     }
@@ -36,7 +36,7 @@ export function ThreadTitle({
       <InlineName
         className="agentplane-thread-title-name"
         label="Thread name"
-        name={thread?.name ?? null}
+        name={thread?.metadata.name ?? null}
         placeholder={threadId}
         maxLength={200}
         disabled={thread === null}

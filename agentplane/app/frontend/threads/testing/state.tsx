@@ -1,4 +1,5 @@
 import { create, type MessageInitShape } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { act } from "react";
 
 import {
@@ -8,33 +9,81 @@ import {
   ThreadPayloadReferenceSchema,
   type ThreadEntity,
   type ThreadPayloadReference,
+  FeedStatus,
+  type SandboxRef,
+  SandboxRefSchema,
+  type SessionSummary,
+  SessionSummarySchema,
 } from "../../../../history_service/history_service_pb";
+import { ThreadMetadataSchema, type ThreadMetadata } from "../../../app_service_pb";
+import {
+  AttachedSchema,
+  type Attached,
+  Harness,
+  HarnessState,
+  LaunchOutcome,
+  type SessionSpec,
+  SessionSpecSchema,
+  SetupState,
+} from "../../../../proto/session_pb";
 
 import type { ThreadView } from "../client";
 import type { ThreadState, ThreadSync } from "../thread_sync";
 
-export const THREAD: ThreadView = {
-  id: "10000000-0000-4000-8000-000000000001",
-  sandbox: "composer-test",
-  harness: "HARNESS_CLAUDE",
-  model: "test-model",
-  cwd: "/test-workspace",
-  created_at: "2026-01-01T00:00:00Z",
-  name: "Test thread",
-  archived: false,
-  last_cursor: 1,
-  sandbox_uid: "20000000-0000-4000-8000-000000000001",
-  last_event_at: null,
-  last_model_activity_at: null,
-  idle_since: null,
-  harness_state: "HARNESS_STATE_RUNNING",
-  setup_state: null,
-  launch_outcome: null,
-  active_turn_id: null,
-  reasoning_effort: "low",
-  feed_status: null,
-  last_turn_status: null,
+type PartialMessage<T extends { $typeName: string }> = Partial<Omit<T, "$typeName" | "$unknown">>;
+
+export type ThreadViewInit = {
+  metadata?: PartialMessage<ThreadMetadata>;
+  summary?: PartialMessage<Omit<SessionSummary, "attached" | "sandbox">> & {
+    attached?:
+      (PartialMessage<Omit<Attached, "spec">> & { spec?: PartialMessage<SessionSpec> | undefined }) | undefined;
+    sandbox?: PartialMessage<SandboxRef> | undefined;
+  };
 };
+
+export function threadView({ metadata = {}, summary = {} }: ThreadViewInit = {}): ThreadView {
+  const threadId = metadata.threadId ?? summary.sessionId ?? "10000000-0000-4000-8000-000000000001";
+  const sandbox = { name: "composer-test", uid: "20000000-0000-4000-8000-000000000001" };
+  const spec = { harness: Harness.CLAUDE, model: "test-model", cwd: "/test-workspace", reasoningEffort: "low" };
+  const attachedInit = Object.hasOwn(summary, "attached") ? summary.attached : {};
+  const specInit = attachedInit !== undefined && Object.hasOwn(attachedInit, "spec") ? attachedInit.spec : spec;
+  const attached =
+    attachedInit === undefined
+      ? undefined
+      : create(AttachedSchema, {
+          sessionId: threadId,
+          lastCursor: 1n,
+          harnessState: HarnessState.RUNNING,
+          activeTurnId: "",
+          setupState: SetupState.NOT_REQUIRED,
+          launchOutcome: LaunchOutcome.STARTED,
+          ...attachedInit,
+          spec: specInit === undefined ? undefined : create(SessionSpecSchema, { ...spec, ...specInit }),
+        });
+  const sandboxInit = Object.hasOwn(summary, "sandbox") ? summary.sandbox : sandbox;
+  const summaryInit = {
+    sessionId: threadId,
+    foldedThrough: 1n,
+    feedStatus: FeedStatus.ACTIVE,
+    ...summary,
+    sandbox: sandboxInit === undefined ? undefined : create(SandboxRefSchema, sandboxInit),
+    attached,
+  };
+  return {
+    metadata: create(ThreadMetadataSchema, {
+      threadId,
+      createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
+      archived: false,
+      ...metadata,
+    }),
+    summary: create(SessionSummarySchema, summaryInit),
+  };
+}
+
+export const THREAD: ThreadView = threadView({
+  metadata: { name: "Test thread" },
+  summary: { sandbox: { name: "composer-test", uid: "20000000-0000-4000-8000-000000000001" } },
+});
 
 export function viewState({
   harness = "running",
@@ -48,7 +97,7 @@ export function viewState({
   activeTurn?: string | null;
 } = {}): ThreadEntity {
   return create(ThreadEntitySchema, {
-    sessionId: THREAD.id,
+    sessionId: THREAD.metadata.threadId,
     projectionEpoch: "test-epoch",
     entityId: "current",
     cursor: 1n,

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
-import { create, fromJson } from "@bufbuild/protobuf";
+import { create, fromJson, toJson } from "@bufbuild/protobuf";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 
 import {
   interruptTurn,
@@ -16,17 +17,72 @@ import {
 } from "./client";
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 import {
+  BatchGetSessionSummariesResponseSchema,
+  FeedStatus,
   EntityKeySchema,
   ReadEntityEvidenceRequestSchema,
   ReadNativeFramesRequestSchema,
   ReadSessionEventsRequestSchema,
   ReadSessionObservationsRequestSchema,
   ThreadEntityKind,
+  SessionSummarySchema,
 } from "../../../history_service/history_service_pb";
+import { Harness, HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
+import { ListThreadMetadataResponseSchema, ThreadMetadataSchema } from "../../app_service_pb";
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+it("keeps app metadata and History SessionSummary in their generated message shapes", async () => {
+  const metadata = create(ThreadMetadataSchema, {
+    threadId: "thread-id",
+    createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
+    name: "Generated pair",
+    archived: false,
+  });
+  const summary = create(SessionSummarySchema, {
+    sessionId: "thread-id",
+    foldedThrough: 9007199254740993n,
+    feedStatus: FeedStatus.UNSPECIFIED,
+    sandbox: { name: "sandbox", uid: "sandbox-uid" },
+    attached: {
+      sessionId: "thread-id",
+      spec: { harness: Harness.CLAUDE, model: "model" },
+      harnessState: HarnessState.RUNNING,
+      setupState: SetupState.NOT_REQUIRED,
+      launchOutcome: LaunchOutcome.STARTED,
+    },
+  });
+  const requests: Request[] = [];
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    requests.push(request);
+    return Promise.resolve(
+      request.method === "GET"
+        ? Response.json(
+            toJson(ListThreadMetadataResponseSchema, create(ListThreadMetadataResponseSchema, { threads: [metadata] }))
+          )
+        : Response.json(
+            toJson(
+              BatchGetSessionSummariesResponseSchema,
+              create(BatchGetSessionSummariesResponseSchema, { summaries: [summary] })
+            )
+          )
+    );
+  });
+
+  const result = await listThreadWindow({ limit: 1, search: null, includeArchived: false }, null);
+
+  expect(result.threads).toEqual([{ metadata, summary }]);
+  expect(result.threads[0]?.summary.foldedThrough).toBe(9007199254740993n);
+  expect(result.threads[0]).not.toHaveProperty("id");
+  expect(result.threads[0]).not.toHaveProperty("created_at");
+  expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
+    "/upstream/app/v1/threads",
+    "/upstream/history/v1/sessions:batchGetSummaries",
+  ]);
 });
 
 it("passes the exact Sandbox UID to the paginated app Thread RPC", async () => {
