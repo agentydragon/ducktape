@@ -3,13 +3,14 @@
 import json
 from pathlib import PurePosixPath
 
+import pytest
 import pytest_bazel
 from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
+from platform_sessions.host import IntegrationError, create_app
 from platform_sessions.registry import IntegrationInstance
-from platform_sessions.service import IntegrationError, create_app
 
 
 class FakeSettings(BaseModel):
@@ -103,6 +104,22 @@ def test_candidate_limits_and_unsupported_verification():
             == 400
         )
         assert client.post("/api/integrations/unknown/session", headers=headers, json={"token": "x"}).status_code == 404
+
+
+def test_failed_start_still_stops_owner():
+    calls = []
+
+    async def start():
+        calls.append("start")
+        raise RuntimeError("startup failed")
+
+    async def stop():
+        calls.append("stop")
+
+    app = create_app([], "https://service.test", require_owner=owner, start=start, stop=stop)
+    with pytest.raises(RuntimeError, match="startup failed"), TestClient(app):
+        pass
+    assert calls == ["start", "stop"]
 
 
 if __name__ == "__main__":

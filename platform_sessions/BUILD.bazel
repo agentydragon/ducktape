@@ -38,8 +38,8 @@ py_test(
 )
 
 py_library(
-    name = "service",
-    srcs = ["service.py"],
+    name = "host",
+    srcs = ["host.py"],
     data = ["//platform_sessions/frontend:assets"],
     deps = [
         ":registry",
@@ -48,15 +48,16 @@ py_library(
 )
 
 py_test(
-    name = "service_test",
-    srcs = ["service_test.py"],
+    name = "host_test",
+    srcs = ["host_test.py"],
     deps = [
+        ":host",
         ":registry",
-        ":service",
         "//:conftest",
         "@pypi//fastapi",
         "@pypi//httpx",  # keep: fastapi.testclient requires httpx at runtime
         "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -77,10 +78,10 @@ py_test(
     name = "proxy_test",
     srcs = ["proxy_test.py"],
     deps = [
+        ":host",
         ":proxy",
         ":registry",
         ":routes",
-        ":service",
         "//:conftest",
         "@pypi//fastapi",
         "@pypi//httpx",  # keep: fastapi.testclient requires httpx at runtime

@@ -6,10 +6,10 @@ import pytest_bazel
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, SecretStr
 
+from platform_sessions.host import create_app
 from platform_sessions.proxy import Consumer, HeaderPolicy, ProxyInstance, ProxyRequest, ProxyResponse, install_proxy
 from platform_sessions.registry import IntegrationInstance
 from platform_sessions.routes import Route
-from platform_sessions.service import create_app
 
 
 class Settings(BaseModel):
