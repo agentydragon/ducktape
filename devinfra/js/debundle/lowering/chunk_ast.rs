@@ -16,7 +16,7 @@ use analysis::{DestructuringDeclaratorGroup, NestedVarStatement, SourceUnitSynta
 use anyhow::{Context, Result, bail};
 use js_ast::post_split_top_level_count;
 use source_identity::SourceUnitOrdinal;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use swc_ecma_ast::*;
 
 #[derive(Debug, Clone)]
@@ -34,21 +34,9 @@ pub(super) struct ChunkAstAnalysis {
     /// need one body_index choose a representative explicitly instead of losing the
     /// earlier sites to `HashMap::collect`'s last-write behavior.
     pub(super) declaration_by_name: HashMap<Id, Vec<StatementId>>,
-    /// Sibling sets for top-level destructuring declarators only.
-    /// For a destructuring declarator like `const { x, y } = obj`
-    /// both `x` and `y` map to the set `{x, y}`. Plain
-    /// single-name declarators (`const a = 1`) are not recorded —
-    /// they don't need atomicity enforcement, and absence here is
-    /// the signal that there are no siblings to consider. Used by
-    /// `pull_destructure_siblings` to enforce destructure-atomicity:
-    /// claiming any one binding from a destructure pulls the rest
-    /// into the same module, because the materializer's
-    /// `split_var_decl` moves a destructuring declarator as one
-    /// atomic group.
-    pub(super) destructure_siblings: BTreeMap<String, BTreeSet<String>>,
-    /// Exact AST identities retained during the same single pass as the
-    /// legacy name-keyed sibling map. These are projection evidence, not
-    /// reconstructed from names or diagnostics.
+    /// Exact AST identities of top-level destructuring declarators, retained
+    /// during this single source-AST pass for both request planning and final
+    /// placement projection.
     pub(super) source_unit_syntax_locations: Vec<SourceUnitSyntaxLocation>,
     pub(super) destructuring_groups: Vec<DestructuringDeclaratorGroup>,
     pub(super) nested_var_statements: Vec<NestedVarStatement>,
@@ -79,7 +67,6 @@ pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
     let mut declarations = Vec::new();
     let mut pre_existing_entry_exports = HashSet::<Id>::new();
     let mut pre_existing_public_export_names = HashSet::<String>::new();
-    let mut destructure_siblings = BTreeMap::<String, BTreeSet<String>>::new();
     let mut source_unit_syntax_locations = Vec::new();
     let mut destructuring_groups = Vec::new();
     let mut nested_var_statements = Vec::new();
@@ -103,7 +90,6 @@ pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
                 exported,
             });
         }
-        record_destructure_sibling_groups(item, &mut destructure_siblings);
         record_exact_destructuring_groups(
             item,
             StatementId(ordinal),
@@ -153,7 +139,6 @@ pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
         runtime_import_facts: RuntimeImportFacts { imports },
         declarations,
         declaration_by_name,
-        destructure_siblings,
         source_unit_syntax_locations,
         destructuring_groups,
         nested_var_statements,
@@ -187,37 +172,6 @@ fn record_exact_destructuring_groups(
             declarator_offset,
             bindings,
         });
-    }
-}
-
-/// For each top-level `var/let/const` declarator whose pattern binds
-/// more than one name (i.e. a destructure like `const { x, y } = obj`
-/// or `const [a, b] = arr`), record a sibling set mapping every name
-/// in the pattern to the set of all names from that pattern.
-/// Single-name declarators add nothing.
-pub(super) fn record_destructure_sibling_groups(
-    item: &ModuleItem,
-    out: &mut BTreeMap<String, BTreeSet<String>>,
-) {
-    let decl = match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => decl,
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => &export_decl.decl,
-        _ => return,
-    };
-    let Decl::Var(var) = decl else {
-        return;
-    };
-    for declarator in &var.decls {
-        let names = binding_names(&declarator.name);
-        if names.len() < 2 {
-            continue;
-        }
-        let group: BTreeSet<String> = names.iter().cloned().collect();
-        for name in &names {
-            out.entry(name.clone())
-                .or_default()
-                .extend(group.iter().cloned());
-        }
     }
 }
 

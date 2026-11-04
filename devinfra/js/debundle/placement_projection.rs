@@ -5,6 +5,7 @@
 //! exact maps the emitter needs together with typed structural evidence.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt;
 
 use serde::Serialize;
 use source_identity::{SourceUnitOrdinal, StatementId};
@@ -34,6 +35,64 @@ pub struct DestructuringDeclaratorGroup {
     pub statement: StatementId,
     pub declarator_offset: usize,
     pub bindings: Vec<Id>,
+}
+
+/// Result of classifying the observed owners of one retained destructuring
+/// declarator. Request planning supplies explicit claims only; finalized
+/// projection supplies every destination after checking completeness. The
+/// classification itself is shared, while planning's sibling-pull mechanics
+/// remain separate from finalized placement proof.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct DestructuringGroupDestinationCheck {
+    pub group: DestructuringDeclaratorGroup,
+    pub owners: Vec<(Id, ModuleId)>,
+    pub classification: DestructuringGroupOwnerClassification,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum DestructuringGroupOwnerClassification {
+    Unclaimed,
+    OneOwner { destination: ModuleId },
+    Split { destinations: Vec<ModuleId> },
+}
+
+impl fmt::Display for DestructuringGroupDestinationCheck {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("destructuring declarator placement check")
+    }
+}
+
+impl std::error::Error for DestructuringGroupDestinationCheck {}
+
+/// Classify observed owners for one destructuring declarator. Callers choose
+/// the ownership evidence domain: explicit module requests during planning, or
+/// complete source-unit destinations after assignment finalization.
+pub fn classify_destructuring_group_owners(
+    group: &DestructuringDeclaratorGroup,
+    owners: impl IntoIterator<Item = (Id, ModuleId)>,
+) -> DestructuringGroupDestinationCheck {
+    let owners: Vec<_> = owners.into_iter().collect();
+    let distinct_destinations: Vec<_> = owners
+        .iter()
+        .map(|(_, destination)| *destination)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let classification = match distinct_destinations.as_slice() {
+        [] => DestructuringGroupOwnerClassification::Unclaimed,
+        [destination] => DestructuringGroupOwnerClassification::OneOwner {
+            destination: *destination,
+        },
+        _ => DestructuringGroupOwnerClassification::Split {
+            destinations: distinct_destinations,
+        },
+    };
+
+    DestructuringGroupDestinationCheck {
+        group: group.clone(),
+        owners,
+        classification,
+    }
 }
 
 /// A top-level control-flow body that owns one or more hoisted `var` bindings.
@@ -553,20 +612,40 @@ pub fn project_placement<'a>(input: PlacementProjectionInput<'a>) -> PlacementPr
                 },
             );
         }
-        let destinations: Vec<_> = group
+        let owners: Vec<_> = group
             .bindings
             .iter()
-            .filter_map(|binding| binding_destinations.get(binding).copied())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
+            .filter_map(|binding| {
+                binding_destinations
+                    .get(binding)
+                    .copied()
+                    .map(|destination| (binding.clone(), destination))
+            })
             .collect();
-        if destinations.len() > 1 {
-            violations.push(
-                PlacementProjectionViolation::DestructuringDestinationSplit {
-                    group: group.clone(),
-                    destinations,
-                },
-            );
+        let present_bindings: BTreeSet<_> =
+            owners.iter().map(|(binding, _)| binding.clone()).collect();
+        if group
+            .bindings
+            .iter()
+            .any(|binding| !present_bindings.contains(binding))
+        {
+            unresolved_checks.insert(StructuralPlacementCheck::DestructuringDeclaratorGrouping);
+            continue;
+        }
+        let decision = classify_destructuring_group_owners(group, owners);
+        match decision.classification {
+            DestructuringGroupOwnerClassification::Split { destinations } => {
+                violations.push(
+                    PlacementProjectionViolation::DestructuringDestinationSplit {
+                        group: decision.group,
+                        destinations,
+                    },
+                );
+            }
+            DestructuringGroupOwnerClassification::Unclaimed => {
+                unresolved_checks.insert(StructuralPlacementCheck::DestructuringDeclaratorGrouping);
+            }
+            DestructuringGroupOwnerClassification::OneOwner { .. } => {}
         }
     }
 

@@ -624,6 +624,14 @@ fn assert_candidate_assessment_matches_run(
     ] {
         assert_eq!(assessment[field], report[field], "assessment field {field}");
     }
+    let placement_report: Value = serde_json::from_slice(
+        &fs::read(out_root.join("reports/tree/main/candidate_relocation_assessment.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        assessment["placement"], placement_report["placement"],
+        "candidate preview and emitted run must use the same typed placement result"
+    );
 }
 
 fn read_effect_report(out_root: &Path) -> Value {
@@ -964,6 +972,53 @@ fn source_mismatch_is_refused() {
 #[test]
 fn gate_rejected_split_matches_a_direct_run() {
     assert_staged_run_matches(rejected_split(), &["--emit-on-rejection"]);
+}
+
+#[test]
+fn early_destructuring_split_refusal_matches_with_saved_facts() {
+    let source = "const source = { left: 1, right: 2 };\n\
+         const { left, right } = source;\n\
+         console.log(left, right);\n\
+         export { left, right };\n";
+    // Build a matching analysis artifact while the source has one explicit
+    // destructuring owner, then change only the module assignment to create the
+    // conflicting request. Assignment edits do not change these saved facts.
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        source,
+        vec![logical_module("left_module", &[Member::new("left")])],
+    ));
+    let mut spec: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&staged.spec).unwrap()).unwrap();
+    let right_module = serde_yaml::from_str(
+        "members:\n  - name: right\n    selector:\n      binding:\n        name: right\n",
+    )
+    .unwrap();
+    spec["logical_modules"]["static/app"]
+        .as_mapping_mut()
+        .unwrap()
+        .insert(
+            serde_yaml::Value::String("right_module".into()),
+            right_module,
+        );
+    fs::write(&staged.spec, serde_yaml::to_string(&spec).unwrap()).unwrap();
+    let direct = staged.run(&[]);
+    staged.set_aside("direct_refusal_output");
+    let from_artifact = staged.run(&["--analysis", path(&staged.artifact)]);
+
+    assert!(
+        !direct.status.success(),
+        "direct run unexpectedly succeeded"
+    );
+    assert_eq!(direct.status.code(), from_artifact.status.code());
+    for result in [&direct, &from_artifact] {
+        assert!(
+            result.stderr.contains("destructure declarator binds left")
+                && result.stderr.contains("left_module")
+                && result.stderr.contains("right_module"),
+            "expected the typed early placement refusal in stderr:\n{}",
+            result.stderr
+        );
+    }
 }
 
 #[test]
@@ -1730,6 +1785,39 @@ fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
     assert_node_output(
         &staged.root().join("run-candidate/app/main/entry.js"),
         "first second\n",
+        "",
+    );
+}
+
+#[test]
+fn destructuring_placement_preview_matches_staged_emission() {
+    let source = "const { left, right } = { left: 10, right: 20 };\n\
+console.log(left, right);\n";
+    let staged = staged_tree(
+        &[("main", source)],
+        &[(
+            "group.yaml",
+            "members: [{selector: {binding: {name: left}}}]\n",
+        )],
+    );
+    let result = staged.assign(None, Some(&staged.artifact), true);
+    assert_ok(&result, "destructuring bindings assign preview");
+    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    let assessment = &outcome["effect_relocation_assessment"];
+    assert_eq!(
+        assessment["placement"]["projection_violations"],
+        json!([]),
+        "the shared request-planning pull must produce one finalized destination"
+    );
+    assert_eq!(
+        assessment["placement"]["coverage"]["unresolved_checks"],
+        json!([]),
+        "destructuring grouping must be covered in the finalized preview"
+    );
+    assert_candidate_assessment_matches_run(assessment, &staged, "destructure", true, false);
+    assert_node_output(
+        &staged.root().join("run-destructure/app/main/entry.js"),
+        "10 20\n",
         "",
     );
 }

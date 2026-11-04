@@ -248,7 +248,7 @@ pub(super) fn prepare_logical_chunk(
         )?;
     }
     builder.drop_explicit_request_scratch();
-    builder.pull_destructure_siblings(&ast_analysis.destructure_siblings, chunk_top_level_mark)?;
+    builder.apply_destructuring_group_placement(&ast_analysis.destructuring_groups)?;
     builder.add_residual_sweep(
         residual_request.as_ref(),
         chunk_unassigned_mode.catchall_file_target(),
@@ -322,10 +322,9 @@ pub(super) fn claim_prepared_chunk<'a>(
         &prepared.runtime_ast.module.body,
         &prepared.ast_analysis.declaration_by_name,
     )?;
-    prepared.builder.pull_destructure_siblings(
-        &prepared.ast_analysis.destructure_siblings,
-        chunk_top_level_mark,
-    )?;
+    prepared
+        .builder
+        .apply_destructuring_group_placement(&prepared.ast_analysis.destructuring_groups)?;
     prepared
         .builder
         .adopt_bindings_of_claimed_anonymous_statements(&prepared.ast_analysis.declarations);
