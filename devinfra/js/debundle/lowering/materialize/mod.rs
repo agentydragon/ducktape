@@ -48,7 +48,7 @@ use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, Selecte
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileRole, JsFile};
 use chunk_analysis::build_chunk_graph;
 use gate::{
-    AssignmentAnalysis, RejectedAssignment, ValidatedAssignment,
+    AssignmentAnalysis, CandidateAssessmentSelection, RejectedAssignment, ValidatedAssignment,
     render_atomic_group_conflict_summary, render_cycle_summary,
 };
 use graph_provenance::GraphProvenance;
@@ -609,51 +609,28 @@ pub(super) fn finish_logical_chunk(
         stable_set_intervals: &stable_set_intervals,
     });
     if assessment_only {
-        let validation = assignment_analysis.validate_for_emission();
-        let legacy = match &validation {
-            Ok(assignment) => assignment.translation_validation::<std::convert::Infallible>(
-                None::<
-                    &mut fn(
-                        &gate::TranslationValidationEvidenceReport,
-                    )
-                        -> std::result::Result<(), std::convert::Infallible>,
-                >,
-            )?,
-            Err(rejected) => rejected.translation_validation::<std::convert::Infallible>(
-                None::<
-                    &mut fn(
-                        &gate::TranslationValidationEvidenceReport,
-                    )
-                        -> std::result::Result<(), std::convert::Infallible>,
-                >,
-            )?,
+        let no_reports = ReportEmission::None;
+        let report_context = ChunkReportContext {
+            ownership_subset: ownership_subset.as_ref(),
+            chunk_id,
+            report_emission: &no_reports,
+            graph_reports: GraphReportSelection::None,
+            policy: gate_rejection_policy,
+            assessment_policy: CandidateAssessmentPolicy::Always,
+            effect_conflicts_jsonl: false,
+            full_translation_validation: false,
+            full_export_reentry: false,
         };
-        let assessment = match &validation {
-            Ok(assignment) => assignment
-                .candidate_relocation_assessment::<std::convert::Infallible>(
-                    &analysis.facts,
-                    &legacy,
-                    &placement_projection,
-                    None::<
-                        &mut fn(
-                            &gate::EffectConflictDiagnosticRow<'_>,
-                        )
-                            -> std::result::Result<(), std::convert::Infallible>,
-                    >,
-                )?,
-            Err(rejected) => rejected.candidate_relocation_assessment::<std::convert::Infallible>(
-                &analysis.facts,
-                &legacy,
-                &placement_projection,
-                None::<
-                    &mut fn(
-                        &gate::EffectConflictDiagnosticRow<'_>,
-                    )
-                        -> std::result::Result<(), std::convert::Infallible>,
-                >,
-            )?,
-        }
-        .report();
+        let (evaluation, _) = evaluate_chunk_candidate(
+            report_context,
+            &assignment_analysis,
+            &analysis.facts,
+            &placement_projection,
+        )?;
+        let assessment = evaluation
+            .candidate_assessment()
+            .expect("assessment-only evaluation always selects candidate assessment")
+            .report();
         return Ok(FinishedLogicalChunk::Assessed {
             chunk_id: chunk_id.to_string(),
             assessment,
@@ -663,24 +640,31 @@ pub(super) fn finish_logical_chunk(
     // and every chunk's bounded summary use the unchanged full input.
     let effect_conflicts_jsonl = effect_conflicts_jsonl
         && (effect_conflicts_chunks.is_empty() || effect_conflicts_chunks.contains(chunk_id));
-    let gate_outcome = validate_and_emit_reports(
-        ChunkReportContext {
-            chunk_id,
-            ownership_subset: ownership_subset.as_ref(),
-            report_emission,
-            graph_reports,
-            policy: gate_rejection_policy,
-            effect_conflicts_jsonl,
-            full_export_reentry: full_reports.contains(&super::FullReportKind::ExportReentry)
-                && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
-            full_translation_validation: full_reports
-                .contains(&super::FullReportKind::TranslationValidation)
-                && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
-        },
-        program_graph,
+    let report_context = ChunkReportContext {
+        ownership_subset: ownership_subset.as_ref(),
+        chunk_id,
+        report_emission,
+        graph_reports,
+        policy: gate_rejection_policy,
+        assessment_policy: CandidateAssessmentPolicy::WhenReportsAreSelected,
+        effect_conflicts_jsonl,
+        full_export_reentry: full_reports.contains(&super::FullReportKind::ExportReentry)
+            && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
+        full_translation_validation: full_reports
+            .contains(&super::FullReportKind::TranslationValidation)
+            && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
+    };
+    let (evaluation, report_out_dir) = evaluate_chunk_candidate(
+        report_context,
         &assignment_analysis,
         &analysis.facts,
         &placement_projection,
+    )?;
+    let gate_outcome = emit_reports_and_resolve_gate(
+        report_context,
+        program_graph,
+        evaluation,
+        report_out_dir,
         &export_reentry_reports[&chunk_id_interned],
     )?;
 
@@ -1236,12 +1220,14 @@ fn write_selector_diagnostics(
 }
 
 /// The selected chunk's output policy, independent of its analysis facts.
+#[derive(Clone, Copy)]
 struct ChunkReportContext<'a> {
     ownership_subset: Option<&'a BTreeSet<spec::ModulePath>>,
     chunk_id: &'a str,
     report_emission: &'a ReportEmission,
     graph_reports: GraphReportSelection,
     policy: GateRejectionPolicy,
+    assessment_policy: CandidateAssessmentPolicy,
     effect_conflicts_jsonl: bool,
     full_translation_validation: bool,
     full_export_reentry: bool,
@@ -1264,6 +1250,111 @@ struct GraphSummary<'a> {
     full_graphs: bool,
 }
 
+#[derive(Clone, Copy)]
+enum CandidateAssessmentPolicy {
+    Always,
+    WhenReportsAreSelected,
+}
+
+impl CandidateAssessmentPolicy {
+    fn selection(self, report_out_dir: Option<&std::path::Path>) -> CandidateAssessmentSelection {
+        match self {
+            Self::Always => CandidateAssessmentSelection::Include,
+            Self::WhenReportsAreSelected if report_out_dir.is_some() => {
+                CandidateAssessmentSelection::Include
+            }
+            Self::WhenReportsAreSelected => CandidateAssessmentSelection::Omit,
+        }
+    }
+}
+
+/// Validate and evaluate one assignment, with assessment work selected by
+/// the caller's explicit policy and report mode. Optional evidence sinks do
+/// not decide whether the candidate assessment itself runs.
+fn evaluate_chunk_candidate<'a, 'b>(
+    context: ChunkReportContext<'b>,
+    assignment_analysis: &'a AssignmentAnalysis,
+    facts: &[analysis::facts::StatementFacts],
+    placement_projection: &analysis::PlacementProjection<'_>,
+) -> Result<(gate::CandidateEvaluation<'a>, Option<&'b std::path::Path>)> {
+    let ChunkReportContext {
+        chunk_id,
+        report_emission,
+        assessment_policy,
+        full_translation_validation,
+        effect_conflicts_jsonl,
+        graph_reports,
+        full_export_reentry,
+        ..
+    } = context;
+    let validation = assignment_analysis.validate_for_emission();
+    let report_out_dir = if validation.is_err() {
+        report_emission.rejection_dir()
+    } else {
+        report_emission.full_dir()
+    };
+    ensure!(
+        !effect_conflicts_jsonl || report_out_dir.is_some(),
+        "--effect-conflicts-jsonl requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
+    );
+    ensure!(
+        !graph_reports.enabled() || report_out_dir.is_some(),
+        "--graphs requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
+    );
+    ensure!(
+        !(full_translation_validation || full_export_reentry) || report_out_dir.is_some(),
+        "--full-report requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
+    );
+
+    let mut full_tv = if full_translation_validation {
+        Some(JsonlReport::create(chunk_report_path(
+            report_out_dir.expect("full-report output was checked"),
+            chunk_id,
+            output_layout::TRANSLATION_VALIDATION_FULL_REPORT,
+        ))?)
+    } else {
+        None
+    };
+    let mut jsonl = if effect_conflicts_jsonl {
+        Some(JsonlReport::create(chunk_report_path(
+            report_out_dir.expect("effect-conflict output was checked"),
+            chunk_id,
+            output_layout::EFFECT_CONFLICTS_JSONL,
+        ))?)
+    } else {
+        None
+    };
+    let evaluation = {
+        let mut write_tv = |row: &gate::TranslationValidationEvidenceReport| -> Result<()> {
+            full_tv
+                .as_mut()
+                .expect("active full-report sink")
+                .write(row)
+        };
+        let mut write_effect = |row: &gate::EffectConflictDiagnosticRow<'_>| -> Result<()> {
+            jsonl
+                .as_mut()
+                .expect("active effect-conflict sink")
+                .write(row)
+        };
+        gate::CandidateEvaluation::evaluate(
+            validation,
+            facts,
+            placement_projection,
+            assessment_policy.selection(report_out_dir),
+            full_translation_validation.then_some(&mut write_tv),
+            effect_conflicts_jsonl.then_some(&mut write_effect),
+        )?
+    };
+    if let Some(writer) = full_tv {
+        writer.finish()?;
+    }
+    if let Some(writer) = jsonl {
+        writer.finish()?;
+    }
+    Ok((evaluation, report_out_dir))
+}
+
 fn graph_export_guidance(
     dir: &std::path::Path,
     chunk_id: &str,
@@ -1283,75 +1374,28 @@ fn graph_export_guidance(
     }
 }
 
-fn validate_and_emit_reports<'a>(
+fn emit_reports_and_resolve_gate<'a>(
     context: ChunkReportContext<'_>,
     program_graph: &ProgramGraphOutput<'_>,
-    assignment_analysis: &'a AssignmentAnalysis,
-    facts: &[analysis::facts::StatementFacts],
-    placement_projection: &analysis::PlacementProjection<'_>,
+    evaluation: gate::CandidateEvaluation<'a>,
+    report_out_dir: Option<&std::path::Path>,
     export_reentry_report: &ExportReentryReport,
 ) -> Result<GateOutcome<'a>> {
     let ChunkReportContext {
         chunk_id,
         ownership_subset,
-        report_emission,
         graph_reports,
         policy,
-        effect_conflicts_jsonl,
-        full_translation_validation,
         full_export_reentry,
+        ..
     } = context;
-    let validation = assignment_analysis.validate_for_emission();
-    let assignment_report = match &validation {
-        Ok(assignment) => assignment.report(),
-        Err(rejected) => rejected.report(),
-    };
-    let rejected = validation.is_err();
+    let assignment_analysis = evaluation.assignment_analysis();
+    let assignment_report = evaluation.report();
+    let rejected = evaluation.is_rejected();
+    let translation_validation = evaluation.translation_validation();
     // Report timing and full graph serialization are separate output choices.
-    // All validation above and below runs regardless of either selection.
-    let report_out_dir = if rejected {
-        report_emission.rejection_dir()
-    } else {
-        report_emission.full_dir()
-    };
-    ensure!(
-        !effect_conflicts_jsonl || report_out_dir.is_some(),
-        "--effect-conflicts-jsonl requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
-    );
-    ensure!(
-        !graph_reports.enabled() || report_out_dir.is_some(),
-        "--graphs requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
-    );
-    ensure!(
-        !(full_translation_validation || full_export_reentry) || report_out_dir.is_some(),
-        "--full-report requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
-    );
-    let mut full_tv = if full_translation_validation {
-        Some(JsonlReport::create(chunk_report_path(
-            report_out_dir.expect("full-report output was checked"),
-            chunk_id,
-            output_layout::TRANSLATION_VALIDATION_FULL_REPORT,
-        ))?)
-    } else {
-        None
-    };
-    let translation_validation = {
-        let mut write_row = |row: &gate::TranslationValidationEvidenceReport| -> Result<()> {
-            full_tv
-                .as_mut()
-                .expect("active full-report sink")
-                .write(row)
-        };
-        match &validation {
-            Ok(assignment) => assignment
-                .translation_validation(full_translation_validation.then_some(&mut write_row))?,
-            Err(rejected) => rejected
-                .translation_validation(full_translation_validation.then_some(&mut write_row))?,
-        }
-    };
-    if let Some(writer) = full_tv {
-        writer.finish()?;
-    }
+    // Mandatory gate and translation checks are complete; the optional
+    // candidate assessment reflects the explicit selection used by evaluation.
     if let Some(report_out_dir) = report_out_dir {
         let graph = assignment_analysis.inputs().dependency_graph();
         let mut edge_kinds = std::collections::BTreeMap::new();
@@ -1376,40 +1420,9 @@ fn validate_and_emit_reports<'a>(
                 full_graphs: graph_reports.enabled(),
             },
         )?;
-        let mut jsonl = if effect_conflicts_jsonl {
-            Some(JsonlReport::create(chunk_report_path(
-                report_out_dir,
-                chunk_id,
-                output_layout::EFFECT_CONFLICTS_JSONL,
-            ))?)
-        } else {
-            None
-        };
-        let candidate_assessment = {
-            let mut write_row = |row: &gate::EffectConflictDiagnosticRow<'_>| -> Result<()> {
-                jsonl
-                    .as_mut()
-                    .expect("active effect-conflict sink")
-                    .write(row)
-            };
-            match &validation {
-                Ok(assignment) => assignment.candidate_relocation_assessment(
-                    facts,
-                    &translation_validation,
-                    placement_projection,
-                    effect_conflicts_jsonl.then_some(&mut write_row),
-                )?,
-                Err(rejected) => rejected.candidate_relocation_assessment(
-                    facts,
-                    &translation_validation,
-                    placement_projection,
-                    effect_conflicts_jsonl.then_some(&mut write_row),
-                )?,
-            }
-        };
-        if let Some(writer) = jsonl {
-            writer.finish()?;
-        }
+        let candidate_assessment = evaluation
+            .candidate_assessment()
+            .expect("report output selects candidate assessment");
         write_chunk_report_json(
             report_out_dir,
             chunk_id,
@@ -1535,7 +1548,7 @@ fn validate_and_emit_reports<'a>(
         None
     };
     if let Some((verdict, evidence_report, diagnostic)) = verdict {
-        return match (policy, validation) {
+        return match (policy, evaluation.into_validation()) {
             (GateRejectionPolicy::LowerUnrunnable, Err(assignment)) => Ok(GateOutcome::Rejected {
                 assignment,
                 rejection: ChunkGateRejection {
@@ -1559,7 +1572,7 @@ fn validate_and_emit_reports<'a>(
     // point with a non-empty clause-2 verdict means the atomic-group
     // glue and the realizability gate disagree — refuse to emit
     // rather than materialize a bundle that reassigns an ESM import.
-    if let Ok(validated) = &validation
+    if let Ok(validated) = evaluation.validation()
         && !validated.cross_destination_rebinds().is_empty()
     {
         bail!(
@@ -1568,7 +1581,7 @@ fn validate_and_emit_reports<'a>(
             rebinds = assignment_report.cross_rebinds.join("\n  "),
         );
     }
-    match validation {
+    match evaluation.into_validation() {
         Ok(validated) => Ok(GateOutcome::Accepted(validated)),
         Err(_) => {
             bail!("chunk {chunk_id}: assignment validation rejected without a rendered diagnostic")
