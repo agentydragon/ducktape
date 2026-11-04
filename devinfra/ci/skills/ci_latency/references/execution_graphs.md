@@ -37,6 +37,70 @@ clocks exist. Preserve physical retries and failure recovery as separate work.
 Recompute which chain becomes limiting after a proposed change; inspect parallel
 chains close enough to become the next long pole.
 
+## Audit which changes trigger expensive work
+
+For representative PR change classes, ask which tests should depend on the changed
+behavior and which actually rerun. Include narrow frontend, backend, test-helper
+and infrastructure changes where relevant. A broad integration suite may need a
+dependency that a unit test does not; establish the assertions and real integration
+boundaries before calling an edge unnecessary.
+
+Keep these mechanisms separate:
+
+| Layer                          | Evidence to inspect                                                                              | What a broad dependency can cause                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| Workflow and target selection  | Changed paths, filters, full-sweep fallbacks, affected-target implementation and selected labels | Extra analysis/build work; selected tests can still cache-hit                  |
+| Build and test action inputs   | Configured actions, runtime/runfiles closure, generated outputs and action/cache records         | Changed inputs invalidate a test even when its exercised behavior is unrelated |
+| Retained fixture compatibility | Runner routing/recycling keys, fixture fingerprints, compatibility checks and reuse receipts     | A required test may unnecessarily rebuild infrastructure it could safely reuse |
+
+Start from a changed input and show its dependency path to an expensive consumer.
+Use `query` for declared paths and reverse dependencies; use `cquery` with the CI
+configuration to check effective dependencies and runfiles. Loading-phase `query`
+can overapproximate `select()` branches and includes build tools that are not test
+runtime inputs. Inspect `aquery` to resolve action inputs, then join actual execution
+records to distinguish fresh work from cache reuse. A `TestRunner` input may be an
+aggregate runfiles tree: inspect its configured members before concluding that a
+file is absent. Likewise, a renderer can rerun while emitting identical output,
+allowing the downstream test to remain cached.
+
+For example, these read-only queries locate consumers of the app frontend and
+inspect selected tests' configured runtime inputs:
+
+```bash
+bbr query 'kind("py_test rule", rdeps(//agentplane/app/..., //agentplane/app/frontend/serving:static_image))'
+bbr query 'somepath(//agentplane/app:test_bridge, //agentplane/app/frontend/serving:static_image)'
+bbr cquery 'set(//agentplane/app:test_bridge //agentplane/app:test_settings //agentplane/app:test_thread_browser)' \
+  --config=rbe --config=ci --output=starlark \
+  '--starlark:expr=str(target.label) + " " + str([f.short_path for f in providers(target)["DefaultInfo"].default_runfiles.files.to_list() if "frontend/serving/static_image" in f.short_path])'
+```
+
+Choose consumers and input patterns for the inspected revision; the query is a
+diagnostic, not an assertion that a particular dependency must remain present.
+Follow every path that keeps an unwanted input reachable, including shared
+`conftest` imports, optional fixture code, helper modules carrying OCI data, common
+renderer executables and packaging targets. A harmless utility import can pull an
+entire service or frontend image into unrelated tests. Read the current selection
+driver before proposing affected-target selection: it may already exist while
+global fallbacks or an overly broad target graph defeat it.
+
+Prefer splitting code/data by the behavior or lifetime they own. Keep genuine
+integration consumers attached to production artifacts; do not replace them with
+mocks, delete assertions, hide imports or exclude tests just to narrow the graph.
+For retained setup, separate baseline-mutating code from per-action orchestration
+and VM-only extensions. Compatibility, identity, cleanliness and cleanup checks
+must still reject incompatible or dirty state; removing hashes alone does not
+establish safe reuse.
+
+Validate a proposed split with a before/after change-to-test impact matrix: show
+which unnecessary runtime inputs or invalidations disappear and which required
+consumers remain. Use existing behavioral tests and meaningful compatibility
+checks, not source-text or literal dependency-roster change detectors. Corroborate
+with actual selected/executed/cached actions for representative changes when
+measuring the result. Rank opportunities by how often the change class occurs,
+avoidable work, required-gate critical path and next bottleneck. Removing a branch
+that already finishes early may reduce compute without improving feedback time;
+graph evidence alone does not quantify a CI speedup.
+
 ## Explain bubbles and opportunities for overlap
 
 A quiet interval is a question about a particular resource or dependency chain,

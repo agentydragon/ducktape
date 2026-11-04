@@ -1,6 +1,6 @@
 ---
 name: ci_latency
-description: Diagnose CI latency across build/test dependency graphs, OpenTelemetry phase traces and environment lifecycles; test improvements to execution structure and resource organization with reproducible evidence and explicit coverage tradeoffs.
+description: Diagnose CI latency, unnecessary change-triggered build/test invalidation, dependency graphs, OpenTelemetry phase traces and environment lifecycles; test improvements with reproducible evidence and explicit coverage tradeoffs.
 ---
 
 # CI latency analysis
@@ -304,13 +304,20 @@ totals and the slowest shard; repeated session setup may dominate cheap cases.
 
 ## Analyze build, test and process dependency graphs
 
-For long poles, idle gaps (bubbles), or parallelism questions, read
+For long poles, idle gaps (bubbles), parallelism, or change-triggered test fanout, read
 [execution graph and trace analysis](references/execution_graphs.md). Follow the
 dependencies across workflow jobs, Bazel build and test actions, and stages inside
 tests or services, including VM startup and teardown. Inspect persisted OTel traces
 before adding instrumentation; extend them when material phases or waits remain
 unexplained, rerun through the normal test path, and analyze the resulting artifacts.
 An instrumentation patch alone does not complete the latency investigation.
+
+Audit whether representative changes select or invalidate tests whose contracts
+do not depend on them. Trace the actual dependency paths, configured runtime inputs
+and retained-state compatibility keys; distinguish selection, cache misses and cold
+fixture setup. Propose narrower ownership boundaries that preserve coverage, and
+verify that required tests still run. Rank the benefit by PR change class and the
+remaining critical path rather than the number of dependencies removed.
 
 ## Explain what long build and test paths are doing
 
