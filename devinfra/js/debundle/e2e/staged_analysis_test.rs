@@ -1323,6 +1323,7 @@ fn modules_delete_assessment_matches_the_staged_run_for_its_candidate_plan() {
             ),
         ],
     );
+    fs::create_dir_all(staged.modules.join("alternate")).unwrap();
     let baseline_out = staged.root().join("run-baseline");
     let baseline = staged.run_with_analysis(&staged.artifact, &baseline_out, false);
     assert_ok(&baseline, "baseline staged run");
@@ -1340,7 +1341,7 @@ fn modules_delete_assessment_matches_the_staged_run_for_its_candidate_plan() {
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let result = staged.delete("a_earlier", true, Some(&staged.artifact), true);
+    let result = staged.delete("alternate/../a_earlier", true, Some(&staged.artifact), true);
     assert_ok(&result, "modules delete --force --dry-run --analysis");
     let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];

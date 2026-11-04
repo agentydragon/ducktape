@@ -784,20 +784,26 @@ pub fn run_delete(
     }
 
     let effect_context = args.effect_assessment.resolve(&args.edit, source_context)?;
-    let (candidate_docs, deleted_module_paths, effect_relocation_assessment) =
+    let (candidate_docs, deleted_module_paths, effect_paths_abs, effect_relocation_assessment) =
         if let Some(context) = effect_context.as_ref() {
             let docs = load_module_docs(&args.edit.modules_root)?;
-            let deleted_module_paths = delete_module_paths(&docs, &paths_abs)?;
+            let delete_plan = resolve_delete_plan(&docs, &paths_abs)?;
             let candidate_modules = docs
                 .iter()
-                .filter(|(module_path, _)| !deleted_module_paths.contains(*module_path))
+                .filter(|(module_path, _)| !delete_plan.module_paths.contains(*module_path))
                 .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
                 .collect();
             let assessment = context.assess(&args.edit.modules_root, &candidate_modules)?;
-            (Some(docs), Some(deleted_module_paths), Some(assessment))
+            (
+                Some(docs),
+                Some(delete_plan.module_paths),
+                Some(delete_plan.entry_paths),
+                Some(assessment),
+            )
         } else {
-            (None, None, None)
+            (None, None, None, None)
         };
+    let delete_paths = effect_paths_abs.as_deref().unwrap_or(&paths_abs);
 
     // Realizability gate. The all-empty fast path is a structural
     // no-op (an empty module owns no bindings and contributes no
@@ -816,7 +822,7 @@ pub fn run_delete(
             })
         } else {
             gate.check(&args.edit.modules_root, || {
-                post_delete_spec(&args.edit.modules_root, &paths_abs)
+                post_delete_spec(&args.edit.modules_root, delete_paths)
             })
         };
         if let Err(err) = validation {
@@ -826,7 +832,7 @@ pub fn run_delete(
         gate.outcome()
     };
 
-    let summary = delete_modules(&paths_abs, args.edit.dry_run)?;
+    let summary = delete_modules(delete_paths, args.edit.dry_run)?;
     let delete_outcome = DeleteOutcome {
         outcome: MutationOutcome {
             verb: "delete",
@@ -852,28 +858,84 @@ pub fn run_delete(
     Ok(())
 }
 
+/// A requested assessment resolves each path to one physical directory entry,
+/// then uses that identity for candidate filtering, the legacy gate and the
+/// eventual unlink plan.
+#[derive(Debug)]
+struct ResolvedDeletePlan {
+    entry_paths: Vec<PathBuf>,
+    module_paths: BTreeSet<String>,
+}
+
 /// Resolve the exact file deletion plan into the logical keys used by both the
-/// candidate effect assessment and the in-memory legacy gate. A requested
-/// assessment must be able to account for every deleted file in the complete
-/// typed module snapshot.
-fn delete_module_paths(
+/// candidate effect assessment and the in-memory legacy gate. Parent
+/// components are normalized, while the final filename is preserved so a
+/// symlink module entry remains distinct from its target. A requested
+/// assessment must map every file to exactly one logical module in the
+/// complete typed snapshot.
+fn resolve_delete_plan(
     docs: &BTreeMap<String, (PathBuf, LogicalModule)>,
     deleted_abs: &[PathBuf],
-) -> Result<BTreeSet<String>> {
-    let mut deleted_module_paths = BTreeSet::new();
+) -> Result<ResolvedDeletePlan> {
+    let mut logical_paths_by_entry: BTreeMap<PathBuf, Vec<&str>> = BTreeMap::new();
+    for (module_path, (file, _)) in docs {
+        logical_paths_by_entry
+            .entry(directory_entry_identity(file)?)
+            .or_default()
+            .push(module_path);
+    }
+
+    let mut entry_paths = Vec::with_capacity(deleted_abs.len());
+    let mut requested_entries = BTreeSet::new();
+    let mut module_paths = BTreeSet::new();
     for deleted_file in deleted_abs {
-        let module_path = docs
-            .iter()
-            .find_map(|(module_path, (file, _))| (file == deleted_file).then_some(module_path))
+        let entry_path = directory_entry_identity(deleted_file)?;
+        let logical_paths = logical_paths_by_entry
+            .get(&entry_path)
             .with_context(|| {
                 format!(
                     "requested effect assessment cannot map deleted module file {} to the complete module tree",
-                    deleted_file.display()
+                    entry_path.display()
                 )
             })?;
-        deleted_module_paths.insert(module_path.clone());
+        anyhow::ensure!(
+            logical_paths.len() == 1,
+            "requested effect assessment found an ambiguous module directory entry {} mapped to logical module paths: {}",
+            entry_path.display(),
+            logical_paths.join(", ")
+        );
+        anyhow::ensure!(
+            requested_entries.insert(entry_path.clone()),
+            "requested effect assessment names the same module directory entry more than once: {}",
+            entry_path.display()
+        );
+        entry_paths.push(entry_path);
+        module_paths.insert(logical_paths[0].to_string());
     }
-    Ok(deleted_module_paths)
+    Ok(ResolvedDeletePlan {
+        entry_paths,
+        module_paths,
+    })
+}
+
+/// Return a stable identity for a filesystem directory entry. Canonicalizing
+/// only the parent collapses `.` / `..` and parent-directory aliases without
+/// following a final symlink that `remove_file` is meant to unlink.
+fn directory_entry_identity(path: &Path) -> Result<PathBuf> {
+    let filename = path
+        .file_name()
+        .with_context(|| format!("module path has no final filename: {}", path.display()))?;
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let parent = fs::canonicalize(parent).with_context(|| {
+        format!(
+            "resolving module directory entry parent {}",
+            parent.display()
+        )
+    })?;
+    Ok(parent.join(filename))
 }
 
 /// Delete the given absolute paths (or, in `dry_run` mode, simply
@@ -1100,5 +1162,71 @@ mod tests {
         );
         let (_root, plan) = plan(target, &source("first"), "members: []");
         plan.expect("identical annotations merge");
+    }
+
+    #[test]
+    fn delete_plan_normalizes_parent_components_without_following_a_final_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("alternate")).unwrap();
+        let target = root.path().join("target.yaml");
+        let alias = root.path().join("alias.yaml");
+        fs::write(&target, "members: []\n").unwrap();
+        symlink("target.yaml", &alias).unwrap();
+
+        let docs = BTreeMap::from([
+            (
+                "alias".to_string(),
+                (alias.clone(), LogicalModule::default()),
+            ),
+            (
+                "target".to_string(),
+                (target.clone(), LogicalModule::default()),
+            ),
+        ]);
+        let requested = root.path().join("alternate/../alias.yaml");
+        let plan = resolve_delete_plan(&docs, &[requested]).unwrap();
+
+        assert_eq!(
+            plan.entry_paths,
+            vec![directory_entry_identity(&alias).unwrap()]
+        );
+        assert_eq!(plan.module_paths, BTreeSet::from(["alias".to_string()]));
+        assert_ne!(
+            directory_entry_identity(&alias).unwrap(),
+            directory_entry_identity(&target).unwrap(),
+            "the final symlink is its own directory entry and must not map to its target"
+        );
+    }
+
+    #[test]
+    fn delete_plan_rejects_a_directory_entry_with_multiple_logical_module_paths() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let real_dir = root.path().join("real");
+        fs::create_dir(&real_dir).unwrap();
+        let real_file = real_dir.join("module.yaml");
+        fs::write(&real_file, "members: []\n").unwrap();
+        let alias_dir = root.path().join("alias");
+        symlink("real", &alias_dir).unwrap();
+        let alias_file = alias_dir.join("module.yaml");
+        let docs = BTreeMap::from([
+            (
+                "alias/module".to_string(),
+                (alias_file.clone(), LogicalModule::default()),
+            ),
+            (
+                "real/module".to_string(),
+                (real_file, LogicalModule::default()),
+            ),
+        ]);
+
+        let error = resolve_delete_plan(&docs, &[alias_file]).unwrap_err();
+
+        assert!(error.to_string().contains("ambiguous"), "{error:#}");
+        assert!(error.to_string().contains("alias/module"), "{error:#}");
+        assert!(error.to_string().contains("real/module"), "{error:#}");
     }
 }
