@@ -149,6 +149,7 @@ impl LocalContext for ProviderContext<'_> {
         });
         let unavailable_capture = body.reads.iter().any(|binding| {
             !body.declared_locals.contains(binding)
+                && !body.catch_bindings.contains(binding)
                 && !parameter_bindings.contains(binding)
                 && !self.local_bindings.contains(binding)
                 && !frame.environment.contains_key(binding)
@@ -275,6 +276,7 @@ fn closure_capture_projection(
                     .flat_map(|parameter| parameter.bindings.iter().cloned()),
             );
             closure_bindings.extend(nested.declared_locals.iter().cloned());
+            closure_bindings.extend(nested.catch_bindings.iter().cloned());
         }
         for (_, nested) in descendants {
             for binding in &nested.reads {

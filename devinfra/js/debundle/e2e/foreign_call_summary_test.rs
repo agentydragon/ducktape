@@ -421,6 +421,40 @@ fn returned_closure_can_resolve_provider_module_bindings_without_callback_eviden
 }
 
 #[test]
+fn returned_closure_can_read_a_destructured_catch_binding() {
+    let source = "import { make } from './peer.js';\n\
+                  const wrapped = make(42, () => { throw Error('unused callback'); });\n\
+                  console.log(wrapped(42), wrapped(false));\n";
+    let provider = "export function make(value, unused) {\n\
+                     return (input) => {\n\
+                       try { throw { observed: input }; }\n\
+                       catch ({ observed }) { return observed === value; }\n\
+                     };\n\
+                   }\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+    );
+    assert_preserved_entry_output(&fixture, "true false\n");
+
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    let callable = &report["imported_callables"]["make"];
+    assert_eq!(
+        callable["foreign_call"]["returns"],
+        serde_json::json!([{"kind": "fresh_allocation"}])
+    );
+    assert_eq!(
+        callable["foreign_call"]["retained_arguments"],
+        serde_json::json!([0, 1]),
+        "the returned closure conservatively retains every formal"
+    );
+    assert_eq!(
+        callable["callback_factory_evidence"],
+        serde_json::json!([]),
+        "a catch-local read does not establish callback factory behavior"
+    );
+}
+
+#[test]
 fn strict_expression_returns_preserve_runtime_values_and_retained_arguments() {
     for (returned, use_result, expected, retained) in [
         (
