@@ -870,9 +870,22 @@ flowchart LR
     CENTRAL_SAMPLER_PROMPT_COMPACTION[Unscheduled: client-side compaction prompt for routes without server compaction]
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
     CENTRAL_SAMPLER_DYNAMIC_TOOLS[Deferred: dynamic tool definitions when needed]
+    SAMPLER_NOTIFICATION_JOURNAL[Candidate: investigate executor notification journal deadline]
     CLAUDE_REMOTE_EXECUTION_SPIKE[In review: gated native Claude remote tools]
     CLAUDE_CUSTOM_SAMPLER[In review: custom Claude sampler evidence]
 ```
+
+### `SAMPLER_NOTIFICATION_JOURNAL` — investigate executor notification journal deadline
+
+**Candidate; independent reliability investigation.** In the [MCP system-test failure](https://app.buildbuddy.io/invocation/47836fa6-2b1b-5387-ba70-f05ca5bc9b7e),
+Dispatcher delivered a central Session's input after Sandbox resume. The sampler then stopped execution after a
+notification-evidence SQL write was canceled under its five-second, stream-independent journal context; the test
+waited for a subsequent model request. A [fresh rerun](https://app.buildbuddy.io/invocation/da1037be-601a-4a62-96d9-85058732becd)
+passed, but did not explain the failure. The captured artifacts do not identify the SQL statement or any lock holder.
+
+Instrument or reproduce the database wait and identify the causal boundary; fix only what the evidence supports.
+Preserve the owner fence, durable notification evidence and fail-closed treatment of unrecorded or uncertain effects.
+Do not lengthen the test timeout or automatically replay executor effects as a substitute for diagnosis.
 
 ### `SESSION_LAUNCH_FRICTION` — fewer clicks to start useful work
 
@@ -1438,6 +1451,7 @@ flowchart TD
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
     ENVIRONMENT_READINESS_WAIT[Unscheduled: bounded CLI and Action/MCP readiness waits]
     AGENT_EXECUTOR_LOSS_NOTICE[Unscheduled: tell agents when executor restarts or kills lose their processes]
+    RUNTIME_FAILED_START_FENCE[Candidate: fence a native child after supervisor loss during startup]
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
@@ -1451,6 +1465,15 @@ flowchart TD
     IDLE_SUSPEND_UI_DRIVE[Operator: remaining VM idle-suspend/send-to-wake UI drive]
     VM_RAM_SUSPEND -. the same experience, resuming with memory kept .-> IDLE_SUSPEND_UI_DRIVE
 ```
+
+### `RUNTIME_FAILED_START_FENCE` — fence uncertain subprocess startup
+
+**Candidate; independent Runtime lifecycle fix.** If a supervisor dies before reporting its native PID,
+`Process.Start` returns an error and `Host.Launch` returns no instance, which the host can treat as already
+fenced even when a child survived. Define a failed-start result that keeps the Process controller's COSI
+finalizer until cleanup is proved; cover supervisor loss before PID report and a surviving child. Preserve
+the existing fence after PID report. Runtime death and replacement require a separate outer-fence analysis.
+See the [Runtime TODO](../env/TODO.md#handle-subprocess-supervisor-loss-before-and-after-native-pid-report).
 
 ### `DECLARATIVE_SESSIONS_DESIGN` — long-running Sessions and managed subscriptions through Flux
 
@@ -2033,6 +2056,7 @@ flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: delivery ownership and service topology]
     SESSION_DIRECTORY_NATIVE[Ready: Dispatcher Session directory for native placement]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: send authority and internal fencing]
+    SESSION_DELETION_FENCE[Candidate: prove and enforce the Session deletion fence]
     DELIVERY_DESTINATION_CONTRACT[Blocked: Session-ID command addressing]
     SESSION_NOTIFICATION_ADDRESS[Blocked: remaining Session notification addressing]
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
@@ -2049,6 +2073,7 @@ flowchart LR
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: process diagnostics and placement, section 3]
     CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a PostgreSQL-free K3s tier]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> DELIVERY_DESTINATION_CONTRACT
+    SESSION_DELETION_FENCE --> DELIVERY_DESTINATION_CONTRACT
     RUNNER_STORE_SESSION_IDENTITY --> RUNNER_IDENTITY_LEGACY_CLEANUP
     HARNESS_IDENTITY_DESIGN --> RUNNER_STORE_SESSION_IDENTITY
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
@@ -2132,32 +2157,48 @@ queued-work revocation remain in
 Notification, Dispatcher, Gateway and Runtime and recommends one transactional native admission
 boundary, persisted exact UID, rechecks before wake and forwarding, and no replay of an uncertain
 effect. The operator selected a Dispatcher Session record as a prerequisite for every
-Session-targeted command, including privileged calls and immediate interrupts. Audit and migrate
-existing no-opening producers and direct Runtime creators; remove the privileged no-opening path,
-not the requirement. On deletion, fail commands known not to have left Dispatcher, report unknown
-when in-flight admission or effects cannot be established, and never redirect accepted work. The
-fence implementation and the location and lifetime of outcome evidence still need design and proof;
-central-Session authority remains separate. The
+Session-targeted command, including privileged calls and immediate interrupts. Dispatcher now enforces
+that prerequisite for queued commands and interrupts; the Gateway limits direct Runtime Session mutations
+to the combined Gateway/Dispatcher workload. See the [Dispatcher contract](../runner_gateway/dispatcher/SPEC.md#method-scope)
+and [Gateway proxy contract](../runner_gateway/gateway/SPEC.md). On deletion, fail commands known not to
+have left Dispatcher, report unknown when in-flight admission or effects cannot be established, and never
+redirect accepted work. `SESSION_DELETION_FENCE` tracks the missing enforcement proof and outcome-evidence
+boundary; central-Session authority remains separate. The
 [older delivery note](../docs/runner_delivery_and_harness_design.md#destination-checks-and-authority)
 is historical where it requires callers to provide `(Sandbox UID, Session ID)`; its authority and
 fencing questions remain applicable. Exit: a reviewed authority and race contract for
 `DELIVERY_DESTINATION_CONTRACT`; no new principal model is selected by this node.
 
+### `SESSION_DELETION_FENCE` — prove and enforce the Session deletion fence
+
+**Candidate; first trace and test the existing boundaries.** Map Dispatcher admission, queued wake and
+forwarding, Gateway routing, Runtime quiesce/admission and exact-UID environment deletion. The final
+Dispatcher recheck for an immediate interrupt is not atomic with the Runtime RPC: deletion can race it.
+Use deterministic races to establish what prevents an old Runtime accepting work after the chosen deletion
+boundary, including queued commands, wake and interrupts. If existing fences do not enforce it, implement
+an authoritative receiver-checked fence or another proved mechanism. A cached generation alone is not proof.
+
+Fail work proven unsent, retain or expose unresolved in-flight outcomes as unknown, and never redirect or
+replay uncertain effects. Specify where that evidence remains observable without selecting Session-record
+retention or UUID reuse after deletion; those remain open decisions. This work is independent of the
+general central principal and attachment model. The [command authority plan](session_send_authority.md#recovery-and-decisions-for-review)
+defines the selected outcomes and remaining review.
+
 ### `DELIVERY_DESTINATION_CONTRACT` — send commands to a Session ID
 
-**Blocked on `SESSION_DIRECTORY_NATIVE` and `DELIVERY_DESTINATION_AUTHORITY_DESIGN`.** Migrate
+**Blocked on `SESSION_DIRECTORY_NATIVE`, `DELIVERY_DESTINATION_AUTHORITY_DESIGN`, and `SESSION_DELETION_FENCE`.** Migrate
 Dispatcher submit/model/effort/interrupt APIs and their app, CLI, Action and other callers to name
 the Session by UUID. Resolve placement inside Dispatcher, retaining exact UID/generation fencing
 in accepted work, owner routing and execution; environment lifecycle and execution APIs still name
 their actual environment. Require the Dispatcher Session record for every Session command, including
-privileged calls and interrupts. Migrate the current no-opening callers and direct Runtime creators
-before removing those paths; the current implementation does not yet enforce the requirement.
+privileged calls and interrupts; the requirement and public Gateway restriction are implemented, while
+the requests still carry the Sandbox name and UID.
 
 Keep command IDs, no-replay recovery, sender/receiver and wake authorization, and explicit unknown,
 failed and suspended outcomes. Cover unavailable owners, same-name replacement, concurrent deletion,
 conflicting retries and callers with distinct privileges. Follow the reviewed
 [command authority](session_send_authority.md), including queue-acceptance versus Runtime-admission
-semantics and the direct proxy command bypass audit. Change call sites and contracts together;
+semantics and the enforced Gateway proxy boundary. Change call sites and contracts together;
 retain History and actual harness stores. This does not decide central attachment policy.
 [Address inventory](session_environment_model.md#session-address-inventory).
 

@@ -38,6 +38,10 @@ The [address inventory](#session-address-inventory) records this completed migra
 [Dispatcher outcome contract](../runner_gateway/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands)
 defines native rejection, unconfirmed owner outcomes and dependent-command fencing. Cleanup's
 Session-identity retention and UUID-reuse policy remains a decision; this does not complete the directory.
+All Session-targeted commands now require a Dispatcher Session record, including privileged callers and
+immediate interrupts. Gateway permits direct Runtime Session creation and mutation only to the combined
+Gateway/Dispatcher workload; its read-only diagnostics and separate Executor service have their own grants.
+These checks do not prove the deletion fence or change the public command address.
 
 **Ready next:** a [native-first Dispatcher Session authority](task_dag.md#session_directory_native--dispatcher-authority-for-environment-hosted-sessions)
 using existing authorization. Specify deletion and uncertain-outcome fencing as part of that slice;
@@ -160,9 +164,9 @@ Selected direction: callers name a Session by one globally unique, unscoped publ
 
 Every Session-targeted command requires a Dispatcher Session record, including commands from
 privileged services and immediate interrupts. The record establishes the Session to address; it is
-not itself permission to send or wake. Current no-opening command admission and direct Runtime
-creation paths must be migrated before enforcement. Whether an individual operation also needs a
-durable command receipt is a separate contract question.
+not itself permission to send or wake. Dispatcher now enforces this for queued commands and interrupts,
+and the public Gateway restricts Runtime Session mutations to the Gateway/Dispatcher workload. Whether
+an individual operation also needs a durable command receipt is a separate contract question.
 
 For the first environment-hosted command cutover, keep the existing direct and delegated caller
 checks and scoped service trust; wake remains separately authorized. When deletion races accepted
@@ -923,8 +927,8 @@ The operator said that with a required Dispatcher database, commands should alwa
 Dispatcher record. In the context of the command-authority discussion, this selects an existing
 Dispatcher Session record as a prerequisite for Session-targeted commands, including privileged
 callers. It does not select Session deletion or UUID retention semantics, send/wake grants, or a
-requirement to queue every operation. The current privileged no-opening path and direct Runtime
-creation callers still need migration before the selected contract is enforced.
+requirement to queue every operation. Dispatcher and the Gateway now enforce the Session-record and
+proxy boundaries; deletion fencing and Session-ID-only command addressing remain open.
 
 **2026-11-03 · Deletion races and initial send authority**
 
