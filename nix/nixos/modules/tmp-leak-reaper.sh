@@ -27,6 +27,7 @@ for dir in "$@"; do
   # can identify possible users, but their absence does not prove a dir is unused.
   # Replace this rule with explicit lifetime tracking that covers child processes
   # before reclaiming non-empty dirs or relying on a dead creator PID.
+  # Inventory and evidence: nix/debug/wyrm2/tmp_inventory.md
   find "$dir" -mindepth 1 -maxdepth 1 -ignore_readdir_race -type d -mmin +1440 -empty \( \
     -name 'nix-shell.*' -o -name 'nix-develop-*' \
     \) -delete
