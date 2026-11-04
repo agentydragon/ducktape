@@ -20,8 +20,6 @@ import (
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
-		case supervision.SupervisorMode:
-			os.Exit(supervision.SupervisorMain(os.Args[2:]))
 		case HelperMode:
 			os.Exit(Main(os.Args[2:]))
 		}
@@ -206,7 +204,11 @@ func assertOwner(t *testing.T, path string, uid, gid uint32) {
 func runWorkspaceCommand(t *testing.T, command []string, cwd string, environment map[string]string, supervisor *supervision.Supervisor) (int, string, string) {
 	t.Helper()
 	if supervisor == nil {
-		supervisor = supervision.NewSubprocessSupervisor(nil)
+		var err error
+		supervisor, err = supervision.NewPID1Supervisor()
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	process, err := supervisor.NewProcess(supervision.ProcessConfig{Command: command, Dir: cwd, Env: environment, StopGrace: time.Second})
 	if err != nil {

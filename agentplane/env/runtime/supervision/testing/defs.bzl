@@ -3,7 +3,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 load("//devinfra/python:defs.bzl", "py_test")
 
-def pid1_go_test(name, srcs, embed, deps, **kwargs):
+def pid1_go_test(name, srcs, embed, deps, git = False, **kwargs):
     binary = name + "_binary"
     go_test(
         name = binary,
@@ -19,6 +19,7 @@ def pid1_go_test(name, srcs, embed, deps, **kwargs):
         data = [":" + binary],
         env = {
             "DOCKER_HOST": "tcp://127.0.0.1:2375",
+            "PID1_GO_TEST_IMAGE": "agentplane.env.runtime.supervision.testing.git_tools" if git else "third_party.containers.debian_slim",
             "PID1_GO_TEST_RUNFILE": "_main/{}/{}_/{}".format(native.package_name(), binary, binary),
         },
         exec_properties = {
@@ -30,11 +31,10 @@ def pid1_go_test(name, srcs, embed, deps, **kwargs):
         requires_docker = True,
         deps = [
             "//:conftest",
-            "//third_party/containers:debian_slim",
             "//third_party/containers:ryuk",
             "//util:oci",
             "//devinfra/bazel:runfiles",
             "//util/testing:container_logs",
             "@pypi//pytest_bazel",
-        ],
+        ] + (["//agentplane/env/runtime/supervision/testing:git_tools"] if git else ["//third_party/containers:debian_slim"]),
     )
