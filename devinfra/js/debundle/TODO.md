@@ -223,6 +223,16 @@ paths and source-unit IDs belong in the consuming repo.
 
 ### Planner CLI follow-ups
 
+- **Ownership subsets with full selector and contract context.** Physical
+  YAML subsets can remove relational selector anchors and analysis-bearing
+  annotations. Normal `run` has no ownership allowlist; `modules decompose`
+  and `modules refine --dry-run` provide planning checks without emission.
+  Add a typed subset operation after full selector resolution and
+  `collect_analysis_assumptions`, before assignment analysis. Route omitted
+  bindings and anonymous statements through the configured residual policy,
+  preserve their resolved names and contracts, and run the normal gate and
+  emission path. Record the exact selected assignment in provenance; reject
+  unknown module IDs. Keep subset acceptance distinct from canonical acceptance.
 - **Diagnostics toggle for `modules propose`.** `--limit` now bounds
   proposals and diagnostics and the `limits` summary reports totals
   when details are truncated, but there is still no explicit
