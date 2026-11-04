@@ -1,4 +1,4 @@
-use source_identity::SourceUnitOrdinal;
+use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
@@ -18,7 +18,7 @@ pub struct GraphOptions {
     pub dataflow_aware_s_chain: bool,
 }
 
-use super::dependency_graph::{AppliedCommutingPremise, DependencyGraph, SourceUnit, SourceUnitId};
+use super::dependency_graph::{AppliedCommutingPremise, DependencyGraph, SourceUnit};
 use super::edge::{
     BindingTimelineOrder, CellConflict, CellEffectClass, DepKind, DependencyEdge, DependencyEdgeId,
     EdgeReason, EdgeRole, EffectCellReport, EffectProvenance, HeapBarrierCause, SequencedCause,

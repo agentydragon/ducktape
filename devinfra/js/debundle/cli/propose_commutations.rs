@@ -22,7 +22,7 @@ use analysis::graph::{
 use analysis::{
     DepKind, DependencyEdgeId, DependencyEdgeReport, DependencyGraph, DependencyGraphReport,
     EntryDestination, KnownConflict, ModuleAssignment, ModuleDestinationKind, ModuleId, ModuleKey,
-    PremiseVerdict, SequencedCause, SourceLocation, SourceUnitId, SourceUnitReport,
+    PremiseVerdict, SequencedCause, SourceLocation, SourceUnitReport,
 };
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
@@ -36,6 +36,7 @@ use selector_codemod::{
     with_source_unit_selector_synthesizer,
 };
 use serde::Serialize;
+use source_identity::SourceUnitId;
 use source_identity::SourceUnitOrdinal;
 use source_inspection::PreparedSource;
 use spec::{CommutingStatementsContract, ModulePath, ResolvedMemberSelector, SourceUnitSelector};

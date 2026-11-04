@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
-use source_identity::SourceUnitOrdinal;
+use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use swc_atoms::Atom;
 use swc_ecma_ast::Id;
 
@@ -12,7 +12,6 @@ use crate::facts::{DataflowOpacityCause, EffectCell};
 use crate::reports::schema::AssumedEffectReason;
 
 use super::build::PremiseVerdict;
-use super::dependency_graph::SourceUnitId;
 
 /// How an edge was emitted. Determines whether the gate / quotient /
 /// reports consumers project the edge through the lenient (drop

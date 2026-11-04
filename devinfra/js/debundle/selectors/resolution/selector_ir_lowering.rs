@@ -15,11 +15,11 @@ use spec::{AnonymousStatementSelector, BindingSelector, BindingSourceKind, Cross
 
 /// A projected `source_match` candidate: its place and, per reference column,
 /// the chunk identifier its template bound there.
-pub type ProjectedRow = ((analysis::SourceUnitId, String), Vec<String>);
+pub type ProjectedRow = ((source_identity::SourceUnitId, String), Vec<String>);
 
 /// A projected `source_matches[]` candidate: one place per target binding and,
 /// per reference column, the chunk identifier its template bound there.
-pub type ProjectedGroupRow = (Vec<(analysis::SourceUnitId, String)>, Vec<String>);
+pub type ProjectedGroupRow = (Vec<(source_identity::SourceUnitId, String)>, Vec<String>);
 
 /// Incremental builder for one joint selector program. Targets are scoped by
 /// logical module plus export name, while relation anchors resolve against the
@@ -148,7 +148,7 @@ impl MemberSelectorProgramBuilder {
         logical_module: &str,
         statement_index: usize,
         references: &[SelectorVariableId],
-        candidate_rows: Vec<(analysis::SourceUnitId, Vec<String>)>,
+        candidate_rows: Vec<(source_identity::SourceUnitId, Vec<String>)>,
     ) {
         let source_unit =
             self.projected_anonymous_source_units[&(logical_module.to_string(), statement_index)];

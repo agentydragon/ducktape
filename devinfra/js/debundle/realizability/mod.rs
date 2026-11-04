@@ -37,13 +37,13 @@ use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use rustc_hash::FxHashMap;
 
-use analysis::SourceUnitId;
 use analysis::graph::{
     ChunkConstrainingEdgeSet, DependencyEdgeId, DependencyGraph, chunk_constraining_module_edges,
 };
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
 use analysis::reports::SccCore;
+use source_identity::SourceUnitId;
 
 mod condensation_order;
 #[cfg(test)]

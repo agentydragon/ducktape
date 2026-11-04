@@ -926,6 +926,7 @@ rust_library(
         ":gate",
         ":graph_provenance",
         ":report_io",
+        ":source_identity",
         ":spec",
         ":spec_modules",
         ":spec_tree",
@@ -1280,7 +1281,6 @@ rust_library(
     crate_root = "selectors/resolution/selector_ir.rs",
     edition = "2024",
     deps = [
-        ":analysis",
         ":source_identity",
         "@crates//:thiserror",
     ],
@@ -1298,9 +1298,9 @@ rust_library(
     crate_root = "selectors/resolution/selector_constraint_backend.rs",
     edition = "2024",
     deps = [
-        ":analysis",
         ":selector_ir",
         ":selector_outcome",
+        ":source_identity",
         "@crates//:thiserror",
     ],
 )
@@ -1318,7 +1318,6 @@ rust_library(
     crate_root = "selectors/resolution/selector_constraint_model_builder.rs",
     edition = "2024",
     deps = [
-        ":analysis",
         ":selector_constraint_backend",
         ":selector_ir",
         ":source_identity",
@@ -1332,7 +1331,6 @@ rust_library(
     crate_root = "selectors/resolution/selector_test_fixtures.rs",
     edition = "2024",
     deps = [
-        ":analysis",
         ":selector_ir",
         ":source_identity",
     ],
@@ -1344,10 +1342,10 @@ rust_test(
     crate = ":selector_constraint_model_builder",
     edition = "2024",
     deps = [
-        ":analysis",
         ":selector_constraint_backend",
         ":selector_ir",
         ":selector_test_fixtures",
+        ":source_identity",
     ],
 )
 
@@ -1357,7 +1355,6 @@ rust_library(
     crate_root = "selectors/resolution/selector_backend_solver.rs",
     edition = "2024",
     deps = [
-        ":analysis",
         ":selector_constraint_backend",
         ":selector_constraint_model_builder",
         ":selector_ir",
@@ -1371,10 +1368,10 @@ rust_test(
     crate = ":selector_backend_solver",
     edition = "2024",
     deps = [
-        ":analysis",
         ":selector_constraint_backend",
         ":selector_constraint_model_builder",
         ":selector_ir",
+        ":source_identity",
     ],
 )
 
@@ -1457,10 +1454,10 @@ rust_test(
     crate = ":selector_ortools_cpsat_backend",
     edition = "2024",
     deps = [
-        ":analysis",
         ":selector_backend_solver",
         ":selector_ir",
         ":selector_test_fixtures",
+        ":source_identity",
     ],
 )
 
@@ -1535,6 +1532,7 @@ rust_library(
     deps = [
         ":analysis",
         ":selector_ir",
+        ":source_identity",
         ":spec",
         "@crates//:thiserror",
     ],

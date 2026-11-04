@@ -3,7 +3,9 @@ pub mod schema;
 
 use std::collections::BTreeSet;
 
-use crate::graph::{DependencyEdgeId, SourceUnitId};
+use source_identity::SourceUnitId;
+
+use crate::graph::DependencyEdgeId;
 use crate::ids::ModuleId;
 use crate::reports::schema::ModuleKey;
 

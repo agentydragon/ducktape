@@ -19,12 +19,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use analysis::{DependencyGraphReport, ModuleDestinationKind, SourceUnitId, StatementKind};
+use analysis::{DependencyGraphReport, ModuleDestinationKind, StatementKind};
 use anonymous_resolution::resolve_source_claims;
 use anyhow::{Context, Result, anyhow, bail};
 use graph_provenance::VerifiedGraphSourceContext;
 use selector_outcome::SelectorKind;
 use serde::Deserialize;
+use source_identity::SourceUnitId;
 
 use pipeline::{AnalysisArtifactInput, TransformCli, assess_candidate_effect_relocation};
 use spec::{

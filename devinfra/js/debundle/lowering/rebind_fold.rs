@@ -91,7 +91,7 @@ pub fn compute_rebind_folds(
             continue;
         }
         let mut explicit_dest: Option<usize> = None;
-        let mut source_units_to_fold: Vec<analysis::graph::SourceUnitId> = Vec::new();
+        let mut source_units_to_fold: Vec<source_identity::SourceUnitId> = Vec::new();
         for &source_unit_id in &atomic_group.members {
             let Some(node) = dependency_graph.node(source_unit_id) else {
                 continue;

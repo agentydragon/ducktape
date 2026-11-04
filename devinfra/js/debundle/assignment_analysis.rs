@@ -7,14 +7,13 @@ use thiserror::Error;
 use crate::report_builders::build_dependency_graph_report;
 use analysis::assignment_assembly::{AtomicGroupConflict, assemble_assignment};
 use analysis::atomic_groups::{AtomicGroup, DependencyGraphAndAtomicGroups};
-use analysis::graph::{
-    DepKind, SourceUnitId, build_module_quotient, chunk_constraining_module_edges,
-};
+use analysis::graph::{DepKind, build_module_quotient, chunk_constraining_module_edges};
 use analysis::module_assignment::ModuleAssignment;
 use analysis::{
     BindingCatalogue, BindingScopeError, ChunkId, DependencyGraphReport, EntryDestination,
     ModuleId, ModuleQuotient, PlannedModule, StructuralPlacementCheck,
 };
+use source_identity::SourceUnitId;
 
 use crate::AssignmentInputs;
 use crate::esm_import_order::EsmImportOrder;

@@ -5,9 +5,9 @@
 //! Submodules:
 //! - [`edge`] — edge types ([`EdgeRole`], [`EdgeReason`], [`DepKind`],
 //!   [`DependencyEdge`], [`DependencyEdgeId`]).
-//! - [`dependency_graph`] — the [`DependencyGraph`] IR ([`SourceUnitId`],
-//!   [`SourceUnit`]), JSON recovery ([`DependencyGraph::from_report`],
-//!   [`UnresolvedDependencyEdgeEndpoint`]).
+//! - [`dependency_graph`] — the [`DependencyGraph`] IR and [`SourceUnit`] rows;
+//!   their dense IDs are `source_identity::SourceUnitId`. It also provides JSON
+//!   recovery ([`DependencyGraph::from_report`], [`UnresolvedDependencyEdgeEndpoint`]).
 //! - [`build`] — dependency-graph construction ([`build_dependency_graph_with`],
 //!   at-init call promotion, the S-chain).
 //! - [`quotient`] — module-level projection ([`ModuleQuotient`],
@@ -33,7 +33,7 @@ pub use build::{
 };
 pub use commutation_order::{CommutationOrder, PreservedOrder, TemporalConstraint, TemporalEdge};
 pub use dependency_graph::{
-    AppliedCommutingPremise, DependencyGraph, SourceUnit, SourceUnitClass, SourceUnitId,
+    AppliedCommutingPremise, DependencyGraph, SourceUnit, SourceUnitClass,
     UnresolvedDependencyEdgeEndpoint,
 };
 pub use edge::{

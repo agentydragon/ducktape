@@ -389,7 +389,6 @@ mod tests {
     use std::sync::Mutex;
     use std::thread;
 
-    use analysis::SourceUnitId;
     use selector_backend_solver::solve_with_backend;
     use selector_constraint_backend::{
         AllDifferentConstraintId, AllowedTupleConstraintId, AllowedTupleRowsId,
@@ -402,6 +401,7 @@ mod tests {
         ClaimKind, ClaimOutcome, ResolvedClaim, SelectorAtom, SelectorFactStore, SelectorProgram,
         SelectorTargetId, SourceUnitTerm, StringTerm, VariableDomain,
     };
+    use source_identity::SourceUnitId;
 
     use super::*;
 

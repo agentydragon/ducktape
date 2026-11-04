@@ -12,10 +12,11 @@
 use std::collections::BTreeSet;
 
 use crate::atomic_groups::AtomicGroup;
-use crate::graph::{DepKind, DependencyGraph, SourceUnitId};
+use crate::graph::{DepKind, DependencyGraph};
 use crate::ids::{BindingKind, EntryDestination, LocalBindings, ModuleId, PlannedModule};
 use crate::module_assignment::ModuleAssignment;
 use serde::Serialize;
+use source_identity::SourceUnitId;
 use swc_atoms::Atom;
 
 /// One source unit's claimed destination inside a conflicting atomic

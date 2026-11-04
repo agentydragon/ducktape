@@ -7,7 +7,7 @@
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::SourceUnitId;
+use source_identity::SourceUnitId;
 
 /// Dense id of a solver variable in a [`SelectorProgram`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

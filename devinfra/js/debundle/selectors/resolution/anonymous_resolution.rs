@@ -10,7 +10,7 @@ use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 
-use analysis::{DependencyGraphReport, SourceUnitClass, SourceUnitId, StatementKind};
+use analysis::{DependencyGraphReport, SourceUnitClass, StatementKind};
 use anyhow::{Context, Result, bail};
 use graph_provenance::VerifiedGraphSourceContext;
 use selector_outcome::{Candidate, Outcome, SelectorOutcome, Severity};
@@ -18,6 +18,7 @@ pub use selector_resolve::ModuleNeutralReferenceMeaning;
 use selector_resolve::{
     DirectBindingSourceEvidence, EntityIndex, SourceMatchReferenceOrigin, SpecModule,
 };
+use source_identity::SourceUnitId;
 use spec::{AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec, SourceMatchClaim};
 use spec_resolution::{
     anonymous_statement, member_from_source_match, member_from_spec, parse_anonymous_selector,

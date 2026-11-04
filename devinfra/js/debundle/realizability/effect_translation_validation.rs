@@ -16,8 +16,9 @@ use analysis::facts::{
 use analysis::graph::{AppliedCommutingPremise, EffectCellReport};
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
-use analysis::{DependencyGraph, EffectCell, SourceUnitId};
+use analysis::{DependencyGraph, EffectCell};
 use serde::{Serialize, Serializer, ser::SerializeSeq};
+use source_identity::SourceUnitId;
 use source_identity::SourceUnitOrdinal;
 use spec::ModulePath;
 
