@@ -27,6 +27,66 @@ fn assert_contains_in_order(code: &str, needles: &[&str]) {
 }
 
 #[test]
+fn large_module_provenance_stays_bounded_and_reports_keep_all_bindings() {
+    let names = [
+        "value00", "value01", "value02", "value03", "value04", "value05", "value06", "value07",
+        "value08", "value09", "value10", "value11", "value12", "value13", "value14", "value15",
+        "value16", "value17", "value18", "value19", "value20", "value21", "value22", "value23",
+    ];
+    let declarations = names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| format!("function {name}() {{ return {index}; }}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let source = format!(
+        "{declarations}\nconsole.log(value00(), value23());\nexport {{ {} }};\n",
+        names.join(", ")
+    );
+    let members = names
+        .iter()
+        .map(|name| Member::new(name))
+        .collect::<Vec<_>>();
+    let fixture = run_fixture(FixtureOpts::new(
+        &source,
+        vec![logical_module("x", &members)],
+    ));
+    let code = read_module(&fixture, MODULE_PATH);
+    assert!(
+        code.lines()
+            .take_while(|line| line.starts_with("//"))
+            .all(|line| line.len() <= 160),
+        "generated metadata must not dump a whole module's provenance into one line:\n{code}"
+    );
+    assert_module_source(
+        &fixture.out_root,
+        MODULE_PATH,
+        &["reports/output.json (selected_module_lowerings)"],
+        &[],
+    );
+    let report: serde_json::Value = read_json(
+        &fixture
+            .report_root
+            .parent()
+            .expect("tree reports have a reports parent")
+            .join("output.json"),
+    );
+    let lowering = report["selected_module_lowerings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|lowering| lowering["residual"] == false)
+        .expect("emitted module has a complete lowering report");
+    assert_eq!(lowering["binding_names"], serde_json::json!(names));
+    assert_eq!(
+        lowering["source_unit_ids"].as_array().unwrap().len(),
+        names.len()
+    );
+    assert_module_exports(&fixture.out_root, MODULE_PATH, &names, &[]);
+    assert_entry_output(&fixture, "0 23\n");
+}
+
+#[test]
 fn single_line_member_comment_lands_above_source_unit_statement() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"function a() { return "a"; }

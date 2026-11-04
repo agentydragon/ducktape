@@ -130,6 +130,13 @@ replacement. Syntax placement must agree with the validated assignment, includin
 whole-statement moves and repeated declarations. Emission consumes an immutable
 validated plan.
 
+Generated module headers inline source-unit and binding lists only when each
+line fits within 160 bytes. Larger lists use a count and point to
+`reports/output.json` at the output root; its `selected_module_lowerings`
+records retain all binding names and their source-unit IDs. Generator and
+detector pragmas remain separate from these summaries. Authored comments are
+emitted in full.
+
 When browser output is configured, reconstruction also resolves the HTML module
 entries and preloads against the retained chunks, prepares the bootstrap and
 rewritten HTML, and enumerates copied assets. Invalid loading topology rejects
