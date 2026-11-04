@@ -206,7 +206,8 @@ def create_app(
     @app.middleware("http")
     async def disable_caching(request: Request, call_next):
         response = await call_next(request)
-        response.headers["Cache-Control"] = "no-store"
+        if not request.url.path.startswith("/proxy/"):
+            response.headers["Cache-Control"] = "no-store"
         return response
 
     @app.get("/", response_class=HTMLResponse)
