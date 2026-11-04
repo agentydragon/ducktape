@@ -453,15 +453,20 @@ enum DebundleCommand {
 
 fn cli_command() -> clap::Command {
     DebundleArgs::command().mut_subcommand("modules", |modules| {
-        modules.mut_subcommand("refine", |refine| {
-            // Refine's opt-in candidate assessment requires caller-supplied
-            // inputs. Keep the shared Clap env defaults on every existing
-            // transform command, but do not let them masquerade as explicit
-            // assessment arguments here.
-            refine
-                .mut_arg("tree_source_root", |arg| arg.env(None::<&'static str>))
-                .mut_arg("out_root", |arg| arg.env(None::<&'static str>))
-        })
+        modules
+            .mut_subcommand("refine", |refine| {
+                // These commands did not previously consume the shared transform
+                // environment defaults. Keep their opt-in context explicit while
+                // leaving those defaults available to the existing run/edit verbs.
+                refine
+                    .mut_arg("tree_source_root", |arg| arg.env(None::<&'static str>))
+                    .mut_arg("out_root", |arg| arg.env(None::<&'static str>))
+            })
+            .mut_subcommand("apply", |apply| {
+                apply
+                    .mut_arg("tree_source_root", |arg| arg.env(None::<&'static str>))
+                    .mut_arg("out_root", |arg| arg.env(None::<&'static str>))
+            })
     })
 }
 

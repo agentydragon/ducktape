@@ -312,6 +312,72 @@ impl TreeStaged {
         command(&args.iter().map(String::as_str).collect::<Vec<_>>())
     }
 
+    fn apply_args(
+        &self,
+        batch: &Path,
+        analysis: Option<&Path>,
+        dry_run: bool,
+        complete_context: bool,
+        partial_context_without_analysis: bool,
+    ) -> Vec<String> {
+        let root = self.root();
+        let mut args = vec![
+            "modules".to_string(),
+            "apply".to_string(),
+            "--batch".to_string(),
+            path(batch).to_string(),
+            "--modules".to_string(),
+            path(&self.modules).to_string(),
+            "--graph".to_string(),
+            path(&self.graph).to_string(),
+            "--source-root".to_string(),
+            path(&root.join("snapshot")).to_string(),
+            "--tree-config".to_string(),
+            path(&self.config).to_string(),
+            "--size-cap-lines".to_string(),
+            "1".to_string(),
+            "--format".to_string(),
+            "json".to_string(),
+        ];
+        if dry_run {
+            args.push("--dry-run".to_string());
+        }
+        if let Some(analysis) = analysis {
+            if complete_context {
+                args.extend([
+                    "--tree-vendor-marks".to_string(),
+                    path(&self.vendor_marks).to_string(),
+                    "--tree-source-root".to_string(),
+                    path(root).to_string(),
+                    "--out-root".to_string(),
+                    path(&root.join("candidate-out")).to_string(),
+                ]);
+            }
+            args.extend(["--analysis".to_string(), path(analysis).to_string()]);
+        } else if partial_context_without_analysis {
+            args.extend(["--tree-source-root".to_string(), path(root).to_string()]);
+        }
+        args
+    }
+
+    fn apply(
+        &self,
+        batch: &Path,
+        analysis: Option<&Path>,
+        dry_run: bool,
+        complete_context: bool,
+        partial_context_without_analysis: bool,
+    ) -> CommandResult {
+        let args = self.apply_args(
+            batch,
+            analysis,
+            dry_run,
+            complete_context,
+            partial_context_without_analysis,
+        );
+        command(&args.iter().map(String::as_str).collect::<Vec<_>>())
+    }
+
     fn refine(
         &self,
         batch: &Path,
@@ -468,6 +534,49 @@ fn source_unit_for_binding(staged: &TreeStaged, binding: &str) -> String {
         .collect::<Vec<_>>();
     assert_eq!(units.len(), 1, "expected one source unit for {binding:?}");
     units.into_iter().next().unwrap()
+}
+
+fn residual_apply_request(
+    staged: &TreeStaged,
+    binding: &str,
+    destination: &str,
+    readable: &str,
+) -> Value {
+    let report = command(&[
+        "modules",
+        "propose",
+        "--graph",
+        path(&staged.graph),
+        "--modules",
+        path(&staged.modules),
+        "--tree-config",
+        path(&staged.config),
+        "--source-root",
+        path(&staged.root().join("snapshot")),
+        "--size-cap-lines",
+        "1",
+        "--format",
+        "json",
+    ]);
+    assert_ok(&report, "modules propose for fresh residual claim");
+    let report: Value = serde_json::from_str(&report.stdout).unwrap();
+    let proposal = report["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| {
+            row["landable_today"] == true
+                && row["binding_ids"]
+                    .as_array()
+                    .is_some_and(|bindings| bindings.iter().any(|name| name == binding))
+        })
+        .unwrap_or_else(|| panic!("no landable residual proposal for {binding:?}: {report:#}"));
+    json!({
+        "proposal_id": proposal["proposed_module_id"],
+        "source_unit_ids": proposal["source_unit_ids"],
+        "module": destination,
+        "readable_names": {(binding): readable},
+    })
 }
 
 fn module_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
@@ -1202,6 +1311,224 @@ console.log(written, read);\n";
     );
     assert!(assessment["counts"]["havoc_pairs"].as_u64().unwrap() > 0);
     assert_candidate_assessment_matches_run(assessment, &staged, "havoc", false, true);
+}
+
+#[test]
+fn modules_apply_assessment_matches_the_selected_residual_candidate() {
+    let staged = staged_tree(
+        &[(
+            "main",
+            "function first() { return \"first\"; }\n\
+             function second() { return \"second\"; }\n\
+             console.log(first(), second());\n",
+        )],
+        &[(
+            "z_later.yaml",
+            "members: [{selector: {binding: {name: first}}}]\n",
+        )],
+    );
+    let baseline_out = staged.root().join("run-apply-baseline");
+    let baseline = staged.run_with_analysis(&staged.artifact, &baseline_out, false);
+    assert_ok(&baseline, "baseline staged run");
+    let baseline_report = read_effect_report(&baseline_out);
+    assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
+
+    let request = residual_apply_request(&staged, "second", "a_earlier", "second");
+    assert_eq!(
+        request["source_unit_ids"],
+        json!([source_unit_for_binding(&staged, "second")])
+    );
+    let batch = staged.root().join("apply.json");
+    fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
+
+    let before = module_snapshot(&staged.modules);
+    let result = staged.apply(&batch, Some(&staged.artifact), true, true, false);
+    assert_ok(&result, "modules apply --dry-run --analysis");
+    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    let assessment = &outcome["effect_relocation_assessment"];
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
+    assert_ne!(
+        assessment["emitted_order"], baseline_report["emitted_order"],
+        "claiming the later residual in an earlier module must change the actual emitted order"
+    );
+    assert_eq!(module_snapshot(&staged.modules), before);
+
+    let applied = staged.apply(&batch, None, false, false, false);
+    assert_ok(&applied, "ordinary graph-backed modules apply");
+    let applied: Value = serde_json::from_str(&applied.stdout).unwrap();
+    assert!(applied.get("effect_relocation_assessment").is_none());
+    assert!(staged.modules.join("a_earlier.yaml").is_file());
+    assert_candidate_assessment_matches_run(assessment, &staged, "apply-candidate", true, false);
+    assert_node_output(
+        &staged.root().join("run-apply-candidate/app/main/entry.js"),
+        "first second\n",
+        "",
+    );
+}
+
+#[test]
+fn modules_apply_assessment_accepts_a_closed_no_swap_candidate() {
+    let staged = staged_tree(
+        &[(
+            "main",
+            "function only() { return \"only\"; }\nconsole.log(only());\n",
+        )],
+        &[("empty.yaml", "members: []\n")],
+    );
+    let request = residual_apply_request(&staged, "only", "new_module", "only");
+    let batch = staged.root().join("apply.json");
+    fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
+
+    let result = staged.apply(&batch, Some(&staged.artifact), true, true, false);
+    assert_ok(&result, "modules apply --dry-run --analysis with no swap");
+    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    let assessment = &outcome["effect_relocation_assessment"];
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["decision"]["scope"], "no_reordering",
+        "{assessment:#}"
+    );
+    assert_eq!(assessment["swapped_pairs"], 0, "{assessment:#}");
+}
+
+#[test]
+fn modules_apply_assessment_refuses_stale_partial_scoped_and_non_dry_inputs_before_writes() {
+    let staged = staged_tree(
+        &[(
+            "main",
+            "function first() { return \"first\"; }\n\
+             function second() { return \"second\"; }\n\
+             console.log(first(), second());\n",
+        )],
+        &[(
+            "z_later.yaml",
+            "members: [{selector: {binding: {name: first}}}]\n",
+        )],
+    );
+    let request = residual_apply_request(&staged, "second", "a_earlier", "second");
+    let batch = staged.root().join("apply.json");
+    fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
+    let before = module_snapshot(&staged.modules);
+
+    let foreign = staged_tree(&[("main", "function other() { return \"other\"; }\n")], &[]);
+    let stale = staged.apply(&batch, Some(&foreign.artifact), true, true, false);
+    assert_eq!(stale.status.code(), Some(1), "{}", stale.stderr);
+    assert!(
+        stale.stderr.contains("projection") || stale.stderr.contains("analysis"),
+        "expected staged projection refusal:\n{}",
+        stale.stderr
+    );
+    assert_eq!(module_snapshot(&staged.modules), before);
+
+    let partial = staged.apply(&batch, Some(&staged.artifact), true, false, false);
+    assert_eq!(partial.status.code(), Some(1), "{}", partial.stderr);
+    assert_eq!(module_snapshot(&staged.modules), before);
+
+    let not_dry = staged.apply(&batch, Some(&staged.artifact), false, true, false);
+    assert_eq!(not_dry.status.code(), Some(1), "{}", not_dry.stderr);
+    assert!(
+        not_dry.stderr.contains("requires --dry-run"),
+        "{}",
+        not_dry.stderr
+    );
+    assert_eq!(module_snapshot(&staged.modules), before);
+
+    let scoped = staged_tree_with_module_roots(
+        &[(
+            "main",
+            "function first() { return \"first\"; }\n\
+             function second() { return \"second\"; }\n\
+             console.log(first(), second());\n",
+        )],
+        &[("chunks/main", "main")],
+        &[(
+            "chunks/main/z_later.yaml",
+            "members: [{selector: {binding: {name: first}}}]\n",
+        )],
+    );
+    let scoped_request =
+        residual_apply_request(&scoped, "second", "chunks/main/a_earlier", "second");
+    let scoped_batch = scoped.root().join("apply.json");
+    fs::write(
+        &scoped_batch,
+        serde_json::to_vec(&json!([scoped_request])).unwrap(),
+    )
+    .unwrap();
+    let scoped_before = module_snapshot(&scoped.modules);
+    let scoped_preview = scoped.apply(&scoped_batch, None, true, false, false);
+    assert_ok(&scoped_preview, "ordinary scoped modules apply --dry-run");
+    let scoped_refused = scoped.apply(&scoped_batch, Some(&scoped.artifact), true, true, false);
+    assert_eq!(
+        scoped_refused.status.code(),
+        Some(1),
+        "{}",
+        scoped_refused.stderr
+    );
+    assert!(
+        scoped_refused.stderr.contains("one full-tree module root"),
+        "{}",
+        scoped_refused.stderr
+    );
+    assert_eq!(module_snapshot(&scoped.modules), scoped_before);
+}
+
+#[test]
+fn modules_apply_assessment_inputs_are_explicit_but_ambient_defaults_are_ignored() {
+    let staged = staged_tree(
+        &[("main", "function value() { return \"value\"; }\n")],
+        &[("empty.yaml", "members: []\n")],
+    );
+    let request = residual_apply_request(&staged, "value", "new_module", "value");
+    let batch = staged.root().join("apply.json");
+    fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
+    let before = module_snapshot(&staged.modules);
+    let root = staged.root();
+    let out = root.join("ambient-out");
+
+    let ambient_args = staged.apply_args(&batch, None, true, false, false);
+    let ambient = std::process::Command::new(debundler_path())
+        .args(ambient_args.iter().map(String::as_str))
+        .env("DEBUNDLE_TREE_SOURCE_ROOT", root)
+        .env("DEBUNDLE_OUT", &out)
+        .output()
+        .expect("spawn debundler with ambient transform defaults");
+    assert!(
+        ambient.status.success(),
+        "ambient transform defaults changed ordinary apply behavior:\n{}",
+        String::from_utf8_lossy(&ambient.stderr)
+    );
+    assert_eq!(module_snapshot(&staged.modules), before);
+
+    let mut explicit_args = staged.apply_args(&batch, None, true, false, false);
+    explicit_args.extend([
+        "--tree-source-root".to_string(),
+        path(root).to_string(),
+        "--out-root".to_string(),
+        path(&out).to_string(),
+    ]);
+    let explicit = std::process::Command::new(debundler_path())
+        .args(explicit_args.iter().map(String::as_str))
+        .env("DEBUNDLE_TREE_SOURCE_ROOT", root)
+        .env("DEBUNDLE_OUT", &out)
+        .output()
+        .expect("spawn debundler with explicit auxiliary inputs matching environment");
+    assert_eq!(explicit.status.code(), Some(1));
+    assert!(
+        String::from_utf8_lossy(&explicit.stderr).contains("require --analysis"),
+        "expected explicit-context refusal:\n{}",
+        String::from_utf8_lossy(&explicit.stderr)
+    );
+    assert_eq!(module_snapshot(&staged.modules), before);
 }
 
 #[test]

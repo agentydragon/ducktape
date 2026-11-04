@@ -4,7 +4,7 @@ use crate::binding::{
     CandidateEffectAssessmentContext, SourceUnitAssignment, SourceUnitRefineOptions,
     run_source_unit_refine,
 };
-use crate::candidate_assessment::CandidateEffectAssessmentRefineArgs;
+use crate::candidate_assessment::CandidateEffectAssessmentExistingTreeArgs;
 use crate::comment::{ModuleCommentArgs, run_module_comment_cmd};
 use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
@@ -197,6 +197,9 @@ enum ModulesNsCommand {
     /// before they can land.
     Propose(PlanWorkArgs),
     /// Claim reviewed residual proposal bindings using proven structural selectors.
+    /// `--dry-run --analysis` additionally reports statement-order commutation for
+    /// the exact candidate using the full tree transform context; it does not
+    /// change the realizability gate.
     Apply(ModulesApplyArgs),
     /// Move reviewed existing source-unit claims as one validated batch.
     ///
@@ -319,7 +322,7 @@ struct ModulesRefineArgs {
     /// Opt-in report-only relocation assessment using the complete transform
     /// context and a verified staged analysis artifact. Requires --dry-run.
     #[command(flatten)]
-    effect_assessment: CandidateEffectAssessmentRefineArgs,
+    effect_assessment: CandidateEffectAssessmentExistingTreeArgs,
 
     /// Validate the complete edit without writing module YAML.
     #[arg(long)]
