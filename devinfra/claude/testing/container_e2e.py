@@ -138,11 +138,7 @@ def load_e2e_image() -> str:
     _save_output(
         "container-e2e-image",
         "load-timing.json",
-        json.dumps(
-            {"duration_s": round(time.monotonic() - started, 3), "image": e2e_container_descriptor.IMAGE.tag},
-            indent=2,
-            sort_keys=True,
-        ),
+        json.dumps({"duration_s": round(time.monotonic() - started, 3), "image": image}, indent=2, sort_keys=True),
     )
     return image
 

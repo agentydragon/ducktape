@@ -8,8 +8,7 @@ non-default image.
 ``start_postgres_container`` is the underlying preload+start helper for packages that
 need to wrap the shared container lifecycle.
 
-Both images are marked ``immutable`` upstream tags, so ``load_oci_image`` skips the
-push on a warm worker by itself — this module no longer checks.
+``load_oci_image`` checks the image digest and skips loading on a warm worker.
 
 The shared ``postgres_admin_url`` uses the sync psycopg driver. Tests that need asyncpg
 should change the driver explicitly on their per-test database URL. Suites that need a
@@ -87,11 +86,11 @@ def start_postgres_container(image: OciImage = postgres_18.IMAGE) -> PostgresCon
     daemon's own container start, so the least this can do is name where the time went.
     """
     with _onto_disk():
-        for preloaded in (ryuk.IMAGE, image):
-            load_oci_image(preloaded)
-        container = PostgresContainer(image=image.tag, username="postgres", password="postgres", dbname="postgres")
+        load_oci_image(ryuk.IMAGE)
+        image_ref = load_oci_image(image)
+        container = PostgresContainer(image=image_ref, username="postgres", password="postgres", dbname="postgres")
         started = time.monotonic()
-        logger.info("Starting %s", image.tag)
+        logger.info("Starting %s", image_ref)
         container.start()
         logger.info("Postgres ready in %.1fs", time.monotonic() - started)
         return container

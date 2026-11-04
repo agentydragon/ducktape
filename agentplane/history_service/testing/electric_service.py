@@ -65,9 +65,9 @@ class BrowserPostgres:
 @contextmanager
 def browser_postgres_server() -> Iterator[BrowserPostgres]:
     """Start one logical-WAL PostgreSQL server and migrate its clone template once per shard."""
-    _load_postgres_images()
+    postgres_image = _load_postgres_images()
     with Network() as network:
-        postgres = _logical_postgres_container(network, test_name="history-postgres")
+        postgres = _logical_postgres_container(network, postgres_image=postgres_image, test_name="history-postgres")
         with postgres:
             address = f"{postgres.get_container_host_ip()}:{postgres.get_exposed_port(5432)}"
             admin_url = f"postgresql+psycopg://postgres:postgres@{address}/postgres"
@@ -163,9 +163,9 @@ async def _electric_process(
     test_name: str,
     electric_storage_dir: Path | None = None,
 ) -> AsyncIterator[ElectricService]:
-    await asyncio.to_thread(load_oci_image, electric_1_8_1.IMAGE)
+    electric_image = await asyncio.to_thread(load_oci_image, electric_1_8_1.IMAGE)
     electric = (
-        LoggedContainer(electric_1_8_1.IMAGE.tag, test_name=test_name)
+        LoggedContainer(electric_image, test_name=test_name)
         .with_network(network)
         .with_exposed_ports(3000)
         .with_env("DATABASE_URL", electric_database_url)
@@ -188,13 +188,13 @@ async def _electric_process(
         yield service
 
 
-def _load_postgres_images() -> None:
-    for image in (ryuk.IMAGE, postgres_18.IMAGE):
-        load_oci_image(image)
+def _load_postgres_images() -> str:
+    load_oci_image(ryuk.IMAGE)
+    return load_oci_image(postgres_18.IMAGE)
 
 
 def _logical_postgres_container(
-    network: Network, *, test_name: str, postgres_settings: tuple[str, ...] = ()
+    network: Network, *, postgres_image: str, test_name: str, postgres_settings: tuple[str, ...] = ()
 ) -> LoggedContainer:
     command = " ".join(
         (
@@ -206,7 +206,7 @@ def _logical_postgres_container(
         )
     )
     return (
-        LoggedContainer(postgres_18.IMAGE.tag, test_name=test_name)
+        LoggedContainer(postgres_image, test_name=test_name)
         .with_network(network)
         .with_network_aliases("postgres")
         .with_exposed_ports(5432)
@@ -220,10 +220,10 @@ def _logical_postgres_container(
 async def electric_service(
     *, postgres_settings: tuple[str, ...] = (), electric_storage_dir: Path | None = None
 ) -> AsyncIterator[ElectricService]:
-    await asyncio.to_thread(_load_postgres_images)
+    postgres_image = await asyncio.to_thread(_load_postgres_images)
     with Network() as network:
         postgres = _logical_postgres_container(
-            network, test_name="history-postgres", postgres_settings=postgres_settings
+            network, postgres_image=postgres_image, test_name="history-postgres", postgres_settings=postgres_settings
         )
         with postgres:
             address = f"{postgres.get_container_host_ip()}:{postgres.get_exposed_port(5432)}"

@@ -49,7 +49,7 @@ def _probe_success(metrics: str) -> int:
 
 def test_blackbox_modules_use_production_config(tmp_path: Path) -> None:
     assert blackbox_exporter.IMAGE.startswith(f"{blackbox_exporter_image.IMAGE.tag}@sha256:")
-    load_oci_image(blackbox_exporter_image.IMAGE)
+    image_ref = load_oci_image(blackbox_exporter_image.IMAGE)
     config_path = tmp_path / "blackbox.yml"
     config_path.write_text(yaml.safe_dump(home_application_probes.CONFIG))
     out_dir = undeclared_outputs_dir() / "home-application-probes"
@@ -57,7 +57,7 @@ def test_blackbox_modules_use_production_config(tmp_path: Path) -> None:
 
     with (
         LoggedContainer(
-            blackbox_exporter_image.IMAGE.tag,
+            image_ref,
             test_name="home-application-probes",
             command=[f"--config.file=/etc/blackbox_exporter/{config_path.name}"],
         )

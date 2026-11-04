@@ -52,19 +52,18 @@ def grafana_dashboard(
         grafana_image = executor.submit(load_oci_image, grafana_visual.IMAGE)
         ryuk_image = executor.submit(load_oci_image, ryuk.IMAGE)
         prometheus_image = None if render_fixture else executor.submit(load_oci_image, prometheus_visual.IMAGE)
-        grafana_image.result()
+        grafana_ref = grafana_image.result()
         ryuk_image.result()
-        if prometheus_image:
-            prometheus_image.result()
+        prometheus_ref = prometheus_image.result() if prometheus_image is not None else None
     client = docker.from_env()
     data = tmp_path / "data"
-    if not render_fixture:
+    if prometheus_ref is not None:
         record_stage("creating synthetic TSDB")
         data.mkdir()
         (data / "fixture.om").write_text(samples)
         mount = {str(data): {"bind": "/fixture", "mode": "rw"}}
         client.containers.run(
-            prometheus_visual.IMAGE.tag,
+            prometheus_ref,
             ["tsdb", "create-blocks-from", "openmetrics", "/fixture/fixture.om", "/fixture/tsdb"],
             entrypoint="/bin/promtool",
             volumes=mount,
@@ -74,21 +73,8 @@ def grafana_dashboard(
     record_stage("starting Grafana" if render_fixture else "starting Prometheus and Grafana")
     try:
         with Network(docker_network_kw={"internal": True}) as network:
-            prometheus = (
-                LoggedContainer(prometheus_visual.IMAGE.tag, test_name="synthetic-prometheus", user="0")
-                .with_network(network)
-                .with_network_aliases("prometheus")
-                .with_volume_mapping(data, "/fixture", "rw")
-                .with_command(
-                    [
-                        "--config.file=/etc/prometheus/prometheus.yml",
-                        "--storage.tsdb.path=/fixture/tsdb",
-                        "--storage.tsdb.retention.time=87600h",
-                    ]
-                )
-            )
             grafana = (
-                LoggedContainer(grafana_visual.IMAGE.tag, test_name="synthetic-grafana")
+                LoggedContainer(grafana_ref, test_name="synthetic-grafana")
                 .with_network(network)
                 .with_envs(
                     GF_AUTH_ANONYMOUS_ENABLED="true",
@@ -102,7 +88,20 @@ def grafana_dashboard(
                 )
             )
             with ExitStack() as services:
-                if not render_fixture:
+                if prometheus_ref is not None:
+                    prometheus = (
+                        LoggedContainer(prometheus_ref, test_name="synthetic-prometheus", user="0")
+                        .with_network(network)
+                        .with_network_aliases("prometheus")
+                        .with_volume_mapping(data, "/fixture", "rw")
+                        .with_command(
+                            [
+                                "--config.file=/etc/prometheus/prometheus.yml",
+                                "--storage.tsdb.path=/fixture/tsdb",
+                                "--storage.tsdb.retention.time=87600h",
+                            ]
+                        )
+                    )
                     services.enter_context(prometheus)
                 services.enter_context(grafana)
                 wrapped = grafana.get_wrapped_container()
