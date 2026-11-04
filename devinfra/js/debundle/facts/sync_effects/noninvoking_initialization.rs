@@ -4,7 +4,7 @@ use super::allocation_transfer::AllocationJudgment;
 use super::value_model::{AbstractValue, CallSite, ValueExpr, Values};
 use crate::facts::OwnerInitializationCoverageRefusalReason;
 use crate::facts::abstract_domain::value::{Kind, Value};
-use crate::facts::item_views::{SplitDeclaratorProvenance, TopLevelItemView};
+use crate::facts::item_views::{SplitDeclaratorProvenance, TopLevelItemView, var_decl_of_item};
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
@@ -168,7 +168,7 @@ fn original_declarator<'source>(
 ) -> Result<(&'source VarDecl, &'source VarDeclarator), OwnerInitializationCoverageRefusalReason> {
     match item {
         TopLevelItemView::Borrowed(item) => {
-            let ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration))) = item else {
+            let Some(declaration) = var_decl_of_item(item) else {
                 return Err(refusal_for_non_variable_owner(item));
             };
             let [declarator] = declaration.decls.as_slice() else {
@@ -186,7 +186,7 @@ fn original_split_declarator<'source>(
 ) -> Result<(&'source VarDecl, &'source VarDeclarator), OwnerInitializationCoverageRefusalReason> {
     use OwnerInitializationCoverageRefusalReason::SplitDeclaration;
 
-    let ModuleItem::Stmt(Stmt::Decl(Decl::Var(original))) = provenance.parent_item else {
+    let Some(original) = var_decl_of_item(provenance.parent_item) else {
         return Err(SplitDeclaration);
     };
     if original.decls.len() <= 1 {
@@ -195,7 +195,7 @@ fn original_split_declarator<'source>(
     let Some(declarator) = original.decls.get(provenance.declarator_index) else {
         return Err(SplitDeclaration);
     };
-    let ModuleItem::Stmt(Stmt::Decl(Decl::Var(single))) = view else {
+    let Some(single) = var_decl_of_item(view) else {
         return Err(SplitDeclaration);
     };
     let [single_declarator] = single.decls.as_slice() else {
@@ -203,7 +203,9 @@ fn original_split_declarator<'source>(
     };
     let same_initializer_span = single_declarator.init.as_ref().map(|init| init.span())
         == declarator.init.as_ref().map(|init| init.span());
-    if single.kind != original.kind
+    if matches!(view, ModuleItem::ModuleDecl(_))
+        != matches!(provenance.parent_item, ModuleItem::ModuleDecl(_))
+        || single.kind != original.kind
         || single.ctxt != original.ctxt
         || single.declare != original.declare
         || single_declarator.span != declarator.span

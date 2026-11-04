@@ -626,7 +626,7 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
             vec![Member::new("value"), Member::new("sibling")],
             1,
         ),
-        ("export const value = 1;", vec![Member::new("value")], 2),
+        ("export const value = 1;", vec![Member::new("value")], 1),
     ] {
         let source = format!("{declaration}\nconsole.log('control');\n");
         let fixture = run_fixture(FixtureOpts::new(
@@ -646,24 +646,57 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
 
 #[test]
 fn composed_initializer_coverage_retains_discarded_reads_and_child_results() {
-    let source = "const first = 1;\n\
-const value = (first, {value: !first, ignored: void first, equal: first === first, items: [first]});\n\
-console.log(JSON.stringify(value));\n";
+    for prefix in ["", "export "] {
+        let source = format!(
+            "{prefix}const first = 1;\n\
+{prefix}const value = (first, {{value: !first, ignored: void first, equal: first === first, items: [first]}});\n\
+console.log(JSON.stringify(value));\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "values",
+                &[Member::new("first"), Member::new("value")],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, "{\"value\":false,\"equal\":true,\"items\":[1]}\n");
+        let report = fixture.effect_translation_validation();
+        for domain in ["global_properties", "general_heap", "host_effects"] {
+            assert_eq!(
+                report["coverage"]["unknown_coverage"][domain], 1,
+                "only the output call remains uncovered: {source}: {report:#}"
+            );
+        }
+    }
+}
+
+#[test]
+fn exported_split_declarators_keep_composed_coverage_local() {
     let fixture = run_fixture(FixtureOpts::new(
-        source,
+        "export const first = 1, value = (first, {value: first}), unsupported = (``, 2);\n\
+console.log(value.value, unsupported);\n",
         vec![logical_module(
             "values",
-            &[Member::new("first"), Member::new("value")],
+            &[
+                Member::new("first"),
+                Member::new("value"),
+                Member::new("unsupported"),
+            ],
         )],
     ));
-    assert_preserved_entry_output(&fixture, "{\"value\":false,\"equal\":true,\"items\":[1]}\n");
+    assert_preserved_entry_output(&fixture, "1 2\n");
     let report = fixture.effect_translation_validation();
+    assert_eq!(report["coverage"]["statement_count"], 4, "{report:#}");
     for domain in ["global_properties", "general_heap", "host_effects"] {
         assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 1,
-            "only the output call remains uncovered: {report:#}"
+            report["coverage"]["unknown_coverage"][domain], 2,
+            "{report:#}"
         );
     }
+    assert_eq!(
+        report["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
+        "the unsupported sibling cannot borrow another declarator's coverage: {report:#}"
+    );
 }
 
 #[test]
