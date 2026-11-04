@@ -2660,10 +2660,17 @@ read projection into the final values of its captured local cells, recursively
 traversing ordinary data records and further closures. Reached checked private
 `var` captures are reported under `retained_provider_captures`; this preserves
 capabilities held through a local heap object even when the closure does not
-read the provider capture directly. A returned graph that reaches an async or
-generator closure, an implicit-`this` closure, or a closure with an unsupported
-capture declines the summary. Closure bodies are deferred and are not executed
-by the provider transfer.
+read the provider capture directly. Reads resolved in the provider module
+environment, and unresolved global names, remain deferred with the closure:
+creation does not read or copy those values from the factory activation, and
+they do not become retained provider captures. An enclosing lexical cell still
+needs a value in the final local environment or a checked private-`var` capture
+projection. A returned graph that reaches an async or generator closure, an
+implicit-`this` closure, or a closure with an unsupported enclosing capture
+declines the summary. Closure bodies are deferred and are not executed by the
+provider transfer. These allocation and retention facts do not establish
+deferred callback behavior; callback-factory evidence keeps its independent
+source checks.
 
 Calls, field reads/writes, `this`, throws and captured writes in the provider
 body remain outside these transfer modes where their behavior is not proved.

@@ -379,6 +379,48 @@ fn shared_local_transfer_preserves_local_bound_returned_closure_and_formal_reten
 }
 
 #[test]
+fn returned_closure_can_resolve_provider_module_bindings_without_callback_evidence() {
+    let source = "import { makeRest, makeZero } from './peer.js';\n\
+                  const rest = makeRest((value) => value + 1, 'unused');\n\
+                  const zero = makeZero(() => 42, 'unused');\n\
+                  console.log(rest(41), zero());\n";
+    let provider = "function moduleCheck(value) { return value !== false; }\n\
+                    export function makeRest(callback, unused) {\n\
+                      return (...args) => {\n\
+                        const value = callback(...args);\n\
+                        return moduleCheck(value) ? value : undefined;\n\
+                      };\n\
+                    }\n\
+                    export function makeZero(callback, unused) {\n\
+                      return () => moduleCheck(callback()) ? 'ok' : 'no';\n\
+                    }\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+    );
+    assert_preserved_entry_output(&fixture, "42 ok\n");
+
+    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
+    for name in ["makeRest", "makeZero"] {
+        let callable = &report["imported_callables"][name];
+        assert_eq!(
+            callable["foreign_call"]["returns"],
+            serde_json::json!([{"kind": "fresh_allocation"}]),
+            "module-scope reads remain deferred for {name}"
+        );
+        assert_eq!(
+            callable["foreign_call"]["retained_arguments"],
+            serde_json::json!([0, 1]),
+            "a returned closure conservatively retains every formal: {name}"
+        );
+        assert_eq!(
+            callable["callback_factory_evidence"],
+            serde_json::json!([]),
+            "a module-scope dependency does not prove deferred callback behavior: {name}"
+        );
+    }
+}
+
+#[test]
 fn strict_expression_returns_preserve_runtime_values_and_retained_arguments() {
     for (returned, use_result, expected, retained) in [
         (

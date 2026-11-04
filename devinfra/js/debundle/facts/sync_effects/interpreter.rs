@@ -5754,6 +5754,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             Parameter {
                 binding: Some(parameter),
                 default: None,
+                ..
             },
         ] = callable.params.as_slice()
         else {

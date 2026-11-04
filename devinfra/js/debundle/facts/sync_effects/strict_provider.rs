@@ -137,6 +137,11 @@ impl LocalContext for ProviderContext<'_> {
             .iter()
             .filter_map(|parameter| parameter.binding.as_ref())
             .collect();
+        let parameter_bindings: BTreeSet<_> = body
+            .params
+            .iter()
+            .flat_map(|parameter| parameter.bindings.iter())
+            .collect();
         let class_unavailable_capture = body.reads.iter().any(|binding| {
             !body.declared_locals.contains(binding)
                 && !parameters.contains(binding)
@@ -144,9 +149,10 @@ impl LocalContext for ProviderContext<'_> {
         });
         let unavailable_capture = body.reads.iter().any(|binding| {
             !body.declared_locals.contains(binding)
-                && !parameters.contains(binding)
+                && !parameter_bindings.contains(binding)
                 && !self.local_bindings.contains(binding)
                 && !frame.environment.contains_key(binding)
+                && !self.index.deferred_module_reference(binding)
         });
         if self.class_mode && class_unavailable_capture {
             return None;
@@ -262,13 +268,12 @@ fn closure_capture_projection(
         let descendants: Vec<_> = index.callables.range(callable..span.hi.0).collect();
         let mut closure_bindings = BTreeSet::new();
         for (_, nested) in &descendants {
-            let nested_parameters: BTreeSet<_> = nested
-                .params
-                .iter()
-                .filter_map(|parameter| parameter.binding.as_ref())
-                .cloned()
-                .collect();
-            closure_bindings.extend(nested_parameters);
+            closure_bindings.extend(
+                nested
+                    .params
+                    .iter()
+                    .flat_map(|parameter| parameter.bindings.iter().cloned()),
+            );
             closure_bindings.extend(nested.declared_locals.iter().cloned());
         }
         for (_, nested) in descendants {
@@ -823,6 +828,44 @@ mod tests {
                 summary.retained_provider_captures,
                 BTreeSet::from(["captured".to_owned()]),
                 "the returned closure reaches the capture through its final local record"
+            );
+        });
+    }
+
+    #[test]
+    fn returned_closure_rejects_unrepresented_enclosing_lexical_capture() {
+        js_ast::with_swc_globals(|| {
+            let source = "function outer() {\n\
+                             const enclosing = 42;\n\
+                             function make(input) { return () => enclosing + input; }\n\
+                           }\n";
+            let module = js_ast::parse_js_module("provider.js", source)
+                .unwrap()
+                .module;
+            let mut make = MakeFunctionKey::default();
+            module.visit_with(&mut make);
+            let key = make.0.expect("canonical nested make callable");
+            let views = top_level_item_views(&module.body);
+            let prepared = super::super::prepare_callable_capabilities(
+                &views,
+                StableArraySpreadShapes::default(),
+                BTreeSet::from(["make".into()]),
+                Vec::new(),
+                Vec::new(),
+                Default::default(),
+                Default::default(),
+            );
+
+            assert!(
+                prepared.index.callables[&key]
+                    .local_body
+                    .as_ref()
+                    .is_some_and(|body| body.closure_allocation_syntax()),
+                "the source is admitted to the shared closure transfer"
+            );
+            assert!(
+                derive(&prepared.index, key, &BTreeSet::new()).is_none(),
+                "an enclosing const that is absent from the final local frame is not a deferred module binding"
             );
         });
     }
