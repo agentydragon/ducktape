@@ -7,13 +7,14 @@ mod apply;
 mod outcome_sink;
 mod plan_builder;
 
+use analysis::analysis_inputs::SourceDeclaration;
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
+use staged_analysis::ResolvedMemberSite;
 use staged_analysis::chunk_facts::{
     ChunkFacts, ChunkFactsContext, chunk_runtime_entry, compute_logical_chunk_facts,
 };
 use staged_analysis::progress::emit_debundle_progress;
-use staged_analysis::{ResolvedMemberDeclaration, ResolvedMemberSite};
 
 use super::analysis_projection::AnalysisProjection;
 use super::commuting_statements::resolve_chunk_commuting_statements;
@@ -364,7 +365,7 @@ impl ClaimedLogicalChunk<'_> {
                         if statements.len() != 1 {
                             return None;
                         }
-                        Some(ResolvedMemberDeclaration {
+                        Some(SourceDeclaration {
                             binding,
                             body_index: statements[0].0,
                         })

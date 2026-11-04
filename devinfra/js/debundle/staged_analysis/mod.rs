@@ -3,10 +3,10 @@
 //! Everything that computes, encodes or loads saved facts belongs to this
 //! closure. Ownership planning, lowering and output reports depend on it.
 
+use analysis::analysis_inputs::SourceDeclaration;
 use analysis::facts::ExportReentryPolicy;
 use analysis_artifact::{AnalysisArtifactBody, AnalysisArtifactHeader};
 use analysis_codec::ContextOrdinals;
-use analysis_projection::AnalysisProjection;
 use anyhow::{Context, Result, bail, ensure};
 use artifact::paths::normalize_module_path;
 use artifact::reports::{StaticModuleRequest, StaticModuleRequestMode};
@@ -33,18 +33,12 @@ pub use loader_surface::{
     LoaderRequestReportTarget, LoaderSite, LoaderSiteWitness,
 };
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct ResolvedMemberDeclaration {
-    pub binding: String,
-    pub body_index: usize,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ResolvedMemberSite {
     pub provider_chunk: String,
     pub module: String,
     pub name: String,
-    pub declaration: Option<ResolvedMemberDeclaration>,
+    pub declaration: Option<SourceDeclaration>,
 }
 
 /// Why the unknown-call fallback includes the chunk's export surface.
@@ -287,14 +281,7 @@ pub fn analyze_program(
         &artifact_indexes,
         &selected_chunk_ids,
     )?;
-    let projection = AnalysisProjection::new(
-        &spec.chunk_analysis_options,
-        resolved_export_purity.as_ref(),
-        &spec.host_behavior,
-        spec.program_premises.intrinsics_never_written.as_ref(),
-        spec.declared_assumptions.clone(),
-        &spec.premise_members,
-    )?;
+    let projection = spec.projection(resolved_export_purity.as_ref());
     let reparsed =
         cross_module::reparse_unretained_entries(&artifact, Some(&cross_module_chunk_closure));
     let cross_module = cross_module::collect_cross_module_imported_purities(

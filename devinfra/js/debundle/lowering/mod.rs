@@ -519,7 +519,7 @@ pub fn materialize_logical_modules(
     let completed = |base: &AnalysisSpec| {
         base.clone().with_premises(
             projection.declared_assumptions.clone(),
-            projection.premise_members.clone(),
+            projection.native_operation_inputs.clone(),
         )
     };
     let (cross_module_purities, mut loaded_chunks) = match (&options.analysis, loaded) {

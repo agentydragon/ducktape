@@ -11,9 +11,11 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use graph_provenance::{CurrentRoots, GraphProvenance};
-use spec::DependencyGraphOptions;
+use spec::{DependencyGraphOptions, SourceUnitSelector};
 
-use crate::analysis_inputs::{NativeOperationInputEvidence, ValueInputEvidence};
+use crate::analysis_inputs::{
+    NativeOperationInputEvidence, NativeOperationSelectorProvenance, ValueInputEvidence,
+};
 use crate::reports::schema::{InferenceUse, NativeMutationWitness, SynchronousExecutionReport};
 
 pub struct AuthorInputLocations<'a> {
@@ -107,7 +109,18 @@ impl<'a> AuthorInputLocations<'a> {
         // The reference indexes operation inputs, then call-identity inputs.
         let index = evidence.reference.input_index;
         evidence.note = match index.checked_sub(options.native_operation_inputs.len()) {
-            None => options.native_operation_inputs[index].note.clone(),
+            None => {
+                let input = &options.native_operation_inputs[index];
+                evidence.selector = match &input.selector {
+                    SourceUnitSelector::SourceMatch(source_match) => {
+                        NativeOperationSelectorProvenance::SourceMatch(source_match.clone())
+                    }
+                    SourceUnitSelector::ResolvedMember(member) => {
+                        NativeOperationSelectorProvenance::ResolvedMember(member.clone())
+                    }
+                };
+                input.note.clone()
+            }
             Some(index) => options.native_call_identity_inputs[index].note.clone(),
         };
         evidence.parser_input_file = Some(self.parser_input_file(chunk));

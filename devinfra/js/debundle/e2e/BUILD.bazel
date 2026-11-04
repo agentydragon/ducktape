@@ -85,6 +85,7 @@ debundle_e2e_test(
         "@crates//:rmp-serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
+        "@crates//:sha2",
     ],
 )
 

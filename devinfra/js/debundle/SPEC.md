@@ -2155,6 +2155,14 @@ holding the call. `audited_source_sha256` must match the provider's parser input
 as for `value_inputs`; the report retains the selector provenance, digest, spec
 location, selected binding and site.
 
+After selector resolution, a `resolved_member` native premise contributes its
+provider chunk, original binding and prepared-body declaration index, operation
+and audited parser-input digest to analysis identity. Renaming the logical module
+or public member while selecting the same declaration preserves projection and
+artifact bytes. Changing the selected declaration or premise invalidates saved
+analysis. Reports render the current authored selector and rationale even when
+the facts came from a saved artifact.
+
 | Input                                | Selected source                                                                                                                                                            | Asserted slots                                                              |
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | `text_encoder_empty`                 | Top-level simple binding initialized by direct bare zero-argument `new TextEncoder()`                                                                                      | Original global `TextEncoder` data binding                                  |

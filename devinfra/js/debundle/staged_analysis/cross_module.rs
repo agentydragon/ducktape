@@ -38,7 +38,7 @@ use program_analysis::analyze_program_shallow;
 use selector_outcome::Outcome as SelectorOutcome;
 use selector_resolve::{Chunk as SelectorChunk, EntityIndex};
 use source_match::source_match_claim_member_selectors;
-use spec::{DependencyGraphOptions, SourceUnitSelector};
+use spec::DependencyGraphOptions;
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::{
     ArrowExpr, CallExpr, Callee, Constructor, Decl, Function, GetterProp, MemberProp, Module,
@@ -46,8 +46,9 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use super::ResolvedMemberSite;
-use super::analysis_projection::{AnalysisProjection, resolve_premise_member_site};
+use super::analysis_projection::{
+    AnalysisNativeOperationInput, AnalysisProjection, NativeOperationSourceSelector,
+};
 
 /// Resolve a one-binding `source_match` through the selector engine and
 /// return the declaring statement the template matched, with the source
@@ -346,8 +347,7 @@ pub fn collect_cross_module_imported_purities(
         replacement_packages,
     } = options;
     let chunk_export_purity = projection.chunk_export_purity;
-    let chunk_analysis_options = projection.chunk_analysis_options;
-    let resolved_member_sites = &projection.premise_members;
+    let chunk_analysis_options = projection.chunk_analysis_options.as_ref();
     let predefined_globals = projection.host_behavior.predefined_globals;
     let declared_pure_new_bindings = &projection.declared_pure_new();
     // Pass 2: assemble each chunk's oracle inputs from whichever body is
@@ -526,7 +526,7 @@ pub fn collect_cross_module_imported_purities(
         chunk_analysis_options,
         graph_provenance,
         chunk_filter,
-        resolved_member_sites,
+        &projection.native_operation_inputs,
     )?;
     let argument_inputs = resolve_argument_inputs(
         artifact,
@@ -929,13 +929,14 @@ fn resolve_native_operation_inputs(
     options: &BTreeMap<String, DependencyGraphOptions>,
     graph_provenance: Option<&GraphProvenance>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
-    resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
+    projected_inputs: &BTreeMap<String, Vec<AnalysisNativeOperationInput>>,
 ) -> Result<BTreeMap<String, Vec<SelectedNativeOperationInput>>> {
     let mut resolved = BTreeMap::new();
     for (chunk_name, options) in options {
-        if options.native_operation_inputs.is_empty()
-            && options.native_call_identity_inputs.is_empty()
-        {
+        let operation_inputs = projected_inputs
+            .get(chunk_name)
+            .map_or(&[][..], Vec::as_slice);
+        if operation_inputs.is_empty() && options.native_call_identity_inputs.is_empty() {
             continue;
         }
         let chunk = artifact
@@ -979,8 +980,7 @@ fn resolve_native_operation_inputs(
         };
         let structural = analysis::facts::collect_chunk_source_facts(&module, None, |_| None);
         let selector_chunk = SelectorChunk::new(chunk_name, &module, structural);
-        let contracts = options
-            .native_operation_inputs
+        let contracts = operation_inputs
             .iter()
             .enumerate()
             .map(|(index, contract)| {
@@ -995,17 +995,16 @@ fn resolve_native_operation_inputs(
             .chain(options.native_call_identity_inputs.iter().enumerate().map(
                 |(index, contract)| {
                     (
-                        options.native_operation_inputs.len() + index,
+                        operation_inputs.len() + index,
                         format!("chunk_analysis_options.{chunk_name}.native_call_identity_inputs[{index}]"),
-                        SourceUnitSelector::SourceMatch(contract.source_match.clone()),
+                        NativeOperationSourceSelector::SourceMatch(contract.source_match.clone()),
                         &contract.audited_source_sha256,
                         NativeInputKind::CallIdentity(contract.callee),
                     )
                 },
             ));
-        let mut chunk_inputs = Vec::with_capacity(
-            options.native_operation_inputs.len() + options.native_call_identity_inputs.len(),
-        );
+        let mut chunk_inputs =
+            Vec::with_capacity(operation_inputs.len() + options.native_call_identity_inputs.len());
         for (input_index, request_id, selector, audited_source_sha256, operation) in contracts {
             ensure!(
                 audited_source_sha256.len() == 64
@@ -1021,7 +1020,7 @@ fn resolve_native_operation_inputs(
                 audited_source_sha256
             );
             let (body_index, selected_binding, selector_provenance) = match selector {
-                SourceUnitSelector::SourceMatch(source_match) => {
+                NativeOperationSourceSelector::SourceMatch(source_match) => {
                     let (body_index, binding) =
                         select_one_declared_binding(&selector_chunk, &request_id, &source_match)?;
                     (
@@ -1030,25 +1029,11 @@ fn resolve_native_operation_inputs(
                         NativeOperationSelectorProvenance::SourceMatch(source_match),
                     )
                 }
-                SourceUnitSelector::ResolvedMember(member) => {
-                    let (_, site) = resolve_premise_member_site(
-                        resolved_member_sites,
-                        &request_id,
-                        chunk_name,
-                        &member.module,
-                        &member.name,
-                    )?;
-                    let declaration = site.declaration.as_ref().with_context(|| {
-                        format!(
-                            "{request_id}.resolved_member has no unique original local declaration"
-                        )
-                    })?;
-                    (
-                        declaration.body_index,
-                        declaration.binding.clone(),
-                        NativeOperationSelectorProvenance::ResolvedMember(member),
-                    )
-                }
+                NativeOperationSourceSelector::Declaration(declaration) => (
+                    declaration.body_index,
+                    declaration.binding.clone(),
+                    NativeOperationSelectorProvenance::Declaration(declaration),
+                ),
             };
             let selected_statement_span = facts
                 .body

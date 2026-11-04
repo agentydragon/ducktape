@@ -10,29 +10,30 @@
 //! analysis artifact's header records. Its canonical encoding is the key a
 //! run checks before it uses an artifact.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use analysis::AnalysisAssumptions;
+use analysis::analysis_inputs::SourceDeclaration;
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use spec::{
     ChunkExportPurity, DependencyGraphOptions, HostBehavior, IntrinsicsNeverWritten,
-    LoadJsChunksArgs, ProgramPremises, SourceUnitSelector, TransformSpec, VendorLevel, VendorMark,
+    LoadJsChunksArgs, NativeOperationKind, ProgramPremises, SourceMatchClaim, SourceUnitSelector,
+    TransformSpec, VendorLevel, VendorMark,
 };
 
 use super::ResolvedMemberSite;
 
 /// Resolve a premise member in the requesting provider chunk's namespace.
-/// Returns both the indexed sites (for the serialized projection) and the
-/// unique site owned by the requested chunk (for analysis).
-pub fn resolve_premise_member_site<'a>(
+fn resolve_premise_member_site<'a>(
     resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
     request_id: &str,
     chunk_name: &str,
     module: &str,
     name: &str,
-) -> Result<(&'a [ResolvedMemberSite], &'a ResolvedMemberSite)> {
+) -> Result<&'a ResolvedMemberSite> {
     let key = (module.to_owned(), name.to_owned());
     let sites = resolved_member_sites.get(&key).with_context(|| {
         format!(
@@ -55,13 +56,27 @@ pub fn resolve_premise_member_site<'a>(
         provider_sites.next().is_none(),
         "{request_id}.resolved_member is ambiguous in provider {chunk_name} (module {module}, member {name}); module names are chunk-relative to each provider chunk"
     );
-    Ok((sites, site))
+    Ok(site)
+}
+
+/// Native premises after resolving layout-relative references at the selector boundary.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalysisNativeOperationInput {
+    pub selector: NativeOperationSourceSelector,
+    pub operation: NativeOperationKind,
+    pub audited_source_sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NativeOperationSourceSelector {
+    SourceMatch(SourceMatchClaim),
+    Declaration(SourceDeclaration),
 }
 
 pub struct AnalysisProjection<'a> {
-    /// Analysis reads every field but `commuting_statements` and
-    /// `dataflow_aware_s_chain`, which only the chunk graph build reads.
-    pub chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
+    /// Graph-only options and authored native selectors are removed.
+    pub chunk_analysis_options: Cow<'a, BTreeMap<String, DependencyGraphOptions>>,
     /// With source-marker export policies already resolved.
     pub chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
     pub host_behavior: &'a HostBehavior,
@@ -71,10 +86,7 @@ pub struct AnalysisProjection<'a> {
     /// `no_reentry_call` premises, keyed by the bindings the selector solve
     /// resolved them to.
     pub declared_assumptions: BTreeMap<String, AnalysisAssumptions>,
-    /// The logical-module members that `native_operation_inputs` name
-    /// through `resolved_member`, keyed by `(module, name)`, with the
-    /// declaration each resolved to. No other member reaches analysis.
-    pub premise_members: BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
+    pub native_operation_inputs: BTreeMap<String, Vec<AnalysisNativeOperationInput>>,
 }
 
 impl<'a> AnalysisProjection<'a> {
@@ -86,33 +98,51 @@ impl<'a> AnalysisProjection<'a> {
         declared_assumptions: BTreeMap<String, AnalysisAssumptions>,
         resolved_member_sites: &BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
     ) -> Result<Self> {
-        let mut premise_members = BTreeMap::new();
+        let mut native_operation_inputs = BTreeMap::new();
         for (chunk_name, options) in chunk_analysis_options {
+            let mut inputs = Vec::new();
             for (input_index, input) in options.native_operation_inputs.iter().enumerate() {
-                let SourceUnitSelector::ResolvedMember(member) = &input.selector else {
-                    continue;
-                };
                 let request_id = format!(
                     "chunk_analysis_options.{chunk_name}.native_operation_inputs[{input_index}]"
                 );
-                let (sites, _) = resolve_premise_member_site(
-                    resolved_member_sites,
-                    &request_id,
-                    chunk_name,
-                    &member.module,
-                    &member.name,
-                )?;
-                premise_members
-                    .insert((member.module.clone(), member.name.clone()), sites.to_vec());
+                let selector = match &input.selector {
+                    SourceUnitSelector::SourceMatch(source_match) => {
+                        let mut source_match = source_match.clone();
+                        source_match.note = None;
+                        NativeOperationSourceSelector::SourceMatch(source_match)
+                    }
+                    SourceUnitSelector::ResolvedMember(member) => {
+                        let site = resolve_premise_member_site(
+                            resolved_member_sites,
+                            &request_id,
+                            chunk_name,
+                            &member.module,
+                            &member.name,
+                        )?;
+                        NativeOperationSourceSelector::Declaration(
+                            site.declaration.clone().with_context(|| format!(
+                                "{request_id}.resolved_member has no unique original local declaration"
+                            ))?
+                        )
+                    }
+                };
+                inputs.push(AnalysisNativeOperationInput {
+                    selector,
+                    operation: input.operation,
+                    audited_source_sha256: input.audited_source_sha256.clone(),
+                });
+            }
+            if !inputs.is_empty() {
+                native_operation_inputs.insert(chunk_name.clone(), inputs);
             }
         }
         Ok(Self {
-            chunk_analysis_options,
+            chunk_analysis_options: Cow::Owned(analysis_options(chunk_analysis_options)?),
             chunk_export_purity,
             host_behavior,
             intrinsics_never_written,
             declared_assumptions,
-            premise_members,
+            native_operation_inputs,
         })
     }
 
@@ -147,12 +177,12 @@ pub struct AnalysisSpec {
     /// `materialize_logical_modules.prune_other_chunks`.
     pub prune_other_chunks: bool,
     pub declared_assumptions: BTreeMap<String, AnalysisAssumptions>,
-    pub premise_members: BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
+    pub native_operation_inputs: BTreeMap<String, Vec<AnalysisNativeOperationInput>>,
 }
 
 impl AnalysisSpec {
     /// The spec half of the projection; `declared_assumptions` and
-    /// `premise_members` come from the selector solve.
+    /// `native_operation_inputs` come from the selector solve.
     pub fn from_transform(spec: &TransformSpec, source_root: &Path) -> Result<Self> {
         let relative = |path: &Path| -> PathBuf {
             path.strip_prefix(source_root)
@@ -164,11 +194,7 @@ impl AnalysisSpec {
                 swap.bundle.path = relative(&swap.bundle.path);
             }
         }
-        let mut chunk_analysis_options = without_notes(&spec.chunk_analysis_options)?;
-        for options in chunk_analysis_options.values_mut() {
-            options.commuting_statements.clear();
-            options.dataflow_aware_s_chain = false;
-        }
+        let chunk_analysis_options = analysis_options(&spec.chunk_analysis_options)?;
         Ok(Self {
             inputs: LoadJsChunksArgs {
                 input_root: relative(&spec.inputs.input_root),
@@ -184,7 +210,7 @@ impl AnalysisSpec {
             entry_file: spec.materialize_logical_modules.file.clone(),
             prune_other_chunks: spec.materialize_logical_modules.prune_other_chunks,
             declared_assumptions: BTreeMap::new(),
-            premise_members: BTreeMap::new(),
+            native_operation_inputs: BTreeMap::new(),
         })
     }
 
@@ -219,7 +245,7 @@ impl AnalysisSpec {
     pub fn with_premises(
         mut self,
         declared_assumptions: BTreeMap<String, AnalysisAssumptions>,
-        premise_members: BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
+        native_operation_inputs: BTreeMap<String, Vec<AnalysisNativeOperationInput>>,
     ) -> Result<Self> {
         // The canonical encoding carries no hygiene contexts: declared
         // assumptions are binding names, never `Id`s resolved by S2.
@@ -232,8 +258,22 @@ impl AnalysisSpec {
             "declared assumptions carry source-resolved inputs"
         );
         self.declared_assumptions = declared_assumptions;
-        self.premise_members = premise_members;
+        self.native_operation_inputs = native_operation_inputs;
         Ok(self)
+    }
+
+    pub fn projection<'a>(
+        &'a self,
+        chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
+    ) -> AnalysisProjection<'a> {
+        AnalysisProjection {
+            chunk_analysis_options: Cow::Borrowed(&self.chunk_analysis_options),
+            chunk_export_purity,
+            host_behavior: &self.host_behavior,
+            intrinsics_never_written: self.program_premises.intrinsics_never_written.as_ref(),
+            declared_assumptions: self.declared_assumptions.clone(),
+            native_operation_inputs: self.native_operation_inputs.clone(),
+        }
     }
 
     /// Canonical bytes: named MessagePack over ordered maps.
@@ -284,9 +324,9 @@ impl AnalysisSpec {
             rmp_serde::to_vec_named(&other.prune_other_chunks)?,
         );
         field(
-            "premise_members",
-            rmp_serde::to_vec_named(&self.premise_members)?,
-            rmp_serde::to_vec_named(&other.premise_members)?,
+            "native_operation_inputs",
+            rmp_serde::to_vec_named(&self.native_operation_inputs)?,
+            rmp_serde::to_vec_named(&other.native_operation_inputs)?,
         );
         differing.extend(keyed_differences("vendor", &self.vendor, &other.vendor)?);
         differing.extend(keyed_differences(
@@ -306,6 +346,18 @@ impl AnalysisSpec {
         )?);
         Ok(differing)
     }
+}
+
+fn analysis_options(
+    options: &BTreeMap<String, DependencyGraphOptions>,
+) -> Result<BTreeMap<String, DependencyGraphOptions>> {
+    let mut projected: BTreeMap<String, DependencyGraphOptions> = without_notes(options)?;
+    for options in projected.values_mut() {
+        options.commuting_statements.clear();
+        options.dataflow_aware_s_chain = false;
+        options.native_operation_inputs.clear();
+    }
+    Ok(projected)
 }
 
 fn keyed_differences<T: Serialize>(
