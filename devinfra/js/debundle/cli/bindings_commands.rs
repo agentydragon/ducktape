@@ -125,8 +125,10 @@ enum BindingsNsCommand {
     /// only some of its members is rejected; unassigning a whole atom
     /// together is accepted. Dry-run and apply share an exit code on
     /// the same input. `source_matches[].bindings[]` entries cannot yet
-    /// be unassigned with this command.
-    Unassign(BindingsUnassignArgs),
+    /// be unassigned with this command. `--dry-run --analysis` additionally
+    /// reports statement-order commutation for the exact post-unassign
+    /// candidate, without changing the legacy gate.
+    Unassign(Box<BindingsUnassignArgs>),
 }
 
 #[derive(Debug, ClapArgs)]
@@ -187,6 +189,10 @@ struct BindingsRenameArgs {
 struct BindingsUnassignArgs {
     #[command(flatten)]
     pub edit: GraphEditArgs,
+    /// Optional full-context report-only assessment of the in-memory
+    /// post-unassign candidate through the canonical lowering path.
+    #[command(flatten)]
+    pub effect_assessment: CandidateEffectAssessmentArgs,
     /// Direct selector identifiers or explicit readable names to remove from
     /// their current modules. Structural selectors require a readable name.
     /// `source_matches[].bindings[]` entries are not supported yet.
@@ -370,15 +376,32 @@ fn run_bindings_unassign_cmd(
     args: BindingsUnassignArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
 ) -> Result<()> {
+    let candidate_context = args.effect_assessment.resolve(&args.edit, source_context)?;
+    let effect_assessment =
+        candidate_context
+            .as_ref()
+            .map(|context| CandidateEffectAssessmentContext {
+                transform: &context.transform,
+                analysis: AnalysisArtifactInput {
+                    path: &context.analysis_path,
+                    analysis_engine_sha256: analysis_identity::ANALYSIS_ENGINE_SHA256,
+                },
+                graph_source: context.graph_source,
+            });
     let gate = args.edit.gate(source_context)?;
-    let out =
-        match run_bindings_unassign(&args.edit.modules_root, args.syms, args.edit.dry_run, gate) {
-            Ok(out) => out,
-            Err(err) => {
-                emit_gate_rejection_json("unassign", args.edit.format, &err);
-                return Err(err);
-            }
-        };
+    let out = match run_bindings_unassign(
+        &args.edit.modules_root,
+        args.syms,
+        args.edit.dry_run,
+        gate,
+        effect_assessment,
+    ) {
+        Ok(out) => out,
+        Err(err) => {
+            emit_gate_rejection_json("unassign", args.edit.format, &err);
+            return Err(err);
+        }
+    };
     let format = OutputFormat::resolve(args.edit.format);
     print_unassign_outcome(&out, format)
 }
@@ -424,6 +447,6 @@ pub(super) fn run(
         BindingsNsCommand::List(l) => run_bindings_list_cmd(l),
         BindingsNsCommand::Rename(r) => run_bindings_rename_cmd(r),
         BindingsNsCommand::Assign(a) => run_bindings_assign_cmd(*a, source_context),
-        BindingsNsCommand::Unassign(u) => run_bindings_unassign_cmd(u, source_context),
+        BindingsNsCommand::Unassign(u) => run_bindings_unassign_cmd(*u, source_context),
     }
 }

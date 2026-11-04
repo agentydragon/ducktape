@@ -2050,6 +2050,8 @@ pub struct UnassignOutcome {
     #[serde(flatten)]
     pub outcome: MutationOutcome,
     pub unassigned: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect_relocation_assessment: Option<gate::EffectRelocationAssessment>,
 }
 
 /// Remove one or more bindings from their current modules as one validated batch.
@@ -2078,8 +2080,10 @@ pub fn run_bindings_unassign(
     syms: Vec<String>,
     dry_run: bool,
     gate: Gate<'_>,
+    effect_assessment_context: Option<CandidateEffectAssessmentContext<'_>>,
 ) -> Result<UnassignOutcome> {
-    if syms.is_empty() {
+    let no_symbols = syms.is_empty();
+    if no_symbols && effect_assessment_context.is_none() {
         return Ok(UnassignOutcome {
             outcome: MutationOutcome {
                 verb: "unassign",
@@ -2089,6 +2093,7 @@ pub fn run_bindings_unassign(
                 files_deleted: Vec::new(),
             },
             unassigned: 0,
+            effect_relocation_assessment: None,
         });
     }
 
@@ -2129,23 +2134,56 @@ pub fn run_bindings_unassign(
         .collect();
     let to_delete = drained_source_modules(&docs, &move_sources);
 
+    // Assess the exact typed post-edit documents before the legacy gate or any
+    // writes. The pipeline resolves this candidate through the same canonical
+    // selector and emitter-planning path as `run --analysis`.
+    let effect_relocation_assessment = if let Some(context) = effect_assessment_context {
+        let candidate_modules = docs
+            .iter()
+            .filter(|(path, _)| !to_delete.contains(*path))
+            .map(|(path, (_, doc))| (path.clone(), doc.clone()))
+            .collect();
+        Some(assess_candidate_effect_relocation(
+            context.transform,
+            context.analysis,
+            context.graph_source,
+            modules_root,
+            &candidate_modules,
+        )?)
+    } else {
+        None
+    };
+
     // Step 5: gate the in-memory post-batch spec (cycles +
     // atom-split) before any file is written. Built from the mutated
     // docs through the run pipeline's claims model, so source_matches[]
     // claims in surviving modules stay claimed.
-    gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
+    if !no_symbols {
+        gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
+    }
 
     let (files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
     Ok(UnassignOutcome {
         outcome: MutationOutcome {
             verb: "unassign",
-            action: if dry_run { "dry-run" } else { "applied" },
-            gate: gate.outcome(),
+            action: if no_symbols {
+                "noop"
+            } else if dry_run {
+                "dry-run"
+            } else {
+                "applied"
+            },
+            gate: if no_symbols {
+                GateOutcome::NotRequired
+            } else {
+                gate.outcome()
+            },
             files_written,
             files_deleted,
         },
         unassigned: plan.len(),
+        effect_relocation_assessment,
     })
 }
 

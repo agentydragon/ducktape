@@ -373,11 +373,12 @@ participants and typed `premise_dependencies` for premises used by conflicting
 pairs. It does not replace the legacy gate and does not establish cross-rebind,
 importability, vendor replacement, privacy or singleton obligations.
 
-`bindings assign --dry-run --analysis <artifact>` can return this assessment
-for its in-memory post-batch candidate. It requires the saved graph plus the
-full tree transform context, with `--modules` and `--tree-modules` resolving to
-the same root. The initial implementation supports exactly one materialized
-graph chunk and a tree config whose full module tree belongs to that chunk
+`bindings assign` and `bindings unassign` can return this assessment for their
+exact in-memory post-edit candidates with `--dry-run --analysis <artifact>`.
+They require the saved graph plus the full tree transform context, with
+`--modules` and `--tree-modules` resolving to the same root. The implementation
+supports exactly one materialized graph chunk and a tree config whose full
+module tree belongs to that chunk
 (empty or absent `module_roots`). It recomputes the candidate through the
 normal selector, analysis-load and `ChunkPlanBuilder` path; the graph report is
 never decoded as effect facts. The engine, source digests and completed
