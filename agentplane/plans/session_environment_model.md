@@ -501,11 +501,21 @@ The app stores each Thread’s name and archive flag in its own database. Its ar
 
 ### Environment deletion
 
-The working direction is for Dispatcher to remove or retire live records for native Sessions when their exact hosting environment UID is gone. Gateway also hosts Environment Service, but Kubernetes deletion and a database transaction are separate; reconcile deletion observed through a watch or relist, including deletion outside the service, and fence races with create and submit. Preserve any evidence or deduplication facts required by their own contracts.
+Today Dispatcher cleanup removes native and central Session opening records associated with the deleted Sandbox UID. Earlier discussion favored removing native live records when their exact hosting environment is gone; the timing and relationship to Notification inbox retirement are now explicitly open for review. Gateway also hosts Environment Service, but Kubernetes deletion and a database transaction are separate; reconcile deletion observed through a watch or relist, including deletion outside the service, and fence races with create and submit. Preserve any evidence or deduplication facts required by their own contracts.
 
 Existing managed Sandbox teardown quiesces the runtime, waits for History ingress to acknowledge the Session seals, and only then releases its finalizer and state PVC. Dispatcher cleanup should use that established lifecycle rather than inventing an app-archive handoff. The Environment Service issues the UID-fenced deletion; the Sandbox controller manages the actual finalizer. Forced deletion or bypassed finalization can lose unexported data and needs an honest outcome, not a claim that History is complete.
 
-Environment loss affects native and central Sessions differently: native Sessions hosted there lose their continuation unless the actual harness store was separately retained and a supported recovery path exists; a central Session survives and the deleted environment’s attachment becomes gone or is removed under a defined policy. Central Sessions do not automatically end; a future explicit delete operation is low priority. Deleting an attached environment cannot delete the central Session.
+Environment loss affects native and central Sessions differently: native Sessions hosted there lose their continuation unless the actual harness store was separately retained and a supported recovery path exists; a central Session survives and the deleted environment’s attachment becomes gone or is removed under a defined policy. Central Sessions do not automatically end; a future explicit delete operation is low priority. Deleting an attached environment cannot delete the central Session. The current Dispatcher cleanup and Notification behavior still tie central records to the original Sandbox; this is a gap against that selected direction.
+
+### Decision: Session and inbox lifetimes after environment deletion
+
+The operator asked to resolve Dispatcher Session-record lifetime and Notification inbox lifetime together. Today the Notification worker [checks the stored Sandbox name and UID and its owner](../notification_service/worker/destination.go), then [retires an inbox and cancels its subscriptions](../notification_service/store/claims.go) after confirming a missing or replaced destination. Dispatcher independently [deletes opening records by Sandbox UID](../runner_gateway/dispatcher/terminal.go). These separate asynchronous decisions can end an inbox because an environment disappeared even when its central Session should survive.
+
+For an environment-hosted Session, compare removing its live Dispatcher record and retiring its inbox when its required environment is deleted with retaining an unavailable Session and its inbox for an explicitly chosen lifetime or until an explicit end. For a central Session, preserve the selected indefinite Session lifetime: deleting, detaching or replacing an environment alone must not end the Session. Decide whether its inbox should remain active independently as well; the initial recommendation is not to retire it solely because an environment disappeared. Specify whether subscriptions continue collecting while delivery is unavailable, what happens to pending messages and notices, and whether and when any inbox is retired or purged. Suspension, an unavailable Runtime, and a deleted or replaced Sandbox are distinct observations; none proves an in-flight effect failed.
+
+Decide which component owns and observes each transition, how Dispatcher and Notification converge without a cross-database transaction, and how retries, deletion races, exact-UID fencing, authorization and History handoff work. The current Sandbox-owned ServiceAccount may itself disappear; define who can still read or administer a retained Session and inbox without silently transferring authority to a replacement. Preserve retained messages and History unless their own reviewed policy permits cleanup. App archive remains separate. Complete forgetting **when a Session is deleted** and the caller's UUID non-reuse obligation remain the selected identity policy; this question is when, if ever, environment deletion ends that Session and what inbox lifecycle follows. The separate command-receipt retention question is deferred, with no period selected.
+
+Track the decision and its scoped implementation gate in [the task DAG](task_dag.md#session_and_inbox_lifetime--decide-session-and-inbox-lifetimes).
 
 **What exists now:** History already retains the associated Sandbox namespace, name and (when known) immutable UID, and its projected `Attached` snapshot includes `SessionSpec` (harness, cwd, model, reasoning effort and instructions). The projection can update model and effort, so it is not necessarily an immutable creation-time spec. This is not a complete Sandbox specification or a record of multiple attachment changes; exact provenance, retention and archive semantics still need design. History is asynchronously fed, so a live reservation does not by itself prove an archival snapshot is durable.
 
@@ -573,7 +583,7 @@ under an authorized policy, which must support eligible unattended inbox notices
 
 This contract leaves the classification of errors, retry triggers, queued-work outcomes on definitive rejection, and how clients observe those facts to implementation design. Retaining rejected Sessions may leave unused records, indefinitely for central Sessions under the current lifetime direction. Runtime-configurable fields and their existing update operations are distinct from rewriting the original creation request.
 
-If the exact required environment UID is deleted, fence pending creation and delivery against that deletion and eventually retire its live Dispatcher records; preserve History under its existing retention. The precise terminal outcomes, cleanup and cross-database handoff still need a design.
+If the exact required environment UID is deleted, fence pending creation and delivery against that deletion and preserve History under its existing retention. When to end a native Session and remove its live Dispatcher record, how its inbox follows, outcome visibility, cleanup and the cross-database handoff remain open.
 
 **Setup and environment wake are explicit policy questions:** opening a central Session without an environment cannot run an environment setup script. If a script is supplied, require an explicit target and define when it runs, its readiness and failure status, and retry behavior. Opening must not require wake for acknowledgement; whether an optional eager attempt may request wake and which component owns wake remain open. Do not assume central and native setup happen at the same time today.
 
@@ -952,6 +962,16 @@ UUID. Dispatcher cannot recognize an old retry after its record is removed, and 
 still reject a conflicting writer. No permanent UUID marker or cross-database uniqueness check is added.
 The operator also wants central agents eventually to learn about zero or more environments and may
 later let them request authorized attach/detach operations. Their tool and authority contracts remain open.
+
+**2026-11-03 · Session and inbox lifetimes after environment deletion**
+
+The operator observed that Notification retiring an inbox when its Sandbox disappears is analogous
+to the question of how long Dispatcher keeps Session records after environment deletion, and asked
+to record the relationship as an unresolved decision. The existing implementation removes the
+Dispatcher opening and independently retires a stale inbox after confirmation. Review the lifetime
+and coordination of both records together, distinguishing native placement from central attachment.
+The selected indefinite lifetime of central Sessions and complete forgetting on Session deletion
+remain unchanged. Command-receipt retention is a separate deferred topic; no retention period was chosen.
 
 **Still open**
 
