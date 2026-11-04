@@ -215,6 +215,7 @@ py_test(
     name = "test_guest_management",
     srcs = ["test_guest_management.py"],
     data = ["//agentplane/firecracker/vsock_bridge:agentplane-firecracker-vsock-bridge"],
+    env = {"VSOCK_BRIDGE": "$(rlocationpath //agentplane/firecracker/vsock_bridge:agentplane-firecracker-vsock-bridge)"},
     deps = [
         ":guest_management",
         "//:conftest",
@@ -222,7 +223,9 @@ py_test(
         "//agentplane/env/firecracker:management_pb2_grpc",
         "//util/bazel:runfiles",
         "@pypi//grpcio",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )

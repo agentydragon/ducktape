@@ -1,5 +1,6 @@
 """Generated Python gRPC through the shipped Go bridge, without a VM."""
 
+import os
 import selectors
 import socket
 import socketserver
@@ -17,7 +18,7 @@ import pytest_bazel
 
 from agentplane.env.firecracker import management_pb2, management_pb2_grpc
 from agentplane.firecracker import guest_management
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from util.bazel.runfiles import get_required_path
 
 
 class Guest(management_pb2_grpc.GuestManagementServicer):
@@ -99,12 +100,10 @@ def firecracker_transport(guest: Guest, *, reject_first: bool = False) -> Iterat
 
 @pytest.fixture
 def configured_launcher(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    bridge = get_required_path(
-        own_repo_rlocation("agentplane/firecracker/vsock_bridge/agentplane-firecracker-vsock-bridge")
-    ).resolve()
-    # Short relative names stay within Linux's Unix-socket path limit in runfiles.
+    bridge = get_required_path(os.environ["VSOCK_BRIDGE"]).resolve()
+    # Avoid pytest's long per-test directory names in Unix-socket paths.
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(guest_management, "WORK", Path())
+    monkeypatch.setattr(guest_management, "WORK", Path(os.environ["TEST_TMPDIR"]))
     monkeypatch.setattr(guest_management, "BRIDGE", bridge)
     tls = tmp_path / "tls"
     tls.mkdir()
@@ -114,7 +113,7 @@ def configured_launcher(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def assert_transport_cleaned() -> None:
-    assert not list(Path().glob("fc-grpc-*"))
+    assert not list(guest_management.WORK.glob("fc-grpc-*"))
 
 
 def test_generated_client_through_real_bridge(configured_launcher: None) -> None:
