@@ -1,4 +1,4 @@
-# Firecracker system test on the wyrm2 BuildBuddy VM
+# Firecracker system test on the dedicated BuildBuddy VM
 
 This follows the [launcher proof](2026_11_03_firecracker_environment.md) with an app-integrated,
 disposable k3s acceptance target: `//agentplane/system_tests/suites:test_firecracker`.
@@ -46,8 +46,9 @@ head; the hardware target is manual and was run separately.
 
 ## Execution path
 
-The existing `buildbuddy-executor/buildbuddy-kvm-worker` KubeVirt VM on wyrm2 serves the
-`wyrm2-kvm-vm` self-hosted BuildBuddy pool. The test action uses Docker inside that VM, starts
+The existing `buildbuddy-executor/buildbuddy-kvm-worker` KubeVirt VM serves the
+`wyrm2-kvm-vm` self-hosted BuildBuddy pool. Initial attempts ran on wyrm2; the current
+runner is on `ovh-ns104963`, as described below. The pool name is independent of its host. The test action uses Docker inside that VM, starts
 k3s there, and asks the deployed Agentplane app to create a Firecracker environment. The real
 controller creates the launcher Pod, cert-manager issues its Runtime certificate, and the real
 Gateway connects to its guest Runtime. A real Codex harness executes tools; the upstream model
@@ -353,3 +354,90 @@ adapter also checks the node's KVM quantity. Cold guest imports remain serialize
 deployment. The production Firecracker Go files, guest Nix configuration and boot artifact are
 unchanged by this rebase. [Focused adapter and baseline checks](https://app.buildbuddy.io/invocation/cd75681e-7e9d-41ae-8abc-277d47c3105c)
 passed four tests plus the explicitly named stack, baseline and pytest-plugin type/lint builds.
+
+## Reconnect and deletion corrections
+
+The [seventeenth submission](https://app.buildbuddy.io/invocation/7c9f74a6-e980-42be-a51e-e4ba7bac97cf)
+failed Bazel analysis because the new pytest plugin lacked visibility to the suite. It did not
+execute hardware work. Its visibility now matches the existing VM plugin.
+
+The [eighteenth run](https://app.buildbuddy.io/invocation/37cde600-6f94-49ef-8f14-9128f7293874)
+at `e892487d80fc30c1d5cda59010dda40fc6abd2b9` passed both Codex turns and the RAM continuation
+assertions: child PID `591`, start ticks `6367`, counter `2` to `67`, and retained RAM marker
+`5c91dd10c15061edaa36e5456d574447d94089e209476f82`. Its database tmpfs and fresh image store remained
+healthy. The enclosing target still failed teardown. After deletion restored the guest, the
+controller persisted a Quiesce attempt before the new Gateway stream had completed verification.
+The guest's old stream then reset, and the controller waited its normal one-minute retry interval.
+
+Deletion now waits for a live Gateway Lease for the same Pod, a verified Runtime boot ID, and
+an epoch newer than the pre-suspend claim before consuming a Quiesce attempt. The
+[controller regression](https://app.buildbuddy.io/invocation/8c2f4b42-eb64-411e-b157-c7662dda8ea4)
+passed stale-epoch, unverified-boot, foreign-Pod and expired-claim cases, followed by a verified
+reconnect making exactly one Quiesce request.
+
+The [nineteenth run](https://app.buildbuddy.io/invocation/015d57c1-f35f-4f7f-8e31-77d80b76f0da)
+at `685cdd37ba4a82e679a8a6292dcc07981f350111` completed cold boot and its first tool turn, but
+missed the checkpoint deadline under severe physical-host contention. Wyrm2 had a load around
+178 on 32 CPUs and approximately 40% full memory stalls; an unrelated analysis process held
+about 25 GiB. That process was left untouched. No RAM continuation pass is claimed for this run.
+
+Cleanup did restore the guest, wait for the verified reconnect, and seal native sessions. It then
+exposed a second controller bug: after recording `Quiesced=True` and deliberately deleting the
+launcher Pod, the next reconciliation mistook the missing Pod for an unsealed lost launcher and
+retained the finalizer. The lost-launcher guard now applies only before sessions are recorded as
+quiesced. The [regression tests](https://app.buildbuddy.io/invocation/c59e2f7b-1831-4b61-8a6a-e327f8571453)
+pass both the sealed deletion through Sandbox removal and unsealed launcher loss retaining its
+checkpoint and finalizer. This correction still requires the full hardware rerun below.
+
+## OVH runner placement and current rerun
+
+The operator authorized moving the disposable runner away from wyrm2, allowing KubeVirt's API
+and controller on all control-plane nodes, and allowing VM workloads on one spare control-plane
+node. The managed configuration now permits `virt-api` and `virt-controller` on all control-plane
+nodes, while the `virt-handler`/VM exception is limited to `ovh-ns104963`. The dedicated worker is
+pinned there with four vCPUs and 16 GiB guest RAM; the executor advertises four CPUs, 14 GiB and
+one action slot. The KVM TestRunner estimate is four compute units. The existing pool name,
+80 GiB disposable work disk and 40 GB file cache are retained.
+
+Before the move the selected host had about 53.8 GB available memory, no memory pressure stalls,
+134 GB node filesystem space and 183 GB image filesystem space. Generated manifests, typed
+placement and explicitly named changed libraries passed the
+[focused check](https://app.buildbuddy.io/invocation/2d771f2a-8a70-47f8-989b-d91551189c5d).
+Server dry runs passed before applying the source-derived candidate. The runner was idle and its
+executor was stopped before replacing its disposable VMI; no PVC-backed disk was involved.
+
+The new VMI UID is `18d03712-a6b8-4524-8282-37c31cec5168`, created at `2026-11-04T11:10:22Z`,
+on `ovh-ns104963`. The VM UID remains `190a0589-2961-4d93-b528-f2857aee4ce2`. Its Ubuntu guest
+reports four CPUs, 15,974 MiB total memory, `/dev/kvm`, and Intel nested KVM enabled. Docker
+loaded the managed seccomp policy at bootstrap. The executor registered with BuildBuddy and all
+its health probes passed. KubeVirt reports Available, with all six virt-handler Pods ready.
+
+For this unmerged live preview, only these three managed resources carry
+`kustomize.toolkit.fluxcd.io/reconcile: disabled`: `kubevirt/kubevirt` (KubeVirt CR), and
+`buildbuddy-executor/buildbuddy-kvm-worker` (VM and ConfigMap). No Flux Kustomization is suspended.
+This prevents devel from removing the approved VM-host exception while the runner is using it.
+After this PR's configuration reaches the GitOps source, release the preview holds:
+
+```sh
+kubectl -n kubevirt annotate kubevirt kubevirt kustomize.toolkit.fluxcd.io/reconcile-
+kubectl -n buildbuddy-executor annotate virtualmachine buildbuddy-kvm-worker kustomize.toolkit.fluxcd.io/reconcile-
+kubectl -n buildbuddy-executor annotate configmap buildbuddy-kvm-worker kustomize.toolkit.fluxcd.io/reconcile-
+```
+
+Then verify `ducktape-flux/kubevirt` and `ducktape-flux/buildbuddy-kvm-worker` converge and the
+VMI remains Ready on the selected node. Do not remove the holds against the old devel policy:
+that would remove this host's virt-handler eligibility. Rolling back the placement requires
+first stopping or relocating the disposable runner while idle, then restoring the old policy.
+
+The branch was rebased onto `2c86bf3bd1c09c1e3ccc4c1bc38cf323db41caf2`. The Firecracker adapter
+now lives in `system_tests/firecracker`, using the shared `deployment`, `driver`, `k3s` and `vm`
+ownership introduced by devel. Production Firecracker Go, controller logic, guest Nix and worker
+placement configuration are unchanged by this rebase. The current hardware run uses clean code
+head `52bd6dbf413e36c0736dc39aff3e05a968f8ce4c`; its result is pending.
+
+The uncached [KVM smoke](https://app.buildbuddy.io/invocation/0707f7db-1bce-4051-a165-5ddee411123a)
+passed on the OVH worker in 5.9 seconds. The [post-rebase focused checks](https://app.buildbuddy.io/invocation/d6d5a00d-fab8-4041-a489-de42008b9aae)
+passed all five tests (Firecracker adapter, rendered fixture, stack lifecycle, baseline and guest
+logs), plus the explicitly named stack and plugin builds. The
+[full acceptance invocation](https://app.buildbuddy.io/invocation/1dcf0f5a-7e83-4e51-8461-fa3266ef851b)
+is separate from these checks.
