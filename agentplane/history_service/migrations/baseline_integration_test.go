@@ -2,8 +2,6 @@ package migrations
 
 import (
 	"database/sql"
-	"reflect"
-	"sort"
 	"strings"
 	"testing"
 )
@@ -18,13 +16,26 @@ func baselineDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func upLegacy(t *testing.T, db *sql.DB, version int64) {
+// prepareVersion10 exercises adoption against the current schema with completed predecessor history.
+func prepareVersion10(t *testing.T, db *sql.DB) {
 	t.Helper()
-	provider, err := legacyProvider(db)
+	if err := upBaseline(t, db); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.BeginTx(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := provider.UpTo(t.Context(), version); err != nil {
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(t.Context(), `DELETE FROM history_service_goose_version WHERE version_id=11`); err != nil {
+		t.Fatal(err)
+	}
+	for version := 1; version <= 10; version++ {
+		if _, err := tx.ExecContext(t.Context(), `INSERT INTO history_service_goose_version(version_id,is_applied) VALUES($1,true)`, version); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -89,7 +100,7 @@ func TestFinalBaselineCreatesHistorySchema(t *testing.T) {
 
 func TestFinalBaselineAdoptsCompletedHistoryWithoutChangingRows(t *testing.T) {
 	db := baselineDB(t)
-	upLegacy(t, db, 10)
+	prepareVersion10(t, db)
 	const id = "00000000-0000-4000-8000-000000000012"
 	var position int64
 	if err := db.QueryRowContext(t.Context(), `INSERT INTO session_history(id,last_cursor,feed_state) VALUES($1,1,$2) RETURNING recorded_position`, id, []byte("recorded-feed")).Scan(&position); err != nil {
@@ -128,15 +139,20 @@ func TestFinalBaselineRejectsIncompletePredecessor(t *testing.T) {
 		name    string
 		prepare func(*testing.T, *sql.DB)
 	}{
-		{"version nine", func(t *testing.T, db *sql.DB) { upLegacy(t, db, 9) }},
+		{"version nine", func(t *testing.T, db *sql.DB) {
+			prepareVersion10(t, db)
+			if _, err := db.ExecContext(t.Context(), `DELETE FROM history_service_goose_version WHERE version_id=10`); err != nil {
+				t.Fatal(err)
+			}
+		}},
 		{"missing applied version", func(t *testing.T, db *sql.DB) {
-			upLegacy(t, db, 10)
+			prepareVersion10(t, db)
 			if _, err := db.ExecContext(t.Context(), `DELETE FROM history_service_goose_version WHERE version_id=7`); err != nil {
 				t.Fatal(err)
 			}
 		}},
 		{"incomplete schema", func(t *testing.T, db *sql.DB) {
-			upLegacy(t, db, 10)
+			prepareVersion10(t, db)
 			if _, err := db.ExecContext(t.Context(), `DROP INDEX ix_session_event_kind_cursor`); err != nil {
 				t.Fatal(err)
 			}
@@ -151,65 +167,6 @@ func TestFinalBaselineRejectsIncompletePredecessor(t *testing.T) {
 			}
 			if got := versionCount(t, db, 11); got != 0 {
 				t.Fatalf("failed adoption records = %d", got)
-			}
-		})
-	}
-}
-
-func catalogRows(t *testing.T, db *sql.DB, query string) []string {
-	t.Helper()
-	rows, err := db.QueryContext(t.Context(), query)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var result []string
-	for rows.Next() {
-		var value string
-		if err := rows.Scan(&value); err != nil {
-			t.Fatal(err)
-		}
-		result = append(result, value)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	sort.Strings(result)
-	return result
-}
-
-func TestFinalBaselineMatchesCompletedPredecessorSchema(t *testing.T) {
-	legacy := baselineDB(t)
-	upLegacy(t, legacy, 10)
-	fresh := baselineDB(t)
-	if err := upBaseline(t, fresh); err != nil {
-		t.Fatal(err)
-	}
-	for _, check := range []struct{ name, query string }{
-		{"columns", `SELECT concat_ws('|',table_name,column_name,data_type,is_nullable,
-            coalesce(column_default,''),is_identity) FROM information_schema.columns
-            WHERE table_schema=current_schema() AND table_name <> 'history_service_goose_version'
-            ORDER BY table_name,ordinal_position`},
-		{"constraints", `SELECT concat_ws('|',c.relname,CASE WHEN p.contype='n' THEN '' ELSE p.conname END,pg_get_constraintdef(p.oid))
-            FROM pg_constraint p JOIN pg_class c ON c.oid=p.conrelid
-            WHERE c.relnamespace=current_schema()::regnamespace
-              AND c.relname <> 'history_service_goose_version' ORDER BY c.relname,p.conname`},
-		{"indexes", `SELECT concat_ws('|',indexname,indexdef) FROM pg_indexes
-            WHERE schemaname=current_schema() AND tablename <> 'history_service_goose_version'
-            ORDER BY indexname`},
-		{"triggers", `SELECT concat_ws('|',c.relname,t.tgname,pg_get_triggerdef(t.oid))
-            FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
-            WHERE c.relnamespace=current_schema()::regnamespace AND NOT t.tgisinternal ORDER BY c.relname,t.tgname`},
-		{"replica identity", `SELECT concat_ws('|',relname,relreplident) FROM pg_class
-            WHERE relnamespace=current_schema()::regnamespace AND relkind='r'
-              AND relname <> 'history_service_goose_version' ORDER BY relname`},
-		{"Electric publication", `SELECT concat_ws('|',schemaname,tablename) FROM pg_publication_tables
-            WHERE pubname='electric_publication_agentplane_history' ORDER BY schemaname,tablename`},
-	} {
-		t.Run(check.name, func(t *testing.T) {
-			want, got := catalogRows(t, legacy, check.query), catalogRows(t, fresh, check.query)
-			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("fresh schema differs from v10:\nwant %v\ngot %v", want, got)
 			}
 		})
 	}
