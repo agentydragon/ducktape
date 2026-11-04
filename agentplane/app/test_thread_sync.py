@@ -9,10 +9,12 @@ from uuid import UUID
 
 import httpx
 import pytest_bazel
+from google.protobuf.json_format import MessageToDict, ParseDict
 
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import SandboxesAccess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.electric_service import ElectricService, electric_service
 from agentplane.history_service.testing.history import History
@@ -182,9 +184,16 @@ async def _cross_replica_sync(
         ) as client_two,
     ):
         path = f"/threads/{thread}/sync"
-        scope = await client_one.get(f"{path}/scope")
-        scope.raise_for_status()
-        epoch = scope.json()["projection_epoch"]
+        response = await client_one.post(
+            f"/upstream/history/v1/sessions/{thread}/entities",
+            json=MessageToDict(
+                history_service_pb2.ReadThreadEntitiesRequest(range=history_service_pb2.EntityRange(limit=1))
+            ),
+        )
+        response.raise_for_status()
+        scope = ParseDict(response.json(), history_service_pb2.ReadThreadEntitiesResponse())
+        epoch = scope.projection_epoch
+        assert epoch
         entities = await _open(client_one, f"{path}/entities", epoch)
         rows, tail = await _subset(
             client_one, f"{path}/entities", epoch, entities, {"order_by": "entity_index DESC", "limit": 30}

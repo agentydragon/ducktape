@@ -464,6 +464,7 @@ py_test(
         "//agentplane/app/testing:replication_process",
         "//agentplane/app/testing:replication_source",
         "//agentplane/history_service:client",
+        "//agentplane/history_service:history_service_pb2",
         "//agentplane/history_service/testing:electric_service",
         "//agentplane/history_service/testing:history",
         "//agentplane/proto:command_pb2",
