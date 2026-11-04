@@ -241,6 +241,7 @@ from cluster.cdk8s.plaid_mcp import (
     pgweb as plaid_mcp_pgweb,
     spend as plaid_mcp_spend,
 )
+from cluster.cdk8s.platform_sessions import app as platform_sessions_app
 from cluster.cdk8s.public_coder import app as public_coder_app, backup as public_coder_backup
 from cluster.cdk8s.seaweedfs import (
     cluster as seaweedfs_cluster,
@@ -1527,6 +1528,21 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         seaweedfs_operator_kustomization,
     )
+    platform_sessions_artifact = artifact(
+        "platform-sessions", platform_sessions_app.OUTPUT_DIR, platform_sessions_app.PINS_DIR
+    )
+    platform_sessions_app.platform_sessions(
+        flux_chart,
+        write_directory(
+            root,
+            platform_sessions_artifact,
+            platform_sessions_app.chart,
+            components=[posixpath.relpath(platform_sessions_app.PINS_DIR, platform_sessions_app.OUTPUT_DIR)],
+            config_map_generator=[platform_sessions_app.CONFIG],
+        ),
+        external_secrets_operator_kustomization,
+        monitoring_crds_kustomization,
+    )
     flux_image_automation_forgejo_artifact = artifact(
         "flux-image-automation-forgejo", forgejo_image_automation.OUTPUT_DIR
     )
@@ -2050,6 +2066,7 @@ def generate_manifests(root: Path) -> None:
             atuin_user_provisioner_artifact,
             authentik_db_backups_artifact,
             claude_session_sync_artifact,
+            platform_sessions_artifact,
             cli_proxy_api_artifact,
             clickhouse_operator_artifact,
             clickhouse_schema_artifact,

@@ -3613,6 +3613,31 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Authenticated upstream sessions and scoped proxies.
+  name: platform-sessions
+  namespace: ducktape-flux
+spec:
+  deletionPolicy: Orphan
+  dependsOn:
+    - name: external-secrets-operator
+      namespace: ducktape-flux
+    - name: monitoring-crds
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/platform-sessions
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: platform-sessions
+    namespace: ducktape-flux
+  suspend: true
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: Image automation for images hosted in our Forgejo registry (authenticated scans via the reflected ducktape-ci credential).
   name: flux-image-automation-forgejo
   namespace: ducktape-flux

@@ -1,0 +1,364 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "false"
+  name: platform-sessions
+spec: {}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/enabled: "false"
+  name: openai-platform-session
+spec: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: platform-sessions
+  namespace: platform-sessions
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: piraeus-ssd-local
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openai-platform-session
+  namespace: openai-platform-session
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: piraeus-ssd-local
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: forgejo-images-creds
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - extract:
+        key: forgejo-images-creds
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: kubernetes-forgejo-images-secret-store
+  target:
+    name: forgejo-images-creds
+    template:
+      mergePolicy: Merge
+      type: kubernetes.io/dockerconfigjson
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: platform-sessions
+  namespace: flux-system
+spec:
+  image: git.allegedly.works/ducktape-ci/platform-sessions
+  interval: 5m
+  secretRef:
+    name: forgejo-images-creds
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: platform-sessions
+  namespace: flux-system
+spec:
+  filterTags:
+    pattern: ^main-\d{14}-[0-9a-f]{7}$
+  imageRepositoryRef:
+    name: platform-sessions
+  policy:
+    alphabetical:
+      order: asc
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-owner-bearer
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-owner-bearer
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-owner-bearer
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-owner-bearer
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-aiquota-bearer
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-aiquota-bearer
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-aiquota-bearer
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-aiquota-bearer
+    template:
+      data:
+        token: "{{ .password }}"
+      metadata:
+        annotations:
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: cli-proxy-api
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: cli-proxy-api
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: platform-sessions-quest-bearer
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-quest-bearer
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-quest-bearer
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-quest-bearer
+    template:
+      data:
+        token: "{{ .password }}"
+      metadata:
+        annotations:
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: agentplane-staging-egress-credentials
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: agentplane-staging-egress-credentials
+      type: Opaque
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-sessions
+  namespace: platform-sessions
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-sessions
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: platform-sessions
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - env:
+            - name: HOME
+              value: /tmp
+            - name: PLATFORM_SESSIONS_PUBLIC_BASE_URL
+              value: https://platform-sessions.allegedly.works
+            - name: PLATFORM_SESSIONS_INTEGRATION_CONFIG
+              valueFrom:
+                configMapKeyRef:
+                  key: integrations.json
+                  name: platform-sessions-config
+            - name: PLATFORM_SESSIONS_BEARERS
+              valueFrom:
+                configMapKeyRef:
+                  key: bearers.json
+                  name: platform-sessions-config
+          envFrom:
+            - secretRef:
+                name: platform-sessions-oidc
+          image: git.allegedly.works/ducktape-ci/platform-sessions:unset
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          name: service
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 9090
+              name: metrics
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: false
+          volumeMounts:
+            - mountPath: /data
+              name: platform-sessions
+            - mountPath: /var/run/platform-sessions
+              name: bearer-secrets
+              readOnly: true
+            - mountPath: /tmp
+              name: tmp
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        kubernetes.io/hostname: wyrm2
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: platform-sessions
+          persistentVolumeClaim:
+            claimName: platform-sessions
+        - name: bearer-secrets
+          projected:
+            defaultMode: 288
+            sources:
+              - secret:
+                  items:
+                    - key: token
+                      path: owner
+                  name: platform-sessions-owner-bearer
+              - secret:
+                  items:
+                    - key: token
+                      path: aiquota
+                  name: platform-sessions-aiquota-bearer
+              - secret:
+                  items:
+                    - key: token
+                      path: quest
+                  name: platform-sessions-quest-bearer
+        - emptyDir: {}
+          name: tmp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-sessions
+  namespace: platform-sessions
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app: platform-sessions
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: platform-sessions
+  namespace: platform-sessions
+spec:
+  hostnames:
+    - platform-sessions.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+      sectionName: https-wildcard
+  rules:
+    - backendRefs:
+        - name: platform-sessions
+          port: 8080
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+          type: ResponseHeaderModifier
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: platform-sessions-quest
+  namespace: platform-sessions
+spec:
+  podMetricsEndpoints:
+    - interval: 1m
+      path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app: platform-sessions

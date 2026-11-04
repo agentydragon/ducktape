@@ -1,0 +1,35 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "app",
+    srcs = [
+        "app.py",
+        "config.py",
+    ],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/forgejo_registry:__pkg__",
+    ],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/external_secrets:minted_secret",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/flux:image_policy",
+        "//cluster/cdk8s/providers/flux:image_repository",
+        "//cluster/cdk8s/providers/flux:imagepolicy",
+        "//cluster/cdk8s/providers/flux:imagerepository",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
+        "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)

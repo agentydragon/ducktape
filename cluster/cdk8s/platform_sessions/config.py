@@ -1,0 +1,41 @@
+"""Non-secret platform-sessions integration and route policy."""
+
+INTEGRATIONS = {
+    "integrations": [
+        {"id": "openai", "type": "openai", "state_dir": "/data/session/openai"},
+        {"id": "anthropic", "type": "anthropic", "state_dir": "/data/session/anthropic"},
+        {"id": "quest", "type": "quest", "state_dir": "/data/session/quest-platform"},
+    ]
+}
+
+BEARERS = {
+    "owner": {"role": "owner", "token_file": "/var/run/platform-sessions/owner"},
+    "aiquota": {
+        "role": "routes",
+        "token_file": "/var/run/platform-sessions/aiquota",
+        "allow": [
+            {"instance": "openai", "method": "GET", "path": "/v1/dashboard/billing/credit_grants"},
+            {"instance": "anthropic", "method": "GET", "path": "/api/organizations"},
+            {"instance": "anthropic", "method": "GET", "path": "/api/organizations/*/prepaid/credits"},
+        ],
+    },
+    "quest-agent": {
+        "role": "routes",
+        "token_file": "/var/run/platform-sessions/quest",
+        "allow": [
+            {"instance": "quest", "method": "GET", "path": "/guest/getReasons/*"},
+            {"instance": "quest", "method": "GET", "path": "/guest/getPscDetails/*"},
+            {"instance": "quest", "method": "GET", "path": "/api/getInsuranceProfile"},
+            {"instance": "quest", "method": "GET", "path": "/guest/getTokenBasicInfoAPI/*"},
+            {"instance": "quest", "method": "GET", "path": "/guest/getEncounterInfo/*"},
+            {"instance": "quest", "method": "GET", "path": "/guest/getPayorList/*"},
+            {"instance": "quest", "method": "GET", "path": "/guest/getAppointment/*"},
+            {"instance": "quest", "method": "POST", "path": "/guest/getPscsWithAvailability"},
+            {"instance": "quest", "method": "POST", "path": "/api/getOpenEorders"},
+            {"instance": "quest", "method": "POST", "path": "/api/getUserDemographics"},
+            {"instance": "quest", "method": "POST", "path": "/guest/examoneEligibility"},
+            {"instance": "quest", "method": "POST", "path": "/guest/verifyInsurance/V2"},
+            {"instance": "quest", "method": "POST", "path": "/guest/getPricing"},
+        ],
+    },
+}
