@@ -26,6 +26,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import uuid
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -961,6 +962,60 @@ def _ready_fixture_postgres_pod(
     return ready_pods[0]
 
 
+def _fixture_root_certificate(fixture: rendered_fixture.RenderedFixture) -> dict[str, Any]:
+    roots = [
+        doc
+        for doc in fixture.objects
+        if doc["kind"] == "Certificate"
+        and doc["metadata"].get("namespace") == "cert-manager"
+        and doc["spec"].get("isCA") is True
+        and doc["spec"].get("issuerRef", {}).get("kind") == "ClusterIssuer"
+    ]
+    if len(roots) != 1:
+        raise RuntimeError(f"expected one fixture root Certificate, found {len(roots)}")
+    return roots[0]
+
+
+def _fixture_intermediate_certificate(fixture: rendered_fixture.RenderedFixture) -> dict[str, Any]:
+    intermediates = [
+        doc
+        for doc in fixture.objects
+        if doc["kind"] == "Certificate"
+        and doc["metadata"].get("namespace") == fixture.namespace
+        and doc["spec"].get("isCA") is True
+        and doc["spec"].get("issuerRef", {}).get("kind") == "ClusterIssuer"
+    ]
+    if len(intermediates) != 1:
+        raise RuntimeError(f"expected one fixture intermediate Certificate, found {len(intermediates)}")
+    return intermediates[0]
+
+
+def _fixture_gateway_certificate(fixture: rendered_fixture.RenderedFixture) -> dict[str, Any]:
+    gateways = [
+        doc
+        for doc in fixture.objects
+        if doc["kind"] == "Certificate"
+        and doc["metadata"].get("namespace") == fixture.namespace
+        and "spiffe://agentplane/runner-gateway" in doc["spec"].get("uris", [])
+    ]
+    if len(gateways) != 1:
+        raise RuntimeError(f"expected one fixture Gateway Certificate, found {len(gateways)}")
+    return gateways[0]
+
+
+def _fixture_root_bundle(fixture: rendered_fixture.RenderedFixture) -> dict[str, Any]:
+    root_secret = _fixture_root_certificate(fixture)["spec"]["secretName"]
+    bundles = [
+        doc
+        for doc in fixture.objects
+        if doc["kind"] == "Bundle"
+        and any(source.get("secret", {}).get("name") == root_secret for source in doc["spec"].get("sources", []))
+    ]
+    if len(bundles) != 1:
+        raise RuntimeError(f"expected one fixture root Bundle, found {len(bundles)}")
+    return bundles[0]
+
+
 def _baseline_evidence(
     k3s: K3s,
     fixture: rendered_fixture.RenderedFixture,
@@ -981,6 +1036,9 @@ def _baseline_evidence(
         if doc["kind"] == "Deployment"
     }
     vm_controllers = vm_sandboxes.baseline_identity(k3s.kubectl) if fixture.vm_sandboxes else {}
+    root_certificate = _fixture_root_certificate(fixture)
+    root_name = root_certificate["metadata"]["name"]
+    root_secret = root_certificate["spec"]["secretName"]
     if warm and vm_controllers != marker.get("vm_controller_uids", {}):
         raise RuntimeError("retained virtualization identities changed; refusing to mark this baseline clean")
     marker["vm_controller_uids"] = vm_controllers
@@ -994,10 +1052,10 @@ def _baseline_evidence(
         "namespace_uid": k3s.kubectl("get", "namespace", fixture.namespace, "-o", "jsonpath={.metadata.uid}"),
         "postgres_pod_uid": postgres["metadata"]["uid"],
         "root_certificate_uid": k3s.kubectl(
-            "get", "certificate", "test-runner-root", "-n", "cert-manager", "-o", "jsonpath={.metadata.uid}"
+            "get", "certificate", root_name, "-n", "cert-manager", "-o", "jsonpath={.metadata.uid}"
         ),
         "root_secret_uid": k3s.kubectl(
-            "get", "secret", "test-runner-root", "-n", "cert-manager", "-o", "jsonpath={.metadata.uid}"
+            "get", "secret", root_secret, "-n", "cert-manager", "-o", "jsonpath={.metadata.uid}"
         ),
         "collector_namespace_uid": k3s.kubectl("get", "namespace", "monitoring", "-o", "jsonpath={.metadata.uid}"),
         "pki_controller_uids": controllers,
@@ -1039,9 +1097,9 @@ def _baseline_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None
         "system_test.stack.namespace.delete", attributes={"k8s.namespace.name": "monitoring"}
     ):
         k3s.kubectl("delete", "namespace", "monitoring", "--ignore-not-found=true", "--wait=true", "--timeout=60s")
-    root_certificate = json.loads(
-        k3s.kubectl("get", "certificate", "test-runner-root", "-n", "cert-manager", "-o", "json")
-    )
+    root_name = _fixture_root_certificate(fixture)["metadata"]["name"]
+    root_secret = _fixture_root_certificate(fixture)["spec"]["secretName"]
+    root_certificate = json.loads(k3s.kubectl("get", "certificate", root_name, "-n", "cert-manager", "-o", "json"))
     certificate_uid = root_certificate["metadata"]["uid"]
     requests = json.loads(k3s.kubectl("get", "certificaterequests", "-n", "cert-manager", "-o", "json"))["items"]
     owned_requests = [
@@ -1049,13 +1107,13 @@ def _baseline_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None
         for item in requests
         if any(owner["uid"] == certificate_uid for owner in item["metadata"].get("ownerReferences", []))
     ]
-    k3s.kubectl("delete", "certificate", "test-runner-root", "-n", "cert-manager", "--wait=true")
+    k3s.kubectl("delete", "certificate", root_name, "-n", "cert-manager", "--wait=true")
     if owned_requests:
         k3s.kubectl(
             "delete", "certificaterequest", *owned_requests, "-n", "cert-manager",
             "--ignore-not-found=true", "--wait=true",
         )  # fmt: skip
-    k3s.kubectl("delete", "secret", "test-runner-root", "-n", "cert-manager", "--wait=true")
+    k3s.kubectl("delete", "secret", root_secret, "-n", "cert-manager", "--wait=true")
     cluster_objects = [
         doc for doc in fixture.objects if doc["kind"] != "Namespace" and not doc["metadata"].get("namespace")
     ]
@@ -1079,7 +1137,8 @@ def _baseline_clean(k3s: K3s, fixture: rendered_fixture.RenderedFixture) -> None
         if k3s.kubectl("get", "namespace", namespace, "--ignore-not-found=true", "-o", "name"):
             raise RuntimeError(f"namespace {namespace} still exists after cleanup")
     for kind in ("certificate", "secret"):
-        if k3s.kubectl("get", kind, "test-runner-root", "-n", "cert-manager", "--ignore-not-found=true", "-o", "name"):
+        name = root_name if kind == "certificate" else root_secret
+        if k3s.kubectl("get", kind, name, "-n", "cert-manager", "--ignore-not-found=true", "-o", "name"):
             raise RuntimeError(f"fixture-owned root {kind} survived cleanup")
     remaining_pvs = json.loads(k3s.kubectl("get", "pv", "-o", "json"))["items"]
     if any(item.get("spec", {}).get("claimRef", {}).get("namespace") in namespaces for item in remaining_pvs):
@@ -1190,6 +1249,7 @@ def running_stack(
                     ),
                     models,
                     mcp,
+                    pki_incarnation=uuid.uuid4().hex,
                 )
                 if fixture.vm_sandboxes:
                     vm_sandboxes.select_boot_evidence(
@@ -1225,7 +1285,12 @@ def running_stack(
                     pki_import.result()
                 fixture_import = importing.submit(contextvars.copy_context().run, k3s.import_images, fixture_images)
                 if install_baseline:
-                    certificates.install(k3s.kubectl, cert_manager, trust_manager)
+                    certificates.install(
+                        k3s.kubectl,
+                        cert_manager,
+                        trust_manager,
+                        root_secret=_fixture_root_certificate(fixture)["spec"]["secretName"],
+                    )
                 else:
                     for doc in cert_manager + trust_manager:
                         if doc["kind"] == "Deployment":
@@ -1264,7 +1329,13 @@ def running_stack(
                     print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest)))
                     logger.info("applied %s objects", len(rest))
                     setup.add_event("manifests applied")
-                certificates.wait_for_issuance(k3s.kubectl, fixture.namespace, "cluster-internal-ca-bundle")
+                certificates.wait_for_issuance(
+                    k3s.kubectl,
+                    fixture.namespace,
+                    _fixture_root_bundle(fixture)["metadata"]["name"],
+                    ca_certificate=_fixture_intermediate_certificate(fixture)["metadata"]["name"],
+                    gateway_certificate=_fixture_gateway_certificate(fixture)["metadata"]["name"],
+                )
                 setup.add_event("runner certificates issued and trust distributed")
                 # Guest images serve Sandboxes created after stack readiness, so they can import during apply.
                 guest_import.result()

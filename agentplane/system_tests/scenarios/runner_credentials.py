@@ -98,6 +98,18 @@ async def _open_agent(
 
 async def cert_manager_reissues_a_deleted_tls_secret(cluster: Cluster) -> None:
     name = f"test-reissue-{uuid4().hex[:8]}"
+    gateway_certificate = json.loads(
+        await cluster.kubectl("get", "certificate", "agentplane-runner-gateway", "-o", "json")
+    )
+    issuer_ref = gateway_certificate.get("spec", {}).get("issuerRef")
+    if (
+        not isinstance(issuer_ref, dict)
+        or issuer_ref.get("kind") != "Issuer"
+        or not isinstance(issuer_ref.get("name"), str)
+        or not issuer_ref["name"]
+    ):
+        raise RuntimeError("current Gateway Certificate does not reference a namespace-scoped Issuer")
+    issuer_ref = {"kind": issuer_ref["kind"], "name": issuer_ref["name"]}
     await cluster.kubectl(
         "apply",
         "-f",
@@ -108,7 +120,7 @@ async def cert_manager_reissues_a_deleted_tls_secret(cluster: Cluster) -> None:
             "metadata": {"name": name},
             "spec": {
                 "secretName": name,
-                "issuerRef": {"name": "agentplane-runner-ca", "kind": "Issuer"},
+                "issuerRef": issuer_ref,
                 "uris": [f"spiffe://agentplane/test-reissue/{name}"],
                 "privateKey": {"algorithm": "ECDSA", "size": 256, "rotationPolicy": "Always"},
                 "usages": ["digital signature", "server auth"],

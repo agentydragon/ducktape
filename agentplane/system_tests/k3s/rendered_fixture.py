@@ -7,6 +7,7 @@ else; `fill` replaces it in every string. A placeholder must stay a whole value 
 a PEM placed inside serialized text (YAML in a ConfigMap) would not survive the replacement.
 """
 
+import re
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -127,11 +128,29 @@ def _replace(value: Any, replacements: dict[str, str]) -> Any:
     return value
 
 
+def _replace_names(value: Any, replacements: dict[str, str], pattern: re.Pattern[str]) -> Any:
+    match value:
+        case str():
+            return pattern.sub(lambda found: replacements[found.group()], value)
+        case list():
+            return [_replace_names(item, replacements, pattern) for item in value]
+        case dict():
+            return {key: _replace_names(item, replacements, pattern) for key, item in value.items()}
+    return value
+
+
 def read(rendered: Path) -> RenderedFixture:
     return RenderedFixture.model_validate_json(rendered.read_text())
 
 
-def fill(fixture: RenderedFixture, inputs: RuntimeInputs, models: Models, mcp: McpInputs | None) -> RenderedFixture:
+def fill(
+    fixture: RenderedFixture,
+    inputs: RuntimeInputs,
+    models: Models,
+    mcp: McpInputs | None,
+    *,
+    pki_incarnation: str | None = None,
+) -> RenderedFixture:
     replacements = dict(zip(asdict(PLACEHOLDERS).values(), asdict(inputs).values(), strict=True))
     if (fixture.mcp_fixtures is None) != (mcp is None):
         raise ValueError(f"{fixture.mcp_fixtures=} does not match {mcp is None=}")
@@ -144,9 +163,24 @@ def fill(fixture: RenderedFixture, inputs: RuntimeInputs, models: Models, mcp: M
             replacements[placeholder] = key
         case _:
             raise ValueError(f"{fixture.backend=} is not rendered for {models=}")
-    return fixture.model_copy(
-        update={
-            "objects": _replace(fixture.objects, replacements),
-            "app_origin": _replace(fixture.app_origin, replacements),
-        }
-    )
+    objects = _replace(fixture.objects, replacements)
+    if pki_incarnation is not None:
+        if not re.fullmatch(r"[0-9a-f]{32}", pki_incarnation):
+            raise ValueError(f"invalid PKI incarnation suffix: {pki_incarnation!r}")
+        # This test stack retains cert-manager across actions. Its cache keys are resource
+        # names, so deleting and recreating same-named CAs and issuers can let an old signing
+        # key cross into the next stack incarnation. Keep the root subject and workload SPIFFE
+        # identity stable, but give the full fixture PKI chain and trust references unique names.
+        names = (
+            "test-runner-root",
+            "test-runner-root-bootstrap",
+            "cluster-internal-ca",
+            "agentplane-runner-ca",
+            "agentplane-runner-gateway-tls",
+        )
+        name_replacements = {name: f"{name}-{pki_incarnation}" for name in names}
+        alternatives = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
+        name_pattern = re.compile(rf"(?<![a-z0-9.-])(?:{alternatives})(?![a-z0-9.-])")
+        objects = _replace_names(objects, name_replacements, name_pattern)
+
+    return fixture.model_copy(update={"objects": objects, "app_origin": _replace(fixture.app_origin, replacements)})
