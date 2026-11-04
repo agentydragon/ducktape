@@ -9,6 +9,7 @@ from uuid import UUID
 import jwt
 import pytest_bazel
 from cryptography.hazmat.primitives.asymmetric import ec
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from itsdangerous import TimestampSigner
 from plaid.api import plaid_api
@@ -35,7 +36,7 @@ from plaid.model.webhook_verification_key_get_response import WebhookVerificatio
 from finance.plaid.db.client import PlaidClient
 from finance.plaid.db.config import PlaidWebSettings
 from finance.plaid.db.link_store import PlaidLinkStorage, StoredLink, SyncAlreadyRunningError
-from finance.plaid.link.app import create_app
+from finance.plaid.link.app import _storage, create_app
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -292,6 +293,19 @@ def test_only_health_and_the_signed_webhook_are_open_without_a_session() -> None
     assert (webhook.status_code, webhook.json()["detail"]) == (401, "missing Plaid-Verification header")
     assert (api.status_code, api.json()) == (401, {"detail": "Not authenticated"})
     assert (page.status_code, page.headers["location"]) == (303, "/auth/login")
+
+
+def test_link_lookup_uses_fastapi_storage_dependency() -> None:
+    class MissingStorage(_FakeStorage):
+        async def get_link(self, item_id: str) -> StoredLink | None:
+            return None
+
+    with _client() as client:
+        cast(FastAPI, client.app).dependency_overrides[_storage] = lambda: cast(PlaidLinkStorage, MissingStorage())
+        response = client.get("/api/links/item_123")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "unknown item_id: item_123"}
 
 
 def test_link_ui_exposes_management_actions() -> None:
