@@ -310,7 +310,7 @@ each verb prints **one outcome object** sharing a common schema core:
 Verb-specific fields flatten in alongside the core: `moves_applied`
 (assign), `unassigned` (unassign), `identity` / `old_readable` /
 `new_readable` (rename), `target` (single merge) / `targets` (merge batch).
-When requested, `bindings assign` and `modules merge` also return
+When requested, `bindings assign`, `bindings unassign`, and `modules merge` also return
 `effect_relocation_assessment`, a report-only assessment of their exact
 in-memory candidate plan. It requires `--dry-run --analysis <artifact>`,
 `--graph`, and the full tree transform inputs (`--tree-config`,
@@ -987,15 +987,18 @@ emptiness. Explicit `modules delete <path>` may remove a comment/note-only modul
 without `--force`, because it owns no code and the author named it for deletion.
 
 To include the report-only effect assessment, add `--analysis <artifact>` and
-the full tree transform context to a graph-backed dry run:
+the full tree transform context to a graph-backed dry run. For example,
+`bindings unassign` accepts:
 
 ```bash
-debundle bindings assign XOe:runtime/plugins \
+debundle bindings unassign XOe \
   --modules "$MODULES" --graph "$GRAPH" --source-root "$GRAPH_SOURCE_ROOT" \
   --tree-config "$TREE_CONFIG" --tree-modules "$MODULES" \
   --tree-vendor-marks "$VENDOR_MARKS" --tree-source-root "$SPEC_ROOT" \
   --out-root "$OUT_ROOT" --analysis analysis.dba --dry-run --format json
 ```
+
+The same opt-in applies to `bindings assign` and `modules merge`.
 
 This assessment currently supports one materialized graph chunk whose
 `--tree-config` assigns the full module tree to that chunk (no scoped
