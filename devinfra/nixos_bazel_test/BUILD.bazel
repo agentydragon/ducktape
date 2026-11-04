@@ -1,0 +1,13 @@
+load("//devinfra/python:defs.bzl", "py_test")
+
+py_test(
+    name = "run_test",
+    srcs = ["run_test.py"],
+    data = ["run.sh"],
+    requires_docker = True,
+    deps = [
+        "//:conftest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
