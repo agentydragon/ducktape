@@ -1769,10 +1769,7 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
 def _posted_input(request: Request) -> command_pb2.Command:
     assert request.post_data is not None
     body = json.loads(request.post_data)
-    assert set(body) == {"commandId", "text", "sandbox", "sandboxUid"}
-    assert body["sandbox"] == SANDBOX
-    assert isinstance(body["sandboxUid"], str)
-    assert body["sandboxUid"]
+    assert set(body) == {"commandId", "text"}
     return command_pb2.Command(command_id=body["commandId"], submit_input=command_pb2.SubmitInput(text=body["text"]))
 
 
