@@ -940,8 +940,12 @@ Object.defineProperty(RegExp.prototype, 'source', {\n\
   configurable: true,\n\
   get() { globalThis.regexGetterReads = (globalThis.regexGetterReads || 0) + 1; return 'overridden'; },\n\
 });\n\
-const sourceText = pattern.source;\n\
-console.log(sourceText, marker, globalThis.regexGetterReads);\n";
+Object.defineProperty(pattern, 'custom', {\n\
+  configurable: true,\n\
+  get() { globalThis.regexOwnGetterReads = (globalThis.regexOwnGetterReads || 0) + 1; return 'own'; },\n\
+});\n\
+const sourceReads = [pattern.source, pattern.notPresent, pattern.lastIndex, pattern.custom];\n\
+console.log(sourceReads[0], sourceReads[1], sourceReads[2], sourceReads[3], marker, globalThis.regexGetterReads, globalThis.regexOwnGetterReads);\n";
     let fixture = run_fixture(
         FixtureOpts::new(
             source,
@@ -949,7 +953,45 @@ console.log(sourceText, marker, globalThis.regexGetterReads);\n";
         )
         .with_unassigned_mode(unassigned_mode_inline()),
     );
-    assert_preserved_entry_output(&fixture, "overridden 1 1\n");
+    assert_preserved_entry_output(&fixture, "overridden undefined 0 own 1 1 1\n");
+
+    let graph = fixture.dependency_graph();
+    let execution = |binding: &str| {
+        let node = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|declared| declared.binding == binding)
+            })
+            .unwrap_or_else(|| panic!("missing {binding} source unit"));
+        serde_json::to_value(
+            node.synchronous_execution
+                .as_ref()
+                .unwrap_or_else(|| panic!("missing {binding} execution summary")),
+        )
+        .expect("serialize execution summary")
+    };
+    let pattern_execution = execution("pattern");
+    assert!(
+        pattern_execution["complete"] == true
+            && pattern_execution["precision_losses"] == serde_json::json!([]),
+        "RegExp literal creation alone remains a complete allocation: {pattern_execution:#?}"
+    );
+    let source_execution = execution("sourceReads");
+    assert!(
+        source_execution["complete"] == false
+            && source_execution["precision_losses"]
+                .as_array()
+                .is_some_and(|losses| {
+                    losses.iter().any(|loss| {
+                        loss["reason"]["code"] == "unsupported_operation"
+                            && loss["reason"]["operation"] == "member_read"
+                    })
+                }),
+        "unknown, missing, own-data, and prototype RegExp property reads stay outside literal-allocation coverage: {source_execution:#?}"
+    );
 
     let report = fixture.effect_translation_validation();
     assert_eq!(report["swapped_pairs"], 1, "{report:#}");

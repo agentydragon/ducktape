@@ -49,6 +49,14 @@ pub enum Kind {
 }
 
 impl Kind {
+    /// Whether this allocation kind can use the engine's ordinary own-data
+    /// read proof. This is a model capability, not a claim that other JavaScript
+    /// objects lack ordinary own properties; their native/descriptor proofs
+    /// must be handled before this default refusal.
+    pub fn supports_ordinary_own_data_read_proof(self) -> bool {
+        self == Self::Object
+    }
+
     /// Kinds whose application-time prefix tracks arbitrary own-property
     /// containment. This carries callback/escape references without implying
     /// that reads have ordinary-record or descriptor semantics.

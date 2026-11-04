@@ -9404,6 +9404,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             if values.iter().any(|value| {
                 matches!(value, AbstractValue::Value(Value::Top))
+                    || matches!(value, AbstractValue::Value(Value::Alloc(Kind::RegExp, _)))
                     || matches!(value,
                 AbstractValue::Value(Value::Alloc(Kind::Object, object))
                     if !self.state.object_accessors_are_settled(object))
@@ -9553,7 +9554,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 self.promote_raw_callbacks(&accessor_getters, outcome);
             }
             let unsupported_local = values.iter().any(|value| match value {
-                AbstractValue::Value(Value::Alloc(Kind::Object, object)) => {
+                AbstractValue::Value(Value::Alloc(kind, object))
+                    if kind.supports_ordinary_own_data_read_proof() =>
+                {
                     !self.state.object_properties_are_settled(object)
                         || ((!self.inputs.index.plain_data_objects.contains(object)
                             && !self.state.ordinary_spread_copies.contains(object)
@@ -9568,10 +9571,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 },
                             ))
                 }
-                // A fresh Set identity is not an own-data record. Its size is
-                // an inherited accessor and its methods need a separate
-                // native-identity and own-override proof.
-                AbstractValue::Value(Value::Alloc(Kind::Set, _)) => true,
+                // Non-ordinary allocation kinds retain identity or containment
+                // only. Their own and inherited property semantics still
+                // need an explicit native/descriptor proof (for example,
+                // RegExp.prototype.source is an accessor).
+                AbstractValue::Value(Value::Alloc(kind, _))
+                    if !kind.supports_ordinary_own_data_read_proof() =>
+                {
+                    true
+                }
                 AbstractValue::Instance(key, _) => {
                     self.state.tainted_classes.contains(key)
                         || !property.as_ref().is_some_and(|property| {

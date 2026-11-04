@@ -478,7 +478,12 @@ shared allocation transfer to return the exact `Kind::RegExp` root allocation
 and finalizes only after the declared binding is initialized. The abstract
 allocation identity does not establish RegExp internal slots,
 prototype/method integrity, `lastIndex` behavior, or effects of later property
-reads, getters or calls.
+reads, getters or calls. RegExp identity does not authorize ordinary-record
+property proofs: reads of inherited properties (including `source`), own data
+properties (including `lastIndex`), missing properties, and custom own or
+prototype accessors remain uncovered unless a separate native or descriptor
+proof applies. A property used as a call target also retains its independent
+callee and invocation proof obligations.
 `RegExp(...)` and `new RegExp(...)` remain unsupported because they evaluate a
 mutable constructor binding and can invoke user code. Under the existing
 [A6 input contract](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md) that the original chunk runs to

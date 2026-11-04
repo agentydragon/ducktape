@@ -2,7 +2,7 @@
 
 use super::value_model::{AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values};
 use crate::facts::EffectCell;
-use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::abstract_domain::value::Value;
 use crate::reports::schema::OrderedFieldReadRefusal;
 use std::collections::BTreeSet;
 
@@ -61,9 +61,12 @@ pub(super) fn resolve_slot(
     if receivers.len() != 1 {
         return Err(OrderedFieldReadRefusal::ReceiverNotSingleton);
     }
-    let Some(AbstractValue::Value(Value::Alloc(Kind::Object, object))) = receivers.first() else {
+    let Some(AbstractValue::Value(Value::Alloc(kind, object))) = receivers.first() else {
         return Err(OrderedFieldReadRefusal::ReceiverNotObject);
     };
+    if !kind.supports_ordinary_own_data_read_proof() {
+        return Err(OrderedFieldReadRefusal::ReceiverNotObject);
+    }
     if let OwnDataOwnership::FreshLocal { borrowed, .. } = &ownership
         && borrowed.contains(object)
     {
