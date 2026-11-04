@@ -114,9 +114,9 @@ the fine layout's simulated evaluation order. Groups omitted by the simulator
 remain separate initially. The normal complete-assignment gate may then
 co-locate a whole actual mutual-constraining SCC only when every member is a
 generated coarse residual module; this refinement repeats until no eligible
-SCC remains. It does not merge authored modules or mixed SCCs, and any
-remaining cycle, including a conditional or eager TDZ rejection, is still
-rejected by the unchanged gate. Generated paths use
+SCC remains. It does not merge authored modules or mixed SCCs. Conditional
+diagnostic summaries do not authorize merging. Any remaining blocking cycle
+or actual eager TDZ rejection is still rejected by the unchanged gate. Generated paths use
 `__auto/residual_groups/NNNN`.
 Selected module names and explicit `chunk_renames` remain intact; omitted
 members retain original source names. The authored spec is unchanged.
@@ -896,7 +896,7 @@ complete-assignment gate's typed actual mutual-SCC diagnosis and merges only
 whole SCCs whose members all have generated-residual provenance. It preserves
 authored plans, destinations, bindings, anonymous source units, and atomic
 groups. The ordinary gate remains authoritative after refinement and rejects
-authored or mixed SCCs and any remaining conditional or eager TDZ cycle.
+authored or mixed SCCs and any remaining actual eager TDZ cycle.
 
 ## Entities
 

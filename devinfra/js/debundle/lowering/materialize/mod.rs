@@ -553,7 +553,7 @@ pub(super) fn finish_logical_chunk(
     // owned state from here on.
     let ChunkPlan {
         mut module_plans,
-        mut bindings_catalogue,
+        bindings_catalogue,
         mut whole_statement_assignment,
         mut generated_residual_plans,
         unmatched_spec_claims,

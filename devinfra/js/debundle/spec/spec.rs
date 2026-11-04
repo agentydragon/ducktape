@@ -1399,12 +1399,10 @@ pub enum UnassignedMode {
     /// be peeled (typically empty for clean chunks). See
     /// `docs/design.md` §"Layered mental model" + §"Two classes of atom".
     PerAtomicGroup,
-    /// Initially group wholly-unclaimed atomic groups with equal reachable
-    /// fixed-owner sets in the strict constraining module projection. The
-    /// normal gate may then co-locate whole actual mutual SCCs only when every
-    /// member has generated-residual provenance. Output paths use
-    /// `__auto/residual_groups/NNNN`; authored or mixed SCCs and remaining
-    /// cycles still go through the ordinary realizability gate unchanged.
+    /// Merge wholly-unclaimed atomic groups with equal reachable fixed-owner
+    /// sets in the strict constraining module projection. Output paths use
+    /// `__auto/residual_groups/NNNN`. The final assignment still goes through
+    /// the ordinary realizability gate.
     CoarseAtomicGroups,
 }
 

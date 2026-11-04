@@ -2983,8 +2983,9 @@ the original source order and rebuilding positional ownership and import
 ordering after each contraction. This uses typed SCC membership, not cut edges
 or generated path spelling. Authored modules and mixed authored/residual SCCs
 remain intact. The normal gate and translation validation run on the final
-assignment, so any remaining cycle, including conditional or eager TDZ
-rejection, is still rejected. The initial projection remains a placement
+assignment, so any remaining blocking cycle or actual eager TDZ rejection is
+still rejected. Conditional diagnostic summaries do not authorize merging.
+The initial projection remains a placement
 heuristic; it does not weaken the complete I-graph checks.
 When a chunk has no explicit logical modules, `inline_in_entry` keeps the
 whole statement sequence in the entry. In `catchall_file`, unclaimed named
