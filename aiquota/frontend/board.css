@@ -2,10 +2,10 @@
  * The quota board's styles, written to survive being dropped into someone else's stylesheet:
  * every class is `aiquota-` prefixed, there are no bare element selectors, and the palette is
  * scoped to `.aiquota-scope` rather than `:root`, so embedding this cannot restyle the host or
- * redefine its tokens. The Haku Console imports it beside its own (haku/console/frontend).
+ * redefine its tokens.
  *
  * One tint variable per card drives the dot, the spine and the meter fill, so a provider's
- * urgency is stated once (in pace.ts) and shown consistently. Tints keep the GNOME extension's
+ * urgency is computed in the view model and shown consistently. Tints keep the GNOME extension's
  * vocabulary — cool / ok / warn / hot / unknown / stale / error — because the panel icon and
  * this board are read as the same signal.
  */
@@ -121,8 +121,6 @@
 }
 
 .aiquota-card {
-  --aiquota-tint: var(--aiquota-unknown);
-
   background: var(--aiquota-surface);
   border: 1px solid var(--aiquota-border);
   border-radius: 14px;

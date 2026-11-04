@@ -168,13 +168,15 @@ describe("QuotaBoard", () => {
   it("updates only reset countdown and pending state as time advances without a new payload", () => {
     const quotas = sampleQuotas();
     render(quotas, Date.parse("2026-01-15T12:00:00Z"));
-    expect(container.querySelector('.aiquota-card[aria-label="Codex quota"]')?.textContent).toContain("↻ 2h 30m");
+    expect(container.querySelector('.aiquota-card[aria-label="Codex quota"]')?.textContent).toContain(
+      "Resets in 2h 30m"
+    );
     expect(container.querySelector('.aiquota-card[aria-label="Codex quota"]')?.textContent).toContain("On pace");
 
     act(() => root.render(<QuotaBoard quotas={quotas} now={Date.parse("2026-01-15T14:31:00Z")} />));
 
     const codex = container.querySelector('.aiquota-card[aria-label="Codex quota"]');
-    expect(codex?.textContent).toContain("↻ awaiting update");
+    expect(codex?.textContent).toContain("Awaiting updated usage");
     expect(codex?.textContent).toContain("Reset time passed · awaiting updated usage");
     expect(codex?.textContent).not.toContain("Numeric pace: +10 pp");
     expect(codex?.textContent).not.toContain("On pace");
@@ -212,7 +214,10 @@ describe("QuotaBoard", () => {
     render(quotas);
 
     expect(container.querySelector('.aiquota-card[aria-label="Codex quota"] .aiquota-strip-line')?.textContent).toBe(
-      "0"
+      "Banked resets: 0"
+    );
+    expect(container.querySelector('.aiquota-card[aria-label="Codex quota"]')?.textContent).not.toContain(
+      "Reset expiry details"
     );
   });
 });

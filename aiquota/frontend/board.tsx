@@ -302,7 +302,7 @@ function WindowRow({
         label={`${window.label}: ${window.used}% used, ${roundHalfToEven(window.elapsed * 100)}% of the window elapsed`}
       />
       <div className="aiquota-window-meta">
-        <span>↻ {window.reset}</span>
+        <span>{resetPending ? "Awaiting updated usage" : `Resets in ${window.reset}`}</span>
         {window.exhausted && !resetPending && <span className="aiquota-exhausted">exhausted</span>}
         {window.forecast && !window.exhausted && <span>{window.forecast}</span>}
       </div>
@@ -353,16 +353,19 @@ function Meter({
 
 function ResetCredits({ count, quota, now }: { count: number; quota: EffectiveQuota; now: Date }): JSX.Element {
   return (
-    <div className="aiquota-strip aiquota-strip-resets">
+    <div className={`aiquota-strip${count > 0 ? " aiquota-strip-resets" : ""}`}>
       <p className="aiquota-strip-line">
+        Banked resets:{" "}
         {formatResetCreditSummary(count, quota.resetCreditExpiries, quota.resetCreditExpiryLookupFailed, now)}
       </p>
-      <details className="aiquota-details">
-        <summary>Reset expiry details</summary>
-        <p>
-          {formatResetCreditSummary(count, quota.resetCreditExpiries, quota.resetCreditExpiryLookupFailed, now, true)}
-        </p>
-      </details>
+      {count > 0 && (
+        <details className="aiquota-details">
+          <summary>Reset expiry details</summary>
+          <p>
+            {formatResetCreditSummary(count, quota.resetCreditExpiries, quota.resetCreditExpiryLookupFailed, now, true)}
+          </p>
+        </details>
+      )}
     </div>
   );
 }

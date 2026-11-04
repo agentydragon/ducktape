@@ -49,7 +49,7 @@ async def test_dashboard(view: VisualPage, scene: str) -> None:
     await expect(view.page.get_by_role("status")).to_have_text("Live updates connected")
     if scene == "reset_credit_expiry_unavailable":
         await expect(view.page.locator(".aiquota-strip-resets .aiquota-strip-line")).to_have_text(
-            "2 · expiry lookup failed"
+            "Banked resets: 2 · expiry lookup failed"
         )
     if scene == "openai_platform_credits":
         card = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
@@ -92,7 +92,7 @@ async def test_dashboard(view: VisualPage, scene: str) -> None:
         codex = view.page.locator('.aiquota-card[aria-label="Codex quota"]')
         await expect(codex.get_by_role("heading")).to_contain_text("Codex")
         await expect(codex.locator(".aiquota-strip-resets .aiquota-strip-line")).to_contain_text(
-            "3 · next known expiry"
+            "Banked resets: 3 · next known expiry"
         )
         await expect(codex.locator(".aiquota-window")).to_have_count(2)
         openai = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
@@ -105,7 +105,7 @@ async def test_dashboard(view: VisualPage, scene: str) -> None:
     if scene == "reset_pending":
         codex = view.page.locator('.aiquota-card[aria-label="Codex quota"]')
         await expect(codex.get_by_text("Reset time passed · awaiting updated usage", exact=True)).to_be_visible()
-        await expect(codex.get_by_text("↻ awaiting update", exact=False)).to_be_visible()
+        await expect(codex.get_by_text("Awaiting updated usage", exact=True)).to_be_visible()
         await expect(codex.get_by_text("Numeric pace", exact=False)).to_have_count(0)
     if scene == "stale_observation":
         claude = view.page.locator('.aiquota-card[aria-label="Claude quota"]')

@@ -153,7 +153,7 @@ function formatBurnSummary(burn) {
 }
 
 function formatPeakSchedule(burn) {
-  if (!burn.upcoming.length) return null;
+  if (!burn?.upcoming.length) return null;
   return `${formatMultiplier(burn.peak_multiplier)}: ${burn.upcoming.map(formatPeakInterval).join("  ")}`;
 }
 
