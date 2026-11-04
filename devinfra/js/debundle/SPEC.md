@@ -398,6 +398,17 @@ over the applied YAML emits. Full-tree single-chunk scope, `--modules` /
 match `bindings assign`; omitting `--analysis` preserves ordinary merge
 behavior.
 
+`modules delete --dry-run --analysis <artifact>` uses that same full-context
+boundary for the exact set of resolved module files scheduled for deletion.
+Their paths are mapped once to the logical keys in the complete typed module
+snapshot, then those same keys are removed for both the legacy edit gate and
+the report-only effect assessment. The assessment therefore sees the candidate
+`ChunkPlanBuilder` order produced by applying the deletion. Non-empty deletion
+still requires `--force`; full-tree single-chunk scope, `--modules` /
+`--tree-modules` equality, identity checks and failure-before-write behavior
+match the other opt-in edit assessments. Omitting `--analysis` preserves the
+ordinary deletion and gate behavior.
+
 `coverage.owner_coverage_refusals` counts typed reasons why an original
 owner's whole-initialization certificate was not sealed. Bounded examples
 include an optional refusal and existing source location for each endpoint;

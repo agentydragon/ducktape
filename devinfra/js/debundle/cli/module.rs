@@ -37,6 +37,7 @@ use spec_modules::{
 };
 use yaml_edit::write_yaml_atomic;
 
+use crate::binding::load_module_docs;
 use crate::candidate_assessment::CandidateEffectAssessmentArgs;
 use crate::edit_gate::{GraphEditArgs, PostEditSpec, post_delete_spec, post_edit_spec_from_docs};
 use crate::outcome::{GateOutcome, MutationOutcome, emit_gate_rejection_json, print_outcome_json};
@@ -111,6 +112,8 @@ struct MergeBatchOutcome {
 pub struct DeleteOutcome {
     #[serde(flatten)]
     pub outcome: MutationOutcome,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect_relocation_assessment: Option<gate::EffectRelocationAssessment>,
 }
 
 /// Why `modules merge` cannot compose its documents; the merge refuses before writing anything,
@@ -188,6 +191,11 @@ impl MergeSummary {
 pub struct DeleteArgs {
     #[command(flatten)]
     pub edit: GraphEditArgs,
+
+    /// Optional full-context report-only effect assessment of the complete
+    /// post-delete candidate. Requires `--dry-run` and `--analysis`.
+    #[command(flatten)]
+    pub effect_assessment: CandidateEffectAssessmentArgs,
 
     /// Module paths (relative to --modules) to delete. The `.yaml`
     /// suffix is optional. All paths are validated up front; if any
@@ -775,6 +783,22 @@ pub fn run_delete(
         );
     }
 
+    let effect_context = args.effect_assessment.resolve(&args.edit, source_context)?;
+    let (candidate_docs, deleted_module_paths, effect_relocation_assessment) =
+        if let Some(context) = effect_context.as_ref() {
+            let docs = load_module_docs(&args.edit.modules_root)?;
+            let deleted_module_paths = delete_module_paths(&docs, &paths_abs)?;
+            let candidate_modules = docs
+                .iter()
+                .filter(|(module_path, _)| !deleted_module_paths.contains(*module_path))
+                .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
+                .collect();
+            let assessment = context.assess(&args.edit.modules_root, &candidate_modules)?;
+            (Some(docs), Some(deleted_module_paths), Some(assessment))
+        } else {
+            (None, None, None)
+        };
+
     // Realizability gate. The all-empty fast path is a structural
     // no-op (an empty module owns no bindings and contributes no
     // anonymous statements, so removing it leaves the assignment
@@ -784,9 +808,18 @@ pub fn run_delete(
         GateOutcome::NotRequired
     } else {
         let gate = args.edit.gate(source_context)?;
-        if let Err(err) = gate.check(&args.edit.modules_root, || {
-            post_delete_spec(&args.edit.modules_root, &paths_abs)
-        }) {
+        let validation = if let (Some(docs), Some(deleted_module_paths)) =
+            (candidate_docs.as_ref(), deleted_module_paths.as_ref())
+        {
+            gate.check(&args.edit.modules_root, || {
+                post_edit_spec_from_docs(docs, deleted_module_paths)
+            })
+        } else {
+            gate.check(&args.edit.modules_root, || {
+                post_delete_spec(&args.edit.modules_root, &paths_abs)
+            })
+        };
+        if let Err(err) = validation {
             emit_gate_rejection_json("delete", args.edit.format, &err);
             return Err(err);
         }
@@ -810,12 +843,37 @@ pub fn run_delete(
                 .map(|p| p.display().to_string())
                 .collect(),
         },
+        effect_relocation_assessment,
     };
     match OutputFormat::resolve(args.edit.format) {
         OutputFormat::Text => println!("{}", summary.summary_line()),
         format => print_outcome_json(&delete_outcome, format)?,
     }
     Ok(())
+}
+
+/// Resolve the exact file deletion plan into the logical keys used by both the
+/// candidate effect assessment and the in-memory legacy gate. A requested
+/// assessment must be able to account for every deleted file in the complete
+/// typed module snapshot.
+fn delete_module_paths(
+    docs: &BTreeMap<String, (PathBuf, LogicalModule)>,
+    deleted_abs: &[PathBuf],
+) -> Result<BTreeSet<String>> {
+    let mut deleted_module_paths = BTreeSet::new();
+    for deleted_file in deleted_abs {
+        let module_path = docs
+            .iter()
+            .find_map(|(module_path, (file, _))| (file == deleted_file).then_some(module_path))
+            .with_context(|| {
+                format!(
+                    "requested effect assessment cannot map deleted module file {} to the complete module tree",
+                    deleted_file.display()
+                )
+            })?;
+        deleted_module_paths.insert(module_path.clone());
+    }
+    Ok(deleted_module_paths)
 }
 
 /// Delete the given absolute paths (or, in `dry_run` mode, simply
