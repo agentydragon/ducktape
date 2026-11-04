@@ -9,8 +9,8 @@ use super::super::noninvoking_initialization::{
 };
 use super::super::value_model::{
     AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
-    DenseArray, FrozenNamespaceProof, LexicalCaptures, LexicalCellId, MemberKey, OwnPropertyShape,
-    RetainedResultKind, ValueExpr, Values,
+    DenseArray, DenseArrayIterationTransfer, FrozenNamespaceProof, LexicalCaptures, LexicalCellId,
+    MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr, Values,
 };
 use super::runtime_callbacks::{CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
@@ -2464,7 +2464,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     /// The indexed SetIterableProof discharges the one Set constructor
-    /// iteration step only for a direct dense primitive-literal array at this
+    /// iteration step only for a direct dense primitive array at this
     /// exact New site. ResolveNative runs in a child executor whose RuntimeKey
     /// identifies only owner/path; this request payload carries the site,
     /// source expression and evaluated operand. Admission must use those
@@ -2496,27 +2496,37 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return false;
         };
         if self.inputs.index.dense_array_literals.get(array) != Some(&elements.len())
-            || !elements.iter().all(|(name, value)| {
-                name.is_none()
-                    && matches!(value, ValueExpr::NonCallable(kinds)
-                        if [PrimKinds::STRING, PrimKinds::NUMBER, PrimKinds::BOOLEAN,
-                            PrimKinds::NULL, PrimKinds::BIGINT]
-                            .contains(kinds))
-            })
+            || elements.iter().any(|(name, _)| name.is_some())
         {
             return false;
         }
         let [values] = arguments else {
             return false;
         };
-        if !matches!(values.iter().collect::<Vec<_>>().as_slice(),
-            [AbstractValue::Value(Value::Alloc(Kind::Object, evaluated_array))]
-                if evaluated_array == array)
+        let source_span = site.source_span();
+        let transfer = self.dense_array_iteration_transfer(values, || {
+            self.inputs
+                .set_iterable_proof
+                .dependencies_for_constructor(source_span)
+                .is_some()
+        });
+        let DenseArrayIterationTransfer::Yielded { source, slots } = transfer else {
+            return false;
+        };
+        if source != *array
+            || !slots.iter().all(|slot| {
+                !slot.is_empty()
+                    && slot.iter().all(|value| {
+                        matches!(value, AbstractValue::Value(Value::Prim(kinds))
+                                if [PrimKinds::STRING, PrimKinds::NUMBER, PrimKinds::BOOLEAN,
+                                    PrimKinds::NULL, PrimKinds::BIGINT]
+                                    .contains(kinds))
+                    })
+            })
         {
             return false;
         }
 
-        let source_span = site.source_span();
         let Some(dependencies) = self
             .inputs
             .set_iterable_proof
@@ -2881,22 +2891,33 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && self.native_guard_intact(NativeIntegrityGuard::ArrayIntrinsics, slots)
     }
 
-    /// The one untainted dense array `values` denotes, when the Array slots
-    /// the caller reads are intact.
-    fn dense_source(
+    /// Transfer the ordinary dense-array iterator over the evaluated operand's
+    /// prefix heap. The operation adapter supplies its already-defined native
+    /// protocol premise (Set's typed certificate or a spread's exact Array
+    /// slots) at the same point the previous dense-source check consulted it.
+    fn dense_array_iteration_transfer(
         &self,
         values: &Values,
-        requires: &[IntrinsicSlot],
-    ) -> Option<(u32, DenseArray)> {
+        protocol_intact: impl FnOnce() -> bool,
+    ) -> DenseArrayIterationTransfer {
         let [AbstractValue::Value(Value::Alloc(Kind::Object, object))] =
             values.iter().collect::<Vec<_>>().as_slice()
         else {
-            return None;
+            return DenseArrayIterationTransfer::Refused;
         };
-        if !self.array_slots_intact(requires) || !self.state.object_properties_are_settled(object) {
-            return None;
+        // Exact singleton matching rejects an Unavailable throw alternative
+        // before consulting protocol slots, as the previous dense-source
+        // guard did.
+        if !protocol_intact() || !self.state.object_properties_are_settled(object) {
+            return DenseArrayIterationTransfer::Refused;
         }
-        Some((*object, self.state.dense_arrays.get(object)?.clone()))
+        let Some(array) = self.state.dense_arrays.get(object) else {
+            return DenseArrayIterationTransfer::Refused;
+        };
+        DenseArrayIterationTransfer::Yielded {
+            source: *object,
+            slots: array.slots.clone(),
+        }
     }
 
     fn dense_array_push_receiver(&self, receiver: &Values) -> Option<u32> {
@@ -2984,10 +3005,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             containment.extend(values.iter().cloned());
             if element.spread {
-                if let Some((_, source)) = self.dense_source(&values, ARRAY_PROTOTYPE_SLOTS) {
-                    slots.extend(source.slots);
-                } else {
-                    dense = false;
+                match self.dense_array_iteration_transfer(&values, || {
+                    self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS)
+                }) {
+                    DenseArrayIterationTransfer::Yielded {
+                        slots: source_slots,
+                        ..
+                    } => slots.extend(source_slots),
+                    _ => dense = false,
                 }
             } else {
                 slots.push(values);
@@ -3036,7 +3061,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let proof = self.inputs.index.array_iterations.get(&span)?.clone();
         proof.result?;
         let values = self.evaluate(&proof.source, env, captures);
-        let (source, dense) = self.dense_source(&values, proof.row.requires)?;
+        let DenseArrayIterationTransfer::Yielded { source, slots } = self
+            .dense_array_iteration_transfer(&values, || {
+                self.array_slots_intact(proof.row.requires)
+            })
+        else {
+            return None;
+        };
+        let dense = DenseArray { slots };
         if dense.slots.len() > MAX_SYNCHRONOUS_INVOCATIONS {
             return None;
         }
@@ -3233,7 +3265,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let returned = nested.returns.clone();
             self.merge_array_effects(outcome, nested);
             let current_source = self.evaluate(&proof.source, env, captures);
-            let valid = !unsupported && self.dense_source(&current_source, row.requires).is_some_and(|(object, current)| object == source && current.slots == dense.slots)
+            let current_source = self.dense_array_iteration_transfer(&current_source, || {
+                self.array_slots_intact(row.requires)
+            });
+            let valid = !unsupported && matches!(current_source,
+                DenseArrayIterationTransfer::Yielded { source: current_object, slots }
+                    if current_object == source && slots == dense.slots)
                 && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, object)) if !self.state.object_properties_are_settled(object)))
                 && dense.slots.iter().flatten().all(|value| !matches!(value, AbstractValue::Value(Value::Alloc(Kind::Function, key)) | AbstractValue::Closure(key, _) if self.state.tainted_functions.contains(key)));
             let valid = valid
@@ -9493,7 +9530,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 );
                 return CallTransfer::EffectsOnly;
             }
-            if self.dense_source(&values, ARRAY_PROTOTYPE_SLOTS).is_some() {
+            if matches!(
+                self.dense_array_iteration_transfer(&values, || {
+                    self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS)
+                }),
+                DenseArrayIterationTransfer::Yielded { .. }
+            ) {
                 return CallTransfer::EffectsOnly;
             }
             outcome.unsupported(ExecutionOperation::ArraySpread, call.owner, call.span);
