@@ -172,6 +172,7 @@ impl<'a> ModulePurityFacts<'a> {
                 source,
                 &inputs.assumptions.native_operation_inputs,
                 &inputs.stable_set_spreads,
+                &inputs.inferred_set_constructions,
                 &inputs.assumptions.argument_inputs,
             ),
         };
@@ -373,6 +374,11 @@ pub fn resolve_imported_purities(
             // mutation census, which would otherwise reintroduce unknown aliases.
             let inputs = crate::analysis_inputs::AnalysisInputs {
                 native_integrity: callable_summaries.native_integrity.clone(),
+                inferred_set_constructions: callable_summaries
+                    .inferred_set_constructions
+                    .get(key)
+                    .cloned()
+                    .unwrap_or_default(),
                 stable_set_spreads: callable_summaries
                     .stable_set_spreads
                     .get(key)
@@ -515,6 +521,8 @@ pub struct ResolvedCallableSummaries {
     pub native_operation_inputs: BTreeMap<ModuleKey, Vec<ResolvedNativeOperationInput>>,
     pub stable_set_spreads:
         BTreeMap<ModuleKey, BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>>,
+    pub inferred_set_constructions:
+        BTreeMap<ModuleKey, BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>>,
     pub argument_inputs: BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
     /// The whole-program bundle-owned globals the census used.
     pub bundle_globals: BundleGlobalNames,
@@ -1063,6 +1071,33 @@ pub fn resolve_imported_callable_summaries(
             }
         }
     }
+    // Source inference must finish before any root can seed structural flow.
+    // The completed raw census is conservative; later branch refinement may
+    // not retroactively introduce a root into an already solved flow.
+    let mut preflow_native_integrity =
+        crate::facts::sync_effects::execution_index::resolve_native_integrity(
+            prepared.values().map(|facts| facts.native_writes()),
+        );
+    // Validate the existing program premise against the conservative raw
+    // census too. Failure only declines this early inference; the established
+    // refined-census check below remains authoritative for the author input.
+    let preflow_premises_hold = intrinsics_never_written.is_empty()
+        || crate::facts::sync_effects::execution_index::apply_intrinsics_never_written(
+            &mut preflow_native_integrity,
+            &intrinsics_never_written,
+        )
+        .is_ok();
+    let inferred_set_constructions: BTreeMap<_, _> = prepared
+        .iter()
+        .filter_map(|(module, facts)| {
+            if !preflow_premises_hold {
+                return None;
+            }
+            let proofs = facts.inferred_set_constructions(&preflow_native_integrity);
+            (!proofs.is_empty()).then_some(((*module).clone(), proofs))
+        })
+        .collect();
+
     // At most one structural flow per module, solved on first need and kept
     // for the purity oracle (`ModulePurityFacts::prepare`).
     let structural_flows: BTreeMap<&ModuleKey, OnceCell<ChunkValueFlow>> = modules
@@ -1077,6 +1112,9 @@ pub fn resolve_imported_callable_summaries(
                     .get(module)
                     .map_or(&[][..], Vec::as_slice),
                 stable_set_spreads.get(module).unwrap_or(&no_spreads),
+                inferred_set_constructions
+                    .get(module)
+                    .unwrap_or(&BTreeMap::new()),
             )
         })
     };
@@ -1477,6 +1515,7 @@ pub fn resolve_imported_callable_summaries(
         value_inputs: resolved_value_inputs,
         native_operation_inputs: resolved_native_operation_inputs,
         stable_set_spreads,
+        inferred_set_constructions,
         argument_inputs: argument_inputs.clone(),
         structural_flows,
     })

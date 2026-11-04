@@ -388,7 +388,7 @@ pub(super) struct ArrayIteration {
 
 #[derive(Debug, Clone)]
 pub(super) struct ArrayElement {
-    pub(super) spread: bool,
+    pub(super) spread: Option<swc_common::Span>,
     pub(super) value: ValueExpr,
 }
 

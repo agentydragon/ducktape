@@ -52,8 +52,8 @@ impl PositionBucketed<BTreeSet<Id>> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatementFacts {
     pub ordinal: SourceUnitOrdinal,
-    /// Exact stable-array spread producers that must remain in this module.
-    pub(crate) stable_array_spread_producers: BTreeSet<SourceUnitOrdinal>,
+    /// Exact protected iterable producers that must remain in this module.
+    pub(crate) stable_iterable_producers: BTreeSet<SourceUnitOrdinal>,
     pub source_location: Option<SourceLocation>,
     /// Matched retained callback-factory contracts rejected by a visible
     /// namespace guard for a top-level call in this source unit. These facts
@@ -149,12 +149,12 @@ pub struct StatementFacts {
     /// `SynchronousCalls::heap_contents`.
     pub(crate) heap_contents: HeapContentCells,
     /// The whole initializer of a single-declarator top-level declaration,
-    /// when it is an array literal: its allocation runs at this statement.
+    /// when it is an array literal or a proved fresh native Set construction:
+    /// this direct eager occurrence allocates at this statement.
     pub(crate) heap_one_shot_allocation: Option<EffectCell>,
     /// Allocation sites in this statement's deferred positions, at any depth.
     pub(crate) deferred_heap_allocations: BTreeSet<EffectCell>,
-    /// Author-conditioned native premises consumed by certified local-class
-    /// heap construction at this source unit.
+    /// Native premises consumed by proved heap construction at this source unit.
     pub heap_native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
     pub purity: Purity,
     pub kind: StatementKind,
@@ -424,7 +424,7 @@ pub enum EffectCell {
     /// Heap contents of one array allocation, keyed by its canonical object
     /// origin from chunk value flow.
     ArrayContents(u32),
-    /// Mutable contents of one author-certified fresh native Set.
+    /// Mutable contents of one proved fresh native Set construction.
     SetContents(u32),
     /// One static own property, conservatively shared by every runtime
     /// generation of the source allocation. This supplies no strong update.

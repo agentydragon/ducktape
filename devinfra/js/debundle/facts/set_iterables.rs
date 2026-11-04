@@ -6,8 +6,8 @@
 
 use super::*;
 use crate::analysis_inputs::{
-    NativeInputKind, NativeOperationInputEvidence, ProofDependencies, ResolvedNativeOperationInput,
-    StableSetIterableUse,
+    InferredSetConstruction, InferredSetOperation, NativeInputKind, NativeOperationInputEvidence,
+    ProofDependencies, ResolvedNativeOperationInput, StableSetIterableUse,
 };
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
@@ -193,6 +193,9 @@ pub(crate) struct SetIterableProof {
     author_inputs: BTreeMap<u32, NativeOperationInputEvidence>,
     author_dependencies: BTreeMap<u32, ProofDependencies>,
     stable_spreads: BTreeMap<u32, ProofDependencies>,
+    source_constructions: BTreeMap<u32, InferredSetConstruction>,
+    protected_intervals: Vec<Vec<Id>>,
+    spread_sources: BTreeMap<u32, u32>,
     array_spreads: StableArraySpreadShapes,
 }
 
@@ -201,6 +204,8 @@ impl SetIterableProof {
         facts: Arc<SemanticFacts>,
         author_inputs: BTreeMap<u32, NativeOperationInputEvidence>,
         stable_spreads: &BTreeMap<u32, StableSetIterableUse>,
+        source_constructions: &BTreeMap<u32, InferredSetConstruction>,
+        native_inputs: &[ResolvedNativeOperationInput],
         array_spreads: StableArraySpreadShapes,
     ) -> Self {
         let author_dependencies = author_inputs
@@ -218,12 +223,53 @@ impl SetIterableProof {
                 )
             })
             .collect();
+        let spreads: Vec<_> = stable_spreads
+            .values()
+            .chain(
+                source_constructions
+                    .values()
+                    .filter_map(|proof| match &proof.operation {
+                        InferredSetOperation::ProtectedSpread { interval, .. } => {
+                            Some(interval.as_ref())
+                        }
+                        InferredSetOperation::PrimitiveArray => None,
+                    }),
+            )
+            .collect();
+        let protected_intervals = spreads
+            .iter()
+            .map(|spread| spread.interval_bindings.clone())
+            .collect();
+        let origins: BTreeMap<_, _> = native_inputs
+            .iter()
+            .map(|input| (input.binding.clone(), input.call_span.lo.0))
+            .chain(
+                source_constructions
+                    .iter()
+                    .map(|(site, proof)| (proof.binding.clone(), *site)),
+            )
+            .collect();
+        let spread_sources = spreads
+            .iter()
+            .filter_map(|spread| {
+                let source = origins.get(spread.interval_bindings.first()?)?;
+                Some(
+                    [spread.source_span.lo.0, spread.spread_token_span.lo.0]
+                        .into_iter()
+                        .map(|span| (span, *source)),
+                )
+            })
+            .flatten()
+            .collect();
         Self {
             facts,
             author_inputs,
             author_dependencies,
-            stable_spreads: stable_spreads
-                .values()
+            protected_intervals,
+            spread_sources,
+            source_constructions: source_constructions.clone(),
+            stable_spreads: spreads
+                .into_iter()
                 .flat_map(|stable| {
                     [stable.source_span.lo.0, stable.spread_token_span.lo.0]
                         .into_iter()
@@ -234,15 +280,30 @@ impl SetIterableProof {
         }
     }
 
+    pub(crate) fn protected_intervals(&self) -> &[Vec<Id>] {
+        &self.protected_intervals
+    }
+
+    pub(crate) fn stable_spread_source(&self, span: Span) -> Option<u32> {
+        self.spread_sources.get(&span.lo.0).copied()
+    }
+
     pub(crate) fn stable_spread_dependencies(&self, span: Span) -> Option<&ProofDependencies> {
         self.stable_spreads.get(&span.lo.0)
     }
 
     pub(crate) fn dependencies_for_constructor(&self, span: Span) -> Option<&ProofDependencies> {
-        self.author_dependencies.get(&span.lo.0).or_else(|| {
-            self.facts
-                .dependencies(&SemanticKey::PrimitiveSetIteration(span.lo.0))
-        })
+        self.author_dependencies
+            .get(&span.lo.0)
+            .or_else(|| {
+                self.source_constructions
+                    .get(&span.lo.0)
+                    .map(|proof| &proof.dependencies)
+            })
+            .or_else(|| {
+                self.facts
+                    .dependencies(&SemanticKey::PrimitiveSetIteration(span.lo.0))
+            })
     }
 
     pub(crate) fn author_input_for_constructor(
@@ -256,8 +317,13 @@ impl SetIterableProof {
         &self,
         span: Span,
     ) -> Option<crate::reports::schema::InferenceUse> {
-        self.facts
-            .inference_use(&SemanticKey::PrimitiveSetIteration(span.lo.0))
+        self.source_constructions
+            .get(&span.lo.0)
+            .map(|proof| proof.inference.clone())
+            .or_else(|| {
+                self.facts
+                    .inference_use(&SemanticKey::PrimitiveSetIteration(span.lo.0))
+            })
     }
 
     pub(crate) fn stable_array_spread_dependencies(
@@ -269,6 +335,10 @@ impl SetIterableProof {
             .dependencies(&SemanticKey::StablePrimitiveArraySpread(*initializer))
     }
 
+    pub(crate) fn stable_array_spread_source(&self, span: Span) -> Option<u32> {
+        self.array_spreads.source_origins.get(&span.lo.0).copied()
+    }
+
     pub(crate) fn stable_array_spread_inference_use(
         &self,
         token: Span,
@@ -278,7 +348,7 @@ impl SetIterableProof {
             .inference_use(&SemanticKey::StablePrimitiveArraySpread(*initializer))
     }
 
-    pub(crate) fn stable_array_spread_producers(
+    pub(crate) fn stable_iterable_producers(
         &self,
         consumer: SourceUnitOrdinal,
     ) -> Option<&BTreeSet<SourceUnitOrdinal>> {

@@ -1040,3 +1040,8 @@ debundle_e2e_test(
     name = "explain_integrity_cli_test",
     deps = ["@crates//:serde_json"],
 )
+
+debundle_e2e_test(
+    name = "native_iterable_operation_test",
+    deps = ["@crates//:serde_json"],
+)

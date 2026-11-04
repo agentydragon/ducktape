@@ -748,7 +748,7 @@ pub struct ResolvedCommutingStatements {
 /// Source-certified Set spread. This is independent, one-way evidence for the
 /// shared value-flow solve, not a result inferred from that solve or from the
 /// eventual dependency graph.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StableSetIterableUse {
     pub source_span: Span,
     pub spread_token_span: Span,
@@ -756,6 +756,34 @@ pub struct StableSetIterableUse {
     /// gate stage refuses an emission placement that splits them.
     pub interval_bindings: Vec<Id>,
     pub dependencies: ProofDependencies,
+}
+
+/// A source-derived primitive Set operation whose full native protocol is
+/// proved before the canonical value-flow solve. This is not an author input.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InferredSetConstruction {
+    pub binding: Id,
+    pub operation: InferredSetOperation,
+    pub dependencies: ProofDependencies,
+    pub inference: crate::reports::schema::InferenceUse,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InferredSetOperation {
+    PrimitiveArray,
+    ProtectedSpread {
+        source: Id,
+        interval: Box<StableSetIterableUse>,
+    },
+}
+
+/// Proven constructor origins shared by flow, heap and native transfer. The
+/// original author reference and source inference stay distinct evidence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProvenSetAllocation {
+    AuthorInput(NativeOperationInputRef),
+    Inferred(Box<InferredSetConstruction>),
 }
 
 /// Resolved whole-program native integrity, derived from source facts and any
@@ -899,6 +927,7 @@ pub struct AnalysisInputs {
     /// exact constructor call start. Their dependencies retain the author
     /// native-operation inputs used to derive each certificate.
     pub stable_set_spreads: BTreeMap<u32, StableSetIterableUse>,
+    pub inferred_set_constructions: BTreeMap<u32, InferredSetConstruction>,
     /// Identity of this chunk within a supplied whole-program native census.
     /// Used only to separate local activation from already-present mutations.
     pub current_chunk_id: Option<String>,

@@ -173,6 +173,11 @@ pub fn compute_logical_chunk_facts(
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
+        inputs.inferred_set_constructions = cross_module_purities
+            .inferred_set_constructions
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
         inputs.stable_set_spreads = cross_module_purities
             .stable_set_spreads
             .get(chunk_id)
@@ -341,6 +346,10 @@ pub fn compute_logical_chunk_facts(
                     .unwrap_or_default(),
                 cross_module_purities
                     .stable_set_spreads
+                    .get(chunk_id)
+                    .unwrap_or(&BTreeMap::new()),
+                cross_module_purities
+                    .inferred_set_constructions
                     .get(chunk_id)
                     .unwrap_or(&BTreeMap::new()),
                 &analysis_inputs.assumptions.argument_inputs,

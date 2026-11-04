@@ -31,22 +31,41 @@ use super::{
 pub(crate) fn native_set_allocation_roots(
     inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
     stable_spreads: &BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>,
-) -> BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef> {
-    inputs
+    inferred: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
+) -> BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation> {
+    let mut allocations: BTreeMap<_, _> = inferred
         .iter()
-        .filter(|input| {
-            input.evidence.operation
-                == crate::analysis_inputs::NativeInputKind::Operation(
-                    spec::NativeOperationKind::SetFromPrimitiveArray,
-                )
-                || (input.evidence.operation
-                    == crate::analysis_inputs::NativeInputKind::Operation(
-                        spec::NativeOperationKind::SetFromSetSpread,
-                    )
-                    && stable_spreads.contains_key(&input.call_span.lo.0))
+        .map(|(site, proof)| {
+            (
+                *site,
+                crate::analysis_inputs::ProvenSetAllocation::Inferred(Box::new(proof.clone())),
+            )
         })
-        .map(|input| (input.call_span.lo.0, input.evidence.reference.clone()))
-        .collect()
+        .collect();
+    allocations.extend(
+        inputs
+            .iter()
+            .filter(|input| {
+                input.evidence.operation
+                    == crate::analysis_inputs::NativeInputKind::Operation(
+                        spec::NativeOperationKind::SetFromPrimitiveArray,
+                    )
+                    || (input.evidence.operation
+                        == crate::analysis_inputs::NativeInputKind::Operation(
+                            spec::NativeOperationKind::SetFromSetSpread,
+                        )
+                        && stable_spreads.contains_key(&input.call_span.lo.0))
+            })
+            .map(|input| {
+                (
+                    input.call_span.lo.0,
+                    crate::analysis_inputs::ProvenSetAllocation::AuthorInput(
+                        input.evidence.reference.clone(),
+                    ),
+                )
+            }),
+    );
+    allocations
 }
 
 pub(crate) struct CallTargets {
@@ -725,9 +744,9 @@ pub(crate) struct ChunkValueFlow {
     /// nothing about the value returned by the function.
     fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
     pub(crate) callable_source_unit: BTreeMap<Value, SourceUnitOrdinal>,
-    /// Exact native Set allocation sites, each backed by a validated author
-    /// operation input. Other constructor results remain unknown.
-    native_set_allocations: BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
+    /// Native Set construction sites backed by a validated author input or
+    /// checked pre-flow source proof. Other constructor results stay unknown.
+    native_set_allocations: BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
 }
 
 impl ChunkValueFlow {
@@ -886,7 +905,7 @@ impl ChunkValueFlow {
     pub(crate) fn analyze_with_native_set_allocations(
         body: &[TopLevelItemView<'_>],
         candidates: &BTreeSet<Value>,
-        allocations: &BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
+        allocations: &BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
     ) -> Self {
         let mut candidates = candidates.clone();
         candidates.extend(
@@ -902,7 +921,7 @@ impl ChunkValueFlow {
 
     pub(crate) fn native_set_allocations(
         &self,
-    ) -> &BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef> {
+    ) -> &BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation> {
         &self.native_set_allocations
     }
 
@@ -1633,7 +1652,7 @@ struct FlowProgram {
     candidate_objects: Vec<Value>,
     canonical: BTreeMap<Value, Id>,
     callable_source_unit: BTreeMap<Value, SourceUnitOrdinal>,
-    native_set_allocations: BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
+    native_set_allocations: BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
     fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
 }
 
@@ -1645,7 +1664,7 @@ impl FlowProgram {
     fn collect_with_native_set_allocations(
         body: &[TopLevelItemView<'_>],
         candidate_objects: &BTreeSet<Value>,
-        native_set_allocations: &BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
+        native_set_allocations: &BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
     ) -> Self {
         let mut collector = FlowProgramCollector {
             declared_ids: BTreeSet::new(),
@@ -1801,7 +1820,7 @@ struct FlowProgramCollector {
     current_function: Option<u32>,
     canonical: BTreeMap<Value, Id>,
     callable_source_unit: BTreeMap<Value, SourceUnitOrdinal>,
-    native_set_allocations: BTreeMap<u32, crate::analysis_inputs::NativeOperationInputRef>,
+    native_set_allocations: BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
     fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
 }
 
