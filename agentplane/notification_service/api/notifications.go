@@ -212,7 +212,30 @@ func (s *Notifications) listInboxes(ctx context.Context, owner store.Owner, _ *n
 }
 
 func (s *Notifications) ReadInbox(ctx context.Context, request *notificationspb.ReadInboxRequest) (*notificationspb.ReadInboxResponse, error) {
-	return serveOwned(ctx, s, request, nil, s.readInbox)
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	caller, err := s.caller(ctx)
+	if err != nil {
+		return nil, failure(ctx, err)
+	}
+	if s.operatorReader == "" || caller.Namespace != s.namespace || caller.Name != s.operatorReader {
+		return serveOwned(ctx, s, request, nil, s.readInbox)
+	}
+	if err := rejectRetiredInboxAddress(request); err != nil {
+		return nil, failure(ctx, err)
+	}
+	if err := model.CheckText("session_id", request.GetSessionId(), 1, 200); err != nil {
+		return nil, failure(ctx, err)
+	}
+	page, err := s.store.ReadSession(ctx, s.namespace, request.GetSessionId(), request.GetAfterCursor(), readLimit(request.Limit))
+	if err != nil {
+		return nil, failure(ctx, err)
+	}
+	response, err := readInboxResponse(page)
+	if err != nil {
+		return nil, failure(ctx, err)
+	}
+	return response, nil
 }
 
 func (s *Notifications) readInbox(ctx context.Context, owner store.Owner, request *notificationspb.ReadInboxRequest) (*notificationspb.ReadInboxResponse, error) {
@@ -224,6 +247,10 @@ func (s *Notifications) readInbox(ctx context.Context, owner store.Owner, reques
 	if err != nil {
 		return nil, err
 	}
+	return readInboxResponse(page)
+}
+
+func readInboxResponse(page store.InboxPage) (*notificationspb.ReadInboxResponse, error) {
 	response := &notificationspb.ReadInboxResponse{Inbox: inboxView(page.Inbox), Notice: noticeView(page.Notice)}
 	for _, entry := range page.Entries {
 		view, err := entryView(entry)
@@ -265,18 +292,25 @@ func (s *Notifications) retireInbox(ctx context.Context, owner store.Owner, requ
 
 // ownedInboxID rejects retired addresses before resolving the Session for its current owner.
 func (s *Notifications) ownedInboxID(ctx context.Context, owner store.Owner, request proto.Message, sessionID string) (uuid.UUID, error) {
-	for unknown := request.ProtoReflect().GetUnknown(); len(unknown) > 0; {
-		field, _, size := protowire.ConsumeField(unknown)
-		if size < 0 {
-			return uuid.Nil, invalidRequest("invalid inbox request")
-		}
-		if field == 1 {
-			return uuid.Nil, invalidRequest("inbox_id is no longer accepted; address the Session by ID")
-		}
-		unknown = unknown[size:]
+	if err := rejectRetiredInboxAddress(request); err != nil {
+		return uuid.Nil, err
 	}
 	if err := model.CheckText("session_id", sessionID, 1, 200); err != nil {
 		return uuid.Nil, err
 	}
 	return s.store.InboxIDForSession(ctx, owner, sessionID)
+}
+
+func rejectRetiredInboxAddress(request proto.Message) error {
+	for unknown := request.ProtoReflect().GetUnknown(); len(unknown) > 0; {
+		field, _, size := protowire.ConsumeField(unknown)
+		if size < 0 {
+			return invalidRequest("invalid inbox request")
+		}
+		if field == 1 {
+			return invalidRequest("inbox_id is no longer accepted; address the Session by ID")
+		}
+		unknown = unknown[size:]
+	}
+	return nil
 }

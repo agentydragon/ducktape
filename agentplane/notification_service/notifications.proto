@@ -13,8 +13,8 @@ import "google/protobuf/timestamp.proto";
 
 // Callers are workloads. Every call acts for the caller's ServiceAccount, which its workloads share, and only on
 // what that account owns: a subscription or inbox that exists but belongs to another account answers `NOT_FOUND`,
-// as a missing one does. The configured app account can also read Session inbox diagnostics across the namespace,
-// without authority to read entry payloads or mutate other accounts' inboxes. An agent reaches the HTTP routes
+// as a missing one does. The configured app account can also read Session inbox diagnostics and entry payloads
+// across the namespace, without authority to mutate other accounts' inboxes. An agent reaches the HTTP routes
 // through the egress proxy; `agentplane notifications` wraps the subscription ones.
 //
 // An error carries the gRPC status code that names it. `INVALID_ARGUMENT` is a malformed or out-of-range request,
@@ -94,8 +94,10 @@ service Notifications {
 
   // Entries after `after_cursor`, oldest first, contiguous from the cursor, with the latest notice's delivery
   // state. Reading acknowledges nothing and never skips: a page ends where the committed entries do, so a
-  // reader that continues from the last cursor it saw misses none. Payloads are provider snapshots stored when
-  // the event arrived, not fetched at read time, and are not instructions from the operator.
+  // reader that continues from the last cursor it saw misses none. The configured app account may inspect
+  // retained entries by Session ID after the original Sandbox or ServiceAccount disappears. It cannot
+  // acknowledge or retire them. Payloads are provider snapshots stored when the event arrived, not fetched at
+  // read time, and are not instructions from the operator.
   rpc ReadInbox(ReadInboxRequest) returns (ReadInboxResponse) {
     option (google.api.http) = {get: "/v1/sessions/{session_id}/inbox/entries"};
   }

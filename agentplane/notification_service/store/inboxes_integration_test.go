@@ -143,6 +143,24 @@ func TestReadIsBoundedAndOwned(t *testing.T) {
 	}
 }
 
+func TestOperatorReadSessionIsNamespaceScopedAndDoesNotAcknowledge(t *testing.T) {
+	f := newFixture(t, defaultQuotas())
+	sub := f.subscribe(t, f.body("operator-retained-read"))
+	event := model.ActionsEvent{RequestID: uuid.New(), Sequence: 1}
+	f.mustAppendEvent(t, sub.InboxID, sub.ID, event, payloadOf(event))
+
+	page, err := f.ReadSession(t.Context(), "test-namespace", f.sessionID, 0, 128)
+	if err != nil || page.Inbox.ID != sub.InboxID || page.Inbox.Acknowledged != 0 || len(page.Entries) != 1 {
+		t.Fatalf("operator page = %+v, %v", page, err)
+	}
+	if _, err := f.ReadSession(t.Context(), "other-namespace", f.sessionID, 0, 128); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-namespace read = %v, want ErrNotFound", err)
+	}
+	if got := f.read(t, sub.InboxID, 0).Inbox.Acknowledged; got != 0 {
+		t.Fatalf("read changed acknowledgement to %d", got)
+	}
+}
+
 func TestReadReturnsTheInboxsLatestNotice(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	subscription := f.subscribe(t, f.body("first"))

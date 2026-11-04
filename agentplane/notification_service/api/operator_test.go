@@ -9,7 +9,7 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-func TestTheOperatorHasNoAgentInboxAuthority(t *testing.T) {
+func TestOperatorInspectionDoesNotGrantInboxMutation(t *testing.T) {
 	server := newServer(t)
 	subscription := server.subscribe(t, "operator-has-none")
 	server.record(t, subscription, 1)
@@ -21,9 +21,41 @@ func TestTheOperatorHasNoAgentInboxAuthority(t *testing.T) {
 	if err != nil || len(subscriptions.GetSubscriptions()) != 0 {
 		t.Errorf("listed %v, %v", subscriptions, err)
 	}
-	_, err = server.client.ReadInbox(bearing(t, operatorToken), &pb.ReadInboxRequest{SessionId: testSession})
-	requireCode(t, err, codes.NotFound)
+	page, err := server.client.ReadInbox(bearing(t, operatorToken), &pb.ReadInboxRequest{SessionId: testSession})
+	if err != nil || len(page.GetEntries()) != 1 || page.GetEntries()[0].GetCursor() != 1 || page.GetInbox().GetAcknowledged() != 0 {
+		t.Fatalf("operator read = %v, %v", page, err)
+	}
 	_, err = server.client.AcknowledgeInbox(bearing(t, operatorToken), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1})
+	requireCode(t, err, codes.NotFound)
+	_, err = server.client.RetireInbox(bearing(t, operatorToken), &pb.RetireInboxRequest{SessionId: testSession})
+	requireCode(t, err, codes.NotFound)
+}
+
+func TestOperatorCanInspectRetainedInboxAfterSandboxReplacement(t *testing.T) {
+	s := newServer(t)
+	sub := s.subscribe(t, "retained-after-delete")
+	s.record(t, sub, 1)
+	s.recreateSandbox(t)
+
+	page, err := s.client.ReadInbox(bearing(t, operatorToken), &pb.ReadInboxRequest{SessionId: testSession})
+	if err != nil || page.GetInbox().GetId() != sub.GetInboxId() || len(page.GetEntries()) != 1 || page.GetEntries()[0].GetPayload() == nil {
+		t.Fatalf("retained operator read = %v, %v", page, err)
+	}
+	_, err = s.client.ReadInbox(bearing(t, sandboxToken), &pb.ReadInboxRequest{SessionId: testSession})
+	requireCode(t, err, codes.NotFound)
+	_, err = s.client.ReadInbox(bearing(t, otherSandboxToken), &pb.ReadInboxRequest{SessionId: testSession})
+	requireCode(t, err, codes.NotFound)
+	_, err = s.client.AcknowledgeInbox(bearing(t, operatorToken), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1})
+	requireCode(t, err, codes.NotFound)
+	_, err = s.client.RetireInbox(bearing(t, operatorToken), &pb.RetireInboxRequest{SessionId: testSession})
+	requireCode(t, err, codes.NotFound)
+}
+
+func TestOperatorPayloadReadRequiresConfiguredAccount(t *testing.T) {
+	s := newServer(t, func(config *serverConfig) { config.operatorReader = "" })
+	sub := s.subscribe(t, "no-operator-reader")
+	s.record(t, sub, 1)
+	_, err := s.client.ReadInbox(bearing(t, operatorToken), &pb.ReadInboxRequest{SessionId: testSession})
 	requireCode(t, err, codes.NotFound)
 }
 
