@@ -364,10 +364,5 @@ pub fn compute_logical_chunk_facts(
             )?
         }
     };
-    facts
-        .validate_initializer_binding_effects(
-            &analysis_inputs.assumptions.source_only_initializer_bindings,
-        )
-        .with_context(|| format!("validating initializer binding effects in chunk `{chunk_id}`"))?;
     Ok((facts, analysis_inputs.imported_callables))
 }

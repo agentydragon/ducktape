@@ -106,13 +106,7 @@ impl MemberRequest {
         !self.selector.is_import_specifier()
     }
 
-    /// Extend `assumptions` with this member's spec-level trust assertions
-    /// (purity, pure_members, effect). Spec annotations carried on any
-    /// member form (logical-module member, chunk_renames member)
-    /// propagate the same way — they are semantic trust assertions,
-    /// not ownership claims; binding patches routed through
-    /// chunk_renames still do not force proposer grouping.
-    pub fn has_analysis_assumptions(&self) -> bool {
+    pub fn has_semantic_annotations(&self) -> bool {
         self.purity != MemberPurity::Default
             || self.initializer_purity != InitializerPurity::Default
             || self.initializer_binding_effects.is_some()
@@ -122,6 +116,12 @@ impl MemberRequest {
             || !self.no_sync_callback_members.is_empty()
     }
 
+    /// Extend `assumptions` with this member's spec-level trust assertions
+    /// (purity, pure_members, effect). Spec annotations carried on any
+    /// member form (logical-module member, chunk_renames member)
+    /// propagate the same way — they are semantic trust assertions,
+    /// not ownership claims; binding patches routed through
+    /// chunk_renames still do not force proposer grouping.
     pub fn collect_assumptions_for_binding(
         &self,
         assumptions: &mut AnalysisAssumptions,
@@ -135,11 +135,6 @@ impl MemberRequest {
         if self.initializer_purity == InitializerPurity::Pure {
             assumptions
                 .declared_pure_initializers
-                .insert(binding.to_string());
-        }
-        if self.initializer_binding_effects == Some(InitializerBindingEffects::SourceOnly) {
-            assumptions
-                .source_only_initializer_bindings
                 .insert(binding.to_string());
         }
         if self.purity == MemberPurity::Pure {

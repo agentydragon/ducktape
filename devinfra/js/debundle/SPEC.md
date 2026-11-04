@@ -1156,6 +1156,13 @@ the assumed binding effects it narrowed. Observed contradictions are errors.
 Other execution precision losses remain reported; the assertion does not mint
 a whole-initialization certificate.
 
+This assertion is applied to computed or loaded facts during materialization,
+before dependency graphs and initialization effect summaries are built. It is
+excluded from the canonical source-analysis projection: `debundle analyze`
+stores unfiltered source facts, including fallback evidence and source-owned
+operation receipts. Applying the assertion never creates or changes a receipt;
+its binding-effect authority remains `author_source_only`.
+
 This contract does not assert purity, freedom from throws, heap locality,
 result shape, or integrity of global-object or host state. Shared-heap effects,
 foreign registry or configuration access, global-object and host effects, and

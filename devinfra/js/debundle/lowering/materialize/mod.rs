@@ -172,6 +172,8 @@ pub(super) struct ClaimedLogicalChunk<'a> {
     structural_analysis: StructuralChunkSourceFacts<'a>,
     /// Taken into the `AnalysisProjection` before analysis.
     declared_assumptions: AnalysisAssumptions,
+    /// Selector-resolved author overlay, applied after raw facts are computed or loaded.
+    source_only_initializer_bindings: BTreeSet<String>,
 }
 
 /// Prepare one chunk's lowering state and project its eligible selector
@@ -328,7 +330,7 @@ pub(super) fn claim_prepared_chunk<'a>(
     prepared
         .builder
         .adopt_bindings_of_claimed_anonymous_statements(&prepared.ast_analysis.declarations);
-    let declared_assumptions = collect_analysis_assumptions(
+    let (declared_assumptions, source_only_initializer_bindings) = collect_binding_contracts(
         &prepared.explicit_requests,
         &prepared.builder,
         prepared.spec.chunk_renames.get(prepared.context.chunk_id),
@@ -338,6 +340,7 @@ pub(super) fn claim_prepared_chunk<'a>(
         prepared,
         structural_analysis,
         declared_assumptions,
+        source_only_initializer_bindings,
     })
 }
 
@@ -409,6 +412,7 @@ pub(super) fn finish_logical_chunk(
     let ClaimedLogicalChunk {
         prepared,
         structural_analysis,
+        source_only_initializer_bindings,
         ..
     } = claimed;
     let PreparedLogicalChunk {
@@ -470,7 +474,7 @@ pub(super) fn finish_logical_chunk(
     // Chunk analysis: hint-sensitive facts, then the dependency graph and
     // structural atomic groups. See `chunk_analysis/mod.rs`.
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "start");
-    let (analysis, imported_callables) = compute_logical_chunk_facts(
+    let (mut analysis, imported_callables) = compute_logical_chunk_facts(
         ChunkFactsContext {
             artifact,
             artifact_indexes,
@@ -490,6 +494,10 @@ pub(super) fn finish_logical_chunk(
         projection,
         cross_module_purities,
     )?;
+    analysis.apply_initializer_binding_effects(&source_only_initializer_bindings);
+    analysis
+        .validate_initializer_binding_effects(&source_only_initializer_bindings)
+        .with_context(|| format!("validating initializer binding effects in chunk `{chunk_id}`"))?;
     let precomputed =
         match build_chunk_graph(chunk_id, &analysis, graph_options, &commuting_statements) {
             Ok(precomputed) => precomputed,
@@ -870,24 +878,26 @@ fn project_planned_modules(
     Ok((planned_modules, entry_destination))
 }
 
-/// Collect `AnalysisAssumptions` from binding annotations. These are semantic
-/// trust assertions, not ownership claims.
-fn collect_analysis_assumptions(
+/// Separate resolved binding contracts into source-analysis assumptions and
+/// materialization effect overlays.
+fn collect_binding_contracts(
     explicit_requests: &[LogicalRequest],
     builder: &ChunkPlanBuilder,
     chunk_renames: Option<&ChunkRenames>,
     module: &Module,
-) -> Result<AnalysisAssumptions> {
+) -> Result<(AnalysisAssumptions, BTreeSet<String>)> {
     let mut assumptions = AnalysisAssumptions::default();
+    let mut source_only_initializer_bindings = BTreeSet::new();
     for (request_index, req) in explicit_requests.iter().enumerate() {
         for m in &req.members {
-            collect_member_analysis_assumptions(
+            collect_member_binding_contracts(
                 request_index,
                 req,
                 m,
                 builder,
                 module,
                 &mut assumptions,
+                &mut source_only_initializer_bindings,
             )?;
         }
     }
@@ -920,8 +930,13 @@ fn collect_analysis_assumptions(
             },
         );
     }
-    collect_chunk_rename_analysis_assumptions(chunk_renames, module, &mut assumptions)?;
-    Ok(assumptions)
+    collect_chunk_rename_binding_contracts(
+        chunk_renames,
+        module,
+        &mut assumptions,
+        &mut source_only_initializer_bindings,
+    )?;
+    Ok((assumptions, source_only_initializer_bindings))
 }
 
 /// Select only the terminal registration call. Every guard expression keeps
@@ -936,10 +951,11 @@ fn asserted_registration_call(expression: &Expr) -> Option<&CallExpr> {
     }
 }
 
-fn collect_chunk_rename_analysis_assumptions(
+fn collect_chunk_rename_binding_contracts(
     chunk_renames: Option<&ChunkRenames>,
     module: &Module,
     assumptions: &mut AnalysisAssumptions,
+    source_only_initializer_bindings: &mut BTreeSet<String>,
 ) -> Result<()> {
     let Some(chunk_renames) = chunk_renames else {
         return Ok(());
@@ -968,13 +984,20 @@ fn collect_chunk_rename_analysis_assumptions(
                 bindings.len()
             );
         }
-        collect_binding_annotation_hints(assumptions, &bindings[0], annotation, module)?;
+        collect_binding_annotation_contracts(
+            assumptions,
+            source_only_initializer_bindings,
+            &bindings[0],
+            annotation,
+            module,
+        )?;
     }
     Ok(())
 }
 
-fn collect_binding_annotation_hints(
+fn collect_binding_annotation_contracts(
     assumptions: &mut AnalysisAssumptions,
+    source_only_initializer_bindings: &mut BTreeSet<String>,
     binding: &str,
     annotation: &spec::BindingAnnotation,
     module: &Module,
@@ -992,9 +1015,7 @@ fn collect_binding_annotation_hints(
     }
     if annotation.initializer_binding_effects == Some(InitializerBindingEffects::SourceOnly) {
         validate_initializer_binding_effects_target(module, binding)?;
-        assumptions
-            .source_only_initializer_bindings
-            .insert(binding.to_string());
+        source_only_initializer_bindings.insert(binding.to_string());
     }
     if annotation.purity == MemberPurity::Pure {
         assumptions.declared_pure.insert(binding.to_string());
@@ -1024,15 +1045,16 @@ fn collect_binding_annotation_hints(
     Ok(())
 }
 
-fn collect_member_analysis_assumptions(
+fn collect_member_binding_contracts(
     request_index: usize,
     request: &LogicalRequest,
     member: &MemberRequest,
     builder: &ChunkPlanBuilder,
     module: &Module,
     assumptions: &mut AnalysisAssumptions,
+    source_only_initializer_bindings: &mut BTreeSet<String>,
 ) -> Result<()> {
-    if !member.has_analysis_assumptions() {
+    if !member.has_semantic_annotations() {
         return Ok(());
     }
     if let Some(binding) = builder.resolved_binding_for_member(request_index, member) {
@@ -1041,6 +1063,7 @@ fn collect_member_analysis_assumptions(
         }
         if member.initializer_binding_effects == Some(InitializerBindingEffects::SourceOnly) {
             validate_initializer_binding_effects_target(module, &binding)?;
+            source_only_initializer_bindings.insert(binding.to_string());
         }
         member.collect_assumptions_for_binding(assumptions, &binding);
         return Ok(());
