@@ -59,6 +59,26 @@ def client(augur_config: Config) -> Iterator[TestClient]:
         yield test_client
 
 
+def test_invalid_scenario_validator_returns_serializable_422(client: TestClient) -> None:
+    response = client.post(
+        "/api/product/projections/rollout",
+        json={
+            "scenario": {
+                "model_id": "current_model",
+                "horizon_months": 3,
+                "monthly_spend": 1000,
+                "spend_index": "none",
+                "currency_code": "",
+            },
+            "seed": 7,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.headers["cache-control"] == "no-store"
+    assert "currency_code must not be empty" in response.json()["detail"][0]["msg"]
+
+
 def test_calibration_info_endpoint(client: TestClient, augur_config: Config) -> None:
     response = client.get("/api/calibration")
     assert response.status_code == 200, response.text

@@ -14,6 +14,7 @@ from typing import Annotated, Any, cast
 import uvicorn
 import yaml
 from fastapi import Depends, FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pydantic import ValidationError
@@ -167,7 +168,7 @@ def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
     no_store = {"cache-control": "no-store"}
 
     def error(status_code: int, detail: Any) -> JSONResponse:
-        return JSONResponse(status_code=status_code, content={"detail": detail}, headers=no_store)
+        return JSONResponse(status_code=status_code, content={"detail": jsonable_encoder(detail)}, headers=no_store)
 
     def payload(value: Any, *, exclude_none: bool = True) -> JSONResponse:
         return JSONResponse(content=plain_json(value, exclude_none=exclude_none), headers=no_store)
