@@ -571,7 +571,7 @@ fn identity_mismatch_is_refused() {
         "unmodified staged artifact",
     );
     let bytes = fs::read(&staged.artifact).unwrap();
-    let (mut header, body) = lowering::analysis_artifact::read_header(&bytes).unwrap();
+    let (mut header, body) = staged_analysis::analysis_artifact::read_header(&bytes).unwrap();
     header.analysis_engine_sha256 = "another-compiled-engine".to_string();
     let encoded = rmp_serde::to_vec_named(&header).unwrap();
     let mut corrupt = u32::try_from(encoded.len()).unwrap().to_le_bytes().to_vec();
@@ -590,7 +590,7 @@ fn source_mismatch_is_refused() {
         "unmodified staged artifact",
     );
     let bytes = fs::read(&staged.artifact).unwrap();
-    let (mut header, body) = lowering::analysis_artifact::read_header(&bytes).unwrap();
+    let (mut header, body) = staged_analysis::analysis_artifact::read_header(&bytes).unwrap();
     let source = header.chunk_sources.values_mut().next().unwrap();
     *source = "other-parser-input".to_string();
     let encoded = rmp_serde::to_vec_named(&header).unwrap();
@@ -1309,7 +1309,8 @@ fn bindings_assign_requested_assessment_refuses_stale_inputs_before_yaml_writes(
     let original_artifact = fs::read(&staged.artifact).unwrap();
 
     // Engine identity is checked by the production staged-artifact loader.
-    let (mut header, body) = lowering::analysis_artifact::read_header(&original_artifact).unwrap();
+    let (mut header, body) =
+        staged_analysis::analysis_artifact::read_header(&original_artifact).unwrap();
     header.analysis_engine_sha256 = "another-compiled-engine".to_string();
     let encoded_header = rmp_serde::to_vec_named(&header).unwrap();
     let mut wrong_engine = Vec::new();

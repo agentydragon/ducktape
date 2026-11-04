@@ -29,7 +29,7 @@ variables split, are the units (`prepare_chunks.rs`, `js_ast.rs`).
 ### 2. Analyze
 
 Analysis runs in source order and never reads the assignment. It is cached by
-source, analysis projection and engine (`lowering/analysis_projection.rs`,
+source, analysis projection and engine (`staged_analysis/analysis_projection.rs`,
 <staged_pipeline.md>).
 
 - **One abstract interpreter.** One domain and one builtin table
@@ -44,7 +44,7 @@ source, analysis projection and engine (`lowering/analysis_projection.rs`,
   not separate analyses.
 
 - **Cross-module summaries** for imported callables, including vendor bodies
-  under the swap promise (`cross_module_purity.rs`, `lowering/cross_module.rs`).
+  under the swap promise (`cross_module_purity.rs`, `staged_analysis/cross_module.rs`).
 - **Premises are axioms**: `host_behavior`, `program_premises`,
   `chunk_export_purity`, the `chunk_analysis_options` premise lists and member
   annotations. The engine generates an audit list for each premise: the sites

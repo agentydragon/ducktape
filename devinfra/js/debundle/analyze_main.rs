@@ -1,7 +1,7 @@
 //! Bazel's analysis-only executable; the standalone CLI retains `analyze`.
 
 use clap::Parser;
-use pipeline::AnalyzeArgs;
+use staged_analysis::AnalyzeArgs;
 use swc_common::{GLOBALS, Globals};
 
 #[derive(Parser)]
@@ -12,7 +12,7 @@ struct Args {
 
 fn main() -> std::process::ExitCode {
     GLOBALS.set(&Globals::default(), || {
-        match pipeline::analyze_cli(
+        match staged_analysis::analyze_cli(
             Args::parse().analysis,
             analysis_identity::ANALYSIS_ENGINE_SHA256,
         ) {

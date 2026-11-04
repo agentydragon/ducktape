@@ -42,13 +42,15 @@ bazelisk build //path/to:debundle \
 `DebundleAnalyze` uses the separate `:debundle_analyze` executable, selected by
 the `:analyzer` label flag or the rule's `analyzer` attribute. It accepts the
 `analyze` command's options directly. The other actions use the full CLI.
-Edits confined to `cli/*.rs` leave the Analyze tool and its compiled identity
-unchanged; projection bytes still determine whether its action is cached.
-The current shared `pipeline`/`lowering` libraries also contain emission code,
-so edits there conservatively invalidate analysis.
+The analyzer depends on `:staged_analysis`, independently of `:pipeline`,
+`:lowering` and `:cli`. Edits confined to those latter crates leave the Analyze
+tool and its compiled identity unchanged. Source inputs and projection bytes
+must also be unchanged to reuse its action. Shared dependencies, including
+artifact and vendor code, remain conservative invalidation boundaries.
 
 Custom CLI/analyzer pairs must embed the same generated configured analysis
-identity; mismatches fail before decoding facts. Both tools use the execution
+identity, generated from the complete `:staged_analysis` closure; mismatches fail
+before decoding facts. Both tools use the execution
 configuration. Their native linking policy must match the shared identity rule;
 binary-specific linking overrides are outside this pairing contract. The
 identity includes Rust compiled outputs, build-script outputs and linker flags,

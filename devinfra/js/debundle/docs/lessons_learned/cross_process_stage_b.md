@@ -32,7 +32,7 @@ A same-process `Id` round trip would pass because both ends share
 `Globals` → re-parse fresh → deserialize → assert `top_level_id`
 matches — fails with raw `u32` contexts. `analysis_codec.rs` now writes
 contexts as first-occurrence ordinals, which that round trip
-(`lowering/analysis_artifact.rs` tests) passes; the staged pipeline plan
+(`staged_analysis/analysis_artifact.rs` tests) passes; the staged pipeline plan
 revisits the rest of this note.
 
 ## Rejected alternatives
@@ -105,6 +105,6 @@ re-parse alternative. `analysis_codec` implements this; its
 ## Pointers
 
 - `../wire_format.md` — the `Atom`-only convention of JSON reports.
-- `analysis_codec.rs`, `lowering/analysis_artifact.rs` — the artifact encoding.
+- `analysis_codec.rs`, `staged_analysis/analysis_artifact.rs` — the artifact encoding.
 - Git history: the abandoned design lived in `PIPELINE_SPLIT.md`
   pre-deletion (`git log -- devinfra/js/debundle/PIPELINE_SPLIT.md`).

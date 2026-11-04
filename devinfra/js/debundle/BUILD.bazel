@@ -28,7 +28,7 @@ py_library(
 
 analysis_identity(
     name = "analysis_identity_source",
-    engine = ":pipeline",
+    engine = ":staged_analysis",
 )
 
 rust_library(
@@ -966,17 +966,51 @@ rust_test(
 )
 
 rust_library(
+    name = "staged_analysis",
+    srcs = glob(["staged_analysis/*.rs"]),
+    crate_root = "staged_analysis/mod.rs",
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":analysis_codec",
+        ":artifact",
+        ":chunk_analysis",
+        ":graph_provenance",
+        ":js_ast",
+        ":prepare_chunks",
+        ":program_analysis",
+        ":selector_outcome",
+        ":selector_resolve",
+        ":source_match",
+        ":spec",
+        ":spec_resolution",
+        ":vendor",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:rayon",
+        "@crates//:rmp-serde",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
+    ],
+)
+
+rust_test(
+    name = "staged_analysis_unit_test",
+    crate = ":staged_analysis",
+    edition = "2024",
+)
+
+rust_library(
     name = "lowering",
     srcs = [
-        "lowering/analysis_artifact.rs",
-        "lowering/analysis_projection.rs",
         "lowering/anonymous.rs",
         "lowering/body_facts.rs",
         "lowering/chunk_ast.rs",
         "lowering/chunk_renames.rs",
         "lowering/commuting_statements.rs",
-        "lowering/cross_module.rs",
-        "lowering/export_policies.rs",
         "lowering/exports.rs",
         "lowering/imports/cross_chunk_imports.rs",
         "lowering/imports/import_emit.rs",
@@ -987,7 +1021,6 @@ rust_library(
         "lowering/imports/runtime_imports.rs",
         "lowering/imports/vendor_imports.rs",
         "lowering/io.rs",
-        "lowering/loader_surface.rs",
         "lowering/lower.rs",
         "lowering/materialize/apply.rs",
         "lowering/materialize/mod.rs",
@@ -1012,7 +1045,6 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
-        ":analysis_codec",
         ":artifact",
         ":binding_targets",
         ":chunk_analysis",
@@ -1029,10 +1061,10 @@ rust_library(
         ":source_match",
         ":spec",
         ":spec_resolution",
+        ":staged_analysis",
         ":vendor",
         "@crates//:anyhow",
         "@crates//:rayon",
-        "@crates//:rmp-serde",
         "@crates//:rustc-hash",
         "@crates//:serde",
         "@crates//:serde_json",
@@ -1139,6 +1171,7 @@ rust_library(
         ":spec",
         ":spec_modules",
         ":spec_tree",
+        ":staged_analysis",
         ":vendor",
         ":write_tree",
         "@crates//:anyhow",
@@ -1214,6 +1247,7 @@ rust_library(
         ":spec_resolution",
         ":spec_stats",
         ":spec_tree",
+        ":staged_analysis",
         ":yaml_edit",
         "@crates//:anyhow",
         "@crates//:clap",
@@ -1535,7 +1569,7 @@ rust_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":analysis_identity",
-        ":pipeline",
+        ":staged_analysis",
         "@crates//:clap",
         "@crates//:swc_common",
     ],

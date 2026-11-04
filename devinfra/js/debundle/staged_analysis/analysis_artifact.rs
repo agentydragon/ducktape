@@ -36,9 +36,9 @@ pub struct AnalysisArtifactHeader {
 
 #[derive(Serialize, Deserialize)]
 pub struct AnalysisArtifactBody {
-    pub(crate) cross_module: CrossModulePurities,
-    pub(crate) export_reentry: BTreeMap<String, ExportReentryReport>,
-    pub(crate) chunks: BTreeMap<String, ChunkFactAnalysis>,
+    pub cross_module: CrossModulePurities,
+    pub export_reentry: BTreeMap<String, ExportReentryReport>,
+    pub chunks: BTreeMap<String, ChunkFactAnalysis>,
 }
 
 /// `ordinals` numbers the contexts of every module the analysis read; a

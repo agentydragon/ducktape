@@ -6,7 +6,7 @@ use anyhow::{Result, bail};
 use artifact::ChunkBundle;
 use spec::ChunkExportPurity;
 
-pub(super) fn resolve_source_export_policies<'a>(
+pub fn resolve_source_export_policies<'a>(
     artifact: &ChunkBundle,
     configured: &'a BTreeMap<String, ChunkExportPurity>,
 ) -> Result<Cow<'a, BTreeMap<String, ChunkExportPurity>>> {

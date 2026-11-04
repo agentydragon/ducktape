@@ -2,7 +2,6 @@ use analysis::ProgramGraphReport;
 use analysis::analysis_inputs::NativeIntegrity;
 use analysis::reports::author_inputs::AuthorInputLocations;
 use anyhow::{Context, Result, bail};
-use artifact::{ChunkBundle, ChunkId};
 use graph_provenance::GraphProvenance;
 use output_layout::{DEPENDENCY_GRAPH_REPORT, PROGRAM_GRAPH_REPORT};
 use serde::Serialize;
@@ -10,14 +9,6 @@ use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-
-pub(super) fn prune_artifact_to_chunk_ids(artifact: &mut ChunkBundle, selected: &[String]) {
-    let selected_ids: std::collections::HashSet<ChunkId> = selected
-        .iter()
-        .filter_map(|name| artifact.chunk_table.get(name))
-        .collect();
-    artifact.retain_chunks(|chunk_id| selected_ids.contains(&chunk_id));
-}
 
 pub(super) fn chunk_report_path(report_out_dir: &Path, chunk_id: &str, filename: &str) -> PathBuf {
     report_out_dir

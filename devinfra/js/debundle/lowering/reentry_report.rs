@@ -7,10 +7,10 @@ use analysis::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey};
 use analysis::facts::ExportReentryPolicy;
 use serde::Serialize;
 
-use super::loader_surface::{
+use staged_analysis::loader_surface::{
     ExportReentryLoaderDerivation, ExportReentryLoaderFailure, ExportReentryLoaderRequest,
 };
-use super::{
+use staged_analysis::{
     ExportReentryClosureBlocker, ExportReentryGlobalBlocker, ExportReentryHostBuiltinLeaf,
     ExportReentryReport,
 };

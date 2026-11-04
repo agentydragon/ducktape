@@ -155,14 +155,20 @@ exporting every configured chunk; exit 3 is accepted only for a gate-only
 rejection. It writes no JavaScript. Other failures still fail the action.
 
 Staged `.analysis` headers carry `analysis_engine_sha256`, the generated
-configured compiled `pipeline` closure identity shared by the writer and reader.
-The identity covers codec/schema code before final executable dead stripping,
-build outputs, native link inputs/flags and toolchain inputs. CLI frontend code
-is outside this closure; saved graphs still require their full executable
-identity. An analysis reader rejects another engine identity before decoding
-facts, checks parser-input digests, and requires exact canonical projection
-equality before using the facts. Old `engine_sha256` analysis headers require
-regeneration. The standalone CLI remains one binary.
+configured compiled `staged_analysis` closure identity shared by the writer and
+reader. The closure owns source preparation, cross-module and per-chunk fact
+computation, loader derivation, projection/schema code, context reconstruction,
+and artifact encoding and decoding. It includes build outputs, native link
+inputs/flags and toolchain inputs before final executable dead stripping.
+CLI, ownership planning, lowering and output reporting are outside this closure;
+shared dependencies may still invalidate analysis conservatively. Both analyzer
+entry points use the same implementation and identity. A reader rejects another
+analysis identity before decoding facts, checks parser-input digests, and
+requires exact canonical projection equality before using the facts. Previous
+compiled identities require regeneration; there is no compatibility fallback.
+Saved graphs and snapshots retain their full executable identity and their
+source/spec checks, even when an analysis artifact can be reused. The standalone
+CLI remains one binary.
 
 ### Reading-only output on gate rejection
 

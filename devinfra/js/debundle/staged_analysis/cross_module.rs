@@ -46,8 +46,8 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
+use super::ResolvedMemberSite;
 use super::analysis_projection::{AnalysisProjection, resolve_premise_member_site};
-use super::materialize::ResolvedMemberSite;
 
 /// Resolve a one-binding `source_match` through the selector engine and
 /// return the declaring statement the template matched, with the source
@@ -58,7 +58,7 @@ use super::materialize::ResolvedMemberSite;
 /// and that statement's declarator is the selected unit. The matched site is
 /// read back from the matcher's candidates for the resolved binding; a
 /// template matching several of the binding's sites is rejected.
-pub(super) fn select_one_declared_binding(
+pub fn select_one_declared_binding(
     selector_chunk: &SelectorChunk<'_>,
     request_id: &str,
     claim: &spec::SourceMatchClaim,
@@ -154,8 +154,8 @@ fn exported_decl_names(decl: &Decl) -> Vec<String> {
 /// kept as raw source (non-selected chunks). The oracle parses these itself —
 /// every listed chunk participates in cross-module purity, not just the
 /// selected ones.
-pub(super) struct ReparsedEntry {
-    pub(super) parsed: ParsedJsModule,
+pub struct ReparsedEntry {
+    pub parsed: ParsedJsModule,
     imports: Vec<ImportRecord>,
     export_aliases: Vec<ExportAliasRecord>,
     stable_export_values: BTreeMap<String, StableExportValue>,
@@ -163,48 +163,48 @@ pub(super) struct ReparsedEntry {
 
 /// Output of the program-level purity pass, keyed by chunk name.
 #[derive(Serialize, Deserialize)]
-pub(super) struct CrossModulePurities {
+pub struct CrossModulePurities {
     /// Per-chunk imported-binding verdicts (`AnalysisInputs::imported_purities`).
-    pub(super) bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,
+    pub bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,
     /// Per-chunk imported-binding values (`AnalysisInputs::imported_values`).
-    pub(super) values: BTreeMap<String, BTreeMap<String, Value>>,
+    pub values: BTreeMap<String, BTreeMap<String, Value>>,
     /// Per-chunk pure-member sets for imported namespace-like bindings,
     /// merged into `AnalysisAssumptions::declared_pure_members`.
-    pub(super) members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+    pub members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
     /// Per-chunk fluent-trusted import binding names (deep-purity roots),
     /// merged into `AnalysisAssumptions::fluent_bindings`.
-    pub(super) fluent: BTreeMap<String, BTreeSet<String>>,
+    pub fluent: BTreeMap<String, BTreeSet<String>>,
     /// Per-chunk local names whose imported exports have an asserted pure
     /// construction contract (`chunk_export_purity.pure_new_exports`).
-    pub(super) constructors: BTreeMap<String, BTreeSet<String>>,
+    pub constructors: BTreeMap<String, BTreeSet<String>>,
     /// Per-chunk bare imported callable summaries with their defining evidence.
-    pub(super) imported_callables: BTreeMap<String, BTreeMap<String, CallableSummary>>,
+    pub imported_callables: BTreeMap<String, BTreeMap<String, CallableSummary>>,
     /// Source-derived native mutation census shared by every analyzed chunk.
-    pub(super) native_integrity: Option<NativeIntegrity>,
+    pub native_integrity: Option<NativeIntegrity>,
     /// The whole-program bundle-owned globals (SPEC.md § Bundle-owned globals).
-    pub(super) bundle_globals: analysis::analysis_inputs::BundleGlobalNames,
+    pub bundle_globals: analysis::analysis_inputs::BundleGlobalNames,
     /// Source-resolved author inputs for the provider's own local analysis.
-    pub(super) value_inputs: BTreeMap<String, Vec<ResolvedBindingValueInput>>,
+    pub value_inputs: BTreeMap<String, Vec<ResolvedBindingValueInput>>,
     /// Source-resolved native operation premises for the provider initializer.
-    pub(super) native_operation_inputs: BTreeMap<String, Vec<ResolvedNativeOperationInput>>,
-    pub(super) stable_set_spreads:
+    pub native_operation_inputs: BTreeMap<String, Vec<ResolvedNativeOperationInput>>,
+    pub stable_set_spreads:
         BTreeMap<String, BTreeMap<u32, analysis::analysis_inputs::StableSetIterableUse>>,
-    pub(super) argument_inputs: BTreeMap<String, Vec<ResolvedArgumentInput>>,
+    pub argument_inputs: BTreeMap<String, Vec<ResolvedArgumentInput>>,
     /// Source-resolved commuting source-unit pairs, keyed by their chunk.
-    pub(super) inline_callback_factories: BTreeMap<String, BTreeSet<String>>,
-    pub(super) callback_factory_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
-    pub(super) retained_callback_factories:
+    pub inline_callback_factories: BTreeMap<String, BTreeSet<String>>,
+    pub callback_factory_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+    pub retained_callback_factories:
         BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
-    pub(super) retained_callback_factory_members:
+    pub retained_callback_factory_members:
         BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>>,
-    pub(super) retained_callback_constructors:
+    pub retained_callback_constructors:
         BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
-    pub(super) no_reentry_exports: BTreeMap<String, BTreeSet<String>>,
-    pub(super) no_reentry_callback_exports:
+    pub no_reentry_exports: BTreeMap<String, BTreeSet<String>>,
+    pub no_reentry_callback_exports:
         BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
-    pub(super) no_reentry_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
-    pub(super) no_reentry_record_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
-    pub(super) namespace_independent_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+    pub no_reentry_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+    pub no_reentry_record_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
+    pub namespace_independent_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
 }
 
 /// Static-import chunk closure for program-level purity analysis.
@@ -213,7 +213,7 @@ pub(super) struct CrossModulePurities {
 /// shallow-analysis import records through the same artifact-index resolver used
 /// by emission. Vendor-swapped chunks are traversed like any other: their
 /// bundled bodies stand for the replacement (SPEC.md § Vendor swap equivalence).
-pub(super) fn selected_static_import_closure(
+pub fn selected_static_import_closure(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
     selected_chunk_ids: &[String],
@@ -274,11 +274,11 @@ fn resolved_target_is_entry(
 /// A vendor-swapped provider (full, partial or bundled partial) is analyzed
 /// from its bundled body: the swap promises the replacement behaves like it
 /// (SPEC.md § Vendor swap equivalence).
-pub(super) struct CrossModuleAnalysisOptions<'a> {
-    pub(super) graph_provenance: Option<&'a GraphProvenance>,
+pub struct CrossModuleAnalysisOptions<'a> {
+    pub graph_provenance: Option<&'a GraphProvenance>,
     /// Export name → replacement package of every vendor-swapped export, by
     /// defining chunk; summaries derived from those bodies name the package.
-    pub(super) replacement_packages: &'a BTreeMap<ChunkId, BTreeMap<String, String>>,
+    pub replacement_packages: &'a BTreeMap<ChunkId, BTreeMap<String, String>>,
 }
 
 /// Re-parse the entries stored as raw source so every chunk's body is
@@ -286,7 +286,7 @@ pub(super) struct CrossModuleAnalysisOptions<'a> {
 /// an analysis refinement, and an unparseable chunk degrades to conservative
 /// behavior rather than failing the build. The caller keeps the parses until
 /// it has numbered the hygiene contexts they introduce in an analysis artifact.
-pub(super) fn reparse_unretained_entries(
+pub fn reparse_unretained_entries(
     artifact: &ChunkBundle,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> BTreeMap<ChunkId, ReparsedEntry> {
@@ -331,7 +331,7 @@ pub(super) fn reparse_unretained_entries(
     reparsed
 }
 
-pub(super) fn collect_cross_module_imported_purities(
+pub fn collect_cross_module_imported_purities(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
     projection: &AnalysisProjection<'_>,
