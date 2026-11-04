@@ -47,10 +47,9 @@ fn large_module_provenance_stays_bounded_and_reports_keep_all_bindings() {
         .iter()
         .map(|name| Member::new(name))
         .collect::<Vec<_>>();
-    let fixture = run_fixture(FixtureOpts::new(
-        &source,
-        vec![logical_module("x", &members)],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(&source, vec![logical_module("x", &members)]).with_browser_harness(),
+    );
     let code = read_module(&fixture, MODULE_PATH);
     assert!(
         code.lines()
@@ -58,30 +57,33 @@ fn large_module_provenance_stays_bounded_and_reports_keep_all_bindings() {
             .all(|line| line.len() <= 160),
         "generated metadata must not dump a whole module's provenance into one line:\n{code}"
     );
-    assert_module_source(
-        &fixture.out_root,
-        MODULE_PATH,
-        &["reports/output.json (selected_module_lowerings)"],
-        &[],
-    );
-    let report: serde_json::Value = read_json(
-        &fixture
-            .report_root
-            .parent()
-            .expect("tree reports have a reports parent")
-            .join("output.json"),
-    );
-    let lowering = report["selected_module_lowerings"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|lowering| lowering["residual"] == false)
-        .expect("emitted module has a complete lowering report");
-    assert_eq!(lowering["binding_names"], serde_json::json!(names));
+    let report_path = format!("reports/tree/{}/chunk.json", fixture.chunk_id);
+    assert_module_source(&fixture.out_root, MODULE_PATH, &[&report_path], &[]);
+    let harness = fixture.harness_root.as_ref().unwrap();
     assert_eq!(
-        lowering["source_unit_ids"].as_array().unwrap().len(),
-        names.len()
+        code,
+        fs::read_to_string(harness.join("app").join(MODULE_PATH)).unwrap()
     );
+    for report_file in [
+        fixture
+            .report_root
+            .join(&fixture.chunk_id)
+            .join("chunk.json"),
+        harness.join(&report_path),
+    ] {
+        let report: serde_json::Value = read_json(&report_file);
+        let lowering = report["selected_module_lowerings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|lowering| lowering["residual"] == false)
+            .expect("emitted module has a complete lowering report");
+        assert_eq!(lowering["binding_names"], serde_json::json!(names));
+        assert_eq!(
+            lowering["source_unit_ids"].as_array().unwrap().len(),
+            names.len()
+        );
+    }
     assert_module_exports(&fixture.out_root, MODULE_PATH, &names, &[]);
     assert_entry_output(&fixture, "0 23\n");
 }

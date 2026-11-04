@@ -132,10 +132,10 @@ validated plan.
 
 Generated module headers inline source-unit and binding lists only when each
 line fits within 160 bytes. Larger lists use a count and point to
-`reports/output.json` at the output root; its `selected_module_lowerings`
+`reports/tree/<chunk>/chunk.json` at the output root; its `selected_module_lowerings`
 records retain all binding names and their source-unit IDs. Generator and
 detector pragmas remain separate from these summaries. Authored comments are
-emitted in full.
+emitted in full. The same pointer works for readable-tree and browser-harness output.
 
 When browser output is configured, reconstruction also resolves the HTML module
 entries and preloads against the retained chunks, prepares the bootstrap and
