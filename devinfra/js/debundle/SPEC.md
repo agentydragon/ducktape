@@ -3631,6 +3631,17 @@ not change effect promotion.
 The ordered call-admission explanation does not change target admission,
 fallback effects, reachability, gate acceptance, or emitted JavaScript.
 
+An annotated local constructor-factory call kept on the conservative path records
+its first typed refusal in `synchronous_execution.local_record_factory_rejections`.
+The identity checks distinguish a non-binding callee, a missing hoisted
+function, an invalid result initializer, an exported or escaped factory, and
+whole-chunk versus current-prefix identity mismatches. For `factory_escaped`,
+`first_callback_publication_owner` may name the first source owner observed
+inserting that function into the escaped-callback set through `publish_values`.
+It is omitted when that insertion was not recorded, and is diagnostic context,
+not proof authority. These reasons and the optional owner do not change the
+conservative effects or emitted JavaScript.
+
 Each record's `reach` classifies the code the conservative path stands for.
 `{"kind": "bounded"}`: known source code, namely a rejected local construction
 or an invocation truncated at a recursion, depth or expansion bound, whose

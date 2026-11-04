@@ -199,6 +199,56 @@ fn assert_atomic_fallback(
     );
 }
 
+fn local_factory_result_rejection(
+    source: &str,
+    anonymous_statements: &[&str],
+) -> (
+    analysis::reports::schema::RecordFactoryRejectionReason,
+    Option<usize>,
+) {
+    let members = vec![
+        Member::new("Flags"),
+        Member::new("mutate"),
+        Member::new("Holder"),
+        Member::new("create").with_retained_record_factory(),
+        Member::new("prefix"),
+        Member::new("command"),
+        Member::new("later"),
+    ];
+    let all = if anonymous_statements.is_empty() {
+        logical_module("all", &members)
+    } else {
+        logical_module_with_anon("all", &members, anonymous_statements)
+    };
+    let fixture = run_fixture(FixtureOpts::new(source, vec![all]));
+    assert_preserved_entry_output(&fixture, "169 0\n");
+    let graph = fixture.dependency_graph();
+    let command = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == "command")
+        })
+        .expect("command source unit");
+    let execution = command
+        .synchronous_execution
+        .as_ref()
+        .expect("command synchronous execution report");
+    let [rejection] = execution.local_record_factory_rejections.as_slice() else {
+        panic!("expected one local constructor-factory rejection: {execution:#?}");
+    };
+    assert_eq!(rejection.factory_binding, "create");
+    assert!(rejection.source_location.is_some());
+    (
+        rejection.reason,
+        rejection
+            .first_callback_publication_owner
+            .map(|owner| owner.0),
+    )
+}
+
 #[test]
 fn annotation_admits_a_direct_fresh_record_to_the_checked_constructor_factory() {
     let source = fixture_source(
@@ -240,6 +290,58 @@ fn annotation_admits_a_direct_fresh_record_to_the_checked_constructor_factory() 
         &["class Holder", "function create", "const command"],
         &[],
     );
+}
+
+#[test]
+fn factory_identity_refusals_report_the_first_guard() {
+    use analysis::reports::schema::RecordFactoryRejectionReason as Reason;
+
+    let escaped = fixture_source(
+        "",
+        FACTORY,
+        "globalThis.saved = create;\n",
+        &format!("create({FRESH_RECORD})"),
+        "",
+        "console.log(command.run(), command.weight);",
+    );
+    let exported_factory = FACTORY.replace("function create", "export function create");
+    let exported = fixture_source(
+        "",
+        &exported_factory,
+        "",
+        &format!("create({FRESH_RECORD})"),
+        "",
+        "console.log(command.run(), command.weight);",
+    );
+    let reassigned = fixture_source(
+        "",
+        FACTORY,
+        "create = function (record) { return new Holder(record, () => later); };\n",
+        &format!("create({FRESH_RECORD})"),
+        "",
+        "console.log(command.run(), command.weight);",
+    );
+
+    for (source, anonymous_statements, expected, has_publication_owner) in [
+        (
+            &escaped,
+            &["globalThis.saved = create;"][..],
+            Reason::FactoryEscaped,
+            false,
+        ),
+        (&exported, &[][..], Reason::FactoryExported, false),
+        (
+            &reassigned,
+            &["create = function (record) { return new Holder(record, () => later); };"][..],
+            Reason::FactoryFlowIdentity,
+            false,
+        ),
+    ] {
+        let (reason, publication_owner) =
+            local_factory_result_rejection(source, anonymous_statements);
+        assert_eq!(reason, expected);
+        assert_eq!(publication_owner.is_some(), has_publication_owner);
+    }
 }
 
 #[test]

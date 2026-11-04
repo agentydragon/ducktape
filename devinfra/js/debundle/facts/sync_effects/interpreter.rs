@@ -820,6 +820,9 @@ pub(super) struct ExecutionState {
     prefix_values: Context,
     initialized_bindings: BTreeSet<Id>,
     global_escaped_callbacks: Values,
+    /// First top-level owner observed inserting each function callback into
+    /// `global_escaped_callbacks` through `publish_values`.
+    first_callback_publication_owners: BTreeMap<u32, SourceUnitOrdinal>,
     top_env: Context,
     top_captures: Context,
     prefix_object_properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
@@ -4912,6 +4915,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             reason,
             property,
             construction: None,
+            first_callback_publication_owner: None,
             lexical_statement_ordinal: fact.ordinal,
             source_location: None,
             span: call.span,
@@ -5038,33 +5042,43 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return Err(RecordFactoryRejectionReason::ArgumentEffects);
         };
         let ValueExpr::Binding(factory) = callee.as_ref() else {
-            return Err(RecordFactoryRejectionReason::FactoryIdentity);
+            return Err(RecordFactoryRejectionReason::FactoryCalleeShape);
         };
         let &key = self
             .inputs
             .index
             .hoisted_bindings
             .get(factory)
-            .ok_or(RecordFactoryRejectionReason::FactoryIdentity)?;
+            .ok_or(RecordFactoryRejectionReason::FactoryNotHoisted)?;
         if !fact.declared.contains(binding)
             || !self.inputs.index.top_definite_initializers[fact.ordinal.0].contains(binding)
-            || self.inputs.index.exported_bindings.contains(factory)
-            || self
-                .state
-                .global_escaped_callbacks
-                .contains(&AbstractValue::Value(Value::Alloc(Kind::Function, key)))
-            || self
-                .inputs
-                .flow
-                .values_of_binding(factory)
-                .iter()
-                .ne([Value::Alloc(Kind::Function, key)])
-            || !self.state.prefix_values.get(factory).is_some_and(|values| {
-                values.len() == 1
-                    && values.contains(&AbstractValue::Value(Value::Alloc(Kind::Function, key)))
-            })
         {
-            return Err(RecordFactoryRejectionReason::FactoryIdentity);
+            return Err(RecordFactoryRejectionReason::InitializerBinding);
+        }
+        if self.inputs.index.exported_bindings.contains(factory) {
+            return Err(RecordFactoryRejectionReason::FactoryExported);
+        }
+        if self
+            .state
+            .global_escaped_callbacks
+            .contains(&AbstractValue::Value(Value::Alloc(Kind::Function, key)))
+        {
+            return Err(RecordFactoryRejectionReason::FactoryEscaped);
+        }
+        if self
+            .inputs
+            .flow
+            .values_of_binding(factory)
+            .iter()
+            .ne([Value::Alloc(Kind::Function, key)])
+        {
+            return Err(RecordFactoryRejectionReason::FactoryFlowIdentity);
+        }
+        if !self.state.prefix_values.get(factory).is_some_and(|values| {
+            values.len() == 1
+                && values.contains(&AbstractValue::Value(Value::Alloc(Kind::Function, key)))
+        }) {
+            return Err(RecordFactoryRejectionReason::FactoryPrefixIdentity);
         }
         if call.kind != CallKind::Call || call.has_spread || CallSite::from(call.span) != *site {
             return Err(RecordFactoryRejectionReason::ArgumentEffects);
@@ -6761,6 +6775,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn publish_values(&mut self, values: &Values) {
         self.taint_objects(values);
         let callbacks = self.callback_values(values);
+        if let Some(owner) = self.state.current_top_owner {
+            for callback in &callbacks {
+                let AbstractValue::Value(Value::Alloc(Kind::Function, key)) = callback else {
+                    continue;
+                };
+                if !self.state.global_escaped_callbacks.contains(callback) {
+                    self.state
+                        .first_callback_publication_owners
+                        .entry(*key)
+                        .or_insert(owner);
+                }
+            }
+        }
         let before = self.state.global_escaped_callbacks.len();
         self.state.global_escaped_callbacks.extend(callbacks);
         if self.state.global_escaped_callbacks.len() != before {
@@ -12149,6 +12176,7 @@ pub(crate) fn annotate_synchronous_calls(
         prefix_values: initial_values,
         initialized_bindings,
         global_escaped_callbacks: Values::new(),
+        first_callback_publication_owners: BTreeMap::new(),
         top_env: Context::new(),
         top_captures: Context::new(),
         prefix_object_properties: OrdMap::new(),
@@ -12559,11 +12587,23 @@ impl Executor<'_, '_> {
             } else {
                 (*reason, None)
             };
+            let first_callback_publication_owner =
+                if reason == RecordFactoryRejectionReason::FactoryEscaped {
+                    self.inputs
+                        .index
+                        .hoisted_bindings
+                        .get(factory)
+                        .and_then(|key| self.state.first_callback_publication_owners.get(key))
+                        .copied()
+                } else {
+                    None
+                };
             record_factory_rejection = Some(LocalRecordFactoryRejection {
                 factory_binding: factory.0.to_string(),
                 reason,
                 property,
                 construction,
+                first_callback_publication_owner,
                 lexical_statement_ordinal: fact.ordinal,
                 source_location: None,
                 span: *span,

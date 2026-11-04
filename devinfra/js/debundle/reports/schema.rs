@@ -748,6 +748,10 @@ pub struct LocalRecordFactoryRejection {
     /// The returned allocation's failed constructor check, for `constructor_proof`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub construction: Option<ConstructionRejection>,
+    /// First owner observed inserting this factory function into the escaped
+    /// callback set through `publish_values`; absent when no such insertion was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_callback_publication_owner: Option<SourceUnitOrdinal>,
     pub lexical_statement_ordinal: SourceUnitOrdinal,
     pub source_location: Option<SourceLocation>,
     #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
@@ -789,8 +793,20 @@ pub enum RecordFactoryRejectionReason {
     StatementShape,
     /// The statement evaluates other calls or unproven conversions.
     ArgumentEffects,
-    /// The callee is not the stable, unexposed hoisted factory function.
-    FactoryIdentity,
+    /// The callee is not a direct binding read.
+    FactoryCalleeShape,
+    /// The callee binding has no hoisted source function.
+    FactoryNotHoisted,
+    /// The result binding is not a declared, definitely initialized binding.
+    InitializerBinding,
+    /// The factory binding is exported.
+    FactoryExported,
+    /// The factory function was published to the global escaped-callback set.
+    FactoryEscaped,
+    /// Whole-chunk flow does not contain only the hoisted factory function.
+    FactoryFlowIdentity,
+    /// The current prefix does not contain only the hoisted factory function.
+    FactoryPrefixIdentity,
     /// The factory body is not one return of checked local allocations.
     FactoryBody,
     /// A constructed class failed the checked local constructor proof.
