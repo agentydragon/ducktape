@@ -1026,11 +1026,22 @@ fn emit_heap_content_order(
     let unique_eager_allocations = OneShotEagerAllocations::from_facts(facts);
 
     // A hoisted or escaped callable can allocate before its lexical statement.
-    // Keep those origins live from the start; eager-only arrays become live
-    // when their allocation or first precise content effect is encountered.
-    let mut has_live_heap_contents = facts
-        .iter()
-        .any(|stmt| !stmt.deferred_heap_allocations.is_empty());
+    // Own-property cells likewise have no unique eager birth proof: an opaque
+    // barrier before their first recorded read must still constrain that read.
+    let mut has_live_heap_contents = facts.iter().any(|stmt| {
+        !stmt.deferred_heap_allocations.is_empty()
+            || stmt
+                .synchronous_calls
+                .iter()
+                .flat_map(|calls| {
+                    calls
+                        .heap_contents
+                        .reads
+                        .iter()
+                        .chain(&calls.heap_contents.writes)
+                })
+                .any(|cell| matches!(cell, EffectCell::OwnProperty { .. }))
+    });
     let mut events = Vec::new();
     for stmt in facts {
         let own = &stmt.heap_contents;
@@ -1120,7 +1131,9 @@ fn heap_content_cells(
             .filter(|cell| {
                 matches!(
                     cell,
-                    EffectCell::ArrayContents(_) | EffectCell::SetContents(_)
+                    EffectCell::ArrayContents(_)
+                        | EffectCell::SetContents(_)
+                        | EffectCell::OwnProperty { .. }
                 )
             })
             .cloned()
@@ -1130,7 +1143,9 @@ fn heap_content_cells(
             .filter(|cell| {
                 matches!(
                     cell,
-                    EffectCell::ArrayContents(_) | EffectCell::SetContents(_)
+                    EffectCell::ArrayContents(_)
+                        | EffectCell::SetContents(_)
+                        | EffectCell::OwnProperty { .. }
                 )
             })
             .cloned()

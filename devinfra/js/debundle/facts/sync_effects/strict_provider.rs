@@ -4,6 +4,7 @@ use super::super::allocation_transfer::{
     self, AllocationContext, AllocationJudgment, AllocationValue, LiteralHeap, LiteralLayout,
 };
 use super::super::local_transfer::{self, EvaluatedCallee, LocalContext, LocalFrame};
+use super::super::own_data_transfer::OwnDataContext;
 use super::super::value_model::{
     AbstractValue, CallSite, Context, DenseArray, OwnPropertyShape, ProviderInput, ProviderScopeId,
     SymbolicInputId, ValueExpr, Values,
@@ -103,7 +104,27 @@ impl ProviderContext<'_> {
     }
 }
 
+impl OwnDataContext for ProviderContext<'_> {
+    fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
+        self.index.ordinary_record_shape(allocation)
+    }
+    fn object_properties_are_settled(&self, _allocation: u32) -> bool {
+        // This isolated query refuses external mutation and publication.
+        true
+    }
+    fn property_values(&self, allocation: u32, property: &str) -> Option<&Values> {
+        self.properties
+            .get(&allocation)?
+            .get(&Some(property.to_owned()))
+    }
+}
+
 impl LocalContext for ProviderContext<'_> {
+    // These cells belong to the isolated fresh heap. The query declines any
+    // borrowed access or publication and separately traverses returned values
+    // for retention, so internal property accesses need no caller effect.
+    fn record_property_read(&mut self, _cell: crate::facts::EffectCell) {}
+    fn record_property_write(&mut self, _cell: crate::facts::EffectCell) {}
     fn closure(&mut self, frame: &mut LocalFrame, callable: u32) -> Option<AllocationValue> {
         let body = self.index.callables.get(&callable)?;
         let parameters: BTreeSet<_> = body
@@ -158,14 +179,6 @@ impl LocalContext for ProviderContext<'_> {
     }
     fn literal_layout(&self, allocation: u32) -> LiteralLayout {
         self.index.allocation_layout(allocation)
-    }
-    fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
-        self.index.ordinary_record_shape(allocation)
-    }
-    fn object_properties_are_settled(&self, _allocation: u32) -> bool {
-        // This isolated query starts with an empty heap and refuses every
-        // operation capable of external mutation or publication.
-        true
     }
     fn heap(&mut self) -> LiteralHeap<'_> {
         AllocationContext::heap(self)

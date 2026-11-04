@@ -6,10 +6,8 @@ use super::allocation_transfer::{
 use super::local_operations::{
     LocalBinding, LocalBody, LocalCallee, LocalExpression, LocalOperation,
 };
-use super::value_model::{
-    AbstractValue, CallSite, Context, OwnPropertyDescriptorSyntax, OwnPropertyShape, ValueExpr,
-    Values,
-};
+use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataSlot};
+use super::value_model::{AbstractValue, CallSite, Context, ValueExpr, Values};
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::reports::schema::OrderedFieldReadRefusal;
@@ -64,7 +62,7 @@ impl EvaluatedCallee {
     }
 }
 
-pub(super) trait LocalContext {
+pub(super) trait LocalContext: OwnDataContext {
     fn instantiate_bindings(&mut self, _frame: &mut LocalFrame) {}
     fn local_binding_stored(&mut self, _binding: &Id, _frame: &LocalFrame) {}
     fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<AllocationValue>;
@@ -86,9 +84,9 @@ pub(super) trait LocalContext {
         span: Span,
     ) -> Option<AllocationValue>;
     fn literal_layout(&self, allocation: u32) -> LiteralLayout;
-    fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape>;
-    fn object_properties_are_settled(&self, allocation: u32) -> bool;
     fn heap(&mut self) -> LiteralHeap<'_>;
+    fn record_property_read(&mut self, cell: crate::facts::EffectCell);
+    fn record_property_write(&mut self, cell: crate::facts::EffectCell);
     /// The receiver cell was read at this operation. A strict query refuses
     /// an unproved field; application execution retains its existing proofs
     /// and summarizes the remainder if getter effects remain unproved.
@@ -209,44 +207,16 @@ fn own_data_field(
     receivers: &Values,
     property: &str,
     frame: &LocalFrame,
-) -> Result<u32, OrderedFieldReadRefusal> {
-    if receivers.len() != 1 {
-        return Err(OrderedFieldReadRefusal::ReceiverNotSingleton);
-    }
-    let Some(AbstractValue::Value(Value::Alloc(Kind::Object, object))) = receivers.first() else {
-        return Err(OrderedFieldReadRefusal::ReceiverNotObject);
-    };
-    if frame.borrowed_records.contains(object) {
-        return Err(OrderedFieldReadRefusal::BorrowedReceiver);
-    }
-    if !context.object_properties_are_settled(*object) {
-        return Err(OrderedFieldReadRefusal::UnsettledReceiver);
-    }
-    // The heap alone records containment. Requiring canonical ordinary-record
-    // descriptor syntax keeps class fields and accessors from being read as
-    // data properties in this provider query.
-    let Some(shape) = context.ordinary_record_shape(*object) else {
-        return Err(OrderedFieldReadRefusal::UnsupportedRecordShape);
-    };
-    if !frame.fresh_records.contains(object) {
-        return Err(OrderedFieldReadRefusal::AllocationNotFresh);
-    }
-    let Some(descriptor) = shape.properties.get(property) else {
-        return Err(OrderedFieldReadRefusal::MissingField);
-    };
-    if !matches!(descriptor, OwnPropertyDescriptorSyntax::Data) {
-        return Err(OrderedFieldReadRefusal::NonDataField);
-    }
-    let key = Some(property.to_owned());
-    if !context
-        .heap()
-        .properties
-        .get(object)
-        .is_some_and(|properties| properties.contains_key(&key))
-    {
-        return Err(OrderedFieldReadRefusal::MissingHeapValue);
-    }
-    Ok(*object)
+) -> Result<OwnDataSlot, OrderedFieldReadRefusal> {
+    own_data_transfer::resolve_slot(
+        context,
+        receivers,
+        property,
+        OwnDataOwnership::FreshLocal {
+            borrowed: &frame.borrowed_records,
+            fresh: &frame.fresh_records,
+        },
+    )
 }
 
 fn read_field(
@@ -258,12 +228,11 @@ fn read_field(
     span: Span,
 ) -> Option<AllocationValue> {
     match own_data_field(context, receivers, property, frame) {
-        Ok(object) => {
-            // The shared guard requires an existing own data slot on a
-            // settled, fresh, unborrowed ordinary record.
-            let values = context.heap().properties[&object][&Some(property.to_owned())].clone();
+        Ok(slot) => {
+            let read = slot.read(context);
+            context.record_property_read(read.cell);
             Some(AllocationValue {
-                values,
+                values: read.values,
                 judgment: AllocationJudgment::CoveredAllocationOnly(Default::default()),
             })
         }
@@ -453,13 +422,14 @@ fn expression(
             if values.is_empty() {
                 return Some(values);
             }
-            let Ok(object) = own_data_field(context, &receivers, property, frame) else {
+            let Ok(slot) = own_data_field(context, &receivers, property, frame) else {
                 context.unproved_field_write(frame, &receivers, &values, *span);
                 return None;
             };
+            context.record_property_write(slot.cell());
             context
                 .heap()
-                .write_property(object, Some(property.clone()), &values);
+                .write_property(slot.object, Some(property.clone()), &values);
             Some(values)
         }
         LocalExpression::DefineThisField {

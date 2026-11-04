@@ -7,6 +7,7 @@ use super::super::noninvoking_initialization::{
     NativeConstructorCandidate, NativeConstructorForm, NativeConstructorKind,
     NativeConstructorTransfer, OriginalInitializer,
 };
+use super::super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataRead};
 use super::super::value_model::{
     AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
     DenseArray, DenseArrayIterationTransfer, FrozenNamespaceProof, LexicalCaptures, LexicalCellId,
@@ -218,14 +219,17 @@ impl Outcome {
         }
     }
 
-    /// Moves `nested`'s binding effects into this outcome. Under an
-    /// `assumption` every moved effect is assumed by it; otherwise each keeps
-    /// the provenance `nested` recorded. Observed wins.
-    fn absorb_binding_effects(
+    /// Union nested heap may-cells and move its binding effects. Under an
+    /// `assumption` the binding effects inherit that provenance; otherwise
+    /// each keeps the provenance `nested` recorded. Observed wins.
+    fn absorb_call_effects(
         &mut self,
         nested: &mut SynchronousCalls,
         assumption: Option<&AssumedEffectReason>,
     ) {
+        self.effects
+            .heap_contents
+            .extend(&std::mem::take(&mut nested.heap_contents));
         let assumed = std::mem::take(&mut nested.fallback_only);
         absorb_effects(
             &mut self.effects.reads,
@@ -1159,6 +1163,37 @@ struct LocalExecutionContext<'a, 'source, 'rule> {
     body: &'a LocalBody,
 }
 
+impl OwnDataContext for Executor<'_, '_> {
+    fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
+        self.inputs.index.ordinary_record_shape(allocation)
+    }
+
+    fn object_properties_are_settled(&self, allocation: u32) -> bool {
+        self.state.object_properties_are_settled(&allocation)
+    }
+
+    fn property_values(&self, allocation: u32, property: &str) -> Option<&Values> {
+        self.state
+            .prefix_object_properties
+            .get(&allocation)?
+            .get(&Some(property.to_owned()))
+    }
+}
+
+impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
+    fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
+        self.executor.ordinary_record_shape(allocation)
+    }
+
+    fn object_properties_are_settled(&self, allocation: u32) -> bool {
+        self.executor.object_properties_are_settled(allocation)
+    }
+
+    fn property_values(&self, allocation: u32, property: &str) -> Option<&Values> {
+        self.executor.property_values(allocation, property)
+    }
+}
+
 impl LocalExecutionContext<'_, '_, '_> {
     fn fallback(
         &mut self,
@@ -1400,7 +1435,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         {
             self.outcome.lose_call_target(self.owner, span);
         }
-        self.outcome.absorb_binding_effects(
+        self.outcome.absorb_call_effects(
             &mut outcome.effects,
             self.executor.state.assumption.as_ref(),
         );
@@ -1438,16 +1473,14 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     fn literal_layout(&self, allocation: u32) -> super::super::allocation_transfer::LiteralLayout {
         self.executor.inputs.index.allocation_layout(allocation)
     }
-    fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
-        self.executor.inputs.index.ordinary_record_shape(allocation)
-    }
-    fn object_properties_are_settled(&self, allocation: u32) -> bool {
-        self.executor
-            .state
-            .object_properties_are_settled(&allocation)
-    }
     fn heap(&mut self) -> super::super::allocation_transfer::LiteralHeap<'_> {
         self.executor.literal_heap()
+    }
+    fn record_property_read(&mut self, cell: crate::facts::EffectCell) {
+        self.outcome.effects.heap_contents.reads.insert(cell);
+    }
+    fn record_property_write(&mut self, cell: crate::facts::EffectCell) {
+        self.outcome.effects.heap_contents.writes.insert(cell);
     }
     fn unproved_field_read(
         &mut self,
@@ -3166,7 +3199,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     fn merge_array_effects(&mut self, outcome: &mut Outcome, mut nested: Outcome) {
         self.apply_rebind_effects(&nested.effects.rebinds);
-        outcome.absorb_binding_effects(&mut nested.effects, self.state.assumption.as_ref());
+        outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
         outcome.executed_owners.extend(nested.executed_owners);
         outcome.unknown_call |= nested.unknown_call;
         outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
@@ -7090,7 +7123,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .map_or(0, |callable| callable.params.len());
             let mut nested = self.invoke(function, vec![unknown(); count], captured, false);
             self.apply_rebind_effects(&nested.effects.rebinds);
-            outcome.absorb_binding_effects(&mut nested.effects, self.state.assumption.as_ref());
+            outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
             outcome.executed_owners.extend(nested.executed_owners);
             outcome.unknown_call |= nested.unknown_call;
             outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
@@ -7397,7 +7430,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     DUMMY_SP,
                 );
                 self.apply_rebind_effects(&nested.effects.rebinds);
-                outcome.absorb_binding_effects(&mut nested.effects, self.state.assumption.as_ref());
+                outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
                 outcome.executed_owners.extend(nested.executed_owners);
                 outcome.unknown_call |= nested.unknown_call;
                 outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
@@ -7430,7 +7463,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.taint_objects(&nested.returns);
             self.promote_returned_callbacks(&nested.returns);
             self.apply_rebind_effects(&nested.effects.rebinds);
-            outcome.absorb_binding_effects(&mut nested.effects, self.state.assumption.as_ref());
+            outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
             outcome.executed_owners.extend(nested.executed_owners);
             outcome.unknown_call |= nested.unknown_call;
             outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
@@ -7904,6 +7937,71 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && self.state.initialized_bindings.contains(id)
     }
 
+    /// The flattened call pass and later initializer projection see the same
+    /// prefix only when this owner has no intervening operation. Compound
+    /// initializers still need ordered result transport through the runtime.
+    fn root_own_data_read(&self, expression: &ValueExpr) -> Option<OwnDataRead> {
+        let ValueExpr::Member(receiver, Some(property), MemberKey::Static, site) = expression
+        else {
+            return None;
+        };
+        let ValueExpr::Binding(receiver) = receiver.as_ref() else {
+            return None;
+        };
+        let owner = *self.inputs.index.member_owners.get(site)?;
+        let fact = &self.inputs.facts[owner.0];
+        if self.state.current_top_owner != Some(owner)
+            || !self.initialized_local_binding(receiver)
+            || !self.inputs.index.dynamic_scope_owners.is_empty()
+            || !matches!(fact.kind, StatementKind::VarDecl)
+            || fact.declared.len() != 1
+            || !fact.rebinds.eager.is_empty()
+            || !fact.global_writes.is_empty()
+            || self.inputs.index.opaque_top.contains(&owner)
+            || !self.inputs.index.top_property_writes[owner.0].is_empty()
+            || !self.inputs.index.top_member_value_writes[owner.0].is_empty()
+            || !self.inputs.index.top_callback_result_writes[owner.0].is_empty()
+            || !self.inputs.index.top_exported_values[owner.0].is_empty()
+        {
+            return None;
+        }
+        let [(binding, ValueExpr::Member(_, _, MemberKey::Static, initializer_site))] =
+            self.inputs.index.top_assignments[owner.0].as_slice()
+        else {
+            return None;
+        };
+        let [call] = self.inputs.index.top_calls[owner.0].as_slice() else {
+            return None;
+        };
+        if *initializer_site != *site
+            || !fact.declared.contains(binding)
+            || !self.inputs.index.top_definite_initializers[owner.0].contains(binding)
+            || call.kind != CallKind::LocalMemberRead
+            || call.caller.is_some()
+            || CallSite::from(call.span) != *site
+        {
+            return None;
+        }
+        let receivers = self.state.prefix_values.get(receiver)?;
+        let slot = own_data_transfer::resolve_slot(
+            self,
+            receivers,
+            property,
+            OwnDataOwnership::CurrentPrefix,
+        )
+        .ok()?;
+        if !self.inputs.index.plain_data_objects.contains(&slot.object)
+            || self
+                .state
+                .applied_accessors
+                .get(&slot.object)
+                .is_some_and(|accessors| accessors.contains_key(property))
+        {
+            return None;
+        }
+        Some(slot.read(self))
+    }
+
     fn evaluate_binding(&mut self, id: &Id, env: &Context) -> Values {
         if self.inputs.index.callback_factory_imports.contains(id) {
             return Values::from([AbstractValue::CallbackFactory]);
@@ -8050,6 +8148,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 unreachable!("the shared transfer evaluates primitive values")
             }
             ValueExpr::Member(object, property, is_static_identifier, site) => {
+                if let Some(read) = self.root_own_data_read(expr) {
+                    return read.values;
+                }
                 if let Some(values) = property
                     .as_deref()
                     .and_then(|property| self.closed_enum_member_parts(object, property))
@@ -8643,7 +8744,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             },
             span,
         );
-        outcome.absorb_binding_effects(&mut fallback.effects, self.state.assumption.as_ref());
+        outcome.absorb_call_effects(&mut fallback.effects, self.state.assumption.as_ref());
         outcome.executed_owners.extend(fallback.executed_owners);
         outcome.unknown_call |= fallback.unknown_call;
         outcome.inherit_completeness(fallback.complete, fallback.effects.precision_losses);
@@ -9404,6 +9505,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if self.closed_enum_member_read(&call.callee) {
                 return CallTransfer::EffectsOnly;
             }
+            if let Some(read) = self.root_own_data_read(&call.callee) {
+                outcome.effects.heap_contents.reads.insert(read.cell);
+                return CallTransfer::EffectsOnly;
+            }
             if object_own_data_read_property(&call.callee, |id| self.inputs.flow.is_declared(id))
                 .is_some()
                 && self
@@ -10126,7 +10231,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     match constructed {
                         Ok((mut nested, _)) => {
                             self.apply_rebind_effects(&nested.effects.rebinds);
-                            outcome.absorb_binding_effects(
+                            outcome.absorb_call_effects(
                                 &mut nested.effects,
                                 self.state.assumption.as_ref(),
                             );
@@ -10167,10 +10272,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         result_values.extend(nested.returns.iter().cloned());
                     }
                     self.apply_rebind_effects(&nested.effects.rebinds);
-                    outcome.absorb_binding_effects(
-                        &mut nested.effects,
-                        self.state.assumption.as_ref(),
-                    );
+                    outcome
+                        .absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
                     outcome.executed_owners.extend(nested.executed_owners);
                     outcome.unknown_call |= nested.unknown_call;
                     outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
@@ -10181,10 +10284,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         result_values.extend(nested.returns.iter().cloned());
                     }
                     self.apply_rebind_effects(&nested.effects.rebinds);
-                    outcome.absorb_binding_effects(
-                        &mut nested.effects,
-                        self.state.assumption.as_ref(),
-                    );
+                    outcome
+                        .absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
                     outcome.executed_owners.extend(nested.executed_owners);
                     outcome.unknown_call |= nested.unknown_call;
                     outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
@@ -11749,7 +11850,7 @@ impl Executor<'_, '_> {
                     .reason
                     .clone(),
             };
-            outcome.absorb_binding_effects(&mut fallback.effects, Some(&reason));
+            outcome.absorb_call_effects(&mut fallback.effects, Some(&reason));
             outcome.executed_owners.extend(fallback.executed_owners);
             outcome.unknown_call = true;
             outcome.inherit_completeness(false, fallback.effects.precision_losses);
@@ -11780,7 +11881,7 @@ impl Executor<'_, '_> {
             for owner in self.state.reachability.owners.clone() {
                 self.promote_lazy_owner(owner, fact.ordinal, &mut restored);
             }
-            outcome.absorb_binding_effects(&mut restored.effects, Some(&reason));
+            outcome.absorb_call_effects(&mut restored.effects, Some(&reason));
             self.apply_rebind_effects(&outcome.effects.rebinds);
         }
         // These are available roots for the remainder of this owner's value

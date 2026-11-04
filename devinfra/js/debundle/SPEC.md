@@ -2495,7 +2495,16 @@ ordinary records, including aliases and self-links. A static dot-field read
 whose receiver is a simple binding uses that same fresh-record check and shared
 heap at its actual operation position. Only an existing own data field on a
 settled, fresh, unborrowed ordinary record supplies a covered read; copying its
-value proves no property or callable behavior on that value. A provider query starts
+value proves no property or callable behavior on that value. Application root
+reads use the same present-slot operation when one simple declarator reads an
+initialized module-local binding and no other call, write or opaque operation
+can intervene before its initializer result is projected. Applied accessors,
+compound owners, copies, arrays and missing/inherited fields retain their
+existing paths. The operation records an `own_property` heap cell identified
+by allocation origin and static property. This cell includes every runtime
+generation of that source allocation; it proves neither a strong update nor
+privacy. Opaque heap barriers and uncovered effect domains remain authoritative.
+A provider query starts
 with scoped opaque parameters and an empty private heap. Parameters,
 instantiated locals and checked private `var` captures can supply binding
 values. Every reached value judgment composes, including discarded expressions;
@@ -3464,7 +3473,8 @@ as constraining, keyed by `explanation.kind`:
   `incomplete_synchronous_execution`, `callee_heap_effects`}. Each conflict is `read_after_write`,
   `write_after_write`, `write_after_read`, `use_after_allocation` or
   `frontier_after_cell` with the `cell` (`binding`, `global_prop`,
-  `array_contents` or `set_contents`), or `after_barrier` / `barrier_after_prior`
+  `array_contents`, `set_contents`, or `own_property` with `origin` and
+  `property`), or `after_barrier` / `barrier_after_prior`
   for the opaque-barrier dependence. `source`, `target` and `observation` are
   the provenance of that endpoint's binding effect (§ Commuting statements):
   `{"kind": "observed"}` or `{"kind": "fallback", "reason": {"path": …}}`
