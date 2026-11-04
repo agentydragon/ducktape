@@ -20,8 +20,24 @@ install -Dm0644 "$config_dir/sysctl.conf" /etc/sysctl.d/90-buildbuddy-kvm-worker
 install -Dm0644 "$config_dir/k3s.yaml" /etc/rancher/k3s/config.yaml
 install -Dm0644 "$config_dir/registries.yaml" /etc/rancher/k3s/registries.yaml
 install -Dm0755 "$config_dir/run-executor.sh" "$install_dir/run-executor"
+if grep -qw svm /proc/cpuinfo; then
+  kvm_module=kvm_amd
+elif grep -qw vmx /proc/cpuinfo; then
+  kvm_module=kvm_intel
+else
+  echo "The guest CPU does not expose SVM or VMX" >&2
+  exit 1
+fi
+printf '%s\n' "$kvm_module" >>/etc/modules-load.d/buildbuddy-kvm-worker.conf
 modprobe -a br_netfilter bridge ip6_tables ip6table_nat ip_tables iptable_nat \
-  kvm_amd loop nf_conntrack nf_nat overlay tun vhost_net vhost_vsock vxlan
+  "$kvm_module" loop nf_conntrack nf_nat overlay tun vhost_net vhost_vsock vxlan
+case "$(cat "/sys/module/$kvm_module/parameters/nested")" in
+  1 | Y) ;;
+  *)
+    echo "Nested KVM is disabled for $kvm_module" >&2
+    exit 1
+    ;;
+esac
 udevadm settle
 test -c /dev/kvm
 test -c /dev/loop-control

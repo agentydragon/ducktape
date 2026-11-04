@@ -79,9 +79,20 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     )
     guest = worker["spec"]["template"]["spec"]
     assert worker["spec"]["runStrategy"] == "Always"
-    assert guest["nodeSelector"] == {"kubernetes.io/hostname": "wyrm2"}
+    assert "kubernetes.io/hostname" not in guest.get("nodeSelector", {})
     assert guest["domain"]["cpu"]["model"] == "host-passthrough"
-    assert {"name": "svm", "policy": "require"} in guest["domain"]["cpu"]["features"]
+    cpu_features = {
+        feature["name"] for feature in guest["domain"]["cpu"]["features"] if feature["policy"] == "optional"
+    }
+    terms = guest["affinity"]["nodeAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]["nodeSelectorTerms"]
+    assert all(len(term["matchExpressions"]) == 1 for term in terms)
+    allowed_features = {
+        expression["key"].removeprefix("cpu-feature.node.kubevirt.io/")
+        for term in terms
+        for expression in term["matchExpressions"]
+        if expression["operator"] == "In" and expression["values"] == ["true"]
+    }
+    assert cpu_features == allowed_features == {"svm", "vmx"}
     assert guest["domain"]["resources"]["limits"] == guest["domain"]["resources"]["requests"]
     assert not guest["domain"]["devices"].get("hostDevices")
     assert not guest["domain"]["devices"].get("gpus")
