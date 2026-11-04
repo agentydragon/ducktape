@@ -124,8 +124,8 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
     )
 
     send = (
-        f"agentplane --json notifications send {cluster.namespace}/{recipient.target.name} {recipient_agent.thread_id}"
-        f" --uid {recipient.target.uid} --key test-message-1 --body {shlex.quote(BODY)}"
+        f"agentplane --json notifications send {recipient_agent.thread_id}"
+        f" --key test-message-1 --body {shlex.quote(BODY)}"
     )
     with tracer.start_as_current_span(
         "system_test.agent_messaging.send", record_exception=False, set_status_on_exception=False

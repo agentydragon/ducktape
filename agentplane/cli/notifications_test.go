@@ -509,7 +509,7 @@ func messaging(message *notificationspb.Message, err error) *notificationsServer
 }
 
 func sendArgs(extra ...string) []string {
-	return append([]string{"notifications", "send", "test-recipient-ns/test-recipient", "test-recipient-session"}, extra...)
+	return append([]string{"notifications", "send", "test-recipient-session"}, extra...)
 }
 
 func TestSendAMessageFromThisSession(t *testing.T) {
@@ -520,12 +520,11 @@ func TestSendAMessageFromThisSession(t *testing.T) {
 		t.Fatalf("exit %d, %d sends, stdout %q, stderr %q", code, len(sent), stdout, stderr)
 	}
 	want := &notificationspb.SendMessageRequest{
-		DestinationRef: &notificationspb.DestinationRef{Namespace: "test-recipient-ns", Name: "test-recipient"},
-		SessionId:      "test-recipient-session", IdempotencyKey: sent[0].GetIdempotencyKey(), Body: "Please review the change.",
+		SessionId: "test-recipient-session", IdempotencyKey: sent[0].GetIdempotencyKey(), Body: "Please review the change.",
 		FromSession: proto.String("test-session"),
 	}
 	if !proto.Equal(sent[0], want) {
-		t.Errorf("sent %v, want %v: any incarnation, from the Session of AGENTPLANE_DESTINATION", sent[0], want)
+		t.Errorf("sent %v, want %v: addressed by Session ID, from AGENTPLANE_DESTINATION", sent[0], want)
 	}
 	// The generated key is on stderr before the POST, for a retry with --key.
 	if got := decodeObject(t, stderr); sent[0].GetIdempotencyKey() == "" || got["idempotency_key"] != sent[0].GetIdempotencyKey() {
@@ -537,14 +536,14 @@ func TestSendTakesTheTextFromStdinAndItsOptionsFromFlags(t *testing.T) {
 	servicer := messaging(acceptedMessage(), nil)
 	env := notificationsEnv(serveNotifications(t, servicer))
 	c := newCLI(env, "line one\nline two\n")
-	code := c.run(sendArgs("--body-file", "-", "--uid", "test-recipient-uid", "--from-session", "test-flag-session", "--key", "test-key")...)
+	code := c.run(sendArgs("--body-file", "-", "--from-session", "test-flag-session", "--key", "test-key")...)
 	delete(env, "AGENTPLANE_DESTINATION")
 	invoke(env, sendArgs("--body", "test body", "--key", "test-key-2")...)
 	sent := received[*notificationspb.SendMessageRequest](servicer)
 	if code != 0 || len(sent) != 2 {
 		t.Fatalf("exit %d, %d sends, stderr %q", code, len(sent), c.stderr.String())
 	}
-	if got := sent[0]; got.GetBody() != "line one\nline two\n" || got.GetDestinationRef().GetUid() != "test-recipient-uid" ||
+	if got := sent[0]; got.GetBody() != "line one\nline two\n" || got.GetSessionId() != "test-recipient-session" ||
 		got.GetFromSession() != "test-flag-session" || got.GetIdempotencyKey() != "test-key" {
 		t.Errorf("sent %v; want stdin as given, the flags' UID, Session and key", got)
 	}
@@ -560,12 +559,11 @@ func TestSendRefusesAMalformedCommandBeforeSending(t *testing.T) {
 	servicer := messaging(acceptedMessage(), nil)
 	env := notificationsEnv(serveNotifications(t, servicer))
 	for name, args := range map[string][]string{
-		"no namespace":    {"notifications", "send", "test-recipient", "test-recipient-session", "--body", "x"},
-		"nested name":     {"notifications", "send", "test-ns/a/b", "test-recipient-session", "--body", "x"},
-		"no text":         sendArgs(),
-		"two texts":       sendArgs("--body", "x", "--body-file", "-"),
-		"missing file":    sendArgs("--body-file", t.TempDir()+"/test-missing"),
-		"bad destination": sendArgs("--body", "x"),
+		"extra destination": {"notifications", "send", "test-ns/test-recipient", "test-recipient-session", "--body", "x"},
+		"no text":           sendArgs(),
+		"two texts":         sendArgs("--body", "x", "--body-file", "-"),
+		"missing file":      sendArgs("--body-file", t.TempDir()+"/test-missing"),
+		"bad destination":   sendArgs("--body", "x"),
 	} {
 		env := maps.Clone(env)
 		if name == "bad destination" {

@@ -11,10 +11,12 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -25,8 +27,7 @@ var toSandbox = policyapi.SandboxTargets{Sandboxes: []policyapi.SandboxTarget{{N
 // sendRequest is a message from the other Sandbox to the test Session of the test Sandbox as it is now.
 func sendRequest(key string) *notificationspb.SendMessageRequest {
 	return &notificationspb.SendMessageRequest{
-		DestinationRef: &notificationspb.DestinationRef{Namespace: testNamespace, Name: sandboxName},
-		SessionId:      testSession, IdempotencyKey: key, Body: "Please review the change.",
+		SessionId: testSession, IdempotencyKey: key, Body: "Please review the change.",
 	}
 }
 
@@ -118,10 +119,9 @@ func TestAGrantedSenderMessagesASessionThatReadsItFromItsInbox(t *testing.T) {
 		t.Errorf("after the acknowledgement: %v", followed)
 	}
 
-	// The History check establishes the new inbox. Later sends to this UID-keyed inbox do not repeat it.
-	server.history.sandboxes[testSession] = &historypb.SandboxRef{
-		Namespace: testNamespace, Name: sandboxName, Uid: proto.String("test-former-sandbox-uid"),
-	}
+	// The History check establishes the new inbox. Later sends to this UID-keyed inbox work through
+	// a History outage because they do not repeat it.
+	server.history.failWith(status.Error(codes.Unavailable, "test History outage"))
 	server.send(t, sendRequest("second"))
 	if asked := server.history.questions(); len(asked) != 1 || asked[0] != testSession {
 		t.Errorf("History asked about %v, want only the check that opened the inbox", asked)
@@ -193,22 +193,66 @@ func TestASendIsRefusedWhileTheGrantsMayBeOutOfDate(t *testing.T) {
 	server.requireNoInbox(t)
 }
 
-func TestAMessageToNoSuchSandboxIsNotFound(t *testing.T) {
+func TestAMessageToNoSuchSessionOrSandboxIncarnationIsNotFound(t *testing.T) {
 	server := newServer(t)
 	server.grantSend(otherSandboxName, policyapi.SandboxTargets{AllSandboxes: true})
-	for name, ref := range map[string]*notificationspb.DestinationRef{
-		"missing Sandbox":     {Namespace: testNamespace, Name: "test-missing-sandbox"},
-		"another incarnation": {Namespace: testNamespace, Name: sandboxName, Uid: "test-former-sandbox-uid"},
-		"another namespace":   {Namespace: "test-elsewhere", Name: sandboxName},
+	for name, placement := range map[string]*dispatcherpb.SessionOpening{
+		"missing Sandbox":     {SessionId: testSession, Sandbox: "test-missing-sandbox", SandboxUid: sandboxUID},
+		"another incarnation": {SessionId: testSession, Sandbox: sandboxName, SandboxUid: "test-former-sandbox-uid"},
 	} {
 		t.Run(name, func(t *testing.T) {
+			server.openings.placements[testSession] = placement
 			request := sendRequest("missing")
-			request.DestinationRef = ref
 			_, err := server.client.SendMessage(bearing(t, otherSandboxToken), request)
 			requireCode(t, err, codes.NotFound)
 		})
 	}
+	delete(server.openings.placements, testSession)
+	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("missing-opening"))
+	requireCode(t, err, codes.NotFound)
 	server.requireNoInbox(t)
+}
+
+func TestAMessageNeedsACompleteDispatcherOpening(t *testing.T) {
+	server := newServer(t)
+	server.grantSend(otherSandboxName, toSandbox)
+	for name, placement := range map[string]*dispatcherpb.SessionOpening{
+		"missing UID":     {SessionId: testSession, Sandbox: sandboxName},
+		"wrong Session":   {SessionId: "another-session", Sandbox: sandboxName, SandboxUid: sandboxUID},
+		"missing Sandbox": {SessionId: testSession, SandboxUid: sandboxUID},
+	} {
+		t.Run(name, func(t *testing.T) {
+			server.openings.placements[testSession] = placement
+			_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("incomplete"))
+			requireCode(t, err, codes.Unavailable)
+		})
+	}
+	server.openings.err = status.Error(codes.Unavailable, "test Dispatcher outage")
+	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("outage"))
+	requireCode(t, err, codes.Unavailable)
+	server.requireNoInbox(t)
+	if asked := server.history.questions(); len(asked) != 0 {
+		t.Errorf("History asked about %v without a valid opening", asked)
+	}
+}
+
+func TestAnOldWireDestinationFenceIsRejectedBeforeSending(t *testing.T) {
+	server := newServer(t)
+	server.grantSend(otherSandboxName, toSandbox)
+	oldRef, err := proto.Marshal(&notificationspb.DestinationRef{
+		Namespace: testNamespace, Name: sandboxName, Uid: "test-former-sandbox-uid",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := sendRequest("old-wire")
+	request.ProtoReflect().SetUnknown(protowire.AppendBytes(protowire.AppendTag(nil, 1, protowire.BytesType), oldRef))
+	_, err = server.client.SendMessage(bearing(t, otherSandboxToken), request)
+	requireCode(t, err, codes.InvalidArgument)
+	server.requireNoInbox(t)
+	if asked := server.history.questions(); len(asked) != 0 {
+		t.Errorf("History asked about %v after an old wire request", asked)
+	}
 }
 
 func TestAMessageOpensAnInboxOnlyForSessionHistoryOfTheExactSandbox(t *testing.T) {
@@ -230,6 +274,7 @@ func TestAMessageOpensAnInboxOnlyForSessionHistoryOfTheExactSandbox(t *testing.T
 		"History Session without UID": "test-session-without-history-uid",
 	} {
 		t.Run(name, func(t *testing.T) {
+			server.openings.placements[session] = &dispatcherpb.SessionOpening{SessionId: session, Sandbox: sandboxName, SandboxUid: sandboxUID}
 			request := sendRequest("unrecorded")
 			request.SessionId = session
 			_, err := server.client.SendMessage(bearing(t, otherSandboxToken), request)

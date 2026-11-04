@@ -4,6 +4,8 @@ The API is defined by [`notifications.proto`](../notifications.proto); its HTTP 
 served at `/openapi.json`. Setup and configuration belong
 in the [service README](../README.md); internal delivery and storage design is in
 [architecture](architecture.md).
+The HTTP/JSON facade rejects request fields absent from this protobuf contract, including fields
+removed in a cutover.
 
 ## Agent API
 
@@ -12,7 +14,8 @@ audience. Owner authority is the verified ServiceAccount, shared by its workload
 addresses a Session by `session_id`. The service resolves its existing Dispatcher opening, checks the exact
 Sandbox UID and caller ownership, and confirms current Runtime membership before source authorization.
 An absent opening is `NOT_FOUND`; an unavailable lookup is `UNAVAILABLE`. Direct Runtime-only Sessions
-cannot create subscriptions. Message sends still specify `destination_ref` and `session_id`.
+cannot create subscriptions or receive new messages. Message sends specify only `session_id`; the
+service resolves the opening and checks the sender's scoped grant against its exact Sandbox.
 Inbox and subscription IDs identify subsequent operations.
 The caller's inboxes and subscriptions are those opened for the Sandbox that runs as its account now: a Sandbox
 recreated under a deleted one's name sees none of the deleted one's, and an account no Sandbox runs as has none.
@@ -118,9 +121,9 @@ refuses sends as `UNAVAILABLE` until its permission view is initialized, or whil
 A grant or revocation takes effect on each replica as that replica observes it. Revocation stops new sends
 only; accepted messages stay in the inbox. The recipient needs no subscription or consent of its own.
 
-A send names the Sandbox (namespace and name; `uid` optional) and the Session ID, as a subscription does. The
-service pins the UID of the Sandbox it finds and refuses a missing Sandbox, one outside its namespace or another
-incarnation than a given `uid` as `NOT_FOUND`; it never retargets. A suspended Sandbox accepts messages; its
+A send names only the Session ID. The service resolves its Dispatcher opening and pins the exact Sandbox UID;
+a missing opening or replaced Sandbox returns `NOT_FOUND`, and an incomplete opening returns `UNAVAILABLE`.
+A suspended Sandbox accepts messages; its
 notice waits until the Sandbox runs again unless wake-on-send is enabled and authorized for this
 service. The inbox belongs to the Sandbox ServiceAccount for that Session. Creating a recipient inbox
 requires retained Session history whose Sandbox namespace, name and nonempty immutable UID all match the

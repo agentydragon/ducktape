@@ -120,9 +120,9 @@ service Notifications {
   // The caller's ServiceAccount must hold a `session_inbox_access` rule that allows `send_message` to the
   // destination Sandbox, through a PolicyBinding, else `PERMISSION_DENIED`; before the service has read the
   // PolicySets and PolicyBindings, and while its view of them is out of date, every send fails `UNAVAILABLE`.
-  // The recipient sees the caller's ServiceAccount as the sender. `destination_ref` names a Sandbox in the
-  // service's namespace; a missing one, or one whose UID is not the `uid` given, is `NOT_FOUND`. A suspended
-  // Sandbox accepts messages.
+  // The recipient sees the caller's ServiceAccount as the sender. The Session's Dispatcher opening resolves
+  // its Sandbox and exact UID; a missing opening or replaced Sandbox is `NOT_FOUND`. A suspended Sandbox accepts
+  // messages.
   //
   // The inbox belongs to the Sandbox's ServiceAccount. Without one yet for the Session, it is created only once
   // the History Service has recorded it with this Sandbox's namespace, name and non-empty UID, else `NOT_FOUND`.
@@ -298,8 +298,8 @@ message RetireInboxRequest {
 message RetireInboxResponse {}
 
 message SendMessageRequest {
-  // The Session's Sandbox. `uid` may be empty, for the Sandbox of that name now; the answer names its UID.
-  DestinationRef destination_ref = 1;
+  reserved 1;
+  reserved "destination_ref";
   // The Session whose inbox receives the message: 1 to 200 characters.
   string session_id = 2;
   // Chosen by the caller, unique among its messages to the inbox: 1 to 200 characters.

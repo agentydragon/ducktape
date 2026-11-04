@@ -446,14 +446,18 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 	})
 	message := func(key string) map[string]any {
 		return map[string]any{
-			"destinationRef": map[string]any{"namespace": testNamespace, "name": sandboxName},
-			"sessionId":      testSession, "idempotencyKey": key, "body": "Please review the change.",
+			"sessionId": testSession, "idempotencyKey": key, "body": "Please review the change.",
 			"fromSession": "test-from-session",
 		}
 	}
 	binding := grantSend(t, otherName)
 	if code, refused := agentCall(t, service, http.MethodPost, "/v1/messages", sandboxToken, message("ungranted")); code != http.StatusForbidden {
 		t.Fatalf("a send no binding grants = %d %v, want 403", code, refused)
+	}
+	oldRequest := message("old-http")
+	oldRequest["destinationRef"] = map[string]any{"namespace": testNamespace, "name": sandboxName, "uid": "former-uid"}
+	if code, refused := agentCall(t, service, http.MethodPost, "/v1/messages", otherToken, oldRequest); code != http.StatusBadRequest {
+		t.Fatalf("a retired destinationRef in HTTP = %d %v, want 400", code, refused)
 	}
 	code, sent := agentCall(t, service, http.MethodPost, "/v1/messages", otherToken, message("review"))
 	if code != http.StatusOK {
