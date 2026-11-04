@@ -32,6 +32,7 @@ from agentplane.system_tests.sandbox import (
     POD_TEMPLATE,
 )
 from agentplane.system_tests.scenarios.dispatcher import container_mount_sources, opening_until
+from agentplane.system_tests.scripted_upstream import ScriptedUpstream
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
@@ -197,9 +198,10 @@ async def _wait_for_gate(
 
 async def _read_sealed_history(
     history: history_service_pb2_grpc.HistoryServiceAsyncStub, caller: Caller, session: str
-) -> tuple[int, set[str]]:
+) -> tuple[int, set[str], set[str]]:
     cursor = 0
     commands: set[str] = set()
+    completed_turns: set[str] = set()
     while True:
         page = await history.ReadSessionEvents(
             history_service_pb2.ReadSessionEventsRequest(session_id=session, after_cursor=cursor, limit=1000),
@@ -213,8 +215,11 @@ async def _read_sealed_history(
             for entry in page.entries
             if entry.event.HasField("command_admitted")
         )
+        completed_turns.update(
+            entry.event.turn_completed.turn_id for entry in page.entries if entry.event.HasField("turn_completed")
+        )
         if len(page.entries) < 1000:
-            return page.last_cursor, commands
+            return page.last_cursor, commands, completed_turns
         cursor = page.entries[-1].cursor
 
 
@@ -229,7 +234,9 @@ def _metadata(caller: Caller, cluster: Cluster, name: str, uid: str) -> tuple[tu
     )
 
 
-async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[str, ...], cluster: Cluster) -> None:
+async def deployed_session_command_cannot_cross_deletion(
+    crictl_command: tuple[str, ...], cluster: Cluster, scripted: ScriptedUpstream
+) -> None:
     artifact = undeclared_outputs_dir() / "session-deletion"
     artifact.mkdir()
     settings = json.loads(await cluster.kubectl("get", "configmap", "runner-gateway-settings", "-o", "json"))
@@ -246,7 +253,7 @@ async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[s
     spec = session_pb2.SessionSpec(
         harness=session_pb2.HARNESS_CODEX,
         model="chatgpt-sub/oai-responses/gpt-6-luna",
-        cwd="/state/work",
+        cwd="/state",
         reasoning_effort="low",
     )
     evidence: dict[str, object] = {"sandbox": name, "session": session, "delayed_command": delayed, "passed": False}
@@ -256,6 +263,7 @@ async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[s
 
     persist()
     async with AsyncExitStack() as stack:
+        await stack.enter_async_context(scripted.case_scope())
         uid = await stack.enter_async_context(_sandbox(cluster, name, config["environment_default_policy_sets"]))
         target = await stack.enter_async_context(forward(cluster))
         channel = await stack.enter_async_context(dial(target))
@@ -285,8 +293,10 @@ async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[s
             session,
             lambda opening: opening.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED,
         )
-        admitted = await runner.ChangeReasoningEffort(
-            environment_runtime_pb2.ChangeReasoningEffortRequest(session_id=session, command_id=positive, effort="low"),
+        admitted = await runner.SubmitInput(
+            environment_runtime_pb2.SubmitInputRequest(
+                session_id=session, command_id=positive, text="Keep this test turn active until deletion."
+            ),
             metadata=metadata,
             timeout=15,
         )
@@ -300,7 +310,26 @@ async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[s
                 (artifact / "pod.json").write_text(pod)
                 log = await cluster.kubectl("logs", incarnation["name"], "-c", ENVIRONMENT_RUNTIME_CONTAINER)
                 (artifact / "runtime.log").write_text(log)
-                await container_mount_sources(crictl_command, cluster, incarnation["name"], artifact)
+
+        model = scripted.model(incarnation["name"], session_pb2.HARNESS_CODEX)
+        try:
+            async with asyncio.timeout(120):
+                await model.hold(await model.request())
+            async for attempt in AsyncRetrying(
+                stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+            ):
+                with attempt:
+                    snapshot = await runner.ListSessions(
+                        session_pb2.ListSessionsRequest(), metadata=metadata, timeout=15
+                    )
+                    active = next(item for item in snapshot.sessions if item.session_id == session)
+                    assert active.active_turn_id
+                    turn_id = active.active_turn_id
+        except Exception as error:
+            await capture_without_masking(error, capture_runtime)
+            raise
+        evidence["active_turn_before_deletion"] = turn_id
+        persist()
 
         sources = await container_mount_sources(crictl_command, cluster, incarnation["name"], artifact)
         gate = sources["/state"] / "deletion-test-admission"
@@ -312,8 +341,8 @@ async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[s
         evidence["gate_owner"] = {"uid": gate_stat.st_uid, "gid": gate_stat.st_gid, "mode": oct(gate_stat.st_mode)}
         persist()
         (gate / "command").write_text(delayed)
-        call = runner.ChangeReasoningEffort(
-            environment_runtime_pb2.ChangeReasoningEffortRequest(session_id=session, command_id=delayed, effort="high"),
+        call = runner.InterruptTurn(
+            environment_runtime_pb2.InterruptTurnRequest(session_id=session, command_id=delayed, turn_id=turn_id),
             metadata=metadata,
             timeout=180,
         )
@@ -370,17 +399,21 @@ async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[s
                 before = await _read_sealed_history(history, history_caller, session)
                 assert positive in before[1]
                 assert delayed not in before[1]
-                assert observed not in before[1]
+                assert turn_id in before[2]
                 assert not call.done()
                 evidence["quiesced_before_release"] = lease
                 persist()
                 (gate / "release").touch()
                 with pytest.raises(grpc.aio.AioRpcError) as refused:
                     await call
-                assert refused.value.code() == grpc.StatusCode.FAILED_PRECONDITION
-                await _wait_for_gate(gate / "result", "FailedPrecondition")
+                evidence["delayed_rpc_code"] = refused.value.code().name
+                evidence["delayed_rpc_details"] = refused.value.details()
+                result = gate / "result"
+                evidence["runtime_handler_result"] = result.read_text() if result.exists() else None
+                persist()
+                assert refused.value.code() == grpc.StatusCode.FAILED_PRECONDITION, refused.value
+                assert evidence["runtime_handler_result"] == "FailedPrecondition", evidence
                 assert await _read_sealed_history(history, history_caller, session) == before
-                evidence["runtime_handler_result"] = "FailedPrecondition"
                 evidence["sealed_cursor_unchanged"] = before[0]
                 persist()
         except Exception as error:
@@ -429,10 +462,8 @@ async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[s
         assert stale_read.value.code() == grpc.StatusCode.NOT_FOUND
         # Preserve the delayed call's payload and old UID; it must not reach this healthy replacement.
         with pytest.raises(grpc.aio.AioRpcError) as stale:
-            await runner.ChangeReasoningEffort(
-                environment_runtime_pb2.ChangeReasoningEffortRequest(
-                    session_id=session, command_id=delayed, effort="high"
-                ),
+            await runner.InterruptTurn(
+                environment_runtime_pb2.InterruptTurnRequest(session_id=session, command_id=delayed, turn_id=turn_id),
                 metadata=metadata,
                 timeout=15,
             )

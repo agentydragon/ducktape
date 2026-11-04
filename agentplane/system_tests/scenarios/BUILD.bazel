@@ -349,6 +349,7 @@ py_library(
         "//agentplane/system_tests:cluster",
         "//agentplane/system_tests:dispatcher_transport",
         "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests:scripted_upstream",
         "//util/testing:undeclared_outputs",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",

@@ -22,7 +22,7 @@ func newRuntime(config runtime.Config) (*runtime.Runtime, error) {
 		return nil, err
 	}
 	config.ControlInterceptor = func(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		command, ok := request.(*environmentruntimepb.ChangeReasoningEffortRequest)
+		command, ok := request.(*environmentruntimepb.InterruptTurnRequest)
 		if !ok {
 			return handler(ctx, request)
 		}
