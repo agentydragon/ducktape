@@ -5,7 +5,7 @@ use super::super::effect_coverage::{
     BindingEffectCoverage, EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt,
     RootInitializerIdentity,
 };
-use super::super::local_operations::{LocalBinding, LocalBody};
+use super::super::local_operations::{LocalBinding, LocalBody, LocalExpression, LocalOperation};
 use super::super::local_transfer::{
     self, EvaluatedCallee, LocalContext, LocalFrame, LocalValueResult,
 };
@@ -1781,6 +1781,39 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                     allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
                     effects: outcome.effect_coverage,
                 });
+            }
+            let terminal_local_call = matches!(self.scope, LocalExecutionScope::Callable(_))
+                && matches!(callee, EvaluatedCallee::Direct(_))
+                && matches!(
+                    self.body.operations.last(),
+                    Some(LocalOperation::Return(Some(LocalExpression::Call {
+                        span: terminal_span,
+                        ..
+                    }))) if *terminal_span == span
+                )
+                && self
+                    .executor
+                    .local_call_target(targets)
+                    .is_some_and(|(key, target)| {
+                        !target.opaque
+                            && !target.generator
+                            && !self.executor.inputs.index.async_callables.contains(&key)
+                    });
+            if terminal_local_call {
+                // The admitted source call already ran and supplied its
+                // conservative effects. This exact return has no caller
+                // remainder to summarize: publishing the entire caller frame
+                // would additionally expose its merely selected callee.
+                // Stop the kernel, retaining uncertainty and every child loss;
+                // neither a partial value nor a terminal position is coverage.
+                self.outcome.complete = false;
+                self.outcome.effect_coverage = EffectCoverageFragment::default();
+                frame.returns.extend(values);
+                frame.returns.extend([
+                    AbstractValue::Value(Value::Top),
+                    AbstractValue::Value(Value::Unavailable),
+                ]);
+                return None;
             }
             reached.extend(values);
         }

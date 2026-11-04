@@ -345,6 +345,162 @@ fn factory_identity_refusals_report_the_first_guard() {
 }
 
 #[test]
+fn incomplete_terminal_forwarding_does_not_publish_the_called_factory() {
+    let before_command = "const make = label => create({ label: () => label, values: [Flags.FIRST], execute: async () => {} });\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
+    let fixture = forwarding_fixture(FACTORY, before_command, &[]);
+    let graph = fixture.dependency_graph();
+    for binding in ["first", "second", "command"] {
+        let node = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|declared| declared.binding == binding)
+            })
+            .expect("declared source unit");
+        let execution = node
+            .synchronous_execution
+            .as_ref()
+            .expect("synchronous execution");
+        if binding == "command" {
+            assert!(node.purity.is_pure(), "{:?}", node.purity);
+            assert!(execution.complete, "{execution:#?}");
+            assert_eq!(
+                execution.local_record_factory_uses.len(),
+                1,
+                "{execution:#?}"
+            );
+        } else {
+            assert!(!execution.complete, "{execution:#?}");
+            assert!(!execution.precision_losses.is_empty());
+            assert!(
+                !matches!(
+                    execution.binding_effect_authority,
+                    Some(
+                        analysis::reports::schema::BindingEffectAuthorityReport::OperationReceipt { .. }
+                    )
+                ),
+                "{execution:#?}"
+            );
+        }
+    }
+}
+
+fn forwarding_fixture(
+    factory: &str,
+    before_command: &str,
+    additional_statements: &[&str],
+) -> Fixture {
+    let source = fixture_source(
+        "",
+        factory,
+        before_command,
+        &format!("create({FRESH_RECORD})"),
+        "",
+        "console.log(command.run(), command.weight);",
+    );
+    let mut statements = vec!["console.log(command.run(), command.weight);"];
+    statements.extend_from_slice(additional_statements);
+    let fixture = run_fixture(FixtureOpts::new(
+        &source,
+        vec![logical_module_with_anon(
+            "all",
+            &[
+                Member::new("Flags"),
+                Member::new("mutate"),
+                Member::new("Holder"),
+                Member::new("create").with_retained_record_factory(),
+                Member::new("prefix"),
+                Member::new("make"),
+                Member::new("first"),
+                Member::new("second"),
+                Member::new("command"),
+                Member::new("later"),
+            ],
+            &statements,
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "169 0\n");
+    fixture
+}
+
+#[test]
+fn nonterminal_forwarding_retains_publication_from_the_caller_suffix() {
+    let before_command = "const make = label => { const result = create({ label: () => label, values: [Flags.FIRST], execute: async () => {} }); globalThis.retained = create; return result; };\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
+    assert_forwarding_factory_refused(
+        &forwarding_fixture(FACTORY, before_command, &[]),
+        Some("first"),
+    );
+}
+
+#[test]
+fn terminal_forwarding_preserves_real_factory_escapes() {
+    let before_command = "const make = label => create({ label: () => label, values: [Flags.FIRST], execute: async () => {} });\nconst first = make(\"a\");\nconst second = make(\"b\");\n";
+    let publishing_factory = "function create(record) { globalThis.retained = create; return new Holder(record, () => later); }\n";
+    assert_forwarding_factory_refused(
+        &forwarding_fixture(publishing_factory, before_command, &[]),
+        None,
+    );
+
+    let prior_escape = "globalThis.retained = create;\n".to_owned() + before_command;
+    assert_forwarding_factory_refused(
+        &forwarding_fixture(FACTORY, &prior_escape, &["globalThis.retained = create;"]),
+        None,
+    );
+}
+
+fn assert_forwarding_factory_refused(
+    fixture: &Fixture,
+    expected_publication_binding: Option<&str>,
+) {
+    let graph = fixture.dependency_graph();
+    let command = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == "command")
+        })
+        .expect("command source unit");
+    let execution = command
+        .synchronous_execution
+        .as_ref()
+        .expect("command execution");
+    assert!(
+        execution.local_record_factory_uses.is_empty(),
+        "{execution:#?}"
+    );
+    assert_eq!(
+        execution.local_record_factory_rejections.len(),
+        1,
+        "{execution:#?}"
+    );
+    assert_eq!(
+        execution.local_record_factory_rejections[0].reason,
+        analysis::reports::schema::RecordFactoryRejectionReason::FactoryEscaped,
+        "{execution:#?}"
+    );
+    if let Some(binding) = expected_publication_binding {
+        let first_publication = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|declared| declared.binding == binding)
+            })
+            .expect("publication source unit");
+        assert_eq!(
+            execution.local_record_factory_rejections[0].first_callback_publication_owner,
+            Some(first_publication.statement_ordinal),
+            "{execution:#?}"
+        );
+    }
+}
+
+#[test]
 fn exported_factory_result_stays_deferred_until_acyclic_importer_use() {
     let fixture = run_exported_record_factory(
         EXPORTED_RECORD_PROVIDER,
