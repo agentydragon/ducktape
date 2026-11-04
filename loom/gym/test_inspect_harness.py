@@ -22,6 +22,7 @@ from inspect_ai.scorer import Target
 from inspect_ai.solver import Generate, Solver, TaskState
 from more_itertools import one
 
+from devinfra.oci.oci import load_oci_image
 from loom.gym.dossier import series_dossier
 from loom.gym.inspect_harness import (
     WAYBACK_PROXY_IMAGE_TAG,
@@ -36,7 +37,6 @@ from loom.gym.series_tasks import SeriesTaskSpec, tasks_for_spec
 from loom.gym.task import BinaryOutcome, EvidenceItem, ScalarOutcome, ScalarQuestion, Task
 from loom.wayback.proxy import fake_ia, wayback_proxy_image
 from third_party.containers import python_3_14_slim
-from util.oci import load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # Linear ramp over 2020-01..2020-12: from anchor 2020-01 (level 100) the ramp

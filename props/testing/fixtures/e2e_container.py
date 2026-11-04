@@ -52,6 +52,7 @@ import aiodocker
 import pytest
 import pytest_asyncio
 
+from devinfra.oci.oci import BazelImage, bazel_crane, push_bazel_image
 from openai_utils.model import OpenAIModelProto
 from openai_utils.model_metadata import get_model_metadata
 from props.backend.app import BackendDeps, create_app
@@ -69,7 +70,6 @@ from props.orchestration.docker_executor import DockerExecutor
 from props.registry_proxy.app import create_app as create_registry_proxy_app
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fake_openai_server import FakeOpenAIServer
-from util.oci import BazelImage, bazel_crane, push_bazel_image
 from util.testing.asgi import bind_http_server
 
 logger = logging.getLogger(__name__)

@@ -23,8 +23,8 @@ from agentplane.history_service.testing.go_service import WRITER, GoHistoryServi
 from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import session_pb2
+from devinfra.oci.oci import load_oci_image
 from third_party.containers import debian_slim, ryuk
-from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 
 # gazelle:include_dep @pypi//protobuf

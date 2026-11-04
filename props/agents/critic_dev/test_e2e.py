@@ -22,6 +22,7 @@ from hamcrest import all_of, assert_that
 from more_itertools import one
 
 from agent_core.testing.responses import PlayGen
+from devinfra.oci.oci import BazelImage
 from mcp_infra.testing.matchers import exited_successfully, stdout_contains
 from props.agents.critic.testing.mocks import CriticMock
 from props.agents.critic_dev.registry_push_probe import CONTAINER_SCRIPT_PATH
@@ -40,7 +41,6 @@ from props.db.models import AgentRun, AgentRunStatus
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.mocks import get_system_prompt_text
 from util.exec.models import BaseExecResult
-from util.oci import BazelImage
 
 logger = logging.getLogger(__name__)
 

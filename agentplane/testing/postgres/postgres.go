@@ -208,7 +208,7 @@ func openDatabase(ctx context.Context, container testcontainers.Container) (stri
 }
 
 func loadImage(ctx context.Context, image, imageRlocation string) error {
-	loader, err := runfiles.Rlocation("ducktape/util/oci_load_bin")
+	loader, err := runfiles.Rlocation("ducktape/devinfra/oci/oci_load_bin")
 	if err != nil {
 		return fmt.Errorf("locate shared OCI image loader for %s: %w", image, err)
 	}

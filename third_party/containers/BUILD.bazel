@@ -44,8 +44,8 @@ py_library(
     srcs = ["fixtures.py"],
     visibility = ["//visibility:public"],
     deps = [
+        "//devinfra/oci",
         "//third_party/containers:debian_slim",
-        "//util:oci",
         "@pypi//pytest",
     ],
 )

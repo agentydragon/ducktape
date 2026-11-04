@@ -10,7 +10,7 @@ from aiohttp import ClientConnectionError, ClientSession, ClientTimeout
 
 from devinfra.github_proxy.central import github_api_proxy_image
 from devinfra.github_proxy.central.testing.certificates import certificates
-from util.oci import load_oci_image
+from devinfra.oci.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 
 

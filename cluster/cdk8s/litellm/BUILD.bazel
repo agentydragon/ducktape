@@ -19,7 +19,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":upstream_test_image",
-        "//util:oci",
+        "//devinfra/oci",
         "//util/testing:undeclared_outputs",
         "@pypi//pytest_bazel",
     ],

@@ -64,6 +64,7 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":loop",
+        "//devinfra/oci",
         "//props/agents:runtime",
         "//props/agents/af:loop",
         "//props/agents/af:middleware",
@@ -77,7 +78,6 @@ py_library(
         "//props/db:config",
         "//props/db:database",
         "//props/db:models",
-        "//util:oci",
         "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
@@ -173,6 +173,7 @@ py_test(
         ":registry_push_probe",
         "//:conftest",
         "//agent_core/testing:responses",
+        "//devinfra/oci",
         "//mcp_infra/testing:matchers",
         "//props:conftest",
         "//props/agents:conftest",
@@ -187,7 +188,6 @@ py_test(
         "//props/db:models",
         "//props/testing",
         "//props/testing:constants",
-        "//util:oci",
         "//util/exec:models",
         "@pypi//more_itertools",
         "@pypi//pyhamcrest",

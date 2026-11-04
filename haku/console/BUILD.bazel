@@ -352,8 +352,8 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
+        "//devinfra/oci",
         "//haku/console:static_test_image",
-        "//util:oci",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
         "@pypi//testcontainers",

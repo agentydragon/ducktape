@@ -21,8 +21,8 @@ from jinja2 import Template
 
 from agentplane.app.frontend.serving.testing.image import LAYOUT_RLOCATION
 from devinfra.bazel.runfiles import get_required_path
+from devinfra.oci.oci import load_oci_image
 from third_party.containers import nginx_unprivileged
-from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 
 # HTTPX loads its optional HTTP/2 transport lazily.

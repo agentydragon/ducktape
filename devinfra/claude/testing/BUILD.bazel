@@ -9,7 +9,7 @@ py_library(
     deps = [
         "//devinfra/bazel:runfiles",
         "//devinfra/claude/claude_hook/container_e2e:e2e_container_descriptor",
-        "//util:oci",
+        "//devinfra/oci",
         "//util/testing:undeclared_outputs",
         "@pypi//docker",
         "@pypi//pytest",

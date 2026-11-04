@@ -70,7 +70,7 @@ py_test(
         "//:conftest",
         "//agentplane/app:conftest",
         "//agentplane/app/frontend/serving/testing:image",
-        "//util:oci",
+        "//devinfra/oci",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
         "@pypi//testcontainers",

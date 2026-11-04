@@ -6,7 +6,7 @@ it built itself, because the planner fails open and its "push it to be safe" ver
 is a guess, not a change. Both compare against the same thing — the content behind
 `latest` — so that read and the repository naming live here rather than in each.
 
-Talking to the registry is `util.crane`'s job, not this module's: it is standard
+Talking to the registry is `devinfra.oci.crane`'s job, not this module's: it is standard
 library only precisely so both halves can import it as bare `python3 -m` on a
 GitHub Actions runner.
 """
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from util.crane import Crane
+from devinfra.oci.crane import Crane
 
 
 class Registry(StrEnum):

@@ -1,6 +1,6 @@
 """OCI container image utilities: auth, digest reading, image loading.
 
-Also the Bazel-facing half of crane: `util/crane.py` is deliberately standard
+Also the Bazel-facing half of crane: `devinfra/oci/crane.py` is deliberately standard
 library only so the CI publish planners can import it without Bazel, so
 resolving crane and Bazel-built images out of runfiles lives here instead.
 """
@@ -29,7 +29,7 @@ from pathlib import Path
 from opentelemetry import trace
 
 from devinfra.bazel import runfiles
-from util.crane import Crane, parse_pushed_digest
+from devinfra.oci.crane import Crane, parse_pushed_digest
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)

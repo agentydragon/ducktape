@@ -8,8 +8,8 @@ py_library(
     srcs = ["driver.py"],
     deps = [
         "//devinfra/bazel:runfiles",
+        "//devinfra/oci",
         "//third_party/containers:postgres_18",
-        "//util:oci",
     ],
 )
 

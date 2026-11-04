@@ -28,9 +28,9 @@ from testcontainers.core import testcontainers_config
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
+from devinfra.oci.oci import BazelImage, load_oci_image
 from props.db.models import AgentType
 from third_party.containers import registry_3, ryuk
-from util.oci import BazelImage, load_oci_image
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)

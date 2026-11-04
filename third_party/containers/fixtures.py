@@ -2,8 +2,8 @@
 
 import pytest
 
+from devinfra.oci.oci import load_oci_image
 from third_party.containers import debian_slim
-from util.oci import load_oci_image
 
 
 @pytest.fixture(scope="session")

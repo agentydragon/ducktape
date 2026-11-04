@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from util import oci
+from devinfra.oci import oci
 
 
 def test_load_oci_image_uses_manifest_digest_and_respects_explicit_reference(

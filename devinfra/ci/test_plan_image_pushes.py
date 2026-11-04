@@ -16,7 +16,7 @@ from devinfra.ci.plan_image_pushes import (
     matrix_include,
     plan,
 )
-from util.crane import Crane
+from devinfra.oci.crane import Crane
 
 BIN = "bazel-out/k8-fastbuild/bin"
 

@@ -4,8 +4,7 @@ import subprocess
 import sys
 
 from devinfra.bazel import runfiles
-from third_party.containers import postgres_18
-from util.oci import (
+from devinfra.oci.oci import (
     _already_loaded,
     _loaded_marker,
     _one_loader_at_a_time,
@@ -13,6 +12,7 @@ from util.oci import (
     load_oci_image,
     read_oci_layout_digest,
 )
+from third_party.containers import postgres_18
 
 
 def main() -> None:

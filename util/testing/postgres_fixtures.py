@@ -28,9 +28,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.core import testcontainers_config
 from testcontainers.postgres import PostgresContainer
 
+from devinfra.oci.oci import load_oci_image
 from third_party.containers import postgres_18, ryuk
 from util.db_migrations import MigrationRunner
-from util.oci import load_oci_image
 from util.testing.postgres import (
     DatabaseClones,
     DatabaseNames,
@@ -50,7 +50,7 @@ tracer = trace.get_tracer(__name__)
 
 @contextlib.contextmanager
 def _onto_disk() -> Iterator[None]:
-    """Mirror this module's and `util.oci`'s progress into an undeclared output, as it happens.
+    """Mirror this module's and `devinfra.oci.oci`'s progress into an undeclared output, as it happens.
 
     `logger.info` on its own does not survive the one case these lines exist for. pytest buffers
     captured output and a Bazel timeout kills the process, so the account of where the time went
@@ -60,7 +60,7 @@ def _onto_disk() -> Iterator[None]:
     """
     handler = logging.FileHandler(undeclared_outputs_dir() / "container_setup.log")
     handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(message)s"))
-    watched = [logging.getLogger("util.oci"), logger]
+    watched = [logging.getLogger("devinfra.oci.oci"), logger]
     levels = [each.level for each in watched]
     for each in watched:
         each.addHandler(handler)
