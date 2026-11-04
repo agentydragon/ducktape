@@ -187,6 +187,13 @@ from the actual remaining rejection, rather than treating a cycle-free result
 as acceptance. Use native module catalogs for normalized chunk-local paths;
 module-root prefixes in authored YAML are not necessarily those identities.
 
+Check each cycle's `rejection` kind before choosing a removal set.
+`tdz_after_collapsing_pass_one` describes a hypothetical co-location of Pass-1
+SCCs; its owner union can include modules that pass together once the actual
+mutual/direct cycles are resolved. Try a coarse candidate based on those actual
+blockers first, rerun the normal gate, then bisect remaining failing additions.
+See [rejection diagnostics](../../docs/cli.md#rejection-diagnostics).
+
 Removal can change module cycles and selector dependencies, so do not assume
 acceptance is monotone or prune untried subsets from one failing result. A
 branch-and-bound search needs an explicit objective and justified bounds; a

@@ -1423,6 +1423,15 @@ structured object on stdout: `{verb, action: "rejected", rejection}`, where
 the **same wire shapes** `atomic_group_conflicts.json` / `cycles.json` carry
 — there is no parallel rejection schema.
 
+Each cycle's `rejection` distinguishes `mutual_constraining_cycle`,
+`esm_evaluation_tdz`, and `tdz_after_collapsing_pass_one`. The last runs Pass 2
+after hypothetically co-locating every Pass-1 SCC and applies to that collapsed
+assignment. Its owner list can include otherwise viable modules. When reducing
+ownership, first try a candidate resolving the actual mutual/direct cycles,
+then rerun the normal gate on that candidate. This can preserve a broad group
+that would be lost by removing the union of every diagnostic's owners. Atomic
+coverage and both gate checks still apply to the resulting assignment.
+
 Edit-gate rejections (including `--dry-run` probes) also write those
 artifacts to disk as siblings of `--graph` — the default location the
 `gate` queries read — so the documented follow-up queries work on the
