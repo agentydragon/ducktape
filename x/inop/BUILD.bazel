@@ -71,7 +71,7 @@ py_library(
         ":config",
         "//agent_core/testing:responses",
         "//agent_core/testing/mcp:responses",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
     ],
 )

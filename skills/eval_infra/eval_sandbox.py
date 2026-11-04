@@ -30,9 +30,9 @@ from pathlib import Path
 
 from agent_framework import MCPStdioTool
 
+from devinfra.bazel.runfiles import get_required_path
 from mcp_infra.exec.docker.types import AlwaysSetTo, BindMount, ContainerExecServerConfig
 from skills.eval_infra.skill_staging import StagedSkill
-from util.bazel.runfiles import get_required_path
 
 # In-container path conventions. Hardcoded — standardizing across rollouts is
 # the whole point of `eval_infra`. See module docstring for the layout.

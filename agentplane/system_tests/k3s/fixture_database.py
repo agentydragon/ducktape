@@ -26,7 +26,7 @@ from constructs import Construct
 
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.secret_ref import SecretRef
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "postgres"
 SERVICE = "postgres-primary"

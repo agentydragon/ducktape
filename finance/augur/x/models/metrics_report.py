@@ -28,6 +28,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from finance.augur.api.config import load_augur_config
 from finance.augur.fit.data import load_evidence_segments
 from finance.augur.fit.metrics import (
@@ -41,7 +42,6 @@ from finance.augur.fit.model import FittableScorable, Scorable
 from finance.augur.x.models.independent import IndependentProviderConfig
 from finance.augur.x.models.provider_config import CompositeProviderConfig
 from finance.augur.x.models.vecm import VecmConfig, VecmModel
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
 @dataclass(frozen=True)

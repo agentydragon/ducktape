@@ -110,9 +110,9 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
+        "//devinfra/bazel:runfiles",
         "//finance/plaid/db:models",
         "//finance/plaid/spend:portfolio_queries",
-        "//util/bazel:runfiles",
         "//util/testing:postgres",
         "@pypi//psycopg",
         "@pypi//pytest_bazel",

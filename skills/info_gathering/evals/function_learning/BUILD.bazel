@@ -31,8 +31,8 @@ py_library(
     ],
     deps = [
         ":functions",
+        "//devinfra/bazel:runfiles",
         "//skills/eval_infra:eval_prompt",
-        "//util/bazel:runfiles",
     ],
 )
 

@@ -30,7 +30,7 @@ from agentplane.system_tests.k3s.rendered_fixture import LocalModel, McpInputs, 
 from agentplane.system_tests.vm_configuration import OOM_TEMPLATE, SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s.agentplane import central_sampler, history_service, llm_ingress, runner_gateway
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from util.settings_contract import env_name
 
 _MCP = McpInputs(

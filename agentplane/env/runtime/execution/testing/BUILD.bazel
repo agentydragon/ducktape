@@ -14,9 +14,9 @@ py_library(
     ],
     deps = [
         "//agentplane/env/e2e/testing:launches",
+        "//devinfra/bazel:runfiles",
         "//third_party/containers:debian_slim",
         "//util:oci",
-        "//util/bazel:runfiles",
         "//util/testing:container_logs",
         "@pypi//pytest",
     ],

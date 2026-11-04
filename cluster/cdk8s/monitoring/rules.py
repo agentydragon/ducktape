@@ -7,7 +7,7 @@ from textwrap import dedent
 from cdk8s import ApiObjectMetadata, App, Chart
 
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "monitoring-rules"
 NAMESPACE = "monitoring"

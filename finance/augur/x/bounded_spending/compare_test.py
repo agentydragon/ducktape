@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 import pytest_bazel
 
+from devinfra.bazel.runfiles import get_required_path
 from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
@@ -24,7 +25,6 @@ from finance.augur.sim.world import World
 from finance.augur.study.trinity.replay import EQUITY, HORIZON_MONTHS, Situation, situation
 from finance.augur.x.bounded_spending.compare import _write_consumption_distribution, compare
 from finance.augur.x.bounded_spending.python_policy import BatchPolicy, Parameters, SpendingPolicy, consumption, run
-from util.bazel.runfiles import get_required_path
 
 
 @pytest.fixture

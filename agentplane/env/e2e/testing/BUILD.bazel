@@ -83,7 +83,7 @@ py_library(
         "//agentplane/native/codex/testing:model",
         "//agentplane/proto:session_pb2",
         "//agentplane/sandboxes:launch",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//protobuf",
     ],
 )

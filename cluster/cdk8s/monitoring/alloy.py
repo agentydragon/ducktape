@@ -20,7 +20,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository, loki, mimir, tempo
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 _NAME = "alloy"
 NAMESPACE = "monitoring"

@@ -31,7 +31,7 @@ py_library(
 py_library(
     name = "tool_resolve",
     srcs = ["tool_resolve.py"],
-    deps = ["//util/bazel:runfiles"],
+    deps = ["//devinfra/bazel:runfiles"],
 )
 
 py_library(
@@ -132,7 +132,7 @@ py_library(
     ],
     deps = [
         ":tool_resolve",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
     ],
 )
 
@@ -152,7 +152,7 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         "//cluster/cdk8s:manifest_roots",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
     ],
 )
@@ -175,7 +175,7 @@ py_test(
     deps = [
         ":kustomize",
         ":tool_resolve",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
@@ -268,7 +268,7 @@ py_test(
     data = ["//:nebula-mesh.json"],
     deps = [
         "//cluster/scripts:nebula_mesh",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -304,7 +304,7 @@ py_test(
         ":k8s",
         ":kustomize",
         "//cluster/cdk8s:manifest_roots",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -324,7 +324,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         "//cluster/cdk8s/authentik:jwt_rotation",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
@@ -366,7 +366,7 @@ py_test(
     ],
     deps = [
         ":flux",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )
@@ -392,7 +392,7 @@ py_test(
     ],
     deps = [
         "//cluster/cdk8s:manifest_roots",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

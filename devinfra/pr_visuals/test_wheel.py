@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 # gazelle:include_dep //devinfra/pr_visuals:publisher
 WHEEL = get_required_path(own_repo_rlocation("devinfra/pr_visuals/pr_visuals-0.1.0-py3-none-any.whl"))

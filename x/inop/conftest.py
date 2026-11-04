@@ -6,7 +6,7 @@ from agent_core.testing.mcp.responses import *  # noqa: F403
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
 from agent_core.testing.responses import *  # noqa: F403
-from util.bazel import runfiles
+from devinfra.bazel import runfiles
 from x.inop.config import (
     GraderConfig,
     OptimizerConfig,

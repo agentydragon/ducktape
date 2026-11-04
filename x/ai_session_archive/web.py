@@ -13,7 +13,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from starlette import status
 
-from util.bazel.runfiles import find_path
+from devinfra.bazel.runfiles import find_path
 from util.oidc_login import LoginConfig, install_login
 from x.ai_session_archive import queries
 from x.ai_session_archive.database import make_session_factory

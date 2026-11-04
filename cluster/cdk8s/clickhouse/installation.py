@@ -58,7 +58,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/cluster"
 SOPS_FILES = (

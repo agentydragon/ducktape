@@ -151,9 +151,9 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
+        "//devinfra/bazel:runfiles",
         "//devinfra/claude:conftest",
         "//devinfra/claude/testing:container_e2e",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

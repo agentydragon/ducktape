@@ -10,7 +10,7 @@ import pytest_bazel
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 _BLUEPRINTS_DIR_ANCHOR = "_main/cluster/k8s/authentik/app/blueprints/embedded-outpost.yaml"
 

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.results import (
@@ -19,7 +20,6 @@ from finance.augur.sim.results import (
     RejectedAction,
 )
 from finance.augur.x.monthly_actions.run import compose, run_example, situation
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
 @pytest.fixture(scope="module")

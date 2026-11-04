@@ -1,9 +1,9 @@
 import pytest_bazel
 
+from devinfra.bazel.runfiles import get_required_path
 from finance.augur.calibration.catalog import MarketCatalog
 from finance.evidence.markets import Platform, load_roster
 from finance.scraper.scrape import build_parser, markets_from_args
-from util.bazel.runfiles import get_required_path
 
 _ROSTER = get_required_path("_main/finance/evidence/example_market_roster.yaml")
 _CATALOG = get_required_path("_main/finance/augur/calibration/example_openai_catalog.yaml")

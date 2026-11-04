@@ -15,8 +15,8 @@ import xmlrpc.client
 import pytest
 import pytest_bazel
 
+from devinfra.bazel.runfiles import get_required_path
 from skills.freecad.conftest import freecad_env
-from util.bazel.runfiles import get_required_path
 
 _FREECAD_MCP_ADDON_RLOCATION = "freecad_mcp/addon/FreeCADMCP"
 _RPC_PORT = 9875

@@ -27,7 +27,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.flux.git_repository import GitRepository
 from cluster.cdk8s.secret_ref import SecretRef
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "infra-drift"
 OUTPUT_DIR = f"{GENERATED_ROOT}/infra-drift"

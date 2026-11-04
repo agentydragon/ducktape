@@ -9,7 +9,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from agentplane.action_service.catalog import ActionGroup, Key, McpExecutorBinding
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 def _configured_groups() -> dict[str, ActionGroup]:

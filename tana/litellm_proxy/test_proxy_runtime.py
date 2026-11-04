@@ -22,9 +22,9 @@ from litellm.proxy.proxy_server import ProxyConfig
 from litellm.types.utils import GenericStreamingChunk
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
 
+from devinfra.bazel.runfiles import get_required_path
 from tana.litellm_proxy import custom_handler
 from tana.litellm_proxy.provider import TanaChatResult, TanaLiteLLM, TanaProxyClient, TanaProxyConfig
-from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_in_loop
 
 

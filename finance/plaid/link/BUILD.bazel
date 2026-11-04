@@ -91,7 +91,7 @@ py_test(
     data = [":server_bin"],
     deps = [
         "//:conftest",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )

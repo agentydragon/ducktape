@@ -28,8 +28,8 @@ from cluster.network_readiness import (
     verify_clusterip_routing,
     wait_for_cilium_health,
 )
-from util.bazel.runfiles import get_required_path
-from util.bazel.workspace import get_build_workspace_directory
+from devinfra.bazel.runfiles import get_required_path
+from devinfra.bazel.workspace import get_build_workspace_directory
 
 _TOFU_BIN = get_required_path("multitool/tools/tofu/tofu")
 

@@ -17,9 +17,9 @@ import pytest
 import pytest_bazel
 from pydantic import TypeAdapter
 
+from devinfra.bazel.runfiles import get_required_path
 from devinfra.claude.claude_api.hooks.output import HookOutput
 from devinfra.claude.claude_api.json_schema import inline_refs
-from util.bazel.runfiles import get_required_path
 
 
 def _load_zod_json_schema() -> dict[str, Any]:

@@ -4,8 +4,8 @@ Loads shared prompt templates from text files via Bazel runfiles, providing a
 single source of truth used by all implementations (Python, Rust, Go).
 """
 
+from devinfra.bazel.runfiles import get_required_path
 from skills.eval_infra.eval_prompt import compose_system_prompt
-from util.bazel.runfiles import get_required_path
 
 _SIM_RLOCATION = "_main/skills/info_gathering/evals/twenty_questions/sim.txt"
 _SCRATCH_NOTE_RLOCATION = "_main/skills/info_gathering/evals/twenty_questions/scratch_system_note.txt"

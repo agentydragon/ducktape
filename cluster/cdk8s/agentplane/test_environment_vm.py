@@ -17,7 +17,7 @@ from more_itertools import one
 
 from agentplane.env.config import CodexReadiness, Configuration, VMEnvironment
 from cluster.cdk8s.agentplane import environment_sandbox, environment_vm, staging
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 HARNESS_ENV = {"EXAMPLE_SERVICE_URL": "http://service.test"}
 

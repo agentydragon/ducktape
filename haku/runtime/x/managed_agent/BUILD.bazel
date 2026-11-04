@@ -10,7 +10,7 @@ py_test(
         "//haku/runtime/x/managed_agent/self_hosted:haku.agent.yaml",
     ],
     deps = [
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//pygohcl",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

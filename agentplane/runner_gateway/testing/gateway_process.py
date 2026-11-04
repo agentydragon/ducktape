@@ -24,7 +24,7 @@ from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.db_url import render_postgresql_url
 from util.net import listen_tcp
 from util.settings_contract import env_name

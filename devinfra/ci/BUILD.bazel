@@ -11,7 +11,7 @@ py_library(
     ],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//util/bazel:workspace",
+        "//devinfra/bazel:workspace",
         "@pypi//httpx",
         "@pypi//pydantic",
     ],
@@ -281,7 +281,7 @@ py_test(
     ],
     deps = [
         ":bazel_ci",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

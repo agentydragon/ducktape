@@ -54,6 +54,7 @@ py_test(
     tags = ["visual"],
     deps = [
         "//:conftest",
+        "//devinfra/bazel:runfiles",
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:conftest",
         "//finance/plaid/spend:models",
@@ -61,7 +62,6 @@ py_test(
         "//gnome/testing:fake_daemon",
         "//gnome/testing:session",
         "//util:oci",
-        "//util/bazel:runfiles",
         "//util/testing:output_writer",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

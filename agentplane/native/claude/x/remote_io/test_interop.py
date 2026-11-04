@@ -16,7 +16,7 @@ from agentplane.native.claude.testing import anthropic_sse
 from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.claude.x.remote_io.local_proxy import HOST, local_proxy, make_tls
 from agentplane.native.claude.x.remote_io.server import SESSION_PATH, TEST_TOKEN, RemoteIOServer
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 MODEL = "agentplane-test/claude-haiku-4-5-20251001"

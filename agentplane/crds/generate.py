@@ -13,8 +13,8 @@ from typing import Any, cast
 
 import yaml
 
-from util.bazel.runfiles import get_required_path
-from util.bazel.workspace import get_build_workspace_directory
+from devinfra.bazel.runfiles import get_required_path
+from devinfra.bazel.workspace import get_build_workspace_directory
 
 CRDS_DIR = Path("agentplane/crds/manifests")
 CRD_FILES = (

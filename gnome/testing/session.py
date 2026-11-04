@@ -16,7 +16,7 @@ from docker.models.containers import Container, ExecResult
 from PIL import Image
 from testcontainers.core.container import DockerContainer
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from util.testing.output_writer import BoundTestOutputs
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 

@@ -16,7 +16,7 @@ import pytest_bazel
 import yaml
 
 from cluster.cdk8s.authentik.jwt_rotation import ROTATIONS
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 _SOPS_CONFIG = "_main/.sops.yaml"
 

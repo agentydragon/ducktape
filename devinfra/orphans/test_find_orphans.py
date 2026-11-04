@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 import pytest_bazel
 
+from devinfra.bazel.workspace import BazelBackend, BazelWorkspace
 from devinfra.orphans.find_orphans import PatternStats, run_report
-from util.bazel.workspace import BazelBackend, BazelWorkspace
 
 
 def _run(

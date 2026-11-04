@@ -18,7 +18,7 @@ from aiquota.render import human
 from aiquota.render.format import format_prepaid_balance, format_reset_credit_summary
 from aiquota.render.view_model import to_view
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_fixture
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 if __name__ == "__main__":
     pytest_bazel.main()

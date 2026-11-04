@@ -20,7 +20,7 @@ from agentplane.central_sampler.settings import AuthConfig, ConnectionConfig, Mo
 from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchange
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.testing.go_process import go_process
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import listen_tcp
 
 METADATA = (("authorization", "Bearer test-token"),)

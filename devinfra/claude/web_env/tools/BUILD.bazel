@@ -5,7 +5,7 @@ py_library(
     srcs = ["manifest.py"],
     data = ["//devinfra/claude/web_env:exclusions.yaml"],
     deps = [
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -53,7 +53,7 @@ py_library(
     name = "fetch_debs",
     srcs = ["fetch_debs.py"],
     deps = [
-        "//util/bazel:workspace",
+        "//devinfra/bazel:workspace",
         "@pypi//requests",
         "@pypi//urllib3",  # keep: mypy checks requests stubs' transitive imports
     ],
@@ -74,7 +74,7 @@ py_library(
         ":diff_manifests",
         ":fetch_debs",
         ":manifest",
-        "//util/bazel:workspace",
+        "//devinfra/bazel:workspace",
     ],
 )
 

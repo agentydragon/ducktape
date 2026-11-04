@@ -33,7 +33,7 @@ from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPo
 from cluster.cdk8s.providers.gateway_api.http_route import RouteFilter
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "authentik"
 NAMESPACE = "authentik"

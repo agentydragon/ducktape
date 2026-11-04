@@ -1,7 +1,7 @@
 import os
 import subprocess
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 def test_root_run_is_the_fixture_symlink_in_all_images() -> None:

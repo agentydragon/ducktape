@@ -7,8 +7,8 @@ py_library(
     testonly = True,
     srcs = ["container_e2e.py"],
     deps = [
+        "//devinfra/bazel:runfiles",
         "//util:oci",
-        "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//docker",
         "@pypi//pytest",

@@ -224,7 +224,7 @@ py_test(
         ":conftest",
         ":worktree_service",
         "//:conftest",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

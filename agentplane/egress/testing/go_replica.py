@@ -10,7 +10,7 @@ from pathlib import Path
 
 from agentplane.egress.settings import Settings
 from agentplane.testing.go_process import GoProcess, go_process
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.db_url import render_postgresql_url
 from util.net import Listener, listen_tcp
 

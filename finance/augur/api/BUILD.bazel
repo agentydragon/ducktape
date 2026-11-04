@@ -266,9 +266,9 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
+        "//devinfra/bazel:runfiles",
         "//finance/augur:conftest",
         "//finance/augur/testing:server",
-        "//util/bazel:runfiles",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
@@ -370,11 +370,11 @@ py_library(
         ":catalog",
         ":config",
         ":portfolio_sources",
+        "//devinfra/bazel:runfiles",
         "//finance/augur/model:exogenous",
         "//finance/augur/product:scenarios",
         "//finance/augur/product:service",
         "//finance/augur/product:wire",
-        "//util/bazel:runfiles",
     ],
 )
 

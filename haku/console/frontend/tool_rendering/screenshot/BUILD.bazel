@@ -78,7 +78,7 @@ py_library(
     testonly = True,
     srcs = ["preview_visual.py"],
     deps = [
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "//util/testing/frontend_visual:capture",
         "//util/testing/frontend_visual:fixtures",
         "//util/testing/frontend_visual:viewports",

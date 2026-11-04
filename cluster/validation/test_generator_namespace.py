@@ -31,7 +31,7 @@ import pytest_bazel
 import yaml
 
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, manifest_files
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 _K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"
 

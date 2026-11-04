@@ -33,7 +33,7 @@ from agentplane.app.testing.notifications import FakeNotifications
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service import notifications_pb2_grpc
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from util.db_url import render_postgresql_url
 from util.net import Listener, listen_tcp
 from util.testing.asgi import serve_app_in_loop

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from agentplane.system_tests.k3s import stack
 from agentplane.system_tests.k3s.stack import K3s
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 def _assert_cri_pinned(k3s: K3s, reference: str, work: Path) -> None:

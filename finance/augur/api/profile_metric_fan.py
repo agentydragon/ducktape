@@ -13,6 +13,7 @@ from pathlib import Path
 from types import FrameType
 from typing import cast, get_args
 
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from finance.augur.api.catalog import build_catalog
 from finance.augur.api.config import Config, load_augur_config
 from finance.augur.api.portfolio_sources import resolve_portfolio_sources
@@ -20,7 +21,6 @@ from finance.augur.model.exogenous import Sampler
 from finance.augur.product.scenarios import locations_by_id, resolve_primary_agent_id
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import MetricName, ProjectionSamplingRequest, ScenarioKey, SpendIndex
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 DEFAULT_CONFIG_RUNFILE = own_repo_rlocation("finance/augur/api/testdata/config.yaml")
 DEFAULT_HORIZON_MONTHS = 100

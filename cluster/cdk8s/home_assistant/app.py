@@ -51,13 +51,13 @@ from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import HostNetworkServiceRef, Pods, Port
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 # Aliased: each provisioner names its model `Settings`, in a module named `settings`.
 from homeassistant.provisioner.components import settings as components
 from homeassistant.provisioner.endpoint import HomeAssistantEndpoint
 from homeassistant.provisioner.onboarding import settings as onboarding
 from homeassistant.provisioner.tokens import settings as tokens
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.settings_contract import env_name, validate_settings_fragment
 from util.yaml_file_settings import YamlFileSettings
 

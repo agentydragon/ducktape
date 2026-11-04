@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 import pytest_bazel
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from x import ember  # gazelle:ignore x.ember
 from x.ember.system_prompt import load_system_prompt
 

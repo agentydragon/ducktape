@@ -14,7 +14,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.gitlab_spike import runner
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 GITOPS_NAME = "gitlab-spike-gitops"
 GITOPS_DIR = f"{GENERATED_ROOT}/gitlab-spike/gitops"

@@ -4,8 +4,8 @@ import json
 
 import pytest_bazel
 
+from devinfra.bazel.runfiles import get_required_path
 from model_catalog.nix import OUTPUT_PATH, claude_wrapper_models
-from util.bazel.runfiles import get_required_path
 
 
 def test_wrapper_projection_matches_committed_json() -> None:

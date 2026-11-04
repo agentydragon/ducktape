@@ -12,8 +12,8 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Browser, Page
 
+from devinfra.bazel.runfiles import get_required_path
 from finance.augur.testing.server import run_server
-from util.bazel.runfiles import get_required_path
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright

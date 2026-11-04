@@ -15,7 +15,7 @@ from playwright.async_api import Error as PlaywrightError, Page
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.alias_generators import to_camel
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
 

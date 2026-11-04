@@ -11,8 +11,8 @@ py_library(
     deps = [
         "//agentplane/egress:platform_routes",
         "//agentplane/egress:sidecar_config",
+        "//devinfra/bazel:runfiles",
         "//util:net",
-        "//util/bazel:runfiles",
         "@pypi//aiohttp",
         "@pypi//pyyaml",
     ],
@@ -24,8 +24,8 @@ py_library(
     deps = [
         "//agentplane/egress:settings",
         "//agentplane/testing:go_process",
+        "//devinfra/bazel:runfiles",
         "//util:db_url",
         "//util:net",
-        "//util/bazel:runfiles",
     ],
 )

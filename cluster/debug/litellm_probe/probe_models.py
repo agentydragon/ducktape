@@ -18,7 +18,7 @@ import yaml
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from pydantic import BaseModel, ConfigDict
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 DEFAULT_BASE_URL = "https://litellm.allegedly.works"
 REPORT_TEMPLATE_RUNFILE = "ducktape/cluster/debug/litellm_probe/report.html.j2"

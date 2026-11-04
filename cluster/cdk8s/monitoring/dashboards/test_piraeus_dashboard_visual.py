@@ -11,9 +11,9 @@ import pytest_bazel
 from playwright.async_api import Response, async_playwright, expect
 
 from cluster.cdk8s.monitoring.dashboards import piraeus_metrics
+from devinfra.bazel.runfiles import get_required_path
 from grafana.visual_tests.visual_browser import capture_dashboard
 from grafana.visual_tests.visual_harness import grafana_dashboard, record_stage
-from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.context import FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.output_writer import BoundTestOutputs

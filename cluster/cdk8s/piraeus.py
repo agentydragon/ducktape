@@ -19,7 +19,7 @@ from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, oci_helm_repo
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.namespaces import Vpa
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAMESPACE = "piraeus-datastore"
 OPERATOR_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/operator"

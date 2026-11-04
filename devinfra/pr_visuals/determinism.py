@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from devinfra.bazel.workspace import get_build_workspace_directory
 from devinfra.pr_visuals.artifacts import Runner
 from devinfra.pr_visuals.collection import (
     CollectedOutputs,
@@ -31,7 +32,6 @@ from devinfra.pr_visuals.collection import (
 )
 from devinfra.pr_visuals.render_common import buildbuddy_url, shard_ranges
 from devinfra.pr_visuals.targets import TestRun, list_test_runs
-from util.bazel.workspace import get_build_workspace_directory
 
 # The BuildBuddy collection scope is explicit and shared with the visual publisher.
 REPOSITORY = "agentydragon/ducktape"

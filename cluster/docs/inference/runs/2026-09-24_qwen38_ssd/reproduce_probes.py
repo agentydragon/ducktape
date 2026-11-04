@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 RUN_DIR = "cluster/docs/inference/runs/2026-09-24_qwen38_ssd"
 CODING_REQUEST = f"{RUN_DIR}/coding_request.json"

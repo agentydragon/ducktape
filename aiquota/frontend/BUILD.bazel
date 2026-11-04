@@ -304,7 +304,7 @@ py_visual_test(
     env = {"FIXTURE_CATALOG": "$(rlocationpath :scenes_json)"},
     harness = ":screenshot_bundle_js",
     test_deps = [
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "//util/testing/frontend_visual:capture",
         "//util/testing/frontend_visual:viewports",
         "@pypi//playwright",

@@ -32,7 +32,7 @@ from more_itertools import one
 from cluster.cdk8s import node_feature_discovery
 from cluster.cdk8s.monitoring import loki
 from cluster.scripts import nebula_mesh
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 # Roaming k8s nodes are exactly the `laptop`-role hosts in the mesh roster: they
 # join and leave the cluster, unlike `wyrm2`, which is NixOS but always-on and so

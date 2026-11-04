@@ -8,6 +8,7 @@ from xml.etree import ElementTree as ET
 import pytest
 import pytest_bazel
 
+from devinfra.bazel import runfiles
 from laser.lightburn.lbrn2_writer import LightBurnProject, RectShape, TextShape
 from laser.material_test.grid_generator import (
     AxisConfig,
@@ -23,7 +24,6 @@ from laser.material_test.grid_generator import (
     fmt_val,
     generate,
 )
-from util.bazel import runfiles
 
 # ── fmt_val ────────────────────────────────────────────────────────────────────
 

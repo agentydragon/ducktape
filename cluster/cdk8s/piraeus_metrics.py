@@ -13,7 +13,7 @@ from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 _NAME = "piraeus-lvm-metrics"
 _METRICS_PORT_NAME = "metrics"

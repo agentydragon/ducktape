@@ -9,8 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from platform_sessions.chrome.cookies import chrome_password, chrome_user_agent, decrypt_cookie
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
 @dataclass(frozen=True)

@@ -40,7 +40,7 @@ from aiquota.models import AllQuotas, FetchSuccess, HistorySnapshot, QuotaSnapsh
 from aiquota.providers.base import SupportsHistory
 from aiquota.render.view_model import AllQuotasView, to_view
 from aiquota.settings import Settings
-from util.bazel.runfiles import find_path
+from devinfra.bazel.runfiles import find_path
 
 _CACHE_CONTROL = {"Cache-Control": "no-store"}
 _MAX_CAPTURE_BYTES = 1024 * 1024

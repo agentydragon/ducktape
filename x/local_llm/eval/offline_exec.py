@@ -21,7 +21,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from util.bazel import runfiles
+from devinfra.bazel import runfiles
 
 
 def _parse_args() -> argparse.Namespace:

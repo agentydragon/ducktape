@@ -52,7 +52,7 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":runner",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],

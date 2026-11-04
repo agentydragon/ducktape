@@ -48,9 +48,9 @@ from inspect_ai.tool import Tool, ToolDef, bash, tool
 from inspect_ai.util import SandboxEnvironmentSpec, sandbox
 from pydantic import TypeAdapter, ValidationError
 
+from devinfra.bazel.runfiles import get_required_path
 from devinfra.skills.reverse_engineer.reverse_engineer_skill_spec import SPEC as RE_SKILL_SPEC
 from skills.eval_infra.skill_staging import stage_skill
-from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
 

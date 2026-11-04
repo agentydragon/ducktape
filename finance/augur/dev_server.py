@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
+from devinfra.bazel.runfiles import get_required_path
 from finance.augur.api.config import Config, load_augur_config, resolve_augur_config_path
 from finance.augur.api.server import (
     PriceClientsProvider,
@@ -17,7 +18,6 @@ from finance.augur.api.server import (
     run_app,
 )
 from finance.augur.calibration.default_clients import default_price_clients
-from util.bazel.runfiles import get_required_path
 
 _AUGUR_BUNDLE_INDEX_RUNFILE_ENV_VAR = "AUGUR_BUNDLE_INDEX_RUNFILE"
 StaticPathResolver = Callable[[str], Path]

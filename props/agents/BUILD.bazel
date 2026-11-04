@@ -35,8 +35,8 @@ py_library(
     srcs = ["push_images.py"],
     deps = [
         ":env",
+        "//devinfra/bazel:runfiles",
         "//util:oci",
-        "//util/bazel:runfiles",
     ],
 )
 

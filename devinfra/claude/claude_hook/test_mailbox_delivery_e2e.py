@@ -16,8 +16,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from devinfra.bazel.runfiles import get_required_path
 from devinfra.claude.testing import container_e2e
-from util.bazel.runfiles import get_required_path
 
 _TEST_PROFILE = "_main/devinfra/claude/claude_hook/mailbox_test_profile.yaml"
 _SESSION_ID = "mailbox-e2e-test"

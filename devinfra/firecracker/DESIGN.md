@@ -61,7 +61,7 @@ Run Firecracker microVMs on wyrm2 (bare metal NixOS, 32 CPU, 94G RAM, KVM,
 - [ ] WebSocket `CreateProcess` runs commands, streams I/O
 - [ ] `curl ifconfig.me` inside VM returns an IP (guest networking works)
 - [ ] `bazel info` inside VM succeeds (JVM starts, finds workspace)
-- [ ] `bazel test //util/bazel/...` passes inside VM (RBE works)
+- [ ] `bazel test //devinfra/bazel/...` passes inside VM (RBE works)
 - [ ] Snapshot: warm Bazel, snapshot, restore — query takes ~0.3s not ~15s
 - [ ] All k8s resources reconcile via Flux without manual intervention
 

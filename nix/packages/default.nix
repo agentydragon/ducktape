@@ -229,7 +229,7 @@ let
   pyrage = pkgs.callPackage ./pyrage.nix { };
   ducktape-util = mkWheel {
     pname = "ducktape-util";
-    description = "Shared utility library (util.bazel, util.fs, etc.)";
+    description = "Shared utility library (devinfra.bazel, util.fs, etc.)";
     importsCheck = [ "util" ];
     propagatedBuildInputs = with python314Packages; [
       opentelemetry-api

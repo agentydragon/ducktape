@@ -13,7 +13,7 @@ from more_itertools import one
 
 from cluster.cdk8s.monitoring import gateway_probe
 from cluster.scripts.nebula_mesh import Host, Mesh
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 # testdata/gateway_probe_rules.yaml writes its series for these node names.
 _MESH = Mesh(

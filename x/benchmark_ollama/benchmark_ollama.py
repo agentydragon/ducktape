@@ -54,7 +54,7 @@ from pathlib import Path
 
 import openai
 
-from util.bazel.workspace import get_build_working_directory
+from devinfra.bazel.workspace import get_build_working_directory
 
 OLLAMA_BASE_URL = "https://litellm.allegedly.works/v1"
 DEFAULT_MODELS = ["gpt-oss-20b-128k", "gpt-oss-120b-128k"]

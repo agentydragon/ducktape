@@ -148,7 +148,7 @@ def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = "", test_
         size = test_size,
         tags = ["specimen"],
         deps = [
-            "//util/bazel:runfiles",
+            "//devinfra/bazel:runfiles",
             "//props:conftest",
             "//props/db:config",
             "//props/db:database",

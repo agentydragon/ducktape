@@ -9,10 +9,10 @@ import numpy as np
 import pytest
 import pytest_bazel
 
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from finance.augur.sim.results import Finished, RejectedAction
 from finance.augur.x.bond_policies.construction import ProxyConstruction, compare_constructions, stipulated_curves
 from finance.augur.x.bond_policies.run import CELLS, compose, execute, measurements, situation
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
 @pytest.fixture

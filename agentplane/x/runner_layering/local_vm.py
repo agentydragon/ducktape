@@ -16,7 +16,7 @@ from typing import TextIO
 
 import httpx
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
 def _put(client: httpx.Client, path: str, body: dict[str, object], output: list[str]) -> None:

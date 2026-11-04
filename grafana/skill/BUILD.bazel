@@ -30,7 +30,7 @@ py_test(
     data = ["verify_dashboard.py"],
     deps = [
         "//cluster/cdk8s/monitoring:grafana_dashboard_inputs",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//httpx",
         "@pypi//playwright",
         "@pypi//pytest",

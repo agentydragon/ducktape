@@ -5,8 +5,8 @@ from collections.abc import Sequence
 from typing import Any
 
 from cluster.cdk8s.agentplane.model_selections import RUNNER_CONTEXT_OVERRIDES
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from model_catalog.catalog import Provider, Route
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 _UPSTREAM_MODELS = "cluster/cdk8s/agentplane/codex_upstream_models.json"
 # Codex's default prompt (`models-manager/prompt.md`, identical in 0.157.0 and 0.163.0). Codex refuses a

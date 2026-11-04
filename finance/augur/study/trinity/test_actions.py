@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 import pytest_bazel
 
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from finance.augur.model.historical_windows import HistoricalWindowsModel
 from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey, SecurityKey
 from finance.augur.sim.external_series import ExternalSeriesContext
@@ -33,7 +34,6 @@ from finance.augur.study.trinity.replay import (
     sleeve_targets,
 )
 from finance.augur.study.trinity.synthetic import synthetic_history
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
 def control(

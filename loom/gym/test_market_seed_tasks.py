@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pytest_bazel
 
+from devinfra.bazel.runfiles import get_required_path
 from finance.evidence.markets import Platform, load_roster
 from loom.gym.market_seed_tasks import MARKET_PROB_AT_AS_OF, MARKET_SEED_RECORDS, MARKET_SEED_TASKS
 from loom.gym.model_cutoffs import KNOWN_MODEL_CUTOFFS
 from loom.gym.seed_tasks import SEED_TASKS
 from loom.gym.task import WAYBACK_PREFIX
-from util.bazel.runfiles import get_required_path
 
 
 def test_task_ids_unique_across_seed_families() -> None:

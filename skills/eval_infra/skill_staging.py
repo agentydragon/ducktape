@@ -11,8 +11,8 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from devinfra.bazel.runfiles import get_required_path
 from skills.skill_spec import SkillSpec
-from util.bazel.runfiles import get_required_path
 
 
 @dataclass(frozen=True)

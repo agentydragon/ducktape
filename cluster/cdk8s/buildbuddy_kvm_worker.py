@@ -29,7 +29,7 @@ from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_lab
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.oci_cache import zot
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy, isolate_ingress
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "buildbuddy-kvm-worker"
 NAMESPACE = "buildbuddy-executor"

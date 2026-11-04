@@ -23,7 +23,7 @@ from more_itertools import one
 
 from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_config
 from cluster.scripts import nebula_mesh
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 def _locate(relative: str) -> Path:

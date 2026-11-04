@@ -8,8 +8,8 @@ from pathlib import Path
 
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from ssh_mcp_server.server import SshSettings, TargetConfig
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "ssh-mcp"
 NAMESPACE = NAME

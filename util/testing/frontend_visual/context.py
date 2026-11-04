@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.testing.browser.launcher import DETERMINISTIC_BROWSER_ARGS, chromium_executable
 
 if TYPE_CHECKING:

@@ -15,7 +15,7 @@ from agentplane.testing.codex_fixtures import (
     executor_server,
 )
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.testing.postgres_fixtures import postgres_admin_url, postgres_container, postgres_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 

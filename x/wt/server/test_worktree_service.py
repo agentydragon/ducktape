@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from x.wt.server.worktree_service import WorktreeService
 
 

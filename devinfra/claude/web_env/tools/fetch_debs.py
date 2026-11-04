@@ -29,7 +29,7 @@ from pathlib import Path
 
 import requests
 
-from util.bazel.workspace import get_build_workspace_directory
+from devinfra.bazel.workspace import get_build_workspace_directory
 
 logger = logging.getLogger(__name__)
 

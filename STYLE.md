@@ -130,7 +130,7 @@ Build `.ts`/`.tsx` with one `ts_library` (`//devinfra/js:ts_library.bzl`) per mo
 
 ### Runfiles
 
-`_main` is the root module of the build, not necessarily this repo. Tests and repo-only tools may use `get_required_path("_main/...")`; library code a dependent repo imports (where this repo is `ducktape+`) uses `own_repo_rlocation` (<util/bazel/runfiles.py>).
+`_main` is the root module of the build, not necessarily this repo. Tests and repo-only tools may use `get_required_path("_main/...")`; library code a dependent repo imports (where this repo is `ducktape+`) uses `own_repo_rlocation` (<devinfra/bazel/runfiles.py>).
 
 ### System CA certificates in distroless images
 

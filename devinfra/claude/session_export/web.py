@@ -12,11 +12,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette import status
 
+from devinfra.bazel.runfiles import find_path
 from devinfra.claude.session_export.read_api import create_read_api
 from devinfra.claude.session_export.settings import OIDCSettings, ServeSettings, WebSettings
 from devinfra.claude.session_export.store import SessionStore
 from devinfra.claude.session_export.supervisor import SyncStatus, SyncSupervisor
-from util.bazel.runfiles import find_path
 from util.oidc_login import LoginConfig, install_login
 
 logger = logging.getLogger(__name__)

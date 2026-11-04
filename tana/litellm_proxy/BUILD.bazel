@@ -166,7 +166,7 @@ py_test(
         ":custom_handler",
         ":provider",
         "//:conftest",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "//util/testing:asgi",
         "@pypi//anthropic",
         "@pypi//pytest",

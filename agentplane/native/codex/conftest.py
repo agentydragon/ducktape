@@ -7,7 +7,7 @@ import pytest
 
 from agentplane.native.codex.testing.harness import CodexHarness
 from agentplane.native.codex.testing.responses import OpenAIResponses
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 @pytest.fixture

@@ -9,8 +9,8 @@ py_library(
     name = "server",
     srcs = ["server.py"],
     deps = [
+        "//devinfra/bazel:runfiles",
         "//util:net",
-        "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
     ],
 )

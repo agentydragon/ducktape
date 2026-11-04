@@ -50,7 +50,7 @@ from agentplane.system_tests.k3s import (
 from agentplane.system_tests.port_forward import PortForward
 from agentplane.system_tests.tracing import tracer
 from agentplane.testing import tls
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)

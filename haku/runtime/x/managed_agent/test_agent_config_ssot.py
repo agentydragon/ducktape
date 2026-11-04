@@ -12,7 +12,7 @@ import pytest
 import pytest_bazel
 import yaml
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 _SHARED = yaml.safe_load(get_required_path("_main/haku/runtime/x/managed_agent/agent_shared.yaml").read_text())
 _SELF_HOSTED = yaml.safe_load(

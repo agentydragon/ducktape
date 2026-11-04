@@ -13,7 +13,7 @@ from typing import IO
 import yaml
 from pydantic import BaseModel
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 class Entry(BaseModel):

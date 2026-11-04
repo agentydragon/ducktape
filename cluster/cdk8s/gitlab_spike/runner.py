@@ -7,7 +7,7 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecEndpointSelector
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "gitlab-spike-runner"
 NAMESPACE = "gitlab-spike-ci"

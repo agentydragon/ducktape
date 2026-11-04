@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+from devinfra.bazel.workspace import get_build_workspace_directory
 from model_catalog.catalog import (
     ANTIGRAVITY_GEMINI_FLASH,
     GEMINI_FLASH,
@@ -14,7 +15,6 @@ from model_catalog.catalog import (
     Route,
 )
 from model_catalog.policies import KEY_MODEL_LANES, ModelLaneRoutes
-from util.bazel.workspace import get_build_workspace_directory
 
 OUTPUT_PATH = "model_catalog/claude-wrappers.json"
 

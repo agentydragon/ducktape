@@ -8,7 +8,7 @@ import yaml
 
 from cluster.validation.kustomize import flux_generated_kustomization, stage_artifact_copies
 from cluster.validation.tool_resolve import resolve_tool
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 def test_flux_generated_kustomization_scans_like_kustomize_controller(tmp_path: Path) -> None:

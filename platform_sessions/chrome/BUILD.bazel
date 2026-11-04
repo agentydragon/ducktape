@@ -8,7 +8,7 @@ py_library(
     srcs = ["profile.py"],
     deps = [
         ":cookies",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
     ],
 )
 

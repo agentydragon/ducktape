@@ -20,9 +20,9 @@ from textwrap import dedent
 import pytest
 import pytest_bazel
 
+from devinfra.bazel.runfiles import get_required_path
 from loom.wayback.proxy import fake_ia
 from third_party.containers import python_3_14_slim
-from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 

@@ -11,7 +11,7 @@ from cdk8s import (
 )
 
 from cluster.cdk8s.kyverno import policies, proxy_injection
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 _POLICY_BUILDERS = {
     "default-vpa-requests-only": policies.default_vpa_requests_only_chart,

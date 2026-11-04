@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _EXPECTED_OUTPUTS = {"local-model.json", "local-model-mcp-fixtures.json", "local-model-vm.json", "public-litellm.json"}

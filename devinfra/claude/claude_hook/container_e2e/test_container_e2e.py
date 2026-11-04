@@ -15,8 +15,8 @@ import pytest
 import pytest_bazel
 import yaml
 
+from devinfra.bazel.runfiles import get_required_path
 from devinfra.claude.testing import container_e2e
-from util.bazel.runfiles import get_required_path
 
 # Runfiles paths — full rlocation (passed directly to get_required_path).
 _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.bazel"

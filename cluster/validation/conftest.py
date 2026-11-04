@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 _K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"
 

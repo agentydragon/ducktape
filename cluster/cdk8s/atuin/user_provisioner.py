@@ -10,7 +10,7 @@ from cluster.cdk8s.atuin.server import DATABASE, NAMESPACE
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "atuin-user-provisioner"
 _JOB = "user-provisioner"

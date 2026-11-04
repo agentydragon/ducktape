@@ -14,7 +14,7 @@ py_library(
     srcs = ["platform_instructions.py"],
     data = ["platform_instructions.j2"],
     deps = [
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//jinja2",
     ],
 )

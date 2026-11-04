@@ -19,10 +19,10 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Page, Route
 
+from devinfra.bazel.runfiles import get_required_path
 from study_casino.app import create_app
 from study_casino.changelog import LATEST_CHANGELOG_ID
 from study_casino.config import Settings
-from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
