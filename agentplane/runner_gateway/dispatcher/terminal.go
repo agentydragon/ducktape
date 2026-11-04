@@ -10,7 +10,6 @@ import (
 	notificationpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/dispatcher_notificationpb"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -83,58 +82,44 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEv
 		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
-		positions := make([]int64, 0)
 		for _, change := range []struct{ State, Predicate string }{
 			{FailedState, "state IN ('QUEUED_IN_DISPATCHER','DELIVERING_TO_RUNNER') AND NOT delivery_attempted"},
 			{UnknownState, "(state IN ('QUEUED_IN_DISPATCHER','DELIVERING_TO_RUNNER') AND delivery_attempted) OR (state='RUNNER_ADMITTED' AND operation='submit_input')"},
 		} {
-			rows, err := tx.QueryContext(ctx, `UPDATE dispatch SET state=$2,reason='sandbox_deleted',updated_at=now()
-				WHERE sandbox_uid=$1 AND (`+change.Predicate+`) RETURNING position`, sandboxUID, change.State)
-			if err != nil {
-				return err
-			}
-			for rows.Next() {
-				var position int64
-				if err := rows.Scan(&position); err != nil {
-					rows.Close()
-					return err
-				}
-				positions = append(positions, position)
-			}
-			err = rows.Err()
-			rows.Close()
-			if err != nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE dispatch SET state=$2,reason='sandbox_deleted',updated_at=now()
+				WHERE sandbox_uid=$1 AND (`+change.Predicate+`)`, sandboxUID, change.State); err != nil {
 				return err
 			}
 		}
-		if len(positions) > 0 {
-			rows, err := tx.QueryContext(ctx, `SELECT `+qualifiedDispatchColumns+`,
-				o.execution_account_namespace,o.execution_account_name,o.execution_account_uid
-				FROM dispatch d LEFT JOIN session_opening o ON o.session_id=d.session_id
-				AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
-				WHERE d.position=ANY($1) ORDER BY d.position`, pq.Array(positions))
-			if err != nil {
-				return err
-			}
-			for rows.Next() {
-				row, owner, err := scanDispatchWithOwner(rows)
-				if err != nil {
-					rows.Close()
-					return err
-				}
-				snapshot, err := DescribeDispatch(row)
-				if err != nil {
-					rows.Close()
-					return err
-				}
-				events = append(events, TerminalEvent{ID: uuid.NewString(), Dispatch: snapshot, Owner: owner})
-			}
-			err = rows.Err()
-			rows.Close()
-			if err != nil {
-				return err
-			}
+		// Snapshot every removed receipt, including outcomes settled before this
+		// transaction whose earlier invalidation a connected watcher has not read.
+		rows, err := tx.QueryContext(ctx, `SELECT `+qualifiedDispatchColumns+`,
+			o.execution_account_namespace,o.execution_account_name,o.execution_account_uid
+			FROM dispatch d LEFT JOIN session_opening o ON o.session_id=d.session_id
+			AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
+			WHERE d.sandbox_uid=$1 ORDER BY d.position`, sandboxUID)
+		if err != nil {
+			return err
 		}
+		for rows.Next() {
+			row, owner, err := scanDispatchWithOwner(rows)
+			if err != nil {
+				rows.Close()
+				return err
+			}
+			snapshot, err := DescribeDispatch(row)
+			if err != nil {
+				rows.Close()
+				return err
+			}
+			events = append(events, TerminalEvent{ID: uuid.NewString(), Dispatch: snapshot, Owner: owner})
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+
 		for _, event := range events {
 			payloads, err := terminalPayloads(event)
 			if err != nil {

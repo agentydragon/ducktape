@@ -3130,3 +3130,90 @@ func TestDeletedAdmittedInputKeepsKnownAdmissionInUnknownEffectSnapshot(t *testi
 		t.Fatalf("unknown effects erased known admission: %+v", events[0])
 	}
 }
+
+type caughtUpPausedWatch struct {
+	*channelWatch
+	paused  chan struct{}
+	release <-chan struct{}
+}
+
+func (w *caughtUpPausedWatch) Send(frame *dispatcherpb.WatchDispatchesResponse) error {
+	if frame.GetCaughtUp() != nil {
+		close(w.paused)
+		select {
+		case <-w.release:
+		case <-w.ctx.Done():
+			return w.ctx.Err()
+		}
+	}
+	return w.channelWatch.Send(frame)
+}
+
+func TestDeletionPreservesTerminalOutcomeForWatcherBehindInvalidation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(admitted(t), 10*time.Second)
+	defer cancel()
+	store, databaseURL := testStoreWithURL(t, 3)
+	head, err := enqueueWithSession(t, store, ctx, "watch-settled-session", "sandbox-worker", sandboxUID, input("watch-settled-input", "hello"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := store.ClaimSandboxOwner(ctx, sandboxUID, "watch-settled-lease", 1, "replica-a", 0)
+	if err != nil || owner == nil {
+		t.Fatalf("owner: %+v %v", owner, err)
+	}
+	hub := NewWatchHub(databaseURL)
+	listenerDone := make(chan error, 1)
+	go func() { listenerDone <- hub.Run(ctx) }()
+	t.Cleanup(func() { cancel(); <-listenerDone })
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for !hub.Connected() {
+		select {
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		case <-ticker.C:
+		}
+	}
+	release := make(chan struct{})
+	var once sync.Once
+	unpause := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(unpause)
+	stream := &caughtUpPausedWatch{channelWatch: &channelWatch{ctx: ctx, frames: make(chan *dispatcherpb.WatchDispatchesResponse, 8)}, paused: make(chan struct{}), release: release}
+	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Hub: hub, WatchLease: time.Minute}
+	watchDone := make(chan error, 1)
+	go func() {
+		watchDone <- service.WatchDispatches(&dispatcherpb.WatchDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: head.SessionID}}}, stream)
+	}()
+	t.Cleanup(func() { cancel(); <-watchDone })
+	select {
+	case <-stream.paused:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	// The live watch subscribed and read the queued snapshot, but cannot process
+	// either invalidation until after the terminal receipt has been removed.
+	admission := &eventlogpb.EventEntry{Cursor: 31}
+	if _, err := store.Settle(ctx, head.CommandID, *owner, []string{QueueState}, UnknownState, "runner_outcome_unconfirmed", admission); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.EndSandbox(ctx, sandboxUID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetDispatch(ctx, head.CommandID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cleanup retained row: %v", err)
+	}
+	unpause()
+	for {
+		select {
+		case frame := <-stream.frames:
+			if row := frame.GetDispatch(); row != nil && row.GetState() == dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN {
+				if row.GetReason() != "runner_outcome_unconfirmed" || !proto.Equal(row.GetAdmission(), admission) {
+					t.Fatalf("terminal evidence changed: %+v", row)
+				}
+				return
+			}
+		case <-ctx.Done():
+			t.Fatal("active watcher missed the deleted terminal receipt")
+		}
+	}
+}

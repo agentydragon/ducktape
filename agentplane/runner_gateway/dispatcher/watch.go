@@ -249,10 +249,17 @@ func (h *WatchHub) terminalPart(payload string) error {
 	if err := proto.Unmarshal(serialized, dispatch); err != nil {
 		return err
 	}
-	if dispatch.GetCommandId() == "" || dispatch.GetReason() != "sandbox_deleted" ||
-		(dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED && dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN) {
-		return errors.New("terminal snapshot did not describe Sandbox deletion")
+	if dispatch.GetCommandId() == "" {
+		return errors.New("terminal snapshot has no command ID")
 	}
+	switch dispatch.GetState() {
+	case dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED, dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN,
+		dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED, dispatcherpb.DeliveryState_DELIVERY_STATE_HARNESS_CONFIRMED,
+		dispatcherpb.DeliveryState_DELIVERY_STATE_NO_OP, dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER:
+	default:
+		return errors.New("terminal snapshot did not describe a settled command")
+	}
+
 	var owner *ServiceAccountIdentity
 	if assembly.ownerNS != "" && assembly.ownerName != "" {
 		owner = serviceAccountIdentityFor(Account{Namespace: assembly.ownerNS, Name: assembly.ownerName}, assembly.ownerUID)
