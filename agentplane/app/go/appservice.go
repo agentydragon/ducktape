@@ -16,6 +16,7 @@ type appService struct {
 	threadWriter     threadOpener
 	threadReader     threadReadStore
 	threadHistory    threadReadHistory
+	threadRuntime    threadEnvironmentRuntimeStatusReader
 	updates          auth.ChangeSource
 	updatesConnected func() bool
 	drainDone        <-chan struct{}

@@ -606,6 +606,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:inline_name",
         "//agentplane/app/frontend:schema",
@@ -892,6 +893,7 @@ ts_library(
     deps = [
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app:app_service_pb",
+        "//agentplane/app/frontend:app_config_client",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:schema",
         "//agentplane/history_service:history_service_pb",

@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { ThreadView } from "../schema";
+import type { ThreadView } from "./client";
 import { ThreadTitle } from "./thread_title";
 
 const fetchMock = vi.hoisted(() => {
@@ -41,7 +41,12 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
   fetchMock.mockImplementation(async (request: Request) => {
-    return Response.json({ ...THREAD, ...((await request.clone().json()) as { name: string | null }) });
+    const body = (await request.clone().json()) as { name?: string };
+    return Response.json({
+      threadId: THREAD.id,
+      createdAt: THREAD.created_at,
+      ...(body.name === undefined ? {} : { name: body.name }),
+    });
   });
 });
 afterEach(async () => {
@@ -114,9 +119,13 @@ it("commits the trimmed name on Enter", async () => {
   await press(input, "Enter");
 
   expect(await renames()).toEqual([
-    { path: `/threads/${THREAD.id}`, method: "PATCH", body: { name: "Test typed name" } },
+    {
+      path: `/upstream/app/v1/threads/${THREAD.id}`,
+      method: "PATCH",
+      body: { threadId: THREAD.id, name: "Test typed name" },
+    },
   ]);
-  expect(onRenamed).toHaveBeenCalledWith({ ...THREAD, name: "Test typed name" });
+  expect(onRenamed).toHaveBeenCalledWith(expect.objectContaining({ threadId: THREAD.id, name: "Test typed name" }));
 });
 
 it("puts the stored name back on Escape and sends nothing", async () => {
@@ -145,8 +154,10 @@ it("clears the name when a blank one is committed by moving away", async () => {
   await type(input, "   ");
   await act(async () => input.blur());
 
-  expect(await renames()).toEqual([{ path: `/threads/${THREAD.id}`, method: "PATCH", body: { name: null } }]);
-  expect(onRenamed).toHaveBeenCalledWith({ ...THREAD, name: null });
+  expect(await renames()).toEqual([
+    { path: `/upstream/app/v1/threads/${THREAD.id}`, method: "PATCH", body: { threadId: THREAD.id } },
+  ]);
+  expect(onRenamed).toHaveBeenCalledWith(expect.objectContaining({ threadId: THREAD.id, name: undefined }));
 });
 
 it("shows a rename from elsewhere unless a name is being typed", async () => {

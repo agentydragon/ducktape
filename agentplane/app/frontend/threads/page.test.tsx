@@ -21,7 +21,8 @@ import {
 } from "../../../environments/v1/environment_service_pb";
 
 import { clone, create, toJson } from "@bufbuild/protobuf";
-import type { LangfuseSearchSettings, ThreadView, TraceSearchSettings } from "../schema";
+import type { LangfuseSearchSettings, TraceSearchSettings } from "../schema";
+import type { ThreadView } from "./client";
 import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
 import { MantineProvider } from "@mantine/core";
 import { act, type JSX } from "react";

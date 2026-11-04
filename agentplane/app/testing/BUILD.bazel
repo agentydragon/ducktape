@@ -31,6 +31,7 @@ py_library(
     visibility = ["//agentplane/app:__subpackages__"],
     deps = [
         ":models",
+        "//agentplane/app:app_service_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:session_pb2",

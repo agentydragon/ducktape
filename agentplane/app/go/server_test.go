@@ -125,9 +125,6 @@ func TestHumaResponsesDoNotAddSchemaMetadata(t *testing.T) {
 
 func TestNonUUIDIDSegmentMatchesNoRoute(t *testing.T) {
 	server := NewHTTPServer(nil)
-	if err := RegisterThreadReadRoutes(server, "tools", nil, nil, nil, nil); err != nil {
-		t.Fatal(err)
-	}
 	if err := RegisterSessionRoutes(server, &appService{}); err != nil {
 		t.Fatal(err)
 	}
@@ -138,11 +135,9 @@ func TestNonUUIDIDSegmentMatchesNoRoute(t *testing.T) {
 	}), false)
 	handler := server.Handler(nil)
 	for _, request := range []struct{ method, path string }{
-		{http.MethodPatch, "/threads/form"},
 		{http.MethodGet, "/threads/form/observations"},
 		{http.MethodGet, "/threads/form/events/stream"},
 		// uuid.Parse accepts this compact spelling; route converters do not.
-		{http.MethodPatch, "/threads/00000000000000000000000000000000"},
 	} {
 		t.Run(request.method+" "+request.path, func(t *testing.T) {
 			response := httptest.NewRecorder()
@@ -153,7 +148,6 @@ func TestNonUUIDIDSegmentMatchesNoRoute(t *testing.T) {
 		})
 	}
 	for _, request := range []struct{ method, path string }{
-		{http.MethodPatch, "/threads/00000000-0000-0000-0000-000000000000"},
 		{http.MethodGet, "/upstream/notifications/v1/sessions/example/inbox:watch"},
 	} {
 		response := httptest.NewRecorder()

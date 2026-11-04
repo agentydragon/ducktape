@@ -13,7 +13,7 @@ import { watchDispatches } from "./dispatch_watch";
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot, type PendingCommand } from "./local_commands";
 import type { ThreadEntity } from "../../../history_service/history_service_pb";
-import type { ThreadView } from "../schema";
+import type { ThreadView } from "./client";
 
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], inputEchoes: [], error: null };
 

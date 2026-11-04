@@ -23,10 +23,24 @@ service AppService {
 
   // App-owned Thread metadata; Session fields belong to History.
   // Get metadata for an app-owned Thread.
-  rpc GetThreadMetadata(GetThreadMetadataRequest) returns (ThreadMetadata) {
+  rpc GetThreadMetadata(ThreadMetadataTarget) returns (ThreadMetadata) {
     option (google.api.http) = {
       get: "/v1/threads/{thread_id}"
     };
+  }
+
+  // Set a Thread's operator-managed name; an absent or blank name clears it.
+  rpc RenameThread(RenameThreadRequest) returns (ThreadMetadata) {
+    option (google.api.http) = {patch: "/v1/threads/{thread_id}" body: "*"};
+  }
+
+  // Archive an idle Thread, or restore it to the default list.
+  rpc ArchiveThread(ThreadMetadataTarget) returns (google.protobuf.Empty) {
+    option (google.api.http) = {post: "/v1/threads/{thread_id}/archive" body: "*"};
+  }
+
+  rpc UnarchiveThread(ThreadMetadataTarget) returns (google.protobuf.Empty) {
+    option (google.api.http) = {post: "/v1/threads/{thread_id}/unarchive" body: "*"};
   }
 
   // List app-owned Thread metadata newest first.
@@ -104,8 +118,13 @@ message SessionDefaults {
   string setup_script = 6;
 }
 
-message GetThreadMetadataRequest {
+message ThreadMetadataTarget {
   string thread_id = 1;
+}
+
+message RenameThreadRequest {
+  string thread_id = 1;
+  optional string name = 2;
 }
 
 message ThreadMetadata {

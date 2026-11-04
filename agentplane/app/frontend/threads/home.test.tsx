@@ -8,7 +8,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import type { ThreadView } from "../schema";
+import type { ThreadView } from "./client";
 import type * as ThreadClientModule from "./client";
 import { listThreadWindow } from "./client";
 import { Home } from "./home";

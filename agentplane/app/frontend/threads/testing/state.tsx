@@ -10,7 +10,7 @@ import {
   type ThreadPayloadReference,
 } from "../../../../history_service/history_service_pb";
 
-import type { ThreadView } from "../../schema";
+import type { ThreadView } from "../client";
 import type { ThreadState, ThreadSync } from "../thread_sync";
 
 export const THREAD: ThreadView = {

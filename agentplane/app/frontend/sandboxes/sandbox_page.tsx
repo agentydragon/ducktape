@@ -1,7 +1,8 @@
+import { archiveThread } from "../threads/client";
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 import { clone, create } from "@bufbuild/protobuf";
 
-import type { ThreadView } from "../schema";
+import type { ThreadView } from "../threads/client";
 import { NotificationStatus } from "../notification_status";
 import {
   ActionIcon,
@@ -208,10 +209,12 @@ export function SandboxPage({
 
   // No refresh after an action: the live stream carries the thread's new archived state back.
   async function threadAct(threadId: string, action: "archive" | "unarchive"): Promise<void> {
-    const { error: failure } = await api.POST(`/threads/{thread_id}/${action}`, {
-      params: { path: { thread_id: threadId } },
-    });
-    setError(failure ? displayableError(failure) : null);
+    try {
+      await archiveThread(threadId, action === "archive");
+      setError(null);
+    } catch (failure: unknown) {
+      setError(displayableError(failure));
+    }
   }
 
   /** Deleting leaves nothing to look at, so a deleted sandbox takes the view back to the list. */

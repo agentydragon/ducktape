@@ -522,48 +522,6 @@ func TestMakeThreadViewReturnsSandboxUID(t *testing.T) {
 	}
 }
 
-func TestThreadRenameBodyRequiresOneKnownField(t *testing.T) {
-	for _, test := range []struct {
-		name    string
-		body    string
-		wantErr bool
-	}{
-		{name: "missing", body: `{}`, wantErr: true},
-		{name: "null clears", body: `{"name":null}`},
-		{name: "string", body: `{"name":"  title  "}`},
-		{name: "extra field", body: `{"name":"title","extra":true}`, wantErr: true},
-		{name: "wrong type", body: `{"name":4}`, wantErr: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			var input threadRenameBody
-			err := json.Unmarshal([]byte(test.body), &input)
-			if (err != nil) != test.wantErr {
-				t.Fatalf("Unmarshal error = %v, wantErr %v", err, test.wantErr)
-			}
-			if err == nil && !input.Present {
-				t.Fatal("name field was not marked present")
-			}
-		})
-	}
-}
-
-func TestThreadReadRouteRegistrationPublishesOpenAPIPaths(t *testing.T) {
-	server := NewHTTPServer(nil)
-	if err := RegisterThreadReadRoutes(server, "tools", nil, nil, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	recorder := httptest.NewRecorder()
-	server.Handler(nil).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("GET /openapi.json status = %d; body: %s", recorder.Code, recorder.Body.String())
-	}
-	for _, path := range []string{"/threads/{thread_id}", "/threads/{thread_id}/archive", "/threads/{thread_id}/unarchive"} {
-		if !strings.Contains(recorder.Body.String(), `"`+path+`"`) {
-			t.Errorf("OpenAPI does not describe %s", path)
-		}
-	}
-}
-
 func TestThreadSandboxReadinessRequiresRunningReadyPod(t *testing.T) {
 	ready := &environmentpb.EnvironmentDescriptor{
 		ObservedState: &environmentpb.EnvironmentObservedState{
@@ -664,29 +622,75 @@ func TestThreadViewReadsHistoryIdentityActivityAndAttachedSpecification(t *testi
 }
 
 func TestRenameThreadReturnsNotFoundWhenHistorySessionIsMissing(t *testing.T) {
-	authentication, err := auth.New(auth.Config{
-		TokenReviews: threadReadAcceptedTokenReviewer{}, TokenAudience: "agentplane",
-		TokenSubjects: []string{"system:serviceaccount:tools:runner"},
-	})
+	id := uuid.New()
+	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id}}}
+	service := &appService{threadReader: store, threadHistory: &threadReadHistoryFake{}}
+	name := "renamed"
+	_, err := service.RenameThread(context.Background(), &apppb.RenameThreadRequest{ThreadId: id.String(), Name: &name})
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("RenameThread: %v, want NotFound", err)
+	}
+	if store.rows[0].Name != nil {
+		t.Fatal("renamed without a History session")
+	}
+}
+
+func TestThreadMutationGateway(t *testing.T) {
+	id := uuid.New()
+	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id, CreatedAt: time.Now()}}}
+	history := &threadReadHistoryFake{summaries: map[uuid.UUID]historydata.FoldSummary{id: {Present: true, Sandbox: "sandbox", SandboxUID: "uid"}}}
+	inventory := &threadReadInventoryFake{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: "sandbox", Uid: "uid"}}}
+	authentication, err := auth.New(auth.Config{TokenReviews: threadReadAcceptedTokenReviewer{}, TokenAudience: "agentplane", TokenSubjects: []string{"system:serviceaccount:tools:runner"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := NewHTTPServer(authentication)
-	t.Cleanup(server.Close)
-	id := uuid.New()
-	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id}}}
-	if err := RegisterThreadReadRoutes(server, "tools", store, &threadReadHistoryFake{}, nil, nil); err != nil {
+	if err := registerThreadMetadataGateway(server, &appService{threadReader: store, threadHistory: history, environments: inventory}); err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodPatch, "/threads/"+id.String(), strings.NewReader(`{"name":"renamed"}`))
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Authorization", "Bearer accepted")
-	response := httptest.NewRecorder()
-	server.Handler(authentication).ServeHTTP(response, request)
-	if response.Code != http.StatusNotFound {
-		t.Fatalf("PATCH /threads/{thread_id} with no History session = %d %s, want 404", response.Code, response.Body.String())
+	t.Cleanup(server.Close)
+	handler := server.Handler(authentication)
+	path := "/upstream/app/v1/threads/" + id.String()
+	call := func(method, path, body string, authorized bool) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if authorized {
+			req.Header.Set("Authorization", "Bearer accepted")
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		return response
 	}
-	if store.rows[0].Name != nil {
-		t.Fatalf("Thread was renamed without a History session: %q", *store.rows[0].Name)
+	response := call(http.MethodPatch, path, `{"name":"  title  "}`, false)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized rename: %d %s", response.Code, response.Body.String())
+	}
+	response = call(http.MethodPatch, path, `{"name":"  title  "}`, true)
+	if response.Code != http.StatusOK {
+		t.Fatalf("rename: %d %s", response.Code, response.Body.String())
+	}
+	var metadata struct {
+		ThreadID string `json:"threadId"`
+		Name     string `json:"name"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &metadata); err != nil || metadata.ThreadID != id.String() || metadata.Name != "title" {
+		t.Fatalf("renamed metadata = %s: %v", response.Body.String(), err)
+	}
+	response = call(http.MethodPatch, path, `{}`, true)
+	if response.Code != http.StatusOK || store.rows[0].Name != nil {
+		t.Fatalf("clear name: %d %s", response.Code, response.Body.String())
+	}
+	response = call(http.MethodPatch, path, `{"name":"`+strings.Repeat("x", 201)+`"}`, true)
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("overlong rename: %d %s", response.Code, response.Body.String())
+	}
+	response = call(http.MethodPost, path+"/archive", `{}`, true)
+	if response.Code != http.StatusOK || !store.rows[0].Archived || inventory.exactUID != "uid" {
+		t.Fatalf("archive: %d %s, uid %q", response.Code, response.Body.String(), inventory.exactUID)
+	}
+	response = call(http.MethodPost, path+"/unarchive", `{}`, true)
+	if response.Code != http.StatusOK || store.rows[0].Archived {
+		t.Fatalf("unarchive: %d %s", response.Code, response.Body.String())
 	}
 }

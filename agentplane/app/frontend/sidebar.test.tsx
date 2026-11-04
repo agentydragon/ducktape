@@ -18,7 +18,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { ThreadView } from "./schema";
+import type { ThreadView } from "./threads/client";
 import type * as ThreadClientModule from "./threads/client";
 import { listThreadWindow } from "./threads/client";
 import { RoutedThreadsLiveProvider } from "./threads/live";
@@ -254,7 +254,7 @@ async function render(
         })
       );
     }
-    if (/^\/threads\/[^/]+\/(un)?archive$/.test(url.pathname)) {
+    if (/^\/upstream\/app\/v1\/threads\/[^/]+\/(un)?archive$/.test(url.pathname)) {
       return Promise.resolve(new Response(null, { status: 204 }));
     }
     throw new Error(`Unexpected request: ${request.method} ${url.pathname}`);
@@ -588,7 +588,7 @@ it("hides archived threads until the switch is toggled, and archives a thread fr
   if (!(archiveButton instanceof HTMLButtonElement)) throw new Error("missing archive button");
   await act(async () => archiveButton.click());
   const archiveCall = fetchMock.mock.calls.find(
-    ([request]) => new URL((request as Request).url).pathname === "/threads/t-1/archive"
+    ([request]) => new URL((request as Request).url).pathname === "/upstream/app/v1/threads/t-1/archive"
   );
   expect(archiveCall).toBeDefined();
   expect((archiveCall?.[0] as Request).method).toBe("POST");
@@ -655,7 +655,7 @@ it("archives an idle Session while its harness process remains running", async (
   expect(archiveButton.disabled).toBe(false);
   await act(async () => archiveButton.click());
   const archiveCall = fetchMock.mock.calls.find(
-    ([request]) => new URL((request as Request).url).pathname === "/threads/t-1/archive"
+    ([request]) => new URL((request as Request).url).pathname === "/upstream/app/v1/threads/t-1/archive"
   );
   expect(archiveCall).toBeDefined();
 });
@@ -678,7 +678,7 @@ it("archives a reserved dormant Session before its first input", async () => {
   expect(archiveButton.disabled).toBe(false);
   await act(async () => archiveButton.click());
   const archiveCall = fetchMock.mock.calls.find(
-    ([request]) => new URL((request as Request).url).pathname === "/threads/t-1/archive"
+    ([request]) => new URL((request as Request).url).pathname === "/upstream/app/v1/threads/t-1/archive"
   );
   expect(archiveCall).toBeDefined();
 });

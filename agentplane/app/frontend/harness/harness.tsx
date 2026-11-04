@@ -16,7 +16,7 @@ import {
   type ServerSentEvent,
   UNANSWERED,
 } from "./network";
-import type { ThreadView } from "../schema";
+import type { ThreadView } from "../threads/client";
 import type { ActionGroupView, ActionRequestView } from "../actions/client";
 import {
   PolicyBindingSchema,

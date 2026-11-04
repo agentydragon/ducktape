@@ -2,7 +2,7 @@ import { Accordion, Badge, Button, Group, Paper, Stack, Table, Text, Title } fro
 import { create, toJson } from "@bufbuild/protobuf";
 import { type JSX, type ReactNode, useEffect, useMemo, useState } from "react";
 
-import type { ThreadView } from "../schema";
+import type { ThreadView } from "../threads/client";
 import { EnvironmentTargetSchema } from "../../../proto/identity_pb";
 import {
   EnvironmentDescriptorSchema,

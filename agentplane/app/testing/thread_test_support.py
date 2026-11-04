@@ -4,9 +4,11 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import httpx
+from google.protobuf.json_format import MessageToDict
 from google.protobuf.timestamp_pb2 import Timestamp
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
+from agentplane.app import app_service_pb2
 from agentplane.app.testing.models import ThreadMetadata
 from agentplane.proto import event_log_pb2, event_pb2, session_pb2
 
@@ -40,11 +42,13 @@ class ThreadHTTP:
 
     async def rename(self, thread_id: UUID, name: str) -> None:
         await self.wait(thread_id)
-        response = await self.http.patch(f"/threads/{thread_id}", json={"name": name})
+        request = app_service_pb2.RenameThreadRequest(thread_id=str(thread_id), name=name)
+        response = await self.http.patch(f"/upstream/app/v1/threads/{thread_id}", json=MessageToDict(request))
         response.raise_for_status()
 
     async def archive(self, thread_id: UUID) -> None:
-        response = await self.http.post(f"/threads/{thread_id}/archive")
+        request = app_service_pb2.ThreadMetadataTarget(thread_id=str(thread_id))
+        response = await self.http.post(f"/upstream/app/v1/threads/{thread_id}/archive", json=MessageToDict(request))
         response.raise_for_status()
 
     async def list_threads(self, *, sandbox: str | None = None) -> list[ThreadMetadata]:

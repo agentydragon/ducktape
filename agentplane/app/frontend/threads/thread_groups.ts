@@ -1,4 +1,4 @@
-import type { ThreadView } from "../schema";
+import type { ThreadView } from "./client";
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 
 /**
