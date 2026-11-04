@@ -99,10 +99,31 @@ def test_weekly_codex_quota_splits_at_manual_plan_change() -> None:
         ("Pro 500", 4),
     ]
     assert all(row["provider_reported_plan_types"] == ["pro"] for row in result)
+    assert [row["subscription_plan_start"] for row in result] == [start.isoformat(), transition.isoformat()]
+    assert [row["subscription_plan_end"] for row in result] == [transition.isoformat(), None]
 
     rows[0]["reported_plan_type"] = "plus"
     with pytest.raises(ValueError, match="plan_type changed within annotated period"):
         quota_weekly(rows, [CodexPlanPeriod(start, None, "Pro 200")])
+
+
+def test_uncertain_plan_transition_rejects_a_poll_in_the_gap() -> None:
+    start = datetime(2026, 1, 5, tzinfo=UTC)
+    periods = [
+        CodexPlanPeriod(start, start + timedelta(minutes=1), "Previous Pro"),
+        CodexPlanPeriod(start + timedelta(minutes=10), None, "Pro 500"),
+    ]
+    row = {
+        "event_id": "gap",
+        "provider": "codex",
+        "window_seconds": 604800,
+        "window_name": "",
+        "observed_at": (start + timedelta(minutes=5)).isoformat(),
+        "used_percent": 0,
+        "reset_at": None,
+    }
+    with pytest.raises(ValueError, match="outside the supplied plan history"):
+        quota_weekly([row], periods)
 
 
 if __name__ == "__main__":

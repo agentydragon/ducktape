@@ -626,6 +626,9 @@ def build_estimates(
                     "window_seconds": seconds,
                     "name": name,
                     "subscription_plan": plan_period.plan if plan_period else None,
+                    "subscription_plan_start": plan_period.start.isoformat() if plan_period else None,
+                    "subscription_plan_end": plan_period.end.isoformat() if plan_period and plan_period.end else None,
+                    "provider_reported_plan_types": sorted(reported_plan_types[(provider, seconds, name, plan_period)]),
                     "status": "no_usage_source",
                 }
             )

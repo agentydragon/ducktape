@@ -21,8 +21,8 @@ Supply these files in `evidence/` before running the notebook:
 - `codex-plan-history.json`: a local JSON timeline of the exact ChatGPT Codex
   plan and quota regime for each interval covered by Codex quota polls. Add a
   new period when a tier or its included quota changes, using the effective
-  timestamp. The pull exports the provider's broad `plan_type` category (such
-  as `pro`), which cannot distinguish Pro 200 from Pro 500. Codex estimates and
+  timestamp. The pull exports the provider's `plan_type` category, but its
+  meaning is not an account purchase record. Codex estimates and
   weekly quota summaries fail closed if a poll is uncovered or a provider
   category change crosses an annotated period.
 - `native-usage-5m.json.gz`, `cloud-usage-5m.json.gz` and
@@ -78,8 +78,29 @@ Codex quota fits and weekly gauge summaries are segmented by the exact plan and
 quota-regime periods in `evidence/codex-plan-history.json`. This prevents a
 mid-sample plan or allowance change from changing quota-per-token coefficients
 without being visible in the result. The plan history is an account-level
-annotation; do not infer Pro 100/200/500 from the upstream `plan_type: pro`
-field. A generic category change within a declared period also fails closed.
+annotation; do not infer an exact Pro tier from an upstream category. Observed
+categories can change (for example, `pro` to `promax`); a category change within
+a declared period also fails closed. If the upgrade time is known only between
+two polls, end the previous period just after its last known poll and begin the
+new period at its first known poll. Leave the interval between them uncovered;
+any later poll found in that gap requires the boundary to be revisited. The first
+new-period poll does not establish the exact time the purchase took effect.
+
+For example (timestamps and tier labels are illustrative):
+
+```json
+{
+  "periods": [
+    { "start": "2026-01-01T00:00:00Z", "end": "2026-11-01T21:00:00.001Z", "plan": "Previous Pro tier" },
+    { "start": "2026-11-01T21:10:00Z", "end": null, "plan": "Pro 500" }
+  ]
+}
+```
+
+Newly upgraded periods may have no matching usage or too few independent days
+to support a fit. The notebook reports these cases without substituting an
+estimate from the preceding tier. Period bounds also appear in weekly summaries
+so separate regimes with the same label remain distinguishable.
 
 The primary regression uses poll-aligned pieces at a 60-minute elapsed-time
 target, retaining short tails. Whole-run, 30-, 60- and 120-minute diagnostics

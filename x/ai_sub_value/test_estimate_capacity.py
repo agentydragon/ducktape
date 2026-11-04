@@ -346,6 +346,30 @@ def test_codex_plan_history_reader_rejects_overlapping_periods(tmp_path: Path) -
         read_codex_plan_history(path)
 
 
+def test_new_codex_plan_without_usage_retains_its_identity() -> None:
+    transition = START + timedelta(hours=1)
+    period = CodexPlanPeriod(transition, None, "Pro 500")
+    quota = [
+        {
+            "event_id": "new",
+            "provider": "codex",
+            "window_name": "",
+            "window_seconds": 604800,
+            "observed_at": transition.isoformat(),
+            "used_percent": 0,
+            "reset_at": (transition + timedelta(days=7)).isoformat(),
+            "reported_plan_type": "promax",
+        }
+    ]
+    result = build_estimates(
+        quota, [], {}, bootstrap_samples=2, sensitivity_samples=2, chunk_minutes=60, codex_plan_periods=[period]
+    )["results"][0]
+    assert result["status"] == "no_usage_source"
+    assert result["subscription_plan"] == "Pro 500"
+    assert result["subscription_plan_start"] == transition.isoformat()
+    assert result["provider_reported_plan_types"] == ["promax"]
+
+
 def test_native_web_equal_token_cost_has_consistent_interaction_fit() -> None:
     intervals = []
     bins = []
