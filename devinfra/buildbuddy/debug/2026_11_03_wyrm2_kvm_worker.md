@@ -5,6 +5,11 @@ The VM is the boundary from the main cluster; actions in this trusted-code pool 
 control the persistent guest. The existing hosted lane runs actions inside BuildBuddy
 Firecracker guests. Both use the same K3s fixture and VM scenarios.
 
+**Adoption is deferred.** The November 4 run below proves that the existing
+worker can execute all three scenarios with KVM, but its target remains red
+and execution still takes over ten minutes. Keep this lane manual and
+experimental; these results do not justify moving ordinary CI onto our VM.
+
 ## BuildBuddy guest comparison
 
 Inspected the executor's pinned BuildBuddy v2.321.0 source, commit
@@ -168,5 +173,32 @@ Remote execution metadata separates 438.06 seconds waiting for the single
 worker from 611.06 seconds executing. The three sandbox readiness waits
 overlapped and took 147.12–154.68 seconds each; their cleanup took 24.01–30.05
 seconds each. These are one run's phase measurements, not a matched CI speedup.
-Lane acceptance still requires successful final cleanup within bounded phase
-deadlines and verification of the committed worker policy after provisioning.
+
+### What the five-minute scenario phase contains
+
+The 312.21-second case includes guest provisioning/readiness, scenario actions
+and per-sandbox cleanup. The three concurrent branches took 284.08 seconds
+(Claude), 287.01 seconds (Codex) and 311.31 seconds (Codex OOM recovery).
+The OOM branch determined the case's elapsed time. Its sequential driver spans
+were:
+
+| Stage                           | Seconds |
+| ------------------------------- | ------: |
+| Wait for Sandbox readiness      |  147.12 |
+| Open Codex session              |    7.56 |
+| Establish baseline turn         |   75.57 |
+| Trigger OOM and verify survival |   27.64 |
+| Verify same-session recovery    |   29.19 |
+| Sandbox cleanup                 |   24.01 |
+
+These spans explain almost all of that branch's elapsed time. The
+`test-spans.jsonl`, `process-spans.jsonl`, `vm-codex-oom.json`, launcher/console
+logs and systemd journals remain linked to the invocation for deeper analysis.
+The readiness wait includes provisioning and guest startup; it does not isolate
+CPU emulation cost. KVM availability alone did not remove these long phases.
+
+Before reconsidering adoption, establish successful bounded final cleanup,
+reproduce the worker from committed configuration, and demonstrate a substantial
+latency benefit with repeated matched hosted-versus-own-VM runs. Match source,
+coverage, resources, concurrency and cache warmth; account for worker queueing
+separately. No matched comparison or CI speedup is established by this run.
