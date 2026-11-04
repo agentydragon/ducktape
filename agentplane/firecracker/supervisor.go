@@ -275,8 +275,9 @@ func (s *Supervisor) configure(ctx context.Context, api *API) error {
 	}
 	if err := api.Request(ctx, "PUT", "/boot-source", struct {
 		Kernel string `json:"kernel_image_path"`
+		Initrd string `json:"initrd_path,omitempty"`
 		Args   string `json:"boot_args"`
-	}{s.storage.Paths["kernel"], "console=ttyS0 reboot=k panic=1 pci=off root=/dev/vda rootwait rootfstype=ext4 rw init=" + init}); err != nil {
+	}{s.storage.Paths["kernel"], s.storage.Paths["initrd"], "console=ttyS0 reboot=k panic=1 pci=off root=/dev/vda rootwait rootfstype=ext4 rw init=" + init}); err != nil {
 		return err
 	}
 	for index, drive := range []struct {

@@ -16,7 +16,7 @@ Source ownership follows the part of a test being changed:
 | [`deployment/`](deployment/README.md)   | Fixture charts, rendering, databases and workload setup/cleanup                 |
 | [`k3s/`](k3s/README.md)                 | Retained node, bootstrap, networking, PKI and the `k3s_suite` macro             |
 | [`vm/`](vm/README.md)                   | KubeVirt, storage, guest evidence and the test guest image in `guest/`          |
-| [`firecracker/`](firecracker/README.md) | Firecracker lifecycle adapter, production guest input and KVM acceptance        |
+| [`firecracker/`](firecracker/README.md) | Firecracker CI guest, lifecycle adapter and production KVM acceptance           |
 
 Offline tests live beside the helpers they exercise. The root `conftest.py` holds shared pytest
 configuration; deployment-specific fixtures are explicit plugins selected by the suite macro.
@@ -25,18 +25,19 @@ The CI suites each start one [disposable k3s stack](deployment/README.md) in an 
 The session-scoped `deployment` fixture exposes its cluster handle, app URL, token, and MCP access
 ([`system_test_target.py`](deployment/system_test_target.py)). Compatible scenarios share a stack:
 
-| Target                                                        | Scenarios                                                                                                    |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `//agentplane/system_tests/suites:test_pod`                   | egress, messaging, presets, session instructions, suspend/resume, thread stream, Pod credentials and storage |
-| `//agentplane/system_tests/suites:test_session_deletion`      | Delayed Session mutation, controller quiescence and same-name replacement UID fencing                        |
-| `//agentplane/system_tests/suites:test_dispatcher`            | Dispatcher queue, wake and replica behavior                                                                  |
-| `//agentplane/system_tests/suites/mcp:test_actions`           | MCP Action execution, BFF decisions, launcher ownership and OAuth linkage                                    |
-| `//agentplane/system_tests/suites/mcp:test_services`          | Dynamic client registration, external MCP Connection, policy binding and Pod central sampler                 |
-| `//agentplane/system_tests/suites/mcp:test_delegation`        | External MCP Connection reuse, explicit Session input, retained reads with the integration app unavailable   |
-| `//agentplane/system_tests/suites/mcp:test_parent_delegation` | Existing-Sandbox parent Session uses the Action CLI to open and drive a child Session                        |
-| `//agentplane/system_tests/suites:test_real_model`            | Public LiteLLM egress and real-model standing-instruction acceptance                                         |
-| `//agentplane/system_tests/suites:test_vm`                    | VM Sandbox behavior, runner credentials and systemd supervision                                              |
-| `//agentplane/system_tests/suites:test_firecracker`           | Manual KVM lane: production Firecracker guest, harness turn and RAM-preserving suspend/resume                |
+| Target                                                         | Scenarios                                                                                                    |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `//agentplane/system_tests/suites:test_pod`                    | egress, messaging, presets, session instructions, suspend/resume, thread stream, Pod credentials and storage |
+| `//agentplane/system_tests/suites:test_session_deletion`       | Delayed Session mutation, controller quiescence and same-name replacement UID fencing                        |
+| `//agentplane/system_tests/suites:test_dispatcher`             | Dispatcher queue, wake and replica behavior                                                                  |
+| `//agentplane/system_tests/suites/mcp:test_actions`            | MCP Action execution, BFF decisions, launcher ownership and OAuth linkage                                    |
+| `//agentplane/system_tests/suites/mcp:test_services`           | Dynamic client registration, external MCP Connection, policy binding and Pod central sampler                 |
+| `//agentplane/system_tests/suites/mcp:test_delegation`         | External MCP Connection reuse, explicit Session input, retained reads with the integration app unavailable   |
+| `//agentplane/system_tests/suites/mcp:test_parent_delegation`  | Existing-Sandbox parent Session uses the Action CLI to open and drive a child Session                        |
+| `//agentplane/system_tests/suites:test_real_model`             | Public LiteLLM egress and real-model standing-instruction acceptance                                         |
+| `//agentplane/system_tests/suites:test_vm`                     | VM Sandbox behavior, runner credentials and systemd supervision                                              |
+| `//agentplane/system_tests/suites:test_firecracker`            | KVM CI lane: Bazel-built Firecracker guest, harness turn and RAM-preserving suspend/resume                   |
+| `//agentplane/system_tests/suites:test_firecracker_production` | Manual KVM lane: same scenario against the published production NixOS guest                                  |
 
 The shared stack cuts setup and image-import work, while each target now has a coarser cache key: a
 changed scenario reruns its suite. Scenario modules live in [`scenarios/`](scenarios/) as ordinary
@@ -126,11 +127,12 @@ is what a model does are `real_model`. Codex is offered a ChatGPT route there
 too, so it runs in code mode, which the scripted model answers.
 Every request the scripted model receives is kept in the target's `test.outputs/scripted_upstream/`.
 
-The manual [Firecracker suite](firecracker/README.md) runs in the existing
+The [Firecracker CI suite](firecracker/README.md) uses a small Bazel-built Debian guest and runs in the existing
 `wyrm2-kvm-vm` BuildBuddy pool. It creates an environment through the app API, executes a Codex
 tool through the real Gateway and guest Runtime, then requests suspend/resume through that API.
 It verifies the same Pod, kernel boot, Runtime boot, native harness process and live guest child,
 including an increasing counter and a random marker generated only in that child's memory.
+The manual `test_firecracker_production` target runs the same scenario against the published NixOS guest.
 `test.outputs/firecracker/` retains the two tool transcripts and continuation evidence. The model
 is scripted; Cilium policy enforcement is outside this bare-k3s fixture's coverage.
 

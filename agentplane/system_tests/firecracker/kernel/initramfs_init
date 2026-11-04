@@ -1,0 +1,26 @@
+#!/bin/busybox sh
+# Load the Debian kernel's modular Firecracker devices, then hand PID 1 to the systemd guest root.
+set -eu
+/bin/busybox --install -s /bin
+mkdir -p /dev /proc /sys /newroot
+mount -t devtmpfs devtmpfs /dev
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+while read -r module; do
+	insmod "/lib/modules/$module.ko"
+done </lib/modules/order
+
+attempt=0
+while [ ! -b /dev/vda ]; do
+	attempt=$((attempt + 1))
+	if [ "$attempt" -ge 50 ]; then
+		echo "timed out waiting for Firecracker root disk /dev/vda" >/dev/console
+		exit 1
+	fi
+	sleep 0.1
+done
+mount -t ext4 -o rw /dev/vda /newroot
+for mount in /dev /proc /sys; do
+	mount --move "$mount" "/newroot$mount"
+done
+exec switch_root /newroot /usr/lib/systemd/systemd

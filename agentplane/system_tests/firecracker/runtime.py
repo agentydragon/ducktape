@@ -50,7 +50,7 @@ class Runtime:
         raise ValueError("the Firecracker fixture does not retain a block-storage baseline")
 
     def configure(self, objects: list[dict[str, Any]]) -> None:
-        # The production guest is used unchanged; there is no VM fixture root/profile selection.
+        # The suite's image manifest selects the guest; no VM root/profile selection is needed.
         return None
 
     def install(self, k3s: K3s) -> None:

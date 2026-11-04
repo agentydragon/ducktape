@@ -377,6 +377,50 @@ func TestCheckpointRestoresMatchingMemoryAndDisks(t *testing.T) {
 	}
 }
 
+func TestCheckpointRestoresOptionalInitrdAfterLauncherRestart(t *testing.T) {
+	ctx := context.Background()
+	storage := testStorage(t)
+	source := filepath.Join(storage.config.BootDirectory, "initramfs.cpio")
+	if err := os.WriteFile(source, []byte("boot modules"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.selectInitrd(); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyAndSync(ctx, source, storage.Paths["initrd"]); err != nil {
+		t.Fatal(err)
+	}
+	memory := filepath.Join(t.TempDir(), "memory")
+	if err := os.WriteFile(memory, []byte("snapshot"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := storage.Checkpoint(ctx, memory, memory, "boot-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := manifest.Files["initrd"]; !ok {
+		t.Fatal("checkpoint omitted initramfs")
+	}
+	path := storage.Paths["initrd"]
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	delete(storage.Paths, "initrd") // A restarted launcher has not prepared cold-boot files.
+	if err := storage.Restore(ctx, manifest); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != "boot modules" {
+		t.Fatalf("restored initramfs = %q, %v", data, err)
+	}
+	if err := os.Remove(source); err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.Restore(ctx, manifest); err == nil {
+		t.Fatal("restore accepted a changed boot image without its checkpoint initramfs")
+	}
+}
+
 func TestPartialCheckpointCannotReplaceCommittedManifest(t *testing.T) {
 	storage := testStorage(t)
 	memory := filepath.Join(t.TempDir(), "memory")

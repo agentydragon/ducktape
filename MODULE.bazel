@@ -598,6 +598,32 @@ apt.install(
     ],
 )
 
+# The Bazel-built Firecracker acceptance guest keeps the real systemd Runtime contract while
+# avoiding the full NixOS closure. Keep this package set separate so Python and shell tools do not
+# enlarge the KubeVirt VM fixture's root image.
+apt.install(
+    dependency_set = "trixie_firecracker_guest",
+    packages = [
+        "acl",
+        "bash",
+        "busybox-static",
+        "ca-certificates",
+        "coreutils",
+        "dbus",
+        "mawk",
+        "python3",
+        "systemd",
+        "systemd-resolved",
+        "udev",
+        "util-linux",
+    ],
+    suites = [
+        "trixie",
+        "trixie-security",
+        "trixie-updates",
+    ],
+)
+
 # Manual VM startup profiling supplies perf as a separate guest-root variant. Ordinary VM tests
 # retain their smaller root image and do not import a profiler they never execute.
 apt.install(
@@ -648,7 +674,7 @@ apt.install(
         "trixie-updates",
     ],
 )
-use_repo(apt, "gnome_shell_test", "trixie_agentplane_firecracker", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_runner_tools", "trixie_vm_guest", "trixie_vm_perf", "trixie_wayback_cache", "wt_shell_test")
+use_repo(apt, "gnome_shell_test", "trixie_agentplane_firecracker", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_firecracker_guest", "trixie_runner_tools", "trixie_vm_guest", "trixie_vm_perf", "trixie_wayback_cache", "wt_shell_test")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")

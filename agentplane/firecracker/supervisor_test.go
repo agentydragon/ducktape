@@ -43,6 +43,47 @@ type testVMM struct {
 	close func()
 }
 
+func TestConfigureOptionalInitrd(t *testing.T) {
+	for _, withInitrd := range []bool{false, true} {
+		t.Run(map[bool]string{false: "built-in drivers", true: "modular drivers"}[withInitrd], func(t *testing.T) {
+			storage := testStorage(t)
+			if err := os.WriteFile(filepath.Join(storage.config.BootDirectory, "init"), []byte("/usr/lib/systemd/systemd\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if withInitrd {
+				storage.Paths["initrd"] = filepath.Join(storage.liveDirectory, "initramfs.cpio")
+			}
+			s := NewSupervisor(storage.config)
+			s.storage = storage
+			var boot map[string]string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/boot-source" {
+					if err := json.NewDecoder(r.Body).Decode(&boot); err != nil {
+						t.Error(err)
+					}
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer server.Close()
+			client := server.Client()
+			client.Transport = &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, "tcp", server.Listener.Addr().String())
+			}}
+			defer client.CloseIdleConnections()
+			if err := s.configure(context.Background(), &API{client: client}); err != nil {
+				t.Fatal(err)
+			}
+			initrd, present := boot["initrd_path"]
+			if present != withInitrd || initrd != storage.Paths["initrd"] {
+				t.Fatalf("initrd_path = %q (present %v), wanted %q (present %v)", initrd, present, storage.Paths["initrd"], withInitrd)
+			}
+			if boot["kernel_image_path"] != storage.Paths["kernel"] {
+				t.Fatalf("unexpected boot source: %v", boot)
+			}
+		})
+	}
+}
+
 func (v *testVMM) Done() <-chan struct{} { return v.done }
 func (v *testVMM) ExitError() error      { return nil }
 func (v *testVMM) Close() error          { v.once.Do(func() { v.close(); close(v.done) }); return nil }

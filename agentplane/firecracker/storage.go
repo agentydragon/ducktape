@@ -122,6 +122,9 @@ func (lock *ownerLock) Close() error {
 }
 
 func (storage *Storage) Prepare(ctx context.Context) error {
+	if err := storage.selectInitrd(); err != nil {
+		return err
+	}
 	for _, path := range []string{storage.ManifestPath, storage.ActivePath} {
 		if _, err := os.Stat(path); err == nil {
 			return nil
@@ -139,8 +142,12 @@ func (storage *Storage) Prepare(ctx context.Context) error {
 		{name: "kernel", source: filepath.Join(storage.config.BootDirectory, "vmlinux")},
 		{name: "rootfs", source: filepath.Join(storage.config.BootDirectory, "rootfs.ext4")},
 		{name: "runner", source: filepath.Join(storage.config.RunnerDirectory, "disk", "runner.img")},
+		{name: "initrd", source: filepath.Join(storage.config.BootDirectory, "initramfs.cpio")},
 	} {
-		destination := storage.Paths[image.name]
+		destination, present := storage.Paths[image.name]
+		if !present {
+			continue
+		}
 		if _, err := os.Stat(destination); err == nil {
 			continue
 		} else if !errors.Is(err, os.ErrNotExist) {
@@ -219,6 +226,25 @@ func (storage *Storage) Prepare(ctx context.Context) error {
 	return os.Chmod(storage.Paths["credentials"], 0o600)
 }
 
+// Boot images may supply an initramfs for kernels with modular boot drivers.
+// Include it in the same checkpoint file set on cold boot and launcher restart.
+func (storage *Storage) selectInitrd() error {
+	path := filepath.Join(storage.config.BootDirectory, "initramfs.cpio")
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		delete(storage.Paths, "initrd")
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("boot initramfs must be a regular file: %s", path)
+	}
+	storage.Paths["initrd"] = filepath.Join(storage.liveDirectory, "initramfs.cpio")
+	return nil
+}
+
 func (storage *Storage) ReadManifest() (*Manifest, error) {
 	data, err := os.ReadFile(storage.ManifestPath)
 	if errors.Is(err, os.ErrNotExist) {
@@ -284,6 +310,9 @@ func (storage *Storage) ClearActive() error {
 }
 
 func (storage *Storage) Restore(ctx context.Context, manifest *Manifest) error {
+	if err := storage.selectInitrd(); err != nil {
+		return err
+	}
 	if manifest == nil || !validGeneration(manifest.Generation) {
 		return fmt.Errorf("invalid checkpoint generation")
 	}

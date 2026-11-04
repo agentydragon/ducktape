@@ -1,0 +1,12 @@
+[Match]
+Name=eth0
+
+[Network]
+Address=192.0.2.2/30
+Address=fd00:fc::2/64
+Gateway=192.0.2.1
+Gateway=fd00:fc::1
+DNS=192.0.2.1
+
+[Link]
+MTUBytes=1280

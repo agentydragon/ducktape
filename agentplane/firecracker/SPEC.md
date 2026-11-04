@@ -13,6 +13,10 @@ Pod environment supplies `POD_UID`, `SANDBOX_UID`, `FIRECRACKER_VCPU_COUNT`,
 The image values identify immutable OCI inputs; the mounted files are under `/images/boot` and
 `/images/runner`. The optional JSON settings are `relay_port`, `platform_route_ports`,
 `state_size_mib`, and `workspace_size_mib`. The latter two default to `2048` and `8192` MiB.
+The boot image supplies `vmlinux`, `rootfs.ext4`, and an `init` file naming one absolute guest
+init path. An optional `initramfs.cpio` loads modular boot drivers before starting that init.
+When present, the launcher stages the initramfs and includes it in checkpoint verification
+and restoration along with the kernel and disks.
 
 `/var/lib/agentplane/state/firecracker/owner.lock` is held with `flock` across boot, checkpoint,
 and resume. A full checkpoint records VM state, guest RAM, and every backing disk at the same
