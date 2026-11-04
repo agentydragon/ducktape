@@ -23,7 +23,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/notificationspb"
-	"github.com/agentydragon/ducktape/agentplane/session_instructions"
 )
 
 const notificationsHelp = `Calls the Notification Service (AGENTPLANE_NOTIFICATIONS_URL, AGENTPLANE_NOTIFICATIONS_CREDENTIAL).
@@ -273,23 +272,11 @@ func (a *app) notificationSessionID(flag string) (string, error) {
 	if flag != "" {
 		return flag, nil
 	}
-	text := a.getenv("AGENTPLANE_DESTINATION")
-	if text == "" {
-		return "", usageFailure("no Session: set AGENTPLANE_DESTINATION or pass --session ID")
+	sessionID := a.getenv("AGENTPLANE_SESSION_ID")
+	if sessionID == "" {
+		return "", usageFailure("no Session: set AGENTPLANE_SESSION_ID or pass --session ID")
 	}
-	var parsed sessioninstructions.Destination
-	decoder := json.NewDecoder(strings.NewReader(text))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&parsed); err != nil {
-		return "", usageFailure("AGENTPLANE_DESTINATION: %v", err)
-	}
-	if parsed.SessionID == "" || parsed.Sandbox.Namespace == "" || parsed.Sandbox.Name == "" || parsed.Sandbox.UID == "" {
-		return "", usageFailure("AGENTPLANE_DESTINATION needs destination_ref.namespace, name and uid, and session_id")
-	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
-		return "", usageFailure("AGENTPLANE_DESTINATION must hold one JSON object")
-	}
-	return parsed.SessionID, nil
+	return sessionID, nil
 }
 
 // parseEvents reads NAME[:ACTION[,ACTION]] filters into their canonical order.
@@ -333,13 +320,13 @@ func subscriptionKey(repository string, number int32, events []*notificationspb.
 
 func (a *app) subscribePullRequestCommand() *cobra.Command {
 	var events []string
-	var key, destinationFlag string
+	var key, sessionFlag string
 	var lifetime optionalInt
 	command := &cobra.Command{
 		Use:   "pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]...",
 		Short: "Follow a pull request",
 		Long: `POST /v1/subscriptions for a GitHub pull request, delivering to the inbox named by
-AGENTPLANE_DESTINATION's session_id or --session ID, which wins.
+AGENTPLANE_SESSION_ID or --session ID, which wins.
 Subscribe first, then read the pull request's current state: this follows from creation, not from history.
 
 By default, pull-request subscriptions include mergeability_changed, which reports the initial
@@ -364,7 +351,7 @@ lifetime), and when the key belongs to a cancelled subscription (pass a new --ke
 			if err != nil {
 				return err
 			}
-			sessionID, err := a.notificationSessionID(destinationFlag)
+			sessionID, err := a.notificationSessionID(sessionFlag)
 			if err != nil {
 				return err
 			}
@@ -400,7 +387,7 @@ lifetime), and when the key belongs to a cancelled subscription (pass a new --ke
 	command.Flags().StringArrayVar(&events, "event", nil, "NAME[:ACTION[,ACTION]]; replaces defaults; repeatable; mergeability_changed has no actions")
 	command.Flags().Var(&lifetime, "lifetime-days", "subscription lifetime in days (service default 7)")
 	command.Flags().StringVar(&key, "key", "", "idempotency key; derived from the source if absent")
-	command.Flags().StringVar(&destinationFlag, "session", "", "Session ID, instead of AGENTPLANE_DESTINATION's session_id")
+	command.Flags().StringVar(&sessionFlag, "session", "", "Session ID, instead of AGENTPLANE_SESSION_ID")
 	return command
 }
 
@@ -522,7 +509,7 @@ entry. A session_inbox_access rule bound to your ServiceAccount must allow send_
 else exit 1 (PERMISSION_DENIED). The service resolves the Session's current Sandbox and exact UID.
 The text is sent as given, from --body or
 --body-file (- reads stdin). --from-session is the label of the Session you write from, so the recipient
-can answer you; it defaults to the session_id of AGENTPLANE_DESTINATION, and nothing verifies it.
+can answer you; it defaults to AGENTPLANE_SESSION_ID, and nothing verifies it.
 
 Without --key a random idempotency key is generated and written to stderr before the POST. Retry a
 failed or uncertain send with --key KEY and the same message: the service answers with the message it
@@ -541,7 +528,7 @@ RESOURCE_EXHAUSTED (too many of your messages there await acknowledgement: wait,
 				}
 				message.Body = text
 			}
-			if fromSession == "" && a.getenv("AGENTPLANE_DESTINATION") != "" {
+			if fromSession == "" && a.getenv("AGENTPLANE_SESSION_ID") != "" {
 				own, err := a.notificationSessionID("")
 				if err != nil {
 					return err
@@ -566,7 +553,7 @@ RESOURCE_EXHAUSTED (too many of your messages there await acknowledgement: wait,
 	command.Flags().StringVar(&bodyFile, "body-file", "", "read the message text from FILE; - reads stdin")
 	command.MarkFlagsOneRequired("body", "body-file")
 	command.MarkFlagsMutuallyExclusive("body", "body-file")
-	command.Flags().StringVar(&fromSession, "from-session", "", "your Session's label; defaults to AGENTPLANE_DESTINATION's session_id")
+	command.Flags().StringVar(&fromSession, "from-session", "", "your Session's label; defaults to AGENTPLANE_SESSION_ID")
 	command.Flags().StringVar(&key, "key", "", "idempotency key; generated and printed on stderr if absent")
 	return command
 }

@@ -18,7 +18,7 @@ import (
 func TestConfigurationBatchPublicationAndRecovery(t *testing.T) {
 	for _, rollback := range []bool{false, true} {
 		t.Run(fmt.Sprintf("rollback=%t", rollback), func(t *testing.T) {
-			ctx, root, _, store, manager := newSessionTestManager(t, nil, func(string) string { return "destination" })
+			ctx, root, _, store, manager := newSessionTestManager(t, nil)
 			s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
 			reservation, err := store.Read(s.id)
 			if err != nil {
@@ -103,7 +103,7 @@ func TestConfigurationBatchPublicationAndRecovery(t *testing.T) {
 }
 
 func TestConcurrentConfigurationOutcomesFollowJournalOrder(t *testing.T) {
-	ctx, root, _, store, manager := newSessionTestManager(t, nil, func(string) string { return "destination" })
+	ctx, root, _, store, manager := newSessionTestManager(t, nil)
 	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
 	before := s.Attached()
 	const changes = 20
@@ -166,7 +166,7 @@ func TestConcurrentConfigurationOutcomesFollowJournalOrder(t *testing.T) {
 }
 
 func TestCodexRecoveredTurnResponseUsesConfirmedModelWithinBatch(t *testing.T) {
-	ctx, root, _, store, manager := newSessionTestManager(t, nil, func(string) string { return "destination" })
+	ctx, root, _, store, manager := newSessionTestManager(t, nil)
 	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
 	for _, command := range []*commandpb.Command{
 		{CommandId: "input", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}},

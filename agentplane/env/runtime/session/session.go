@@ -77,7 +77,6 @@ type sessionDependencies struct {
 	ctx                context.Context
 	state              state.State
 	store              *retained.Store
-	destination        string
 	claude             *harness.LaunchConfig
 	harnessEnvironment map[string]string
 	debugCheckpoint    *DebugCheckpointConfig
@@ -130,10 +129,9 @@ func (s *Session) Session() harness.SessionSnapshot {
 	return snapshot
 }
 
-// environment is this Session's own harness environment: its notification destination, which the
-// `agentplane` command reads as AGENTPLANE_DESTINATION.
+// environment keeps Session identity scoped to this Session's own harness process.
 func (s *Session) environment() map[string]string {
-	return map[string]string{"AGENTPLANE_DESTINATION": s.deps.destination}
+	return map[string]string{"AGENTPLANE_SESSION_ID": s.ID()}
 }
 
 func (s *Session) hostedAdapter() harness.Adapter {

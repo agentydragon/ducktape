@@ -54,9 +54,11 @@ Notification API and CLI images together; creations can fail while old and new v
 Message sends also use a Session-only request; old CLI binaries cannot send to the new API during
 the rolling overlap. Once serving replicas and client binaries agree, retry uncertain creations and
 sends with their original idempotency keys.
-The existing `AGENTPLANE_DESTINATION` metadata envelope still contains the Sandbox reference and
-Session ID; the CLI extracts only the Session ID for subscription creation. This preserves the
-default CLI invocation in retained central Session prompts without rewriting those prompts or History.
+New Sessions receive their public ID as `AGENTPLANE_SESSION_ID`; the CLI reads that value directly and
+does not accept the former `AGENTPLANE_DESTINATION` JSON envelope. Existing central Sessions keep the
+prompt frozen when they were opened, which may still show a Sandbox reference and name the old
+variable. Use `--session ID` from such a Session or open a new Session for the current prompt and
+environment. Stored prompts and History are preserved unchanged.
 Rollback rolls both API and CLI images back together. Existing subscriptions and their stored
 destination fences, entries, acknowledgements and notices are not converted or deleted.
 

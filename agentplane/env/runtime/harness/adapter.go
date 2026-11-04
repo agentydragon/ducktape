@@ -27,7 +27,7 @@ type SessionSnapshot struct {
 	Resuming                 bool
 	ActiveTurnID             string
 	// Environment holds the variables only this Session's tools see, beside the runner-wide harness
-	// environment: its notification destination. A shared process applies them per native thread.
+	// environment: its Session ID. A shared process applies them per native thread.
 	Environment map[string]string
 }
 

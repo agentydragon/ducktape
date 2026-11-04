@@ -16,26 +16,22 @@ import (
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 )
 
-func TestSessionEnvironmentCarriesItsOwnDestination(t *testing.T) {
+func TestSessionEnvironmentCarriesItsOwnID(t *testing.T) {
 	globalEnvironment := map[string]string{"TZ": "UTC"}
-	want := map[string]string{
-		"session-1": `{"destination_ref":{"namespace":"test","name":"sandbox","uid":"sandbox-uid"},"session_id":"session-1"}`,
-		"session-2": `{"destination_ref":{"namespace":"test","name":"sandbox","uid":"sandbox-uid"},"session_id":"session-2"}`,
-	}
-	ctx, root, _, store, manager := newSessionTestManager(t, globalEnvironment, func(id string) string { return want[id] })
-	for id := range want {
+	ctx, root, _, store, manager := newSessionTestManager(t, globalEnvironment)
+	for _, id := range []string{"session-1", "session-2"} {
 		s := reserveTestSession(t, ctx, manager, store, id, filepath.Join(root, id), "")
-		if got := s.Session().Environment["AGENTPLANE_DESTINATION"]; got != want[id] {
-			t.Fatalf("%s destination = %q, want %q", id, got, want[id])
+		if got := s.Session().Environment["AGENTPLANE_SESSION_ID"]; got != id {
+			t.Fatalf("%s session ID environment = %q, want %q", id, got, id)
 		}
 	}
-	if _, shared := globalEnvironment["AGENTPLANE_DESTINATION"]; shared {
-		t.Fatal("a Session's destination leaked into the Host-wide harness environment")
+	if _, shared := globalEnvironment["AGENTPLANE_SESSION_ID"]; shared {
+		t.Fatal("a Session's ID leaked into the Host-wide harness environment")
 	}
 }
 
 func TestSessionBlockersTrackBusyReasonsAndReturnToIdle(t *testing.T) {
-	ctx, root, resources, store, manager := newSessionTestManager(t, nil, func(string) string { return "test-destination" })
+	ctx, root, resources, store, manager := newSessionTestManager(t, nil)
 	s := reserveTestSession(t, ctx, manager, store, "session-1", filepath.Join(root, "project"), "setup script")
 	if err := publish(ctx, resources, s.ID(), LifecycleStatus{Phase: Preparing}); err != nil {
 		t.Fatal(err)
@@ -76,7 +72,7 @@ func TestSessionBlockersTrackBusyReasonsAndReturnToIdle(t *testing.T) {
 	}
 }
 
-func newSessionTestManager(t *testing.T, environment map[string]string, destination func(string) string) (context.Context, string, state.State, *retained.Store, *Manager) {
+func newSessionTestManager(t *testing.T, environment map[string]string) (context.Context, string, state.State, *retained.Store, *Manager) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
@@ -88,8 +84,8 @@ func newSessionTestManager(t *testing.T, environment map[string]string, destinat
 	}
 	manager, err := NewManager(withTestSessionFacilities(t, Config{
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: root,
-		Destination: destination, HarnessEnvironment: environment,
-		OnChange: func() {},
+		HarnessEnvironment: environment,
+		OnChange:           func() {},
 		OnError: func(err error) {
 			if err != nil {
 				t.Errorf("session manager: %v", err)

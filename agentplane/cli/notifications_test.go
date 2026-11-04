@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -336,7 +335,7 @@ func TestSubscribeSessionFlagWinsOverTheEnvironment(t *testing.T) {
 	env := notificationsEnv(serveNotifications(t, servicer))
 	flag := "from-flag"
 	invoke(env, subscribeArgs("--session", flag)...)
-	delete(env, "AGENTPLANE_DESTINATION")
+	delete(env, "AGENTPLANE_SESSION_ID")
 	invoke(env, subscribeArgs("--session", flag)...)
 	code, _, _ := invoke(env, subscribeArgs()...)
 	sent := received[*notificationspb.CreateSubscriptionRequest](servicer)
@@ -499,20 +498,13 @@ func TestSubscriptionsFollowPagesOf128(t *testing.T) {
 	}
 }
 
-func TestDestinationIsStrictAboutItsFields(t *testing.T) {
+func TestSubscribeDoesNotReadTheOldDestinationVariable(t *testing.T) {
 	servicer := answering(pullRequestSubscription(1, false))
 	env := notificationsEnv(serveNotifications(t, servicer))
-	for _, destination := range []string{
-		`{"destination_ref":{"namespace":"n","name":"s","uid":"u"},"session_id":"x","source":{}}`,
-		`{"destination_ref":{"namespace":"n","name":"s"},"session_id":"x"}`,
-		`{"session_id":""}`,
-		`{}`,
-		`not json`,
-	} {
-		env["AGENTPLANE_DESTINATION"] = destination
-		if code, stdout, _ := invoke(env, subscribeArgs()...); code != 2 || stdout != "" {
-			t.Errorf("destination %s: exit %d, stdout %q; want exit 2", destination, code, stdout)
-		}
+	delete(env, "AGENTPLANE_SESSION_ID")
+	env["AGENTPLANE_DESTINATION"] = `{"destination_ref":{"namespace":"n","name":"s","uid":"u"},"session_id":"x"}`
+	if code, stdout, _ := invoke(env, subscribeArgs()...); code != 2 || stdout != "" {
+		t.Errorf("exit %d, stdout %q; want exit 2 without AGENTPLANE_SESSION_ID", code, stdout)
 	}
 	if sent := received[*notificationspb.CreateSubscriptionRequest](servicer); len(sent) != 0 {
 		t.Errorf("%d creations after bad destinations, want none", len(sent))
@@ -553,7 +545,7 @@ func TestSendAMessageFromThisSession(t *testing.T) {
 		FromSession: proto.String("test-session"),
 	}
 	if !proto.Equal(sent[0], want) {
-		t.Errorf("sent %v, want %v: addressed by Session ID, from AGENTPLANE_DESTINATION", sent[0], want)
+		t.Errorf("sent %v, want %v: addressed by Session ID, from AGENTPLANE_SESSION_ID", sent[0], want)
 	}
 	// The generated key is on stderr before the POST, for a retry with --key.
 	if got := decodeObject(t, stderr); sent[0].GetIdempotencyKey() == "" || got["idempotency_key"] != sent[0].GetIdempotencyKey() {
@@ -566,7 +558,8 @@ func TestSendTakesTheTextFromStdinAndItsOptionsFromFlags(t *testing.T) {
 	env := notificationsEnv(serveNotifications(t, servicer))
 	c := newCLI(env, "line one\nline two\n")
 	code := c.run(sendArgs("--body-file", "-", "--from-session", "test-flag-session", "--key", "test-key")...)
-	delete(env, "AGENTPLANE_DESTINATION")
+	delete(env, "AGENTPLANE_SESSION_ID")
+	env["AGENTPLANE_DESTINATION"] = `{"destination_ref":{"namespace":"n","name":"s","uid":"u"},"session_id":"old-session"}`
 	invoke(env, sendArgs("--body", "test body", "--key", "test-key-2")...)
 	sent := received[*notificationspb.SendMessageRequest](servicer)
 	if code != 0 || len(sent) != 2 {
@@ -580,7 +573,7 @@ func TestSendTakesTheTextFromStdinAndItsOptionsFromFlags(t *testing.T) {
 		t.Errorf("stderr %q, want nothing when --key is given", c.stderr.String())
 	}
 	if sent[1].FromSession != nil {
-		t.Errorf("from_session %q without AGENTPLANE_DESTINATION, want none", sent[1].GetFromSession())
+		t.Errorf("from_session %q without AGENTPLANE_SESSION_ID, want none", sent[1].GetFromSession())
 	}
 }
 
@@ -592,12 +585,7 @@ func TestSendRefusesAMalformedCommandBeforeSending(t *testing.T) {
 		"no text":           sendArgs(),
 		"two texts":         sendArgs("--body", "x", "--body-file", "-"),
 		"missing file":      sendArgs("--body-file", t.TempDir()+"/test-missing"),
-		"bad destination":   sendArgs("--body", "x"),
 	} {
-		env := maps.Clone(env)
-		if name == "bad destination" {
-			env["AGENTPLANE_DESTINATION"] = "not json"
-		}
 		if code, stdout, _ := invoke(env, args...); code != 2 || stdout != "" {
 			t.Errorf("%s: exit %d, stdout %q; want exit 2", name, code, stdout)
 		}

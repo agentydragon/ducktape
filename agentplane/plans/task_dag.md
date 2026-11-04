@@ -2216,8 +2216,10 @@ stores. This does not decide central attachment policy.
 read and watch by Session ID; inbox storage enforces one inbox per Session while retaining existing
 destination keys and state. Inbox reads, acknowledgement and retirement address the owning Session. Public message sends and their CLI use Session ID and resolve exact
 placement through Dispatcher; stored destination fences and output provenance remain. Migrate the
-remaining delivery worker, Action-facing guidance and
-`AGENTPLANE_DESTINATION` to Session UUID addressing. Resolve an environment only when an actual
+remaining delivery worker and Action-facing guidance. Native and central tool processes now receive
+only `AGENTPLANE_SESSION_ID`; retained central prompts may still contain the old Sandbox-shaped
+instructions, as recorded in the [address inventory](session_environment_model.md#session-address-inventory).
+Resolve an environment only when an actual
 placement, authorization or wake decision needs it. Preserve subscription and message idempotency,
 inbox cursors, actor attribution, cross-Session denial, authorized unattended wake, and exact UID
 fencing of accepted work. Account for central Sessions without an environment without assuming the

@@ -44,9 +44,9 @@ public control RPCs are in [Environment Runtime control](../control/environment_
   orders that hold for every turn of it. They reach the model appended to the harness's own system
   prompt, so each harness keeps its coding-agent policy. A caller's empty task leaves the platform part. They are
   fixed for the session's life. The Runtime composes them from the deployment's platform instructions
-  (`environment-runtime.json`’s `platform_instructions`), the Session's
-  notification destination (the Sandbox identity from the launch file and the Session ID) and the
-  caller's task, in that order; callers supply only the task. They are fixed because a `spec` supplied on reopening must equal the stored one.
+  (`environment-runtime.json`’s `platform_instructions`), the public Session ID and the caller's task,
+  in that order; callers supply only the task. They are fixed because a `spec` supplied on reopening
+  must equal the stored one.
   Platform guidance supplies deployment service addresses and essential constraints; detailed
   workflows are discoverable through the independent services' `/llms.txt` indexes.
 - For a Claude Session the Runtime asks the workload-authenticated LLM ingress for `ModelConfig` when a

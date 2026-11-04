@@ -197,7 +197,7 @@ generated gRPC over HTTP/2; Notifications and Egress rules use HTTP.
 | `AGENTPLANE_ACTIONS_URL`, `AGENTPLANE_SESSIONS_URL`, `AGENTPLANE_HISTORY_URL`                                                                                             | the gRPC service origin (`http` or `https`; defaults to port 80 or 443), no credentials, path, query or fragment |
 | `AGENTPLANE_NOTIFICATIONS_URL`, `AGENTPLANE_EGRESS_URL`                                                                                                                   | the HTTP service's base URL: `http` or `https`, no credentials, query or fragment                                |
 | `AGENTPLANE_ACTIONS_CREDENTIAL`, `AGENTPLANE_SESSIONS_CREDENTIAL`, `AGENTPLANE_HISTORY_CREDENTIAL`, `AGENTPLANE_NOTIFICATIONS_CREDENTIAL`, `AGENTPLANE_EGRESS_CREDENTIAL` | the inert placeholder the egress proxy substitutes for that service                                              |
-| `AGENTPLANE_DESTINATION`                                                                                                                                                  | `{"destination_ref": {...}, "session_id": "..."}`: this Session for `subscribe`, `send`                          |
+| `AGENTPLANE_SESSION_ID`                                                                                                                                                   | this Session's public ID for `subscribe` and the default `fromSession` label on `send`                           |
 
 Managed Pod and VM environments supply the Session Dispatcher URL and inert credential placeholder
 through their shared CLI environment. The egress path holds and substitutes the audience-specific
@@ -205,13 +205,18 @@ token. Custom environments need equivalent configuration; the CLI itself never p
 or adds a route. Retained History reads need their own History configuration and backend authority;
 the Action-backed delegation tools use the Actions service's configured peers instead.
 
+New native and central Sessions receive their public ID as `AGENTPLANE_SESSION_ID`. Older central
+Sessions retain the prompt frozen when they were opened; it may still show a Sandbox-shaped
+destination and refer to `AGENTPLANE_DESTINATION`. The CLI has no compatibility reader for that
+variable. Pass `--session ID` to notification subscription commands in such a Session, or open a new
+Session to receive the current prompt and environment. Stored prompts and History are not rewritten.
+
 The HTTP clients use `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and `SSL_CERT_FILE` from the harness. The
 Action and Session gRPC clients use `HTTPS_PROXY` for proxy resolution even when their configured service URL is
 `http`; they open an HTTP CONNECT tunnel, carrying h2c to the egress proxy. `NO_PROXY` excludes targets
 from both clients. `subscribe` also accepts `--session ID`, which wins over the metadata variable.
 Only that Session ID is sent to the subscription API; the service resolves its exact native placement.
-The metadata envelope still contains `destination_ref` and `session_id`, including for retained central
-Sessions; it is not the subscription request.
+The CLI reads a raw Session ID; it has no Sandbox identity or destination envelope.
 
 Credential scope:
 
@@ -352,8 +357,8 @@ than adding to them, as the service does.
 `POST`, as `submit` does. The service answers an identical retry under the key with the message it already
 accepted, so a send that failed or lost its response is retried with `--key KEY` and the same text; the key
 with other text is `409` (exit `4`). A message is not a subscription: identical text sent twice is two
-messages, so the key is not derived from it. `--from-session` defaults to the `session_id` of
-`AGENTPLANE_DESTINATION` and is omitted without it.
+messages, so the key is not derived from it. `--from-session` defaults to `AGENTPLANE_SESSION_ID` and
+is omitted without it.
 
 ## Waiting
 

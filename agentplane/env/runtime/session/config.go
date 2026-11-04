@@ -29,7 +29,6 @@ type Config struct {
 	State                state.State
 	Store                *retained.Store
 	WorkspaceRoot        string
-	Destination          func(string) string
 	Claude               *harness.LaunchConfig
 	HarnessEnvironment   map[string]string
 	DebugCheckpoint      *DebugCheckpointConfig

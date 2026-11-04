@@ -459,7 +459,7 @@ async def test_nested_command_inherits_executor_environment(
     # Inherited from the exec-server's own environment; the Session's variables are set over it.
     assert variables.get("PATH")
     assert variables.get("HOME")
-    assert variables.get("AGENTPLANE_DESTINATION")
+    assert variables.get("AGENTPLANE_SESSION_ID") == request.session_id
 
 
 async def test_reasoning_summaries_are_requested_and_reach_history(

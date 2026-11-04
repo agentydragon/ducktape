@@ -122,7 +122,7 @@ container limits stop meeting the production resource contract.
   before sampling starts. Opening only reserves the Session and may run setup; the first model turn
   requires an explicit `SubmitInput`. Caller `additional_instructions` are an additive briefing
   mapped into `SessionSpec.instructions`, after server-owned platform guidance and the child
-  notification destination. Its stdout, stderr and terminal outcome are retained in History.
+  Session ID. Its stdout, stderr and terminal outcome are retained in History.
 - LLM ingress must allow the sampler account in `central_sampler_accounts` to accept its
   `x-agentplane-session-id` claim. Ingress validates a canonical UUID and generates trusted
   metadata. Langfuse links filter by public Session ID; Sandbox identity describes execution.

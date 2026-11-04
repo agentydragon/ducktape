@@ -170,7 +170,7 @@ Keep these sources distinct:
   actual harness/tool surface; a central loop or MCP client must not be told that it runs inside
   the target environment or has local tools it lacks.
 - **Environment context:** the selected target's description and instructions, with the child's
-  own identity/notification destination where supported. Never copy the parent's destination.
+  own Session ID where supported. Never copy the parent's Session ID.
   This describes the environment and does not establish new execution permissions.
 - **Role/preset instructions, when selected:** optional role-specific text such as public-coder
   contribution practices. A caller's additional briefing appends to the selected role text.
@@ -212,8 +212,8 @@ omitting guidance does not change backend RBAC, Action policy or environment iso
 ## Proposed workflow A: agent reuses its environment
 
 Platform instructions describe tool/API discovery for the selected runtime and supply the child's
-notification address. Native runtime configuration also puts that address in
-`AGENTPLANE_DESTINATION`. Those identifiers are addresses, not credentials; Discovery verifies
+Session ID. Native runtime configuration also puts that ID in
+`AGENTPLANE_SESSION_ID`. Session IDs are addresses, not credentials; Discovery verifies
 eligibility against the authenticated caller. Direct-tool availability depends on the target's
 configured catalogue and must be discovered rather than assumed from the guide.
 

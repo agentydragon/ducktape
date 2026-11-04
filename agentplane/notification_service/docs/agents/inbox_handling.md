@@ -12,7 +12,7 @@ provider payloads. If the CLI is unavailable, use the equivalent HTTP routes bel
 
 ## Retrieve and account for entries
 
-Use your Session ID from `AGENTPLANE_DESTINATION` to address your inbox. The notice identifies `inbox_id` and preparation-time snapshots `acknowledged_at_preparation` and
+Use your Session ID from `AGENTPLANE_SESSION_ID` to address your inbox. The notice identifies `inbox_id` and preparation-time snapshots `acknowledged_at_preparation` and
 `through_at_preparation`. They describe when the notice was prepared, not current inbox state.
 Acknowledgement may already have advanced and entries newer than the coverage snapshot may exist.
 

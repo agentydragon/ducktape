@@ -28,7 +28,6 @@ type Manager struct {
 	environment   func() Environment
 	workspaceRoot string
 	dependencies  sessionDependencies
-	destination   func(string) string
 	changed       func()
 	fail          func(error)
 	workers       int
@@ -44,7 +43,7 @@ type Manager struct {
 }
 
 func NewManager(config Config) (*Manager, error) {
-	if config.Admission == nil || config.Context == nil || config.State == nil || config.Store == nil || config.Destination == nil || config.Scripts == nil || config.WaitBootstrap == nil || config.Environment == nil || config.EnsureWorkspace == nil || config.LaunchProcess == nil || config.ResolveModelConfig == nil || config.OnChange == nil || config.OnError == nil || config.ReconcileConcurrency <= 0 {
+	if config.Admission == nil || config.Context == nil || config.State == nil || config.Store == nil || config.Scripts == nil || config.WaitBootstrap == nil || config.Environment == nil || config.EnsureWorkspace == nil || config.LaunchProcess == nil || config.ResolveModelConfig == nil || config.OnChange == nil || config.OnError == nil || config.ReconcileConcurrency <= 0 {
 		return nil, fmt.Errorf("invalid Session manager dependencies")
 	}
 	if config.Claude != nil {
@@ -57,7 +56,7 @@ func NewManager(config Config) (*Manager, error) {
 	}
 	m := &Manager{
 		ctx: config.Context, state: config.State, store: config.Store,
-		workspaceRoot: config.WorkspaceRoot, destination: config.Destination, environment: config.Environment,
+		workspaceRoot: config.WorkspaceRoot, environment: config.Environment,
 		changed: config.OnChange, fail: config.OnError,
 		workers: config.ReconcileConcurrency, sessions: map[string]*Session{}, freshReservations: map[string]struct{}{},
 		ownerErrors: map[string]error{}, ownerFailuresChanged: make(chan struct{}),
@@ -248,7 +247,6 @@ func (m *Manager) loadLocked(ctx context.Context, id string, recoverRetained boo
 		}
 	}()
 	deps := m.dependencies
-	deps.destination = m.destination(id)
 	s := newSession(deps, id, record, journal)
 	s.loading = true
 	if err := s.load(ctx); err != nil {
