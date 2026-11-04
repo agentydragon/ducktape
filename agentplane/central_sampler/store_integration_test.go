@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/responses"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/samplerpb"
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/threadfold"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -1818,18 +1819,18 @@ func TestFailedActiveInputFoldsAsConfirmedInputAndFailedTurn(t *testing.T) {
 			if err != nil {
 				t.Fatalf("fold persisted sampler events: %v", err)
 			}
-			outcomes := make(map[string]threadfold.CommandOutcome, len(folded.CommandUpserts))
+			outcomes := make(map[string]historypb.ThreadCommandOutcome, len(folded.CommandUpserts))
 			for _, command := range folded.CommandUpserts {
 				outcomes[command.CommandID] = command.Outcome
 			}
-			if outcomes["active-input"] != threadfold.OutcomeEffected {
-				t.Fatalf("confirmed input history outcome=%q, want %q", outcomes["active-input"], threadfold.OutcomeEffected)
+			if outcomes["active-input"] != historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_EFFECTED {
+				t.Fatalf("confirmed input history outcome=%q, want %q", outcomes["active-input"], historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_EFFECTED)
 			}
-			if test.wantQueueError && outcomes["queued-input"] != threadfold.OutcomeFailed {
-				t.Fatalf("queued input history outcome=%q, want %q", outcomes["queued-input"], threadfold.OutcomeFailed)
+			if test.wantQueueError && outcomes["queued-input"] != historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_FAILED {
+				t.Fatalf("queued input history outcome=%q, want %q", outcomes["queued-input"], historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_FAILED)
 			}
-			if !test.wantQueueError && outcomes["queued-input"] != threadfold.OutcomePending {
-				t.Fatalf("queued input history outcome=%q, want %q", outcomes["queued-input"], threadfold.OutcomePending)
+			if !test.wantQueueError && outcomes["queued-input"] != historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_PENDING {
+				t.Fatalf("queued input history outcome=%q, want %q", outcomes["queued-input"], historypb.ThreadCommandOutcome_THREAD_COMMAND_OUTCOME_PENDING)
 			}
 			var failedTurn, failedTurnReason bool
 			for _, lifecycle := range folded.LifecycleUpserts {

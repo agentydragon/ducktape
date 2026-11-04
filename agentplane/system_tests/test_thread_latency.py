@@ -10,10 +10,10 @@ clock in the frame that ends it: Claude's `result` `duration_ms`, Codex's `turn/
 difference, the runner's and the app's share, since the model's leg alone varies by seconds.
 
 **The open.** The reads `electric_sync.tsx` makes before it can show that answer, through the app's
-generated History facade and Electric sync proxy (`agentplane/app/go/proxy/electric.go`), each stage
-timed from sending its first request to reading its last body:
+sync proxy (`agentplane/app/go/proxy/electric.go`), each stage timed from sending its first request to
+reading its last body:
 
-- `scope`: `POST /upstream/history/v1/sessions/{id}/entities`, the projection every shape request names.
+- `scope`: `POST /upstream/history/v1/sessions/{id}/entities`, the projection epoch every shape request names.
 - `entity_shape`: the thread's entity shape, opened from now; Electric creates it here, or finds it.
 - `tail`: the tail, view-state and pending-command subsets of that shape, sent together as the
   browser sends them before it shows the thread.
@@ -41,7 +41,7 @@ from uuid import UUID
 
 import httpx
 import pytest_bazel
-from google.protobuf.json_format import ParseDict
+from google.protobuf.json_format import MessageToDict, ParseDict
 from more_itertools import one
 from pydantic import BaseModel, Field
 
@@ -49,7 +49,7 @@ from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.app.testing.models import SUBSET_ROW_LIMIT, SubsetRequest
 from agentplane.env.runtime.harness import Harness
 from agentplane.history_service import history_service_pb2
-from agentplane.history_service.fold.views import EntityKind, PayloadField, ThreadItemState, ThreadPayloadReference
+from agentplane.history_service.testing.protojson import thread_entity_from_record
 from agentplane.native.claude import wire as claude_wire  # Both harnesses name their frame module `wire`.
 from agentplane.native.codex import wire as codex_wire
 from agentplane.proto import event_pb2, session_pb2
@@ -91,9 +91,9 @@ WARM_CEILINGS = COLD_CEILINGS | {Stage.ENTITY_SHAPE: 1.0, Stage.BODY_SHAPE: 1.0}
 # proxy admits; the tail is its `PAGE`.
 NEWEST_FIRST = "entity_index DESC"
 TAIL = SubsetRequest(order_by=NEWEST_FIRST, limit=30)
-VIEW_STATE = SubsetRequest(where=f"entity_kind = '{EntityKind.VIEW_STATE}'", order_by=NEWEST_FIRST, limit=1)
+VIEW_STATE = SubsetRequest(where="entity_kind = 'view_state'", order_by=NEWEST_FIRST, limit=1)
 PENDING_COMMANDS = SubsetRequest(
-    where=f"entity_kind = '{EntityKind.COMMAND}' AND pending = true", order_by=NEWEST_FIRST, limit=SUBSET_ROW_LIMIT
+    where="entity_kind = 'command' AND pending = true", order_by=NEWEST_FIRST, limit=SUBSET_ROW_LIMIT
 )
 
 
@@ -164,18 +164,21 @@ def _harness_seconds(harness: session_pb2.Harness, native: list[str]) -> float:
     return milliseconds / 1000
 
 
-def _answers(tail: list[Row]) -> list[ThreadPayloadReference]:
+def _answers(tail: list[Row]) -> list[history_service_pb2.ThreadPayloadReference]:
     """The assistant-text bodies the tail names: what the browser mounts to show the answer."""
-    return [
-        ThreadPayloadReference.model_validate_json(row["text_ref"])
-        for row in tail
-        if row["entity_kind"] == EntityKind.ITEM
-        and row["text_ref"] is not None
-        and ThreadItemState.model_validate_json(row["state"]).kind == event_pb2.ITEM_KIND_ASSISTANT_TEXT
-    ]
+    references = []
+    for row in tail:
+        entity = thread_entity_from_record(row)
+        if (
+            entity.WhichOneof("entity") == "item"
+            and entity.item.kind == event_pb2.ITEM_KIND_ASSISTANT_TEXT
+            and entity.item.HasField("text_ref")
+        ):
+            references.append(entity.item.text_ref)
+    return references
 
 
-def _bodies(references: list[ThreadPayloadReference]) -> SubsetRequest:
+def _bodies(references: list[history_service_pb2.ThreadPayloadReference]) -> SubsetRequest:
     """One read naming every body, as `bodySubset` in electric_sync.tsx forms it."""
     return SubsetRequest(
         where=" OR ".join(
@@ -184,19 +187,19 @@ def _bodies(references: list[ThreadPayloadReference]) -> SubsetRequest:
         params={
             key: value
             for n, reference in enumerate(references, 1)
-            for key, value in ((str(2 * n - 1), reference.owner_id), (str(2 * n), reference.generation))
+            for key, value in ((str(2 * n - 1), reference.owner_id), (str(2 * n), str(reference.generation)))
         },
     )
 
 
-def _body(chunks: list[Row], reference: ThreadPayloadReference) -> str:
+def _body(chunks: list[Row], reference: history_service_pb2.ThreadPayloadReference) -> str:
     """The body as far as its reference spans it, which is what the browser renders."""
     texts = {
         int(chunk["chunk_index"]): chunk["text"]
         for chunk in chunks
-        if chunk["owner_id"] == reference.owner_id and chunk["generation"] == reference.generation
+        if chunk["owner_id"] == reference.owner_id and int(chunk["generation"]) == reference.generation
     }
-    return "".join(texts[index] for index in range(int(reference.chunk_count)))
+    return "".join(texts[index] for index in range(reference.chunk_count))
 
 
 async def _open_thread(http: httpx.AsyncClient, thread_id: UUID) -> ThreadOpen:
@@ -205,10 +208,13 @@ async def _open_thread(http: httpx.AsyncClient, thread_id: UUID) -> ThreadOpen:
     with _timed(seconds, Stage.SCOPE):
         response = await http.post(
             f"/upstream/history/v1/sessions/{thread_id}/entities",
-            json={"projection_epoch": "", "range": {"start_entity_index": "0", "limit": 1}},
+            json=MessageToDict(
+                history_service_pb2.ReadThreadEntitiesRequest(range=history_service_pb2.EntityRange(limit=1))
+            ),
         )
         response.raise_for_status()
         scope = ParseDict(response.json(), history_service_pb2.ReadThreadEntitiesResponse())
+        assert scope.projection_epoch
     with _timed(seconds, Stage.ENTITY_SHAPE):
         entities = await _open_shape(http, f"{sync}/entities", scope.projection_epoch)
     with _timed(seconds, Stage.TAIL):
@@ -218,7 +224,7 @@ async def _open_thread(http: httpx.AsyncClient, thread_id: UUID) -> ThreadOpen:
     answers = _answers(tail)
     assert answers, f"the tail names no assistant text: {tail}"
     with _timed(seconds, Stage.BODY_SHAPE):
-        chunks = await _open_shape(http, f"{sync}/chunks/{PayloadField.TEXT}", scope.projection_epoch)
+        chunks = await _open_shape(http, f"{sync}/chunks/text", scope.projection_epoch)
     with _timed(seconds, Stage.BODY):
         rows = await chunks.subset(_bodies(answers))
     return ThreadOpen(seconds=seconds, answers=[_body(rows, reference) for reference in answers])

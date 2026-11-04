@@ -55,7 +55,7 @@ func projectLifecycle(
 	if attached == nil {
 		// Successful projection clears an earlier projection error even if imported history has no runner
 		// lifecycle snapshot. This does not manufacture EOF.
-		return SetOperational(ctx, tx, threadID, threadfold.StatusActive, nil, nil)
+		return SetOperational(ctx, tx, threadID, historypb.ThreadFeedStatus_THREAD_FEED_STATUS_ACTIVE, nil, nil)
 	}
 	for _, entry := range page.GetEntries() {
 		if entry.GetCursor() <= attached.GetLastCursor() {
@@ -91,15 +91,15 @@ func projectLifecycle(
 		return false, err
 	}
 
-	status, message := threadfold.StatusActive, (*string)(nil)
+	status, message := historypb.ThreadFeedStatus_THREAD_FEED_STATUS_ACTIVE, (*string)(nil)
 	switch {
 	case len(end) > 0:
-		status = threadfold.StatusFailed
+		status = historypb.ThreadFeedStatus_THREAD_FEED_STATUS_FAILED
 		if text, ok := end["message"]; ok {
 			message = &text
 		}
 	case end != nil:
-		status = threadfold.StatusEnded
+		status = historypb.ThreadFeedStatus_THREAD_FEED_STATUS_ENDED
 	}
 	operationalChanged, err := SetOperational(ctx, tx, threadID, status, message, nil)
 	if err != nil {

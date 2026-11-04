@@ -74,8 +74,7 @@ ts_library(
     srcs = ["history_rows.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":thread_sync",
-        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/history_service:history_service_pb",
         "//agentplane/proto:event_pb",
     ],
 )
@@ -85,10 +84,10 @@ agentplane_vitest_test(
     srcs = ["history_rows.test.ts"],
     deps = [
         ":history_rows",
-        ":thread_sync",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/threads/testing:entity",
+        "//agentplane/history_service:history_service_pb",
         "//agentplane/proto:event_pb",
     ],
 )
@@ -157,11 +156,13 @@ ts_library(
         ":history_rows",
         ":thread_cards",
         ":thread_commands",
+        ":thread_entity",
         ":thread_sync",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/history_service:history_service_pb",
         "//util/frontend:disclosure",
         "//util/frontend:markdown",
         "//util/frontend/transcript:retained_disclosures",
@@ -176,11 +177,13 @@ ts_library(
     deps = [
         ":history_row_views",
         ":history_rows",
+        ":thread_entity",
         ":thread_evidence",
         ":thread_sync",
         ":thread_view_recorder",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/history_service:history_service_pb",
         "//util/frontend/transcript:history_diagnostics",
         "//util/frontend/transcript:virtualized_history",
     ],
@@ -251,6 +254,7 @@ ts_library(
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:live",
         "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/history_service:history_service_pb",
         "//util/frontend/transcript:retained_disclosures",
     ],
 )
@@ -338,6 +342,7 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/threads/testing:entity",
         "//agentplane/app/frontend/threads/testing:state",
         "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/history_service:history_service_pb",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:environment_lifecycle_pb",
         "//agentplane/proto:event_log_pb",
@@ -374,6 +379,7 @@ ts_library(
         ":command_progress",
         ":history_rows",
         ":shell_calls",
+        ":thread_entity",
         ":thread_evidence",
         ":thread_sync",
         "//:node_modules/@mantine/core",
@@ -381,6 +387,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:raw_switch",
         "//agentplane/app/frontend:shell_command_view",
+        "//agentplane/history_service:history_service_pb",
         "//agentplane/proto:event_pb",
         "//util/frontend:code_block",
         "//util/frontend:disclosure",
@@ -408,6 +415,7 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/app/frontend/threads/testing:entity",
         "//agentplane/app/frontend/threads/testing:state",
+        "//agentplane/history_service:history_service_pb",
         "//agentplane/proto:event_pb",
         "//util/frontend/transcript:retained_disclosures",
     ],
@@ -436,6 +444,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
+        "//agentplane/history_service:history_service_pb",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
@@ -463,6 +472,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/history_service:history_service_pb",
         "//agentplane/runner_gateway/dispatcher:session_dispatcher_pb",
     ],
 )
@@ -476,6 +486,7 @@ ts_library(
     deps = [
         ":chronological_debug",
         ":client",
+        ":thread_entity",
         ":thread_evidence_css",
         ":thread_sync",
         "//:node_modules/@bufbuild/protobuf",
@@ -525,6 +536,7 @@ ts_library(
     deps = [
         ":client",
         ":proto_json",
+        ":thread_entity",
         ":thread_sync",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@electric-sql/client",
@@ -535,6 +547,7 @@ ts_library(
         "//agentplane/app/frontend:stream_reader",
         "//agentplane/app/frontend:watch_stream",
         "//agentplane/history_service:history_service_pb",
+        "//agentplane/proto:event_pb",
     ],
 )
 
@@ -544,12 +557,26 @@ agentplane_vitest_test(
     deps = [
         ":electric_sync",
         ":thread_sync",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@electric-sql/client",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/threads/testing:electric_entity",
+        "//agentplane/history_service:history_service_pb",
+        "//agentplane/proto:event_pb",
+    ],
+)
+
+ts_library(
+    name = "thread_entity",
+    srcs = ["thread_entity.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/history_service:history_service_pb",
     ],
 )
 
@@ -563,6 +590,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:stream_reader",
+        "//agentplane/history_service:history_service_pb",
     ],
 )
 

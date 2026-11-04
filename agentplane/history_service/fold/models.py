@@ -66,7 +66,7 @@ class ThreadHistorySummary(Base):
 
 
 class ThreadEntity(Base):
-    """The mutable, tagged current row consumed by the thread view shape."""
+    """The mutable current row consumed by the thread view shape."""
 
     __tablename__ = "thread_entity"
     __table_args__ = (
@@ -98,12 +98,8 @@ class ThreadEntity(Base):
     cursor: Mapped[int] = mapped_column(BigInteger)
     revision_cursor: Mapped[int] = mapped_column(BigInteger)
     pending: Mapped[bool] = mapped_column(Boolean)
-    turn_id: Mapped[str | None] = mapped_column(Text)
+    # ProtoJSON for the matching ThreadEntity oneof submessage.
     state: Mapped[dict[str, object]] = mapped_column(JSONB)
-    text_ref: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
-    arguments_ref: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
-    output_ref: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
-    input_ref: Mapped[dict[str, object] | None] = mapped_column(JSONB(none_as_null=True))
     # A dense position in the thread, assigned once and never revised, over every kind rather than
     # only the rendered ones -- so a range of it is every row in that stretch of the thread,
     # whatever it is. A cursor cannot stand in: how many rows a cursor range covers

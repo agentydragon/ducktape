@@ -20,8 +20,8 @@ from agentplane import sandbox_resource
 from agentplane.history_service import history_service_pb2
 from agentplane.history_service.channels import Channel
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity
-from agentplane.history_service.fold.views import EntityKind
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, go_history_service
+from agentplane.history_service.testing.protojson import thread_entity_from_record, thread_entity_state_json
 from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
@@ -144,19 +144,17 @@ class History:
             checkpoint = await session.get(ThreadCheckpoint, session_id)
             if checkpoint is None:
                 raise ValueError("record the Session's first entries before failing its feed")
-            view = await session.get(
-                ThreadEntity, (session_id, checkpoint.projection_epoch, EntityKind.VIEW_STATE, "current")
-            )
-            if view is None:
+            row = await session.get(ThreadEntity, (session_id, checkpoint.projection_epoch, "view_state", "current"))
+            if row is None:
                 raise ValueError("thread checkpoint has no current controls")
-            view.state = {
-                **view.state,
-                "operational": {
-                    "status": "failed",
-                    "last_verified_cursor": str(checkpoint.through_cursor),
-                    "feed_error": {"cursor": None if error_cursor is None else str(error_cursor), "message": error},
-                },
-            }
+            view = thread_entity_from_record(row)
+            operational = view.view_state.operational
+            operational.status = history_service_pb2.THREAD_FEED_STATUS_FAILED
+            operational.last_verified_cursor = checkpoint.through_cursor
+            if error_cursor is not None:
+                operational.feed_error.cursor = error_cursor
+            operational.feed_error.message = error
+            row.state = thread_entity_state_json(view)
             await session.execute(select(func.pg_notify(Channel.SUMMARIES, "")))
 
     @staticmethod
@@ -203,17 +201,23 @@ class History:
         return writer
 
     async def _operational_status_is_failed(self, session_id: UUID) -> bool:
-        async with self.sessions() as session:
-            checkpoint = await session.get(ThreadCheckpoint, session_id)
-            if checkpoint is None:
-                return False
-            view = await session.get(
-                ThreadEntity, (session_id, checkpoint.projection_epoch, EntityKind.VIEW_STATE, "current")
+        response = await self.service.reader.read_thread_entities(
+            history_service_pb2.ReadThreadEntitiesRequest(
+                session_id=str(session_id),
+                keys=history_service_pb2.EntityKeys(
+                    keys=[
+                        history_service_pb2.EntityKey(
+                            entity_kind=history_service_pb2.THREAD_ENTITY_KIND_VIEW_STATE, entity_id="current"
+                        )
+                    ]
+                ),
             )
-        if view is None:
-            return False
-        operational = view.state["operational"]
-        return isinstance(operational, dict) and operational["status"] == "failed"
+        )
+        return any(
+            entity.HasField("view_state")
+            and entity.view_state.operational.status == history_service_pb2.THREAD_FEED_STATUS_FAILED
+            for entity in response.entities
+        )
 
     async def _folded(self, session_id: UUID, committed: int, attached: session_pb2.Attached | None) -> None:
         """Wait for the summary to show the entries through `committed` and, once they cover it, `attached`."""

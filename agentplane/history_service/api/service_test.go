@@ -511,7 +511,7 @@ func TestAnUnfoldedOrUnknownSessionReadsAsNotFoundWhereItHasNoHistory(t *testing
 	server := newServer(t, time.Minute)
 	ctx := bearing(t, readerToken)
 	sessionID := uuid.NewString()
-	entity := &historypb.EntityKey{EntityKind: "item", EntityId: "test-entity"}
+	entity := &historypb.EntityKey{EntityKind: historypb.ThreadEntityKind_THREAD_ENTITY_KIND_ITEM, EntityId: "test-entity"}
 	for name, call := range map[string]func() error{
 		"events": func() error {
 			_, err := server.client.ReadSessionEvents(ctx, &historypb.ReadSessionEventsRequest{SessionId: sessionID, Limit: 10})

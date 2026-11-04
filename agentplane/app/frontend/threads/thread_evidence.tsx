@@ -1,5 +1,6 @@
 import { Button, Group, Stack, Text } from "@mantine/core";
 import { create, toJson } from "@bufbuild/protobuf";
+import { EventEntrySchema } from "../../../proto/event_log_pb";
 import { type CSSProperties, type JSX, type MouseEvent, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { displayableError } from "../client";
@@ -9,15 +10,14 @@ import { JsonView } from "../../../../util/frontend/json_view";
 import { ChronologicalDebugIcon } from "./chronological_debug";
 import { InspectionToggle } from "../../../../util/frontend/transcript/inspection";
 import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/transcript/retained_disclosures";
-import type { ThreadEntity } from "./thread_sync";
-import { EventEntrySchema } from "../../../proto/event_log_pb";
 import {
-  EntityKeySchema,
   ReadEntityEvidenceRequestSchema,
   ReadNativeFramesRequestSchema,
   type ReadEntityEvidenceResponse,
   type ReadNativeFramesResponse,
+  type ThreadEntity,
 } from "../../../history_service/history_service_pb";
+import { threadEntityKey, threadEntityKind } from "./thread_entity";
 import "./thread_evidence.css";
 
 function EvidenceFramesPage({
@@ -34,11 +34,6 @@ function EvidenceFramesPage({
   const [loading, setLoading] = useState(false);
   const [afterSequence, setAfterSequence] = useState("0");
   const request = useRef<AbortController | null>(null);
-  const scope = {
-    projectionEpoch: entity.projectionEpoch,
-    entityKind: entity.entityKind,
-    entityId: entity.entityId,
-  };
   const loadFirstPage = useEffectEvent(() => load());
   useEffect(() => {
     loadFirstPage();
@@ -53,8 +48,8 @@ function EvidenceFramesPage({
     void threadNativeFrames(
       create(ReadNativeFramesRequestSchema, {
         sessionId: threadId,
-        projectionEpoch: scope.projectionEpoch,
-        entity: create(EntityKeySchema, { entityKind: scope.entityKind, entityId: scope.entityId }),
+        projectionEpoch: entity.projectionEpoch,
+        entity: threadEntityKey(entity),
         observationCursor: BigInt(observationCursor),
         afterSequence: BigInt(after),
         limit: 30,
@@ -76,13 +71,12 @@ function EvidenceFramesPage({
         if (!controller.signal.aborted) setLoading(false);
       });
   };
-  const nextAfterSequence = page?.nextAfterSequence;
   return (
     <DisclosureBody>
       <Stack gap="xs">
         {error && <Text c="red">{error}</Text>}
         {page?.frames.map((frame) =>
-          frame.entry ? (
+          frame.entry !== undefined ? (
             <JsonView key={frame.sourceSequence.toString()} value={toJson(EventEntrySchema, frame.entry)} />
           ) : (
             <Text size="xs" key={frame.sourceSequence.toString()}>
@@ -100,8 +94,8 @@ function EvidenceFramesPage({
             First frames
           </Button>
         )}
-        {nextAfterSequence !== undefined && (
-          <Button variant="subtle" loading={loading} onClick={() => load(nextAfterSequence.toString())}>
+        {page?.nextAfterSequence !== undefined && (
+          <Button variant="subtle" loading={loading} onClick={() => load(page.nextAfterSequence?.toString() ?? "0")}>
             Load more frames
           </Button>
         )}
@@ -112,7 +106,7 @@ function EvidenceFramesPage({
 
 function EvidenceFrames(props: { threadId: string; entity: ThreadEntity; observationCursor: string }): JSX.Element {
   const { entity } = props;
-  const id = `${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:frames:${props.observationCursor}`;
+  const id = `${entity.projectionEpoch}:${threadEntityKind(entity)}:${entity.entityId}:frames:${props.observationCursor}`;
   return (
     <RetainedDisclosure
       id={id}
@@ -134,11 +128,6 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
   const [loading, setLoading] = useState(false);
   const [afterCursor, setAfterCursor] = useState("0");
   const request = useRef<AbortController | null>(null);
-  const scope = {
-    projectionEpoch: entity.projectionEpoch,
-    entityKind: entity.entityKind,
-    entityId: entity.entityId,
-  };
   const loadFirstPage = useEffectEvent(() => load());
   useEffect(() => {
     loadFirstPage();
@@ -153,8 +142,8 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
     void threadEvidence(
       create(ReadEntityEvidenceRequestSchema, {
         sessionId: threadId,
-        projectionEpoch: scope.projectionEpoch,
-        entity: create(EntityKeySchema, { entityKind: scope.entityKind, entityId: scope.entityId }),
+        projectionEpoch: entity.projectionEpoch,
+        entity: threadEntityKey(entity),
         afterCursor: BigInt(after),
         limit: 30,
       }),
@@ -175,7 +164,6 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
         if (!controller.signal.aborted) setLoading(false);
       });
   };
-  const nextAfterCursor = page?.nextAfterCursor;
   return (
     <Stack gap="xs">
       {error && (
@@ -199,18 +187,18 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
           ) : (
             <DisclosureBody key={observation.observationCursor.toString()}>
               <Group justify="space-between" wrap="nowrap" gap="xs">
-                <Text size="xs">Observation {observation.observationCursor} has no native frame</Text>
+                <Text size="xs">Observation {observation.observationCursor.toString()} has no native frame</Text>
                 <ChronologicalDebugIcon observationCursor={observation.observationCursor.toString()} />
               </Group>
             </DisclosureBody>
           )}
         </Stack>
       ))}
-      {(nextAfterCursor !== undefined || afterCursor !== "0") && (
+      {(page?.nextAfterCursor !== undefined || afterCursor !== "0") && (
         <DisclosureBody>
           <Stack gap="xs">
-            {nextAfterCursor !== undefined && (
-              <Button variant="subtle" loading={loading} onClick={() => load(nextAfterCursor.toString())}>
+            {page?.nextAfterCursor !== undefined && (
+              <Button variant="subtle" loading={loading} onClick={() => load(page.nextAfterCursor?.toString() ?? "0")}>
                 Load more evidence
               </Button>
             )}
@@ -227,7 +215,7 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
 }
 
 function evidenceDisclosure(entity: ThreadEntity): string {
-  return `${entity.projectionEpoch}:${entity.entityKind}:${entity.entityId}:evidence`;
+  return `${entity.projectionEpoch}:${threadEntityKind(entity)}:${entity.entityId}:evidence`;
 }
 
 /** An icon, not a disclosure row, so it adds no height to its card: it sits in the card's header

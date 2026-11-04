@@ -3,7 +3,6 @@ package reads
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -39,7 +38,11 @@ func (r *Reader) ReadThreadEntities(ctx context.Context, request *historypb.Read
 		}
 		kinds, ids := make([]string, len(keys)), make([]string, len(keys))
 		for index, key := range keys {
-			kinds[index], ids[index] = key.GetEntityKind(), key.GetEntityId()
+			kind, err := threadfold.StoredEntityKind(key.GetEntityKind())
+			if err != nil {
+				return nil, invalid("entity kind")
+			}
+			kinds[index], ids[index] = string(kind), key.GetEntityId()
 		}
 		window, arguments = "(entity_kind, entity_id) IN (SELECT * FROM unnest($3::text[], $4::text[]))", []any{pq.Array(kinds), pq.Array(ids)}
 	default:
@@ -62,8 +65,7 @@ func (r *Reader) ReadThreadEntities(ctx context.Context, request *historypb.Read
 			return nil
 		}
 		response.ProjectionEpoch, response.ThroughCursor = checkpoint.projectionEpoch, checkpoint.throughCursor
-		rows, err := tx.QueryContext(ctx, `SELECT entity_index, entity_kind, entity_id, cursor, revision_cursor, pending,
-				turn_id, state, text_ref, arguments_ref, output_ref, input_ref
+		rows, err := tx.QueryContext(ctx, `SELECT entity_index, entity_kind, entity_id, cursor, revision_cursor, pending, state
 			FROM thread_entity WHERE thread_id = $1 AND projection_epoch = $2 AND `+window+` ORDER BY entity_index`,
 			append([]any{sessionID, checkpoint.projectionEpoch}, arguments...)...)
 		if err != nil {
@@ -100,21 +102,15 @@ func readCheckpoint(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID) (*chec
 }
 
 func scanEntity(rows *sql.Rows, sessionID uuid.UUID, projectionEpoch string) (*historypb.ThreadEntity, error) {
-	row := threadfold.EntityRow{ThreadID: sessionID, ProjectionEpoch: projectionEpoch}
-	var index uint64
+	entity := &historypb.ThreadEntity{SessionId: sessionID.String(), ProjectionEpoch: projectionEpoch}
+	var kind threadfold.EntityKind
+	var pending bool
 	var state []byte
-	var references threadfold.ReferenceColumns
-	if err := rows.Scan(&index, &row.EntityKind, &row.EntityID, &row.Cursor, &row.RevisionCursor, &row.Pending, &row.TurnID,
-		&state, &references.Text, &references.Arguments, &references.Output, &references.Input); err != nil {
+	if err := rows.Scan(&entity.EntityIndex, &kind, &entity.EntityId, &entity.Cursor, &entity.RevisionCursor, &pending, &state); err != nil {
 		return nil, err
 	}
-	row.State = state
-	if err := row.SetReferences(references); err != nil {
+	if err := threadfold.ParseEntity(entity, kind, pending, state); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidStoredEntity, err)
 	}
-	if err := row.Validate(); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrInvalidStoredEntity, err)
-	}
-	view, err := json.Marshal(row)
-	return &historypb.ThreadEntity{EntityIndex: index, ViewJson: string(view)}, err
+	return entity, nil
 }

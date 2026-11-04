@@ -87,7 +87,7 @@ get their Threads once it does.
   History owns event storage, folding and evidence; `go/historydata/` reads it through gRPC.
 - `go/policyaccess/`: Kubernetes policy projections.
   The Action Service independently streams its effective policy through its generated facade.
-- `go/proxy/`: authenticated Electric shape forwarding with pinned Thread/projection scope.
+- `go/proxy/`: authenticated Electric entity/chunk forwarding with current History projection-epoch checks.
   Native service RPCs use generated app-side HTTP gateways with request-bound credentials.
 - `go/auth/` and `go/federation/`: PostgreSQL browser sessions, signed OIDC login and operator token
   exchange. Logout, expiry and replica notifications end browser streams.

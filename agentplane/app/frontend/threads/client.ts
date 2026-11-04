@@ -57,52 +57,6 @@ export interface ThreadListing {
   sandboxUID?: string;
 }
 export type ThreadWindow = { threads: ThreadView[]; more: boolean; archived_count: number };
-export type ThreadPayloadRef = {
-  projection_epoch: string;
-  owner_cursor: string;
-  owner_id: string;
-  field: "text" | "arguments" | "output" | "confirmed_input" | "command_input";
-  revision_cursor: string;
-  generation: string;
-  chunk_count: string;
-};
-export type ThreadEntityState =
-  | {
-      controls: {
-        applied_model: string | null;
-        applied_reasoning_effort: string | null;
-        active_turn_id: string | null;
-        harness_state: string | null;
-      };
-
-      operational: {
-        status: "active" | "ended" | "failed";
-        last_verified_cursor: string;
-        feed_error: { cursor: string | null; message: string } | null;
-      };
-    }
-  | {
-      kind: number;
-      tool_name: string;
-      completion: string | null;
-      tool_succeeded: boolean | null;
-      recovery: number | null;
-      recovery_reason: string | null;
-    }
-  | { harness_message_id: string; origin_command_ids: string[] }
-  | { observation: string; event: unknown }
-  | {
-      operation: string;
-      outcome: "pending" | "effected" | "failed" | "noop";
-      outcome_cursor: string | null;
-      outcome_reason: string | null;
-      requested_value: string | null;
-    };
-export type ThreadEntityView = {
-  text_ref: ThreadPayloadRef | null;
-  state: ThreadEntityState;
-};
-
 async function historyJson(path: string, init: RequestInit = {}): Promise<JsonValue> {
   const response = await fetchWithLogin(new URL(`/upstream/history/v1${path}`, window.location.href), {
     ...init,

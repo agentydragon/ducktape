@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(
     default_testonly = True,
@@ -51,12 +51,12 @@ py_library(
     srcs = ["history.py"],
     deps = [
         ":go_service",
+        ":protojson",
         "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/history_service:channels",
         "//agentplane/history_service:history_service_pb2",
         "//agentplane/history_service/fold:models",
-        "//agentplane/history_service/fold:views",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/testing:kubernetes_apiserver",
@@ -64,6 +64,28 @@ py_library(
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "protojson",
+    srcs = ["protojson.py"],
+    deps = [
+        "//agentplane/history_service:history_service_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "protojson_test",
+    srcs = ["protojson_test.py"],
+    deps = [
+        ":protojson",
+        "//:conftest",
+        "//agentplane/history_service:history_service_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

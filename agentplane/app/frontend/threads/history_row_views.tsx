@@ -2,7 +2,9 @@ import { Box, Flex, Stack, Text } from "@mantine/core";
 import { type JSX, type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { Markdown } from "../../../../util/frontend/markdown";
-import { type ThreadEntity, useThreadSync } from "./thread_sync";
+import { useThreadSync } from "./thread_sync";
+import type { ThreadEntity, ThreadPayloadReference } from "../../../history_service/history_service_pb";
+import { threadEntityKind } from "./thread_entity";
 import {
   summarizeLifecycleGroup,
   summarizeRun,
@@ -66,7 +68,7 @@ function ReasoningSummaryPart({
   onText,
 }: {
   entityId: string;
-  reference: NonNullable<ThreadEntity["textRef"]>;
+  reference: ThreadPayloadReference;
   onText: (entityId: string, text: string) => void;
 }): null {
   const { body } = useThreadSync().usePayload(reference);
@@ -84,7 +86,7 @@ function ReasoningGroup({
   live: (entity: ThreadEntity) => boolean;
 }): JSX.Element {
   const first = entities[0];
-  const id = `${first.projectionEpoch}:${first.entityKind}:${first.entityId}:reasoning-group`;
+  const id = `${first.projectionEpoch}:${threadEntityKind(first)}:${first.entityId}:reasoning-group`;
   const [open, setOpen] = useRetainedDisclosure(id);
   const [texts, setTexts] = useState<ReadonlyMap<string, string>>(() => new Map());
   const onText = useCallback((entityId: string, text: string) => {
@@ -106,11 +108,12 @@ function ReasoningGroup({
             <Markdown source={summary} singleLine size="sm" />
             {entities.map(
               (entity) =>
-                entity.textRef && (
+                entity.entity.case === "item" &&
+                entity.entity.value.textRef && (
                   <ReasoningSummaryPart
                     key={entity.entityId}
                     entityId={entity.entityId}
-                    reference={entity.textRef}
+                    reference={entity.entity.value.textRef}
                     onText={onText}
                   />
                 )
@@ -159,7 +162,7 @@ function RunView({
   const first = entities[0];
   return (
     <CollapsibleRows
-      id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:run`}
+      id={`${first.projectionEpoch}:${threadEntityKind(first)}:${first.entityId}:run`}
       summary={
         <Flex component="span" display="inline-flex" gap="xs" align="center" wrap="wrap">
           <Text size="sm" c="dimmed">
@@ -197,7 +200,7 @@ function LifecycleGroupView({
   const first = entities[0];
   return (
     <CollapsibleRows
-      id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:lifecycle`}
+      id={`${first.projectionEpoch}:${threadEntityKind(first)}:${first.entityId}:lifecycle`}
       summary={
         // Unlike RunView's inline-flex Flex, a plain Text defaults to a block <p> -- inside the
         // Accordion control's flex label, that wraps below the disclosure chevron.
@@ -224,7 +227,7 @@ function SetupView({
   const first = entities[0];
   return (
     <CollapsibleRows
-      id={`${first.projectionEpoch}:${first.entityKind}:${first.entityId}:setup`}
+      id={`${first.projectionEpoch}:${threadEntityKind(first)}:${first.entityId}:setup`}
       summary={
         <Box component="span" style={{ display: "grid", gap: 2 }}>
           <Text span size="xs" c="dimmed">
@@ -265,11 +268,11 @@ export function HistoryRowView({
   if (lone) {
     const echoCommandId = pendingSentMessage(first)
       ? first.entityId
-      : first.entityKind === "confirmed_input" && "origin_command_ids" in first.state
-        ? first.state.origin_command_ids.find((id) => inputEchoes?.has(id))
+      : first.entity.case === "confirmedInput"
+        ? first.entity.value.originCommandIds.find((id) => inputEchoes?.has(id))
         : undefined;
     const fallbackText = echoCommandId === undefined ? undefined : inputEchoes?.get(echoCommandId);
-    return first.entityKind === "command" && !pendingSentMessage(first) ? (
+    return first.entity.case === "command" && !pendingSentMessage(first) ? (
       <ProjectedControlCommand threadId={threadId} row={first} />
     ) : (
       <EntityCard

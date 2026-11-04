@@ -68,7 +68,7 @@ func TestBackfillSessionEventKindAndRequireIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := provider.Up(ctx); err == nil {
+	if _, err := provider.UpTo(ctx, 4); err == nil {
 		t.Fatal("migration accepted malformed protobuf payload")
 	}
 	assertPartialKinds(t, ctx, db, sessionID, rowCount)
@@ -79,7 +79,7 @@ func TestBackfillSessionEventKindAndRequireIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := provider.Up(ctx); err != nil {
+	if _, err := provider.UpTo(ctx, 4); err != nil {
 		t.Fatal(err)
 	}
 	want := make([]int64, rowCount)

@@ -76,7 +76,7 @@ func (p *Projector) recordFailure(ctx context.Context, threadID uuid.UUID, lease
 			errorCursor = replicationError.Cursor
 		}
 		message := stalledMessage
-		if _, err := SetOperational(ctx, tx, threadID, threadfold.StatusFailed, &message, errorCursor); err != nil {
+		if _, err := SetOperational(ctx, tx, threadID, historypb.ThreadFeedStatus_THREAD_FEED_STATUS_FAILED, &message, errorCursor); err != nil {
 			return err
 		}
 		return notify(ctx, tx, ChannelSummaries)

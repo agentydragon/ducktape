@@ -23,7 +23,7 @@ const (
 )
 
 const (
-	entityColumns = "thread_id,projection_epoch,entity_kind,entity_id,entity_index,cursor,revision_cursor,pending,turn_id,state,text_ref,arguments_ref,output_ref,input_ref"
+	entityColumns = "thread_id,projection_epoch,entity_kind,entity_id,entity_index,cursor,revision_cursor,pending,state"
 	chunkColumns  = "thread_id,projection_epoch,owner_cursor,owner_id,field,generation,chunk_index,text"
 	entityWhere   = "thread_id = $1 AND projection_epoch = $2"
 	chunkWhere    = "thread_id = $1 AND projection_epoch = $2 AND field = $3"
@@ -68,7 +68,7 @@ type ElectricProxy struct {
 // of the upstream service; the proxy applies the same streaming/no-redirect semantics as UpstreamProxy.
 func NewElectricProxy(client *http.Client, electricURL string, store ThreadEpochStore) (*ElectricProxy, error) {
 	if store == nil {
-		return nil, errors.New("thread epoch store is required")
+		return nil, errors.New("thread scope store is required")
 	}
 	upstream, err := NewUpstreamProxy(client, electricURL)
 	if err != nil {

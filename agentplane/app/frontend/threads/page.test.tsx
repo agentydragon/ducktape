@@ -1,4 +1,10 @@
 // @vitest-environment happy-dom
+import {
+  ThreadPayloadField,
+  ThreadCommandOutcome,
+  ThreadFeedStatus,
+  type ThreadEntity,
+} from "../../../history_service/history_service_pb";
 import { AutosuspendBlockerSchema } from "../../../proto/environment_lifecycle_pb";
 import { DurationSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { readySandbox, suspendedSandbox } from "../testing/sandbox";
@@ -56,7 +62,7 @@ import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../stream_status";
 import { THREAD_STATUS_MARKS } from "../status_mark";
 import { testItem } from "./testing/entity";
 import { badgeLabels, entity, reference, serving, THREAD, threadState, toggle, viewState } from "./testing/state";
-import { ThreadSyncContext, type ThreadEntity, type ThreadState, type ThreadSync } from "./thread_sync";
+import { ThreadSyncContext, type ThreadState, type ThreadSync } from "./thread_sync";
 import { TopbarContext } from "../topbar";
 import { reconnected, serveEventStreams, ServedWatch, stubWatchFetch } from "../testing/watch";
 
@@ -391,7 +397,7 @@ function page(
     Thread: ({ children }) => <>{children}</>,
     useThread: () => state,
     useCommandRows: (ids) =>
-      state.window?.rows.filter((row) => row.entityKind === "command" && ids.includes(row.entityId)) ?? [],
+      state.window?.rows.filter((row) => row.entity.case === "command" && ids.includes(row.entityId)) ?? [],
     usePayload: () => ({ body: null, error: null, retry: () => {} }),
   };
   return (
@@ -726,7 +732,7 @@ it("queues a message through the Dispatcher for a fresh suspended Sandbox with w
     setup_state: "SETUP_STATE_SUCCEEDED",
     launch_outcome: "LAUNCH_OUTCOME_STARTED",
   };
-  const sealedThread = threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] });
+  const sealedThread = threadState({ rows: [viewState({ harness: "stopped", status: ThreadFeedStatus.ENDED })] });
   const container = await render(sealedThread);
   const field = composer(container);
   expect(field.disabled).toBe(false);
@@ -755,7 +761,7 @@ it("disables the composer and offers resume for a fresh suspended Sandbox withou
     setup_state: "SETUP_STATE_SUCCEEDED",
     launch_outcome: "LAUNCH_OUTCOME_STARTED",
   };
-  const sealedThread = threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] });
+  const sealedThread = threadState({ rows: [viewState({ harness: "stopped", status: ThreadFeedStatus.ENDED })] });
   const container = await render(sealedThread);
   const field = composer(container);
   expect(field.disabled).toBe(true);
@@ -783,7 +789,7 @@ it.each(["SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED"])(
       setup_state: setupState,
       launch_outcome: "LAUNCH_OUTCOME_STARTED",
     };
-    const sealedThread = threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] });
+    const sealedThread = threadState({ rows: [viewState({ harness: "stopped", status: ThreadFeedStatus.ENDED })] });
     const container = await render(sealedThread);
     expect(composer(container).disabled).toBe(true);
     await type(composer(container), "Do not send");
@@ -844,15 +850,23 @@ it("sends the draft from the Send button, which an empty draft disables", async 
 it.each([
   [
     "a newly reserved Session",
-    { harness_state: "HARNESS_STATE_STOPPED", feed_status: "active", launch_outcome: "LAUNCH_OUTCOME_PENDING" },
+    {
+      harness_state: "HARNESS_STATE_STOPPED",
+      feed_status: "active",
+      launch_outcome: "LAUNCH_OUTCOME_PENDING",
+    },
   ],
   [
     "a Session whose harness exited",
-    { harness_state: "HARNESS_STATE_STOPPED", feed_status: "ended", launch_outcome: "LAUNCH_OUTCOME_STARTED" },
+    {
+      harness_state: "HARNESS_STATE_STOPPED",
+      feed_status: "ended",
+      launch_outcome: "LAUNCH_OUTCOME_STARTED",
+    },
   ],
 ] as const)("sends input to %s without an explicit resume action", async (_name, snapshot) => {
   sharedThread = snapshot;
-  const dormant = threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] });
+  const dormant = threadState({ rows: [viewState({ harness: "stopped", status: ThreadFeedStatus.ENDED })] });
   const container = await render(dormant);
   expect(composer(container).disabled).toBe(false);
   expect(document.body.textContent).not.toContain("Resume harness");
@@ -867,7 +881,9 @@ it.each([
 
 it("queues input while one-shot setup runs", async () => {
   sharedThread = { setup_state: "SETUP_STATE_RUNNING", harness_state: "HARNESS_STATE_STOPPED" };
-  const container = await render(threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] }));
+  const container = await render(
+    threadState({ rows: [viewState({ harness: "stopped", status: ThreadFeedStatus.ENDED })] })
+  );
   expect(composer(container).disabled).toBe(false);
   await type(composer(container), "Continue after setup");
   await press(composer(container), {});
@@ -875,7 +891,7 @@ it("queues input while one-shot setup runs", async () => {
 });
 
 it.each([
-  ["failed Thread operation", threadState({ rows: [viewState({ status: "failed" })] })],
+  ["failed Thread operation", threadState({ rows: [viewState({ status: ThreadFeedStatus.FAILED })] })],
   ["failed Thread synchronization", threadState({ windowError: "shape unavailable" })],
 ] as const)("keeps the composer read-only during %s", async (_label, state) => {
   const container = await render(state);
@@ -905,7 +921,11 @@ it.each([
   [{ feed_status: "failed" }, "Runner feed failed", "failed"],
   [{ feed_status: "ended" }, "Runner feed ended", "inactive"],
   [
-    { feed_status: "active", harness_state: "HARNESS_STATE_STOPPED", launch_outcome: "LAUNCH_OUTCOME_PENDING" },
+    {
+      feed_status: "active",
+      harness_state: "HARNESS_STATE_STOPPED",
+      launch_outcome: "LAUNCH_OUTCOME_PENDING",
+    },
     "Harness not running",
     "stopped",
   ],
@@ -1130,9 +1150,9 @@ it("shows an archived thread as the archive icon, in the favicon and with its ow
   vi.mocked(getThread).mockResolvedValue({ ...THREAD, archived: true });
   sharedThread = { archived: true };
   sandboxes = [inventorySandbox()];
-  const indicator = (await render(threadState({ rows: [viewState({ status: "failed" })] }))).querySelector(
-    ".agentplane-thread-status-indicator"
-  );
+  const indicator = (
+    await render(threadState({ rows: [viewState({ status: ThreadFeedStatus.FAILED })] }))
+  ).querySelector(".agentplane-thread-status-indicator");
   expect(indicator?.getAttribute("aria-label")).toBe("Thread archived");
   expect(indicator?.getAttribute("data-status")).toBe("archived");
   expect(indicator?.querySelector("svg")).not.toBeNull();
@@ -1147,9 +1167,9 @@ it.each([[{ archived: false }, [], "Sandbox unavailable", "inactive"]])(
     vi.mocked(getThread).mockResolvedValue({ ...THREAD, ...overrides });
     sharedThread = overrides;
     sandboxes = inventory;
-    const indicator = (await render(threadState({ rows: [viewState({ status: "failed" })] }))).querySelector(
-      ".agentplane-thread-status-indicator"
-    );
+    const indicator = (
+      await render(threadState({ rows: [viewState({ status: ThreadFeedStatus.FAILED })] }))
+    ).querySelector(".agentplane-thread-status-indicator");
     expect(indicator?.getAttribute("aria-label")).toBe(label);
     expect(indicator?.getAttribute("data-status")).toBe(kind);
   }
@@ -1231,7 +1251,9 @@ it.each(["running", "dormant", "setup", "suspended", "waking"])(
     if (state === "waking") sandboxes = [waking];
     if (state === "setup") sharedThread = { setup_state: "SETUP_STATE_RUNNING" };
     const container = await render(
-      state === "running" ? threadState() : threadState({ rows: [viewState({ harness: "stopped", status: "ended" })] })
+      state === "running"
+        ? threadState()
+        : threadState({ rows: [viewState({ harness: "stopped", status: ThreadFeedStatus.ENDED })] })
     );
     expect(container.querySelector<HTMLInputElement>('input[aria-label="Model"]')?.disabled).toBe(false);
     const picker = container.querySelector<HTMLInputElement>('input[aria-label="Reasoning effort"]');
@@ -1256,7 +1278,7 @@ it.each(["running", "dormant", "setup", "suspended", "waking"])(
 it.each([
   [{ caughtUp: false }, "Catching up…"],
   [{ windowError: "test shape gone" }, "Model unavailable"],
-  [{ rows: [viewState({ status: "failed", model: null })] }, "Model unavailable"],
+  [{ rows: [viewState({ status: ThreadFeedStatus.FAILED, model: null })] }, "Model unavailable"],
   [{ rows: [viewState({ model: null })] }, "Model"],
 ])("names why %o shows no model: %s", async (state, placeholder) => {
   const picker = (await render(threadState(state))).querySelector<HTMLInputElement>('input[aria-label="Model"]');
@@ -1635,19 +1657,18 @@ it("moves a local control into chronological history once projected and retains 
   expect(local.closest('[aria-label="Thread history"]')).not.toBeNull();
   expect(local.querySelector('[data-stage="local"]')).not.toBeNull();
 
-  const projected = entity(
-    "command",
-    {
+  const projected = entity({
+    case: "command",
+    value: {
       operation: "change_model",
-      outcome: "effected",
-      outcome_cursor: "2",
-      outcome_reason: null,
-      requested_value: "next-model",
+      outcome: ThreadCommandOutcome.EFFECTED,
+      outcomeCursor: 2n,
+      outcomeReason: undefined,
+      requestedValue: "next-model",
     },
-    {}
-  );
+  });
   projected.entityId = "inline-model";
-  projected.cursor = "2";
+  projected.cursor = 2n;
   await rerender(container, threadState({ rows: [viewState(), projected] }));
   expect(container.querySelectorAll('[data-command-id="inline-model"]')).toHaveLength(1);
   const settled = pendingRow(container, "inline-model");
@@ -1663,17 +1684,16 @@ it("moves a local control into chronological history once projected and retains 
 it("shows a server-only pending command as saved, not as a local delivery", async () => {
   const [section] = await renderHistory(
     [
-      entity(
-        "command",
-        {
+      entity({
+        case: "command",
+        value: {
           operation: "change_model",
-          outcome: "pending",
-          outcome_cursor: null,
-          outcome_reason: null,
-          requested_value: "next-model",
+          outcome: ThreadCommandOutcome.PENDING,
+          outcomeCursor: undefined,
+          outcomeReason: undefined,
+          requestedValue: "next-model",
         },
-        {}
-      ),
+      }),
     ],
     false
   );
@@ -1690,17 +1710,16 @@ it("shows a server-only pending command as saved, not as a local delivery", asyn
 it("shows the failure and reason for a server-only command", async () => {
   const [section] = await renderHistory(
     [
-      entity(
-        "command",
-        {
+      entity({
+        case: "command",
+        value: {
           operation: "change_model",
-          outcome: "failed",
-          outcome_cursor: "1",
-          outcome_reason: "model unavailable",
-          requested_value: null,
+          outcome: ThreadCommandOutcome.FAILED,
+          outcomeCursor: 1n,
+          outcomeReason: "model unavailable",
+          requestedValue: undefined,
         },
-        {}
-      ),
+      }),
     ],
     false
   );
@@ -1714,17 +1733,16 @@ it("shows the failure and reason for a server-only command", async () => {
 it("renders a server-only no-op control as a settled label, not a progress light", async () => {
   const [section] = await renderHistory(
     [
-      entity(
-        "command",
-        {
+      entity({
+        case: "command",
+        value: {
           operation: "change_model",
-          outcome: "noop",
-          outcome_cursor: "1",
-          outcome_reason: "model already selected",
-          requested_value: "current-model",
+          outcome: ThreadCommandOutcome.NOOP,
+          outcomeCursor: 1n,
+          outcomeReason: "model already selected",
+          requestedValue: "current-model",
         },
-        {}
-      ),
+      }),
     ],
     false
   );
@@ -1744,17 +1762,22 @@ it.each([
     threadState({
       rows: [
         viewState(),
-        entity(
-          "command",
-          {
+        entity({
+          case: "command",
+          value: {
             operation: "submit_input",
-            outcome,
-            outcome_cursor: "2",
-            outcome_reason: outcome === "effected" ? null : status.split(": ")[1],
-            requested_value: null,
+            outcome:
+              outcome === "failed"
+                ? ThreadCommandOutcome.FAILED
+                : outcome === "noop"
+                  ? ThreadCommandOutcome.NOOP
+                  : ThreadCommandOutcome.EFFECTED,
+            outcomeCursor: 2n,
+            outcomeReason: outcome === "effected" ? undefined : status.split(": ")[1],
+            requestedValue: undefined,
+            inputRef: reference("failed-input", ThreadPayloadField.COMMAND_INPUT),
           },
-          { inputRef: reference("failed-input", "command_input") }
-        ),
+        }),
       ],
     })
   );
@@ -1781,17 +1804,17 @@ it("keeps a still-pending sent message out of the pending-commands box, since it
     threadState({
       rows: [
         viewState(),
-        entity(
-          "command",
-          {
+        entity({
+          case: "command",
+          value: {
             operation: "submit_input",
-            outcome: "pending",
-            outcome_cursor: null,
-            outcome_reason: null,
-            requested_value: null,
+            outcome: ThreadCommandOutcome.PENDING,
+            outcomeCursor: undefined,
+            outcomeReason: undefined,
+            requestedValue: undefined,
+            inputRef: reference("test-message", ThreadPayloadField.COMMAND_INPUT),
           },
-          { inputRef: reference("test-message", "command_input") }
-        ),
+        }),
       ],
     })
   );
@@ -1836,20 +1859,20 @@ async function renderHistory(
 }
 
 function pendingInput(id: string, cursor: string): ThreadEntity {
-  const row = entity(
-    "command",
-    {
+  const row = entity({
+    case: "command",
+    value: {
       operation: "submit_input",
-      outcome: "pending",
-      outcome_cursor: null,
-      outcome_reason: null,
-      requested_value: null,
+      outcome: ThreadCommandOutcome.PENDING,
+      outcomeCursor: undefined,
+      outcomeReason: undefined,
+      requestedValue: undefined,
+      inputRef: reference(id, ThreadPayloadField.COMMAND_INPUT),
     },
-    { inputRef: reference(id, "command_input") }
-  );
+  });
   row.entityId = id;
-  row.cursor = cursor;
-  row.revisionCursor = cursor;
+  row.cursor = BigInt(cursor);
+  row.revisionCursor = BigInt(cursor);
   return row;
 }
 
@@ -1891,8 +1914,11 @@ it.each(["Bash", "commandExecution"])(
   async (toolName) => {
     const [run] = await renderHistory(
       [
-        testItem(1, ItemKind.TOOL_CALL, { tool_name: toolName, completion: "tool", tool_succeeded: false }),
-        testItem(2, ItemKind.REASONING, {}, { textRef: reference("entity-2", "text") }),
+        testItem(1, ItemKind.TOOL_CALL, {
+          toolName: toolName,
+          completion: { case: "tool", value: { succeeded: false } },
+        }),
+        testItem(2, ItemKind.REASONING, {}, { textRef: reference("entity-2", ThreadPayloadField.TEXT) }),
       ],
       false,
       { "entity-2:text": "A command may exit nonzero as part of normal investigation." }
@@ -1906,9 +1932,15 @@ it.each(["Bash", "commandExecution"])(
 it("folds a run of tool calls and reasoning behind its summary until it is opened", async () => {
   const [run] = await renderHistory(
     [
-      testItem(1, ItemKind.TOOL_CALL, { tool_name: "test-read", completion: "tool", tool_succeeded: true }),
-      testItem(2, ItemKind.REASONING, {}, { textRef: reference("test-entity-2", "text") }),
-      testItem(3, ItemKind.TOOL_CALL, { tool_name: "test-shell", completion: "tool", tool_succeeded: false }),
+      testItem(1, ItemKind.TOOL_CALL, {
+        toolName: "test-read",
+        completion: { case: "tool", value: { succeeded: true } },
+      }),
+      testItem(2, ItemKind.REASONING, {}, { textRef: reference("test-entity-2", ThreadPayloadField.TEXT) }),
+      testItem(3, ItemKind.TOOL_CALL, {
+        toolName: "test-shell",
+        completion: { case: "tool", value: { succeeded: false } },
+      }),
     ],
     false,
     { "test-entity-2:text": "The plan is to **inspect** the evidence." }
@@ -1928,7 +1960,10 @@ it("folds a run of tool calls and reasoning behind its summary until it is opene
 });
 
 it("marks an unfinished run as streaming in the live turn, and as incomplete once that is over", async () => {
-  const segments = [testItem(1, ItemKind.REASONING, { completion: null }), testItem(2, ItemKind.TOOL_CALL)];
+  const segments = [
+    testItem(1, ItemKind.REASONING, { completion: { case: undefined } }),
+    testItem(2, ItemKind.TOOL_CALL),
+  ];
   const [live] = await renderHistory(segments, true);
   expect(live.querySelector('.ui-disclosure-summary [role="img"]')?.getAttribute("aria-label")).toBe("Streaming");
   const [retained] = await renderHistory(segments, false);
@@ -1938,7 +1973,14 @@ it("marks an unfinished run as streaming in the live turn, and as incomplete onc
 it("puts a live assistant-text cursor inline after its Markdown body", async () => {
   const body = "The answer is still being written.";
   const [row] = await renderHistory(
-    [testItem(1, ItemKind.ASSISTANT_TEXT, { completion: null }, { textRef: reference("streaming-reply", "text") })],
+    [
+      testItem(
+        1,
+        ItemKind.ASSISTANT_TEXT,
+        { completion: { case: undefined } },
+        { textRef: reference("streaming-reply", ThreadPayloadField.TEXT) }
+      ),
+    ],
     true,
     { "streaming-reply:text": body }
   );
@@ -1956,9 +1998,9 @@ it("shows a lone tool call directly and opens its details with one click", async
       testItem(
         1,
         ItemKind.TOOL_CALL,
-        { tool_name: "test-read", completion: "tool", tool_succeeded: true },
+        { toolName: "test-read", completion: { case: "tool", value: { succeeded: true } } },
         {
-          argumentsRef: reference("single-tool", "arguments"),
+          argumentsRef: reference("single-tool", ThreadPayloadField.ARGUMENTS),
         }
       ),
     ],
@@ -1976,8 +2018,8 @@ it("shows a lone tool call directly and opens its details with one click", async
 it("shows a lone reasoning step as its own reasoning block, and assistant text without a role label", async () => {
   const [reasoning, answer] = await renderHistory(
     [
-      testItem(1, ItemKind.REASONING, {}, { textRef: reference("test-entity-1", "text") }),
-      testItem(2, ItemKind.ASSISTANT_TEXT, {}, { textRef: reference("test-entity-2", "text") }),
+      testItem(1, ItemKind.REASONING, {}, { textRef: reference("test-entity-1", ThreadPayloadField.TEXT) }),
+      testItem(2, ItemKind.ASSISTANT_TEXT, {}, { textRef: reference("test-entity-2", ThreadPayloadField.TEXT) }),
     ],
     false,
     {
@@ -2001,8 +2043,8 @@ describe("recovery presentation", () => {
           testItem(
             1,
             ItemKind.ASSISTANT_TEXT,
-            { completion: null, recovery },
-            { textRef: reference("recovered-reply", "text") }
+            { completion: { case: undefined }, recovery },
+            { textRef: reference("recovered-reply", ThreadPayloadField.TEXT) }
           ),
         ],
         true,
@@ -2016,10 +2058,9 @@ describe("recovery presentation", () => {
   it("summarizes recovery in a collapsed tool run without marking recovered items streaming", async () => {
     const [run] = await renderHistory(
       [
-        testItem(1, ItemKind.TOOL_CALL, { completion: null, recovery: RecoveryDisposition.UNKNOWN }),
+        testItem(1, ItemKind.TOOL_CALL, { completion: { case: undefined }, recovery: RecoveryDisposition.UNKNOWN }),
         testItem(2, ItemKind.TOOL_CALL, {
-          completion: "tool",
-          tool_succeeded: false,
+          completion: { case: "tool", value: { succeeded: false } },
           recovery: RecoveryDisposition.RETAINED,
         }),
       ],
@@ -2033,21 +2074,19 @@ describe("recovery presentation", () => {
     const [run] = await renderHistory(
       [
         testItem(1, ItemKind.TOOL_CALL, {
-          tool_name: "test-read",
-          completion: "tool",
-          tool_succeeded: true,
+          toolName: "test-read",
+          completion: { case: "tool", value: { succeeded: true } },
           recovery: RecoveryDisposition.RETAINED,
         }),
         testItem(
           2,
           ItemKind.REASONING,
           { recovery: RecoveryDisposition.RETAINED },
-          { textRef: reference("test-entity-2", "text") }
+          { textRef: reference("test-entity-2", ThreadPayloadField.TEXT) }
         ),
         testItem(3, ItemKind.TOOL_CALL, {
-          tool_name: "test-shell",
-          completion: "tool",
-          tool_succeeded: true,
+          toolName: "test-shell",
+          completion: { case: "tool", value: { succeeded: true } },
           recovery: RecoveryDisposition.RETAINED,
         }),
       ],

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
-import { create } from "@bufbuild/protobuf";
+import { create, fromJson } from "@bufbuild/protobuf";
 
 import {
   interruptTurn,
@@ -21,6 +21,7 @@ import {
   ReadNativeFramesRequestSchema,
   ReadSessionEventsRequestSchema,
   ReadSessionObservationsRequestSchema,
+  ThreadEntityKind,
 } from "../../../history_service/history_service_pb";
 
 afterEach(() => {
@@ -246,7 +247,7 @@ it("passes History protobuf evidence and native frame pages through unchanged", 
       create(ReadEntityEvidenceRequestSchema, {
         sessionId: "session-id",
         projectionEpoch: "history-v1",
-        entity: create(EntityKeySchema, { entityKind: "item", entityId: "item-id" }),
+        entity: create(EntityKeySchema, { entityKind: ThreadEntityKind.ITEM, entityId: "item-id" }),
         afterCursor: 9007199254740992n,
         limit: 30,
       })
@@ -260,7 +261,7 @@ it("passes History protobuf evidence and native frame pages through unchanged", 
       create(ReadNativeFramesRequestSchema, {
         sessionId: "session-id",
         projectionEpoch: "history-v1",
-        entity: create(EntityKeySchema, { entityKind: "item", entityId: "item-id" }),
+        entity: create(EntityKeySchema, { entityKind: ThreadEntityKind.ITEM, entityId: "item-id" }),
         observationCursor: 9007199254740993n,
         afterSequence: 9007199254740992n,
         limit: 30,
@@ -281,9 +282,11 @@ it("passes History protobuf evidence and native frame pages through unchanged", 
     expect(body).not.toHaveProperty("sessionId");
     expect(body).toMatchObject({
       projectionEpoch: "history-v1",
-      entity: { entityKind: "item", entityId: "item-id" },
       limit: 30,
     });
+    const entity = fromJson(EntityKeySchema, body.entity);
+    expect(entity.entityKind).toBe(ThreadEntityKind.ITEM);
+    expect(entity.entityId).toBe("item-id");
   }
   expect(await requests[0]!.clone().json()).toMatchObject({ afterCursor: "9007199254740992" });
   expect(await requests[1]!.clone().json()).toMatchObject({

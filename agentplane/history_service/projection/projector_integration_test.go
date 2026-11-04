@@ -1,8 +1,10 @@
 package projection
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -19,6 +21,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -329,7 +332,7 @@ func TestAnAdmittedSessionWithoutEventsGetsAnEmptyViewFromItsAttachment(t *testi
 	if _, through := checkpointOf(t, f.db, sessionID); through != 0 {
 		t.Fatalf("empty view through %d, want 0", through)
 	}
-	if view, _ := viewStateOf(t, f.db, sessionID); view.Operational.Status != threadfold.StatusActive {
+	if view, _ := viewStateOf(t, f.db, sessionID); view.Operational.Status != historypb.ThreadFeedStatus_THREAD_FEED_STATUS_ACTIVE {
 		t.Fatalf("operational = %+v", view.Operational)
 	}
 
@@ -388,7 +391,7 @@ func TestTheFoldPassesOverRemovedCursorsIncludingThoseEndingTheHistory(t *testin
 // generation is the cursor that last wrote it, which a settled item's chunks no longer are.
 func foldedRows(t *testing.T, db *sql.DB, sessionID uuid.UUID) []string {
 	t.Helper()
-	rows, err := db.Query(`SELECT entity_kind, entity_id, cursor, revision_cursor, pending, state::text, text_ref
+	rows, err := db.Query(`SELECT entity_kind, entity_id, cursor, revision_cursor, pending, state::text
 		FROM thread_entity WHERE thread_id = $1 AND projection_epoch = $2 ORDER BY entity_index`, sessionID, testEpoch)
 	if err != nil {
 		t.Fatal(err)
@@ -399,17 +402,29 @@ func foldedRows(t *testing.T, db *sql.DB, sessionID uuid.UUID) []string {
 		var kind, id, state string
 		var cursor, revision uint64
 		var pending bool
-		var textRef []byte
-		if err := rows.Scan(&kind, &id, &cursor, &revision, &pending, &state, &textRef); err != nil {
+		if err := rows.Scan(&kind, &id, &cursor, &revision, &pending, &state); err != nil {
 			t.Fatal(err)
 		}
 		body := ""
-		if textRef != nil {
-			reference, err := threadfold.ParseReference(textRef)
+		if kind == "item" {
+			item := &historypb.ThreadItem{}
+			if err := protojson.Unmarshal([]byte(state), item); err != nil {
+				t.Fatal(err)
+			}
+			if item.TextRef != nil {
+				body = bodyOf(t, db, sessionID, *item.TextRef)
+			}
+			// Settled history may use different payload generations while representing the same body.
+			item.TextRef = nil
+			encoded, err := protojson.Marshal(item)
 			if err != nil {
 				t.Fatal(err)
 			}
-			body = bodyOf(t, db, sessionID, reference)
+			var compact bytes.Buffer
+			if err := json.Compact(&compact, encoded); err != nil {
+				t.Fatal(err)
+			}
+			state = compact.String()
 		}
 		folded = append(folded, fmt.Sprintf("%s/%s cursor=%d revision=%d pending=%t state=%s body=%q", kind, id, cursor, revision, pending, state, body))
 	}
@@ -511,7 +526,7 @@ func TestHistoryTheFoldCannotApplyIsRetainedAsAFailureAtItsCursor(t *testing.T) 
 		t.Fatalf("a source change = %v, want a ReplicationError", err)
 	}
 	view, _ := viewStateOf(t, f.db, sessionID)
-	if view.Operational.Status != threadfold.StatusFailed || view.Operational.FeedError == nil ||
+	if view.Operational.Status != historypb.ThreadFeedStatus_THREAD_FEED_STATUS_FAILED || view.Operational.FeedError == nil ||
 		view.Operational.FeedError.Message != stalledMessage ||
 		view.Operational.FeedError.Cursor == nil || *view.Operational.FeedError.Cursor != 3 {
 		t.Fatalf("operational = %+v %+v, want the stall at cursor 3", view.Operational, view.Operational.FeedError)
@@ -536,7 +551,7 @@ func TestAnObservationTheFoldDoesNotModelStallsWithoutACursor(t *testing.T) {
 		t.Fatalf("an item of no known kind = %v, want ObservationNotUnderstoodError", err)
 	}
 	view, _ := viewStateOf(t, f.db, sessionID)
-	if view.Operational.Status != threadfold.StatusFailed || view.Operational.FeedError == nil || view.Operational.FeedError.Cursor != nil {
+	if view.Operational.Status != historypb.ThreadFeedStatus_THREAD_FEED_STATUS_FAILED || view.Operational.FeedError == nil || view.Operational.FeedError.Cursor != nil {
 		t.Fatalf("operational = %+v %+v, want a stall naming no cursor", view.Operational, view.Operational.FeedError)
 	}
 }

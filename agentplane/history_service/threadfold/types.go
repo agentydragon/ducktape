@@ -15,28 +15,6 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 )
 
-// PayloadField names a body a row references. The stored form is the string.
-type PayloadField string
-
-const (
-	FieldText           PayloadField = "text"
-	FieldArguments      PayloadField = "arguments"
-	FieldOutput         PayloadField = "output"
-	FieldConfirmedInput PayloadField = "confirmed_input"
-	FieldCommandInput   PayloadField = "command_input"
-)
-
-var payloadFields = []PayloadField{FieldText, FieldArguments, FieldOutput, FieldConfirmedInput, FieldCommandInput}
-
-type CommandOutcome string
-
-const (
-	OutcomePending  CommandOutcome = "pending"
-	OutcomeEffected CommandOutcome = "effected"
-	OutcomeFailed   CommandOutcome = "failed"
-	OutcomeNoop     CommandOutcome = "noop"
-)
-
 // EntityKind is the kind column of a synchronized entity row.
 type EntityKind string
 
@@ -79,7 +57,7 @@ type PayloadRef struct {
 	ProjectionEpoch string
 	OwnerCursor     uint64
 	OwnerID         string
-	Field           PayloadField
+	Field           historypb.ThreadPayloadField
 	RevisionCursor  uint64
 	Generation      uint64
 }
@@ -119,13 +97,13 @@ type Item struct {
 }
 
 // Payload returns the reference an item holds in field, or nil.
-func (i Item) Payload(field PayloadField) (*PayloadRef, error) {
+func (i Item) Payload(field historypb.ThreadPayloadField) (*PayloadRef, error) {
 	switch field {
-	case FieldText:
+	case historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_TEXT:
 		return i.Text, nil
-	case FieldArguments:
+	case historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_ARGUMENTS:
 		return i.Arguments, nil
-	case FieldOutput:
+	case historypb.ThreadPayloadField_THREAD_PAYLOAD_FIELD_OUTPUT:
 		return i.Output, nil
 	}
 	return nil, fmt.Errorf("field %s does not belong to a thread item", field)
@@ -145,7 +123,6 @@ type LifecycleSegment struct {
 	ProjectionEpoch string
 	Cursor          uint64
 	RevisionCursor  uint64
-	Observation     string
 	Event           *eventpb.Event
 }
 
@@ -154,7 +131,7 @@ type CommandSummary struct {
 	CommandID       string
 	AdmissionCursor uint64
 	Operation       string
-	Outcome         CommandOutcome
+	Outcome         historypb.ThreadCommandOutcome
 	OutcomeCursor   *uint64
 	OutcomeReason   *string
 	Input           *PayloadRef
@@ -227,7 +204,7 @@ type EventBatch struct {
 // ItemField is an item field an authoritative value completes.
 type ItemField struct {
 	ItemID string
-	Field  PayloadField
+	Field  historypb.ThreadPayloadField
 }
 
 // TouchedKeys holds the rows a worker preloads before folding a batch, each sorted.

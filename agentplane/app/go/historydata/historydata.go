@@ -194,6 +194,7 @@ func (s *Store) ReadWatermark(ctx context.Context, id uuid.UUID) (uint64, error)
 	return page.GetLastCursor(), nil
 }
 
+// CurrentEpoch reports the fold epoch when History has materialized the Session.
 func (s *Store) CurrentEpoch(ctx context.Context, id uuid.UUID) (string, bool, error) {
 	message, err := s.reader.GetSessionSummary(ctx, &historypb.GetSessionSummaryRequest{SessionId: id.String()})
 	if status.Code(err) == codes.NotFound {

@@ -2,11 +2,13 @@
 
 import httpx
 import pytest_bazel
+from google.protobuf.json_format import MessageToDict
 
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import AppProcess
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.testing.thread_test_support import ThreadHTTP
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_pb2
 
@@ -47,14 +49,21 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     thread = await event_logs.seed(SANDBOX, SESSION)
     await history.set_attached(thread, source.attached)
     await history.record(thread, source.entries)
-    summary = await content.session_summary(thread)
-    assert summary is not None
-    assert summary.HasField("projection_epoch")
+    scope = await content.session_summary(thread)
+    assert scope is not None
+    assert scope.HasField("projection_epoch")
     await store.wait(thread)
     path = f"/upstream/history/v1/sessions/{thread}"
     evidence_path = f"{path}/entity-evidence"
     frames_path = f"{path}/native-frames"
-    params = {"projectionEpoch": summary.projection_epoch, "entity": {"entityKind": "item", "entityId": "first"}}
+
+    def entity_key(kind: history_service_pb2.ThreadEntityKind, entity_id: str) -> dict[str, object]:
+        return MessageToDict(history_service_pb2.EntityKey(entity_kind=kind, entity_id=entity_id))
+
+    params = {
+        "projectionEpoch": scope.projection_epoch,
+        "entity": entity_key(history_service_pb2.THREAD_ENTITY_KIND_ITEM, "first"),
+    }
     async with httpx.AsyncClient(base_url=app.url) as client:
         denied = await client.post(evidence_path, json=params | {"afterCursor": "0", "limit": 2})
         assert denied.status_code == 401
@@ -91,7 +100,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
             frames_path,
             json=params
             | {
-                "entity": {"entityKind": "item", "entityId": "second"},
+                "entity": entity_key(history_service_pb2.THREAD_ENTITY_KIND_ITEM, "second"),
                 "observationCursor": "8",
                 "afterSequence": "0",
                 "limit": 30,
@@ -107,7 +116,12 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         assert stale.status_code == 400
         lifecycle = await client.post(
             evidence_path,
-            json=params | {"entity": {"entityKind": "lifecycle", "entityId": "2"}, "afterCursor": "0", "limit": 30},
+            json=params
+            | {
+                "entity": entity_key(history_service_pb2.THREAD_ENTITY_KIND_LIFECYCLE, "2"),
+                "afterCursor": "0",
+                "limit": 30,
+            },
             headers=agent_auth,
         )
         assert lifecycle.json() == {"observations": [{"observationCursor": "2", "hasNative": False}]}
@@ -189,7 +203,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         )
         await history.record(thread, source.entries[-4:])
         for command_id, admission_cursor, outcome_cursor in (("failed-debug", "13", "15"), ("noop-debug", "14", "16")):
-            command_scope = params | {"entity": {"entityKind": "command", "entityId": command_id}}
+            command_scope = params | {"entity": entity_key(history_service_pb2.THREAD_ENTITY_KIND_COMMAND, command_id)}
             command_evidence = await client.post(
                 evidence_path, json=command_scope | {"afterCursor": "0", "limit": 30}, headers=agent_auth
             )

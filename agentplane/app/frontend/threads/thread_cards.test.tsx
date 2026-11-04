@@ -1,6 +1,12 @@
 // @vitest-environment happy-dom
+import {
+  ThreadPayloadField,
+  ThreadCommandOutcome,
+  type ThreadItemSchema,
+  type ThreadEntity,
+} from "../../../history_service/history_service_pb";
 
-import { create, toJson, type MessageInitShape } from "@bufbuild/protobuf";
+import { create, type MessageInitShape } from "@bufbuild/protobuf";
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -11,7 +17,7 @@ import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript
 import { EntityCard } from "./thread_cards";
 import { testItem } from "./testing/entity";
 import { badgeLabels, entity, reference, serving, toggle } from "./testing/state";
-import { ThreadSyncContext, type ThreadEntity } from "./thread_sync";
+import { ThreadSyncContext } from "./thread_sync";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
@@ -52,9 +58,8 @@ async function renderCard(
 
 type Observation = MessageInitShape<typeof EventSchema>["observation"];
 
-function renderLifecycle(observation: string, event: Observation): Promise<HTMLDivElement> {
-  const state = { observation, event: toJson(EventSchema, create(EventSchema, { observation: event })) };
-  return renderCard(entity("lifecycle", state, {}), {});
+function renderLifecycle(event: Observation): Promise<HTMLDivElement> {
+  return renderCard(entity({ case: "lifecycle", value: { event: create(EventSchema, { observation: event }) } }), {});
 }
 
 async function disclose(container: HTMLElement, summary: string): Promise<void> {
@@ -68,16 +73,16 @@ async function disclose(container: HTMLElement, summary: string): Promise<void> 
 const PROSE = "Run **every** test\n- first";
 
 describe("recovery presentation", () => {
-  it.each<[string | null, string[]]>([
-    [null, ["Interrupted"]],
-    ["text", []],
+  it.each<[MessageInitShape<typeof ThreadItemSchema>["completion"], string[]]>([
+    [{ case: undefined }, ["Interrupted"]],
+    [{ case: "text", value: {} }, []],
   ])("badges retained text that completed as %j with %j", async (completion, badges) => {
     const container = await renderCard(
       testItem(
         1,
         ItemKind.ASSISTANT_TEXT,
         { completion, recovery: RecoveryDisposition.RETAINED },
-        { textRef: reference("test-entity-1", "text") }
+        { textRef: reference("test-entity-1", ThreadPayloadField.TEXT) }
       ),
       { "test-entity-1:text": "Remember the name in the margin" }
     );
@@ -90,8 +95,8 @@ describe("recovery presentation", () => {
       testItem(
         1,
         ItemKind.ASSISTANT_TEXT,
-        { completion: null, recovery: RecoveryDisposition.ABSENT },
-        { textRef: reference("test-entity-1", "text") }
+        { completion: { case: undefined }, recovery: RecoveryDisposition.ABSENT },
+        { textRef: reference("test-entity-1", ThreadPayloadField.TEXT) }
       ),
       { "test-entity-1:text": "The seam widened." }
     );
@@ -108,11 +113,11 @@ describe("recovery presentation", () => {
         1,
         ItemKind.ASSISTANT_TEXT,
         {
-          completion: null,
+          completion: { case: undefined },
           recovery: RecoveryDisposition.UNKNOWN,
-          recovery_reason: "The harness history could not be inspected.",
+          recoveryReason: "The harness history could not be inspected.",
         },
-        { textRef: reference("test-entity-1", "text") }
+        { textRef: reference("test-entity-1", ThreadPayloadField.TEXT) }
       ),
       { "test-entity-1:text": "The bells were ringing." }
     );
@@ -127,12 +132,11 @@ describe("recovery presentation", () => {
         1,
         ItemKind.TOOL_CALL,
         {
-          tool_name: "Bash",
-          completion: null,
-          tool_succeeded: null,
+          toolName: "Bash",
+          completion: { case: undefined },
           recovery: RecoveryDisposition.REVISED,
         },
-        { outputRef: reference("test-entity-1", "output") }
+        { outputRef: reference("test-entity-1", ThreadPayloadField.OUTPUT) }
       ),
       { "test-entity-1:output": "aborted" }
     );
@@ -150,8 +154,12 @@ describe("recovery presentation", () => {
       testItem(
         1,
         ItemKind.TOOL_CALL,
-        { tool_name: "Bash", completion: "tool", tool_succeeded: true, recovery: RecoveryDisposition.REVISED },
-        { outputRef: reference("test-entity-1", "output") }
+        {
+          toolName: "Bash",
+          completion: { case: "tool", value: { succeeded: true } },
+          recovery: RecoveryDisposition.REVISED,
+        },
+        { outputRef: reference("test-entity-1", ThreadPayloadField.OUTPUT) }
       ),
       { "test-entity-1:output": "Created report.txt" }
     );
@@ -166,12 +174,11 @@ describe("recovery presentation", () => {
         1,
         ItemKind.TOOL_CALL,
         {
-          tool_name: "Bash",
-          completion: "tool",
-          tool_succeeded: true,
+          toolName: "Bash",
+          completion: { case: "tool", value: { succeeded: true } },
           recovery: RecoveryDisposition.ABSENT,
         },
-        { outputRef: reference("test-entity-1", "output") }
+        { outputRef: reference("test-entity-1", ThreadPayloadField.OUTPUT) }
       ),
       { "test-entity-1:output": "Created report.txt" }
     );
@@ -201,7 +208,12 @@ describe("an item the recovery left as it was", () => {
     ["reasoning step", ItemKind.REASONING],
   ])("gives retained, finished %s no badge and no row for one", async (_, kind) => {
     const container = await renderCard(
-      testItem(1, kind, { recovery: RecoveryDisposition.RETAINED }, { textRef: reference("test-entity-1", "text") }),
+      testItem(
+        1,
+        kind,
+        { recovery: RecoveryDisposition.RETAINED },
+        { textRef: reference("test-entity-1", ThreadPayloadField.TEXT) }
+      ),
       bodies
     );
     expect(container.textContent).toContain("Kept in context");
@@ -214,8 +226,15 @@ describe("an item the recovery left as it was", () => {
       testItem(
         1,
         ItemKind.TOOL_CALL,
-        { tool_name: "Bash", completion: "tool", tool_succeeded: true, recovery: RecoveryDisposition.RETAINED },
-        { argumentsRef: reference("test-entity-1", "arguments"), outputRef: reference("test-entity-1", "output") }
+        {
+          toolName: "Bash",
+          completion: { case: "tool", value: { succeeded: true } },
+          recovery: RecoveryDisposition.RETAINED,
+        },
+        {
+          argumentsRef: reference("test-entity-1", ThreadPayloadField.ARGUMENTS),
+          outputRef: reference("test-entity-1", ThreadPayloadField.OUTPUT),
+        }
       ),
       bodies
     );
@@ -233,8 +252,15 @@ describe("an item the recovery left as it was", () => {
       testItem(
         1,
         ItemKind.TOOL_CALL,
-        { tool_name: "Bash", completion: "tool", tool_succeeded: false, recovery: RecoveryDisposition.RETAINED },
-        { argumentsRef: reference("test-entity-1", "arguments"), outputRef: reference("test-entity-1", "output") }
+        {
+          toolName: "Bash",
+          completion: { case: "tool", value: { succeeded: false } },
+          recovery: RecoveryDisposition.RETAINED,
+        },
+        {
+          argumentsRef: reference("test-entity-1", ThreadPayloadField.ARGUMENTS),
+          outputRef: reference("test-entity-1", ThreadPayloadField.OUTPUT),
+        }
       ),
       bodies
     );
@@ -244,18 +270,18 @@ describe("an item the recovery left as it was", () => {
 });
 
 function toolEntity(toolName: string): ThreadEntity {
-  return entity(
-    "item",
-    {
+  return entity({
+    case: "item",
+    value: {
       kind: ItemKind.TOOL_CALL,
-      tool_name: toolName,
-      completion: "tool",
-      tool_succeeded: true,
-      recovery: null,
-      recovery_reason: null,
+      toolName: toolName,
+      completion: { case: "tool", value: { succeeded: true } },
+      recovery: undefined,
+      recoveryReason: undefined,
+      argumentsRef: reference("test-tool", ThreadPayloadField.ARGUMENTS),
+      outputRef: reference("test-tool", ThreadPayloadField.OUTPUT),
     },
-    { argumentsRef: reference("test-tool", "arguments"), outputRef: reference("test-tool", "output") }
-  );
+  });
 }
 
 /** A completed tool call whose arguments and output are the given values. */
@@ -270,20 +296,19 @@ const lineOf = (container: HTMLElement): string | undefined =>
   container.querySelector(".transcript-step-preview")?.textContent ?? undefined;
 
 describe("reasoning step marks", () => {
-  const reasoningStep = (state: Partial<Extract<ThreadEntity["state"], { kind: number }>>): ThreadEntity =>
-    entity(
-      "item",
-      {
+  const reasoningStep = (state: MessageInitShape<typeof ThreadItemSchema>): ThreadEntity =>
+    entity({
+      case: "item",
+      value: {
         kind: ItemKind.REASONING,
-        tool_name: "",
-        completion: null,
-        tool_succeeded: null,
-        recovery: null,
-        recovery_reason: null,
+        toolName: "",
+        completion: { case: undefined },
+        recovery: undefined,
+        recoveryReason: undefined,
         ...state,
+        textRef: reference("test-reasoning", ThreadPayloadField.TEXT),
       },
-      { textRef: reference("test-reasoning", "text") }
-    );
+    });
   const bodies = { "test-reasoning:text": "Weighing the next step." };
 
   it.each([
@@ -303,7 +328,7 @@ describe("reasoning step marks", () => {
   );
 
   it("leaves a finished step in the dimmed title", async () => {
-    const container = await renderCard(reasoningStep({ completion: "text" }), bodies);
+    const container = await renderCard(reasoningStep({ completion: { case: "text", value: {} } }), bodies);
     expect(container.querySelector(".transcript-step-title")?.getAttribute("style")).not.toContain("blue");
   });
 
@@ -427,18 +452,17 @@ describe("tool call rows", () => {
 
   it("marks a failed call by its title in red while folded, and by a badge once opened", async () => {
     const container = await renderCard(
-      entity(
-        "item",
-        {
+      entity({
+        case: "item",
+        value: {
           kind: ItemKind.TOOL_CALL,
-          tool_name: "Bash",
-          completion: "tool",
-          tool_succeeded: false,
-          recovery: null,
-          recovery_reason: null,
+          toolName: "Bash",
+          completion: { case: "tool", value: { succeeded: false } },
+          recovery: undefined,
+          recoveryReason: undefined,
+          outputRef: reference("test-tool", ThreadPayloadField.OUTPUT),
         },
-        { outputRef: reference("test-tool", "output") }
-      ),
+      }),
       { "test-tool:output": "test-failure" }
     );
     const title = container.querySelector(".transcript-step-title")!;
@@ -458,18 +482,17 @@ describe("tool call rows", () => {
     "marks a call still unfinished (live: %s) by a blue title while folded, and by a badge once opened",
     async (live, label, breathes) => {
       const container = await renderCard(
-        entity(
-          "item",
-          {
+        entity({
+          case: "item",
+          value: {
             kind: ItemKind.TOOL_CALL,
-            tool_name: "Bash",
-            completion: null,
-            tool_succeeded: null,
-            recovery: null,
-            recovery_reason: null,
+            toolName: "Bash",
+            completion: { case: undefined },
+            recovery: undefined,
+            recoveryReason: undefined,
+            outputRef: reference("test-tool", ThreadPayloadField.OUTPUT),
           },
-          { outputRef: reference("test-tool", "output") }
-        ),
+        }),
         { "test-tool:output": "test-partial" },
         live
       );
@@ -528,18 +551,17 @@ describe("tool call rows", () => {
 });
 
 describe("a row whose body stopped loading", () => {
-  const reasoning = entity(
-    "item",
-    {
+  const reasoning = entity({
+    case: "item",
+    value: {
       kind: ItemKind.REASONING,
-      tool_name: "",
-      completion: "text",
-      tool_succeeded: null,
-      recovery: null,
-      recovery_reason: null,
+      toolName: "",
+      completion: { case: "text", value: {} },
+      recovery: undefined,
+      recoveryReason: undefined,
+      textRef: reference("test-reasoning", ThreadPayloadField.TEXT),
     },
-    { textRef: reference("test-reasoning", "text") }
-  );
+  });
 
   it.each([
     ["reasoning step", reasoning, {}, "test-reasoning:text"],
@@ -571,18 +593,17 @@ describe("EntityCard", () => {
 
   it("renders the assistant's text as Markdown", async () => {
     const container = await renderCard(
-      entity(
-        "item",
-        {
+      entity({
+        case: "item",
+        value: {
           kind: ItemKind.ASSISTANT_TEXT,
-          tool_name: "",
-          completion: PROSE,
-          tool_succeeded: null,
-          recovery: null,
-          recovery_reason: null,
+          toolName: "",
+          completion: { case: "text", value: {} },
+          recovery: undefined,
+          recoveryReason: undefined,
+          textRef: reference("test-reply", ThreadPayloadField.TEXT),
         },
-        { textRef: reference("test-reply", "text") }
-      ),
+      }),
       { "test-reply:text": PROSE }
     );
     expect(container.querySelector(".ui-markdown strong")?.textContent).toBe("every");
@@ -591,11 +612,14 @@ describe("EntityCard", () => {
 
   it("renders the operator's input as typed, not as Markdown", async () => {
     const container = await renderCard(
-      entity(
-        "confirmed_input",
-        { harness_message_id: "test-message", origin_command_ids: [] },
-        { inputRef: reference("test-message", "confirmed_input") }
-      ),
+      entity({
+        case: "confirmedInput",
+        value: {
+          harnessMessageId: "test-message",
+          originCommandIds: [],
+          inputRef: reference("test-message", ThreadPayloadField.CONFIRMED_INPUT),
+        },
+      }),
       { "test-message:confirmed_input": PROSE }
     );
     expect(container.querySelector(".transcript-user-bubble .transcript-verbatim")?.textContent).toBe(PROSE);
@@ -604,17 +628,17 @@ describe("EntityCard", () => {
 
   it("renders a still-pending sent message as the same bubble, with its status beside it, not inside", async () => {
     const container = await renderCard(
-      entity(
-        "command",
-        {
+      entity({
+        case: "command",
+        value: {
           operation: "submit_input",
-          outcome: "pending",
-          outcome_cursor: null,
-          outcome_reason: null,
-          requested_value: null,
+          outcome: ThreadCommandOutcome.PENDING,
+          outcomeCursor: undefined,
+          outcomeReason: undefined,
+          requestedValue: undefined,
+          inputRef: reference("test-message", ThreadPayloadField.COMMAND_INPUT),
         },
-        { inputRef: reference("test-message", "command_input") }
-      ),
+      }),
       { "test-message:command_input": PROSE }
     );
     const bubble = container.querySelector<HTMLElement>(".transcript-user-bubble");
@@ -649,8 +673,8 @@ describe("EntityCard", () => {
       "Reasoning effort changed to high",
     ],
     ["harness_exited", { case: "harnessExited", value: { exitCode: 3 } }, "Harness exited with code 3"],
-  ])("shows an ordinary %s as one line, its raw event behind the row's Evidence", async (observation, event, line) => {
-    const container = await renderLifecycle(observation, event);
+  ])("shows an ordinary %s as one line, its raw event behind the row's Evidence", async (_observation, event, line) => {
+    const container = await renderLifecycle(event);
     const row = container.querySelector('[data-thread-anchor="1"]')!;
     expect(row.querySelector('button[aria-label="Evidence"]')).not.toBeNull();
     expect(row.textContent).toBe(line);
@@ -660,7 +684,7 @@ describe("EntityCard", () => {
   it.each(['Test API failure: HTTP 429\n<img src="x" onerror="throw new Error()">', ""])(
     "shows a failed turn's error as a plain-text alert: %j",
     async (error) => {
-      const container = await renderLifecycle("turn_completed", {
+      const container = await renderLifecycle({
         case: "turnCompleted",
         value: { turnId: "test-failed-turn", status: TurnStatus.FAILED, error },
       });
@@ -671,7 +695,7 @@ describe("EntityCard", () => {
   );
 
   it("shows an interrupted turn's error dimmed beneath its line, not as an alert", async () => {
-    const container = await renderLifecycle("turn_completed", {
+    const container = await renderLifecycle({
       case: "turnCompleted",
       value: { turnId: "test-turn", status: TurnStatus.INTERRUPTED, error: "test interrupt detail" },
     });
@@ -681,10 +705,9 @@ describe("EntityCard", () => {
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
 
-  it.each<[string, string, Observation]>([
+  it.each<[string, Observation]>([
     [
       "Turn lost test harness exited during the turn",
-      "turn_completed",
       {
         case: "turnCompleted",
         value: { turnId: "test-turn", status: TurnStatus.PROCESS_LOST, error: "test harness exited during the turn" },
@@ -692,12 +715,11 @@ describe("EntityCard", () => {
     ],
     [
       "Turn ended without a status",
-      "turn_completed",
       { case: "turnCompleted", value: { turnId: "test-turn", status: TurnStatus.UNSPECIFIED } },
     ],
-    ["Harness lost", "harness_lost", { case: "harnessLost", value: {} }],
-  ])("keeps an abnormal ending prominent: %s", async (text, observation, event) => {
-    const container = await renderLifecycle(observation, event);
+    ["Harness lost", { case: "harnessLost", value: {} }],
+  ])("keeps an abnormal ending prominent: %s", async (text, event) => {
+    const container = await renderLifecycle(event);
     expect(container.querySelector('[data-thread-anchor="1"] [role="alert"]')?.textContent).toBe(text);
   });
 });
