@@ -18,6 +18,12 @@
     "digest": "sha256:6ff6717f99a9238f4d5762ad4c1eb88e543e2f31115b1ecffe4a9a4847871c42",
     "platforms": ["linux/amd64"]
   },
+  "firecracker_boot": {
+    "image": "git.allegedly.works/ducktape-ci/agentplane-environment-firecracker",
+    "digest": "sha256:f1465053413c073aa5aa9c75d4c3e9fa6225021b94f48cc8cceb2a30271a05e1",
+    "tag": "spike-firecracker-ff14e8bd057d51591be67f5d94a085bb5f3f6f91",
+    "platforms": ["linux/amd64"]
+  },
   "excalidraw": {
     "image": "docker.io/excalidraw/excalidraw",
     "digest": "sha256:72600b725cfbf0c74f090b748f11bdd41ae205fc065ad02080d7b2ec37566079",

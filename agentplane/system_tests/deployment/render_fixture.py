@@ -1,6 +1,7 @@
 """Render one ordinary or VM fixture chart into `$K3S_FIXTURE_DIR`.
 
-`K3S_FIXTURE_VARIANT` selects `local-model`, `public-litellm`, or `local-model-vm`.
+`K3S_FIXTURE_VARIANT` selects `local-model`, `public-litellm`, `local-model-vm`, or
+`local-model-firecracker`.
 The selector is an environment variable because the app's Settings parse `sys.argv` as their own.
 """
 
@@ -27,6 +28,7 @@ from agentplane.system_tests.k3s.namespaces import NAMESPACE
 class FixtureVariant(StrEnum):
     LOCAL_MODEL = "local-model"
     LOCAL_MODEL_VM = "local-model-vm"
+    LOCAL_MODEL_FIRECRACKER = "local-model-firecracker"
     PUBLIC_LITELLM = "public-litellm"
 
 
@@ -44,12 +46,19 @@ def write_fixture(path: Path, fixture: RenderedFixture, *, models: Models, mcp: 
 
 
 def _render(
-    output: Path, variant: FixtureVariant, backend: Backend, *, vm_sandboxes: bool, central_sampler: bool = False
+    output: Path,
+    variant: FixtureVariant,
+    backend: Backend,
+    *,
+    vm_sandboxes: bool,
+    firecracker_sandboxes: bool = False,
+    central_sampler: bool = False,
 ) -> None:
     models = MODEL_PLACEHOLDERS[backend]
     fixture = RenderedFixture(
         backend=backend,
         vm_sandboxes=vm_sandboxes,
+        firecracker_sandboxes=firecracker_sandboxes,
         central_sampler=central_sampler,
         namespace=NAMESPACE,
         app_origin=fixture_chart.APP_ORIGIN,
@@ -62,7 +71,11 @@ def _render(
         ],
         mcp_fixtures=None,
         objects=fixture_chart.objects(
-            **asdict(PLACEHOLDERS), models=models, vm_sandboxes=vm_sandboxes, central_sampler=central_sampler
+            **asdict(PLACEHOLDERS),
+            models=models,
+            vm_sandboxes=vm_sandboxes,
+            firecracker_sandboxes=firecracker_sandboxes,
+            central_sampler=central_sampler,
         ),
     )
     write_fixture(output / f"{variant}.json", fixture, models=models, mcp=None)
@@ -74,6 +87,8 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
             _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False)
         case FixtureVariant.LOCAL_MODEL_VM:
             _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=True)
+        case FixtureVariant.LOCAL_MODEL_FIRECRACKER:
+            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False, firecracker_sandboxes=True)
         case FixtureVariant.PUBLIC_LITELLM:
             _render(output, variant, Backend.PUBLIC_LITELLM, vm_sandboxes=False)
 

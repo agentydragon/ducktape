@@ -35,6 +35,7 @@ The session-scoped `deployment` fixture exposes its cluster handle, app URL, tok
 | `//agentplane/system_tests/suites/mcp:test_parent_delegation` | Existing-Sandbox parent Session uses the Action CLI to open and drive a child Session                        |
 | `//agentplane/system_tests/suites:test_real_model`            | Public LiteLLM egress and real-model standing-instruction acceptance                                         |
 | `//agentplane/system_tests/suites:test_vm`                    | VM Sandbox behavior, runner credentials and systemd supervision                                              |
+| `//agentplane/system_tests/suites:test_firecracker`           | Manual KVM lane: production Firecracker guest, harness turn and RAM-preserving suspend/resume                |
 
 The shared stack cuts setup and image-import work, while each target now has a coarser cache key: a
 changed scenario reruns its suite. Scenario modules live in [`scenarios/`](scenarios/) as ordinary
@@ -123,6 +124,14 @@ the harness sent. Suites explicitly select their cases; a case marked `real_mode
 is what a model does are `real_model`. Codex is offered a ChatGPT route there
 too, so it runs in code mode, which the scripted model answers.
 Every request the scripted model receives is kept in the target's `test.outputs/scripted_upstream/`.
+
+The manual [Firecracker suite](k3s/README.md#firecracker-sandboxes) runs on the existing
+`wyrm2-kvm-vm` BuildBuddy worker. It creates an environment through the app API, executes a Codex
+tool through the real Gateway and guest Runtime, then requests suspend/resume through that API.
+It verifies the same Pod, kernel boot, Runtime boot, native harness process and live guest child,
+including an increasing counter and a random marker generated only in that child's memory.
+`test.outputs/firecracker/` retains the two tool transcripts and continuation evidence. The model
+is scripted; Cilium policy enforcement is outside this bare-k3s fixture's coverage.
 
 ```bash
 bbr test \

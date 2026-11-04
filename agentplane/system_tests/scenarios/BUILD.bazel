@@ -11,6 +11,25 @@ package(
 )
 
 py_library(
+    name = "firecracker",
+    srcs = ["firecracker.py"],
+    deps = [
+        "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:agent",
+        "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:offered_models",
+        "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests:scripted_upstream",
+        "//util/testing:undeclared_outputs",
+        "@pypi//protobuf",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
     name = "agent_messaging",
     srcs = ["agent_messaging.py"],
     deps = [

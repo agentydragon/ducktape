@@ -74,6 +74,7 @@ _FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model.json"
 _MCP_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-mcp-fixtures.json"
 _MCP_IMAGES = "//agentplane/system_tests/deployment:mcp_images"
 _VM_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-vm.json"
+_FIRECRACKER_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-firecracker.json"
 _REAL_MODEL_FIXTURE = "//agentplane/system_tests/deployment:rendered/public-litellm.json"
 _CERT_MANAGER_INSTALL = "@cert_manager_v1_21_2_release//file"
 _TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml"
@@ -81,24 +82,27 @@ _TRUST_MANAGER_INSTALL = "//agentplane/system_tests/k3s/pki:trust_manager_instal
 # Each preset explicitly owns the environment its selected scenarios need. Dispatcher failover
 # uses the pod preset in a dedicated suite because it mutates shared controller Deployments.
 _STACKS = {
-    "pod": struct(fixture = _FIXTURE, vm = False, real_model = False, images = [_HARNESSES_LAYOUT]),
-    "deletion": struct(fixture = _FIXTURE, vm = False, real_model = False, images = [_HARNESSES_LAYOUT]),
-    "mcp": struct(fixture = _MCP_FIXTURE, vm = False, real_model = False, images = [_HARNESSES_LAYOUT, _MCP_IMAGES]),
-    "vm": struct(fixture = _VM_FIXTURE, vm = True, real_model = False, images = []),
-    "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = [_HARNESSES_LAYOUT]),
+    "pod": struct(fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = [_HARNESSES_LAYOUT]),
+    "deletion": struct(fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = [_HARNESSES_LAYOUT]),
+    "mcp": struct(fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = [_HARNESSES_LAYOUT, _MCP_IMAGES]),
+    "vm": struct(fixture = _VM_FIXTURE, vm = True, firecracker = False, real_model = False, images = []),
+    "firecracker": struct(fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = []),
+    "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, firecracker = False, real_model = True, images = [_HARNESSES_LAYOUT]),
 }
 
 def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, require_kvm = False, main = None):
     """Run one suite with fresh fixture state and the selected executor lifecycle."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
-    if require_kvm and stack != "vm":
-        fail("require_kvm requires the VM stack")
+    if require_kvm and stack not in ["vm", "firecracker"]:
+        fail("require_kvm requires the VM or Firecracker stack")
     if profile_guest and stack != "vm":
         fail("profile_guest requires the VM stack")
     if boot_evidence and stack != "vm":
         fail("boot_evidence requires the VM stack")
     config = _STACKS[stack]
+    if config.firecracker and not require_kvm:
+        fail("the Firecracker stack requires require_kvm = True")
     images = {
         "fixture": [
             "//agentplane/system_tests/deployment:service_images",
@@ -118,14 +122,17 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
     }
     properties = {}
     suite_tags = K3S_TAGS + tags
-    if config.vm:
-        # Three 1.5 GiB guests boot alongside k3s services; request eight estimated compute units.
+    if config.vm or config.firecracker:
+        # A guest runs alongside k3s services; reserve the VM lane's larger worker budget.
         properties["EstimatedComputeUnits"] = "8"
         images["vm"] = ["//agentplane/system_tests/vm:vm_images"]
-        images["guest"] = [
-            "//agentplane/system_tests/vm/guest:vm_guest_boot_layout",
-            "//agentplane/system_tests/vm/guest:vm_guest_root_profile_layout" if profile_guest else "//agentplane/system_tests/vm/guest:vm_guest_root_layout",
-        ]
+        if config.vm:
+            images["guest"] = [
+                "//agentplane/system_tests/vm/guest:vm_guest_boot_layout",
+                "//agentplane/system_tests/vm/guest:vm_guest_root_profile_layout" if profile_guest else "//agentplane/system_tests/vm/guest:vm_guest_root_layout",
+            ]
+        else:
+            images["guest"] = ["//agentplane/system_tests/k3s:firecracker_images"]
         data += ["@kubevirt_operator_bundle//file", "@kyverno_install//file"]
         env |= {
             "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",

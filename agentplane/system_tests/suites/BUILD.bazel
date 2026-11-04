@@ -8,6 +8,28 @@ package(
     default_visibility = ["//agentplane:__subpackages__"],
 )
 
+# Production Nix guest and launcher; requires real nested KVM on the static VM worker.
+k3s_suite(
+    name = "test_firecracker",
+    srcs = ["test_firecracker.py"],
+    require_kvm = True,
+    stack = "firecracker",
+    tags = ["manual"],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:cluster",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests:sandbox",
+        "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/system_tests/scenarios:firecracker",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # Each target starts exactly one stack. Per-test clients and Sandbox cleanup remain isolated.
 k3s_suite(
     name = "test_pod",

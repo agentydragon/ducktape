@@ -109,6 +109,8 @@ def _copy(
             for pattern, log_destination in scopes.items():
                 for path in log_root.glob(pattern):
                     _retain(path, log_destination, opened, streams, files)
+            for path in storage_root.glob(f"pvc-*_{namespace}_*-state/firecracker/firecracker.log"):
+                _retain(path, destination / "firecracker", opened, streams, files, raw_log=True)
             for reader, writer in streams:
                 shutil.copyfileobj(reader, writer)
                 writer.flush()
@@ -135,6 +137,7 @@ def _retain(
     files: ExitStack,
     *,
     journal: bool = False,
+    raw_log: bool = False,
 ) -> None:
     try:
         source = path.open("rb")
@@ -148,6 +151,8 @@ def _retain(
             return
         if journal:
             target = destination / path.parents[2].name / path.parent.name / f"{identity[1]}-{path.name}"
+        elif raw_log:
+            target = destination / path.parent.parent.name / f"{path.name}-{identity[1]}"
         else:
             target = destination / path.parent.parent.name / f"{path.name}-{identity[1]}.cri.log"
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -183,9 +188,10 @@ def capture(
     kubevirt_namespace: str,
     destination: Path,
     validate_shutdown: Callable[[], bool],
+    require_shutdown_marker: bool = True,
     require_boot_evidence: bool = False,
 ) -> Iterator[None]:
-    """Retain guest journals, console, launcher relay and virt-handler logs.
+    """Retain guest journals plus VM, Firecracker, and runtime logs.
 
     A pytest session fixture exits normally even when its tests failed, so its caller supplies a
     teardown-time predicate in addition to the exception-unwind protection here.
@@ -194,6 +200,7 @@ def capture(
         f"{namespace}_virt-launcher-*/guest-console-log/*.log*": destination / "consoles",
         f"{namespace}_virt-launcher-*/compute/*.log*": destination / "launchers",
         f"{namespace}_virt-launcher-*/egress-sidecar/*.log*": destination / "relays",
+        f"{namespace}_*/environment-runtime/*.log*": destination / "runtimes",
         f"{kubevirt_namespace}_virt-handler-*/virt-handler/*.log*": destination / "handlers",
     }
     stop = threading.Event()
@@ -212,6 +219,7 @@ def capture(
             stop.set()
         copying.result()
         if validate_shutdown():
-            _require_shutdown(destination / "consoles")
+            if require_shutdown_marker:
+                _require_shutdown(destination / "consoles")
             if require_boot_evidence:
                 _require_boot_evidence(destination / "consoles")

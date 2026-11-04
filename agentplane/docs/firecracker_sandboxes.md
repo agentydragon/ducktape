@@ -134,4 +134,12 @@ This backend adds controller/admission, generated-template, guest thaw, checkpoi
 supervisor ordering tests. A deployment acceptance run must additionally boot the published NixOS
 image, connect the real Gateway/Runtime, suspend a running Session twice, rotate credentials while
 suspended, and verify the same processes and journals continue without replay. The ordinary RBE
-k3s fixture has no KVM; do not nest its host-cgroup cleanup in a privileged live-cluster Pod.
+pool has no KVM. The manual
+[`test_firecracker`](../system_tests/k3s/README.md#firecracker-sandboxes) suite instead runs its
+disposable k3s stack on the existing `wyrm2-kvm-vm` BuildBuddy executor. It uses the production
+NixOS boot image, launcher and runner disk, creates its Sandbox through the app, and checks a
+scripted Codex tool turn followed by one RAM-preserving suspend/resume. It asserts unchanged Pod,
+guest and Runtime boot identities, native process identity, and a progressing child with a
+random memory-resident marker. Cilium policy enforcement and TLS rotation while suspended remain
+outside that suite's coverage. Never run the fixture's host-cgroup cleanup in a privileged
+live-cluster Pod.

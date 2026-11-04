@@ -9,7 +9,13 @@ import pytest_bazel
 from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
-_EXPECTED_OUTPUTS = {"local-model.json", "local-model-mcp-fixtures.json", "local-model-vm.json", "public-litellm.json"}
+_EXPECTED_OUTPUTS = {
+    "local-model.json",
+    "local-model-firecracker.json",
+    "local-model-mcp-fixtures.json",
+    "local-model-vm.json",
+    "public-litellm.json",
+}
 
 
 def test_independent_renders_are_byte_identical(tmp_path: Path) -> None:

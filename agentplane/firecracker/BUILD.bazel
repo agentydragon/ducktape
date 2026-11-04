@@ -79,6 +79,7 @@ oci_image(
         ":runtime_tool_links",
         ":launcher_layer",
     ],
+    visibility = ["//agentplane/system_tests/k3s:__pkg__"],
 )
 
 oci_load(
