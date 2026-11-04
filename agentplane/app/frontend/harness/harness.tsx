@@ -88,6 +88,7 @@ import { EventEntrySchema } from "../../../proto/event_log_pb";
 import {
   AttachedSchema,
   CentralSamplerV1PlacementSchema,
+  EnvironmentHostedPlacementSchema,
   Harness,
   HarnessState,
   LaunchOutcome,
@@ -2919,14 +2920,16 @@ routes.push(
   [
     "POST",
     /^\/sandboxes\/([^/]+)\/sessions$/,
-    (match, _query, _signal, body) => {
+    (_match, _query, _signal, body) => {
       if (!queueOpenResponses || body === undefined) throw new Error("No queued Session Open fixture is configured");
-      const request = JSON.parse(body) as { session_id?: string };
-      if (!request.session_id) throw new Error("Open request has no Session ID");
+      const request = JSON.parse(body) as { session_id?: string; spec?: JsonValue };
+      if (!request.session_id || !request.spec) throw new Error("Open request has no Session ID or spec");
+      const spec = fromJson(SessionSpecSchema, request.spec);
+      if (spec.placement.case !== "environmentHosted") throw new Error("Queued fixture requires native placement");
       queuedOpenSessionId = request.session_id;
       return {
         sessionId: request.session_id,
-        sandbox: match[1],
+        environmentHosted: toJson(EnvironmentHostedPlacementSchema, spec.placement.value),
         state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
         reason: "waiting for runner admission",
       };

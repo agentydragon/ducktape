@@ -22,7 +22,6 @@ import {
   Harness,
   HarnessState,
   LaunchOutcome,
-  type SessionSpec,
   SessionSpecSchema,
   SetupState,
 } from "../../../../proto/session_pb";
@@ -36,7 +35,8 @@ export type ThreadViewInit = {
   metadata?: PartialMessage<ThreadMetadata>;
   summary?: PartialMessage<Omit<SessionSummary, "attached" | "sandbox">> & {
     attached?:
-      (PartialMessage<Omit<Attached, "spec">> & { spec?: PartialMessage<SessionSpec> | undefined }) | undefined;
+      | (PartialMessage<Omit<Attached, "spec">> & { spec?: MessageInitShape<typeof SessionSpecSchema> | undefined })
+      | undefined;
     sandbox?: PartialMessage<SandboxRef> | undefined;
   };
 };
