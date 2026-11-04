@@ -73,27 +73,27 @@ def test_image_cleanup_surfaces_a_failed_removal(tmp_path: Path, monkeypatch: py
         k3s.prune_unused_images()
 
 
-@pytest.mark.parametrize(
-    ("references", "container_refs"),
-    [
-        ({"repoTags": ["fixture:current"]}, []),
-        ({"repoDigests": ["fixture@sha256:current"]}, []),
-        ({"pinned": True}, []),
-        ({}, ["sha256:importing"]),
-    ],
-)
-def test_image_cleanup_accepts_a_new_reference_during_removal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, references: dict[str, Any], container_refs: list[str]
+def test_image_cleanup_protects_imported_layout_during_cri_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     k3s = stack.K3s(tmp_path, tmp_path / "unused-k3s")
+    layout = tmp_path / "layout"
+    blobs = layout / "blobs" / "sha256"
+    blobs.mkdir(parents=True)
+    (layout / "index.json").write_text(json.dumps({"manifests": [{"digest": "sha256:manifest"}]}))
+    (blobs / "manifest").write_text(json.dumps({"config": {"digest": "sha256:importing"}}))
+    k3s.protect_image_layouts({"fixture:current": layout})
     removed: list[str] = []
 
     def crictl(*args: str, check: bool = True) -> str:
         match args:
             case ("images", "-o", "json"):
-                return json.dumps({"images": [{"id": "sha256:importing", **(references if removed else {})}]})
+                images = [{"id": "sha256:importing"}]
+                if not removed:
+                    images.append({"id": "sha256:obsolete"})
+                return json.dumps({"images": images})
             case ("ps", "-a", "-o", "json"):
-                return json.dumps({"containers": [{"imageRef": ref} for ref in container_refs] if removed else []})
+                return json.dumps({"containers": []})
             case ("rmi", *ids):
                 removed.extend(ids)
                 return ""
@@ -104,7 +104,9 @@ def test_image_cleanup_accepts_a_new_reference_during_removal(
 
     k3s.prune_unused_images()
 
-    assert removed == ["sha256:importing"]
+    # Containerd can publish the pinned tag after the initial list but before RemoveImage.
+    # Removing by config ID would then delete the new tag as well as its untagged alias.
+    assert removed == ["sha256:obsolete"]
 
 
 def _postgres_pod(
