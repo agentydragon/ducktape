@@ -37,7 +37,6 @@ rust_library(
     crate_root = ":analysis_identity_source",
     edition = "2024",
     rustc_env = {"RUSTC_BOOTSTRAP": "1"},
-    rustc_flags = ["-Ztime-passes"],
     zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
 )
 
@@ -644,7 +643,6 @@ rust_library(
         "RUSTC_BOOTSTRAP": "1",
         "STANDARD_GLOBALS_JSON": "$(execpath :standard_globals_json)",
     },
-    rustc_flags = ["-Ztime-passes"],
     zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis_codec",
@@ -981,7 +979,6 @@ rust_library(
     crate_root = "staged_analysis/mod.rs",
     edition = "2024",
     rustc_env = {"RUSTC_BOOTSTRAP": "1"},
-    rustc_flags = ["-Ztime-passes"],
     zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis",
@@ -1235,7 +1232,6 @@ rust_library(
     crate_root = "cli/mod.rs",
     edition = "2024",
     rustc_env = {"RUSTC_BOOTSTRAP": "1"},
-    rustc_flags = ["-Ztime-passes"],
     zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis",
@@ -1294,7 +1290,6 @@ rust_library(
     crate_root = "selectors/resolution/selector_ir.rs",
     edition = "2024",
     rustc_env = {"RUSTC_BOOTSTRAP": "1"},
-    rustc_flags = ["-Ztime-passes"],
     zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis",
@@ -1315,7 +1310,6 @@ rust_library(
     crate_root = "selectors/resolution/selector_constraint_backend.rs",
     edition = "2024",
     rustc_env = {"RUSTC_BOOTSTRAP": "1"},
-    rustc_flags = ["-Ztime-passes"],
     zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis",
@@ -1338,7 +1332,6 @@ rust_library(
     crate_root = "selectors/resolution/selector_constraint_model_builder.rs",
     edition = "2024",
     rustc_env = {"RUSTC_BOOTSTRAP": "1"},
-    rustc_flags = ["-Ztime-passes"],
     zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis",
@@ -1380,7 +1373,6 @@ rust_library(
     crate_root = "selectors/resolution/selector_backend_solver.rs",
     edition = "2024",
     rustc_env = {"RUSTC_BOOTSTRAP": "1"},
-    rustc_flags = ["-Ztime-passes"],
     zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis",
@@ -1496,7 +1488,6 @@ rust_library(
     crate_root = "selectors/resolution/selector_runtime.rs",
     edition = "2024",
     rustc_env = {"RUSTC_BOOTSTRAP": "1"},
-    rustc_flags = ["-Ztime-passes"],
     zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":selector_backend_solver",
@@ -1517,7 +1508,6 @@ rust_library(
     crate_root = "selectors/resolution/selector_resolve.rs",
     edition = "2024",
     rustc_env = {"RUSTC_BOOTSTRAP": "1"},
-    rustc_flags = ["-Ztime-passes"],
     zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis",
@@ -1543,7 +1533,6 @@ rust_library(
     crate_root = "spec_resolution.rs",
     edition = "2024",
     rustc_env = {"RUSTC_BOOTSTRAP": "1"},
-    rustc_flags = ["-Ztime-passes"],
     zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
         ":analysis",
@@ -1636,7 +1625,10 @@ rust_binary(
     crate_root = "main.rs",
     edition = "2024",
     rustc_env = {"RUSTC_BOOTSTRAP": "1"},
-    rustc_flags = ["-Cstrip=symbols", "-Ztime-passes"],
+    rustc_flags = [
+        "-Cstrip=symbols",
+        "-Ztime-passes",
+    ],
     visibility = ["//devinfra/js/debundle/e2e:__pkg__"],
     zself_profile_events = "@rules_rust//rust/settings:zself_profile_events",
     deps = [
