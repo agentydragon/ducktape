@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import hmac
-from collections.abc import Mapping, Sequence
+from collections import defaultdict
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -66,6 +67,24 @@ class BearerAuth:
         tokens = [bearer.token.get_secret_value() for bearer in bearers]
         if any(not token for token in tokens) or len(set(tokens)) != len(tokens):
             raise ValueError("Empty or duplicate bearer credential")
+
+    @classmethod
+    def from_config(cls, configs: Mapping[str, BearerConfig], *, instances: Collection[str]) -> BearerAuth:
+        bearers = []
+        for config in configs.values():
+            routes: dict[str, list[Route]] = defaultdict(list)
+            for item in config.allow:
+                if item.instance not in instances:
+                    raise ValueError("Bearer route references an unknown or disabled integration")
+                routes[item.instance].append(Route(item.method, item.path))
+            bearers.append(
+                Bearer(
+                    config.load_token(),
+                    owner=config.role == "owner",
+                    routes={instance: tuple(rules) for instance, rules in routes.items()},
+                )
+            )
+        return cls(bearers)
 
     def authenticate(self, request: Request) -> Bearer | None:
         auth = [value for name, value in request.scope["headers"] if name.lower() == b"authorization"]

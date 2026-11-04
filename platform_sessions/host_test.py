@@ -149,6 +149,14 @@ def test_bearer_config_reads_a_mounted_secret(tmp_path):
         config.load_token()
 
 
+def test_bearer_config_rejects_unknown_instances():
+    config = BearerConfig.model_validate(
+        {"token": "x" * 32, "role": "routes", "allow": [{"instance": "missing", "method": "GET", "path": "/orders"}]}
+    )
+    with pytest.raises(ValueError, match="unknown or disabled"):
+        BearerAuth.from_config({"consumer": config}, instances={"example"})
+
+
 def test_failed_start_still_stops_owner():
     calls = []
 
