@@ -1682,6 +1682,15 @@ heap; they do not overwrite earlier abstract values. An unproved store stops
 ordered execution and conservatively summarizes the remaining body, retaining
 input, local and newly allocated capabilities and possible setter effects.
 Its precision loss identifies the assignment's source span.
+An incomplete, already-executed local call in an exact terminal `return call(...)`
+of a callable stops ordered execution without publishing the caller's entire
+frame: there is no remaining caller operation to summarize. This sufficient
+condition requires a directly selected, singleton ordinary source function,
+excluding opaque, async and generator bodies, and a child value transfer. Child
+effects, escapes, precision losses and incomplete execution remain; partial
+returns are widened to include unknown normal and abrupt completion, and no
+effect coverage is issued. Root initializers, nonterminal calls, operand
+failures, unknown targets and missing-result transfers retain ordinary fallback.
 Calls, member reads, computed writes, branches, unknown free bindings, dynamic
 scope and unsupported syntax retain the conservative execution path. This
 coverage does not certify initializer effects or an imported provider summary.
@@ -3641,6 +3650,17 @@ site from another reason freshness was not established. This explanation does
 not change effect promotion.
 The ordered call-admission explanation does not change target admission,
 fallback effects, reachability, gate acceptance, or emitted JavaScript.
+
+An annotated local constructor-factory call kept on the conservative path records
+its first typed refusal in `synchronous_execution.local_record_factory_rejections`.
+The identity checks distinguish a non-binding callee, a missing hoisted
+function, an invalid result initializer, an exported or escaped factory, and
+whole-chunk versus current-prefix identity mismatches. For `factory_escaped`,
+`first_callback_publication_owner` may name the first source owner observed
+inserting that function into the escaped-callback set through `publish_values`.
+It is omitted when that insertion was not recorded, and is diagnostic context,
+not proof authority. These reasons and the optional owner do not change the
+conservative effects or emitted JavaScript.
 
 Each record's `reach` classifies the code the conservative path stands for.
 `{"kind": "bounded"}`: known source code, namely a rejected local construction
