@@ -161,6 +161,36 @@ async def test_sandbox_cel_relationships_and_opaque_fields() -> None:
         assert opaque_workspace is not None
         assert opaque_workspace["spec"]["workspaceVolume"]["claim"] == opaque_spec["workspaceVolume"]["claim"]
 
+        # The controller records Firecracker's raw state layout through the status subresource.
+        for index, (layout, valid) in enumerate(
+            [
+                ({"type": "DirectoryTree"}, True),
+                ({"type": "RawDiskImage", "filesystem": "ext4"}, True),
+                ({"type": "DirectoryTree", "filesystem": "ext4"}, False),
+                ({"type": "RawDiskImage"}, False),
+                ({"type": "RawDiskImage", "filesystem": "xfs"}, False),
+                ({"type": "BlockFilesystem", "filesystem": "ext4"}, False),
+            ]
+        ):
+            name = f"state-binding-{index}"
+            bound = await _create(api, "sandboxes", name, {"template": "firecracker-layout-2"}, True)
+            assert bound is not None
+            candidate = {
+                **bound,
+                "status": {"volumes": {"state": {"name": "state", "uid": "state-uid", "layout": layout}}},
+            }
+            if valid:
+                accepted = await api.replace_namespaced_custom_object_status(
+                    GROUP, VERSION, NAMESPACE, "sandboxes", name, candidate
+                )
+                assert accepted["status"]["volumes"]["state"]["layout"] == layout
+            else:
+                with pytest.raises(ApiException) as rejected:
+                    await api.replace_namespaced_custom_object_status(
+                        GROUP, VERSION, NAMESPACE, "sandboxes", name, candidate
+                    )
+                assert rejected.value.status == 422, f"{layout}: {rejected.value.body!r}"
+
         sandbox = await _create(api, "sandboxes", "suspension", {"template": "opaque"}, True)
         assert sandbox is not None
         with_status = deepcopy(sandbox)

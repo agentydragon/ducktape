@@ -9,8 +9,8 @@ import (
 	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
-// StateVolume is the volume the controller fills with the Sandbox's state PVC: a Pod's containers
-// mount it by name, and a VM guest mounts the virtiofs filesystem of that name.
+// StateVolume is the controller-owned PVC for retained environment state. Pod and VM backends keep
+// a directory tree; Firecracker stores the guest state disk and its checkpoints.
 type StateVolume struct {
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
@@ -294,7 +294,7 @@ type StateBinding struct {
 	Name string `json:"name"`
 	// +kubebuilder:validation:MinLength=1
 	UID string `json:"uid"`
-	// +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' && !has(self.filesystem)",message="state volume requires DirectoryTree without a filesystem"
+	// +kubebuilder:validation:XValidation:rule="self.type == 'DirectoryTree' || self.type == 'RawDiskImage'",message="state volume requires DirectoryTree or RawDiskImage"
 	Layout VolumeLayout `json:"layout"`
 }
 

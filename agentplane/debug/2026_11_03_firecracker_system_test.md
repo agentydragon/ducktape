@@ -195,3 +195,18 @@ and the Firecracker virtualization condition. Devel also replaced `oci_image_py`
 [Focused checks on the rebased code](https://app.buildbuddy.io/invocation/42dba61c-12a1-4c9e-b235-fadffba5bf64)
 passed: launcher OCI startup (17.1 seconds), fixture rendering (29.3 seconds), and retained guest logs
 (cached pass). These are separate from the still-unproved full RAM continuation scenario.
+
+The [tenth run](https://app.buildbuddy.io/invocation/89724f98-c5d8-4331-9800-1d3d5c36ee2b)
+passed fixture setup and created the Sandbox, exposing an admission mismatch in the backend:
+`SandboxTemplate` allowed raw state, but `Sandbox.status.volumes.state.layout` still required
+DirectoryTree. The API server rejected the controller's durable state binding before Pod creation.
+The Go status marker now admits DirectoryTree or ext4 RawDiskImage, with its existing filesystem
+constraints retained. The real API-server regression tests cover both valid layouts and reject
+missing filesystems, invalid filesystems and BlockFilesystem state.
+
+For diagnosis only, that same status-validation rule was applied inside the disposable test cluster.
+It unblocked both PVCs and created the launcher Pod. The original 300-second startup wait expired
+before this late recovery completed disk preparation; cleanup also timed out. No guest tool turn or
+RAM pass is claimed for this modified run. The clean rerun uses regenerated source manifests.
+The CRD generator invocation `0395176a-2ae3-4574-9ef7-8c0a3ee2d4a1` completed successfully; most of
+its elapsed time waited for the running Bazel test's local server lock, not for code generation.

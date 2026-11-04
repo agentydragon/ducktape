@@ -82,11 +82,11 @@ spec:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               stateVolume:
-                description: 'StateVolume is the volume the controller fills with
-                  the Sandbox''s state PVC: a Pod''s containers
+                description: 'StateVolume is the controller-owned PVC for retained
+                  environment state. Pod and VM backends keep
 
-                  mount it by name, and a VM guest mounts the virtiofs filesystem
-                  of that name.'
+                  a directory tree; Firecracker stores the guest state disk and its
+                  checkpoints.'
                 properties:
                   claim:
                     type: object

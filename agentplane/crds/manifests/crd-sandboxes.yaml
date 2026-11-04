@@ -366,8 +366,8 @@ spec:
                         - type
                         type: object
                         x-kubernetes-validations:
-                        - message: state volume requires DirectoryTree without a filesystem
-                          rule: self.type == 'DirectoryTree' && !has(self.filesystem)
+                        - message: state volume requires DirectoryTree or RawDiskImage
+                          rule: self.type == 'DirectoryTree' || self.type == 'RawDiskImage'
                         - message: DirectoryTree omits filesystem; disk layouts require
                             it
                           rule: 'self.type == ''DirectoryTree'' ? !has(self.filesystem)
