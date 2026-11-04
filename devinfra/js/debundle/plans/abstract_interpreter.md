@@ -431,17 +431,35 @@ its cost.
   Execution-derived per-allocation state must preserve setter freedom when
   constructor or enum initialization adds keys. That depends on escape and
   taint, not only on fields the receiver already owns.
-- 5c callable summaries: `callable_inference.rs`, `namespace_wrapper.rs`,
-  `SemanticKey::{StableFunction, StableProvider, NamespaceWrapper,
-ArgumentNoEscape, DescriptorCopy*}` → the
-  interpreter summarizes the exported body once; imported providers carry the
-  summary as `Foreign(summary)` through `imported_callables`. Tests
+- 5c callable certificates and summary projection: fold the remaining
+  source-derived `StableFunction`, `StableProvider` and `NamespaceWrapper`
+  judgments from `callable_inference.rs` / `namespace_wrapper.rs` into shared
+  callable summaries. `ArgumentNoEscape` and `DescriptorCopyProvider` /
+  `DescriptorCopyCall` are still separate semantic facts; carry them as typed
+  premises and dependencies, preserving the distinction between author
+  assertions and inferred body results. Keep returned-record method/capture
+  projections covered by the summary contract.
+  `infer_foreign_calls` currently selects exported function/class declarations
+  and direct single-declarator function/arrow initializers. Extend it to
+  property-derived exported callables only when identity is proved at the
+  actual export read, including descriptor, initialization, mutation/escape
+  and captured-cell evidence. A covered provider body alone does not prove
+  which property value an export read denotes.
+  `strict_provider::{derive, derive_class}` uses the shared allocation and
+  local transfers and emits a summary only for covered allocation-only bodies;
+  refusal does not retry another evaluator. Keep unsupported effects unknown,
+  preserve typed proof dependencies, and require source-backed capture
+  initialization before widening summary coverage. Contract controls:
   `imported_callback_timing`, `retained_callback_factory`,
   `retained_constructor_callback`, `namespace_wrapper`,
-  `descriptor_copy_factory`, `argument_input`. Fold the remaining certificates
-  into the body summary and summarize returned objects' methods. Preserve the
-  existing allocation-only `foreign_call` summaries and their returned-record
-  and callback-factory projections (`facts/abstract_domain/foreign_call.rs`).
+  `descriptor_copy_factory`, `argument_input`.
+  Audit invocation-memo dependencies against heap, descriptor and native-state
+  invalidation before broadening memo eligibility. Tainted functions bypass
+  memos; the existing audit request does not establish a stale-result bug.
+  Complete the canonical imported-summary and effect classification under the
+  exact audited inputs before claiming corpus precision or widening coverage.
+  Explain any summary, effect or coverage changes from source witnesses, not
+  gate outcomes alone.
 - 5d own-property projections: `property_inference.rs` → `props` of a `Clean`
   `Alloc(One)` in ECMAScript own-key order. Tests `own_property_names`,
   `own_descriptor_inspection`.
