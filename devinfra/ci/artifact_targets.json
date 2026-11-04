@@ -158,7 +158,7 @@
       "nixPackage": true
     },
     "ducktape-util": {
-      "tests": "//util/...",
+      "tests": "//devinfra/bazel/... //util/...",
       "nixPackage": true
     },
     "ducktape-network-monitor": {
