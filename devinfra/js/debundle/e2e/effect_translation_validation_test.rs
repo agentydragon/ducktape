@@ -2288,6 +2288,70 @@ fn default_report_bounds_examples_without_losing_exact_counts() {
     assert_full_rows_match_summary(&report, &rows);
 }
 
+#[test]
+fn bounded_examples_prefer_modeled_rows_after_early_havoc_only_rows() {
+    let names = [
+        "item0", "item1", "item2", "item3", "item4", "item5", "item6", "item7", "item8", "item9",
+        "item10", "item11", "item12", "item13", "item14", "item15", "item16", "item17", "item18",
+        "item19", "item20", "item21", "item22", "item23",
+    ];
+    let mut source = String::new();
+    for (index, name) in names.iter().enumerate() {
+        // The template is pure but outside the source-covered value subset,
+        // retaining an early Havoc-only conflict inventory.
+        source.push_str(&format!("const {name} = (``, {index});\n"));
+    }
+    source.push_str(&format!(
+        "const tail = {};\nconst writer = (globalThis.marker = 1);\nconst reader = globalThis.marker;\nconsole.log(tail, writer, reader);\n",
+        names.join(" + ")
+    ));
+    let mut modules = vec![logical_module(
+        "outer",
+        &[
+            Member::new("item0"),
+            Member::new("tail"),
+            Member::new("reader"),
+        ],
+    )];
+    modules.extend(
+        names[1..]
+            .iter()
+            .map(|name| logical_module(name, &[Member::new(name)])),
+    );
+    let fixture = run_rejection_fixture_with_args(
+        FixtureOpts::new(&source, modules).with_unassigned_mode(unassigned_mode_inline()),
+        &["--effect-conflicts-jsonl"],
+        1,
+    );
+    let report = fixture.effect_translation_validation();
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
+    let example_limit = report["example_limit"].as_u64().unwrap() as usize;
+    let first_modeled_row = rows
+        .iter()
+        .position(|row| row["cell_count"].as_u64().unwrap() > 0)
+        .expect("the full stream contains modeled-cell conflicts");
+    assert!(
+        first_modeled_row >= example_limit,
+        "first modeled row {first_modeled_row} precedes example limit {example_limit}"
+    );
+    assert!(
+        rows[..example_limit]
+            .iter()
+            .all(|row| row["cell_count"] == 0 && row["havoc"] == true),
+        "the fixture begins with {example_limit} Havoc-only rows"
+    );
+    assert!(
+        examples(&report)
+            .iter()
+            .any(|example| example["cell_count"].as_u64().unwrap() > 0),
+        "the bounded report should expose a modeled-cell witness after the initial Havoc-only rows"
+    );
+    assert_eq!(report["examples_truncated"], true, "{report:#}");
+    assert_eq!(report["decision"]["status"], "conflict");
+    assert_eq!(report["legacy_gate_accepts"], false);
+    assert_full_rows_match_summary(&report, &rows);
+}
+
 fn assert_full_rows_match_summary(summary: &Value, rows: &[Value]) {
     let count = |name| summary["counts"][name].as_u64().unwrap();
     assert_eq!(rows.len() as u64, count("pairs"));
@@ -2328,7 +2392,28 @@ fn assert_full_rows_match_summary(summary: &Value, rows: &[Value]) {
         );
         assert!(row["first_opacity"].is_object() && row["later_opacity"].is_object());
     }
-    for (example, full) in examples(summary).iter().zip(rows) {
+    let limit = summary["example_limit"].as_u64().unwrap() as usize;
+    let mut selected_indexes = rows
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| row["cell_count"].as_u64().unwrap() > 0)
+        .take(limit)
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    let fallback_slots = limit.saturating_sub(selected_indexes.len());
+    selected_indexes.extend(
+        rows.iter()
+            .enumerate()
+            .filter(|(_, row)| row["cell_count"].as_u64().unwrap() == 0)
+            .take(fallback_slots)
+            .map(|(index, _)| index),
+    );
+    selected_indexes.sort_unstable();
+    assert_eq!(examples(summary).len(), selected_indexes.len());
+    for (example, full) in examples(summary)
+        .iter()
+        .zip(selected_indexes.into_iter().map(|i| &rows[i]))
+    {
         for field in [
             "runs_first",
             "runs_later",

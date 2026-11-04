@@ -258,9 +258,11 @@ artifacts missing it fail to decode, and the normal analysis-engine and source
 provenance checks still apply. `legacy_execution` is a temporary decision for
 owners outside ordered-root execution, not evidence of covered operations.
 
-`examples` retains at most twenty deterministic pairs, each with at
-most twenty conflicting cells and their access provenance. Each sampled pair
-retains its exact `cell_count` and `cells_truncated` marker;
+`examples` retains at most twenty deterministic pairs, preferring rows with
+modeled cells and filling unused slots with the earliest Havoc-only rows. The
+selected pairs retain sweep order and each contains at most twenty conflicting
+cells with their access provenance. Each sampled pair retains its exact
+`cell_count` and `cells_truncated` marker;
 `examples_truncated` makes omitted pairs explicit. Counts remain exact when
 examples are truncated. `full_detail_export_available` is true: request
 `debundle run --effect-conflicts-jsonl` for complete per-chunk rows in
@@ -268,8 +270,9 @@ examples are truncated. `full_detail_export_available` is true: request
 Repeatable `--effect-conflicts-chunk <chunk-id>` selects only JSONL sinks;
 it leaves every graph, bounded summary, source input and census scope intact.
 
-Each JSONL line is one pair in the same deterministic order used to select
-summary examples. It includes `runs_first`, `runs_later`, every `cells` entry
+Each JSONL line is one pair in the complete sweep order; summary examples are
+selected from this stream without changing that order. A line includes
+`runs_first`, `runs_later`, every `cells` entry
 with access provenance, exact `cell_count`, `havoc`, typed `disposition`,
 `premise_locations`, typed `premise_references`, and the report-only
 `legacy_edge_conflict` comparison.
