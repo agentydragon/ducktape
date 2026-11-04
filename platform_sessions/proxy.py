@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, Sequence, Set
 from dataclasses import dataclass, field
 from typing import Protocol
 from urllib.parse import urljoin, urlsplit, urlunsplit
@@ -17,30 +17,32 @@ from platform_sessions.routes import _encoded_path, _segments, authorize_route
 
 # The transport owns upstream authentication and session rotation. These are
 # always removed regardless of the additional provider-configured rules.
-_HOP = frozenset(
-    (
-        b"connection",
-        b"keep-alive",
-        b"proxy-authenticate",
-        b"proxy-authorization",
-        b"te",
-        b"trailer",
-        b"transfer-encoding",
-        b"upgrade",
-    )
-)
-_REQUEST_PRIVATE = frozenset((b"authorization", b"cookie", b"cookie2", b"host"))
-_RESPONSE_PRIVATE = frozenset(
-    (b"authorization", b"authentication-info", b"proxy-authentication-info", b"set-cookie", b"set-cookie2")
-)
+_HOP = {
+    b"connection",
+    b"keep-alive",
+    b"proxy-authenticate",
+    b"proxy-authorization",
+    b"te",
+    b"trailer",
+    b"transfer-encoding",
+    b"upgrade",
+}
+_REQUEST_PRIVATE = {b"authorization", b"cookie", b"cookie2", b"host"}
+_RESPONSE_PRIVATE = {
+    b"authorization",
+    b"authentication-info",
+    b"proxy-authentication-info",
+    b"set-cookie",
+    b"set-cookie2",
+}
 
 
 @dataclass(frozen=True)
 class HeaderPolicy:
     """Headers to strip in addition to hop-by-hop and session headers."""
 
-    request: frozenset[str] = frozenset()
-    response: frozenset[str] = frozenset()
+    request: Set[str] = field(default_factory=set)
+    response: Set[str] = field(default_factory=set)
 
 
 @dataclass(frozen=True)
@@ -78,7 +80,7 @@ class ProxyInstance:
 
 
 def _filter_headers(
-    headers: Sequence[tuple[bytes, bytes]], mandatory: frozenset[bytes], configured: frozenset[str]
+    headers: Sequence[tuple[bytes, bytes]], mandatory: Set[bytes], configured: Set[str]
 ) -> tuple[tuple[bytes, bytes], ...]:
     names = {name.lower().encode("ascii") for name in configured}
     for name, value in headers:
