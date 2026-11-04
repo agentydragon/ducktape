@@ -109,6 +109,7 @@ import {
   ThreadPayloadReferenceSchema,
   ThreadViewStateSchema,
   FeedStatus,
+  SandboxRefSchema,
   SessionSummarySchema,
   WatchSessionSummariesResponseSchema,
   type ThreadEntity,
@@ -3672,10 +3673,20 @@ const visualHarness = {
     if (!thread) throw new Error(`Missing thread fixture ${threadId}`);
     thread.metadata.name = name;
   },
-  updateThread(threadId: string, changes: Partial<ThreadView>): void {
+  centralSamplerOnSandbox(threadId: string, sandboxName: string): void {
     const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === threadId);
     if (!thread) throw new Error(`Missing thread fixture ${threadId}`);
-    Object.assign(thread, changes);
+    const target = SANDBOXES.find((candidate) => candidate.target?.name === sandboxName)?.target;
+    if (!target) throw new Error(`Missing Sandbox fixture ${sandboxName}`);
+    const spec = thread.summary.attached?.spec;
+    if (!spec) throw new Error(`Thread fixture ${threadId} has no attached Session spec`);
+    thread.summary.sandbox = create(SandboxRefSchema, {
+      namespace: target.namespace,
+      name: target.name,
+      uid: target.uid,
+    });
+    spec.harness = Harness.CENTRAL_SAMPLER;
+    spec.model = "harness-codex-model";
   },
   mountDisclosure(props: Parameters<typeof DisclosureVisual>[0]): void {
     mount(<DisclosureVisual {...props} />);

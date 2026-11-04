@@ -95,9 +95,9 @@ class AgentplaneFixture:
     async def name_thread(self, thread_id: str, name: str) -> None:
         await self.page.evaluate("([id, name]) => window.agentplaneVisual.nameThread(id, name)", [thread_id, name])
 
-    async def update_thread(self, thread_id: str, changes: dict[str, str]) -> None:
+    async def central_sampler_on_sandbox(self, thread_id: str, sandbox: str) -> None:
         await self.page.evaluate(
-            "([id, changes]) => window.agentplaneVisual.updateThread(id, changes)", [thread_id, changes]
+            "([id, sandbox]) => window.agentplaneVisual.centralSamplerOnSandbox(id, sandbox)", [thread_id, sandbox]
         )
 
     async def mount_thread(self, thread_id: str) -> None:
