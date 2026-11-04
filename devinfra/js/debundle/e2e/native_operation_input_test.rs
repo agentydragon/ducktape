@@ -610,6 +610,62 @@ fn selected_primitive_set_construction_removes_its_opaque_frontier() {
 }
 
 #[test]
+fn primitive_set_owner_keeps_its_effect_coverage_dependency() {
+    const SOURCE: &str = "const emptyMap = new Map();\nconst made = new Set(['alpha', 'beta']);\nconsole.log(made.size, emptyMap.size);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(SOURCE, vec![logical_module("sets", &[Member::new("made")])])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_native_operation_inputs(
+                "static/app",
+                vec![
+                    primitive_set_input(SOURCE),
+                    selected_native_input(
+                        SOURCE,
+                        "const emptyMap = new Map();",
+                        "emptyMap",
+                        NativeOperationKind::MapEmpty,
+                    ),
+                ],
+            ),
+    );
+    assert_preserved_entry_output(&fixture, "2 0\n");
+
+    let report = fixture.effect_translation_validation();
+    assert!(report["legacy_gate_accepts"].as_bool().unwrap_or(false));
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    assert_eq!(
+        report["decision"]["scope"], "statement_order_commutation",
+        "the reordered native owners have complete effect coverage: {report:#}"
+    );
+    assert_eq!(
+        report["emitted_order"],
+        serde_json::json!([1, 0, 2]),
+        "{report:#}"
+    );
+    assert_eq!(
+        report["coverage"]["owner_coverage_refusals"]["initializer_result_unproved"]
+            .as_u64()
+            .unwrap_or_default(),
+        0,
+        "the exact native constructor result completes its named source owner: {report:#}"
+    );
+    assert_eq!(
+        report["coverage"]["covered_owner_dependencies"]["native_operation_inputs"],
+        serde_json::json!([
+            {"defining_chunk": "static/app", "input_index": 0},
+            {"defining_chunk": "static/app", "input_index": 1},
+        ]),
+        "both completed native owners retain their exact author premises: {report:#}"
+    );
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 1,
+            "only the console observation remains uncovered: {report:#}"
+        );
+    }
+}
+
+#[test]
 fn source_known_set_construction_protocol_writes_reject_the_input() {
     for mutation in [
         "globalThis.Set = function replacement() {};",

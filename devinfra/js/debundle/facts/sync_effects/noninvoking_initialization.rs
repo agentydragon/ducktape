@@ -116,6 +116,16 @@ impl NativeConstructorCandidate {
         self.kind
     }
 
+    fn matches_set_primitive_array_allocation(self, allocation: u32) -> bool {
+        matches!(
+            (self.kind, self.form),
+            (
+                NativeConstructorKind::Set,
+                NativeConstructorForm::SetPrimitiveArray { .. }
+            )
+        ) && self.call_site.allocation_id() == allocation
+    }
+
     pub(super) fn matches_dispatch(
         self,
         call_site: CallSite,
@@ -637,6 +647,18 @@ impl OriginalInitializer {
                 .zip(native_constructor_transfer.as_ref())
                 .is_some_and(|(candidate, transfer)| {
                     values.len() == 1 && transfer.matches(candidate)
+                }),
+            (
+                Leaf::NativeConstructor { .. },
+                _,
+                AbstractValue::Value(Value::Alloc(Kind::Set, allocation)),
+            ) => self
+                .native_constructor_candidate(expression)
+                .zip(native_constructor_transfer.as_ref())
+                .is_some_and(|(candidate, transfer)| {
+                    values.len() == 1
+                        && transfer.matches(candidate)
+                        && candidate.matches_set_primitive_array_allocation(*allocation)
                 }),
             (
                 Leaf::RegExp(allocation),
