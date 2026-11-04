@@ -157,6 +157,7 @@ export { items, marks, count, back };
         ],
     ));
     let cycles = rejected.cycles();
+    let graph = rejected.dependency_graph();
     let edges = cut_edges(&cycles);
     let allocation_use = edges
         .iter()
@@ -165,6 +166,21 @@ export { items, marks, count, back };
                 && sequenced_cause(edge)["to"] == json!({ "kind": "heap_allocation" })
         })
         .unwrap_or_else(|| panic!("no cut edge targeting an allocation: {cycles:#?}"));
+    let target_id = allocation_use["to_source_unit_id"]
+        .as_str()
+        .expect("cut edge target source-unit ID");
+    let target = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == target_id)
+        .unwrap_or_else(|| {
+            panic!("target {target_id} is not a graph source unit: {allocation_use}")
+        });
+    assert_eq!(
+        serde_json::to_value(&target.purity).expect("purity serializes")["kind"],
+        "pure"
+    );
+    assert_cycle_edge_source_units(&graph, allocation_use);
     let cause = sequenced_cause(allocation_use);
     assert_eq!(cause["rule"], "cell_order", "{allocation_use}");
     assert!(
@@ -181,6 +197,39 @@ export { items, marks, count, back };
         allocation_use["explanation"]["target_source_unit"].is_null(),
         "{allocation_use}"
     );
+    assert!(
+        allocation_use.get("binding").is_none(),
+        "sequenced edge has no target binding: {allocation_use}"
+    );
+    let describe = run_debundle(&[
+        "gate",
+        "describe",
+        "0",
+        "--graph",
+        rejected
+            .report_path("dependency_graph.json.gz")
+            .to_str()
+            .unwrap(),
+        "--format",
+        "json",
+    ]);
+    assert!(
+        describe.status.success(),
+        "{}",
+        String::from_utf8_lossy(&describe.stderr)
+    );
+    let described: Value = serde_json::from_slice(&describe.stdout).expect("gate describe JSON");
+    let evidence_row = described["evidence"]
+        .as_array()
+        .expect("gate describe evidence")
+        .iter()
+        .find(|row| {
+            row["kind"] == "sequenced"
+                && row["from_source_unit_id"] == allocation_use["from_source_unit_id"]
+                && row["to_source_unit_id"] == allocation_use["to_source_unit_id"]
+        })
+        .unwrap_or_else(|| panic!("gate describe omitted the pure-allocation edge: {described:#}"));
+    assert_cycle_edge_source_units(&graph, evidence_row);
     assert_eq!(cycles.len(), 1, "{cycles:#?}");
     assert!(
         edges.iter().all(|edge| !edge["explanation"].is_null()),

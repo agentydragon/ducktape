@@ -596,6 +596,16 @@ a `ModuleRef { chunk_id, path }` object.
 | chunk summary `linker_order`  | `ModulePath`                                                                             |
 | stderr rejection summaries    | every module named in cycle / atom-split / unmatched-claim blocks                        |
 
+`CycleEdge` rows in `cycles.json` (`cut[]`, `lazy_closure[]`, and
+`inert_commuting_edges[]`) carry `from_source_unit_id` and
+`to_source_unit_id` as the actual dependency-edge endpoints, using the same
+`unit:N` identities as `dependency_graph.json.gz`'s `nodes[].id`,
+`edges[].source`, and `edges[].target`. These IDs identify the source units
+whose destinations project to the row's `from` and `to`; `statement_ordinal`
+remains edge-reason provenance and does not identify either endpoint. `gate
+describe`'s `cut` and `evidence` rows and `spec propose-commutations`' nested
+`edge` rows use the same endpoint fields.
+
 Cross-file join recipe (what `debundle gate describe` does): resolve
 each source unit's `destination` key through the dependency graph's module table
 to its `path`, then intersect those paths with the SCC's

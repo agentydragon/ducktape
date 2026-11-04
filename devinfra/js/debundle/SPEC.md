@@ -3814,10 +3814,14 @@ Pass-1 root cause and labels each cycle's pass; `gate list` and
 
 Every blocking SCC in `cycles.json` carries a `cut`: the constraining edges
 whose removal (co-locating each binding pair) makes the SCC realizable. Each
-cut edge names both endpoints (`from`, `to`, `from_binding`, `binding`), its
-`kind`, and, for a `sequenced` edge, the source side's impure initializer in
-`sequenced_source_unit`. The edge's `explanation` states why the gate treats it
-as constraining, keyed by `explanation.kind`:
+cut edge names both module endpoints (`from`, `to`), both actual source-unit
+endpoints (`from_source_unit_id`, `to_source_unit_id`, matching graph node IDs
+and the dependency edge's source and target), the binding labels
+(`from_binding`, `binding`), and its `kind`. `statement_ordinal` is edge-reason
+provenance, not an endpoint identity. For a `sequenced` edge, the source side's
+impure initializer appears in `sequenced_source_unit`. The edge's
+`explanation` states why the gate treats it as constraining, keyed by
+`explanation.kind`:
 
 - `at_init_read` (an `eager_use` edge): `position.kind` is `direct` when the
   statement reads `binding` in its own eager position, `promoted_at_init` when

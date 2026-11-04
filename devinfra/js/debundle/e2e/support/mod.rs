@@ -217,6 +217,54 @@ fn assert_no_purity_disagreements(report: &DependencyGraphReport) {
     );
 }
 
+/// Check that a rendered cycle-edge row names actual graph-edge endpoints and
+/// that their source-unit destinations project to the reported module paths.
+pub fn assert_cycle_edge_source_units(graph: &DependencyGraphReport, edge: &Value) {
+    let from_id = edge["from_source_unit_id"]
+        .as_str()
+        .expect("cycle edge source endpoint ID");
+    let to_id = edge["to_source_unit_id"]
+        .as_str()
+        .expect("cycle edge target endpoint ID");
+    let from_unit = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == from_id)
+        .unwrap_or_else(|| panic!("source endpoint {from_id} is not a graph node: {edge}"));
+    let to_unit = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == to_id)
+        .unwrap_or_else(|| panic!("target endpoint {to_id} is not a graph node: {edge}"));
+    let from_module = graph
+        .quotient
+        .nodes
+        .iter()
+        .find(|module| module.key == from_unit.destination)
+        .expect("source endpoint destination has a module-table entry");
+    let to_module = graph
+        .quotient
+        .nodes
+        .iter()
+        .find(|module| module.key == to_unit.destination)
+        .expect("target endpoint destination has a module-table entry");
+    assert_eq!(edge["from"], from_module.path.as_str(), "{edge}");
+    assert_eq!(edge["to"], to_module.path.as_str(), "{edge}");
+
+    assert!(
+        graph.edges.iter().any(|candidate| {
+            candidate.source == from_id
+                && candidate.target == to_id
+                && serde_json::to_value(candidate.edge_kind).expect("DepKind serializes")
+                    == edge["kind"]
+                && serde_json::to_value(candidate.statement_ordinal)
+                    .expect("SourceUnitOrdinal serializes")
+                    == edge["statement_ordinal"]
+        }),
+        "no dependency-graph edge matches the reported source/target IDs, kind, and reason ordinal: {edge}"
+    );
+}
+
 /// The `program_graph.json.gz` that the graph at `graph_path` references.
 pub fn program_graph_path(graph_path: &Path) -> PathBuf {
     let graph: DependencyGraphReport = read_gzip_json(graph_path);

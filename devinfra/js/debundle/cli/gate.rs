@@ -1336,6 +1336,8 @@ fn recompute_evidence(
         out.push(CycleEdge {
             from: from_mod.clone(),
             to: to_mod.clone(),
+            from_source_unit_id: edge.source.clone(),
+            to_source_unit_id: edge.target.clone(),
             statement_ordinal: edge.statement_ordinal,
             binding: edge.binding.clone(),
             from_binding,
