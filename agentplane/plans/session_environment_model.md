@@ -344,6 +344,13 @@ For a native harness, built-in local tools operate with the environment's actual
 
 ## Sessions, ServiceAccounts and environments
 
+**Operator requirement, 2026-11-04:** Sessions using the same Environment must have the same
+verified identity. Native placement and central attachment must enforce that invariant against the
+actual authenticated workload identity, including concurrent admission and identity changes. A
+Session ID, directory, nominal grant or caller-supplied account name is not isolation or proof of
+identity. The identity representation and its ownership remain open; see
+[`SESSION_IDENTITY_CONTRACT`](task_dag.md#session_identity_contract--session-identity-and-shared-environment-admission).
+
 Candidate: Agentplane owns an agent principal and its permissions. A Session and an environment each have at most one active identity association at a time, and attachment requires an appropriate trust relationship. Kubernetes ServiceAccounts can be the principal’s workload-authentication or external-system accounts, rather than defining the domain identity. Cardinalities, reassignment and the exact implementation remain open.
 
 ```text
@@ -409,7 +416,7 @@ Session ── acts as ── Agentplane principal P ── PolicyBindings ─�
 Environment workload credential ── authenticated association ──► P
 ```
 
-An Agentplane principal must have a stable, independently managed identity and a verifiable association to the exact environment workload or authenticated delegated caller. A Pod token can remain evidence of a workload’s identity while Agentplane maps the verified workload to P; neither an arbitrary HTTP header nor a Session ID proves P. The shared egress proxy sees the environment workload, not automatically which of several co-resident Sessions issued a request. Under broad local execution, allow only same-trust Sessions in one environment unless a real per-Session isolation mechanism supplies enforceable identity.
+An Agentplane principal must have a stable, independently managed identity and a verifiable association to the exact environment workload or authenticated delegated caller. A Pod token can remain evidence of a workload’s identity while Agentplane maps the verified workload to P; neither an arbitrary HTTP header nor a Session ID proves P. The shared egress proxy sees the environment workload, not automatically which of several co-resident Sessions issued a request. Under the current broad local execution model, allow only Sessions with the same verified identity in one Environment.
 
 ### Existing patterns and possible building blocks
 
@@ -780,6 +787,12 @@ submitInput(N, commandId, "Inspect the project")
 
 ## Get there without a flag day
 
+This is an illustrative progression, not a blanket dependency chain. The authoritative
+[task DAG](task_dag.md#13-delivery-boundaries-apis-and-harness-identity) records independent
+decisions, implementation outcomes and conditional dependencies. In particular, broader identity
+provisioning and service/database regrouping do not gate the initial zero-Environment Session;
+attachment History delivery does not gate the initial attachment UI.
+
 **1. Decide and document the object contract.**
 
 Review global UUIDs, a common OpenSession reservation contract, authoritative Session-to-owner resolution, required versus optional bindings, central authorization scope, and deletion semantics. Map existing native and central opens to the same concepts without claiming they already implement them.
@@ -1075,6 +1088,14 @@ The operator suggested making the ServiceAccount part of a Session's spec. This 
 an explicit, stable Session identity, including for a central Session with no Environment. Account
 ownership, exact identity form, selection and change authority, and credential delivery remain to be
 designed; a Session spec does not itself authenticate its caller or create an account.
+
+**2026-11-04 · Shared-Environment identity boundary**
+
+The operator requires Sessions using the same Environment to have the same verified identity:
+co-resident agents have shared ambient access, including to the egress proxy and placeholder tokens.
+Enforce this for native placement and central attachment, including concurrent admission, rather than
+treating Session IDs or directories as isolation. The account representation and lifecycle remain
+open; placing an account reference in the Session spec is a candidate, not authorization by itself.
 
 **2026-11-04 · Session-facing APIs and service topology**
 
