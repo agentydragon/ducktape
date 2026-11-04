@@ -102,6 +102,13 @@ to support a fit. The notebook reports these cases without substituting an
 estimate from the preceding tier. Period bounds also appear in weekly summaries
 so separate regimes with the same label remain distinguishable.
 
+The weekly model-cost charts fit each UTC calendar week separately, in quota
+percentage points per million recorded tokens. These are exploratory averages,
+not per-request charges: changes in token mix and incomplete capture can mimic
+quota-policy changes. A one-week fit cannot meet the eight-active-day
+publication threshold. The chart marks its diagnostic points accordingly and
+omits the three-day bootstrap bar when only one resampling block exists.
+
 The primary regression uses poll-aligned pieces at a 60-minute elapsed-time
 target, retaining short tails. Whole-run, 30-, 60- and 120-minute diagnostics
 conserve accepted time, quota deltas and allocated tokens. Whole-run fits have

@@ -33,6 +33,7 @@ from x.ai_sub_value.estimate_capacity import (
     source_consistency,
     split_monotonic_runs,
     stable_money_ranges,
+    weekly_cost_estimates,
 )
 from x.ai_sub_value.plan_history import CodexPlanPeriod, read_codex_plan_history
 
@@ -64,6 +65,24 @@ def test_poll_aligned_chunks_keep_short_tail_without_clock_hour_rounding() -> No
     assert len(whole) == 1
     assert whole[0].points == 27
     assert rejected == {}
+
+
+def test_weekly_costs_exclude_boundary_crossing_and_keep_short_tails() -> None:
+    monday = datetime(2026, 1, 5, tzinfo=UTC)
+    polls = [
+        Poll(monday + timedelta(minutes=minute), value, None) for minute, value in [(-15, 1), (-5, 2), (5, 3), (15, 4)]
+    ]
+    runs, _ = split_monotonic_runs(polls)
+    bins = [
+        UsageBin(monday + timedelta(minutes=minute), "openai", "model-a", 1000, "native", "unknown")
+        for minute in (-15, -10, 5, 10)
+    ]
+    result = weekly_cost_estimates(runs, bins, chunk_minutes=60, bootstrap_samples=10)
+    assert [item["week_start"] for item in result] == [(monday - timedelta(days=7)).isoformat(), monday.isoformat()]
+    assert [item["observed_hours"] for item in result] == [10 / 60, 10 / 60]
+    assert [item["observed_points"] for item in result] == [1, 1]
+    assert [item["bootstrap_candidate_blocks"] for item in result] == [1, 1]
+    assert all(item["models"][0]["status"] != "conditional_estimate" for item in result)
 
 
 def test_usage_alignment_exposes_the_metering_lag_assumption() -> None:

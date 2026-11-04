@@ -178,6 +178,35 @@ def calibration_intervals(runs: list[MonotonicRun], *, chunk_minutes: int | None
     return result
 
 
+def weekly_cost_estimates(
+    runs: list[MonotonicRun], bins: list[UsageBin], *, chunk_minutes: int, bootstrap_samples: int
+) -> list[dict[str, Any]]:
+    """Fit calendar weeks independently, excluding poll pairs crossing a week boundary."""
+    pairs_by_week: dict[datetime, list[tuple[Poll, Poll]]] = defaultdict(list)
+    for run in runs:
+        for before, after in pairwise(run.polls):
+            week = before.at.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=before.at.weekday())
+            if after.at <= week + timedelta(days=7):
+                pairs_by_week[week].append((before, after))
+    result = []
+    for week, pairs in sorted(pairs_by_week.items()):
+        intervals = calibration_intervals(join_poll_pairs(pairs), chunk_minutes=chunk_minutes)
+        rows = align_usage(intervals, bins, lag_minutes=0)
+        fit = fit_rows(rows, bootstrap_samples=bootstrap_samples, seed=20261031)
+        _, blocks = resampling_units([row.start for row in rows], BlockMethod.THREE_DAYS)
+        result.append(
+            {
+                "week_start": week.isoformat(),
+                "week_end": (week + timedelta(days=7)).isoformat(),
+                "matched_from": min(row.start for row in rows).isoformat(),
+                "matched_through": max(row.end for row in rows).isoformat(),
+                "bootstrap_candidate_blocks": len(blocks),
+                **fit,
+            }
+        )
+    return result
+
+
 def overlap_bins(bins: list[UsageBin], *, scenario: str) -> list[UsageBin]:
     if scenario == "sum_sources":
         return bins
@@ -721,6 +750,9 @@ def build_estimates(
                 if provider == "claude"
                 else {"status": "not_applicable"},
                 "rolling_four_week_estimates": periods,
+                "weekly_cost_estimates": weekly_cost_estimates(
+                    runs, relevant, chunk_minutes=chunk_minutes, bootstrap_samples=bootstrap_samples
+                ),
             }
         )
     return {
