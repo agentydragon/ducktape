@@ -467,7 +467,7 @@ Let the input _chunk_ be a sequence of top-level statements
 bindings without an explicit owner follow `unassigned_mode`. They can remain in
 the physical entry destination (`inline_in_entry`), land in a catchall file
 plan (`catchall_file`), or be assigned to generated plans
-(`per_atomic_group`). The entry destination is not a synthesized
+(`per_atomic_group` or `coarse_atomic_groups`). The entry destination is not a synthesized
 `PlannedModule`; `ModuleRole::Unassigned` describes a planned output, not the
 entry.
 
@@ -2957,6 +2957,15 @@ atomic group or planner proposal includes anonymous statements, the spec author
 copies their source into `anonymous_statements` (one entry per claimed
 statement). `per_atomic_group` may place an unclaimed whole atomic group,
 including anonymous statements, into a generated plan.
+`coarse_atomic_groups` begins from those same wholly unclaimed atomic groups
+after the named and rebind-fold destinations are known. It assigns each
+candidate atom a temporary destination using the borrowed graph and ownership
+catalogue, then groups atoms with equal reachable nonvirtual owners in the
+canonical strict constraining module projection. Entry and retained residual
+plans count as fixed owners only when they own source units. Groups sort by
+their smallest `SourceUnitId` and use `__auto/residual_groups/NNNN`. The
+projection is only a placement heuristic: final assignment analysis still
+checks the complete I-graph and may reject a lazy or hoisted cycle.
 When a chunk has no explicit logical modules, `inline_in_entry` keeps the
 whole statement sequence in the entry. In `catchall_file`, unclaimed named
 bindings land in the catchall. Anonymous source units in a catchall atomic group and

@@ -9,7 +9,7 @@
 //! an authoring decision surfaced by `debundle coverage`.
 //! See `docs/design.md` §"Assignment assembly inside `debundle run`".
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use crate::atomic_groups::AtomicGroup;
 use crate::graph::{DepKind, DependencyGraph};
@@ -71,8 +71,57 @@ pub fn assemble_assignment(
     planned_modules: &[PlannedModule],
     entry_destination: EntryDestination,
 ) -> AssemblyOutcome {
+    let mut claims = compute_source_unit_binding_claims(dependency_graph, bindings.as_map());
+    for (idx, module) in planned_modules.iter().enumerate() {
+        let dest = ModuleId(idx);
+        for ordinal in &module.anonymous_source_unit_ordinals {
+            if let Some(node) = dependency_graph
+                .iter_nodes()
+                .find(|n| n.statement_ordinal == *ordinal)
+            {
+                claims[node.id.0] = Some(dest);
+            }
+        }
+    }
+    assemble_assignment_from_claims(dependency_graph, atomic_groups, claims, entry_destination)
+}
+
+/// Assemble an assignment from the borrowed binding catalogue plus explicit
+/// source-unit destinations. This is the shared conversion seam for callers
+/// that have already projected whole-statement ownership to checked graph IDs,
+/// such as residual routing. The graph and atomic groups stay borrowed.
+pub fn assemble_assignment_with_source_unit_claims(
+    dependency_graph: &DependencyGraph,
+    atomic_groups: &[AtomicGroup],
+    bindings: &HashMap<swc_ecma_ast::Id, BindingKind>,
+    source_unit_claims: &[(SourceUnitId, ModuleId)],
+    entry_destination: EntryDestination,
+) -> anyhow::Result<AssemblyOutcome> {
+    let mut claims = compute_source_unit_binding_claims(dependency_graph, bindings);
+    for (source_unit, destination) in source_unit_claims {
+        anyhow::ensure!(
+            source_unit.0 < claims.len(),
+            "source-unit claim {} is outside the dependency graph with {} nodes",
+            source_unit.0,
+            claims.len()
+        );
+        claims[source_unit.0] = Some(*destination);
+    }
+    Ok(assemble_assignment_from_claims(
+        dependency_graph,
+        atomic_groups,
+        claims,
+        entry_destination,
+    ))
+}
+
+fn assemble_assignment_from_claims(
+    dependency_graph: &DependencyGraph,
+    atomic_groups: &[AtomicGroup],
+    claims: Vec<Option<ModuleId>>,
+    entry_destination: EntryDestination,
+) -> AssemblyOutcome {
     let entry_module_id = entry_destination.module_id();
-    let claims = compute_source_unit_claims(dependency_graph, bindings, planned_modules);
     let mut assignment = ModuleAssignment::new(dependency_graph, entry_destination);
     for (idx, claim) in claims.iter().enumerate() {
         if let Some(dest) = claim {
@@ -94,35 +143,20 @@ pub fn assemble_assignment(
 }
 
 /// One [`ModuleId`] slot per source unit; `None` means no explicit claim.
-fn compute_source_unit_claims(
+fn compute_source_unit_binding_claims(
     dependency_graph: &DependencyGraph,
-    bindings: &LocalBindings<'_>,
-    planned_modules: &[PlannedModule],
+    bindings: &HashMap<swc_ecma_ast::Id, BindingKind>,
 ) -> Vec<Option<ModuleId>> {
     let mut claims = vec![None; dependency_graph.num_nodes()];
     for node in dependency_graph.iter_nodes() {
         for binding_id in &node.declared {
-            let claim = bindings
-                .as_map()
-                .get(binding_id)
-                .and_then(|kind| match kind {
-                    BindingKind::Owned { module: dest } => Some(*dest),
-                    _ => None,
-                });
+            let claim = bindings.get(binding_id).and_then(|kind| match kind {
+                BindingKind::Owned { module: dest } => Some(*dest),
+                _ => None,
+            });
             if let Some(dest) = claim {
                 claims[node.id.0] = Some(dest);
                 break;
-            }
-        }
-    }
-    for (idx, module) in planned_modules.iter().enumerate() {
-        let dest = ModuleId(idx);
-        for ordinal in &module.anonymous_source_unit_ordinals {
-            if let Some(node) = dependency_graph
-                .iter_nodes()
-                .find(|n| n.statement_ordinal == *ordinal)
-            {
-                claims[node.id.0] = Some(dest);
             }
         }
     }

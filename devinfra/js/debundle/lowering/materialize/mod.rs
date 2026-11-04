@@ -530,6 +530,9 @@ pub(super) fn finish_logical_chunk(
     if matches!(chunk_unassigned_mode, UnassignedMode::PerAtomicGroup) {
         builder.synthesize_per_atomic_group(&precomputed, &source_unit_layout, target_dir)?;
     }
+    if matches!(chunk_unassigned_mode, UnassignedMode::CoarseAtomicGroups) {
+        builder.synthesize_coarse_atomic_groups(&precomputed, &source_unit_layout, target_dir)?;
+    }
     builder.route_nested_var_statements(&ast_analysis.nested_var_statements);
     if matches!(chunk_unassigned_mode, UnassignedMode::CatchallFile { .. }) {
         builder.route_unclaimed_anonymous_to_catchall(&precomputed, &source_unit_layout)?;
@@ -798,7 +801,7 @@ fn gate_rejected_banner_lines(rejection: &ChunkGateRejection) -> Vec<String> {
 ///
 /// This runs after the seed phases of assignment construction
 /// (explicit requests, destructure pull, residual sweep) and before
-/// `synthesize_per_atomic_group`. The decision step is spec-independent —
+/// residual-group synthesis. The decision step is spec-independent —
 /// it only inspects the chunk-analysis dependency graph + atomic groups, the
 /// builder's binding→plan assignment, and the residual landing-site
 /// index — so it lives in the `analysis` crate; this thin composer

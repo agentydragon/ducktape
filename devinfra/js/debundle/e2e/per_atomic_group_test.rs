@@ -302,7 +302,7 @@ fn ownership_subset_still_rejects_catchall_file() {
     assert!(
         rejected
             .stderr
-            .contains("inline_in_entry or per_atomic_group"),
+            .contains("inline_in_entry, per_atomic_group, or coarse_atomic_groups"),
         "{}",
         rejected.stderr
     );

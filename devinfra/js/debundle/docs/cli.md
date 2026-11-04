@@ -617,12 +617,15 @@ debundle run <full tree args> --analysis analysis.dba \
 
 The full joint selector solve and all analysis assertions remain unchanged;
 only resolved output ownership is reduced. Every materialized chunk must use
-`inline_in_entry` or `per_atomic_group`. Selected module names and explicit
-entry renames stay intact.
-Omitted members keep their source names in entry with `inline_in_entry`, or in
-generated atomic-group modules with `per_atomic_group`. Their authored names
-remain in the complete spec. Invalid full-spec selectors or duplicate/unmatched
-claims still fail even when their modules are omitted.
+`inline_in_entry`, `per_atomic_group`, or `coarse_atomic_groups`. Selected
+module names and explicit entry renames stay intact. Omitted members keep their
+source names in entry with `inline_in_entry`, in one module per atomic group
+with `per_atomic_group`, or in generated residual groups with
+`coarse_atomic_groups`. Coarse groups merge wholly unclaimed atomic groups
+with equal reachable fixed-owner sets in the strict constraining projection;
+their paths use `__auto/residual_groups/NNNN`. Authored names remain in the
+complete spec. Invalid full-spec selectors or duplicate/unmatched claims still
+fail even when their modules are omitted.
 
 Normal gates, translation validation, reconstruction and emission run on the
 selected assignment. `graph_summary.json` and `modules.json` carry its

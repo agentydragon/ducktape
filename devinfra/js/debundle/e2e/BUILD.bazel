@@ -483,6 +483,11 @@ debundle_e2e_test(
     ],
 )
 
+debundle_e2e_test(
+    name = "coarse_atomic_groups_test",
+    deps = ["//devinfra/js/debundle:spec"],
+)
+
 debundle_e2e_test(name = "naturalization_test")
 
 debundle_e2e_test(name = "naturalize_cross_scope_params_test")

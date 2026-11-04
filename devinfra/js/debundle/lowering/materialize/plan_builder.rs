@@ -13,11 +13,13 @@ use crate::imports::{
 use crate::plans::ModulePlan;
 use crate::rebind_fold::RebindFold;
 use crate::util::target_file_for_request;
+use analysis::assignment_assembly::assemble_assignment_with_source_unit_claims;
 use analysis::{
     BindingCatalogue, BindingKind, ChunkId, DependencyGraphAndAtomicGroups,
-    DestructuringDeclaratorGroup, DestructuringGroupOwnerClassification, ModuleId, ModuleRole,
-    NestedVarDestinationClassification, NestedVarStatement, SourceUnitClass, SourceUnitLayout,
-    classify_destructuring_group_owners, classify_nested_var_placement, top_level_id,
+    DestructuringDeclaratorGroup, DestructuringGroupOwnerClassification, EntryDestination,
+    ModuleId, ModuleRole, NestedVarDestinationClassification, NestedVarStatement, SourceUnitClass,
+    SourceUnitLayout, chunk_constraining_module_edges, classify_destructuring_group_owners,
+    classify_nested_var_placement, top_level_id,
 };
 use anyhow::{Context, Result, bail, ensure};
 use selector_outcome::{
@@ -27,6 +29,7 @@ use selector_resolve::{EntityIndex, EntityOutcome, MemberSelector, Resolution};
 use source_identity::SourceUnitId;
 use source_identity::StatementId;
 use spec_resolution::{LogicalRequest, MemberRequest, reject_duplicate_member_bindings};
+use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 
@@ -99,8 +102,8 @@ pub(super) struct ChunkPlanBuilder {
     bindings_catalogue: HashMap<Id, BindingKind>,
     /// Index into `module_plans` of the "catchall" plan that
     /// unclaimed bindings sweep into, when one exists. `None` when
-    /// the chunk has no residual landing site (default
-    /// `InlineInEntry` with no fallback request, or `PerAtomicGroup`).
+    /// the chunk has no residual landing site (default `InlineInEntry` with
+    /// no fallback request, `PerAtomicGroup`, or `CoarseAtomicGroups`).
     residual_plan_index: Option<usize>,
     /// Spec claims that named a binding for which no top-level
     /// declaration exists in this chunk. Materialization keeps
@@ -1019,7 +1022,7 @@ impl ChunkPlanBuilder {
     ///
     /// `None` for both `residual_request` and `catchall_target`
     /// leaves `residual_plan_index` unset, which is the
-    /// `InlineInEntry` / `PerAtomicGroup` shape.
+    /// `InlineInEntry` / `PerAtomicGroup` / `CoarseAtomicGroups` shape.
     pub(super) fn add_residual_sweep(
         &mut self,
         residual_request: Option<&LogicalRequest>,
@@ -1246,8 +1249,46 @@ impl ChunkPlanBuilder {
         layout: &SourceUnitLayout,
         target_dir: &str,
     ) -> Result<()> {
+        let groups = self.wholly_unclaimed_atomic_groups(precomputed, layout)?;
+        self.synthesize_source_unit_groups(
+            groups,
+            precomputed,
+            layout,
+            target_dir,
+            "__auto/atomic_groups",
+        )
+    }
+
+    /// Coarse residual routing merges wholly-unclaimed atomic groups when
+    /// their strict constraining-edge reachability to existing owners agrees.
+    /// This only chooses a candidate layout; the ordinary final assignment
+    /// analysis still evaluates the complete I-graph and gate.
+    pub(super) fn synthesize_coarse_atomic_groups(
+        &mut self,
+        precomputed: &DependencyGraphAndAtomicGroups,
+        layout: &SourceUnitLayout,
+        target_dir: &str,
+    ) -> Result<()> {
+        let atomic_groups = self.wholly_unclaimed_atomic_groups(precomputed, layout)?;
+        if atomic_groups.is_empty() {
+            return Ok(());
+        }
+        let groups = self.coarse_residual_groups(precomputed, layout, &atomic_groups)?;
+        self.synthesize_source_unit_groups(
+            groups.iter(),
+            precomputed,
+            layout,
+            target_dir,
+            "__auto/residual_groups",
+        )
+    }
+
+    fn wholly_unclaimed_atomic_groups<'a>(
+        &self,
+        precomputed: &'a DependencyGraphAndAtomicGroups,
+        layout: &SourceUnitLayout,
+    ) -> Result<Vec<&'a BTreeSet<SourceUnitId>>> {
         let dependency_graph = &precomputed.dependency_graph;
-        let atomic_groups = &precomputed.atomic_groups;
         let mut source_unit_declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
         let mut source_unit_statements = HashMap::<SourceUnitId, StatementId>::new();
         for node in dependency_graph.iter_nodes() {
@@ -1295,7 +1336,8 @@ impl ChunkPlanBuilder {
             true
         };
 
-        let mut unclaimed_atomic_groups: Vec<&BTreeSet<SourceUnitId>> = atomic_groups
+        let mut unclaimed_atomic_groups: Vec<&BTreeSet<SourceUnitId>> = precomputed
+            .atomic_groups
             .iter()
             .filter(|atomic_group| {
                 atomic_group
@@ -1308,11 +1350,120 @@ impl ChunkPlanBuilder {
             .collect();
         // Stable iteration order: smallest SourceUnitId first.
         unclaimed_atomic_groups.sort_by_key(|members| members.iter().next().copied());
+        Ok(unclaimed_atomic_groups)
+    }
 
-        for (idx, members) in unclaimed_atomic_groups.into_iter().enumerate() {
+    fn coarse_residual_groups(
+        &self,
+        precomputed: &DependencyGraphAndAtomicGroups,
+        layout: &SourceUnitLayout,
+        atomic_groups: &[&BTreeSet<SourceUnitId>],
+    ) -> Result<Vec<BTreeSet<SourceUnitId>>> {
+        let dependency_graph = &precomputed.dependency_graph;
+        let entry_module = ModuleId(self.module_plans.len());
+        // Keep the existing entry ID distinct from every temporary candidate
+        // module. The virtual IDs live strictly above it and never become
+        // output-plan indices.
+        let first_virtual_module = self
+            .module_plans
+            .len()
+            .checked_add(1)
+            .context("temporary residual module IDs overflowed")?;
+        let mut source_unit_claims = Vec::<(SourceUnitId, ModuleId)>::new();
+        for (statement, destination) in &self.whole_statement_assignment {
+            for location in layout.for_statement(*statement) {
+                source_unit_claims.push((location.source_unit, ModuleId(*destination)));
+            }
+        }
+
+        let mut virtual_modules = BTreeSet::new();
+        let mut candidate_modules = Vec::<(ModuleId, &BTreeSet<SourceUnitId>)>::new();
+        for (idx, members) in atomic_groups.iter().enumerate() {
+            let module_id = ModuleId(
+                first_virtual_module
+                    .checked_add(idx)
+                    .context("temporary residual module IDs overflowed")?,
+            );
+            virtual_modules.insert(module_id);
+            candidate_modules.push((module_id, *members));
+            for source_unit in members.iter() {
+                source_unit_claims.push((*source_unit, module_id));
+            }
+        }
+
+        let assignment = assemble_assignment_with_source_unit_claims(
+            dependency_graph,
+            &precomputed.atomic_groups,
+            &self.bindings_catalogue,
+            &source_unit_claims,
+            EntryDestination::from_module_id(entry_module),
+        )?
+        .assignment;
+        let canonical_edges = chunk_constraining_module_edges(dependency_graph, &assignment);
+        let mut successors = BTreeMap::<ModuleId, BTreeSet<ModuleId>>::new();
+        for &(from, to) in canonical_edges.edges.keys() {
+            successors.entry(from).or_default().insert(to);
+        }
+
+        // A destination is fixed when it already owns at least one source
+        // unit outside the candidate atomic groups. This includes a retained
+        // residual placeholder and includes entry only when entry actually
+        // owns units. Empty planned destinations cannot influence reachability.
+        let fixed_destinations: BTreeSet<ModuleId> = assignment
+            .iter()
+            .map(|(_, destination)| destination)
+            .filter(|destination| !virtual_modules.contains(destination))
+            .collect();
+        let mut groups_by_signature = BTreeMap::<BTreeSet<ModuleId>, BTreeSet<SourceUnitId>>::new();
+        for (virtual_module, members) in candidate_modules {
+            let mut reachable = BTreeSet::new();
+            let mut visited = BTreeSet::from([virtual_module]);
+            let mut pending = VecDeque::from([virtual_module]);
+            while let Some(from) = pending.pop_front() {
+                for to in successors.get(&from).into_iter().flatten() {
+                    if fixed_destinations.contains(to) {
+                        reachable.insert(*to);
+                    }
+                    if visited.insert(*to) {
+                        pending.push_back(*to);
+                    }
+                }
+            }
+            groups_by_signature
+                .entry(reachable)
+                .or_default()
+                .extend(members.iter().copied());
+        }
+
+        let mut groups: Vec<BTreeSet<SourceUnitId>> = groups_by_signature.into_values().collect();
+        groups.sort_by_key(|members| members.iter().next().copied());
+        Ok(groups)
+    }
+
+    fn synthesize_source_unit_groups<'a>(
+        &mut self,
+        groups: impl IntoIterator<Item = &'a BTreeSet<SourceUnitId>>,
+        precomputed: &DependencyGraphAndAtomicGroups,
+        layout: &SourceUnitLayout,
+        target_dir: &str,
+        path_prefix: &str,
+    ) -> Result<()> {
+        let dependency_graph = &precomputed.dependency_graph;
+        let mut source_unit_declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
+        let mut source_unit_statements = HashMap::<SourceUnitId, StatementId>::new();
+        for node in dependency_graph.iter_nodes() {
+            source_unit_declared_names.insert(node.id, node.declared.iter().cloned().collect());
+            let location = layout.by_source_unit(node.id).with_context(|| {
+                format!("source unit {} has no checked syntax location", node.id.0)
+            })?;
+            source_unit_statements.insert(node.id, location.statement);
+        }
+
+        let residual_plan_index = self.residual_plan_index;
+        for (idx, members) in groups.into_iter().enumerate() {
             let synthetic_idx = self.module_plans.len();
             let synthetic_module_id = ModuleId(synthetic_idx);
-            let target_path = format!("__auto/atomic_groups/{idx:04}");
+            let target_path = format!("{path_prefix}/{idx:04}");
             let target_file = target_file_for_request(target_dir, &target_path)?;
             let mut bindings = HashMap::<String, String>::new();
             let mut anonymous_statements = Vec::<StatementId>::new();
@@ -1335,9 +1486,8 @@ impl ChunkPlanBuilder {
                     bindings.insert(name_str.clone(), name_str.clone());
                     // Move the binding out of the residual plan (if it
                     // was staged there by the sweep above) into the
-                    // synthesized plan. The residual plan's
-                    // bindings/anonymous-ordinal maps are pruned so it
-                    // doesn't double-claim members.
+                    // synthesized plan. The residual plan's bindings are
+                    // pruned so it doesn't double-claim members.
                     if let Some(prev) = owned_destination(&self.bindings_catalogue, name)
                         && Some(prev) == residual_plan_index
                         && let Some(residual_idx) = residual_plan_index

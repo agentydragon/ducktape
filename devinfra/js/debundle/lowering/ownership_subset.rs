@@ -15,7 +15,8 @@ pub struct RetainedModule {
 }
 
 /// A normal run's retained ownership claims, independent of analysis inputs.
-/// An empty list returns every logical-module claim to the chunk's entry.
+/// An empty list returns every logical-module claim to the chunk's unassigned
+/// routing policy (which may synthesize residual modules).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OwnershipSubset {
@@ -74,9 +75,13 @@ impl OwnershipSubset {
             ensure!(
                 matches!(
                     unassigned_mode.get(chunk),
-                    Some(UnassignedMode::InlineInEntry | UnassignedMode::PerAtomicGroup)
+                    Some(
+                        UnassignedMode::InlineInEntry
+                            | UnassignedMode::PerAtomicGroup
+                            | UnassignedMode::CoarseAtomicGroups
+                    )
                 ),
-                "ownership subsets require inline_in_entry or per_atomic_group for chunk {chunk:?}"
+                "ownership subsets require inline_in_entry, per_atomic_group, or coarse_atomic_groups for chunk {chunk:?}"
             );
         }
         Ok(())
