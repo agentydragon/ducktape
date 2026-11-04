@@ -1017,14 +1017,22 @@ fn no_reentry_inert_argument(expression: &Expr) -> bool {
 #[derive(Debug, Clone)]
 struct Parameter {
     binding: Option<Id>,
+    bindings: BTreeSet<Id>,
     default: Option<ValueExpr>,
 }
 
 impl Parameter {
     fn from_pattern(pattern: &Pat) -> Self {
+        let mut assignments = Vec::new();
+        collect_pattern_assignments(pattern, &ValueExpr::Unknown, &mut assignments);
+        let bindings = assignments
+            .into_iter()
+            .map(|(binding, _)| binding)
+            .collect();
         match pattern {
             Pat::Ident(binding) => Self {
                 binding: Some(binding.id.to_id()),
+                bindings,
                 default: None,
             },
             Pat::Assign(assign) => Self {
@@ -1032,10 +1040,12 @@ impl Parameter {
                     Pat::Ident(binding) => Some(binding.id.to_id()),
                     _ => None,
                 },
+                bindings,
                 default: Some(ValueExpr::from_expr(&assign.right)),
             },
             _ => Self {
                 binding: None,
+                bindings,
                 default: None,
             },
         }
@@ -6171,6 +6181,24 @@ impl BundleGlobalContext<'_> {
 }
 
 impl ExecutionIndex {
+    /// A closure can resolve module bindings and unresolved globals when it is
+    /// later invoked. Creating it does not read those values into the factory
+    /// activation, so they are not retained provider captures. Enclosing
+    /// lexical cells still require the local transfer or checked private-var
+    /// capture projection to represent them.
+    fn deferred_module_reference(&self, binding: &Id) -> bool {
+        self.imported_bindings.contains(binding)
+            || self.hoisted_bindings.contains_key(binding)
+            || self.class_ids.contains(binding)
+            || self
+                .binding_declaration_writes
+                .get(binding)
+                .is_some_and(|writes| {
+                    !writes.is_empty() && writes.iter().all(|write| write.direct_top_level)
+                })
+            || !self.property_key_declarations.contains(binding)
+    }
+
     fn private_var_binding(&self, binding: &Id) -> bool {
         if !self.dynamic_scope_owners.is_empty() || self.imported_bindings.contains(binding) {
             return false;
@@ -10706,6 +10734,7 @@ impl Visit for ExecutionIndex {
                         ParamOrTsParamProp::Param(param) => Parameter::from_pattern(&param.pat),
                         ParamOrTsParamProp::TsParamProp(_) => Parameter {
                             binding: None,
+                            bindings: BTreeSet::new(),
                             default: None,
                         },
                     })
@@ -13309,10 +13338,10 @@ fn infer_foreign_calls<'f>(
                         .get(&declaration_start)
                         .is_some_and(|callable| {
                             callable.allocation_return.is_some()
-                                || callable
-                                    .local_body
-                                    .as_ref()
-                                    .is_some_and(LocalBody::allocation_only_syntax)
+                                || callable.local_body.as_ref().is_some_and(|body| {
+                                    body.allocation_only_syntax()
+                                        || body.closure_allocation_syntax()
+                                })
                         }) =>
                 {
                     // This migrated slice consumes the central value/operation transfers.

@@ -84,6 +84,8 @@ pub(super) struct LocalBody {
     free_reads: Option<Arc<[Id]>>,
     captured_writes: Option<Arc<[Id]>>,
     allocation_only_syntax: bool,
+    closure_allocation_syntax: bool,
+    closure_sites: Arc<[u32]>,
     /// These operations have a shared provider transfer, but the application
     /// interpreter has no keyed-collection heap lane. Keep that interpreter on
     /// its existing flat path when the body contains one.
@@ -414,22 +416,53 @@ impl LocalExpression {
         }
     }
 
-    fn allocation_only_syntax(&self, bindings: &BTreeMap<Id, LocalBinding>) -> bool {
+    fn allocation_syntax(
+        &self,
+        bindings: &BTreeMap<Id, LocalBinding>,
+        closure_sites: &mut BTreeSet<u32>,
+    ) -> (bool, bool) {
         match self {
-            Self::Call { .. } | Self::Closure(_) => false,
-            Self::Record { properties, .. } => properties
-                .iter()
-                .all(|(_, value)| value.allocation_only_syntax(bindings)),
-            Self::Sequence(expressions) => expressions
-                .iter()
-                .all(|expression| expression.allocation_only_syntax(bindings)),
+            Self::Call { arguments, .. } => {
+                for argument in arguments.iter() {
+                    argument.allocation_syntax(bindings, closure_sites);
+                }
+                (false, false)
+            }
+            Self::Closure(callable) => {
+                closure_sites.insert(*callable);
+                (false, true)
+            }
+            Self::Record { properties, .. } => {
+                let (mut allocation_only, mut closure_allowed) = (true, true);
+                for (_, value) in properties.iter() {
+                    let (allocation, closure) = value.allocation_syntax(bindings, closure_sites);
+                    allocation_only &= allocation;
+                    closure_allowed &= closure;
+                }
+                (allocation_only, closure_allowed)
+            }
+            Self::Sequence(expressions) => {
+                let (mut allocation_only, mut closure_allowed) = (true, true);
+                for expression in expressions.iter() {
+                    let (allocation, closure) =
+                        expression.allocation_syntax(bindings, closure_sites);
+                    allocation_only &= allocation;
+                    closure_allowed &= closure;
+                }
+                (allocation_only, closure_allowed)
+            }
             Self::Assign { binding, value, .. } => {
-                bindings.contains_key(binding) && value.allocation_only_syntax(bindings)
+                let (allocation_only, closure_allowed) =
+                    value.allocation_syntax(bindings, closure_sites);
+                let local = bindings.contains_key(binding);
+                (local && allocation_only, local && closure_allowed)
             }
             Self::AssignField { value, .. } | Self::DefineThisField { value, .. } => {
-                value.allocation_only_syntax(bindings)
+                let (allocation_only, _) = value.allocation_syntax(bindings, closure_sites);
+                (allocation_only, false)
             }
-            Self::Value(_) | Self::This | Self::ReadField { .. } => true,
+            Self::Value(value) => (true, unconditional_value(value)),
+            Self::This | Self::ReadField { .. } => (true, false),
         }
     }
 
@@ -743,16 +776,28 @@ impl LocalBody {
             expression.writes(&mut writes);
         }
         writes.retain(|binding| !bindings.contains_key(binding));
-        let allocation_only_syntax = Self::expressions(&operations)
-            .all(|expression| expression.allocation_only_syntax(&bindings));
+        let (mut allocation_only_syntax, mut closure_allocation_syntax) = (true, true);
+        let mut closure_sites = BTreeSet::new();
+        for expression in Self::expressions(&operations) {
+            let (allocation, closure) = expression.allocation_syntax(&bindings, &mut closure_sites);
+            allocation_only_syntax &= allocation;
+            closure_allocation_syntax &= closure;
+        }
+        closure_allocation_syntax &= !operations
+            .iter()
+            .any(|operation| matches!(operation, LocalOperation::Throw(_)));
+        closure_allocation_syntax &= !closure_sites.is_empty();
         let requires_keyed_collection_new =
             Self::expressions(&operations).any(LocalExpression::requires_keyed_collection_new);
+        let closure_sites: Arc<[_]> = closure_sites.into_iter().collect();
         Some(Self {
             bindings,
             operations: operations.into(),
             free_reads: (!reads.is_empty()).then(|| reads.into_iter().collect()),
             captured_writes: (!writes.is_empty()).then(|| writes.into_iter().collect()),
             allocation_only_syntax,
+            closure_allocation_syntax,
+            closure_sites,
             requires_keyed_collection_new,
         })
     }
@@ -765,15 +810,26 @@ impl LocalBody {
         self.captured_writes.as_deref().unwrap_or_default()
     }
 
-    /// Calls, closures and captured writes have not migrated to the
-    /// allocation-only provider proof. Classify before selecting that
-    /// proof; a failed migrated query still never retries another evaluator.
+    /// Calls and captured writes remain outside the allocation-only provider
+    /// proof. Closure literals use the separate shared eligibility result;
+    /// either migrated query refuses without retrying another evaluator.
     pub(super) fn allocation_only_syntax(&self) -> bool {
         self.allocation_only_syntax
     }
 
     pub(super) fn requires_keyed_collection_new(&self) -> bool {
         self.requires_keyed_collection_new
+    }
+
+    /// The shared body classification admits closure literals in addition to
+    /// allocation-only syntax. Both answers and canonical sites are collected
+    /// in one source-covered traversal at construction.
+    pub(super) fn closure_allocation_syntax(&self) -> bool {
+        self.closure_allocation_syntax
+    }
+
+    pub(super) fn closure_sites(&self) -> &[u32] {
+        &self.closure_sites
     }
 
     fn expressions(operations: &[LocalOperation]) -> impl Iterator<Item = &LocalExpression> {
