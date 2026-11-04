@@ -659,8 +659,10 @@ Revisit when selecting fresh-environment creation, not as a gate on Session dele
 ### `ENVIRONMENT_MANAGEMENT` — dedicated environment tools and creation
 
 **Deferred by the operator, 2026-10-31; template ownership is intentionally postponed.**
-When selected, implement full published template discovery and typed creation/status/recovery
-with a dedicated `environments/create` Action, initially human-approved. Creation requires
+When selected, implement full published template discovery and creation/status/recovery under
+the caller's shared account with a dedicated `environments/create` Action, initially human-approved.
+`EnvironmentService` already provides typed create and basic runtime-template listing RPCs, but its
+template names are not the full published catalogue. This new workflow requires
 `ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN` and `ENVIRONMENT_SHARED_ACCOUNT`; use the durable verified
 Action caller UID rather than adopting a same-name replacement account or guessing legacy identity.
 Existing-environment list/get is already available through backend Discovery and does not wait for
@@ -702,7 +704,7 @@ may allow its launched sandboxes to do": the templates, PolicySets and tags a la
 
 **Blocked on launch policy.** Enforce the reviewed
 effective spec and delegation server-side. Test allowed and forbidden launch parameters and
-concurrent retries. Reuse the app's create path (the shared Sandbox inventory), not harness-native agent tools. Launch alone
+concurrent retries. Reuse the EnvironmentService create path and shared inventory. Launch alone
 does not grant history read, messaging, credentials or execution of another principal's Actions.
 
 ### `ORCHESTRATION_V1_BACKEND_GRANTS` — `orchestration_v1` operations on backend grants
@@ -1962,8 +1964,7 @@ Thread for its projection; no "hub", "follow" or "shadow" left); READMEs, `SPEC.
 `docs/` describing the code as it is, without cutover narration; no compatibility branch,
 optional-with-fallback setting or `CLEANUP` tombstone whose condition is met; the system diagram in
 `agentplane/docs/system_overview.md` showing exactly the deployed services and the traffic between them in
-`cluster/cdk8s/agentplane`. Known now: egress and app test support each build a throwaway CA;
-`docs/operator_federation.md` says "Event & Notification Hub";
+`cluster/cdk8s/agentplane`. Known now: `docs/operator_federation.md` says "Event & Notification Hub";
 `cluster/cdk8s/agentplane/test_sandbox_service.py` is named for the retired Sandbox Service. Findings are fixed in
 PRs of their own; this node leaves with the last of them.
 
@@ -2331,13 +2332,12 @@ the MCP edge extraction leaves Web Push in Actions.
 
 ### `HARNESS_IDENTITY_DESIGN` — decide private Session-to-store and native mapping
 
-**Current destination and process boundary (operator direction updated 2026-11-02).** The current API still carries
-`(Sandbox UID, Agentplane Session ID)` with no store field. The selected public address is a
-globally unique Session UUID; Dispatcher resolves placement; see the [Session/environment model](session_environment_model.md).
-The existing Runtime maps a public Session durably
-to its private store/native ID; selecting a default store by requested harness kind remains a
-candidate policy. Namespace/name may locate the Sandbox, but request syntax and UID resolver are
-undecided.
+**Current destination and process boundary (operator direction updated 2026-11-02).** Dispatcher
+command requests address a globally unique Session UUID and resolve placement; broker APIs may
+still carry an exact Sandbox target as an authorization precondition. Opening still names an exact
+Sandbox. See the [Session/environment model](session_environment_model.md). Runtime retains Session
+and native identity without exposing a store field; selecting a default store by requested harness
+kind remains a candidate policy.
 Process allocation/routing stays internal; there is no create-Session-on-process API or refusal.
 Process incarnations may be diagnostic objects, never durable addresses. Neither the number of
 stores/processes per Runner, at-most-one process per store nor shared-store concurrent safety is
@@ -2372,7 +2372,7 @@ one-versus-many store or shared-store safety decision is made here.
 
 Feed the reviewed process-diagnostic shape into
 [`RUNNER_HARNESS_OBJECTS_DESIGN`](#runner_harness_objects_design--decide-process-diagnostics-and-placement-policy).
-The current destination contract remains in force until its replacement, authority and locator are
+The current destination and authority contracts remain in force while their remaining questions are
 reviewed; private runner mapping can be implemented independently. Neither design node authorizes runtime changes.
 
 ### `RUNNER_STORE_SESSION_IDENTITY` — implement durable store and public Session mapping
@@ -2419,7 +2419,7 @@ Kubernetes clients for state envtest can hold:
 
 Go `clientfake` or `kubernetes/fake`: `notification_service/api/fixture_test.go` (Sandboxes, inbox tags,
 `recreateSandbox`), `notification_service/main_test.go`, `runner_gateway/gateway/records_test.go`,
-`runner_gateway/dispatcher/sandbox_kubernetes_test.go`, `sandboxes/sandboxreader/reader_test.go`.
+`sandboxes/sandboxreader/reader_test.go`.
 
 One PR per file. Exit: each reads from `testing/kubeapiserver`, or keeps only a fault it injects, named at the fake.
 

@@ -12,9 +12,8 @@ a field a harness adds sends every such call to the JSON view while the tests st
 
 - **Consider squashing the "observation" naming layer**: not remembered as a deliberate design choice. `Event`
   (`agentplane/proto/event.proto`)'s payload is a `oneof` field literally named `observation`; that name then propagated
-  outward into `runner/observation.go`'s `Observation` type, the archive/API layer
-  (`app/go/historydata/`'s observation reads and the app's
-  `/observations/{cursor}` and `/evidence/{observation_cursor}/frames` routes), and the debug UI
+  outward into Runtime's observation handling, History's `ReadSessionObservations` and
+  `ReadNativeFrames` APIs, and the debug UI
   (`threads/chronological_debug.tsx`'s "Observation N raw frames"). Worth revisiting whether this is a distinction worth
   keeping or whether it should just say "Event" everywhere a stored `Event` is meant.
 - **Bubble chrome and the user bubble's blue read as unnecessary decoration**: `.transcript-user-bubble`

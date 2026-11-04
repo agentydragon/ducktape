@@ -23,14 +23,13 @@ Electric sits behind one module on each side:
 
 ## Backend
 
-- **Shared, below the seam:** the fold tables; `historydata.Store`;
-  `threads.Store`; the app's `wakeups.Hub` subscription to `threads.UpdatesChannel` for thread
-  metadata updates. The `/threads` routes for thread metadata and commands
-  (the five typed command POST routes under `/threads/{thread_id}`) stay shared: commands are writes,
-  not sync.
-- **One new shared read**, which every non-Electric option needs: rows by `entity_index` range, and
-  the delta — rows in a range with `revision_cursor > since`. It is a read of the fold rather than a
-  protocol, so it belongs beside `historydata.Store`.
+- **Shared, below the seam:** History owns the fold tables and its generated read APIs. The app
+  owns Thread metadata and its generated `AppService` facade; command writes go through the
+  generated Dispatcher facade. These contracts are shared by sync implementations: commands are
+  writes, not sync.
+- **Shared reads:** History's `ReadThreadEntities` already reads a bounded range or explicit keys.
+  The non-Electric options also need a delta — rows in a range with `revision_cursor > since`.
+  This is a read of the fold rather than a sync protocol, so History should own that contract.
 - **Per implementation:** a package `agentplane/app/go/threadsync/<name>/` owning handlers mounted at
   `/threads/{thread_id}/sync/<name>/…` through the same `HTTPServer.RegisterRawRoute` authorization
   (**C2**), and its own settings. Electric moves there.
