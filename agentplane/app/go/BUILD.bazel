@@ -278,9 +278,10 @@ go_test(
     deps = [
         "//agentplane/app:app_service_go_proto",
         "//agentplane/app/go/auth",
-        "//agentplane/app/go/historydata",
         "//agentplane/app/go/threads",
         "//agentplane/environments/v1:environment_service_go_proto",
+        "//agentplane/history_service:history_service_go_proto",
+        "//agentplane/proto:event_go_proto",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
         "@com_github_google_uuid//:uuid",
@@ -289,6 +290,7 @@ go_test(
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -298,7 +300,6 @@ go_test(
     embed = [":main_lib"],
     deps = [
         "//agentplane/app/go/auth",
-        "//agentplane/app/go/historydata",
         "//agentplane/app/go/proxy",
         "//agentplane/app/go/sandboxes",
         "//agentplane/app/go/threads",

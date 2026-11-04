@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
-	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/proxy"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
@@ -306,22 +305,22 @@ func (f *streamTestThreadStore) ArchivedCount(context.Context) (int, error) { re
 
 type streamTestHistory struct {
 	threadReadHistory
-	feedSummary historydata.FoldSummary
-	summaries   map[uuid.UUID]historydata.FoldSummary
+	feedSummary *historypb.SessionSummary
+	summaries   map[uuid.UUID]*historypb.SessionSummary
 	sandboxes   map[uuid.UUID]string
 	sandboxUIDs map[uuid.UUID]string
 	summaryRead chan struct{}
 }
 
-func (f *streamTestHistory) GetSummary(context.Context, uuid.UUID) (historydata.FoldSummary, error) {
+func (f *streamTestHistory) GetSummary(context.Context, uuid.UUID) (*historypb.SessionSummary, error) {
 	if f.summaryRead != nil {
 		f.summaryRead <- struct{}{}
 	}
 	return f.feedSummary, nil
 }
 
-func (f *streamTestHistory) BatchGetSummaries(_ context.Context, ids []uuid.UUID) (map[uuid.UUID]historydata.FoldSummary, error) {
-	result := make(map[uuid.UUID]historydata.FoldSummary, len(ids))
+func (f *streamTestHistory) BatchGetSummaries(_ context.Context, ids []uuid.UUID) (map[uuid.UUID]*historypb.SessionSummary, error) {
+	result := make(map[uuid.UUID]*historypb.SessionSummary, len(ids))
 	for _, id := range ids {
 		result[id] = f.summaries[id]
 	}
@@ -475,10 +474,11 @@ func TestThreadEventStreamResumesFollowAtCoveredCursorAndDrains(t *testing.T) {
 	threadID := uuid.New()
 	const largeCursor = uint64(9007199254740993)
 	history := &streamTestHistory{
-		feedSummary: historydata.FoldSummary{Feed: &historydata.FeedSnapshot{
-			Status:   historypb.FeedStatus_FEED_STATUS_ACTIVE,
-			Attached: &sessionpb.Attached{SessionId: threadID.String(), LastCursor: largeCursor + 1},
-		}, CommittedCursor: largeCursor + 1},
+		feedSummary: &historypb.SessionSummary{
+			FeedStatus:      historypb.FeedStatus_FEED_STATUS_ACTIVE,
+			Attached:        &sessionpb.Attached{SessionId: threadID.String(), LastCursor: largeCursor + 1},
+			CommittedCursor: largeCursor + 1,
+		},
 	}
 	updates := &streamTestChanges{changes: make(chan struct{}, 1)}
 	follower := newThreadFollowClient(
@@ -591,13 +591,10 @@ func TestThreadEventStreamWaitsForCoveredTerminalFeedAndAwaitedAdmission(t *test
 	authentication := newStreamTestAuth(t)
 	threadID := uuid.New()
 	history := &streamTestHistory{
-		feedSummary: historydata.FoldSummary{
+		feedSummary: &historypb.SessionSummary{
 			CommittedCursor: 6,
-			Feed: &historydata.FeedSnapshot{
-				Status:   historypb.FeedStatus_FEED_STATUS_ENDED,
-				Attached: &sessionpb.Attached{SessionId: threadID.String(), LastCursor: 6},
-				End:      &historydata.FeedEnd{},
-			},
+			FeedStatus:      historypb.FeedStatus_FEED_STATUS_ENDED,
+			Attached:        &sessionpb.Attached{SessionId: threadID.String(), LastCursor: 6},
 		},
 		summaryRead: make(chan struct{}, 8),
 	}
@@ -650,51 +647,64 @@ func TestThreadEventStreamWaitsForCoveredTerminalFeedAndAwaitedAdmission(t *test
 }
 
 func TestThreadEventStreamWaitsForCommittedCursorCoverage(t *testing.T) {
-	authentication := newStreamTestAuth(t)
-	threadID := uuid.New()
-	history := &streamTestHistory{
-		feedSummary: historydata.FoldSummary{
-			CommittedCursor: 6,
-			Feed: &historydata.FeedSnapshot{
-				Status:   historypb.FeedStatus_FEED_STATUS_ENDED,
-				Attached: &sessionpb.Attached{SessionId: threadID.String(), LastCursor: 6},
-				End:      &historydata.FeedEnd{},
-			},
-		},
-		summaryRead: make(chan struct{}, 8),
-	}
-	follower := newThreadFollowClient(threadFollowScript{})
-	server := NewHTTPServer(authentication)
-	RegisterStreamingRoutes(server, StreamingDependencies{
-		Threads: &streamTestThreadStore{row: &threads.Thread{ID: threadID}},
-		History: history, HistoryFollower: follower, Updates: &streamTestChanges{changes: make(chan struct{}, 1)},
-	})
-	request := httptest.NewRequest(http.MethodGet, "/threads/"+threadID.String()+"/events/stream", nil)
-	request.Header.Set("Authorization", "Bearer accepted")
-	response := newStreamingRecorder()
-	done := make(chan struct{})
-	go func() {
-		server.Handler(authentication).ServeHTTP(response, request)
-		close(done)
-	}()
-	waitForStreamText(t, response, "event: attached")
-	awaitSummaryRead(t, history)
-	if strings.Contains(response.String(), "event: end") {
-		t.Fatalf("terminal feed ended before its committed cursor was covered: %s", response.String())
-	}
-	awaitFollowCall(t, follower)
-	stream := awaitFollowStream(t, follower)
-	stream.send(&historypb.FollowSessionResponse{ThroughCursor: 5, Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
-	awaitSummaryRead(t, history)
-	if strings.Contains(response.String(), "event: end") {
-		t.Fatalf("terminal feed ended before FollowSession covered its committed cursor: %s", response.String())
-	}
-	stream.send(&historypb.FollowSessionResponse{ThroughCursor: 6, Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
-	waitForStreamText(t, response, "event: end")
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("thread event stream did not stop after the terminal feed frame")
+	for _, test := range []struct {
+		name   string
+		status historypb.FeedStatus
+		event  string
+	}{
+		{name: "ended", status: historypb.FeedStatus_FEED_STATUS_ENDED, event: "end"},
+		{name: "failed", status: historypb.FeedStatus_FEED_STATUS_FAILED, event: "error"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			authentication := newStreamTestAuth(t)
+			threadID := uuid.New()
+			failure := "feed rejected"
+			history := &streamTestHistory{
+				feedSummary: &historypb.SessionSummary{
+					CommittedCursor: 6,
+					FeedStatus:      test.status,
+					FeedError:       &failure,
+					Attached:        &sessionpb.Attached{SessionId: threadID.String(), LastCursor: 6},
+				},
+				summaryRead: make(chan struct{}, 8),
+			}
+			follower := newThreadFollowClient(threadFollowScript{})
+			server := NewHTTPServer(authentication)
+			RegisterStreamingRoutes(server, StreamingDependencies{
+				Threads: &streamTestThreadStore{row: &threads.Thread{ID: threadID}},
+				History: history, HistoryFollower: follower, Updates: &streamTestChanges{changes: make(chan struct{}, 1)},
+			})
+			request := httptest.NewRequest(http.MethodGet, "/threads/"+threadID.String()+"/events/stream", nil)
+			request.Header.Set("Authorization", "Bearer accepted")
+			response := newStreamingRecorder()
+			done := make(chan struct{})
+			go func() {
+				server.Handler(authentication).ServeHTTP(response, request)
+				close(done)
+			}()
+			waitForStreamText(t, response, "event: attached")
+			awaitSummaryRead(t, history)
+			if strings.Contains(response.String(), "event: "+test.event) {
+				t.Fatalf("terminal feed ended before its committed cursor was covered: %s", response.String())
+			}
+			awaitFollowCall(t, follower)
+			stream := awaitFollowStream(t, follower)
+			stream.send(&historypb.FollowSessionResponse{ThroughCursor: 5, Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
+			awaitSummaryRead(t, history)
+			if strings.Contains(response.String(), "event: "+test.event) {
+				t.Fatalf("terminal feed ended before FollowSession covered its committed cursor: %s", response.String())
+			}
+			stream.send(&historypb.FollowSessionResponse{ThroughCursor: 6, Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}})
+			waitForStreamText(t, response, "event: "+test.event)
+			if test.status == historypb.FeedStatus_FEED_STATUS_FAILED {
+				waitForStreamText(t, response, failure)
+			}
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("thread event stream did not stop after the terminal feed frame")
+			}
+		})
 	}
 }
 

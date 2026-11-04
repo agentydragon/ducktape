@@ -456,16 +456,18 @@ func (r *streamingRoutes) threadEvents(w http.ResponseWriter, request *http.Requ
 			r.logger().WarnContext(ctx, "read Thread event feed status", "error", err)
 			return true
 		}
-		if !attachedSent && summary.Feed != nil && summary.Feed.Attached != nil {
-			data, marshalErr := (protojson.MarshalOptions{}).Marshal(summary.Feed.Attached)
+		attached := summary.GetAttached()
+		if !attachedSent && attached != nil {
+			data, marshalErr := (protojson.MarshalOptions{}).Marshal(attached)
 			if marshalErr != nil || writeSSEData(w, "attached", data, nil) != nil {
 				return true
 			}
 			attachedSent = true
 		}
-		if awaiting == nil && summary.Feed != nil && summary.Feed.End != nil && summary.Feed.Attached != nil && summary.CommittedCursor <= cursor && summary.Feed.Attached.GetLastCursor() >= cursor {
-			if summary.Feed.Status == historypb.FeedStatus_FEED_STATUS_FAILED {
-				_ = writeSSE(w, "error", map[string]string{"message": summary.Feed.End.Message}, nil)
+		terminal := summary.GetFeedStatus() == historypb.FeedStatus_FEED_STATUS_ENDED || summary.GetFeedStatus() == historypb.FeedStatus_FEED_STATUS_FAILED
+		if awaiting == nil && terminal && attached != nil && summary.GetCommittedCursor() <= cursor && attached.GetLastCursor() >= cursor {
+			if summary.GetFeedStatus() == historypb.FeedStatus_FEED_STATUS_FAILED {
+				_ = writeSSE(w, "error", map[string]string{"message": summary.GetFeedError()}, nil)
 			} else {
 				_ = writeSSE(w, "end", map[string]any{}, nil)
 			}
