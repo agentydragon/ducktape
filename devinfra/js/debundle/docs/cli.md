@@ -309,7 +309,10 @@ each verb prints **one outcome object** sharing a common schema core:
 
 Verb-specific fields flatten in alongside the core: `moves_applied`
 (assign), `unassigned` (unassign), `identity` / `old_readable` /
-`new_readable` (rename), `target` (single merge) / `targets` (merge batch). Gate rejections replace the
+`new_readable` (rename), `target` (single merge) / `targets` (merge batch).
+When requested, `bindings assign` also returns
+`effect_relocation_assessment`, a report-only assessment of its exact
+in-memory candidate plan. Gate rejections replace the
 success object with a structured rejection object — see "Rejection
 diagnostics" below.
 
@@ -973,6 +976,29 @@ and drain sweep. Automatic cleanup preserves module-level `comment:` and
 uses the same metadata-preserving predicate; `--empty` only tests structural
 emptiness. Explicit `modules delete <path>` may remove a comment/note-only module
 without `--force`, because it owns no code and the author named it for deletion.
+
+To include the report-only effect assessment, add `--analysis <artifact>` and
+the full tree transform context to a graph-backed dry run:
+
+```bash
+debundle bindings assign XOe:runtime/plugins \
+  --modules "$MODULES" --graph "$GRAPH" --source-root "$GRAPH_SOURCE_ROOT" \
+  --tree-config "$TREE_CONFIG" --tree-modules "$MODULES" \
+  --tree-vendor-marks "$VENDOR_MARKS" --tree-source-root "$SPEC_ROOT" \
+  --out-root "$OUT_ROOT" --analysis analysis.dba --dry-run --format json
+```
+
+This assessment currently supports one materialized graph chunk whose
+`--tree-config` assigns the full module tree to that chunk (no scoped
+`module_roots` entry). `--tree-modules` must resolve to the same directory as
+the editor's `--modules`. The transform context and staged artifact are checked
+against the verified graph source and the artifact's engine, source digests and
+completed projection before the candidate plan is assessed. A missing, stale
+or mismatched input fails before YAML is written. The typed result reports the
+candidate's exact statement order, decision and proof dependencies; it does not
+change the legacy edit gate or establish placement, rebinding, vendor
+replacement, privacy or singleton guarantees. Without `--analysis`, the normal
+graph-backed edit path remains unchanged.
 
 ### `bindings assign --batch` JSON format
 

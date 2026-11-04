@@ -22,9 +22,11 @@ use std::path::{Path, PathBuf};
 use analysis::{DependencyGraphReport, ModuleDestinationKind, SourceUnitId, StatementKind};
 use anonymous_resolution::resolve_source_claims;
 use anyhow::{Context, Result, anyhow, bail};
+use graph_provenance::VerifiedGraphSourceContext;
 use selector_outcome::SelectorKind;
 use serde::Deserialize;
 
+use pipeline::{AnalysisArtifactInput, TransformCli, assess_candidate_effect_relocation};
 use spec::{
     AnonymousStatement, BindingAnnotation, LogicalModule, Member, MemberSelectorSpec, ModulePath,
     SourceMatchBinding, SourceMatchBindingDetail, SourceMatchClaim, is_residual_namespace_path,
@@ -702,6 +704,15 @@ pub struct AssignOutcome {
     #[serde(flatten)]
     pub outcome: MutationOutcome,
     pub moves_applied: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect_relocation_assessment: Option<gate::EffectRelocationAssessment>,
+}
+
+#[derive(Clone, Copy)]
+pub struct CandidateEffectAssessmentContext<'a> {
+    pub transform: &'a TransformCli,
+    pub analysis: AnalysisArtifactInput<'a>,
+    pub graph_source: &'a VerifiedGraphSourceContext,
 }
 
 /// Parse a positional `<sym>:<module>[:<readable>]` triple.
@@ -851,8 +862,10 @@ pub fn run_bindings_assign(
     moves: Vec<Move>,
     dry_run: bool,
     gate: Gate<'_>,
+    effect_assessment_context: Option<CandidateEffectAssessmentContext<'_>>,
 ) -> Result<AssignOutcome> {
-    if moves.is_empty() {
+    let no_moves = moves.is_empty();
+    if no_moves && effect_assessment_context.is_none() {
         return Ok(AssignOutcome {
             outcome: MutationOutcome {
                 verb: "assign",
@@ -862,6 +875,7 @@ pub fn run_bindings_assign(
                 files_deleted: Vec::new(),
             },
             moves_applied: 0,
+            effect_relocation_assessment: None,
         });
     }
 
@@ -1077,19 +1091,48 @@ pub fn run_bindings_assign(
     // post-batch docs — the same `ModuleFile` claims model `debundle
     // run` loads, so canonical source_matches[] claims gate
     // identically. Runs before any file is written.
-    gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
+    let effect_relocation_assessment = if let Some(context) = effect_assessment_context {
+        let candidate_modules = docs
+            .iter()
+            .filter(|(path, _)| !to_delete.contains(*path))
+            .map(|(path, (_, doc))| (path.clone(), doc.clone()))
+            .collect();
+        Some(assess_candidate_effect_relocation(
+            context.transform,
+            context.analysis,
+            context.graph_source,
+            modules_root,
+            &candidate_modules,
+        )?)
+    } else {
+        None
+    };
+    if !no_moves {
+        gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
+    }
 
     let (files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
     Ok(AssignOutcome {
         outcome: MutationOutcome {
             verb: "assign",
-            action: if dry_run { "dry-run" } else { "applied" },
-            gate: gate.outcome(),
+            action: if no_moves {
+                "noop"
+            } else if dry_run {
+                "dry-run"
+            } else {
+                "applied"
+            },
+            gate: if no_moves {
+                GateOutcome::NotRequired
+            } else {
+                gate.outcome()
+            },
             files_written,
             files_deleted,
         },
         moves_applied: plan.len(),
+        effect_relocation_assessment,
     })
 }
 

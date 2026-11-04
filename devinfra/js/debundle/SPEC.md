@@ -373,6 +373,19 @@ participants and typed `premise_dependencies` for premises used by conflicting
 pairs. It does not replace the legacy gate and does not establish cross-rebind,
 importability, vendor replacement, privacy or singleton obligations.
 
+`bindings assign --dry-run --analysis <artifact>` can return this assessment
+for its in-memory post-batch candidate. It requires the saved graph plus the
+full tree transform context, with `--modules` and `--tree-modules` resolving to
+the same root. The initial implementation supports exactly one materialized
+graph chunk and a tree config whose full module tree belongs to that chunk
+(empty or absent `module_roots`). It recomputes the candidate through the
+normal selector, analysis-load and `ChunkPlanBuilder` path; the graph report is
+never decoded as effect facts. The engine, source digests and completed
+analysis projection must match before the assessment is returned, and any
+failure occurs before YAML writes. The result remains diagnostic: it does not
+change the edit gate or authorize an otherwise rejected assignment. Omitting
+`--analysis` preserves the ordinary graph-backed editor behavior.
+
 `coverage.owner_coverage_refusals` counts typed reasons why an original
 owner's whole-initialization certificate was not sealed. Bounded examples
 include an optional refusal and existing source location for each endpoint;

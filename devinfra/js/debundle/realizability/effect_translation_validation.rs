@@ -403,7 +403,7 @@ pub struct EffectRelocationAssessmentInputs<'a> {
 
 /// One sweep result. `emitted_order` binds the verdict to the candidate
 /// statement order; this ephemeral value is not a persisted proof artifact.
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize)]
 pub struct EffectRelocationAssessment {
     pub emitted_order: Vec<SourceUnitId>,
     pub decision: EffectRelocationDecision,

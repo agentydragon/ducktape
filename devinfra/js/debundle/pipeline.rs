@@ -10,7 +10,10 @@ use artifact::load_js_chunks;
 use artifact::reports::{ArtifactChunkRecord, ChunkDecompositionOutput};
 use artifact::{ChunkId, EmissionFiles};
 use emit_harness::emit_browser_harness;
-use graph_provenance::{CurrentRoots, GraphProvenance, InputCapture, ProvenanceRoots};
+use gate::EffectRelocationAssessment;
+use graph_provenance::{
+    CurrentRoots, GraphProvenance, InputCapture, ProvenanceRoots, VerifiedGraphSourceContext,
+};
 use lowering::ownership_subset::OwnershipSubset;
 use lowering::{
     AnalysisMode, AnalysisSpec, AnalyzeProgramInputs, FullReportKind, GateRejectionPolicy,
@@ -23,7 +26,7 @@ use prune_module_exports::prune_unimported_module_exports;
 use reconstruction::{
     EmittablePlan, ReconstructionPlan, RejectedPlan, UnmatchedSpecClaim, VendorManifestOutput,
 };
-use spec::{ChunkExportPurity, TransformSpec};
+use spec::{ChunkExportPurity, LogicalModule, TransformSpec};
 use spec_modules::read_flat_transform_spec;
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree, graph_module_roots};
 use vendor::{
@@ -125,9 +128,9 @@ pub enum TransformSpecSource {
     Tree(CompileSpecTreeOptions),
 }
 
-/// Command-line arguments for the debundle transform pipeline.
-#[derive(ClapArgs, Debug, Clone)]
-pub struct TransformArgs {
+/// Spec, source and package inputs shared by runs and assessment-only callers.
+#[derive(ClapArgs, Debug, Clone, Default)]
+pub struct TransformContextArgs {
     /// Path to a flat transform spec YAML. Pass exactly one of `--spec`
     /// / `--tree-config`.
     #[arg(long)]
@@ -156,6 +159,35 @@ pub struct TransformArgs {
     /// Root directory containing per-package sources (alternative to repeated --package-root).
     #[arg(long)]
     pub packages_root: Option<PathBuf>,
+}
+
+impl TransformContextArgs {
+    /// Collapse `--package-root` pairs into a `HashMap` and validate spec source.
+    pub fn resolve(self) -> Result<TransformCli> {
+        let spec_source = resolve_spec_source(&self)?;
+        Ok(TransformCli {
+            spec_source,
+            package_roots: collect_package_roots(self.package_roots)?
+                .into_iter()
+                .collect(),
+            packages_root: self.packages_root,
+        })
+    }
+
+    pub fn has_explicit_auxiliary_inputs(&self) -> bool {
+        self.tree_modules.is_some()
+            || self.tree_vendor_marks.is_some()
+            || self.out_root.is_some()
+            || !self.package_roots.is_empty()
+            || self.packages_root.is_some()
+    }
+}
+
+/// Run-only output and diagnostic flags layered over transform inputs.
+#[derive(ClapArgs, Debug, Clone)]
+pub struct TransformArgs {
+    #[command(flatten)]
+    pub context: TransformContextArgs,
     /// Run pipeline parse/facts/gate checks without writing emitted JS
     /// or accept-path reports. A gate rejection still writes its evidence
     /// under reports/tree/<chunk>/. Add --graphs for graph-backed gate queries.
@@ -192,18 +224,11 @@ impl TransformArgs {
 
     /// Collapse `--package-root` pairs into a `HashMap` and validate spec source.
     pub fn resolve(self) -> Result<TransformCli> {
-        let spec_source = resolve_spec_source(&self)?;
-        Ok(TransformCli {
-            spec_source,
-            package_roots: collect_package_roots(self.package_roots)?
-                .into_iter()
-                .collect(),
-            packages_root: self.packages_root,
-        })
+        self.context.resolve()
     }
 }
 
-fn resolve_spec_source(args: &TransformArgs) -> Result<TransformSpecSource> {
+fn resolve_spec_source(args: &TransformContextArgs) -> Result<TransformSpecSource> {
     match (&args.spec, &args.tree_config) {
         (Some(_), Some(_)) => {
             bail!("pass either --spec or --tree-config, not both");
@@ -318,8 +343,113 @@ pub fn run_transform_with_analysis(
         },
         None => AnalysisMode::Compute,
     };
-    run_prepared_transform(&spec, prepared, options, false, mode)?;
+    run_prepared_transform(&spec, prepared, options, false, mode, false)?;
     Ok(())
+}
+
+/// Build a report-only assessment from the exact candidate module documents
+/// used by a graph-backed `bindings assign` dry run. The tree source, staged
+/// analysis and graph must all identify the same chunk input.
+pub fn assess_candidate_effect_relocation(
+    cli: &TransformCli,
+    analysis: AnalysisArtifactInput<'_>,
+    graph_source: &VerifiedGraphSourceContext,
+    edit_modules_root: &Path,
+    candidate_modules: &BTreeMap<String, LogicalModule>,
+) -> Result<EffectRelocationAssessment> {
+    let TransformSpecSource::Tree(tree) = &cli.spec_source else {
+        bail!("candidate effect assessment requires a tree-shaped transform context");
+    };
+    let tree_modules_root = graph_provenance::absolute(&tree.modules_root)?;
+    let edit_modules_root = graph_provenance::absolute(edit_modules_root)?;
+    anyhow::ensure!(
+        tree_modules_root == edit_modules_root,
+        "candidate assessment requires --tree-modules to equal --modules"
+    );
+    anyhow::ensure!(
+        graph_source
+            .modules_root()
+            .map(graph_provenance::absolute)
+            .transpose()?
+            .as_ref()
+            == Some(&tree_modules_root),
+        "candidate transform context modules root differs from the verified graph"
+    );
+    let scoped_roots = graph_module_roots(&tree.config_path)?;
+    let roots = scoped_roots.get(graph_source.chunk_id()).with_context(|| {
+        format!(
+            "tree config has no module root for graph chunk {:?}",
+            graph_source.chunk_id()
+        )
+    })?;
+    anyhow::ensure!(
+        roots.len() == 1 && roots[0].as_os_str().is_empty(),
+        "candidate effect assessment currently requires one full-tree module root for graph chunk {:?}",
+        graph_source.chunk_id()
+    );
+
+    let options = audit_options();
+    let (mut spec, prepared) = prepare_transform(cli, &options, None, Some(analysis.path))?;
+    let chunk_source = prepared
+        .provenance
+        .chunk_sources
+        .iter()
+        .find(|source| source.chunk_id == graph_source.chunk_id())
+        .with_context(|| {
+            format!(
+                "transform context has no input mapping for graph chunk {:?}",
+                graph_source.chunk_id()
+            )
+        })?;
+    let transform_input = prepared.provenance.resolve(
+        &chunk_source.input_file.root,
+        &chunk_source.input_file.path,
+        &CurrentRoots::default(),
+    )?;
+    anyhow::ensure!(
+        chunk_source.source_path == graph_source.source_path()
+            && chunk_source.sha256 == graph_source.sha256()
+            && graph_provenance::absolute(&transform_input)? == graph_source.input_file(),
+        "candidate transform context source differs from the verified dependency graph"
+    );
+    let materialized_chunks = spec.materialize_chunk_ids();
+    anyhow::ensure!(
+        materialized_chunks.len() == 1 && materialized_chunks.contains(graph_source.chunk_id()),
+        "candidate effect assessment currently requires exactly the graph chunk {:?} to be materialized",
+        graph_source.chunk_id(),
+    );
+    spec.logical_modules.insert(
+        graph_source.chunk_id().to_string(),
+        candidate_modules.clone(),
+    );
+    validate_transform_spec(&spec)?;
+
+    let artifact = fs::read(analysis.path)
+        .with_context(|| format!("read analysis artifact {}", analysis.path.display()))?;
+    let mode = AnalysisMode::Load {
+        base: AnalysisSpec::from_transform(&spec, &prepared.source_root)?,
+        artifact,
+        analysis_engine_sha256: analysis.analysis_engine_sha256.to_string(),
+    };
+    let outcome = run_prepared_transform(&spec, prepared, options, true, mode, true)?;
+    let PreparedTransformResult::EffectAssessed(mut assessments) = outcome else {
+        bail!("candidate effect assessment did not reach AssignmentAnalysis");
+    };
+    let mut matches = assessments
+        .drain(..)
+        .filter(|(chunk_id, _)| chunk_id == graph_source.chunk_id());
+    let (_, assessment) = matches.next().with_context(|| {
+        format!(
+            "no effect assessment for chunk {:?}",
+            graph_source.chunk_id()
+        )
+    })?;
+    anyhow::ensure!(
+        matches.next().is_none(),
+        "candidate transform produced duplicate effect assessments for chunk {:?}",
+        graph_source.chunk_id()
+    );
+    Ok(assessment)
 }
 
 /// `debundle spec project-analysis`: the run's analysis projection, written to
@@ -328,9 +458,17 @@ pub fn project_analysis_cli(cli: &TransformCli, out: &Path) -> Result<()> {
     let options = audit_options();
     let (spec, prepared) = prepare_transform(cli, &options, None, None)?;
     let base = AnalysisSpec::from_transform(&spec, &prepared.source_root)?;
-    let projection =
-        run_prepared_transform(&spec, prepared, options, true, AnalysisMode::Project(base))?
-            .context("spec materializes no chunk, so it has no analysis projection")?;
+    let projection = match run_prepared_transform(
+        &spec,
+        prepared,
+        options,
+        true,
+        AnalysisMode::Project(base),
+        false,
+    )? {
+        PreparedTransformResult::Projected(projection) => projection,
+        _ => bail!("projection run did not stop after the selector solve"),
+    };
     fs::write(out, projection.encode()?)
         .with_context(|| format!("write analysis projection {}", out.display()))
 }
@@ -472,6 +610,7 @@ impl ContractAudit {
             audit_options(),
             true,
             AnalysisMode::Compute,
+            false,
         )?;
         prepared
             .provenance
@@ -506,6 +645,7 @@ impl ContractAudit {
             audit_options(),
             true,
             AnalysisMode::Compute,
+            false,
         );
         self.provenance()
             .verify(&CurrentRoots::default())
@@ -650,13 +790,20 @@ fn prepare_transform(
 
 /// Returns the completed projection when `analysis` is
 /// [`AnalysisMode::Project`], which stops after the selector solve.
+enum PreparedTransformResult {
+    Completed,
+    Projected(Box<AnalysisSpec>),
+    EffectAssessed(Vec<(String, EffectRelocationAssessment)>),
+}
+
 fn run_prepared_transform(
     spec: &TransformSpec,
     prepared: PreparedTransform,
     options: TransformRunOptions,
     suppress_reports: bool,
     analysis: AnalysisMode,
-) -> Result<Option<AnalysisSpec>> {
+    assessment_only: bool,
+) -> Result<PreparedTransformResult> {
     let PreparedTransform {
         source,
         vendor_plan,
@@ -785,12 +932,21 @@ fn run_prepared_transform(
                     RunOutput::DryRun | RunOutput::Accepted => GateRejectionPolicy::Refuse,
                     RunOutput::EmitOnRejection => GateRejectionPolicy::LowerUnrunnable,
                 },
+                assessment_only,
                 analysis,
             },
         )?;
         let materialize_result = match materialize_result {
-            Materialized::Lowered(result) => result,
-            Materialized::Projected(projection) => return Ok(Some(projection)),
+            Materialized::Assessed(assessments) => {
+                return Ok(PreparedTransformResult::EffectAssessed(assessments));
+            }
+            Materialized::Projected(projection) => {
+                return Ok(PreparedTransformResult::Projected(Box::new(projection)));
+            }
+            Materialized::Lowered(result) if !assessment_only => result,
+            Materialized::Lowered(_) => {
+                bail!("assessment-only materialization unexpectedly lowered chunks");
+            }
         };
         module_count = materialize_result.module_count;
         selected_lowerings = materialize_result.selected_lowerings;
@@ -942,7 +1098,7 @@ fn run_prepared_transform(
         )?;
     }
 
-    Ok(None)
+    Ok(PreparedTransformResult::Completed)
 }
 
 /// Chunk records of the emission set: records of excluded (fully-swapped)

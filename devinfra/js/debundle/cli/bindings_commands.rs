@@ -1,9 +1,9 @@
 //! `bindings` command arguments, dispatch, and presentation. Spec edits live
 //! in `binding`; this module adapts the CLI to that shared editing API.
 use crate::binding::{
-    AssignOutcome, BindingsListFilters, Move, Rename, UnassignOutcome, parse_batch_json,
-    parse_move_triple, rename_binding, rename_bindings, run_bindings_assign, run_bindings_list,
-    run_bindings_unassign,
+    AssignOutcome, BindingsListFilters, CandidateEffectAssessmentContext, Move, Rename,
+    UnassignOutcome, parse_batch_json, parse_move_triple, rename_binding, rename_bindings,
+    run_bindings_assign, run_bindings_list, run_bindings_unassign,
 };
 use crate::comment::{BindingCommentArgs, run_binding_comment_cmd};
 use crate::edit_gate::GraphEditArgs;
@@ -13,6 +13,7 @@ use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::OutputFormat;
+use pipeline::{AnalysisArtifactInput, TransformContextArgs};
 use std::path::PathBuf;
 
 /// Top-level `debundle bindings ...` argument node.
@@ -113,7 +114,7 @@ enum BindingsNsCommand {
     /// of a claim splits that claim across modules. The post-batch gate
     /// rejects any split of a source statement's atomic source_unit.
     /// Contract details: docs/cli.md § "Batch atomicity".
-    Assign(BindingsAssignArgs),
+    Assign(Box<BindingsAssignArgs>),
     /// Remove one or more bindings from their current modules
     /// atomically; they fall through to residual.
     ///
@@ -196,6 +197,13 @@ struct BindingsUnassignArgs {
 struct BindingsAssignArgs {
     #[command(flatten)]
     pub edit: GraphEditArgs,
+    /// Full tree transform inputs used only with `--analysis` to assess the
+    /// in-memory post-batch candidate through the canonical lowering path.
+    #[command(flatten)]
+    pub transform: TransformContextArgs,
+    /// Verified staged analysis artifact for the candidate effect assessment.
+    #[arg(long)]
+    pub analysis: Option<PathBuf>,
     /// Positional `<sym>:<module>[:<readable>]` triples. May be empty
     /// when `--batch` is supplied.
     ///
@@ -327,11 +335,58 @@ fn run_bindings_assign_cmd(
         };
         moves.extend(parse_batch_json(&text)?);
     }
+    let candidate_context = if let Some(analysis_path) = &args.analysis {
+        anyhow::ensure!(
+            args.edit.dry_run,
+            "candidate effect assessment requires --dry-run"
+        );
+        anyhow::ensure!(
+            !args.edit.no_verify && args.edit.dependency_graph_path.is_some(),
+            "candidate effect assessment requires graph validation"
+        );
+        let graph_source = source_context
+            .context("candidate effect assessment requires a verified graph source context")?;
+        anyhow::ensure!(
+            args.transform.tree_config.is_some() && args.transform.spec.is_none(),
+            "candidate effect assessment currently requires the full --tree-config transform context"
+        );
+        Some((
+            args.transform.clone().resolve()?,
+            analysis_path.as_path(),
+            graph_source,
+        ))
+    } else {
+        anyhow::ensure!(
+            args.transform.spec.is_none()
+                && args.transform.tree_config.is_none()
+                && !args.transform.has_explicit_auxiliary_inputs(),
+            "transform context arguments require --analysis for candidate effect assessment"
+        );
+        None
+    };
     // `GraphEditArgs::gate` is the shared "graph or no-verify" policy
     // every mutating verb uses; no verb can silently skip the
     // realizability gate.
     let gate = args.edit.gate(source_context)?;
-    let out = match run_bindings_assign(&args.edit.modules_root, moves, args.edit.dry_run, gate) {
+    let effect_assessment = candidate_context
+        .as_ref()
+        .map(
+            |(cli, analysis_path, graph_source)| CandidateEffectAssessmentContext {
+                transform: cli,
+                analysis: AnalysisArtifactInput {
+                    path: analysis_path,
+                    analysis_engine_sha256: analysis_identity::ANALYSIS_ENGINE_SHA256,
+                },
+                graph_source,
+            },
+        );
+    let out = match run_bindings_assign(
+        &args.edit.modules_root,
+        moves,
+        args.edit.dry_run,
+        gate,
+        effect_assessment,
+    ) {
         Ok(out) => out,
         Err(err) => {
             emit_gate_rejection_json("assign", args.edit.format, &err);
@@ -399,7 +454,7 @@ pub(super) fn run(
         BindingsNsCommand::Comment(c) => run_binding_comment_cmd(c),
         BindingsNsCommand::List(l) => run_bindings_list_cmd(l),
         BindingsNsCommand::Rename(r) => run_bindings_rename_cmd(r),
-        BindingsNsCommand::Assign(a) => run_bindings_assign_cmd(a, source_context),
+        BindingsNsCommand::Assign(a) => run_bindings_assign_cmd(*a, source_context),
         BindingsNsCommand::Unassign(u) => run_bindings_unassign_cmd(u, source_context),
     }
 }
