@@ -103,3 +103,220 @@ fn per_atomic_group_peels_entry_with_leading_import() {
     let fixture = run_fixture(opts);
     assert_entry_output(&fixture, "1\n");
 }
+
+const SUBSET_SOURCE: &str = r#"globalThis.events = ["before"];
+export const originalName = "selected";
+export const omitted = "omitted";
+export let carried;
+carried = (globalThis.events.push("residual"), "carried");
+globalThis.events.push("after");
+console.log(globalThis.events.join(","));
+"#;
+
+fn subset_spec() -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        SUBSET_SOURCE,
+        vec![
+            logical_module(
+                "features/public",
+                &[Member::renamed("publicName", "originalName")],
+            ),
+            logical_module("features/omitted", &[Member::new("omitted")]),
+        ],
+    )
+    .with_unassigned_mode(unassigned_mode_per_atomic_group())
+}
+
+fn write_subset(json: &str) -> tempfile::NamedTempFile {
+    let subset = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(subset.path(), json).unwrap();
+    subset
+}
+
+fn atomic_group_with_source(fixture: &Fixture, source_fragment: &str) -> String {
+    let group_dir = fixture
+        .out_root
+        .join("static/app/modules/__auto/atomic_groups");
+    for entry in std::fs::read_dir(group_dir).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.ends_with(".js") {
+            continue;
+        }
+        let source = std::fs::read_to_string(entry.path()).unwrap();
+        if source.contains(source_fragment) {
+            return format!("static/app/modules/__auto/atomic_groups/{name}");
+        }
+    }
+    panic!("no generated atomic-group module contains {source_fragment:?}");
+}
+
+#[test]
+fn ownership_subset_with_per_atomic_group_keeps_selected_rename_and_groups_residual_statement() {
+    let subset = write_subset(r#"{"modules":[{"chunk":"static/app","module":"features/public"}]}"#);
+    let subset_path = subset.path().to_str().unwrap();
+    let fixture =
+        run_fixture_without_graphs_with_args(subset_spec(), &["--ownership-subset", subset_path]);
+
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/features/public.js",
+        &["publicName"],
+        &[],
+    );
+    assert!(
+        !fixture
+            .out_root
+            .join("static/app/modules/features/omitted.js")
+            .exists()
+    );
+    let residual_group = atomic_group_with_source(&fixture, "let carried");
+    assert_module_source(
+        &fixture.out_root,
+        &residual_group,
+        &[
+            "let carried",
+            "carried =",
+            "globalThis.events.push(\"residual\")",
+        ],
+        &["publicName"],
+    );
+    assert_entry_output(&fixture, "before,residual,after\n");
+}
+
+#[test]
+fn empty_ownership_subset_routes_all_claims_to_generated_atomic_groups() {
+    let subset = write_subset(r#"{"modules":[]}"#);
+    let subset_path = subset.path().to_str().unwrap();
+    let fixture =
+        run_fixture_without_graphs_with_args(subset_spec(), &["--ownership-subset", subset_path]);
+
+    assert!(
+        !fixture
+            .out_root
+            .join("static/app/modules/features/public.js")
+            .exists()
+    );
+    assert!(
+        !fixture
+            .out_root
+            .join("static/app/modules/features/omitted.js")
+            .exists()
+    );
+    let generated_public = atomic_group_with_source(&fixture, "originalName = \"selected\"");
+    assert_module_source(
+        &fixture.out_root,
+        &generated_public,
+        &["originalName"],
+        &["publicName"],
+    );
+    let residual_group = atomic_group_with_source(&fixture, "let carried");
+    assert_module_source(
+        &fixture.out_root,
+        &residual_group,
+        &[
+            "let carried",
+            "carried =",
+            "globalThis.events.push(\"residual\")",
+        ],
+        &[],
+    );
+    assert_entry_output(&fixture, "before,residual,after\n");
+}
+
+#[test]
+fn ownership_subset_keeps_full_spec_selector_duplicate_and_premise_guards() {
+    let subset = write_subset(r#"{"modules":[{"chunk":"static/app","module":"features/public"}]}"#);
+    let subset_path = subset.path().to_str().unwrap();
+
+    let invalid_selector = FixtureOpts::new(
+        SUBSET_SOURCE,
+        vec![
+            logical_module(
+                "features/public",
+                &[Member::renamed("publicName", "originalName")],
+            ),
+            logical_module(
+                "features/omitted",
+                &[Member::source_alpha("missing", "const missing = 9;")],
+            ),
+        ],
+    )
+    .with_unassigned_mode(unassigned_mode_per_atomic_group());
+    let rejected = run_rejection_fixture_without_graphs_with_args(
+        invalid_selector,
+        &["--ownership-subset", subset_path],
+        1,
+    );
+    assert!(rejected.stderr.contains("selector"), "{}", rejected.stderr);
+
+    let duplicate_claim = FixtureOpts::new(
+        SUBSET_SOURCE,
+        vec![
+            logical_module("features/public", &[Member::new("originalName")]),
+            logical_module("features/duplicate", &[Member::new("originalName")]),
+        ],
+    )
+    .with_unassigned_mode(unassigned_mode_per_atomic_group());
+    let rejected = run_rejection_fixture_without_graphs_with_args(
+        duplicate_claim,
+        &["--ownership-subset", subset_path],
+        1,
+    );
+    assert!(rejected.stderr.contains("duplicate"), "{}", rejected.stderr);
+
+    let premise =
+        serde_yaml::from_str("intrinsics_never_written:\n  families: [Map]\n  note: audited\n")
+            .unwrap();
+    let contradiction = FixtureOpts::new(
+        "function patch(value) { Map.prototype.extra = value; }\nexport const originalName = 1;\n",
+        vec![logical_module(
+            "features/public",
+            &[Member::renamed("publicName", "originalName")],
+        )],
+    )
+    .with_unassigned_mode(unassigned_mode_per_atomic_group())
+    .with_program_premises(premise);
+    let rejected = run_rejection_fixture_without_graphs_with_args(
+        contradiction,
+        &["--ownership-subset", subset_path],
+        1,
+    );
+    assert!(
+        rejected.stderr.contains("intrinsics_never_written")
+            && rejected.stderr.contains("exact objects"),
+        "{}",
+        rejected.stderr
+    );
+}
+
+#[test]
+fn ownership_subset_still_rejects_catchall_file() {
+    let subset = write_subset(r#"{"modules":[{"chunk":"static/app","module":"features/public"}]}"#);
+    let subset_path = subset.path().to_str().unwrap();
+    let rejected = run_rejection_fixture_without_graphs_with_args(
+        subset_spec().with_unassigned_mode(unassigned_mode_catchall_file(None)),
+        &["--ownership-subset", subset_path],
+        1,
+    );
+    assert!(
+        rejected
+            .stderr
+            .contains("inline_in_entry or per_atomic_group"),
+        "{}",
+        rejected.stderr
+    );
+}
+
+#[test]
+fn ownership_subset_still_rejects_full_graph_export() {
+    let subset = write_subset(r#"{"modules":[]}"#);
+    let subset_path = subset.path().to_str().unwrap();
+    let rejected =
+        run_rejection_fixture_with_args(subset_spec(), &["--ownership-subset", subset_path], 2);
+    assert!(
+        rejected.stderr.contains("cannot be used with") && rejected.stderr.contains("--graphs"),
+        "{}",
+        rejected.stderr
+    );
+}

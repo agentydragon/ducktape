@@ -273,7 +273,7 @@ def _shell_execroot_path(execroot_relative):
 _DEBUNDLE_PIPELINE_ATTRS = {
     "ownership_subset": attr.label(
         allow_single_file = [".json"],
-        doc = "Optional retained chunk/module list for normal emission with full spec context. Only the Pipeline action reads it; requires inline_in_entry and conflicts with split_dependency_graphs.",
+        doc = "Optional retained chunk/module list for normal emission with full spec context. Only the Pipeline action reads it; requires inline_in_entry or per_atomic_group and conflicts with split_dependency_graphs.",
     ),
     "spec": attr.label(
         allow_single_file = True,
