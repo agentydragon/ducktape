@@ -17,7 +17,7 @@ type SupervisorConfig struct {
 	Bearer            string
 	Store             *retained.Store
 	Inventory         func() []Source
-	Changes           func() <-chan struct{}
+	InventoryChanges  func() <-chan struct{}
 	OnAcknowledgement func(string, retained.Acknowledgement) error
 	OnWorkerFailure   func(error)
 }
@@ -37,7 +37,7 @@ func NewSupervisor(config SupervisorConfig) *Supervisor {
 // retry. Callers decide when shutdown may cancel ingress so final ACKs can
 // still satisfy Runtime quiescence.
 func (s *Supervisor) Run(ctx context.Context) error {
-	if s == nil || s.config.Store == nil || s.config.Inventory == nil || s.config.Changes == nil || s.config.OnWorkerFailure == nil {
+	if s == nil || s.config.Store == nil || s.config.Inventory == nil || s.config.InventoryChanges == nil || s.config.OnWorkerFailure == nil {
 		return errors.New("ingress supervisor requires a store, inventory, change source, and worker failure handler")
 	}
 	conn, err := stream.NewConnection(s.config.Target)
@@ -71,7 +71,7 @@ func (s *Supervisor) supervise(ctx context.Context, deliver func(context.Context
 		if ctx.Err() != nil {
 			return nil
 		}
-		changed := s.config.Changes()
+		changed := s.config.InventoryChanges()
 		for _, source := range s.config.Inventory() {
 			if _, found := active[source.ID]; found {
 				continue

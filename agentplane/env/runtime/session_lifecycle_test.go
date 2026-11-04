@@ -909,6 +909,7 @@ func TestCloseProgressesForEmptyRunner(t *testing.T) {
 func TestJournalAndAcknowledgementChangesWakeObservers(t *testing.T) {
 	r, s := lifecycleTestSession(t)
 	changes := r.changesSince()
+	inventoryChanges := r.sessions.InventoryChangesSince()
 	if err := s.Emit(r.lifecycleContext, &eventpb.Event{Observation: &eventpb.Event_HarnessStderr{HarnessStderr: &eventpb.HarnessStderr{Text: "journal update"}}}, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -921,6 +922,11 @@ func TestJournalAndAcknowledgementChangesWakeObservers(t *testing.T) {
 	case <-changes:
 	default:
 		t.Fatal("journal/acknowledgement changes did not wake Runtime observers")
+	}
+	select {
+	case <-inventoryChanges:
+		t.Fatal("journal/acknowledgement changes woke ingress inventory observers")
+	default:
 	}
 }
 
