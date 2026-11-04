@@ -138,3 +138,35 @@ had deleted the newly imported pinned guest-root image. The
 records the deletion sequence. No guest boot or complete scenario pass was established.
 Execution took 640.49 seconds after 563.53 seconds of scheduler wait; these
 failed-run timings do not establish a CI speedup.
+
+## VM scenarios pass after image protection
+
+The [fixture image protection](https://github.com/agentydragon/ducktape/pull/14226)
+merged. A [fresh full run](https://app.buildbuddy.io/invocation/9b8d28ca-acda-448a-9c4f-5c96c3ca287e)
+at unmodified devel `2eda822716e1f80de0869486ba57338111e248c5` used the same worker.
+All three scenarios passed: Claude supervision, a Codex turn, and Codex OOM
+survival with recovery in the same session. The process trace contract passed,
+and console logs plus systemd journal artifacts were retained for all three guests.
+The final CRI inventory retained both guest images with `pinned: true`.
+
+Read-only inspection during this action found three `qemu-kvm` processes, each
+with `-accel kvm`, an open `/dev/kvm`, a KVM VM descriptor and two KVM vCPU
+descriptors. This establishes actual accelerated guest execution beyond the
+earlier syscall smoke. The live `pivot_root` policy rule still was absent from
+this source revision; fresh provisioning from devel alone remains unverified.
+
+The Bazel target remained red: pytest reported **1 passed, 1 teardown error**.
+Its 600-second deadline covered session fixture setup, the scenario body and
+teardown. Setup took 273.93 seconds; the scenario body, including concurrent
+per-sandbox cleanup, took 312.21 seconds. At 06:47:44 UTC the deadline interrupted
+`crictl rmp --all --force` inside `K3s.cleanup_stopped`. Containerd's cleanup log
+was still recording successful removals just before interruption, so this run
+does not establish a cleanup wedge or completed final cleanup. The timeout and
+all coverage checks were unchanged.
+
+Remote execution metadata separates 438.06 seconds waiting for the single
+worker from 611.06 seconds executing. The three sandbox readiness waits
+overlapped and took 147.12–154.68 seconds each; their cleanup took 24.01–30.05
+seconds each. These are one run's phase measurements, not a matched CI speedup.
+Lane acceptance still requires successful final cleanup within bounded phase
+deadlines and verification of the committed worker policy after provisioning.
