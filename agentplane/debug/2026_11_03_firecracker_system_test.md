@@ -398,57 +398,83 @@ quiesced. The [regression tests](https://app.buildbuddy.io/invocation/c59e2f7b-1
 pass both the sealed deletion through Sandbox removal and unsealed launcher loss retaining its
 checkpoint and finalizer. The complete hardware rerun above subsequently passed with this correction.
 
-## OVH runner placement and current rerun
+## Runner placement and permanent Flux adoption
 
-The operator authorized moving the disposable runner away from wyrm2, allowing KubeVirt's API
-and controller on all control-plane nodes, and allowing VM workloads on one spare control-plane
-node. The managed configuration now permits `virt-api` and `virt-controller` on all control-plane
-nodes, while the `virt-handler`/VM exception is limited to `ovh-ns104963`. The dedicated worker is
-pinned there with four vCPUs and 16 GiB guest RAM; the executor advertises four CPUs, 14 GiB and
-one action slot. The KVM TestRunner estimate is four compute units. The existing pool name,
-80 GiB disposable work disk and 40 GB file cache are retained.
-
-Before the move the selected host had about 53.8 GB available memory, no memory pressure stalls,
-134 GB node filesystem space and 183 GB image filesystem space. Generated manifests, typed
-placement and explicitly named changed libraries passed the
-[focused check](https://app.buildbuddy.io/invocation/2d771f2a-8a70-47f8-989b-d91551189c5d).
-Server dry runs passed before applying the source-derived candidate. The runner was idle and its
-executor was stopped before replacing its disposable VMI; no PVC-backed disk was involved.
+The initial move away from wyrm2 used a four-vCPU, 16-GiB worker on `ovh-ns104963`, with
+one BuildBuddy action slot and 14 GiB advertised memory. Before that move the host had about
+53.8 GB available memory, no memory pressure stalls, 134 GB node filesystem space and 183 GB
+image filesystem space. The existing `wyrm2-kvm-vm` pool name, 80 GiB disposable work disk and
+40 GB file cache were retained. The runner was idle and its executor was stopped before
+replacing its disposable VMI; no PVC-backed disk was involved.
 
 The new VMI UID is `18d03712-a6b8-4524-8282-37c31cec5168`, created at `2026-11-04T11:10:22Z`,
 on `ovh-ns104963`. The VM UID remains `190a0589-2961-4d93-b528-f2857aee4ce2`. Its Ubuntu guest
 reports four CPUs, 15,974 MiB total memory, `/dev/kvm`, and Intel nested KVM enabled. Docker
-loaded the managed seccomp policy at bootstrap. The executor registered with BuildBuddy and all
-its health probes passed. KubeVirt reports Available, with all six virt-handler Pods ready.
+loaded the managed seccomp policy at bootstrap.
 
-For this unmerged live preview, only these three managed resources carry
-`kustomize.toolkit.fluxcd.io/reconcile: disabled`: `kubevirt/kubevirt` (KubeVirt CR), and
-`buildbuddy-executor/buildbuddy-kvm-worker` (VM and ConfigMap). No Flux Kustomization is suspended.
-This prevents devel from removing the approved VM-host exception while the runner is using it.
-After this PR's configuration reaches the GitOps source, release the preview holds:
+That preview was initially applied directly after server dry runs, with Flux reconciliation
+disabled on three resources: the KubeVirt CR and the worker VM and ConfigMap. This was not a
+Flux deployment. The operator requested making the smaller worker permanent and subsequently
+simplified its policy to allow any node advertising Intel VMX or AMD SVM, whether control-plane
+or worker. The permanent policy has no hostname, region or explicit OS selector on the runner,
+and removes KubeVirt's global workload region/control-plane exclusions. Control-plane taint
+tolerations are present on the VM and KubeVirt infrastructure/workload placement. API/controller
+placement retains its existing region. Other taints, available resources and KubeVirt scheduling
+requirements still apply.
 
-```sh
-kubectl -n kubevirt annotate kubevirt kubevirt kustomize.toolkit.fluxcd.io/reconcile-
-kubectl -n buildbuddy-executor annotate virtualmachine buildbuddy-kvm-worker kustomize.toolkit.fluxcd.io/reconcile-
-kubectl -n buildbuddy-executor annotate configmap buildbuddy-kvm-worker kustomize.toolkit.fluxcd.io/reconcile-
-```
+[Infrastructure PR #14289](https://github.com/agentydragon/ducktape/pull/14289) landed separately
+as `026a3696d26a5d613321d61fb92ce87fcd798ee7` at `2026-11-04T12:07:14Z`. All ordinary PR checks
+passed at final head `e00918c46d`; [explicit manifest/lint and uncached KVM/keyring/pivot-root checks](https://app.buildbuddy.io/invocation/36a48bff-1586-4bcf-9f2e-51b1b5f67fd1)
+also passed. This includes the runner's already-tested capability-scoped `pivot_root` policy.
 
-Then verify `ducktape-flux/kubevirt` and `ducktape-flux/buildbuddy-kvm-worker` converge and the
-VMI remains Ready on the selected node. Do not remove the holds against the old devel policy:
-that would remove this host's virt-handler eligibility. Rolling back the placement requires
-first stopping or relocating the disposable runner while idle, then restoring the old policy.
+Both Flux ExternalArtifacts were verified Ready with origin
+`devel@sha1:026a3696d26a5d613321d61fb92ce87fcd798ee7` before releasing the preview:
 
-The branch was rebased onto `2c86bf3bd1c09c1e3ccc4c1bc38cf323db41caf2`. The Firecracker adapter
-now lives in `system_tests/firecracker`, using the shared `deployment`, `driver`, `k3s` and `vm`
-ownership introduced by devel. Production Firecracker Go, controller logic, guest Nix and worker
-placement configuration are unchanged by this rebase. The first submission at clean code head `52bd6dbf413e36c0736dc39aff3e05a968f8ce4c`
-failed analysis because the production launcher image still granted visibility to the old
-fixture package. No hardware action ran. Its visibility now names the new Firecracker package.
+| Artifact                | Revision digest                                                           |
+| ----------------------- | ------------------------------------------------------------------------- |
+| `kubevirt`              | `sha256:7433bf41fa329490f35bb61b00f643c8d54e753635af8c34a226396d19baa915` |
+| `buildbuddy-kvm-worker` | `sha256:681f7768ad8ebf535c7db689ad44c0c0b04c3a43044cfcc0c6bbde0ba8093554` |
 
-The uncached [KVM smoke](https://app.buildbuddy.io/invocation/0707f7db-1bce-4051-a165-5ddee411123a)
-passed on the OVH worker in 5.9 seconds. The [post-rebase focused checks](https://app.buildbuddy.io/invocation/d6d5a00d-fab8-4041-a489-de42008b9aae)
-passed all five tests (Firecracker adapter, rendered fixture, stack lifecycle, baseline and guest
-logs), plus the explicitly named stack and plugin builds. The
+Server-side dry runs using Flux's field manager revealed that the old manually owned hostname
+selector and KubeVirt workload affinity would survive omission from source. UID- and
+value-guarded JSON removals cleared exactly those two preview fields. Removing the complete
+selector field passed admission; the earlier Linux-selector workaround was unnecessary for
+this removal. All three `kustomize.toolkit.fluxcd.io/reconcile` holds were then removed.
+No Flux Kustomization was suspended. Flux reconciles the permanent source through the existing
+`kubevirt` → `buildbuddy-kvm-worker` dependency.
+
+KubeVirt became Available with all eight virt-handler Pods ready at DaemonSet generation 895.
+Its Flux health check completed in 6 minutes 25 seconds. Both owning Kustomizations report
+Ready and Healthy at the revisions above. The VM's live ConfigMap matches all 13 configuration
+files in the landed artifact, and no reconciliation hold remains on any of the three resources.
+
+The existing guest stayed healthy during node-agent rollout, but Flux correctly waited for the
+new VM template: `metadata.generation=4` versus `status.observedGeneration=3`. The idle executor
+was stopped, absence of action containers verified, and the disposable VM restarted through
+KubeVirt's lifecycle API. Only rebuildable cache/work disks were discarded. No further desired
+configuration override was introduced.
+
+Kubernetes selected `wyrm2` under the unrestricted capability policy. The replacement VMI UID is
+`b6e36912-8f01-48e1-8a8e-aca63ee5d9a9`, created at `2026-11-04T12:22:04Z`. The VM UID is unchanged;
+its desired and observed generations are both 4. Guest bootstrap and its automatic reboot
+completed, AMD nested KVM reports `1`, and the executor registered at 12:26:23 UTC with all
+health probes passing. The VM has no nodeSelector and only the two alternative VMX/SVM affinity
+terms. The controller-added KubeVirt schedulable-node requirements still apply.
+
+An [early post-adoption submission](https://app.buildbuddy.io/invocation/845d6299-2120-430c-83ca-19b09b36f11f)
+arrived before executor registration and was rejected with no test execution. The
+[post-registration smoke](https://app.buildbuddy.io/invocation/b6950fb1-da29-421d-bdad-841e2b9703fc)
+passed after all executor health probes were verified.
+
+The feature branch was rebased onto that landed infrastructure, dropping the duplicate
+fixed-host placement commits. Its Firecracker Go/controller files, guest Nix configuration,
+boot artifact and system-test fixture/scenario sources are unchanged by this rebase. The
+accepted hardware result remains tied to `760367f0aa`; rebased-head checks are separate.
+
+The uncached [OVH KVM smoke](https://app.buildbuddy.io/invocation/0707f7db-1bce-4051-a165-5ddee411123a)
+passed in 5.9 seconds. The [earlier post-rebase fixture checks](https://app.buildbuddy.io/invocation/d6d5a00d-fab8-4041-a489-de42008b9aae)
+passed all five tests and the explicitly named stack and plugin builds. The
 [analysis-only submission](https://app.buildbuddy.io/invocation/1dcf0f5a-7e83-4e51-8461-fa3266ef851b)
-is separate from these checks. The [hardware rerun](https://app.buildbuddy.io/invocation/418f4407-9b83-47df-be8d-fb28df43b15e)
-used clean head `760367f0aa` and passed, including teardown, as detailed above.
+failed because launcher-image visibility still named the old test package; it ran no hardware
+action. After correcting visibility, the [complete hardware rerun](https://app.buildbuddy.io/invocation/418f4407-9b83-47df-be8d-fb28df43b15e)
+passed, including teardown, as detailed above.
