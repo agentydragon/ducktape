@@ -13,7 +13,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.system_tests.k3s.iptables_rule import IptablesCommandError, ensure_rule
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 def _fake_iptables(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, check_result: int) -> tuple[Path, Path]:

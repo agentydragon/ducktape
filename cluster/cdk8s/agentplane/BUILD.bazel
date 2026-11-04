@@ -282,8 +282,8 @@ py_library(
     ],
     deps = [
         "//cluster/cdk8s/agentplane:model_selections",
+        "//devinfra/bazel:runfiles",
         "//model_catalog:catalog",
-        "//util/bazel:runfiles",
     ],
 )
 
@@ -296,8 +296,8 @@ py_test(
         ":codex_models",
         "//:conftest",
         "//cluster/cdk8s/agentplane:model_selections",
+        "//devinfra/bazel:runfiles",
         "//model_catalog:catalog",
-        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )
@@ -1076,7 +1076,7 @@ py_test(
         "//:conftest",
         "//agentplane/env:config",
         "//cluster/cdk8s:conftest",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",

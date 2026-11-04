@@ -39,9 +39,9 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":simple_servers",
+        "//devinfra/bazel:subprocess",
         "//mcp_infra/exec/docker:types",
         "//mcp_infra/testing:stdio_app",
-        "//util/bazel:subprocess",
         "@pypi//aiodocker",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",

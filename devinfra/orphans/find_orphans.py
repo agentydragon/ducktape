@@ -23,7 +23,7 @@ from textwrap import dedent
 import pathspec
 import pygit2
 
-from util.bazel.workspace import BazelLabel, BazelWorkspace, detect_bazel_backend, get_build_workspace_directory
+from devinfra.bazel.workspace import BazelLabel, BazelWorkspace, detect_bazel_backend, get_build_workspace_directory
 
 
 @dataclasses.dataclass

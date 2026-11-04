@@ -26,8 +26,8 @@ py_test(
     deps = [
         ":grid_generator",
         "//:conftest",
+        "//devinfra/bazel:runfiles",
         "//laser/lightburn:lbrn2_writer",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

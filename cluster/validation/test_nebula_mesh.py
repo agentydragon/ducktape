@@ -8,7 +8,7 @@ import pytest
 import pytest_bazel
 
 from cluster.scripts import nebula_mesh
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 @pytest.fixture(scope="module")

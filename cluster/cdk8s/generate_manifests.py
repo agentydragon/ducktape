@@ -263,8 +263,8 @@ from cluster.cdk8s.tofu_controller import release as tofu_controller_release
 from cluster.cdk8s.tofu_state import db as tofu_state_db, namespace as tofu_state_namespace
 from cluster.cdk8s.website import website
 from cluster.scripts import nebula_mesh
-from util.bazel.runfiles import get_required_path
-from util.bazel.workspace import get_build_workspace_directory
+from devinfra.bazel.runfiles import get_required_path
+from devinfra.bazel.workspace import get_build_workspace_directory
 
 
 def generate_manifests(root: Path) -> None:

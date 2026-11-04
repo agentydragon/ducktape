@@ -3,8 +3,8 @@ import tomllib
 
 import pytest_bazel
 
+from devinfra.bazel.runfiles import get_required_path
 from nix.home.codex import merge
-from util.bazel.runfiles import get_required_path
 
 
 def test_main_prints_unmanaged_toml_and_preserves_live_only_config(tmp_path, monkeypatch, capsys) -> None:

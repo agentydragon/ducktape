@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from x.wt.shared.config_file import ConfigFile
 from x.wt.shared.configuration import Configuration
 from x.wt.testing.data import WATCHER_DEBOUNCE_SECS, ConfigPresets, TestData

@@ -26,6 +26,7 @@ from typing import assert_never
 import httpx
 import uvicorn
 
+from devinfra.bazel.workspace import get_build_working_directory
 from devinfra.claude.session_export.api import SessionCookie, SessionsApi
 from devinfra.claude.session_export.archive import export_all, verify_archive
 from devinfra.claude.session_export.database_migrate import RUNNER
@@ -44,7 +45,6 @@ from devinfra.claude.session_export.store import SessionStore, make_engine
 from devinfra.claude.session_export.supervisor import SyncSupervisor
 from devinfra.claude.session_export.sync import sync_once
 from devinfra.claude.session_export.web import create_app, create_control_app, create_web_app
-from util.bazel.workspace import get_build_working_directory
 
 logger = logging.getLogger(__name__)
 

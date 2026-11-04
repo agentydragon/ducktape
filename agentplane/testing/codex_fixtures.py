@@ -10,7 +10,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.engine import make_url
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from util.testing.postgres import create_temporary_database
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 

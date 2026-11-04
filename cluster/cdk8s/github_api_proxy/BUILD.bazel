@@ -58,7 +58,7 @@ py_test(
         ":proxy",
         "//:conftest",
         "//cluster/cdk8s:conftest",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",

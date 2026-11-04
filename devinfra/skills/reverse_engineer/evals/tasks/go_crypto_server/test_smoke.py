@@ -31,7 +31,7 @@ import httpx
 import pytest
 import pytest_bazel
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from util.net import listen_tcp
 
 PROTOCOL_VERSION = "ncs/1"

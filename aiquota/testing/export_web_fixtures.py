@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from aiquota.testing.quota_fixtures import DEFAULT_NOW, FIXTURE_NAMES, load_quota_view_fixture
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 def scene_payloads(*, now: datetime = DEFAULT_NOW) -> dict[str, Any]:

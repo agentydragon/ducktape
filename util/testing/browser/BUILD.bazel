@@ -10,5 +10,5 @@ py_library(
         "@chrome_headless_shell//:executable",
     ],
     visibility = ["//visibility:public"],
-    deps = ["//util/bazel:runfiles"],
+    deps = ["//devinfra/bazel:runfiles"],
 )

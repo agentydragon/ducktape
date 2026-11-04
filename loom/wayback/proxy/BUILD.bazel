@@ -139,9 +139,9 @@ py_test(
     deps = [
         ":fake_ia",
         "//:conftest",
+        "//devinfra/bazel:runfiles",
         "//third_party/containers:python_3_14_slim",
         "//util:oci",
-        "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

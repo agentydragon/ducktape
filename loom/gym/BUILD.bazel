@@ -194,8 +194,8 @@ py_test(
         ":seed_tasks",
         ":task",
         "//:conftest",
+        "//devinfra/bazel:runfiles",
         "//finance/evidence:markets",
-        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )

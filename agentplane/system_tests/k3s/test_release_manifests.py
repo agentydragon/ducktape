@@ -7,7 +7,7 @@ import pytest
 import yaml
 
 from agentplane.system_tests.k3s.release_manifests import load_release_manifest
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 _PINNED_MANIFESTS = (
     "CERT_MANAGER_INSTALL_RLOCATION",

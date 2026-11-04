@@ -15,7 +15,7 @@ import asyncio
 import pytest_bazel
 
 from cluster.validation.flux import validate_flux_build
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 _K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"
 

@@ -10,8 +10,8 @@ import pytest
 import pytest_bazel
 from opentelemetry import trace
 
-from util.bazel.runfiles import get_required_path
-from util.bazel.subprocess import _merge_pythonpath
+from devinfra.bazel.runfiles import get_required_path
+from devinfra.bazel.subprocess import _merge_pythonpath
 from util.testing.otel_tracing import configure_tracing
 
 _CONDA_ENV_REPO = "rules_conda++conda+freecad_conda"

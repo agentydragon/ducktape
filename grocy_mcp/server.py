@@ -38,6 +38,7 @@ from fastmcp.server.providers.openapi import (
 from fastmcp.utilities.openapi import HTTPRoute
 from prometheus_client import Gauge, start_http_server
 
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from grocy_mcp.batch_tools import register_batch_tools
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
@@ -46,7 +47,6 @@ from mcp_infra.authentik_auth.provider import build_authentik_auth
 from mcp_infra.authentik_auth.token_exchange import AuthentikTokenExchanger, build_authentik_backend_token_provider
 from mcp_infra.persistence import build_client_storage
 from mcp_infra.request_scoped_openapi import HTTPClientProvider, RequestScopedOpenAPIClients
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 logger = logging.getLogger(__name__)
 

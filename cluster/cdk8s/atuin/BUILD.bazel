@@ -31,7 +31,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

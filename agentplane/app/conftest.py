@@ -38,7 +38,7 @@ from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.electric_role import ensure_electric_role
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from util.db_url import render_postgresql_url
 from util.net import refusing_tcp_endpoint
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate

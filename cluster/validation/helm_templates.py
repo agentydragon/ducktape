@@ -23,7 +23,7 @@ def _helm_bin() -> Path:
 def _get_values_files() -> list[Path]:
     """Get cilium values files from runfiles or source tree."""
     try:
-        from util.bazel.runfiles import get_required_path  # noqa: PLC0415 — not available outside Bazel
+        from devinfra.bazel.runfiles import get_required_path  # noqa: PLC0415 — not available outside Bazel
 
         return [get_required_path(rloc) for rloc in _CILIUM_VALUES_RLOCATIONS]
     except ImportError, RuntimeError:

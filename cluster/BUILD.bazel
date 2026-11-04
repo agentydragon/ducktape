@@ -55,8 +55,8 @@ py_library(
     srcs = ["bootstrap.py"],
     deps = [
         ":network_readiness",
-        "//util/bazel:runfiles",
-        "//util/bazel:workspace",
+        "//devinfra/bazel:runfiles",
+        "//devinfra/bazel:workspace",
         "@pypi//kubernetes",
         "@pypi//pygit2",
     ],

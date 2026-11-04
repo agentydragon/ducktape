@@ -14,7 +14,7 @@ from agentplane.native.claude.testing import anthropic_sse
 from agentplane.native.claude.testing.harness import ClaudeLauncher
 from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.claude.testing.model import MODEL
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 

@@ -18,7 +18,7 @@ from more_itertools import one
 from agentplane.system_tests.k3s.release_manifests import load_release_manifest
 from agentplane.system_tests.tracing import tracer
 from agentplane.system_tests.vm_configuration import OOM_TEMPLATE
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 # The stack's `K3s.kubectl`: the stack calls this module while it starts.
 Kubectl = Callable[..., str]

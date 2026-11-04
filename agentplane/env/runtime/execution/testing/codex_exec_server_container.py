@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 
 from agentplane.env.e2e.testing import launches
+from devinfra.bazel.runfiles import get_required_path
 from third_party.containers import debian_slim
-from util.bazel.runfiles import get_required_path
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 

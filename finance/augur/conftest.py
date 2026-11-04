@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from devinfra.bazel.runfiles import get_required_path
 from finance.augur.api.config import Config, load_augur_config
 from finance.augur.fit.synthetic_evidence import synthetic_evidence_dir
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
@@ -13,7 +14,6 @@ from finance.augur.model.testing import (
     level_matrix_with_month_override,
 )
 from finance.augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS
-from util.bazel.runfiles import get_required_path
 
 _PRIVATE_HOLDING_A = IssuerId("private_holding_a")
 

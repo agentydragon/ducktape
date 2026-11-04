@@ -9,7 +9,7 @@ from typing import Any
 import pytest_bazel
 from sqlalchemy import create_engine, text
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 pytest_plugins = ("util.testing.postgres_fixtures",)
 

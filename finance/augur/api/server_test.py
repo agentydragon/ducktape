@@ -13,8 +13,8 @@ import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
 
+from devinfra.bazel.runfiles import get_required_path
 from finance.augur.testing.server import run_server
-from util.bazel.runfiles import get_required_path
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx

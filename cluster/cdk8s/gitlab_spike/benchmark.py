@@ -18,7 +18,7 @@ from cilium_crds.io.cilium import (
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.gitlab_spike import app
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "gitlab-spike-benchmark"
 _FORGEJO_NAME = "forgejo-spike-benchmark"

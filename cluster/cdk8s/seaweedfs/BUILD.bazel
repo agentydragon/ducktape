@@ -91,7 +91,7 @@ py_library(
         ":public_s3",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/seaweedfs:namespace",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
     ],
 )

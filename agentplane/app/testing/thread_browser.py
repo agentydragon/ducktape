@@ -46,7 +46,7 @@ from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatche
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.runner_gateway.testing.runner_server import runner_server
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from util.testing.frontend_visual.context import deterministic_browser_context, disable_animations_script
 from util.testing.frontend_visual.viewports import DESKTOP, Viewport
 from util.testing.postgres import DatabaseNames

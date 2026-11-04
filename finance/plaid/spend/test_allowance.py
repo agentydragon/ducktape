@@ -10,6 +10,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
+from devinfra.bazel.runfiles import get_required_path
 from finance.plaid.spend.allowance import (
     AllOf,
     AllowancePolicy,
@@ -39,7 +40,6 @@ from finance.plaid.spend.configuration import SpendConfiguration, load_configura
 from finance.plaid.spend.models import AllowanceConfigurationView, SpendConfigurationView
 from finance.plaid.spend.reconciliation_views import allowance_view
 from finance.plaid.spend.testing.transaction import make_transaction
-from util.bazel.runfiles import get_required_path
 
 START = datetime(2026, 1, 31, tzinfo=UTC)
 START_DATE = date(2026, 1, 31)

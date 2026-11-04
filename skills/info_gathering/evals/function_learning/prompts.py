@@ -1,8 +1,8 @@
 """Prompt loading helpers for the function learning eval."""
 
+from devinfra.bazel.runfiles import get_required_path
 from skills.eval_infra.eval_prompt import compose_system_prompt
 from skills.info_gathering.evals.function_learning.functions import SecretFunction
-from util.bazel.runfiles import get_required_path
 
 _FIRST_USER_MSG_RLOCATION = "_main/skills/info_gathering/evals/function_learning/first_user_message.txt"
 

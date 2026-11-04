@@ -12,7 +12,7 @@ from cdk8s import (
 from more_itertools import one
 
 from cluster.cdk8s.github_api_proxy import proxy
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 def test_github_proxy_rules(scratch_app: App, tmp_path: Path) -> None:

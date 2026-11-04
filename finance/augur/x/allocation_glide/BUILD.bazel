@@ -41,9 +41,9 @@ py_test(
     deps = [
         ":compare",
         "//:conftest",
+        "//devinfra/bazel:runfiles",
         "//finance/augur:conftest",
         "//finance/augur/sim:results",
-        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

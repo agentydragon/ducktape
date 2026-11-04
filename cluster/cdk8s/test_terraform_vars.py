@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from cluster.cdk8s.forgejo_registry.chart import ForgejoImagesVars
 from cluster.cdk8s.monitoring.home_switch import HomeSwitchVars
 from cluster.cdk8s.route53_domain_delegation import Route53DomainDelegationVars
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 @pytest.mark.parametrize(

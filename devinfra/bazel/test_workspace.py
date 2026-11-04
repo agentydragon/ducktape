@@ -1,4 +1,4 @@
-"""Tests for util.bazel.workspace."""
+"""Tests for devinfra.bazel.workspace."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 import pytest_bazel
 
-from util.bazel.workspace import BazelBackend, BazelLabel, BazelWorkspace
+from devinfra.bazel.workspace import BazelBackend, BazelLabel, BazelWorkspace
 
 
 @pytest.mark.parametrize(
@@ -88,7 +88,7 @@ def test_str(label: BazelLabel, expected: str) -> None:
 def test_query_parses_labels(tmp_path: Path) -> None:
     completed = CompletedProcess(args=[], returncode=0, stdout="//foo:bar.py\n@ext//pkg:target\n\n", stderr="")
     workspace = BazelWorkspace(root=tmp_path, backend=BazelBackend.LOCAL)
-    with patch("util.bazel.workspace.subprocess.run", return_value=completed) as mock_run:
+    with patch("devinfra.bazel.workspace.subprocess.run", return_value=completed) as mock_run:
         result = workspace.query("//...")
     (cmd,), kwargs = mock_run.call_args
     assert cmd[:3] == ["bazelisk", "query", "--output=label"]
@@ -106,7 +106,7 @@ def test_query_persist_dir(tmp_path: Path) -> None:
     persist_dir.mkdir()
     completed = CompletedProcess(args=[], returncode=0, stdout="//foo:bar\n", stderr="")
     workspace = BazelWorkspace(root=tmp_path, backend=BazelBackend.LOCAL)
-    with patch("util.bazel.workspace.subprocess.run", return_value=completed):
+    with patch("devinfra.bazel.workspace.subprocess.run", return_value=completed):
         workspace.query("//...", persist_dir=persist_dir)
     assert (persist_dir / "query").read_text() == "//..."
     assert (persist_dir / "stdout").read_text() == "//foo:bar\n"
@@ -127,18 +127,18 @@ def test_query_filters_bbr_log_lines(tmp_path: Path) -> None:
         "\x1b[32mLoading: \x1b[m12 packages loaded\n"
         "//\n"
         "//devinfra/precommit:test_filename_conventions.py\n"
-        "//util/bazel:test_workspace.py\n"
+        "//devinfra/bazel:test_workspace.py\n"
         "@pypi//pytest:pkg\n"
         "\x1b[32mINFO: \x1b[mStreaming build results to: https://app.buildbuddy.io/invocation/0b50b97b\n"
         "\x1b[90m2026-04-08 14:38:30.000 UTC (command exited with code 0)\n"
     )
     completed = CompletedProcess(args=[], returncode=0, stdout=stdout, stderr="")
     workspace = BazelWorkspace(root=tmp_path, backend=BazelBackend.LOCAL)
-    with patch("util.bazel.workspace.subprocess.run", return_value=completed):
+    with patch("devinfra.bazel.workspace.subprocess.run", return_value=completed):
         result = workspace.query("//...")
     assert result == [
         BazelLabel(repo="", package=Path("devinfra/precommit"), name="test_filename_conventions.py"),
-        BazelLabel(repo="", package=Path("util/bazel"), name="test_workspace.py"),
+        BazelLabel(repo="", package=Path("devinfra/bazel"), name="test_workspace.py"),
         BazelLabel(repo="pypi", package=Path("pytest"), name="pkg"),
     ]
 
@@ -147,7 +147,7 @@ def test_query_raises_on_failure_with_stderr_in_the_traceback(tmp_path: Path) ->
     completed = CompletedProcess(args=[], returncode=7, stdout="", stderr="ERROR: no such package 'missing'")
     workspace = BazelWorkspace(root=tmp_path, backend=BazelBackend.LOCAL)
     with (
-        patch("util.bazel.workspace.subprocess.run", return_value=completed),
+        patch("devinfra.bazel.workspace.subprocess.run", return_value=completed),
         pytest.raises(CalledProcessError) as excinfo,
     ):
         workspace.query("//...")

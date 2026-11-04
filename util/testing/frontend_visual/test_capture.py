@@ -11,7 +11,7 @@ import pytest
 import pytest_bazel
 from playwright.async_api import BrowserContext, Page, Playwright, expect
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.testing.frontend_visual.capture import (
     HarnessConfig,
     InlinePage,

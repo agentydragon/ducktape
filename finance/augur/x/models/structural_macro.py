@@ -55,6 +55,7 @@ import numpy as np
 import yaml
 from pydantic import Field, NonNegativeFloat, PositiveFloat, model_validator
 
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from finance.augur.model.bond_fund import MINIMUM_ANNUAL_YIELD, BondFundSpec
 from finance.augur.model.equity import EquitySpec
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
@@ -64,7 +65,6 @@ from finance.augur.model.product_paths import construct_products, product_level_
 from finance.augur.model.schemas import FrozenModel
 from finance.augur.model.series import IssuerId, LevelSeriesKey
 from finance.augur.model.series_model import derive_stream_rollout_seeds
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 MONTHS_PER_YEAR = 12
 

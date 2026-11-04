@@ -23,7 +23,7 @@ from more_itertools import one
 from playwright.async_api import BrowserContext, Locator, Page, Playwright, Route
 from pydantic import JsonValue, TypeAdapter
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.testing.frontend_visual.context import DISABLE_ANIMATIONS_CSS, FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.frontend_visual.page_capture import (
     WAIT_TIMEOUT_MS,

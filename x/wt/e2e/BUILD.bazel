@@ -86,7 +86,7 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "//x/wt/testing:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

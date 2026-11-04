@@ -10,7 +10,7 @@ from cdk8s import (
 from more_itertools import one
 
 from cluster.cdk8s.haku import mailbox
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 def test_mailbox_initialization_is_serialized_and_init_only(scratch_app: App) -> None:

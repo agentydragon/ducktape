@@ -1,9 +1,9 @@
 import pytest_bazel
 from sqlalchemy import create_engine, func, select
 
+from devinfra.bazel.runfiles import get_required_path
 from finance.plaid.db.models import Base
 from finance.plaid.spend.portfolio_queries import select_account_balances, select_holding_batches
-from util.bazel.runfiles import get_required_path
 from util.testing.postgres import PostgresDatabaseTemplate
 
 # SQLAlchemy loads psycopg from the URL scheme at runtime.

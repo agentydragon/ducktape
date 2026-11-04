@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BAZEL_CI = REPO_ROOT / "devinfra/ci/bazel_ci.py"

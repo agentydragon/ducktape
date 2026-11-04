@@ -16,13 +16,13 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from finance.augur.sim.ids import AssetId
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.study.guyton_klinger.panel import Sleeve, load_panel
 from finance.augur.study.guyton_klinger.paths import ADAPTATION_TARGET_PERCENT, CURRENCY, AnnualWindows, annual_windows
 from finance.augur.study.guyton_klinger.policy import Cell, Guardrail, Inflation, Stage
 from finance.augur.study.guyton_klinger.run import Records, YearAmounts, YearRecordView, run
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 HEADER = "year,cash_income,bonds_income,bonds_price,equity_income,equity_price,inflation"
 # Window 2001: every sleeve +10% then 0%. Window 2003: cash +5% then 0%, the other sleeves

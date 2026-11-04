@@ -136,9 +136,9 @@ py_test(
     deps = [
         ":scrape",
         "//:conftest",
+        "//devinfra/bazel:runfiles",
         "//finance/augur/calibration:catalog",
         "//finance/evidence:markets",
-        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )

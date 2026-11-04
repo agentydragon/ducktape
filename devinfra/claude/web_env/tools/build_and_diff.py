@@ -20,12 +20,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from devinfra.bazel.workspace import get_build_workspace_directory
 from devinfra.claude.web_env.tools.capture_manifest import capture, write_manifest
 from devinfra.claude.web_env.tools.capture_versions import capture_versions_yaml
 from devinfra.claude.web_env.tools.diff_manifests import REAL_DIFF_STATUSES, diff_manifests, generate_report
 from devinfra.claude.web_env.tools.fetch_debs import fetch_debs
 from devinfra.claude.web_env.tools.manifest import Entry, load_default_exclusions
-from util.bazel.workspace import get_build_workspace_directory
 
 logger = logging.getLogger(__name__)
 

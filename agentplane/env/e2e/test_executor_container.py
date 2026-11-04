@@ -32,8 +32,8 @@ from agentplane.env.runtime.execution.testing.codex_exec_server_container import
 )
 from agentplane.proto import event_pb2, identity_pb2, session_pb2
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
+from devinfra.bazel.runfiles import get_required_path
 from third_party.containers import debian_slim
-from util.bazel.runfiles import get_required_path
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 

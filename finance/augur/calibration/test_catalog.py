@@ -7,6 +7,7 @@ from datetime import date
 import pytest
 import pytest_bazel
 
+from devinfra.bazel.runfiles import get_required_path
 from finance.augur.calibration.catalog import (
     CatalogMetadata,
     CorrelateMarket,
@@ -20,7 +21,6 @@ from finance.augur.calibration.catalog import (
 )
 from finance.augur.model.series import IssuerId
 from finance.evidence.markets import Platform
-from util.bazel.runfiles import get_required_path
 
 OPENAI = IssuerId("openai")
 

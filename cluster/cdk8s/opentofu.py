@@ -31,7 +31,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
 )
 from cluster.cdk8s.secret_ref import SecretKey
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAMESPACE = "crossplane-system"
 RUNTIME_SERVICE_ACCOUNT = "crossplane-opentofu"

@@ -1,7 +1,7 @@
 import nltk
 import pytest
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 def _refuse_download(*_args: object, **_kwargs: object) -> bool:

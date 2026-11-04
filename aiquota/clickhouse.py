@@ -21,7 +21,7 @@ from aiquota.models import (
     TokenActivityObservation,
     history_capture_key,
 )
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 _DATASET = "aiquota"
 _SCHEMA = "aiquota/schema.sql"

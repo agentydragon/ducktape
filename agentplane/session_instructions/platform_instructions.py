@@ -4,7 +4,7 @@ from enum import StrEnum
 
 from jinja2 import StrictUndefined, Template
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 PLATFORM_INSTRUCTIONS_TEMPLATE = "agentplane/session_instructions/platform_instructions.j2"
 

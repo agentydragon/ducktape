@@ -70,8 +70,8 @@ py_library(
     ],
     visibility = ["//skills/freecad:__subpackages__"],
     deps = [
-        "//util/bazel:runfiles",
-        "//util/bazel:subprocess",
+        "//devinfra/bazel:runfiles",
+        "//devinfra/bazel:subprocess",
         "//util/testing:otel_tracing",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
@@ -90,7 +90,7 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

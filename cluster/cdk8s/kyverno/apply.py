@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 def _kyverno_bin() -> Path:

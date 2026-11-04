@@ -2,7 +2,7 @@
 
 TODO: Consolidate to PATH-only resolution once all callers run in the Nix
 devshell (which provides kustomize, flux, helm). Remove the runfiles fallback
-and the util.bazel.runfiles dependency.
+and the devinfra.bazel.runfiles dependency.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ def resolve_tool(name: str, runfiles_rlocation: str) -> Path:
     from Nix-installed wheels (pre-commit hooks).
     """
     try:
-        from util.bazel.runfiles import get_required_path  # noqa: PLC0415 — not available outside Bazel
+        from devinfra.bazel.runfiles import get_required_path  # noqa: PLC0415 — not available outside Bazel
 
         return get_required_path(runfiles_rlocation)
     except ImportError, RuntimeError:

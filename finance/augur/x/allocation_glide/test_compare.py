@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from finance.augur.sim.results import Finished, Paid
 from finance.augur.x.allocation_glide.compare import execute, situation
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
 
 @pytest.fixture(scope="module")

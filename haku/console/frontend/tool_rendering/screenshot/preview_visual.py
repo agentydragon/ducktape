@@ -9,7 +9,7 @@ import pytest_bazel
 from playwright.async_api import expect
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from util.testing.frontend_visual.capture import VisualHarness
 from util.testing.frontend_visual.viewports import Viewport
 

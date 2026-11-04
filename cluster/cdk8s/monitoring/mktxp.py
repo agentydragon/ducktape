@@ -41,7 +41,7 @@ from cluster.cdk8s.node_scheduling import OPTIPLEX
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 NAME = "mktxp"
 NAMESPACE = "monitoring"

@@ -18,7 +18,7 @@ from cluster.cdk8s.x.render_diff import (
     git_tree,
     reconcile,
 )
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 _GOTK_SYNC = """\
 apiVersion: source.toolkit.fluxcd.io/v1

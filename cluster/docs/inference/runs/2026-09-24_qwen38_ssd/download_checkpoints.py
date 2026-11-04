@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 MANIFEST = "cluster/docs/inference/runs/2026-09-24_qwen38_ssd/checkpoints.json"
 HEADROOM_BYTES = 200 * 1024**3

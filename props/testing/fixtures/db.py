@@ -14,13 +14,13 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 
+from devinfra.bazel.runfiles import get_required_path
 from openai_utils.model_metadata import MODEL_METADATA
 from props.config import CustomModelConfig, PropsConfig, UpstreamConfig
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.sync import SpecimenBundle, refresh_examples_matview, sync_specimen
-from util.bazel.runfiles import get_required_path
 from util.testing.postgres import (
     DatabaseNames,
     PostgresDatabaseTemplate,

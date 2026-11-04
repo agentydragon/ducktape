@@ -12,10 +12,10 @@ import tarfile
 
 import pytest_bazel
 
+from devinfra.bazel.runfiles import get_required_path
 from props.db.database import Database
 from props.db.models import Snapshot
 from props.db.sync.sync import SpecimenBundle, sync_specimen
-from util.bazel.runfiles import get_required_path
 
 _CODE_TAR = get_required_path(f"_main/{os.environ['SPECIMEN_CODE_TAR']}")
 _DATA_YAML = get_required_path(f"_main/{os.environ['SPECIMEN_DATA_YAML']}")

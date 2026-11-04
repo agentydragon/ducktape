@@ -13,7 +13,7 @@ from typing import Any
 
 from playwright.async_api import BrowserContext, Page
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
 

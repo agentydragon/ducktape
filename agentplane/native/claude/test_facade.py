@@ -11,7 +11,7 @@ import pytest_bazel
 
 from agentplane.native.claude import facade, wire
 from agentplane.native.testing.async_process import AsyncNativeProcess, NativeProcessEofError
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 @pytest.mark.parametrize("outcome", ["success", "error", "eof"])

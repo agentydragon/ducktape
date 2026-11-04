@@ -14,7 +14,7 @@ import subprocess
 
 import pytest_bazel
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 SERVER_BIN = "_main/finance/plaid/link/server_bin"
 

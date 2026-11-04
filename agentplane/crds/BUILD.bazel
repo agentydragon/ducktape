@@ -38,8 +38,8 @@ py_library(
     srcs = ["generate.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//util/bazel:runfiles",
-        "//util/bazel:workspace",
+        "//devinfra/bazel:runfiles",
+        "//devinfra/bazel:workspace",
         "@pypi//pyyaml",
     ],
 )
@@ -67,7 +67,7 @@ py_test(
     deps = [
         ":generate",
         "//:conftest",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//jsonschema",
         "@pypi//pytest_bazel",

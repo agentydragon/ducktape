@@ -7,7 +7,7 @@ from typing import Any
 
 from more_itertools import one
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 # The pinned Codex's own catalog (`codex debug models --bundled`), which LLM ingress serves ChatGPT routes from.
 _BUNDLED = "_main/cluster/cdk8s/agentplane/codex_upstream_models.json"

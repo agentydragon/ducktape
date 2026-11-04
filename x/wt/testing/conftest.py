@@ -15,7 +15,7 @@ import pygit2
 import pytest
 from typer.testing import CliRunner
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from x.wt.server import github_client
 from x.wt.server.git_manager import GitManager
 from x.wt.server.worktree_service import WorktreeService

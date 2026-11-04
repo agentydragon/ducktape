@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 from pydantic import BaseModel, Field
 
-from util.bazel.workspace import get_build_workspace_directory
+from devinfra.bazel.workspace import get_build_workspace_directory
 
 
 def sources_path() -> Path:

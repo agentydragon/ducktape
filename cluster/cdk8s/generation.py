@@ -26,7 +26,7 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 CNPG_DATABASE_READY = (
     "has(status.applied) && status.applied && "

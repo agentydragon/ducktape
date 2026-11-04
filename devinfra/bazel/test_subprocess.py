@@ -1,4 +1,4 @@
-"""Tests for util.bazel.subprocess module."""
+"""Tests for devinfra.bazel.subprocess module."""
 
 import subprocess
 import sys
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from util.bazel.subprocess import _in_bazel_venv, python_env
+from devinfra.bazel.subprocess import _in_bazel_venv, python_env
 
 
 def test_python_env_inherit_includes_path():

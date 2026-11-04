@@ -37,7 +37,7 @@ import pytest_bazel
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixture
 from gnome.testing.fake_daemon import fake_daemon
 from gnome.testing.session import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
 from util.testing.output_writer import BoundTestOutputs
 from util.testing.undeclared_outputs import undeclared_outputs_dir

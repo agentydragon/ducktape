@@ -23,13 +23,13 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Page, Playwright, ViewportSize
 
+from devinfra.bazel.runfiles import get_required_path
 from finance.augur.api.config import Config
 from finance.augur.api.server import static_price_clients
 from finance.augur.calibration.catalog import MarketCatalog
 from finance.augur.calibration.testing import mock_price_clients
 from finance.augur.dev_server import build_dev_app
 from finance.evidence.markets import Platform
-from util.bazel.runfiles import get_required_path
 from util.testing.asgi import serve_app_sync
 from util.testing.frontend_visual.capture import VisualPage, open_visual_page
 from util.testing.frontend_visual.context import deterministic_browser_context

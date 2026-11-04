@@ -5,6 +5,7 @@ py_library(
     name = "re_rollout",
     srcs = ["re_rollout.py"],
     deps = [
+        "//devinfra/bazel:runfiles",
         "//devinfra/skills/reverse_engineer:reverse_engineer_skill_spec",
         "//openai_utils:pydantic_strict_mode",
         "//skills:skill_spec",
@@ -15,7 +16,6 @@ py_library(
         "//skills/eval_infra:termination",
         "//skills/eval_infra:transcript",
         "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
-        "//util/bazel:runfiles",
         "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",

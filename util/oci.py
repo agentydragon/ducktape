@@ -27,7 +27,7 @@ from pathlib import Path
 
 from opentelemetry import trace
 
-from util.bazel import runfiles
+from devinfra.bazel import runfiles
 from util.crane import Crane, parse_pushed_digest
 
 logger = logging.getLogger(__name__)

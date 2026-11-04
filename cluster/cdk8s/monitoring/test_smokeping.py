@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest_bazel
 import yaml
 
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 _DASHBOARD = "_main/cluster/cdk8s/monitoring/dashboards/home-network-overview.json"
 

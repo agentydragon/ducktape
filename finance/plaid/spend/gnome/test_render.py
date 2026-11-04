@@ -18,12 +18,12 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from devinfra.bazel.runfiles import get_required_path
 from finance.plaid.spend.allowance import PeriodId
 from finance.plaid.spend.models import SpendView
 from finance.plaid.spend.testing import dashboard
 from gnome.testing.fake_daemon import fake_daemon
 from gnome.testing.session import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
-from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
 from util.testing.output_writer import BoundTestOutputs
 

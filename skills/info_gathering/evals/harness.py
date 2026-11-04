@@ -17,9 +17,9 @@ from typing import Literal
 from pydantic import BaseModel
 
 from agent_core.events import ToolCall
+from devinfra.bazel.runfiles import get_required_path
 from openai_utils.client_factory import get_async_openai
 from openai_utils.model import BoundOpenAIModel, OpenAIModelProto
-from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
 

@@ -13,9 +13,9 @@ import aiodocker
 import pytest
 from fastmcp.mcp_config import StdioMCPServer
 
+from devinfra.bazel.subprocess import python_env
 from mcp_infra.exec.docker.types import ContainerExecServerConfig, DefaultValue
 from mcp_infra.testing.simple_servers import make_simple_mcp as _make_simple_mcp  # avoid fixture collision
-from util.bazel.subprocess import python_env
 
 # The stdio transport fixture launches `-m mcp_infra.testing.stdio_app`; the module
 # is referenced only as a string, so gazelle cannot see the dependency.

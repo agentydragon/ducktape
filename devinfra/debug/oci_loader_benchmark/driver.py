@@ -3,8 +3,8 @@
 import subprocess
 import sys
 
+from devinfra.bazel import runfiles
 from third_party.containers import postgres_18
-from util.bazel import runfiles
 from util.oci import (
     OciImage,
     _already_loaded,

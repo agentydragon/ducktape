@@ -11,7 +11,7 @@ from cdk8s import (
 )
 
 from cluster.cdk8s.monitoring import rules
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 def _promtool_test_rules(app: App, tmp_path: Path, rule_files: dict[str, str], tests: str) -> None:

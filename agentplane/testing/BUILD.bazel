@@ -28,7 +28,7 @@ py_library(
     srcs = ["codex_fixtures.py"],
     data = ["@agentplane_codex_cli_linux_x64//:files"],
     deps = [
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "//util/testing:postgres",
         "//util/testing:undeclared_outputs",
         "@pypi//pytest",
@@ -61,7 +61,7 @@ py_library(
     ],
     deps = [
         "//agentplane:subjects",
-        "//util/bazel:runfiles",
+        "//devinfra/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//kubernetes_asyncio",
     ],

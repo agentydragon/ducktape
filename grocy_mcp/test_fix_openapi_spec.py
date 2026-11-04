@@ -6,6 +6,7 @@ import json
 
 import pytest_bazel
 
+from devinfra.bazel.runfiles import get_required_path
 from grocy_mcp.fix_openapi_spec import (
     _MISSING_PRODUCT_PROPERTIES,
     fix_entity_refs,
@@ -14,7 +15,6 @@ from grocy_mcp.fix_openapi_spec import (
     strip_replaced_routes,
 )
 from grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS
-from util.bazel.runfiles import get_required_path
 
 
 def test_strip_empty_enums_removes_empty_enum() -> None:

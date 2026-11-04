@@ -5,7 +5,7 @@ import subprocess
 import pytest_bazel
 from sqlalchemy import create_engine, text
 
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.db_url import render_postgresql_url
 from util.testing.postgres import DatabaseNames, create_temporary_database
 

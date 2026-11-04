@@ -22,7 +22,7 @@ from agentplane.native.claude.testing import model as claude_model
 from agentplane.native.codex.testing import model as codex_model
 from agentplane.proto import session_pb2
 from agentplane.sandboxes.launch import SandboxIdentity
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

@@ -18,7 +18,7 @@ from agentplane.env.e2e.testing.driver import RunnerDriver
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
-from util.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 # gazelle:include_dep @pypi//protobuf
 

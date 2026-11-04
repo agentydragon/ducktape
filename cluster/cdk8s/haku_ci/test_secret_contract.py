@@ -6,7 +6,7 @@ import pytest_bazel
 import yaml
 
 from cluster.cdk8s.haku_ci import runner
-from util.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path
 
 
 def test_keda_auth_reads_the_forgejo_token_secret() -> None:
