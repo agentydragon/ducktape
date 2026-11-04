@@ -421,7 +421,7 @@ impl FromStr for StatementRange {
     }
 }
 
-/// One raw top-level module item and its original-source coordinates.
+/// One raw top-level module item or variable declarator and its source coordinates.
 #[derive(Debug, Clone, Serialize)]
 pub struct StatementRow {
     /// Zero-based index in the parsed source module's `Module.body` array.

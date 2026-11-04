@@ -597,7 +597,7 @@ pub(super) fn run_inspect_source(
         if let Some(binding) = args.declarator_binding.as_deref() {
             let row =
                 source.variable_declarator_row(binding, matches!(args.view, SourceView::Pretty))?;
-            append_declarator_file(&mut report, &source, row, &args)?;
+            append_declarator_file(&mut report, &source, row, &args);
         } else {
             let range = match args.around_binding.as_deref() {
                 Some(binding) => Some(
@@ -701,25 +701,17 @@ fn append_declarator_file(
     source: &PreparedSource,
     row: StatementRow,
     args: &InspectSourceArgs,
-) -> Result<()> {
-    let statements =
-        if args.max_statements == 0 || displayed_statement_count(report) < args.max_statements {
-            vec![inspected_statement(
-                row,
-                Vec::new(),
-                args.view,
-                args.max_line_bytes,
-            )]
-        } else {
-            report.omitted_items += 1;
-            Vec::new()
-        };
+) {
     report.files.push(InspectedFile {
         source_file: source.path().display().to_string(),
         total_statements: source.statement_count(),
-        statements,
+        statements: vec![inspected_statement(
+            row,
+            Vec::new(),
+            args.view,
+            args.max_line_bytes,
+        )],
     });
-    Ok(())
 }
 
 fn render_inspect_source_text(report: &InspectSourceReport, out: &mut String) {
