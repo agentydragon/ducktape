@@ -127,7 +127,7 @@ def container_disk_vm(
     image: str,
     cpu: VirtualMachineSpecTemplateSpecDomainCpu,
     resources: VirtualMachineSpecTemplateSpecDomainResources,
-    node_selector: Mapping[str, str],
+    node_selector: Mapping[str, str] | None = None,
     ports: Sequence[VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts],
     disks: Mapping[str, VirtualMachineSpecTemplateSpecVolumes],
     run_strategy: str = "Always",

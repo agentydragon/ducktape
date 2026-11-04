@@ -79,9 +79,7 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     )
     guest = worker["spec"]["template"]["spec"]
     assert worker["spec"]["runStrategy"] == "Always"
-    # An empty selector removes its last SSA key and KubeVirt rejects the resulting null.
-    assert guest.get("nodeSelector")
-    worker_node = guest["nodeSelector"]["kubernetes.io/hostname"]
+    assert not guest.get("nodeSelector")
     kubevirt = next(doc["spec"] for doc in documents if doc["kind"] == "KubeVirt")
     control_plane_toleration = {
         "key": "node-role.kubernetes.io/control-plane",
@@ -91,16 +89,10 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
     assert control_plane_toleration in guest["tolerations"]
     assert control_plane_toleration in kubevirt["infra"]["nodePlacement"]["tolerations"]
     assert "kubernetes.io/hostname" not in kubevirt["infra"]["nodePlacement"].get("nodeSelector", {})
-    workload_terms = kubevirt["workloads"]["nodePlacement"]["affinity"]["nodeAffinity"][
-        "requiredDuringSchedulingIgnoredDuringExecution"
-    ]["nodeSelectorTerms"]
-    assert workload_terms[0]["matchExpressions"][-1] == {
-        "key": "node-role.kubernetes.io/control-plane",
-        "operator": "DoesNotExist",
-    }
-    assert workload_terms[1:] == [
-        {"matchExpressions": [{"key": "kubernetes.io/hostname", "operator": "In", "values": [worker_node]}]}
-    ]
+    workload_placement = kubevirt["workloads"]["nodePlacement"]
+    assert control_plane_toleration in workload_placement["tolerations"]
+    assert not workload_placement.get("nodeSelector")
+    assert not workload_placement.get("affinity")
     assert guest["domain"]["cpu"]["model"] == "host-passthrough"
     cpu_features = {
         feature["name"] for feature in guest["domain"]["cpu"]["features"] if feature["policy"] == "optional"

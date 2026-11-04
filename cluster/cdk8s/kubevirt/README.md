@@ -8,6 +8,7 @@ its kustomize manager reads a remote resource's version only from a `?ref=` or `
 query.
 
 The KubeVirt API and controller may run on any control-plane node in region `hil`.
-VM workloads run on non-control-plane workers in regions `hil`, `home` and `proxmox`, plus
-`ovh-ns104963` for the dedicated BuildBuddy KVM worker (`app.py`'s `workloads.nodePlacement`). `wyrm2` (region `proxmox`) is a Proxmox guest with
+VM workloads have no regional or control-plane exclusion; their own scheduling constraints
+and available KVM resources determine placement. The workload placement tolerates the
+control-plane taint (`app.py`'s `workloads.nodePlacement`). `wyrm2` (region `proxmox`) is a Proxmox guest with
 nested KVM: `kvm_amd` `nested=1` on both `atlas` (L0) and `wyrm2` (L1).

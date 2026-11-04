@@ -133,9 +133,6 @@ def chart(app: App) -> Chart:
                 ),
             },
         ),
-        # Keep a nonempty selector: deleting the last key via server-side apply can
-        # present nodeSelector: null to KubeVirt's admission webhook.
-        node_selector={"kubernetes.io/os": "linux", "kubernetes.io/hostname": node_scheduling.KVM_WORKER_NODE},
         tolerations=[
             VirtualMachineSpecTemplateSpecTolerations(
                 key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"

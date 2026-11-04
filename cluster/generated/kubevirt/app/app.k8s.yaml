@@ -37,24 +37,6 @@ spec:
   workloadUpdateStrategy: {}
   workloads:
     nodePlacement:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: topology.kubernetes.io/region
-                    operator: In
-                    values:
-                      - hil
-                      - home
-                      - proxmox
-                  - key: node-role.kubernetes.io/control-plane
-                    operator: DoesNotExist
-              - matchExpressions:
-                  - key: kubernetes.io/hostname
-                    operator: In
-                    values:
-                      - ovh-ns104963
       tolerations:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane

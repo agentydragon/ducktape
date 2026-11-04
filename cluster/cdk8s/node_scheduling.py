@@ -27,8 +27,6 @@ ROAMING_REGION = "roaming"
 HIL_OVH_NODE_SELECTOR: Mapping[str, str] = {ZONE_LABEL: HIL_OVH_ZONE}
 # Control-plane nodes also carry this key as a label, which node affinities and selectors match.
 CONTROL_PLANE_TAINT_KEY = "node-role.kubernetes.io/control-plane"
-# The dedicated BuildBuddy VM is the explicit control-plane exception for KubeVirt workloads.
-KVM_WORKER_NODE = "ovh-ns104963"
 CONTROL_PLANE_TOLERATION = k8s.Toleration(key=CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule")
 # The laptops' taint (their NixOS `nodeTaints`): only Pods that may vanish with the laptop tolerate it.
 ROAMING_TOLERATION = k8s.Toleration(

@@ -33,9 +33,9 @@ nested runc can use its normal root switch instead of the no-pivot fallback.
 The Kustomization is enabled, so Flux deploys the VM when this configuration lands.
 First boot configures the dedicated guest for nested KVM and reboots once before the
 executor starts. The VM selects nodes whose KubeVirt CPU feature labels advertise either
-`svm` or `vmx`; its guest loads the corresponding KVM driver. The worker is placed on
-`ovh-ns104963`, the explicit control-plane exception to KubeVirt workload placement. Its
-4-CPU, 16-GiB reservation fits that node; the executor advertises four CPUs and 14 GiB, leaving
+`svm` or `vmx`; its guest loads the corresponding KVM driver. The worker may run on any node,
+including control-plane nodes, that advertises either CPU feature and has capacity for
+the 4-CPU, 16-GiB reservation. It has no hostname, region or explicit OS selector. The executor advertises four CPUs and 14 GiB, leaving
 2 GiB for the guest OS and Docker. KVM test actions request four compute units. The historical
 `wyrm2-kvm-vm` pool name is retained independently of the node placement.
 The labels describe hypervisor CPU features, and the guest bootstrap fails if no KVM device

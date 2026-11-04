@@ -21,11 +21,6 @@ from kubevirt_kubevirt_crds.io.kubevirt import (
     KubeVirtSpecInfraNodePlacementTolerations,
     KubeVirtSpecWorkloads,
     KubeVirtSpecWorkloadsNodePlacement,
-    KubeVirtSpecWorkloadsNodePlacementAffinity,
-    KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinity,
-    KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
-    KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
-    KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
     KubeVirtSpecWorkloadsNodePlacementTolerations,
     KubeVirtSpecWorkloadUpdateStrategy,
 )
@@ -98,37 +93,7 @@ def chart(app: App) -> Chart:
                         KubeVirtSpecWorkloadsNodePlacementTolerations(
                             key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule"
                         )
-                    ],
-                    affinity=KubeVirtSpecWorkloadsNodePlacementAffinity(
-                        node_affinity=KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinity(
-                            required_during_scheduling_ignored_during_execution=KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                                node_selector_terms=[
-                                    KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                                        match_expressions=[
-                                            KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                                key="topology.kubernetes.io/region",
-                                                operator="In",
-                                                values=["hil", "home", "proxmox"],
-                                            ),
-                                            KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                                key=node_scheduling.CONTROL_PLANE_TAINT_KEY, operator="DoesNotExist"
-                                            ),
-                                        ]
-                                    ),
-                                    # The dedicated nested-KVM worker is the one control-plane workload exception.
-                                    KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
-                                        match_expressions=[
-                                            KubeVirtSpecWorkloadsNodePlacementAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
-                                                key="kubernetes.io/hostname",
-                                                operator="In",
-                                                values=[node_scheduling.KVM_WORKER_NODE],
-                                            )
-                                        ]
-                                    ),
-                                ]
-                            )
-                        )
-                    ),
+                    ]
                 )
             ),
             workload_update_strategy=KubeVirtSpecWorkloadUpdateStrategy(),

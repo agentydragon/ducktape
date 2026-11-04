@@ -1051,9 +1051,6 @@ spec:
       networks:
         - name: default
           pod: {}
-      nodeSelector:
-        kubernetes.io/hostname: ovh-ns104963
-        kubernetes.io/os: linux
       tolerations:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane
