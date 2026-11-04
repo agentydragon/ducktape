@@ -212,7 +212,8 @@ discarded reads and abrupt outcomes. A supported last value cannot cover an
 unproved operand, and a failed transfer never retries another evaluator.
 Whole-owner certificates remain sealed only after binding initialization and
 normal complete execution; neither a child judgment nor an invocation memo
-carries one.
+carries one. Named exported variable declarations use the same transfers;
+split declarations retain each original initializer as its own source owner.
 
 Runtime expression, invoke, call, heap, callback, and model transfers use one
 shared runtime fact context. Each child is keyed by a `ProgramPoint` (owning

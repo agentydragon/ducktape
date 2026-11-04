@@ -361,7 +361,7 @@ construction and property observations retain their ordinary effects and
 coverage requirements. The existing binding write and allocation facts remain
 projected.
 
-An original, non-exported simple variable declarator with an unannotated
+An original simple variable declarator with an unannotated
 binding may close global-property, general-heap and host-effect coverage when
 its initializer is a primitive literal, checked JavaScript
 function/arrow creation, a read of an initialized module-local binding, a
@@ -411,7 +411,8 @@ host globals, and the interpreter must check its initialization before the
 read. A normally completed read retains its binding effect regardless of the
 value's kind or number of abstract alternatives; it establishes no heap
 privacy, value immutability or absence of getters on that value.
-For a comma-split ordinary, non-exported variable declaration, the canonical
+Ordinary and named exported variable declarations use the same initializer
+transfers and owner checks. For a comma-split declaration, the canonical
 item view retains the original parent and selected declarator index. The
 source collector checks that exact original child against its split analysis
 view before expression erasure; every declarator remains its own effect owner
@@ -423,7 +424,7 @@ defaults, destructuring and rest, remain lazy together with the body. Async
 and generator function creation follow the same rule. This certifies no call:
 later parameter evaluation, iterator/getter access, bodies and scheduling
 retain their ordinary effects and coverage requirements.
-Assignments, templates, exports, destructured variable bindings, class expressions,
+Assignments, templates, default export expressions, destructured variable bindings, class expressions,
 imported/global/uninitialized binding reads, decorated/type-annotated
 functions remain uncovered. For class declarations,
 all other shapes remain uncovered. Parentheses alone preserve admissibility for
@@ -435,7 +436,7 @@ never propagate a whole-owner certificate, and invocation memos carry none.
 The owner certificate survives staged analysis. Binding/allocation cells, other opacity
 flags, purity and the authoritative legacy gates retain their existing rules.
 
-An original, non-exported simple variable declarator may also close those
+An original simple variable declarator may also close those
 coverage domains for a direct bare `new Map()` or `new Set()` with exactly zero
 arguments. The original AST and lowered `New` site must identify the same
 constructor, and the dedicated root initializer transfer must actually select
