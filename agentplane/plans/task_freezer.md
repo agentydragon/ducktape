@@ -76,10 +76,13 @@ Only if worker deaths cause actual operational trouble. Keep workers in-process;
 
 ### `NOTIFICATION_ACTION_FEED` — remove idle Action-history polling
 
-Only if idle Action-history polling cost matters. Add a read-authorized Action change feed without
-giving Notifications operator authority or cross-service database access. Use one shared feed per
-replica as an invalidation source; drain canonical events from persisted `actions_after_sequence`
-on startup, reconnect, subscription creation and invalidation. Register before catch-up reads,
+Only if idle Action-history polling cost matters. Evaluate using the existing read-authorized
+`WatchActionRequests` as an invalidation source before adding another feed. It sends a snapshot and
+changes, has no resume cursor, and can be unbounded without a state filter; verify the Notification
+service's actual read scope, cost and whether every relevant transition invalidates. Use one shared
+feed per replica without granting operator authority or cross-service database access; drain canonical
+events from persisted `actions_after_sequence` on startup, reconnect, subscription creation and
+invalidation. Register before catch-up reads,
 fence racing invalidations and commit progress with inbox entries. Waiting on the feed must not
 hold an inbox lease or occupy a delivery worker. Reconnect with rotating credentials and bounded
 backoff; preserve delivery retries and retention scheduling. Test missed signals, reconnect,
@@ -442,6 +445,7 @@ TanStack Query (with `openapi-react-query` over the existing `openapi-fetch` cli
 
 ### `FRONTEND_CONNECT_ES` — typed streaming clients
 
-**Frozen; operator, 2026-10-30: think about it later.** Backend watches are read as grpc-gateway NDJSON
-with hand-written ProtoJSON decoding; Connect-ES streaming clients generated from the same protos would
-replace that, at the cost of revisiting the app's deliberate gateway choice (`app/README.md`).
+**Frozen; operator, 2026-10-30: think about it later.** Backend watches use a shared handwritten
+stream reader for grpc-gateway NDJSON; consumers such as Policy and Egress decode messages with
+their generated protobuf schemas. Connect-ES streaming clients could replace the framing and request
+plumbing, at the cost of revisiting the app's deliberate gateway choice (`app/README.md`).

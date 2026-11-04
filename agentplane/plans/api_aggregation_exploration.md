@@ -4,8 +4,9 @@ Status: **design exploration, held by the operator, 2026-10-17.** It is not a de
 nothing is scheduled. It authorizes no extension apiserver, API group, `APIService` or deployment
 change. If the idea is revived, what survives graduates to a doc under `docs/`.
 
-The candidate table below is also a 2026-10-17 snapshot: the Action Service now runs in Go behind
-a generated HTTP facade.
+The candidates and comparative cost analysis below are a 2026-10-17 snapshot, not a current API
+inventory. The Action Service now runs in Go behind a generated HTTP facade; Session commands use
+Session IDs and History supports same-principal reads. Recheck all contracts if this work is revived.
 
 An aggregated API is an extension apiserver that the kube-apiserver proxies one API group to,
 registered by an `APIService`. Clients get the cluster's authentication, RBAC, discovery, OpenAPI
@@ -53,8 +54,8 @@ presenting through the Kubernetes API.
   hand-written typed objects, generated deepcopy and OpenAPI, serving certificates, an `APIService`
   with its CA bundle, and bindings to `system:auth-delegator` and the
   `extension-apiserver-authentication-reader` Role. The scaffolds (`apiserver-builder-alpha`,
-  `apiserver-runtime`) are alpha. The Action Service is Python: it would be Go
-  first, or fronted by a Go bridge over its gRPC.
+  `apiserver-runtime`) are alpha. The Action Service now runs in Go; it would still need the
+  extension-server serving and authorization machinery.
 - **Watch over Postgres.** A watch needs a monotonic `resourceVersion`, resume from one, and `410 Gone`
   when it cannot. The watches here (`WatchDispatches`, `WatchSessionSummaries`, `/decisions/changes`,
   the operator SSE streams) send a snapshot then changes, or a payload-free `changed` tick, and
@@ -113,14 +114,14 @@ and agent-authority choices. Aggregation then adds one thing: a Kubernetes clien
 (`kubectl get` and `wait`, informers, OpenAPI) for a record. It is worth its cost only where an agent
 or operator would use that surface. For every other record the cost exceeds the gain today.
 
-**First candidate: `ActionRequest`'s workload half, once the Action Service is served from Go.** It is
-the one record that is caller-owned, low-volume, spec-and-status-shaped and agent-facing, and it
-removes the wait, paging and key-recovery work that the CLI would otherwise carry. The store behind the
-facade is open then: its own tables, kine, or a dedicated etcd. A Python bridge adds a service to
-delete, so none is built.
+**First candidate: `ActionRequest`'s workload half, if the idea is revisited.** The Action Service
+now runs in Go. Its request is caller-owned, low-volume, spec-and-status-shaped and agent-facing.
+The [agent CLI](../docs/agent_cli.md#commands) already handles waiting, paging and key recovery; a
+Kubernetes facade would be an additional surface unless it replaces a current one. Its backing store
+would need an explicit choice: the service's tables, kine, or a dedicated etcd.
 
-A bounded spike answers the questions that would end the idea. Its answers matter only once
-`ActionRequest` is committed, so it can wait for that. The Go Dispatcher, already deployed on the k3s
+If this candidate is selected for exploration, a bounded spike answers the questions that would end
+the idea. The Go Dispatcher, already deployed on the k3s
 environment (`agentplane/system_tests/k3s`), is the cheapest vehicle: a read-only `Dispatch` list, get and
 watch, served by an extension server in its own Deployment, so that the server's outage is not an
 `APIService` outage, which breaks discovery cluster-wide. It asks:

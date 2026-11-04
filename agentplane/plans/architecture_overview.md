@@ -374,8 +374,8 @@ Held until one is chosen:
 
 ### Kubernetes records
 
-- **Sandbox.** A `Sandbox` CR. The app writes desired state, the Sandbox Controller writes status,
-  and the Dispatcher patches the wake fields. Operator: deletes a Sandbox when done and wants its
+- **Sandbox.** A `Sandbox` CR. EnvironmentService owns the app-facing management operations, the
+  Sandbox Controller writes status, and the shared lifecycle manager handles authorized wake/resume. Operator: deletes a Sandbox when done and wants its
   history kept (2026-10-18 23:29), floated suspending instead of deleting, offered deleting the
   history with the Sandbox (2026-10-19 02:04), and wants the workspace disposable on its own while
   the state PVC and metadata stay with the history (09:42).
@@ -383,8 +383,8 @@ Held until one is chosen:
   Service, the Sandbox's own `PolicyBinding`). Owned by the Sandbox and removed with it; both PVCs
   survive suspension.
 - **Grants and catalog** (`PolicySet`, static `PolicyBinding`s, `SandboxTemplate`,
-  `EgressCredential`). Authored in git and applied by Flux; the app writes runtime grants as bindings
-  owned by the Sandbox. Operator: wants the Flux-managed shared permission sets kept gitops-driven,
+  `EgressCredential`). Authored in git and applied by Flux; the Sandbox Controller reconciles the
+  Sandbox-owned PolicyBinding from the Sandbox's selected PolicySets. Operator: wants the Flux-managed shared permission sets kept gitops-driven,
   and floated a second control plane "if it came to it" (2026-10-18 22:54, 23:02).
 - **Leases.** `dispatcher-<sandbox UID>`, renewed every 10 s (`LeaseRenewInterval`) while its
   Sandbox has queued or delivering work and left to lapse otherwise (#11035), and `<sandbox>-runner`
@@ -404,11 +404,13 @@ Held until one is chosen:
   key ([History README](../history_service/README.md#session-writer-and-execution-sandbox)).
 - **Thread** (the app's link and metadata for a Session). The app database, keyed by Session ID with
   no Sandbox column. The app carries the recorded History UID in Thread views, filters Sandbox pages by
-  UID, and passes it to the Dispatcher for live actions.
+  UID, and sends Session commands to Dispatcher by Session ID; Dispatcher resolves and fences the
+  recorded placement.
 - **Commands and Session openings.** The `session_dispatcher` database, served by the Runner
-  Gateway (`dispatch`, `session_opening`, `wake_attempt`, `sandbox_ownership`), every row carrying
-  the Sandbox UID and ended when the Sandbox is gone. Current opening rows are not a general Session directory. The operator now favors a Dispatcher-owned
-  logical Session directory; see the [Session/environment plan](session_environment_model.md) and
+  Gateway (`dispatch`, `session_opening`, `wake_attempt`, `sandbox_ownership`). Opening records are
+  addressed by Session ID and currently retain an exact Sandbox placement; the Dispatcher removes
+  them when that Sandbox is gone. Remaining native directory and independent Session-lifetime work
+  are in the [Session/environment plan](session_environment_model.md) and
   [opening and recovery inventory](session_opening_recovery.md).
 - **Inbox entries, peer messages, notices, subscriptions.** The Notification database; entries
   survive their inbox's retirement when the Sandbox is gone. The service split stays unscheduled;
@@ -425,9 +427,10 @@ Held until one is chosen:
   implemented: a second set-typed list on the Sandbox, kept by History in its own record of each
   Sandbox, keyed by Sandbox UID ([design](sandbox_tags.md)). Inbox tags are stored as
   `spec.inboxTags`.
-- **History-read grants** (who may read which Sandbox's Sessions). History's configured
-  `reader_accounts` are the only gate on reads. Sends are granted by `session_inbox_access` rules
-  that the Notification service enforces. Proposed: a rule type of their own for reads, in
+- **Broader History-read grants** (who may read another principal's Sessions). History's configured
+  `reader_accounts` provide backend-wide access; ordinary callers can read Sessions owned by their
+  exact retained execution principal. Sends are granted by `session_inbox_access` rules that the
+  Notification service enforces. Proposed: a rule type of their own for broader reads, in
   `PolicySet`s, enforced by History
   ([plan](multiagent_communication.md#tentative-implementation-direction)). Operator: archive
   permissions maybe "in a possibly separate universe" from live objects (2026-10-18 22:31,

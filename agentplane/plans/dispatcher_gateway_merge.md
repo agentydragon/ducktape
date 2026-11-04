@@ -23,10 +23,8 @@ Operator clarification, 2026-10-31 UTC: Session dispatch and Environment dispatc
 responsibilities because a Session need not live under an environment. They may share a binary or
 have separate binaries; leave this particular merge/reshuffle for later. The single-service shape
 and audience unification below remain proposals. The earlier holder-owned delivery preference was
-scoped to that combined shape; revisit it when choosing a topology. The independently assignable Runner extractions in the
-[runtime plan](session_runtime_model.md#independently-assignable-extractions) do not wait for this
-decision. Retain existing dispatch ownership/fencing until a reviewed
-change replaces it.
+scoped to that combined shape; revisit it when choosing a topology. The current [Runtime and Execution boundaries](../env/README.md) do not wait for this
+decision. Retain existing dispatch ownership/fencing until a reviewed change replaces it.
 
 ## Proposal
 

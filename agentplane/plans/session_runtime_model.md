@@ -6,7 +6,7 @@ decisions, unresolved questions, and implementation readiness.
 Operator-requested future design, 2026-10-28 PDT; discussion directions updated 2026-10-30 PDT.
 The broader object model is a long-term north star; concrete object types, storage and protocols
 remain open. Current component names, source ownership and runnable entrypoints live in the
-[environment layout](../env/README.md#layout-and-entrypoints); Runtime and Execution contracts live
+[environment layout](../env/README.md); Runtime and Execution contracts live
 in their component specifications.
 Session/Environment dispatch regrouping remains for later;
 its service roles may share a binary or have separate binaries.
@@ -21,8 +21,9 @@ The [central sampler](../central_sampler/README.md) hosts them outside execution
 Sandboxes; its Session data should survive their deletion. In that mode a Sandbox supplies tools,
 rather than defining the conversation's lifetime. Executor acquisition is lazy, but the current
 Session API still fixes the logical execution target to one Sandbox. Execution calls support
-optional model-controlled incarnation fencing and report verified replacement incarnations;
-explicit resume still waits on lifecycle authorization in the DAG. These are current constraints,
+optional model-controlled incarnation fencing and report verified replacement incarnations.
+Explicit resume uses the shared lifecycle manager's caller, UID, policy and guarded-update checks;
+the remaining `IDLE_SUSPEND_UI_DRIVE` is VM staging UI acceptance. These are current constraints,
 not a required ontology for every future harness.
 
 ## Cases the model must represent
@@ -99,7 +100,7 @@ explicit workload resource domain; sharing one with Codex execution is a deploym
 `env/` groups software specific to operating execution environments. Runtime and Execution share
 the implemented management process and live under `env/runtime/`.
 Shared supervision is under `env/runtime/supervision`, while one-shot bookkeeping remains in
-`env/oneoff`. The [source layout](../env/README.md#layout-and-entrypoints) owns the full map.
+`env/oneoff`. The [source layout](../env/README.md) owns the full map.
 The central sampler lives at `agentplane/central_sampler`, outside `env/`; it may use the Executor
 protocol and client owned by `env/runtime/execution`. Logical responsibilities remain distinct even
 when their calls are in-process.
