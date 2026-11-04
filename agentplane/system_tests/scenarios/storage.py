@@ -228,7 +228,7 @@ async def _probe(
         dispatcher=dispatcher,
         sandbox_uid=sandbox_uid,
         overrides={
-            "harness": "HARNESS_CODEX",
+            "environmentHosted": {"environment": {"name": name, "uid": sandbox_uid}, "harness": "HARNESS_CODEX"},
             "model": "chatgpt-sub/oai-responses/gpt-6-luna",
             "cwd": cwd,
             "reasoningEffort": "low",
