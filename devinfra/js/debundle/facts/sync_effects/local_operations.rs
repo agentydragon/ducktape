@@ -95,7 +95,8 @@ fn unconditional_value(value: &ValueExpr) -> bool {
         ValueExpr::StrictEquality(left, right) => {
             unconditional_value(left) && unconditional_value(right)
         }
-        ValueExpr::Void(value) => unconditional_value(value),
+        ValueExpr::Void(value) | ValueExpr::LogicalNot(value) => unconditional_value(value),
+        ValueExpr::Sequence(values) => values.iter().all(unconditional_value),
         _ => false,
     }
 }

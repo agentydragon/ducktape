@@ -1063,6 +1063,7 @@ pub(super) struct Executor<'source, 'rule> {
     state: ExecutionStateSlot,
     queries: RuntimeQueries<'source, 'rule>,
     allocation_judgment: super::super::allocation_transfer::AllocationJudgment,
+    source_covered: bool,
     evaluation_effects: EvaluationEffects,
     native_initializer_candidate: Option<NativeConstructorCandidate>,
     native_initializer_transfer: Option<NativeConstructorTransfer>,
@@ -1111,16 +1112,23 @@ struct ApplicationAllocationContext<'a, 'source, 'rule> {
 
 impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
     fn source_covered(&self) -> bool {
-        false
+        self.executor.source_covered
     }
 
     fn binding(
         &mut self,
         binding: &Id,
     ) -> Option<super::super::allocation_transfer::AllocationValue> {
-        Some(super::super::allocation_transfer::AllocationValue::opaque(
-            self.executor.evaluate_binding(binding, self.environment),
-        ))
+        let values = self.executor.evaluate_binding(binding, self.environment);
+        let judgment =
+            if self.executor.source_covered && self.executor.initialized_local_binding(binding) {
+                super::super::allocation_transfer::AllocationJudgment::CoveredAllocationOnly(
+                    ProofDependencies::default(),
+                )
+            } else {
+                super::super::allocation_transfer::AllocationJudgment::Opaque
+            };
+        Some(super::super::allocation_transfer::AllocationValue { values, judgment })
     }
 
     fn child(
@@ -1538,6 +1546,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             queries,
             // Creating an executor establishes no whole-source coverage.
             allocation_judgment: super::super::allocation_transfer::AllocationJudgment::Opaque,
+            source_covered: false,
             evaluation_effects: EvaluationEffects::default(),
             native_initializer_candidate: None,
             native_initializer_transfer: None,
@@ -1565,6 +1574,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
     pub(super) fn mark_allocation_opaque(&mut self) {
         self.allocation_judgment = super::super::allocation_transfer::AllocationJudgment::Opaque;
+    }
+
+    /// Called only for an expression whose canonical source coverage was
+    /// retained by its owner, or a child of that exact expression.
+    pub(super) fn cover_source_expression(&mut self) {
+        self.source_covered = true;
+        self.allocation_judgment =
+            super::super::allocation_transfer::AllocationJudgment::CoveredAllocationOnly(
+                ProofDependencies::default(),
+            );
     }
 
     fn request(&mut self, operation: RuntimeOperation) -> RuntimeValue {
@@ -7810,6 +7829,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 expression: expr.clone(),
                 environment: env.clone(),
                 captures: captures.clone(),
+                source_covered: self.source_covered,
             });
         let RuntimeValue::Values(values) = result else {
             unreachable!("expression transfers produce values");
@@ -8464,7 +8484,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 results
             }
-            ValueExpr::StrictEquality(..) | ValueExpr::Void(_) => {
+            ValueExpr::StrictEquality(..)
+            | ValueExpr::Void(_)
+            | ValueExpr::LogicalNot(_)
+            | ValueExpr::Sequence(_) => {
                 unreachable!("the shared transfer handles noncoercing primitive operations")
             }
             ValueExpr::Conditional { test, alternatives } => {
@@ -8504,13 +8527,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         expression: &ValueExpr,
         env: &Context,
         captures: &Context,
-    ) -> (Values, Option<NativeConstructorTransfer>) {
+    ) -> (
+        Values,
+        super::super::allocation_transfer::AllocationJudgment,
+        Option<NativeConstructorTransfer>,
+    ) {
+        let expression = if let Some(covered) = source.composed_expression() {
+            self.cover_source_expression();
+            covered
+        } else {
+            expression
+        };
         self.native_initializer_candidate = source.native_constructor_candidate(expression);
         self.native_initializer_transfer = None;
         let values = self.evaluate_transfer(expression, env, captures);
         let transfer = self.native_initializer_transfer.take();
         self.native_initializer_candidate = None;
-        (values, transfer)
+        (values, self.allocation_judgment.clone(), transfer)
     }
 
     /// Stop the frame without replaying its earlier operations. An unproved

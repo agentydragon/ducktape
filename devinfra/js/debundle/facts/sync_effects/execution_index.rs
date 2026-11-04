@@ -2184,11 +2184,13 @@ fn receiver_uses_intrinsic_alias(
     match value {
         ValueExpr::Binding(id) => aliases.contains_key(id),
         ValueExpr::Member(base, ..) => receiver_uses_intrinsic_alias(base, aliases),
-        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => value
-            .result_alternatives()
-            .expect("alternative expression")
-            .iter()
-            .any(|option| receiver_uses_intrinsic_alias(option, aliases)),
+        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
+            value
+                .result_alternatives()
+                .expect("alternative expression")
+                .iter()
+                .any(|option| receiver_uses_intrinsic_alias(option, aliases))
+        }
         _ => false,
     }
 }
@@ -2353,7 +2355,7 @@ fn intrinsic_roots(
             }
             out
         }
-        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => {
+        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
             let options = value.result_alternatives().expect("alternative expression");
             let mut combined = NativeReceiverRoots::new();
             let mut unknown_arm = false;
@@ -2390,6 +2392,7 @@ fn intrinsic_roots(
                             | ValueExpr::NonCallable(_)
                             | ValueExpr::Primitive(_)
                             | ValueExpr::StrictEquality(..)
+                            | ValueExpr::LogicalNot(_)
                             | ValueExpr::Void(_)
                     )
                 {
@@ -3082,7 +3085,10 @@ fn evaluate_receiver_value(
             result.fact.safe = true;
             result.fact.complete = true;
         }
-        ValueExpr::Primitive(_) | ValueExpr::StrictEquality(..) | ValueExpr::Void(_) => {
+        ValueExpr::Primitive(_)
+        | ValueExpr::StrictEquality(..)
+        | ValueExpr::LogicalNot(_)
+        | ValueExpr::Void(_) => {
             result.fact.safe = true;
             result.fact.complete = true;
         }
@@ -3108,7 +3114,7 @@ fn evaluate_receiver_value(
                 ));
             }
         }
-        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => {
+        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
             let options = value.result_alternatives().expect("alternative expression");
             result.fact.safe = true;
             result.fact.complete = true;
@@ -5175,11 +5181,13 @@ fn exposes_global_receiver(value: &ValueExpr, names: &BTreeSet<&str>) -> bool {
                 exposes_global_receiver(receiver, names)
             }
         }
-        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => value
-            .result_alternatives()
-            .expect("alternative expression")
-            .iter()
-            .any(|value| exposes_global_receiver(value, names)),
+        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
+            value
+                .result_alternatives()
+                .expect("alternative expression")
+                .iter()
+                .any(|value| exposes_global_receiver(value, names))
+        }
         ValueExpr::ObjectLiteral(_, properties) => properties
             .iter()
             .any(|(_, value)| exposes_global_receiver(value, names)),
@@ -5189,7 +5197,10 @@ fn exposes_global_receiver(value: &ValueExpr, names: &BTreeSet<&str>) -> bool {
         // Operators can inspect or coerce their operands, but their result
         // cannot be the global object. Calls arising from those operands are
         // checked separately below.
-        ValueExpr::Primitive(_) | ValueExpr::StrictEquality(..) | ValueExpr::Void(_) => false,
+        ValueExpr::Primitive(_)
+        | ValueExpr::StrictEquality(..)
+        | ValueExpr::LogicalNot(_)
+        | ValueExpr::Void(_) => false,
         _ => false,
     }
 }
@@ -5285,15 +5296,18 @@ fn same_property_or_fresh(value: &ValueExpr, alias: &Id, property: &str) -> bool
             true
         }
         ValueExpr::ObjectLiteral(_, properties) => properties.is_empty(),
-        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => value
-            .result_alternatives()
-            .expect("alternative expression")
-            .iter()
-            .all(|value| same_property_or_fresh(value, alias, property)),
+        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
+            value
+                .result_alternatives()
+                .expect("alternative expression")
+                .iter()
+                .all(|value| same_property_or_fresh(value, alias, property))
+        }
         ValueExpr::NonCallable(_)
         | ValueExpr::Undefined
         | ValueExpr::Primitive(_)
         | ValueExpr::StrictEquality(..)
+        | ValueExpr::LogicalNot(_)
         | ValueExpr::Void(_) => true,
         _ => false,
     }
@@ -5391,6 +5405,7 @@ fn confined_prepublication_alias(
                     | ValueExpr::Undefined
                     | ValueExpr::Primitive(_)
                     | ValueExpr::StrictEquality(..)
+                    | ValueExpr::LogicalNot(_)
                     | ValueExpr::Void(_)
             )
         } else {
@@ -5639,11 +5654,13 @@ fn stored_global_alias(
         GlobalMutationPath::Prototype => include_prototypes,
         GlobalMutationPath::Descendant => false,
         GlobalMutationPath::Unrelated => match value {
-            ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => value
-                .result_alternatives()
-                .expect("alternative expression")
-                .iter()
-                .any(|value| stored_global_alias(value, names, bindings, include_prototypes)),
+            ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
+                value
+                    .result_alternatives()
+                    .expect("alternative expression")
+                    .iter()
+                    .any(|value| stored_global_alias(value, names, bindings, include_prototypes))
+            }
             ValueExpr::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| stored_global_alias(value, names, bindings, include_prototypes)),
@@ -6111,10 +6128,11 @@ impl BundleGlobalContext<'_> {
             ValueExpr::ObjectLiteral(..)
             | ValueExpr::Primitive(_)
             | ValueExpr::StrictEquality(..)
+            | ValueExpr::LogicalNot(_)
             | ValueExpr::Void(_)
             | ValueExpr::Undefined
             | ValueExpr::NonCallable(_) => true,
-            ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => {
+            ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
                 let options = value.result_alternatives().expect("alternative expression");
                 options.iter().all(|option| self.keeps(option, slot))
             }
@@ -6385,7 +6403,9 @@ impl ExecutionIndex {
             ValueExpr::ArrayIteratorPrototype(inner) | ValueExpr::SetIteratorPrototype(inner) => {
                 self.global_property_reads(inner, context, reads);
             }
-            ValueExpr::Primitive(values) | ValueExpr::Alternatives(values) => {
+            ValueExpr::Primitive(values)
+            | ValueExpr::Alternatives(values)
+            | ValueExpr::Sequence(values) => {
                 for value in values.iter() {
                     self.global_property_reads(value, context, reads);
                 }
@@ -6394,7 +6414,9 @@ impl ExecutionIndex {
                 self.global_property_reads(left, context, reads);
                 self.global_property_reads(right, context, reads);
             }
-            ValueExpr::Void(child) => self.global_property_reads(child, context, reads),
+            ValueExpr::Void(child) | ValueExpr::LogicalNot(child) => {
+                self.global_property_reads(child, context, reads)
+            }
             ValueExpr::Conditional { test, alternatives } => {
                 self.global_property_reads(test, context, reads);
                 for alternative in alternatives.iter() {

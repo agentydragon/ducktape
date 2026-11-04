@@ -518,6 +518,8 @@ pub(super) enum ValueExpr {
     Primitive(Arc<[Self]>),
     /// Both strict equality operators produce an unknown Boolean without coercion.
     StrictEquality(Arc<Self>, Arc<Self>),
+    Sequence(Arc<[Self]>),
+    LogicalNot(Arc<Self>),
     Void(Arc<Self>),
     Conditional {
         test: Arc<Self>,
@@ -646,6 +648,7 @@ impl ValueExpr {
     pub(super) fn result_alternatives(&self) -> Option<&[Self]> {
         match self {
             Self::Alternatives(values) => Some(values),
+            Self::Sequence(values) => Some(&values[values.len().saturating_sub(1)..]),
             Self::Conditional { alternatives, .. } => Some(alternatives.as_slice()),
             _ => None,
         }
@@ -671,13 +674,14 @@ impl ValueExpr {
                 | Expr::Object(_)
                 | Expr::Array(_)
                 | Expr::Cond(_)
+                | Expr::Seq(_)
                 | Expr::Lit(
                     Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_)
                 )
         ) && !matches!(expr.unwrap_parens(), Expr::Bin(bin)
             if matches!(bin.op, BinaryOp::EqEqEq | BinaryOp::NotEqEq))
             && !matches!(expr.unwrap_parens(), Expr::Unary(unary)
-                if unary.op == UnaryOp::Void)
+                if matches!(unary.op, UnaryOp::Void | UnaryOp::Bang))
         {
             *covered = false;
         }
@@ -908,12 +912,27 @@ impl ValueExpr {
             Expr::Unary(unary) if unary.op == UnaryOp::Void => {
                 Self::Void(Arc::new(Self::lower(&unary.arg, covered)))
             }
+            Expr::Unary(unary) if unary.op == UnaryOp::Bang => {
+                Self::LogicalNot(Arc::new(Self::lower(&unary.arg, covered)))
+            }
             Expr::Unary(unary) => Self::Primitive([Self::lower(&unary.arg, covered)].into()),
             Expr::Update(update) => Self::Primitive([Self::lower(&update.arg, covered)].into()),
-            Expr::Seq(seq) => seq
-                .exprs
-                .last()
-                .map_or(Self::Unknown, |expr| Self::lower(expr, covered)),
+            Expr::Seq(seq) => {
+                let mut sequence_covered = true;
+                let expressions: Vec<_> = seq
+                    .exprs
+                    .iter()
+                    .map(|expression| Self::lower(expression, &mut sequence_covered))
+                    .collect();
+                *covered &= sequence_covered;
+                if sequence_covered {
+                    Self::Sequence(expressions.into())
+                } else {
+                    // Uncovered calls/writes are executed by the indexed
+                    // timing path. Do not replay them to reconstruct a value.
+                    expressions.into_iter().last().unwrap_or(Self::Unknown)
+                }
+            }
             Expr::Assign(assign) => Self::lower(&assign.right, covered),
             Expr::Lit(Lit::Regex(regex)) => Self::ObjectLiteral(regex.span.lo.0, Arc::default()),
             Expr::Lit(literal) => Self::NonCallable(match literal {
@@ -936,6 +955,7 @@ impl ValueExpr {
             }
             Self::ArrayIteratorPrototype(expression)
             | Self::SetIteratorPrototype(expression)
+            | Self::LogicalNot(expression)
             | Self::Void(expression) => expression.bindings(result),
             Self::StrictEquality(left, right) => {
                 left.bindings(result);
@@ -954,7 +974,7 @@ impl ValueExpr {
                     arg.bindings(result);
                 }
             }
-            Self::Alternatives(options) => {
+            Self::Alternatives(options) | Self::Sequence(options) => {
                 for option in options.iter() {
                     option.bindings(result);
                 }
@@ -986,8 +1006,10 @@ impl ValueExpr {
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),
-            Self::Primitive(_) | Self::StrictEquality(..) | Self::Void(_) => false,
-            Self::Alternatives(_) | Self::Conditional { .. } => self
+            Self::Primitive(_) | Self::StrictEquality(..) | Self::LogicalNot(_) | Self::Void(_) => {
+                false
+            }
+            Self::Alternatives(_) | Self::Conditional { .. } | Self::Sequence(_) => self
                 .result_alternatives()
                 .expect("alternative expression")
                 .iter()
@@ -1077,7 +1099,7 @@ impl ValueExpr {
                 visiting.remove(binding);
                 possible
             }
-            Self::Alternatives(_) | Self::Conditional { .. } => self
+            Self::Alternatives(_) | Self::Conditional { .. } | Self::Sequence(_) => self
                 .result_alternatives()
                 .expect("alternative expression")
                 .iter()
@@ -1112,7 +1134,9 @@ impl ValueExpr {
                     visiting_classes,
                 )
             }
-            Self::Primitive(_) | Self::StrictEquality(..) | Self::Void(_) => false,
+            Self::Primitive(_) | Self::StrictEquality(..) | Self::LogicalNot(_) | Self::Void(_) => {
+                false
+            }
             Self::ObjectLiteral(_, properties) => properties.iter().any(|(_, value)| {
                 value.may_publish_namespace_inner(
                     id,
@@ -1122,7 +1146,7 @@ impl ValueExpr {
                     visiting_classes,
                 )
             }),
-            Self::Alternatives(_) | Self::Conditional { .. } => self
+            Self::Alternatives(_) | Self::Conditional { .. } | Self::Sequence(_) => self
                 .result_alternatives()
                 .expect("alternative expression")
                 .iter()
@@ -1268,11 +1292,13 @@ impl ValueExpr {
                     facts,
                 )
             }
-            Self::Primitive(_) | Self::StrictEquality(..) | Self::Void(_) => false,
+            Self::Primitive(_) | Self::StrictEquality(..) | Self::LogicalNot(_) | Self::Void(_) => {
+                false
+            }
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),
-            Self::Alternatives(_) | Self::Conditional { .. } => self
+            Self::Alternatives(_) | Self::Conditional { .. } | Self::Sequence(_) => self
                 .result_alternatives()
                 .expect("alternative expression")
                 .iter()

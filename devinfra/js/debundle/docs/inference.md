@@ -203,6 +203,17 @@ recursive cycles therefore need no optimistic purity seed. Unknown targets
 remain direct unknown-call effects. Pinned export assertions are explicit
 axioms; export inference does not consume chunk-local declared-pure hints.
 
+The initializer coverage consumer retains the expression and its source
+coverage from canonical value lowering. Its dedicated root and child requests
+compose the same allocation/operation judgments as strict provider queries.
+Application binding reads additionally require an initialized module-local
+declarative cell; imports and host globals remain opaque. Sequences preserve
+discarded reads and abrupt outcomes. A supported last value cannot cover an
+unproved operand, and a failed transfer never retries another evaluator.
+Whole-owner certificates remain sealed only after binding initialization and
+normal complete execution; neither a child judgment nor an invocation memo
+carries one.
+
 Runtime expression, invoke, call, heap, callback, and model transfers use one
 shared runtime fact context. Each child is keyed by a `ProgramPoint` (owning
 source unit and nested operation path) and carries operation-specific inputs,

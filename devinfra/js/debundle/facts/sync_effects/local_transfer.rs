@@ -293,14 +293,20 @@ fn expression(
             Some(completing(result.values, frame))
         }
         LocalExpression::Sequence(expressions) => {
-            let mut values = Values::from([AbstractValue::UNDEFINED]);
-            for node in expressions.iter() {
-                values = expression(context, node, body, frame, judgment)?;
-                if values.is_empty() {
-                    break;
-                }
-            }
-            Some(values)
+            let result = allocation_transfer::sequence(
+                &mut LocalValueContext { context, frame },
+                expressions.iter(),
+                AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
+                |context, node| {
+                    let mut judgment =
+                        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default());
+                    let values =
+                        expression(context.context, node, body, context.frame, &mut judgment)?;
+                    Some(AllocationValue { values, judgment })
+                },
+            )?;
+            judgment.compose(&result.judgment);
+            Some(completing(result.values, frame))
         }
         LocalExpression::Closure(callable) => {
             let result = context.closure(frame, *callable)?;

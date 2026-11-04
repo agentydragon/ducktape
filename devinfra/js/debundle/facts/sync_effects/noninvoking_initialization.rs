@@ -1,8 +1,9 @@
 //! Whole-source-unit coverage for a small, non-invoking initializer subset.
 
+use super::allocation_transfer::AllocationJudgment;
 use super::value_model::{AbstractValue, CallSite, ValueExpr, Values};
 use crate::facts::OwnerInitializationCoverageRefusalReason;
-use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
+use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::item_views::{SplitDeclaratorProvenance, TopLevelItemView};
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
@@ -38,19 +39,15 @@ impl NativeConstructorKind {
 
 #[derive(Clone)]
 enum Leaf {
-    Primitive(PrimKinds),
+    Composed(ValueExpr),
     Function(u32),
     Class(u32),
-    Binding(Id),
+    RegExp(u32),
     NativeConstructor {
         callee: Id,
         call_site: CallSite,
         kind: NativeConstructorKind,
         form: NativeConstructorForm,
-    },
-    Allocation {
-        allocation: u32,
-        reads: BTreeSet<Id>,
     },
 }
 
@@ -315,61 +312,6 @@ fn inert_class_declaration(declaration: &ClassDecl) -> bool {
         && class.body.iter().all(plain_class_member)
 }
 
-/// Static data fields and dense array elements use CreateDataProperty, without
-/// invoking receiver accessors. Retain every declarative-cell read, including
-/// overwritten duplicate fields. No value-kind or heap-locality premise is needed.
-/// `void` and logical-not are also safe around this same input subset: neither
-/// operation invokes user code while evaluating its operand. Their operands
-/// still contribute every lexical read and nested allocation to the proof.
-fn allocation_inputs(expression: &Expr, reads: &mut BTreeSet<Id>) -> Option<()> {
-    match expression.unwrap_parens() {
-        Expr::Ident(binding) => {
-            reads.insert(binding.to_id());
-        }
-        Expr::Unary(unary) if matches!(unary.op, UnaryOp::Void | UnaryOp::Bang) => {
-            allocation_inputs(&unary.arg, reads)?;
-        }
-        Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_)) => {}
-        Expr::Object(record) => {
-            for property in &record.props {
-                let PropOrSpread::Prop(property) = property else {
-                    return None;
-                };
-                match property.as_ref() {
-                    Prop::Shorthand(binding) => {
-                        reads.insert(binding.to_id());
-                    }
-                    Prop::KeyValue(property) => {
-                        let name = match &property.key {
-                            PropName::Ident(name) => name.sym.as_ref(),
-                            PropName::Str(name) => name.value.as_str()?,
-                            _ => return None,
-                        };
-                        // A colon-form __proto__ field changes the prototype
-                        // rather than creating an own data property.
-                        if name == "__proto__" {
-                            return None;
-                        }
-                        allocation_inputs(&property.value, reads)?;
-                    }
-                    _ => return None,
-                }
-            }
-        }
-        Expr::Array(array) => {
-            for element in &array.elems {
-                let element = element.as_ref()?;
-                if element.spread.is_some() {
-                    return None;
-                }
-                allocation_inputs(&element.expr, reads)?;
-            }
-        }
-        _ => return None,
-    }
-    Some(())
-}
-
 fn empty_native_constructor(expression: &Expr) -> Option<(Id, CallSite, NativeConstructorKind)> {
     let Expr::New(construction) = expression.unwrap_parens() else {
         return None;
@@ -495,36 +437,13 @@ impl OriginalInitializer {
                     return Err(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer);
                 }
             }
-            Expr::Ident(binding) => Leaf::Binding(binding.to_id()),
             Expr::Lit(Lit::Regex(regex)) => {
                 // ECMA-262 evaluates a validated literal through RegExpCreate
                 // with its source text; this does not resolve the mutable
                 // global RegExp binding or invoke source-defined code. Later
                 // reads and calls on the RegExp remain outside this proof.
-                Leaf::Allocation {
-                    allocation: regex.span.lo.0,
-                    reads: BTreeSet::new(),
-                }
+                Leaf::RegExp(regex.span.lo.0)
             }
-            Expr::Object(_) | Expr::Array(_) => {
-                let mut reads = BTreeSet::new();
-                allocation_inputs(initializer, &mut reads)
-                    .ok_or(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer)?;
-                Leaf::Allocation {
-                    allocation: initializer.unwrap_parens().span().lo.0,
-                    reads,
-                }
-            }
-            Expr::Lit(literal) => Leaf::Primitive(match literal {
-                Lit::Str(_) => PrimKinds::STRING,
-                Lit::Num(_) => PrimKinds::NUMBER,
-                Lit::Bool(_) => PrimKinds::BOOLEAN,
-                Lit::Null(_) => PrimKinds::NULL,
-                Lit::BigInt(_) => PrimKinds::BIGINT,
-                _ => {
-                    return Err(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer);
-                }
-            }),
             Expr::Fn(expression)
                 if expression.function.body.is_some()
                     && expression.function.type_params.is_none()
@@ -546,7 +465,11 @@ impl OriginalInitializer {
                 Leaf::Function(expression.span.lo.0)
             }
             _ => {
-                return Err(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer);
+                let (expression, covered) = ValueExpr::from_expr_with_coverage(initializer);
+                if !covered {
+                    return Err(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer);
+                }
+                Leaf::Composed(expression)
             }
         };
         Ok(Self {
@@ -561,14 +484,12 @@ impl OriginalInitializer {
         self.owner == owner && self.binding == *binding
     }
 
-    pub(super) fn reads_are_initialized(&self, mut initialized: impl FnMut(&Id) -> bool) -> bool {
+    /// The expression and coverage come from the same canonical lowering.
+    /// Only this retained source expression may enable covered child transfers.
+    pub(super) fn composed_expression(&self) -> Option<&ValueExpr> {
         match &self.leaf {
-            Leaf::Binding(binding) => initialized(binding),
-            Leaf::Allocation { reads, .. } => reads.iter().all(initialized),
-            Leaf::Primitive(_)
-            | Leaf::Function(_)
-            | Leaf::Class(_)
-            | Leaf::NativeConstructor { .. } => true,
+            Leaf::Composed(expression) => Some(expression),
+            _ => None,
         }
     }
 
@@ -617,15 +538,15 @@ impl OriginalInitializer {
         &self,
         expression: &ValueExpr,
         values: &Values,
-        initialized_reads: bool,
+        judgment: &AllocationJudgment,
         native_constructor_transfer: Option<NativeConstructorTransfer>,
     ) -> Option<EvaluatedInitializer> {
         if values.is_empty() || values.contains(&AbstractValue::Value(Value::Unavailable)) {
             return None;
         }
         let matches = match (&self.leaf, expression, values.first()?) {
-            (Leaf::Binding(expected), ValueExpr::Binding(lowered), _) => {
-                expected == lowered && initialized_reads
+            (Leaf::Composed(_), _, _) => {
+                matches!(judgment, AllocationJudgment::CoveredAllocationOnly(_))
             }
             (Leaf::NativeConstructor { .. }, _, AbstractValue::Value(Value::Top)) => self
                 .native_constructor_candidate(expression)
@@ -634,29 +555,14 @@ impl OriginalInitializer {
                     values.len() == 1 && transfer.matches(candidate)
                 }),
             (
-                Leaf::Allocation { allocation, .. },
+                Leaf::RegExp(allocation),
                 ValueExpr::ObjectLiteral(lowered, _),
                 AbstractValue::Value(Value::Alloc(Kind::Object, evaluated)),
-            ) => {
-                values.len() == 1
-                    && allocation == lowered
-                    && allocation == evaluated
-                    && initialized_reads
-            }
+            ) => values.len() == 1 && allocation == lowered && allocation == evaluated,
             (
                 Leaf::Class(expected),
                 ValueExpr::Alloc(Kind::Class, lowered),
                 AbstractValue::Value(Value::Alloc(Kind::Class, evaluated)),
-            ) => {
-                values.len() == 1
-                    && expected == lowered
-                    && expected == evaluated
-                    && initialized_reads
-            }
-            (
-                Leaf::Primitive(expected),
-                ValueExpr::NonCallable(lowered),
-                AbstractValue::Value(Value::Prim(evaluated)),
             ) => values.len() == 1 && expected == lowered && expected == evaluated,
             (
                 Leaf::Function(expected),
