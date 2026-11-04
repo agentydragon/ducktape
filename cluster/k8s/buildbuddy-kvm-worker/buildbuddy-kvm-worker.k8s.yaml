@@ -811,6 +811,13 @@ data:
               "op": "SCMP_CMP_EQ"
             }
           ]
+        },
+        {
+          "names": ["pivot_root"],
+          "action": "SCMP_ACT_ALLOW",
+          "includes": {
+            "caps": ["CAP_SYS_ADMIN"]
+          }
         }
       ]
     }
@@ -841,8 +848,8 @@ data:
     executor:
       app_target: grpcs://remote.buildbuddy.io:443
       api_key: "${BUILDBUDDY_API_KEY}"
-      millicpu: 8000
-      memory_bytes: 23622320128
+      millicpu: 4000
+      memory_bytes: 15032385536
       max_concurrent_tasks: 1
       root_directory: /buildbuddy/remotebuilds
       local_cache_directory: /buildbuddy/filecache
@@ -996,7 +1003,7 @@ spec:
                       - "true"
       domain:
         cpu:
-          cores: 8
+          cores: 4
           features:
             - name: svm
               policy: optional
@@ -1036,16 +1043,21 @@ spec:
               secureBoot: false
         resources:
           limits:
-            cpu: "8"
-            memory: 24Gi
+            cpu: "4"
+            memory: 16Gi
           requests:
-            cpu: "8"
-            memory: 24Gi
+            cpu: "4"
+            memory: 16Gi
       networks:
         - name: default
           pod: {}
       nodeSelector:
+        kubernetes.io/hostname: ovh-ns104963
         kubernetes.io/os: linux
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
       volumes:
         - containerDisk:
             image: quay.io/containerdisks/ubuntu:24.04@sha256:ea164c514b308286bdc179b403298efd2d8ae549af518a82a029e1bbb027f3a4

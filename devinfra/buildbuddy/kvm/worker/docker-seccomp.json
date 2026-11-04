@@ -715,6 +715,13 @@
           "op": "SCMP_CMP_EQ"
         }
       ]
+    },
+    {
+      "names": ["pivot_root"],
+      "action": "SCMP_ACT_ALLOW",
+      "includes": {
+        "caps": ["CAP_SYS_ADMIN"]
+      }
     }
   ]
 }

@@ -30,6 +30,10 @@ spec:
     nodePlacement:
       nodeSelector:
         topology.kubernetes.io/region: hil
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
   workloadUpdateStrategy: {}
   workloads:
     nodePlacement:
@@ -46,3 +50,12 @@ spec:
                       - proxmox
                   - key: node-role.kubernetes.io/control-plane
                     operator: DoesNotExist
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - ovh-ns104963
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists

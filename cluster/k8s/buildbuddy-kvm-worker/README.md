@@ -1,8 +1,8 @@
 # Static KVM worker
 
 One always-running KubeVirt VM contains the BuildBuddy executor for the manual
-`wyrm2-kvm-vm` pool. It boots KubeVirt's digest-pinned Ubuntu 24.04 cloud image, with eight
-vCPUs, 24 GiB RAM and an 80 GiB `emptyDisk` for Docker layers, action workspaces and cache.
+`wyrm2-kvm-vm` pool. It boots KubeVirt's digest-pinned Ubuntu 24.04 cloud image, with four
+vCPUs, 16 GiB RAM and an 80 GiB `emptyDisk` for Docker layers, action workspaces and cache.
 Cloud-init installs Ubuntu's Docker package and the native
 [worker configuration](../../../devinfra/buildbuddy/kvm/worker/). There is no custom guest
 image build. Docker package installation uses the Ubuntu repositories at first boot.
@@ -27,14 +27,19 @@ seccomp profile allows the `KEYCTL_JOIN_SESSION_KEYRING`, `KEYCTL_DESCRIBE` and
 29.1.3's [default profile](https://github.com/moby/moby/blob/docker-v29.1.3/vendor/github.com/moby/profiles/seccomp/default.json).
 When the Docker package is upgraded, compare its default profile and update our copy so
 other seccomp policy changes are retained. The profile applies to every container in this
-dedicated guest.
+dedicated guest. `pivot_root` is additionally allowed only with `CAP_SYS_ADMIN`, so
+nested runc can use its normal root switch instead of the no-pivot fallback.
 
 The Kustomization is enabled, so Flux deploys the VM when this configuration lands.
 First boot configures the dedicated guest for nested KVM and reboots once before the
 executor starts. The VM selects nodes whose KubeVirt CPU feature labels advertise either
-`svm` or `vmx`; its guest loads the corresponding KVM driver. The 8-CPU, 24-GiB reservation
-currently fits only on `wyrm2`. The labels describe hypervisor CPU features, and the guest
-bootstrap fails if no KVM device is available; verify nested execution after moving the VM.
+`svm` or `vmx`; its guest loads the corresponding KVM driver. The worker is placed on
+`ovh-ns104963`, the explicit control-plane exception to KubeVirt workload placement. Its
+4-CPU, 16-GiB reservation fits that node; the executor advertises four CPUs and 14 GiB, leaving
+2 GiB for the guest OS and Docker. KVM test actions request four compute units. The historical
+`wyrm2-kvm-vm` pool name is retained independently of the node placement.
+The labels describe hypervisor CPU features, and the guest bootstrap fails if no KVM device
+is available; verify nested execution after moving the VM.
 Verify guest boot, the outer network fence and these manual checks:
 
 ```bash
