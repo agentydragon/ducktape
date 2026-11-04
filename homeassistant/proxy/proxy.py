@@ -3,11 +3,11 @@
 import logging
 import secrets
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Annotated, Any
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from homeassistant.proxy.config import Settings, TokenConfig
@@ -31,38 +31,47 @@ def _extract_str_or_list(value: Any, field: str) -> list[str]:
     raise HTTPException(status_code=400, detail=f"{field}: expected string or list of strings")
 
 
+def get_authenticated_token(request: Request) -> TokenConfig:
+    settings: Settings = request.app.state.settings
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        token = auth[len("Bearer ") :]
+        for token_cfg in settings.tokens.values():
+            if secrets.compare_digest(token, token_cfg.secret):
+                return token_cfg
+    raise HTTPException(status_code=401, detail="unauthorized")
+
+
+def get_http_client(request: Request) -> httpx.AsyncClient:
+    http_client: httpx.AsyncClient | None = request.app.state.http_client
+    assert http_client is not None, "httpx client not initialized (lifespan not started)"
+    return http_client
+
+
+AuthenticatedToken = Annotated[TokenConfig, Depends(get_authenticated_token)]
+HomeAssistantHttpClient = Annotated[httpx.AsyncClient, Depends(get_http_client)]
+
+
 def create_app(settings: Settings) -> FastAPI:
-    http_client: httpx.AsyncClient | None = None
     enforcer = PolicyEnforcer(settings.homeassistant.url, settings.homeassistant.token)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        nonlocal http_client
         http_client = httpx.AsyncClient(
             base_url=settings.homeassistant.url,
             headers={"Authorization": f"Bearer {settings.homeassistant.token}"},
             timeout=30.0,
         )
+        app.state.http_client = http_client
         await enforcer.start()
         yield
         await enforcer.stop()
         await http_client.aclose()
-        http_client = None
-
-    def _http() -> httpx.AsyncClient:
-        assert http_client is not None, "httpx client not initialized (lifespan not started)"
-        return http_client
+        app.state.http_client = None
 
     app = FastAPI(lifespan=lifespan)
-
-    def _authenticate(request: Request) -> TokenConfig:
-        auth = request.headers.get("Authorization", "")
-        if auth.startswith("Bearer "):
-            token = auth[len("Bearer ") :]
-            for token_cfg in settings.tokens.values():
-                if secrets.compare_digest(token, token_cfg.secret):
-                    return token_cfg
-        raise HTTPException(status_code=401, detail="unauthorized")
+    app.state.settings = settings
+    app.state.http_client = None
 
     @app.exception_handler(AccessDeniedError)
     async def _handle_access_denied(request: Request, exc: AccessDeniedError) -> JSONResponse:
@@ -73,17 +82,17 @@ def create_app(settings: Settings) -> FastAPI:
         return {"status": "ok"}
 
     # Metadata pass-through routes (require auth, no policy filtering).
-    async def _passthrough(request: Request) -> JSONResponse:
-        _authenticate(request)
-        return _forward(await _http().get(request.url.path))
+    async def _passthrough(
+        request: Request, _token_cfg: AuthenticatedToken, http_client: HomeAssistantHttpClient
+    ) -> JSONResponse:
+        return _forward(await http_client.get(request.url.path))
 
     for path in ("/api/", "/api/config", "/api/services"):
         app.add_api_route(path, _passthrough, methods=["GET"])
 
     @app.get("/api/states")
-    async def api_states(request: Request) -> JSONResponse:
-        token_cfg = _authenticate(request)
-        resp = await _http().get("/api/states")
+    async def api_states(token_cfg: AuthenticatedToken, http_client: HomeAssistantHttpClient) -> JSONResponse:
+        resp = await http_client.get("/api/states")
         if resp.status_code != 200:
             return _forward(resp)
         states: list[dict[str, Any]] = resp.json()
@@ -92,14 +101,16 @@ def create_app(settings: Settings) -> FastAPI:
         return JSONResponse([s for s in states if s["entity_id"] in allowed])
 
     @app.get("/api/states/{entity_id}")
-    async def api_state(request: Request, entity_id: str) -> JSONResponse:
-        token_cfg = _authenticate(request)
+    async def api_state(
+        request: Request, entity_id: str, token_cfg: AuthenticatedToken, http_client: HomeAssistantHttpClient
+    ) -> JSONResponse:
         await enforcer.require_read(entity_id, token_cfg.policy)
-        return _forward(await _http().get(f"/api/states/{entity_id}"))
+        return _forward(await http_client.get(f"/api/states/{entity_id}"))
 
     @app.post("/api/services/{domain}/{service}")
-    async def api_call_service(request: Request, domain: str, service: str) -> JSONResponse:
-        token_cfg = _authenticate(request)
+    async def api_call_service(
+        request: Request, domain: str, service: str, token_cfg: AuthenticatedToken, http_client: HomeAssistantHttpClient
+    ) -> JSONResponse:
         body = await request.body()
         data: dict[str, Any] = await request.json() if body else {}
 
@@ -126,11 +137,10 @@ def create_app(settings: Settings) -> FastAPI:
         url = request.url.path
         if request.url.query:
             url = f"{url}?{request.url.query}"
-        return _forward(await _http().post(url, content=body, headers={"Content-Type": "application/json"}))
+        return _forward(await http_client.post(url, content=body, headers={"Content-Type": "application/json"}))
 
     @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-    async def catch_all(request: Request, path: str) -> JSONResponse:
-        _authenticate(request)
+    async def catch_all(path: str, _token_cfg: AuthenticatedToken) -> JSONResponse:
         return JSONResponse({"error": f"endpoint not allowed: /{path}"}, status_code=403)
 
     return app
