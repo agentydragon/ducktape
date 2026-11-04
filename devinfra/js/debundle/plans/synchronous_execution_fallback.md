@@ -11,6 +11,12 @@ and rebinds. `LegacyExecution { complete }` remains a compatibility authority
 for other owners; its completion flag is not an operation receipt. Neither path
 proves property, heap, global or host-effect coverage.
 
+The ordered family includes a single ordinary identifier-call initializer
+with zero actual arguments. Its existing child read/rebind receipts and actual
+return value compose before exact root sealing. A complete alias without the
+direct-declaration selection proof remains uncovered and retains closure
+fallback; normal completion alone cannot restore legacy authority.
+
 ## Remaining effect-authority boundary
 
 `graph/build.rs` emits known synchronous reads and rebinds according to their

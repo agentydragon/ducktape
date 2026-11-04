@@ -712,6 +712,141 @@ fn local_cell_read_effects_compose_without_an_allocation_result() {
 }
 
 #[test]
+fn single_local_call_seals_real_lexical_read_and_call_receipts() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const seed = 41;\nfunction readSeed() { return seed; }\nvar result = readSeed();\nconsole.log(result);\n",
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("seed"),
+                Member::new("readSeed"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "41\n");
+    let graph = fixture.dependency_graph();
+    let result = graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_ordinal.0 == 2)
+        .expect("single-call initializer");
+    let execution = serde_json::to_value(result.synchronous_execution.as_ref().unwrap()).unwrap();
+    assert_eq!(execution["complete"], true, "{execution:#}");
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "one actual local call must have operation evidence rather than legacy completion authority: {execution:#}"
+    );
+    let receipt = &execution["binding_effect_authority"]["receipt"];
+    assert_eq!(receipt["owner"], 2);
+    assert_eq!(receipt["binding"], "result");
+    let calls = receipt["calls"].as_array().unwrap();
+    assert_eq!(calls.len(), 1, "{receipt:#}");
+    assert_eq!(calls[0]["caller"]["kind"], "root_initializer");
+    assert_eq!(calls[0]["caller"]["owner"], receipt["owner"]);
+    assert_eq!(calls[0]["call_span"], receipt["initializer_span"]);
+    assert_eq!(
+        calls[0]["caller"]["initializer_span"],
+        receipt["initializer_span"]
+    );
+    assert_eq!(calls[0]["target"]["kind"], "callable");
+    assert_eq!(calls[0]["target"]["owner"], 1);
+    let seed = graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_ordinal.0 == 0)
+        .unwrap();
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == result.id
+                && edge.target == seed.id
+                && edge.binding.as_deref() == Some("seed")
+                && edge.constrains_init_order
+        }),
+        "the observed child read must retain its ordering edge: {graph:#?}"
+    );
+    let report = fixture.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 1,
+            "{report:#}"
+        );
+    }
+}
+
+#[test]
+fn single_aliased_call_keeps_complete_but_uncovered_fallback() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const seed = 41;\nconst later = 99;\nfunction readSeed() { return seed; }\nconst alias = { run: readSeed, dormant: () => later }.run;\nvar result = alias();\nconsole.log(result);\n",
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("seed"),
+                Member::new("later"),
+                Member::new("readSeed"),
+                Member::new("alias"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "41\n");
+    let graph = fixture.dependency_graph();
+    let result = graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_ordinal.0 == 4)
+        .unwrap();
+    let execution = serde_json::to_value(result.synchronous_execution.as_ref().unwrap()).unwrap();
+    assert_eq!(execution["complete"], true, "{execution:#}");
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
+        "an identifier alias may execute completely without a selected direct-declaration receipt: {execution:#}"
+    );
+    let seed = graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_ordinal.0 == 0)
+        .unwrap();
+    let later = graph
+        .nodes
+        .iter()
+        .find(|node| node.statement_ordinal.0 == 1)
+        .unwrap();
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == result.id
+                && edge.target == seed.id
+                && edge.binding.as_deref() == Some("seed")
+        }),
+        "the actual seed read remains observed: {graph:#?}"
+    );
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == result.id
+                && edge.target == later.id
+                && edge.binding.as_deref() == Some("later")
+                && edge.role.as_ref().is_some_and(|role| {
+                    serde_json::to_value(role).is_ok_and(|role| {
+                        role["kind"] == "promoted_at_init"
+                            && role["callee_source_unit"].as_str() == Some(result.id.as_str())
+                    })
+                })
+        }),
+        "the dormant closure needs graph fallback even though the alias call completed: {graph:#?}"
+    );
+    let report = fixture.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert!(
+            report["coverage"]["unknown_coverage"][domain]
+                .as_u64()
+                .unwrap()
+                >= 2,
+            "the unreceipted result and output remain unknown: {report:#}"
+        );
+    }
+}
+
+#[test]
 fn complete_aliased_local_calls_without_a_receipt_keep_fallback_authority() {
     let fixture = run_fixture(FixtureOpts::new(
         "const seed = 41;\nconst later = 99;\nfunction readSeed() { return seed; }\nconst alias = { run: readSeed, dormant: () => later }.run;\nvar result = (alias(), alias());\nconsole.log(result);\n",

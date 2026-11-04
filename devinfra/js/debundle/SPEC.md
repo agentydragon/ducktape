@@ -642,6 +642,21 @@ other prologue work, and their own evaluation remains separately covered.
 The root checks that its exact root call-site set matches and that the flat
 call edges connect back to its exact body without expanding root-to-leaf paths.
 
+Ordered root execution also includes an exact initializer containing one
+ordinary identifier call with zero actual arguments. Its actual call result
+travels with the child effects through the shared local kernel; the old
+effect-only call and later value projection do not execute alongside it.
+An identifier alias can enter this execution family but cannot substitute for
+the selected direct-declaration proof. A complete unreceipted alias therefore
+keeps syntactic fallback. Member, native, imported and constructor single calls
+retain their existing admission paths.
+
+If that exact single-call root receives an incomplete local child result, it
+retains the child effects and losses, unknown coverage, and unavailable/unknown
+return possibilities without inventing a caller remainder. Only a singleton
+ordinary nonopaque, nonasync, nongenerator target can use this terminal stop.
+Compound roots and suffix operands retain their conservative remainder path.
+
 The lexical read and rebind domains retain the conditions used to select each
 operation. Values, `complete`, and the existing three effect domains cannot
 mint lexical coverage. The root identity is installed before ordered

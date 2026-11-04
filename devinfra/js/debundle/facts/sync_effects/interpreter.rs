@@ -1789,15 +1789,22 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                     effects: outcome.effect_coverage,
                 });
             }
-            let terminal_local_call = matches!(self.scope, LocalExecutionScope::Callable(_))
-                && matches!(callee, EvaluatedCallee::Direct(_))
-                && matches!(
+            let terminal_position = match self.scope {
+                LocalExecutionScope::Callable(_) => matches!(
                     self.body.operations.last(),
                     Some(LocalOperation::Return(Some(LocalExpression::Call {
                         span: terminal_span,
                         ..
                     }))) if *terminal_span == span
-                )
+                ),
+                // This canonical root has one direct zero-argument call and
+                // no suffix. Other root expressions retain remainder fallback.
+                LocalExecutionScope::RootInitializer => {
+                    self.body.single_identifier_call_initializer() == Some(span)
+                }
+            };
+            let terminal_local_call = terminal_position
+                && matches!(callee, EvaluatedCallee::Direct(_))
                 && self
                     .executor
                     .local_call_target(targets)
@@ -12782,20 +12789,32 @@ impl Executor<'_, '_> {
             && index.top_property_writes[owner.0].is_empty()
             && index.top_member_value_writes[owner.0].is_empty()
             && index.top_callback_result_writes[owner.0].is_empty()
-            && index.top_exported_values[owner.0].is_empty()
-            // Migrate compound call/field operands first. A lone call keeps
-            // its established effect-only/result projection path; selecting
-            // it here would introduce a remainder fallback even when there
-            // is no later operand whose value needs ordered transport.
-            && (calls.iter().filter(|call| call.kind == CallKind::Call).nth(1).is_some()
-                || (calls.iter().any(|call| call.kind == CallKind::Call)
-                    && calls.iter().any(|call| call.kind == CallKind::LocalMemberRead))))
+            && index.top_exported_values[owner.0].is_empty())
         .then(|| index.ordered_initializers.get(&owner))
         .flatten()
         .filter(|body| {
             !body.requires_keyed_collection_new()
                 && body.captured_writes().is_empty()
                 && self.ordered_root_calls_are_local(calls)
+                && (calls
+                    .iter()
+                    .filter(|call| call.kind == CallKind::Call)
+                    .nth(1)
+                    .is_some()
+                    || (calls.iter().any(|call| call.kind == CallKind::Call)
+                        && calls
+                            .iter()
+                            .any(|call| call.kind == CallKind::LocalMemberRead))
+                    || body
+                        .single_identifier_call_initializer()
+                        .is_some_and(|span| {
+                            matches!(calls.as_slice(), [call]
+                            if call.kind == CallKind::Call
+                                && call.span == span
+                                && !call.has_spread
+                                && call.args.is_empty()
+                                && matches!(call.callee, ValueExpr::Binding(_)))
+                        }))
         });
         // Canonical source identity is independent of leaf/value admission.
         // Retain the exact selected body span, not a lowered-value guess.

@@ -627,6 +627,22 @@ impl LocalBody {
         Some(body)
     }
 
+    /// Exact terminal source call, with no other root operation or operand.
+    /// This selects ordered execution, never positive effect coverage.
+    pub(super) fn single_identifier_call_initializer(&self) -> Option<Span> {
+        self.initializer_span?;
+        match self.operations.as_ref() {
+            [
+                LocalOperation::Return(Some(LocalExpression::Call {
+                    callee: LocalCallee::Binding(_),
+                    arguments,
+                    span,
+                })),
+            ] if arguments.is_empty() => Some(*span),
+            _ => None,
+        }
+    }
+
     /// Called by the canonical function collector. Unsupported syntax discards
     /// the entire candidate; the ordinary conservative lanes remain available.
     pub(super) fn lower<'a>(
