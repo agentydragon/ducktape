@@ -1,4 +1,5 @@
 # gazelle:resolve py agentplane.env.firecracker.management_pb2 //agentplane/env/firecracker:management_pb2
+# gazelle:resolve py agentplane.env.firecracker.management_pb2_grpc //agentplane/env/firecracker:management_pb2_grpc
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
@@ -47,7 +48,10 @@ py_library(
     deps = [
         ":credentials",
         "//agentplane/env/firecracker:management_pb2",
+        "//agentplane/env/firecracker:management_pb2_grpc",
+        "@pypi//grpcio",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//types_grpcio",  # keep: mypy follows generated gRPC interfaces
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
@@ -99,8 +103,8 @@ pkg_tar(
 )
 
 pkg_tar(
-    name = "guest_client_layer",
-    srcs = ["//agentplane/env/firecracker/cmd/guest_client:agentplane-firecracker-guest-client"],
+    name = "vsock_bridge_layer",
+    srcs = ["//agentplane/firecracker/vsock_bridge:agentplane-firecracker-vsock-bridge"],
     mode = "0755",
     package_dir = "/usr/local/bin",
 )
@@ -123,7 +127,7 @@ oci_image(
         ":layers",
         ":firecracker_layer",
         ":runtime_tool_links",
-        ":guest_client_layer",
+        ":vsock_bridge_layer",
     ],
 )
 
@@ -202,6 +206,22 @@ py_test(
         ":storage",
         ":supervisor",
         "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_guest_management",
+    srcs = ["test_guest_management.py"],
+    data = ["//agentplane/firecracker/vsock_bridge:agentplane-firecracker-vsock-bridge"],
+    deps = [
+        ":guest_management",
+        "//:conftest",
+        "//agentplane/env/firecracker:management_pb2",
+        "//agentplane/env/firecracker:management_pb2_grpc",
+        "//util/bazel:runfiles",
+        "@pypi//grpcio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -109,8 +109,12 @@ the root-only guest agent writes private tmpfs credentials. On each start/restor
 sends the current certificate, key, CA and host wall time through the typed `GuestManagement`
 gRPC service over vsock port 52. The guest accepts only host CID 2 and checks the expected boot
 identity before applying changes. The root service binds a privileged port so an unprivileged
-guest process cannot impersonate it and receive private keys. Runtime reloads TLS files on a new
-handshake without restarting its process.
+guest process cannot impersonate it and receive private keys. The Python supervisor uses the generated gRPC stub through a private Unix socket. A thin launcher
+binary forwards opaque streams using [`util/vsock/firecracker`](../../util/vsock/firecracker/README.md),
+which owns Firecracker's CONNECT handshake and transport lifecycle without depending on Agentplane
+or protobuf. The guest uses `github.com/mdlayher/vsock` for its native listener; host-CID authorization
+remains in the management service. Runtime reloads TLS files on a new handshake without restarting
+its process.
 The public egress CA disk and Runtime trust are distinct.
 
 The guest reaches the relay at `192.0.2.1:3128` or `[fd00:fc::1]:3128` and explicitly declared

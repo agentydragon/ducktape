@@ -35,6 +35,11 @@ network admission follows the typed `GuestManagement.Synchronize` gRPC response 
 port `52`. The host first reads `GetStatus`, then sends the current clock, TLS certificate, key,
 CA bundle and expected boot ID; the guest rejects a mismatched identity before changing state.
 The host client retries transport establishment within a bounded deadline while the guest boots.
+The Python supervisor calls the generated gRPC stub over a private Unix socket. A transport-only
+bridge performs Firecracker's `CONNECT 52` handshake and forwards the gRPC byte stream to vsock;
+it never decodes RPC messages. gRPC owns serialization, message limits, deadlines and cancellation.
+There is no protobuf request/response protocol on subprocess stdin or stdout. Each synchronization
+owns its bridge process and private socket directory, and closes both on success or failure.
 The root guest service accepts only host CID `2` and holds `CAP_SYS_TIME` and
 `CAP_NET_BIND_SERVICE`. Keeping its listener below port `1024` prevents an unprivileged guest
 process from replacing the service and receiving Runtime private keys. It exposes no TCP listener.

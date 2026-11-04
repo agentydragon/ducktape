@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "vsock_bridge",
+    srcs = ["main.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/firecracker/vsock_bridge",
+    deps = ["//util/vsock/firecracker"],
+)
+
+go_binary(
+    name = "agentplane-firecracker-vsock-bridge",
+    embed = [":vsock_bridge"],
+    pure = "on",
+)
+
+go_test(
+    name = "vsock_bridge_test",
+    srcs = ["main_test.go"],
+    embed = [":vsock_bridge"],
+)

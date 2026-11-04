@@ -29,7 +29,7 @@ def test_shipped_launcher_starts_and_has_required_tools() -> None:
     version = _run(image, "--version", entrypoint="/usr/local/bin/firecracker")
     assert "Firecracker v1.17.0" in version.stdout
 
-    _run(image, "--help", entrypoint="/usr/local/bin/agentplane-firecracker-guest-client")
+    _run(image, "--help", entrypoint="/usr/local/bin/agentplane-firecracker-vsock-bridge")
 
     tools = "cp truncate mkfs.ext4 xorriso blkid ip iptables ip6tables"
     _run(image, "-c", f'for tool in {tools}; do command -v "$tool" || exit 1; done', entrypoint="/bin/sh")
