@@ -39,11 +39,13 @@ def create_app(*, db: ProxyDatabase | None = None, config: LLMProxyConfig | None
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with AsyncExitStack() as stack:
-            admin_db = db or await stack.enter_async_context(ProxyDatabase(DatabaseConfig()))
+            if db is None:
+                admin_db = await stack.enter_async_context(ProxyDatabase(DatabaseConfig()))
+                await admin_db.verify()
+            else:
+                admin_db = db
             app.state.admin_db = admin_db
             app.state.config = config or load_proxy_config_from_env()
-            if db is None:
-                await admin_db.verify()
             logger.info("LLM proxy ready")
             yield
 
