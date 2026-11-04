@@ -206,7 +206,14 @@ For a native Session, resolve `S` to the Harness Host in environment `E`, then s
 
 **Symmetry:** environment UID and native store reference are both placement/continuation facts. Neither is part of the public Session identity. The environment identifies the owner scope to reach; the store reference and native ID tell that owner which harness continuation to resume. Process identity and a connection endpoint are more transient still.
 
-**Change from the earlier decision:** existing native callers provide `(Sandbox UID, Agentplane Session ID)`, and today's Dispatcher still asks callers for a Sandbox even for a central Session. The selected UUID-only public address and directory supersede that earlier contract; the current code does not yet implement them. Existing native Runtime IDs also allow non-UUID strings, so preserving existing identities needs a deliberate transition or alias policy.
+**Change from the earlier decision:** Dispatcher command requests now address a Session ID, and
+Dispatcher resolves and fences their placement. Session opening still requires an exact Sandbox,
+including for a central Session; the complete directory and environment-independent central Session
+model remain unfinished. Existing native Runtime IDs also allow non-UUID strings, so preserving
+existing identities needs a deliberate transition or alias policy. See the
+[address inventory](#session-address-inventory) and
+[`SESSION_DIRECTORY_NATIVE`](task_dag.md#session_directory_native--dispatcher-authority-for-environment-hosted-sessions)
+for the implemented and remaining boundaries.
 
 - **One placement authority:** the directory is the source of truth for UUID → assigned Session owner and placement generation. That owner is the authority for harness/store/native mapping. Do not let two independently writable records each claim they select the current owner.
 - **Durable reservation:** register the client-chosen UUID and immutable creation request in Dispatcher under a unique constraint. An exact retry resumes/reconciles the same logical reservation; conflicting reuse fails. An owner reservation, if needed, and native creation are distinct from that Dispatcher receipt and may occur later.
