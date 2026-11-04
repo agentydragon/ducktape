@@ -221,12 +221,12 @@ console.log(late);
         let has_path_lookalike_authored_module = modules.iter().any(|module| {
             module
                 .as_str()
-                .is_some_and(|path| path.contains("features/__auto/residual_groups/endpoints"))
+                .is_some_and(|path| path == "features/__auto/residual_groups/endpoints")
         });
         let has_generated_residual = modules.iter().any(|module| {
             module
                 .as_str()
-                .is_some_and(|path| path.contains("::__auto/residual_groups/"))
+                .is_some_and(|path| path == "__auto/residual_groups/0000")
         });
         has_path_lookalike_authored_module && has_generated_residual
     });
@@ -238,31 +238,35 @@ console.log(late);
 }
 
 #[test]
-fn coarse_residual_sccs_contract_actual_cycles_and_preserve_source_order() {
-    let source = r#"const x = 1;
-const y = 2;
-const a1 = (console.log("a1"), x);
+fn coarse_generated_scc_contraction_repairs_interleaved_evaluation_intervals() {
+    // The generated reader/trigger chain makes the fine ESM DFS enter
+    // reader -> first -> anchor -> middle -> first. Middle and its anonymous
+    // predecessor evaluate before anchor; first and last evaluate after it.
+    // The effectful residuals share strict-owner signature {anchor}, but their
+    // two evaluation intervals interleave along the source S-chain. Their coarse
+    // quotient therefore needs an actual generated-only SCC merge. Reader and
+    // trigger have empty strict signatures and remain outside that contraction.
+    let source = r#"const reader = () => first;
+const trigger = reader;
+const anchor = () => middle;
+const first = (console.log("first"), anchor);
 console.log("between");
-const b1 = (console.log("b1"), y);
-const a2 = (console.log("a2"), x);
-const b2 = (console.log("b2"), y);
-console.log([a1, b1, a2, b2].join("|"));
+const middle = (console.log("middle"), 1);
+const last = (console.log("last"), 2);
+console.log([trigger() === first, first(), middle, last].join("|"));
 "#;
     let fixture = run_fixture(
         FixtureOpts::new(
             source,
-            vec![
-                logical_module("features/x", &[Member::new("x")]),
-                logical_module("features/y", &[Member::new("y")]),
-            ],
+            vec![logical_module("features/anchor", &[Member::new("anchor")])],
         )
         .with_unassigned_mode(unassigned_mode_coarse_atomic_groups()),
     );
-    assert_preserved_entry_output(&fixture, "a1\nbetween\nb1\na2\nb2\n1|2|1|2\n");
+    assert_preserved_entry_output(&fixture, "first\nbetween\nmiddle\nlast\ntrue|1|1|2\n");
     let residual = module_containing(
         &fixture.out_root,
         "static/app/modules/__auto/residual_groups",
-        "const a1",
+        "const first",
     );
     let residual_relative = residual
         .strip_prefix(&fixture.out_root)
@@ -282,18 +286,18 @@ console.log([a1, b1, a2, b2].join("|"));
         &fixture.out_root,
         &residual_relative,
         &[
-            "const a1",
+            "const first",
             "console.log(\"between\")",
-            "const b1",
-            "const a2",
-            "const b2",
+            "const middle",
+            "const last",
         ],
         &[],
     );
-    assert_module_exports(
-        &fixture.out_root,
-        &residual_relative,
-        &["a1", "b1", "a2", "b2"],
-        &[],
-    );
+    let residual_source = std::fs::read_to_string(residual).unwrap();
+    for name in ["first", "middle"] {
+        assert_export_named_specifiers(&residual_source, name, &[None]);
+    }
+    for name in ["last", "anchor"] {
+        assert_export_named_specifiers(&residual_source, name, &[]);
+    }
 }
