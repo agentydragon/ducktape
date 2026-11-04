@@ -1536,8 +1536,14 @@ otherwise assume.
 
 Within synchronous value flow, recursion and budget limits summarize both
 escaped callbacks and the directly truncated callable through retained
-synchronous statement adjacency and prefix reads. Complete raw rebinds remain
-conservative. Private truncated roots are expanded once per source statement
+synchronous statement adjacency and covered prefix reads and rebinds. The
+execution index records prefix rebinds through the raw facts' shared target
+walker during its existing AST pass, before visiting assignment operands;
+updates, patterns and loop heads keep their possible synchronous writes.
+Owner-wide coverage includes retained nested callables created before suspension
+and hoisted function declarations. Dynamic scope, unindexed accessor owners,
+uncovered pattern targets or missing first-order read/write coverage retain raw lazy effects. Private
+truncated roots are expanded once per source statement
 without adding them to the persistent escaped-callback cache. Incomplete
 reachability retains whole-body fallback.
 
@@ -1718,10 +1724,10 @@ cross-instance state in the returned graph; the complete contract is in
 author assumption, never an inference from a provider's name.
 
 Invoking a retained result promotes its callbacks through the shared synchronous
-statement adjacency and retained prefix reads. This includes callbacks returned
-before suspension while excluding reads after an unconditional await. Complete
-raw rebinds remain conservative; incomplete reachability or uncovered callable
-surfaces retain whole-body read effects.
+statement adjacency and retained prefix effects. This includes callbacks returned
+before suspension while excluding reads and rebinds after an unconditional
+await when source coverage is complete. Incomplete reachability or uncovered
+callable surfaces retain whole-body effects.
 
 Opaque returned carriers retain live actual inputs, including aliases and later
 container insertions. They do not prove an ordinary graph for a subsequent
@@ -1764,8 +1770,8 @@ boundaries rather than stopping at the first invocation.
 
 Opaque class and instance values can expose constructors, instance fields,
 methods, and accessors to foreign code. Their callback promotion uses the same
-synchronous statement adjacency and retained prefix reads, with the source closure
-cached per class. Uncovered source statements retain raw lazy reads and all raw lazy
+synchronous statement adjacency and retained prefix effects, with the source closure
+cached per class. Uncovered source statements retain raw lazy reads and
 rebinds; incomplete reachability uses the original whole-body closure.
 
 ### Namespace capability privacy

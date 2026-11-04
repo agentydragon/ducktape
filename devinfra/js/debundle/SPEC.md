@@ -1636,12 +1636,17 @@ are handed.
 ## Synchronous analysis limits
 
 Recursion and analysis limits preserve the first-await boundary where retained
-callback read coverage is complete. Possible synchronous reads and writes remain
+callback read and write coverage is complete. Possible synchronous reads and writes remain
 constraints, including for private callbacks that have not escaped. Unsupported
 bodies and dynamic scope retain conservative whole-body effects. Opaque-call
 reachability follows those same synchronous prefixes, so a value first read
 after a definite `await` does not expose its callback body through that path
 during chunk initialization.
+
+Prefix write coverage includes assignments, updates, destructuring and loop
+targets. A write whose target or value evaluation contains an `await` may still
+be retained conservatively. Deferred writes continue to require co-location
+with the binding declaration because ESM imports cannot be reassigned.
 
 Ordinary eager reads and synchronous callback reads stay between the known
 preceding and following writes of the binding, including `var` initializers
