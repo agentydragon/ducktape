@@ -88,11 +88,13 @@ debundle_e2e_test(
     },
     deps = [
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:spec",
         "//devinfra/js/debundle:staged_analysis",
         "@crates//:rmp-serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:sha2",
+        "@crates//:tempfile",
     ],
 )
 

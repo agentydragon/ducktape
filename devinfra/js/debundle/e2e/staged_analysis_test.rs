@@ -12,6 +12,28 @@ use debundle_e2e_support::*;
 use debundle_e2e_support::{TreeFixture, TreeRun, run_tree_graph_fixture};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use tempfile::TempDir;
+
+struct StagedInvocation {
+    result: CommandResult,
+    harness_root: Option<PathBuf>,
+    invocation_spec: Option<PathBuf>,
+    _outputs: TempDir,
+}
+
+impl StagedInvocation {
+    fn output_root(&self) -> PathBuf {
+        self._outputs.path().join("out")
+    }
+
+    fn harness_root(&self) -> Option<&Path> {
+        self.harness_root.as_deref()
+    }
+
+    fn invocation_spec(&self) -> Option<&Path> {
+        self.invocation_spec.as_deref()
+    }
+}
 
 /// Two modules split across an at-init read, a cross-module pure import, and
 /// a member annotation, so the artifact carries cross-module summaries,
@@ -101,24 +123,50 @@ impl Staged {
         )
     }
 
-    fn run(&self, extra: &[&str]) -> CommandResult {
-        let mut args = vec!["run", "--graphs", "--spec", path(&self.spec)];
-        args.extend_from_slice(extra);
-        command(&args)
+    fn run(&self, extra: &[&str]) -> StagedInvocation {
+        self.run_with_graphs(true, extra)
     }
 
-    /// Move the trees a run wrote aside, so the next run writes fresh ones.
-    fn set_aside(&self, label: &str) -> PathBuf {
-        let aside = self.root().join(label);
-        fs::create_dir_all(&aside).unwrap();
-        for name in ["out", "harness"] {
-            let tree = self.root().join(name);
-            if tree.exists() {
-                fs::rename(&tree, aside.join(name)).unwrap();
-            }
+    fn run_without_graphs(&self, extra: &[&str]) -> StagedInvocation {
+        self.run_with_graphs(false, extra)
+    }
+
+    fn run_with_graphs(&self, graphs: bool, extra: &[&str]) -> StagedInvocation {
+        let outputs = TempDir::new_in(self.root()).expect("create per-run output directory");
+        let invocation_spec = outputs.path().join("transform_spec.yaml");
+        let harness_root = outputs.path().join("harness");
+        let output_root = outputs.path().join("out");
+
+        let mut spec: spec::TransformSpec =
+            serde_yaml::from_slice(&fs::read(&self.spec).expect("read flat fixture spec"))
+                .expect("deserialize typed flat fixture spec");
+        spec.write_js_tree
+            .as_mut()
+            .expect("flat fixture writes a JS tree")
+            .out_dir = output_root.clone();
+        spec.materialize_logical_modules.report_out_dir = Some(output_root.join("reports/tree"));
+        let has_harness = spec.emit_browser_harness.is_some();
+        if let Some(harness) = spec.emit_browser_harness.as_mut() {
+            harness.out_dir = harness_root.clone();
         }
-        fs::create_dir_all(self.root().join("out")).unwrap();
-        aside
+        fs::write(
+            &invocation_spec,
+            serde_yaml::to_string(&spec).expect("serialize typed per-run fixture spec"),
+        )
+        .expect("write per-run fixture spec");
+
+        let mut args = vec!["run"];
+        if graphs {
+            args.push("--graphs");
+        }
+        args.extend(["--spec", path(&invocation_spec)]);
+        args.extend_from_slice(extra);
+        StagedInvocation {
+            result: command(&args),
+            _outputs: outputs,
+            harness_root: has_harness.then_some(harness_root),
+            invocation_spec: Some(invocation_spec),
+        }
     }
 }
 
@@ -147,8 +195,10 @@ impl TreeStaged {
         triple: Option<&str>,
         analysis: Option<&Path>,
         dry_run: bool,
-    ) -> CommandResult {
+    ) -> StagedInvocation {
         let root = self.root();
+        let outputs = TempDir::new_in(root).expect("create per-invocation output directory");
+        let output_root = outputs.path().join("out");
         let mut args = vec![
             "bindings".to_string(),
             "assign".to_string(),
@@ -178,16 +228,23 @@ impl TreeStaged {
                 "--tree-source-root".to_string(),
                 path(root).to_string(),
                 "--out-root".to_string(),
-                path(&root.join("candidate-out")).to_string(),
+                path(&output_root).to_string(),
                 "--analysis".to_string(),
                 path(analysis).to_string(),
             ]);
         }
-        command(&args.iter().map(String::as_str).collect::<Vec<_>>())
+        StagedInvocation {
+            result: command(&args.iter().map(String::as_str).collect::<Vec<_>>()),
+            _outputs: outputs,
+            harness_root: None,
+            invocation_spec: None,
+        }
     }
 
-    fn unassign(&self, sym: &str, analysis: Option<&Path>, dry_run: bool) -> CommandResult {
+    fn unassign(&self, sym: &str, analysis: Option<&Path>, dry_run: bool) -> StagedInvocation {
         let root = self.root();
+        let outputs = TempDir::new_in(root).expect("create per-invocation output directory");
+        let output_root = outputs.path().join("out");
         let mut args = vec![
             "bindings".to_string(),
             "unassign".to_string(),
@@ -215,12 +272,17 @@ impl TreeStaged {
                 "--tree-source-root".to_string(),
                 path(root).to_string(),
                 "--out-root".to_string(),
-                path(&root.join("candidate-out")).to_string(),
+                path(&output_root).to_string(),
                 "--analysis".to_string(),
                 path(analysis).to_string(),
             ]);
         }
-        command(&args.iter().map(String::as_str).collect::<Vec<_>>())
+        StagedInvocation {
+            result: command(&args.iter().map(String::as_str).collect::<Vec<_>>()),
+            _outputs: outputs,
+            harness_root: None,
+            invocation_spec: None,
+        }
     }
 
     fn merge(
@@ -229,8 +291,10 @@ impl TreeStaged {
         source: &str,
         analysis: Option<&Path>,
         dry_run: bool,
-    ) -> CommandResult {
+    ) -> StagedInvocation {
         let root = self.root();
+        let outputs = TempDir::new_in(root).expect("create per-invocation output directory");
+        let output_root = outputs.path().join("out");
         let mut args = vec![
             "modules".to_string(),
             "merge".to_string(),
@@ -260,12 +324,17 @@ impl TreeStaged {
                 "--tree-source-root".to_string(),
                 path(root).to_string(),
                 "--out-root".to_string(),
-                path(&root.join("candidate-out")).to_string(),
+                path(&output_root).to_string(),
                 "--analysis".to_string(),
                 path(analysis).to_string(),
             ]);
         }
-        command(&args.iter().map(String::as_str).collect::<Vec<_>>())
+        StagedInvocation {
+            result: command(&args.iter().map(String::as_str).collect::<Vec<_>>()),
+            _outputs: outputs,
+            harness_root: None,
+            invocation_spec: None,
+        }
     }
 
     fn delete(
@@ -274,8 +343,10 @@ impl TreeStaged {
         force: bool,
         analysis: Option<&Path>,
         dry_run: bool,
-    ) -> CommandResult {
+    ) -> StagedInvocation {
         let root = self.root();
+        let outputs = TempDir::new_in(root).expect("create per-invocation output directory");
+        let output_root = outputs.path().join("out");
         let mut args = vec![
             "modules".to_string(),
             "delete".to_string(),
@@ -306,12 +377,17 @@ impl TreeStaged {
                 "--tree-source-root".to_string(),
                 path(root).to_string(),
                 "--out-root".to_string(),
-                path(&root.join("candidate-out")).to_string(),
+                path(&output_root).to_string(),
                 "--analysis".to_string(),
                 path(analysis).to_string(),
             ]);
         }
-        command(&args.iter().map(String::as_str).collect::<Vec<_>>())
+        StagedInvocation {
+            result: command(&args.iter().map(String::as_str).collect::<Vec<_>>()),
+            _outputs: outputs,
+            harness_root: None,
+            invocation_spec: None,
+        }
     }
 
     fn apply_args(
@@ -321,6 +397,7 @@ impl TreeStaged {
         dry_run: bool,
         complete_context: bool,
         partial_context_without_analysis: bool,
+        output_root: &Path,
     ) -> Vec<String> {
         let root = self.root();
         let mut args = vec![
@@ -352,7 +429,7 @@ impl TreeStaged {
                     "--tree-source-root".to_string(),
                     path(root).to_string(),
                     "--out-root".to_string(),
-                    path(&root.join("candidate-out")).to_string(),
+                    path(output_root).to_string(),
                 ]);
             }
             args.extend(["--analysis".to_string(), path(analysis).to_string()]);
@@ -369,15 +446,23 @@ impl TreeStaged {
         dry_run: bool,
         complete_context: bool,
         partial_context_without_analysis: bool,
-    ) -> CommandResult {
+    ) -> StagedInvocation {
+        let outputs = TempDir::new_in(self.root()).expect("create per-invocation output directory");
+        let output_root = outputs.path().join("out");
         let args = self.apply_args(
             batch,
             analysis,
             dry_run,
             complete_context,
             partial_context_without_analysis,
+            &output_root,
         );
-        command(&args.iter().map(String::as_str).collect::<Vec<_>>())
+        StagedInvocation {
+            result: command(&args.iter().map(String::as_str).collect::<Vec<_>>()),
+            _outputs: outputs,
+            harness_root: None,
+            invocation_spec: None,
+        }
     }
 
     fn refine(
@@ -386,8 +471,10 @@ impl TreeStaged {
         analysis: Option<&Path>,
         dry_run: bool,
         partial_context_without_analysis: bool,
-    ) -> CommandResult {
+    ) -> StagedInvocation {
         let root = self.root();
+        let outputs = TempDir::new_in(root).expect("create per-invocation output directory");
+        let output_root = outputs.path().join("out");
         let mut args = vec![
             "modules".to_string(),
             "refine".to_string(),
@@ -414,23 +501,25 @@ impl TreeStaged {
                 "--tree-source-root".to_string(),
                 path(root).to_string(),
                 "--out-root".to_string(),
-                path(&root.join("candidate-out")).to_string(),
+                path(&output_root).to_string(),
                 "--analysis".to_string(),
                 path(analysis).to_string(),
             ]);
         } else if partial_context_without_analysis {
             args.extend(["--tree-source-root".to_string(), path(root).to_string()]);
         }
-        command(&args.iter().map(String::as_str).collect::<Vec<_>>())
+        StagedInvocation {
+            result: command(&args.iter().map(String::as_str).collect::<Vec<_>>()),
+            _outputs: outputs,
+            harness_root: None,
+            invocation_spec: None,
+        }
     }
 
-    fn run_with_analysis(
-        &self,
-        analysis: &Path,
-        out_root: &Path,
-        emit_on_rejection: bool,
-    ) -> CommandResult {
+    fn run_with_analysis(&self, analysis: &Path, emit_on_rejection: bool) -> StagedInvocation {
         let root = self.root();
+        let outputs = TempDir::new_in(root).expect("create per-invocation staged output directory");
+        let output_root = outputs.path().join("out");
         let mut args = vec![
             "run".to_string(),
             "--graphs".to_string(),
@@ -443,14 +532,19 @@ impl TreeStaged {
             "--tree-source-root".to_string(),
             path(root).to_string(),
             "--out-root".to_string(),
-            path(out_root).to_string(),
+            path(&output_root).to_string(),
             "--analysis".to_string(),
             path(analysis).to_string(),
         ];
         if emit_on_rejection {
             args.push("--emit-on-rejection".to_string());
         }
-        command(&args.iter().map(String::as_str).collect::<Vec<_>>())
+        StagedInvocation {
+            result: command(&args.iter().map(String::as_str).collect::<Vec<_>>()),
+            _outputs: outputs,
+            harness_root: None,
+            invocation_spec: None,
+        }
     }
 }
 
@@ -600,17 +694,16 @@ fn module_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 fn assert_candidate_assessment_matches_run(
     assessment: &Value,
     run: &TreeStaged,
-    label: &str,
     expect_success: bool,
     emit_on_rejection: bool,
-) {
-    let out_root = run.root().join(format!("run-{label}"));
-    let result = run.run_with_analysis(&run.artifact, &out_root, emit_on_rejection);
+) -> StagedInvocation {
+    let result = run.run_with_analysis(&run.artifact, emit_on_rejection);
+    let out_root = result.output_root();
     assert_eq!(
-        result.status.success(),
+        result.result.status.success(),
         expect_success,
         "candidate run failed unexpectedly:\n{}",
-        result.stderr
+        result.result.stderr
     );
     let report = read_effect_report(&out_root);
     for field in [
@@ -632,6 +725,7 @@ fn assert_candidate_assessment_matches_run(
         assessment["placement"], placement_report["placement"],
         "candidate preview and emitted run must use the same typed placement result"
     );
+    result
 }
 
 fn read_effect_report(out_root: &Path) -> Value {
@@ -768,19 +862,23 @@ fn assert_same_trees(direct: &Path, staged: &Path) {
     }
 }
 
+fn assert_same_invocation_trees(direct: &StagedInvocation, staged: &StagedInvocation) {
+    assert_same_trees(&direct.output_root(), &staged.output_root());
+}
+
 fn assert_staged_run_matches(opts: FixtureOpts<'_>, run_args: &[&str]) {
     let (staged, _fixture) = staged(opts);
     let direct = staged.run(run_args);
-    let direct_trees = staged.set_aside("direct");
+    let direct_out = direct.output_root();
     assert!(
-        tree(&direct_trees.join("out")).keys().any(|path| path
+        tree(&direct_out).keys().any(|path| path
             .file_name()
             .is_some_and(|name| name == "effect_translation_validation.json")),
         "direct run must produce the facts-backed effect report before staged comparison"
     );
     if run_args.contains(&"--effect-conflicts-jsonl") {
         assert!(
-            tree(&direct_trees.join("out")).keys().any(|path| path
+            tree(&direct_out).keys().any(|path| path
                 .file_name()
                 .is_some_and(|name| name == "effect_conflicts.jsonl")),
             "explicit stream must exist before staged comparison"
@@ -790,8 +888,11 @@ fn assert_staged_run_matches(opts: FixtureOpts<'_>, run_args: &[&str]) {
     let mut staged_args = run_args.to_vec();
     staged_args.extend(["--analysis", artifact.as_str()]);
     let from_artifact = staged.run(&staged_args);
-    assert_eq!(direct.status.code(), from_artifact.status.code());
-    assert_same_trees(&direct_trees.join("out"), &staged.root().join("out"));
+    assert_eq!(
+        direct.result.status.code(),
+        from_artifact.result.status.code()
+    );
+    assert_same_invocation_trees(&direct, &from_artifact);
 }
 
 fn graph_node_for_binding<'a>(graph: &'a Value, binding: &str) -> &'a Value {
@@ -821,9 +922,8 @@ fn assert_lexical_authority_staged_parity(
         vec![logical_module("all", members)],
     ));
     let direct = staged.run(&[]);
-    assert_ok(&direct, "direct lexical-authority run");
-    let direct_trees = staged.set_aside("direct-lexical-authority");
-    let direct_out = direct_trees.join("out");
+    assert_ok(&direct.result, "direct lexical-authority run");
+    let direct_out = direct.output_root();
     let direct_graph: Value =
         read_gzip_json(&direct_out.join("reports/tree/static/app/dependency_graph.json.gz"));
     let direct_result = graph_node_for_binding(&direct_graph, "result");
@@ -851,18 +951,18 @@ fn assert_lexical_authority_staged_parity(
 
     let analysis = path(&staged.artifact).to_owned();
     let loaded = staged.run(&["--analysis", analysis.as_str()]);
-    assert_ok(&loaded, "run from saved analysis artifact");
-    assert_same_trees(&direct_out, &staged.root().join("out"));
+    assert_ok(&loaded.result, "run from saved analysis artifact");
+    assert_same_invocation_trees(&direct, &loaded);
     assert_node_output(&direct_out.join("app/static/app/entry.js"), "41\n", "");
     assert_node_output(
-        &staged.root().join("out/app/static/app/entry.js"),
+        &loaded.output_root().join("app/static/app/entry.js"),
         "41\n",
         "",
     );
     let loaded_graph: Value = read_gzip_json(
-        &staged
-            .root()
-            .join("out/reports/tree/static/app/dependency_graph.json.gz"),
+        &loaded
+            .output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz"),
     );
     let loaded_execution =
         &graph_node_for_binding(&loaded_graph, "result")["synchronous_execution"];
@@ -1049,7 +1149,7 @@ fn dedicated_projector_matches_flat_tree_and_resolved_member_inputs() {
 fn identity_mismatch_is_refused() {
     let (staged, _fixture) = staged(split_with_pure_import());
     assert_ok(
-        &staged.run(&["--analysis", path(&staged.artifact)]),
+        &staged.run(&["--analysis", path(&staged.artifact)]).result,
         "unmodified staged artifact",
     );
     let bytes = fs::read(&staged.artifact).unwrap();
@@ -1061,14 +1161,14 @@ fn identity_mismatch_is_refused() {
     corrupt.extend(body);
     fs::write(&staged.artifact, corrupt).unwrap();
     let refused = staged.run(&["--analysis", path(&staged.artifact)]);
-    assert!(!refused.status.success());
+    assert!(!refused.result.status.success());
 }
 
 #[test]
 fn source_mismatch_is_refused() {
     let (staged, _fixture) = staged(split_with_pure_import());
     assert_ok(
-        &staged.run(&["--analysis", path(&staged.artifact)]),
+        &staged.run(&["--analysis", path(&staged.artifact)]).result,
         "unmodified staged artifact",
     );
     let bytes = fs::read(&staged.artifact).unwrap();
@@ -1081,7 +1181,96 @@ fn source_mismatch_is_refused() {
     corrupt.extend(body);
     fs::write(&staged.artifact, corrupt).unwrap();
     let refused = staged.run(&["--analysis", path(&staged.artifact)]);
-    assert!(!refused.status.success());
+    assert!(!refused.result.status.success());
+}
+
+#[test]
+fn staged_invocations_keep_outputs_and_refuse_reused_reports_destinations() {
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            "const value = 1;\nconsole.log(value);\n",
+            vec![logical_module("all", &[Member::new("value")])],
+        )
+        .with_browser_harness(),
+    );
+
+    let first = staged.run(&[]);
+    assert_ok(&first.result, "first isolated staged run");
+    let first_entry = first.output_root().join("app/static/app/entry.js");
+    let first_entry_bytes = fs::read(&first_entry).unwrap();
+    let first_spec_path = first
+        .invocation_spec()
+        .expect("flat run spec path")
+        .to_path_buf();
+    let first_spec_bytes = fs::read(&first_spec_path).unwrap();
+    let first_harness = first
+        .harness_root()
+        .expect("fixture requests a browser harness");
+    assert!(first_harness.is_dir());
+
+    let second = staged.run(&[]);
+    assert_ok(&second.result, "second isolated staged run");
+    assert_ne!(first.output_root(), second.output_root());
+    assert_ne!(first.invocation_spec(), second.invocation_spec());
+    assert_ne!(first.harness_root(), second.harness_root());
+    assert!(first_entry.is_file(), "the earlier run output was removed");
+    assert_eq!(fs::read(&first_entry).unwrap(), first_entry_bytes);
+    assert_eq!(fs::read(&first_spec_path).unwrap(), first_spec_bytes);
+    assert!(second.harness_root().unwrap().is_dir());
+
+    let original_artifact = fs::read(&staged.artifact).unwrap();
+    let (mut header, body) =
+        staged_analysis::analysis_artifact::read_header(&original_artifact).unwrap();
+    header.analysis_engine_sha256 = "another-compiled-engine".to_string();
+    let encoded_header = rmp_serde::to_vec_named(&header).unwrap();
+    let mut invalid_artifact = Vec::new();
+    invalid_artifact.extend_from_slice(&u32::try_from(encoded_header.len()).unwrap().to_le_bytes());
+    invalid_artifact.extend_from_slice(&encoded_header);
+    invalid_artifact.extend_from_slice(body);
+    fs::write(&staged.artifact, invalid_artifact).unwrap();
+
+    let refused_first = staged.run(&["--analysis", path(&staged.artifact)]);
+    let refused_second = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert!(!refused_first.result.status.success());
+    assert!(!refused_second.result.status.success());
+    assert_ne!(refused_first.output_root(), refused_second.output_root());
+    for refused in [&refused_first, &refused_second] {
+        assert!(
+            !refused.output_root().join("app").exists()
+                && !refused.output_root().join("reports").exists(),
+            "refused invocation wrote output under {}",
+            refused.output_root().display()
+        );
+    }
+    assert_eq!(fs::read(&first_entry).unwrap(), first_entry_bytes);
+    fs::write(&staged.artifact, original_artifact).unwrap();
+
+    let reports_only = staged.root().join("reports-only-export");
+    let report_args = [
+        "--analysis",
+        path(&staged.artifact),
+        "--reports-only",
+        path(&reports_only),
+    ];
+    let exported = staged.run(&report_args);
+    assert_ok(
+        &exported.result,
+        "reports-only export to an explicit destination",
+    );
+    let exported_tree = module_snapshot(&reports_only);
+    assert!(!exported_tree.is_empty());
+
+    let overwrite = staged.run(&report_args);
+    assert!(!overwrite.result.status.success());
+    assert!(
+        overwrite
+            .result
+            .stderr
+            .contains("Output directory is not empty"),
+        "reports-only overwrite refusal changed: {}",
+        overwrite.result.stderr
+    );
+    assert_eq!(module_snapshot(&reports_only), exported_tree);
 }
 
 #[test]
@@ -1117,26 +1306,36 @@ fn destructuring_split_refusal_matches_with_saved_facts() {
         );
     fs::write(&staged.spec, serde_yaml::to_string(&spec).unwrap()).unwrap();
     let direct = staged.run(&[]);
-    staged.set_aside("direct_refusal_output");
     let from_artifact = staged.run(&["--analysis", path(&staged.artifact)]);
 
     assert!(
-        !direct.status.success(),
+        !direct.result.status.success(),
         "direct run unexpectedly succeeded"
     );
-    assert_eq!(direct.status.code(), from_artifact.status.code());
+    assert_eq!(
+        direct.result.status.code(),
+        from_artifact.result.status.code()
+    );
+    assert_same_invocation_trees(&direct, &from_artifact);
     for result in [&direct, &from_artifact] {
         assert!(
             result
+                .result
                 .stderr
                 .contains("source/destination placement projection is unmappable")
-                && result.stderr.contains("OwnedBindingDestinationMismatch")
-                && result.stderr.contains("DestructuringDestinationSplit")
-                && result.stderr.contains("left_module")
-                && result.stderr.contains("right_module")
-                && result.stderr.contains("unresolved checks: {}"),
+                && result
+                    .result
+                    .stderr
+                    .contains("OwnedBindingDestinationMismatch")
+                && result
+                    .result
+                    .stderr
+                    .contains("DestructuringDestinationSplit")
+                && result.result.stderr.contains("left_module")
+                && result.result.stderr.contains("right_module")
+                && result.result.stderr.contains("unresolved checks: {}"),
             "expected the common typed placement refusal with complete destinations in stderr:\n{}",
-            result.stderr
+            result.result.stderr
         );
     }
 }
@@ -1176,21 +1375,24 @@ console.log(left, right);\nexport { left, right };\n";
     fs::write(&staged.spec, serde_yaml::to_string(&spec).unwrap()).unwrap();
 
     let direct = staged.run(&[]);
-    staged.set_aside("direct_nested_var_refusal_output");
     let from_artifact = staged.run(&["--analysis", path(&staged.artifact)]);
 
     assert!(
-        !direct.status.success(),
+        !direct.result.status.success(),
         "direct run unexpectedly succeeded"
     );
-    assert_eq!(direct.status.code(), from_artifact.status.code());
+    assert_eq!(
+        direct.result.status.code(),
+        from_artifact.result.status.code()
+    );
+    assert_same_invocation_trees(&direct, &from_artifact);
     for result in [&direct, &from_artifact] {
         assert!(
-            result.stderr.contains("NestedVarDestinationSplit")
-                && result.stderr.contains("left_module")
-                && result.stderr.contains("right_module"),
+            result.result.stderr.contains("NestedVarDestinationSplit")
+                && result.result.stderr.contains("left_module")
+                && result.result.stderr.contains("right_module"),
             "expected the shared typed nested-var placement refusal in stderr:\n{}",
-            result.stderr
+            result.result.stderr
         );
     }
 }
@@ -1228,7 +1430,7 @@ fn assignment_edit_keeps_the_projection_and_the_artifact() {
     );
     let artifact = path(&staged.artifact).to_owned();
     assert_ok(
-        &staged.run(&["--analysis", &artifact]),
+        &staged.run(&["--analysis", &artifact]).result,
         "run --analysis after the edit",
     );
 }
@@ -1253,13 +1455,13 @@ fn graph_options_survive_the_source_only_analysis_boundary() {
             fs::read(&staged.projection).unwrap() == fs::read(edited).unwrap(),
             "graph-only setting changed analysis identity"
         );
-        assert_ok(
-            &staged.run(&["--analysis", path(&staged.artifact)]),
-            "run saved facts with changed graph options",
+        let reused = staged.run(&["--analysis", path(&staged.artifact)]);
+        assert_ok(&reused.result, "run saved facts with changed graph options");
+        let graph: DependencyGraphReport = read_gzip_json(
+            &reused
+                .output_root()
+                .join("reports/tree/static/app/dependency_graph.json.gz"),
         );
-        let reused = staged.set_aside(&format!("reused-{enabled}"));
-        let graph: DependencyGraphReport =
-            read_gzip_json(&reused.join("out/reports/tree/static/app/dependency_graph.json.gz"));
         let a = debundle_e2e_support::source_unit_for_binding(&graph, "a");
         let b = debundle_e2e_support::source_unit_for_binding(&graph, "b");
         let has_edge = graph.edges.iter().any(|edge| {
@@ -1268,9 +1470,9 @@ fn graph_options_survive_the_source_only_analysis_boundary() {
                     || (edge.source == b && edge.target == a))
         });
         assert_eq!(has_edge, !enabled, "dataflow graph setting was not applied");
-        assert_ok(&staged.run(&[]), "direct run with changed graph options");
-        assert_same_trees(&reused.join("out"), &staged.root().join("out"));
-        staged.set_aside(&format!("direct-{enabled}"));
+        let direct = staged.run(&[]);
+        assert_ok(&direct.result, "direct run with changed graph options");
+        assert_same_invocation_trees(&reused, &direct);
     }
 }
 
@@ -1294,13 +1496,16 @@ export { Holder1, Holder2, instA, instB };
         .with_dataflow_aware_s_chain()
         .with_trusted_dataflow_summaries(),
     );
+    let reused = staged.run(&["--analysis", path(&staged.artifact)]);
     assert_ok(
-        &staged.run(&["--analysis", path(&staged.artifact)]),
+        &reused.result,
         "run trusted dataflow facts from the staged artifact",
     );
-    let reused = staged.set_aside("trusted-reused");
-    let graph: DependencyGraphReport =
-        read_gzip_json(&reused.join("out/reports/tree/static/app/dependency_graph.json.gz"));
+    let graph: DependencyGraphReport = read_gzip_json(
+        &reused
+            .output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz"),
+    );
     let inst_a = debundle_e2e_support::source_unit_for_binding(&graph, "instA");
     let inst_b = debundle_e2e_support::source_unit_for_binding(&graph, "instB");
     assert!(
@@ -1311,12 +1516,9 @@ export { Holder1, Holder2, instA, instB };
         }),
         "trusted syntactic summaries should keep disjoint constructor calls unsequenced"
     );
-    assert_ok(
-        &staged.run(&[]),
-        "direct run with trusted dataflow summaries",
-    );
-    assert_same_trees(&reused.join("out"), &staged.root().join("out"));
-    staged.set_aside("trusted-direct");
+    let direct = staged.run(&[]);
+    assert_ok(&direct.result, "direct run with trusted dataflow summaries");
+    assert_same_invocation_trees(&reused, &direct);
 
     let mut spec: serde_yaml::Value =
         serde_yaml::from_str(&fs::read_to_string(&staged.spec).unwrap()).unwrap();
@@ -1334,13 +1536,13 @@ export { Holder1, Holder2, instA, instB };
     );
     let refused = staged.run(&["--analysis", path(&staged.artifact)]);
     assert!(
-        !refused.status.success(),
+        !refused.result.status.success(),
         "changed trusted dataflow assumptions reused saved facts"
     );
     assert!(
-        refused.stderr.contains("another projection"),
+        refused.result.stderr.contains("another projection"),
         "{}",
-        refused.stderr
+        refused.result.stderr
     );
 }
 
@@ -1363,13 +1565,13 @@ fn empty_chunk_options_keep_their_analysis_projection_key() {
     );
     let refused = staged.run(&["--analysis", path(&staged.artifact)]);
     assert!(
-        !refused.status.success(),
+        !refused.result.status.success(),
         "adding an empty per-chunk options entry reused saved facts"
     );
     assert!(
-        refused.stderr.contains("another projection"),
+        refused.result.stderr.contains("another projection"),
         "{}",
-        refused.stderr
+        refused.result.stderr
     );
 }
 
@@ -1422,13 +1624,13 @@ fn resolved_member_layout_edits_keep_analysis_identity() {
         fs::read(&staged.projection).unwrap() == fs::read(&edited).unwrap(),
         "renaming the module and public member changed the analysis projection"
     );
-    assert_ok(
-        &staged.run(&["--analysis", path(&staged.artifact)]),
-        "reuse native member analysis",
+    let reused = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert_ok(&reused.result, "reuse native member analysis");
+    let graph: Value = read_gzip_json(
+        &reused
+            .output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz"),
     );
-    let reused = staged.set_aside("reused");
-    let graph: Value =
-        read_gzip_json(&reused.join("out/reports/tree/static/app/dependency_graph.json.gz"));
     let evidence = graph["nodes"]
         .as_array()
         .unwrap()
@@ -1446,8 +1648,9 @@ fn resolved_member_layout_edits_keep_analysis_identity() {
         evidence["selector"]["resolved_member"],
         json!({"module": "renamed", "name": "chosen"})
     );
-    assert_ok(&staged.run(&[]), "direct renamed native member run");
-    assert_same_trees(&reused.join("out"), &staged.root().join("out"));
+    let direct = staged.run(&[]);
+    assert_ok(&direct.result, "direct renamed native member run");
+    assert_same_invocation_trees(&reused, &direct);
     fs::copy(edited, &staged.projection).unwrap();
     assert_ok(&staged.analyze(), "reanalyze renamed native member");
     assert!(
@@ -1477,13 +1680,11 @@ fn native_source_match_notes_keep_analysis_identity() {
         fs::read(&staged.projection).unwrap() == fs::read(edited).unwrap(),
         "selector rationale changed analysis identity"
     );
-    assert_ok(
-        &staged.run(&["--analysis", path(&staged.artifact)]),
-        "reuse analysis after selector note edit",
-    );
-    let reused = staged.set_aside("reused");
-    assert_ok(&staged.run(&[]), "direct run after selector note edit");
-    assert_same_trees(&reused.join("out"), &staged.root().join("out"));
+    let reused = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert_ok(&reused.result, "reuse analysis after selector note edit");
+    let direct = staged.run(&[]);
+    assert_ok(&direct.result, "direct run after selector note edit");
+    assert_same_invocation_trees(&reused, &direct);
 }
 
 #[test]
@@ -1502,19 +1703,18 @@ fn resolved_member_retargeting_refuses_saved_analysis() {
     );
     let refused = staged.run(&["--analysis", path(&staged.artifact)]);
     assert!(
-        !refused.status.success(),
+        !refused.result.status.success(),
         "retargeted native premise reused old facts"
     );
     assert!(
-        refused.stderr.contains("another projection"),
+        refused.result.stderr.contains("another projection"),
         "{}",
-        refused.stderr
+        refused.result.stderr
     );
-    staged.set_aside("refused");
     fs::copy(edited, &staged.projection).unwrap();
     assert_ok(&staged.analyze(), "analyze retargeted native member");
     assert_ok(
-        &staged.run(&["--analysis", path(&staged.artifact)]),
+        &staged.run(&["--analysis", path(&staged.artifact)]).result,
         "run retargeted native member",
     );
 }
@@ -1534,15 +1734,14 @@ fn resolved_member_premise_edits_refuse_saved_analysis() {
         write_yaml_file(&staged.spec, &spec);
         let refused = staged.run(&["--analysis", path(&staged.artifact)]);
         assert!(
-            !refused.status.success(),
+            !refused.result.status.success(),
             "changed {field} reused old facts"
         );
         assert!(
-            refused.stderr.contains("another projection"),
+            refused.result.stderr.contains("another projection"),
             "{}",
-            refused.stderr
+            refused.result.stderr
         );
-        staged.set_aside(field);
     }
 }
 
@@ -1558,13 +1757,17 @@ fn analysis_edit_refuses_the_stale_artifact() {
 
     let artifact = path(&staged.artifact).to_owned();
     let refused = staged.run(&["--analysis", &artifact]);
-    assert!(!refused.status.success(), "stale artifact was accepted");
+    assert!(
+        !refused.result.status.success(),
+        "stale artifact was accepted"
+    );
     assert!(
         refused
+            .result
             .stderr
             .contains("chunk_export_purity.static/vendorlib"),
         "refusal does not name the differing field:\n{}",
-        refused.stderr
+        refused.result.stderr
     );
 }
 
@@ -1591,12 +1794,12 @@ fn assert_export_filter_changes_only_sinks(
         vec![logical_module("outer", &[Member::new("first"), Member::new("tail")]), logical_module("inner", &[Member::new("second")])],
     ).with_extra_chunks(&[("static/peer", "globalThis.externalMarker = 1;\nexport const value = 1;\n")]).with_extra_chunk_logical_modules(&extra_modules);
     let (staged, _fixture) = staged(opts);
-    assert_ok(&staged.run(export_args), "unfiltered export");
-    let all = staged.set_aside("all-conflicts");
+    let all = staged.run(export_args);
+    assert_ok(&all.result, "unfiltered export");
     let mut flags = export_args.to_vec();
     flags.extend([filter_flag, "static/app"]);
-    assert_ok(&staged.run(&flags), "filtered export");
-    let filtered = staged.set_aside("filtered-conflicts");
+    let filtered = staged.run(&flags);
+    assert_ok(&filtered.result, "filtered export");
     let without_streams = |root: &Path| {
         tree(root)
             .into_iter()
@@ -1606,33 +1809,31 @@ fn assert_export_filter_changes_only_sinks(
     // tree() removes only command provenance. Every other byte, including
     // all graphs, summary counts, native census and emitted JS, must match.
     assert_eq!(
-        without_streams(&all.join("out")),
-        without_streams(&filtered.join("out"))
+        without_streams(&all.output_root()),
+        without_streams(&filtered.output_root())
     );
     let main_stream = PathBuf::from(format!("reports/tree/static/app/{filename}"));
     let peer_stream = PathBuf::from(format!("reports/tree/static/peer/{filename}"));
     assert_eq!(
-        fs::read(all.join("out").join(&main_stream)).unwrap(),
-        fs::read(filtered.join("out").join(&main_stream)).unwrap()
+        fs::read(all.output_root().join(&main_stream)).unwrap(),
+        fs::read(filtered.output_root().join(&main_stream)).unwrap()
     );
-    assert!(all.join("out").join(&peer_stream).exists());
-    assert!(!filtered.join("out").join(&peer_stream).exists());
+    assert!(all.output_root().join(&peer_stream).exists());
+    assert!(!filtered.output_root().join(&peer_stream).exists());
     let artifact = path(&staged.artifact).to_owned();
     let mut loaded_flags = flags.to_vec();
     loaded_flags.extend(["--analysis", &artifact]);
+    let filtered_loaded = staged.run(&loaded_flags);
     assert_ok(
-        &staged.run(&loaded_flags),
+        &filtered_loaded.result,
         "filtered export from full staged analysis",
     );
-    assert_same_trees(&filtered.join("out"), &staged.root().join("out"));
-    staged.set_aside("filtered-loaded");
+    assert_same_invocation_trees(&filtered, &filtered_loaded);
     let mut all_selected = export_args.to_vec();
     all_selected.extend([filter_flag, "static/app", filter_flag, "static/peer"]);
-    assert_ok(
-        &staged.run(&all_selected),
-        "repeated filter selects both chunks",
-    );
-    assert_same_trees(&all.join("out"), &staged.root().join("out"));
+    let all_selected = staged.run(&all_selected);
+    assert_ok(&all_selected.result, "repeated filter selects both chunks");
+    assert_same_invocation_trees(&all, &all_selected);
 }
 
 #[test]
@@ -1693,36 +1894,34 @@ fn default_reports_are_graph_free_and_full_export_reuses_the_analysis() {
     ));
     let suppressed_graphs = staged.run(&["--dry-run"]);
     assert_eq!(
-        suppressed_graphs.status.code(),
+        suppressed_graphs.result.status.code(),
         Some(1),
         "{}",
-        suppressed_graphs.stderr
+        suppressed_graphs.result.stderr
     );
     assert!(
-        suppressed_graphs.stderr.contains("--graphs requested"),
+        suppressed_graphs
+            .result
+            .stderr
+            .contains("--graphs requested"),
         "{}",
-        suppressed_graphs.stderr
+        suppressed_graphs.result.stderr
     );
-    assert_ok(
-        &command(&["run", "--spec", path(&staged.spec)]),
-        "small default run",
-    );
+    let small = staged.run_without_graphs(&[]);
+    assert_ok(&small.result, "small default run");
     assert_node_output(
-        &staged.root().join("out/app/static/app/entry.js"),
+        &small.output_root().join("app/static/app/entry.js"),
         "2\n",
         "",
     );
-    let small = staged.set_aside("small-default");
-    let small_files = tree(&small.join("out"));
+    let small_files = tree(&small.output_root());
     assert!(!small_files.keys().any(|p| {
         p.file_name()
             .is_some_and(|n| n == "dependency_graph.json.gz" || n == "program_graph.json.gz")
     }));
-    assert_ok(
-        &staged.run(&["--analysis", path(&staged.artifact)]),
-        "full graphs from shared analysis",
-    );
-    let full = tree(&staged.root().join("out"));
+    let full_run = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert_ok(&full_run.result, "full graphs from shared analysis");
+    let full = tree(&full_run.output_root());
     let without_graphs = |files: BTreeMap<PathBuf, Vec<u8>>| {
         files
             .into_iter()
@@ -1768,18 +1967,20 @@ fn default_reports_are_graph_free_and_full_export_reuses_the_analysis() {
     );
     let export = staged.root().join("graph-export");
     assert_ok(
-        &staged.run(&[
-            "--analysis",
-            path(&staged.artifact),
-            "--reports-only",
-            path(&export),
-        ]),
+        &staged
+            .run(&[
+                "--analysis",
+                path(&staged.artifact),
+                "--reports-only",
+                path(&export),
+            ])
+            .result,
         "reports-only full export",
     );
     assert!(!export.join("app").exists());
     assert!(!export.join("GATE_REJECTED").exists());
     let exported = tree(&export.join("reports/tree"));
-    let program_reports = tree(&staged.root().join("out/reports/tree"));
+    let program_reports = tree(&full_run.output_root().join("reports/tree"));
     // Program emission adds per-file metrics. Every report-only artifact is
     // identical to its canonical full-run counterpart after provenance removal.
     for (path, bytes) in exported {
@@ -1806,17 +2007,22 @@ fn default_reports_are_graph_free_and_full_export_reuses_the_analysis() {
 #[test]
 fn reports_only_keeps_typed_rejection_without_emitting_a_program() {
     let (staged, _fixture) = staged(rejected_split());
-    let small = command(&["run", "--spec", path(&staged.spec), "--emit-on-rejection"]);
-    assert_eq!(small.status.code(), Some(3), "{}", small.stderr);
-    let small_marker = fs::read_to_string(staged.root().join("out/GATE_REJECTED")).unwrap();
+    let small = staged.run_without_graphs(&["--emit-on-rejection"]);
+    assert_eq!(
+        small.result.status.code(),
+        Some(3),
+        "{}",
+        small.result.stderr
+    );
+    let small_marker = fs::read_to_string(small.output_root().join("GATE_REJECTED")).unwrap();
     assert!(
         !small_marker.contains("dependency graph:"),
         "{small_marker}"
     );
     assert!(
-        !staged
-            .root()
-            .join("out/reports/tree/static/app/dependency_graph.json.gz")
+        !small
+            .output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz")
             .exists()
     );
     let export = staged.root().join("rejected-export");
@@ -1827,7 +2033,12 @@ fn reports_only_keeps_typed_rejection_without_emitting_a_program() {
         path(&export),
         "--emit-on-rejection",
     ]);
-    assert_eq!(result.status.code(), Some(3), "{}", result.stderr);
+    assert_eq!(
+        result.result.status.code(),
+        Some(3),
+        "{}",
+        result.result.stderr
+    );
     assert!(!export.join("app").exists());
     let marker = fs::read_to_string(export.join("GATE_REJECTED")).unwrap();
     assert!(
@@ -1897,8 +2108,17 @@ fn reports_only_requires_analysis_and_keeps_final_program_validation() {
         "--reports-only",
         path(&export),
     ]);
-    assert_eq!(result.status.code(), Some(1), "{}", result.stderr);
-    assert!(result.stderr.contains("missing"), "{}", result.stderr);
+    assert_eq!(
+        result.result.status.code(),
+        Some(1),
+        "{}",
+        result.result.stderr
+    );
+    assert!(
+        result.result.stderr.contains("missing"),
+        "{}",
+        result.result.stderr
+    );
     assert!(!export.join("app").exists());
     assert!(!export.join("GATE_REJECTED").exists());
 }
@@ -1917,15 +2137,14 @@ fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
             "members: [{selector: {binding: {name: first}}}, {selector: {binding: {name: second}}}]\n",
         )],
     );
-    let baseline_out = staged.root().join("run-baseline");
-    let baseline = staged.run_with_analysis(&staged.artifact, &baseline_out, false);
-    assert_ok(&baseline, "baseline staged run");
-    let baseline_report = read_effect_report(&baseline_out);
+    let baseline = staged.run_with_analysis(&staged.artifact, false);
+    assert_ok(&baseline.result, "baseline staged run");
+    let baseline_report = read_effect_report(&baseline.output_root());
     assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
     let result = staged.assign(Some("second:a_earlier"), Some(&staged.artifact), true);
-    assert_ok(&result, "bindings assign --dry-run --analysis");
-    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    assert_ok(&result.result, "bindings assign --dry-run --analysis");
+    let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
     assert_eq!(
         assessment["status"], "accepted_within_checked_scope",
@@ -1953,13 +2172,13 @@ fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
     // Apply the identical move through the ordinary graph-backed edit path,
     // then compare the assessment with run --analysis over that candidate YAML.
     let applied = staged.assign(Some("second:a_earlier"), Some(&staged.artifact), false);
-    assert_ok(&applied, "bindings assign --analysis");
-    let applied: Value = serde_json::from_str(&applied.stdout).unwrap();
+    assert_ok(&applied.result, "bindings assign --analysis");
+    let applied: Value = serde_json::from_str(&applied.result.stdout).unwrap();
     assert_eq!(applied["effect_relocation_assessment"], *assessment);
     assert!(staged.modules.join("a_earlier.yaml").is_file());
-    assert_candidate_assessment_matches_run(assessment, &staged, "candidate", true, false);
+    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
     assert_node_output(
-        &staged.root().join("run-candidate/app/main/entry.js"),
+        &candidate.output_root().join("app/main/entry.js"),
         "first second\n",
         "",
     );
@@ -1977,8 +2196,8 @@ console.log(left, right);\n";
         )],
     );
     let result = staged.assign(None, Some(&staged.artifact), true);
-    assert_ok(&result, "destructuring bindings assign preview");
-    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    assert_ok(&result.result, "destructuring bindings assign preview");
+    let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
     assert_eq!(
         assessment["placement"]["projection_violations"],
@@ -1990,9 +2209,9 @@ console.log(left, right);\n";
         json!([]),
         "destructuring grouping must be covered in the finalized preview"
     );
-    assert_candidate_assessment_matches_run(assessment, &staged, "destructure", true, false);
+    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
     assert_node_output(
-        &staged.root().join("run-destructure/app/main/entry.js"),
+        &candidate.output_root().join("app/main/entry.js"),
         "10 20\n",
         "",
     );
@@ -2010,8 +2229,8 @@ console.log(impl);\n";
         )],
     );
     let result = staged.assign(None, Some(&staged.artifact), true);
-    assert_ok(&result, "nested-var bindings assign preview");
-    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    assert_ok(&result.result, "nested-var bindings assign preview");
+    let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
     assert_eq!(
         assessment["placement"]["projection_violations"],
@@ -2023,9 +2242,9 @@ console.log(impl);\n";
         json!([]),
         "nested-var owners and whole-statement placement must be covered"
     );
-    assert_candidate_assessment_matches_run(assessment, &staged, "nested_var", true, false);
+    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
     assert_node_output(
-        &staged.root().join("run-nested_var/app/main/entry.js"),
+        &candidate.output_root().join("app/main/entry.js"),
         "primary\n",
         "",
     );
@@ -2045,10 +2264,10 @@ console.log(written, read);\n";
     );
     let result = staged.assign(None, Some(&staged.artifact), true);
     assert_ok(
-        &result,
+        &result.result,
         "bindings assign --dry-run --analysis with no moves",
     );
-    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
     assert_eq!(
         assessment["decision"]["status"], "conflict",
@@ -2060,7 +2279,7 @@ console.log(written, read);\n";
         "{assessment:#}"
     );
     assert!(assessment["counts"]["havoc_pairs"].as_u64().unwrap() > 0);
-    assert_candidate_assessment_matches_run(assessment, &staged, "havoc", false, true);
+    assert_candidate_assessment_matches_run(assessment, &staged, false, true);
 }
 
 #[test]
@@ -2077,10 +2296,9 @@ fn modules_apply_assessment_matches_the_selected_residual_candidate() {
             "members: [{selector: {binding: {name: first}}}]\n",
         )],
     );
-    let baseline_out = staged.root().join("run-apply-baseline");
-    let baseline = staged.run_with_analysis(&staged.artifact, &baseline_out, false);
-    assert_ok(&baseline, "baseline staged run");
-    let baseline_report = read_effect_report(&baseline_out);
+    let baseline = staged.run_with_analysis(&staged.artifact, false);
+    assert_ok(&baseline.result, "baseline staged run");
+    let baseline_report = read_effect_report(&baseline.output_root());
     assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
     let request = residual_apply_request(&staged, "second", "a_earlier", "second");
@@ -2093,8 +2311,8 @@ fn modules_apply_assessment_matches_the_selected_residual_candidate() {
 
     let before = module_snapshot(&staged.modules);
     let result = staged.apply(&batch, Some(&staged.artifact), true, true, false);
-    assert_ok(&result, "modules apply --dry-run --analysis");
-    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    assert_ok(&result.result, "modules apply --dry-run --analysis");
+    let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
     assert_eq!(
         assessment["decision"]["status"], "accepted",
@@ -2111,17 +2329,17 @@ fn modules_apply_assessment_matches_the_selected_residual_candidate() {
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let applied = staged.apply(&batch, Some(&staged.artifact), false, true, false);
-    assert_ok(&applied, "modules apply --analysis");
-    let applied: Value = serde_json::from_str(&applied.stdout).unwrap();
+    assert_ok(&applied.result, "modules apply --analysis");
+    let applied: Value = serde_json::from_str(&applied.result.stdout).unwrap();
     assert_eq!(
         applied["effect_relocation_assessment"], *assessment,
         "the written candidate must use the same canonical assessment as its preview"
     );
     assert!(applied.get("effect_assessment_unavailable").is_none());
     assert!(staged.modules.join("a_earlier.yaml").is_file());
-    assert_candidate_assessment_matches_run(assessment, &staged, "apply-candidate", true, false);
+    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
     assert_node_output(
-        &staged.root().join("run-apply-candidate/app/main/entry.js"),
+        &candidate.output_root().join("app/main/entry.js"),
         "first second\n",
         "",
     );
@@ -2141,8 +2359,11 @@ fn modules_apply_assessment_accepts_a_closed_no_swap_candidate() {
     fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
 
     let result = staged.apply(&batch, Some(&staged.artifact), true, true, false);
-    assert_ok(&result, "modules apply --dry-run --analysis with no swap");
-    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    assert_ok(
+        &result.result,
+        "modules apply --dry-run --analysis with no swap",
+    );
+    let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
     assert_eq!(
         assessment["decision"]["status"], "accepted",
@@ -2185,20 +2406,35 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
 
     let foreign = staged_tree(&[("main", "function other() { return \"other\"; }\n")], &[]);
     let stale = staged.apply(&batch, Some(&foreign.artifact), true, true, false);
-    assert_eq!(stale.status.code(), Some(1), "{}", stale.stderr);
+    assert_eq!(
+        stale.result.status.code(),
+        Some(1),
+        "{}",
+        stale.result.stderr
+    );
     assert!(
-        stale.stderr.contains("projection") || stale.stderr.contains("analysis"),
+        stale.result.stderr.contains("projection") || stale.result.stderr.contains("analysis"),
         "expected staged projection refusal:\n{}",
-        stale.stderr
+        stale.result.stderr
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let partial = staged.apply(&batch, Some(&staged.artifact), true, false, false);
-    assert_eq!(partial.status.code(), Some(1), "{}", partial.stderr);
+    assert_eq!(
+        partial.result.status.code(),
+        Some(1),
+        "{}",
+        partial.result.stderr
+    );
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let not_dry = staged.apply(&batch, Some(&foreign.artifact), false, true, false);
-    assert_eq!(not_dry.status.code(), Some(1), "{}", not_dry.stderr);
+    assert_eq!(
+        not_dry.result.status.code(),
+        Some(1),
+        "{}",
+        not_dry.result.stderr
+    );
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let scoped = staged_tree_with_module_roots(
@@ -2224,18 +2460,24 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
     .unwrap();
     let scoped_before = module_snapshot(&scoped.modules);
     let scoped_preview = scoped.apply(&scoped_batch, None, true, false, false);
-    assert_ok(&scoped_preview, "ordinary scoped modules apply --dry-run");
+    assert_ok(
+        &scoped_preview.result,
+        "ordinary scoped modules apply --dry-run",
+    );
     let scoped_refused = scoped.apply(&scoped_batch, Some(&scoped.artifact), true, true, false);
     assert_eq!(
-        scoped_refused.status.code(),
+        scoped_refused.result.status.code(),
         Some(1),
         "{}",
-        scoped_refused.stderr
+        scoped_refused.result.stderr
     );
     assert!(
-        scoped_refused.stderr.contains("one full-tree module root"),
+        scoped_refused
+            .result
+            .stderr
+            .contains("one full-tree module root"),
         "{}",
-        scoped_refused.stderr
+        scoped_refused.result.stderr
     );
     assert_eq!(module_snapshot(&scoped.modules), scoped_before);
 }
@@ -2253,7 +2495,7 @@ fn modules_apply_assessment_inputs_are_explicit_but_ambient_defaults_are_ignored
     let root = staged.root();
     let out = root.join("ambient-out");
 
-    let ambient_args = staged.apply_args(&batch, None, true, false, false);
+    let ambient_args = staged.apply_args(&batch, None, true, false, false, &out);
     let ambient = std::process::Command::new(debundler_path())
         .args(ambient_args.iter().map(String::as_str))
         .env("DEBUNDLE_TREE_SOURCE_ROOT", root)
@@ -2267,7 +2509,7 @@ fn modules_apply_assessment_inputs_are_explicit_but_ambient_defaults_are_ignored
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let mut explicit_args = staged.apply_args(&batch, None, true, false, false);
+    let mut explicit_args = staged.apply_args(&batch, None, true, false, false, &out);
     explicit_args.extend([
         "--tree-source-root".to_string(),
         path(root).to_string(),
@@ -2309,16 +2551,18 @@ fn bindings_unassign_assessment_matches_the_staged_run_for_its_candidate_plan() 
             ),
         ],
     );
-    let baseline_out = staged.root().join("run-baseline");
-    let baseline = staged.run_with_analysis(&staged.artifact, &baseline_out, false);
-    assert_ok(&baseline, "baseline staged run");
-    let baseline_report = read_effect_report(&baseline_out);
+    let baseline = staged.run_with_analysis(&staged.artifact, false);
+    assert_ok(&baseline.result, "baseline staged run");
+    let baseline_report = read_effect_report(&baseline.output_root());
     assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
     let before = module_snapshot(&staged.modules);
     let ordinary = staged.unassign("first", None, true);
-    assert_ok(&ordinary, "ordinary graph-backed bindings unassign dry-run");
-    let ordinary_outcome: Value = serde_json::from_str(&ordinary.stdout).unwrap();
+    assert_ok(
+        &ordinary.result,
+        "ordinary graph-backed bindings unassign dry-run",
+    );
+    let ordinary_outcome: Value = serde_json::from_str(&ordinary.result.stdout).unwrap();
     assert!(
         ordinary_outcome
             .get("effect_relocation_assessment")
@@ -2327,8 +2571,8 @@ fn bindings_unassign_assessment_matches_the_staged_run_for_its_candidate_plan() 
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let result = staged.unassign("first", Some(&staged.artifact), true);
-    assert_ok(&result, "bindings unassign --dry-run --analysis");
-    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    assert_ok(&result.result, "bindings unassign --dry-run --analysis");
+    let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
     assert_eq!(
         assessment["decision"]["status"], "accepted",
@@ -2345,20 +2589,12 @@ fn bindings_unassign_assessment_matches_the_staged_run_for_its_candidate_plan() 
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let applied = staged.unassign("first", None, false);
-    assert_ok(&applied, "ordinary graph-backed bindings unassign");
+    assert_ok(&applied.result, "ordinary graph-backed bindings unassign");
     assert!(!staged.modules.join("a_earlier.yaml").exists());
     assert!(staged.modules.join("z_later.yaml").is_file());
-    assert_candidate_assessment_matches_run(
-        assessment,
-        &staged,
-        "unassigned-candidate",
-        true,
-        false,
-    );
+    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
     assert_node_output(
-        &staged
-            .root()
-            .join("run-unassigned-candidate/app/main/entry.js"),
+        &candidate.output_root().join("app/main/entry.js"),
         "first second\n",
         "",
     );
@@ -2382,13 +2618,18 @@ fn bindings_unassign_requested_assessment_refuses_stale_artifacts_before_yaml_wr
     );
     let before = module_snapshot(&staged.modules);
     let result = staged.unassign("first", Some(&foreign.artifact), true);
-    assert_eq!(result.status.code(), Some(1), "{}", result.stderr);
+    assert_eq!(
+        result.result.status.code(),
+        Some(1),
+        "{}",
+        result.result.stderr
+    );
     assert!(
-        result.stderr.contains("projection")
-            || result.stderr.contains("analysis")
-            || result.stderr.contains("source"),
+        result.result.stderr.contains("projection")
+            || result.result.stderr.contains("analysis")
+            || result.result.stderr.contains("source"),
         "expected staged input mismatch:\n{}",
-        result.stderr
+        result.result.stderr
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 }
@@ -2418,16 +2659,18 @@ fn modules_merge_assessment_matches_the_staged_run_for_its_candidate_plan() {
             ),
         ],
     );
-    let baseline_out = staged.root().join("run-baseline");
-    let baseline = staged.run_with_analysis(&staged.artifact, &baseline_out, false);
-    assert_ok(&baseline, "baseline staged run");
-    let baseline_report = read_effect_report(&baseline_out);
+    let baseline = staged.run_with_analysis(&staged.artifact, false);
+    assert_ok(&baseline.result, "baseline staged run");
+    let baseline_report = read_effect_report(&baseline.output_root());
     assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
     let before = module_snapshot(&staged.modules);
     let ordinary = staged.merge("z_later", "a_earlier", None, true);
-    assert_ok(&ordinary, "ordinary graph-backed modules merge dry-run");
-    let ordinary_outcome: Value = serde_json::from_str(&ordinary.stdout).unwrap();
+    assert_ok(
+        &ordinary.result,
+        "ordinary graph-backed modules merge dry-run",
+    );
+    let ordinary_outcome: Value = serde_json::from_str(&ordinary.result.stdout).unwrap();
     assert!(
         ordinary_outcome
             .get("effect_relocation_assessment")
@@ -2436,8 +2679,8 @@ fn modules_merge_assessment_matches_the_staged_run_for_its_candidate_plan() {
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let result = staged.merge("z_later", "a_earlier", Some(&staged.artifact), true);
-    assert_ok(&result, "modules merge --dry-run --analysis");
-    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    assert_ok(&result.result, "modules merge --dry-run --analysis");
+    let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
     assert_eq!(
         assessment["decision"]["status"], "accepted",
@@ -2451,12 +2694,12 @@ fn modules_merge_assessment_matches_the_staged_run_for_its_candidate_plan() {
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let applied = staged.merge("z_later", "a_earlier", None, false);
-    assert_ok(&applied, "ordinary graph-backed modules merge");
+    assert_ok(&applied.result, "ordinary graph-backed modules merge");
     assert!(!staged.modules.join("a_earlier.yaml").exists());
     assert!(staged.modules.join("z_later.yaml").is_file());
-    assert_candidate_assessment_matches_run(assessment, &staged, "merged-candidate", true, false);
+    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
     assert_node_output(
-        &staged.root().join("run-merged-candidate/app/main/entry.js"),
+        &candidate.output_root().join("app/main/entry.js"),
         "first second third\n",
         "",
     );
@@ -2483,16 +2726,18 @@ fn modules_delete_assessment_matches_the_staged_run_for_its_candidate_plan() {
         ],
     );
     fs::create_dir_all(staged.modules.join("alternate")).unwrap();
-    let baseline_out = staged.root().join("run-baseline");
-    let baseline = staged.run_with_analysis(&staged.artifact, &baseline_out, false);
-    assert_ok(&baseline, "baseline staged run");
-    let baseline_report = read_effect_report(&baseline_out);
+    let baseline = staged.run_with_analysis(&staged.artifact, false);
+    assert_ok(&baseline.result, "baseline staged run");
+    let baseline_report = read_effect_report(&baseline.output_root());
     assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
     let before = module_snapshot(&staged.modules);
     let ordinary = staged.delete("a_earlier", true, None, true);
-    assert_ok(&ordinary, "ordinary graph-backed modules delete dry-run");
-    let ordinary_outcome: Value = serde_json::from_str(&ordinary.stdout).unwrap();
+    assert_ok(
+        &ordinary.result,
+        "ordinary graph-backed modules delete dry-run",
+    );
+    let ordinary_outcome: Value = serde_json::from_str(&ordinary.result.stdout).unwrap();
     assert!(
         ordinary_outcome
             .get("effect_relocation_assessment")
@@ -2501,8 +2746,11 @@ fn modules_delete_assessment_matches_the_staged_run_for_its_candidate_plan() {
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let result = staged.delete("alternate/../a_earlier", true, Some(&staged.artifact), true);
-    assert_ok(&result, "modules delete --force --dry-run --analysis");
-    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    assert_ok(
+        &result.result,
+        "modules delete --force --dry-run --analysis",
+    );
+    let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
     assert_eq!(
         assessment["decision"]["status"], "accepted",
@@ -2519,14 +2767,12 @@ fn modules_delete_assessment_matches_the_staged_run_for_its_candidate_plan() {
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let applied = staged.delete("a_earlier", true, None, false);
-    assert_ok(&applied, "ordinary graph-backed modules delete");
+    assert_ok(&applied.result, "ordinary graph-backed modules delete");
     assert!(!staged.modules.join("a_earlier.yaml").exists());
     assert!(staged.modules.join("z_later.yaml").is_file());
-    assert_candidate_assessment_matches_run(assessment, &staged, "deleted-candidate", true, false);
+    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
     assert_node_output(
-        &staged
-            .root()
-            .join("run-deleted-candidate/app/main/entry.js"),
+        &candidate.output_root().join("app/main/entry.js"),
         "first second\n",
         "",
     );
@@ -2561,11 +2807,16 @@ fn modules_delete_requested_assessment_refuses_stale_artifacts_before_yaml_write
     );
     let before = module_snapshot(&staged.modules);
     let result = staged.delete("a_earlier", true, Some(&foreign.artifact), true);
-    assert_eq!(result.status.code(), Some(1), "{}", result.stderr);
+    assert_eq!(
+        result.result.status.code(),
+        Some(1),
+        "{}",
+        result.result.stderr
+    );
     assert!(
-        result.stderr.contains("projection") || result.stderr.contains("analysis"),
+        result.result.stderr.contains("projection") || result.result.stderr.contains("analysis"),
         "{}\nexpected staged projection/artifact mismatch",
-        result.stderr
+        result.result.stderr
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 }
@@ -2599,12 +2850,17 @@ fn modules_merge_requested_assessment_refuses_stale_artifacts_before_yaml_writes
     );
     let before = module_snapshot(&staged.modules);
     let result = staged.merge("z_later", "a_earlier", Some(&foreign.artifact), true);
-    assert_eq!(result.status.code(), Some(1), "{}", result.stderr);
+    assert_eq!(
+        result.result.status.code(),
+        Some(1),
+        "{}",
+        result.result.stderr
+    );
     assert!(
-        result.stderr.contains("projection") || result.stderr.contains("analysis"),
+        result.result.stderr.contains("projection") || result.result.stderr.contains("analysis"),
         "{}
 expected staged projection/artifact mismatch",
-        result.stderr
+        result.result.stderr
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 }
@@ -2623,10 +2879,9 @@ fn modules_refine_assessment_matches_staged_run_for_its_candidate_plan() {
             "members: [{selector: {binding: {name: first}}}, {selector: {binding: {name: second}}}]\n",
         )],
     );
-    let baseline_out = staged.root().join("run-refine-baseline");
-    let baseline = staged.run_with_analysis(&staged.artifact, &baseline_out, false);
-    assert_ok(&baseline, "baseline staged run");
-    let baseline_report = read_effect_report(&baseline_out);
+    let baseline = staged.run_with_analysis(&staged.artifact, false);
+    assert_ok(&baseline.result, "baseline staged run");
+    let baseline_report = read_effect_report(&baseline.output_root());
     assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
     let batch = staged.root().join("refine.json");
@@ -2641,8 +2896,8 @@ fn modules_refine_assessment_matches_staged_run_for_its_candidate_plan() {
     .unwrap();
     let before = module_snapshot(&staged.modules);
     let result = staged.refine(&batch, Some(&staged.artifact), true, false);
-    assert_ok(&result, "modules refine --dry-run --analysis");
-    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    assert_ok(&result.result, "modules refine --dry-run --analysis");
+    let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
     assert_eq!(
         assessment["decision"]["status"], "accepted",
@@ -2659,8 +2914,8 @@ fn modules_refine_assessment_matches_staged_run_for_its_candidate_plan() {
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let applied = staged.refine(&batch, None, false, false);
-    assert_ok(&applied, "ordinary graph-backed modules refine");
-    let applied_outcome: Value = serde_json::from_str(&applied.stdout).unwrap();
+    assert_ok(&applied.result, "ordinary graph-backed modules refine");
+    let applied_outcome: Value = serde_json::from_str(&applied.result.stdout).unwrap();
     assert!(
         applied_outcome
             .get("effect_relocation_assessment")
@@ -2668,9 +2923,9 @@ fn modules_refine_assessment_matches_staged_run_for_its_candidate_plan() {
     );
     assert!(staged.modules.join("a_earlier.yaml").is_file());
     assert!(staged.modules.join("z_later.yaml").is_file());
-    assert_candidate_assessment_matches_run(assessment, &staged, "refine-candidate", true, false);
+    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
     assert_node_output(
-        &staged.root().join("run-refine-candidate/app/main/entry.js"),
+        &candidate.output_root().join("app/main/entry.js"),
         "first second\n",
         "",
     );
@@ -2705,22 +2960,32 @@ fn modules_refine_assessment_refuses_stale_or_partial_context_before_writes() {
     let before = module_snapshot(&staged.modules);
 
     let stale = staged.refine(&batch, Some(&foreign.artifact), true, false);
-    assert_eq!(stale.status.code(), Some(1), "{}", stale.stderr);
+    assert_eq!(
+        stale.result.status.code(),
+        Some(1),
+        "{}",
+        stale.result.stderr
+    );
     assert!(
-        stale.stderr.contains("projection")
-            || stale.stderr.contains("analysis")
-            || stale.stderr.contains("source"),
+        stale.result.stderr.contains("projection")
+            || stale.result.stderr.contains("analysis")
+            || stale.result.stderr.contains("source"),
         "expected staged input mismatch:\n{}",
-        stale.stderr
+        stale.result.stderr
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let partial = staged.refine(&batch, None, true, true);
-    assert_eq!(partial.status.code(), Some(1), "{}", partial.stderr);
-    assert!(
-        partial.stderr.contains("require --analysis"),
+    assert_eq!(
+        partial.result.status.code(),
+        Some(1),
         "{}",
-        partial.stderr
+        partial.result.stderr
+    );
+    assert!(
+        partial.result.stderr.contains("require --analysis"),
+        "{}",
+        partial.result.stderr
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
@@ -2832,11 +3097,16 @@ fn modules_refine_assessment_refuses_scoped_tree_before_writes() {
     .unwrap();
     let before = module_snapshot(&staged.modules);
     let result = staged.refine(&batch, Some(&staged.artifact), true, false);
-    assert_eq!(result.status.code(), Some(1), "{}", result.stderr);
-    assert!(
-        result.stderr.contains("one full-tree module root"),
+    assert_eq!(
+        result.result.status.code(),
+        Some(1),
         "{}",
-        result.stderr
+        result.result.stderr
+    );
+    assert!(
+        result.result.stderr.contains("one full-tree module root"),
+        "{}",
+        result.result.stderr
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 }
@@ -2864,8 +3134,15 @@ fn bindings_assign_requested_assessment_refuses_stale_inputs_before_yaml_writes(
     wrong_engine.extend_from_slice(body);
     fs::write(&staged.artifact, wrong_engine).unwrap();
     let refused = staged.assign(Some("value:target"), Some(&staged.artifact), true);
-    assert!(!refused.status.success(), "wrong engine was accepted");
-    assert!(refused.stderr.contains("engine"), "{}", refused.stderr);
+    assert!(
+        !refused.result.status.success(),
+        "wrong engine was accepted"
+    );
+    assert!(
+        refused.result.stderr.contains("engine"),
+        "{}",
+        refused.result.stderr
+    );
     assert_eq!(module_snapshot(&staged.modules), before);
     fs::write(&staged.artifact, &original_artifact).unwrap();
 
@@ -2874,7 +3151,10 @@ fn bindings_assign_requested_assessment_refuses_stale_inputs_before_yaml_writes(
     let original_source = fs::read(&staged.source).unwrap();
     fs::write(&staged.source, "const value = 2;\nconsole.log(value);\n").unwrap();
     let refused = staged.assign(Some("value:target"), Some(&staged.artifact), true);
-    assert!(!refused.status.success(), "changed source was accepted");
+    assert!(
+        !refused.result.status.success(),
+        "changed source was accepted"
+    );
     assert_eq!(module_snapshot(&staged.modules), before);
     fs::write(&staged.source, original_source).unwrap();
 
@@ -2931,10 +3211,14 @@ fn bindings_assign_requested_assessment_refuses_stale_inputs_before_yaml_writes(
     );
     let refused = staged.assign(Some("value:target"), Some(&alternate_artifact), true);
     assert!(
-        !refused.status.success(),
+        !refused.result.status.success(),
         "different projection was accepted"
     );
-    assert!(refused.stderr.contains("projection"), "{}", refused.stderr);
+    assert!(
+        refused.result.stderr.contains("projection"),
+        "{}",
+        refused.result.stderr
+    );
     assert_eq!(module_snapshot(&staged.modules), before);
 }
 
@@ -3023,13 +3307,18 @@ export { a, b };\n";
     );
     let result = staged.assign(Some("b:zz_right"), Some(&staged.artifact), true);
     assert_candidate_has_placement_violation(
-        &result,
+        &result.result,
         "destructuring_destination_split",
         "bindings assign --dry-run --analysis for split destructuring",
     );
     let before = module_snapshot(&staged.modules);
     let write = staged.assign(Some("b:zz_right"), Some(&staged.artifact), false);
-    assert_eq!(write.status.code(), Some(1), "{}", write.stderr);
+    assert_eq!(
+        write.result.status.code(),
+        Some(1),
+        "{}",
+        write.result.stderr
+    );
     assert_eq!(module_snapshot(&staged.modules), before);
     assert_normal_run_refuses_with_projection_violation(
         &invalid,
@@ -3064,7 +3353,7 @@ export { a, b };\n";
     );
     let result = staged.unassign("b", Some(&staged.artifact), true);
     assert_candidate_has_placement_violation(
-        &result,
+        &result.result,
         "nested_var_missing_owner",
         "bindings unassign --dry-run --analysis for partial nested var",
     );
@@ -3107,7 +3396,7 @@ export { a, b };\n";
     );
     let result = staged.assign(Some("b:zz_right"), Some(&staged.artifact), true);
     assert_candidate_has_placement_violation(
-        &result,
+        &result.result,
         "nested_var_destination_split",
         "bindings assign --dry-run --analysis for split nested-var bindings",
     );
