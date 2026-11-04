@@ -21,9 +21,10 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name="gitlab-spike-job", namespace=NAMESPACE),
         automount_token=False,
     )
+    # The Helm chart uses this dedicated service account for the manager; jobs use a different one.
     # The manager alone needs the API. Build/helper pods cannot reach it.
     for name, selector, api_access in (
-        ("manager", {"app": NAME}, True),
+        ("manager", {"io.cilium.k8s.policy.serviceaccount": NAME}, True),
         ("jobs", {"app.kubernetes.io/name": "gitlab-spike-job"}, False),
     ):
         NetworkPolicy(

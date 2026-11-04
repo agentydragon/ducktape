@@ -54,7 +54,7 @@ spec:
               protocol: TCP
   endpointSelector:
     matchLabels:
-      app: gitlab-spike-runner
+      io.cilium.k8s.policy.serviceaccount: gitlab-spike-runner
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
