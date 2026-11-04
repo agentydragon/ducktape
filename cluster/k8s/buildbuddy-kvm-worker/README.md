@@ -1,6 +1,6 @@
 # Static KVM worker
 
-One always-running KubeVirt VM on `wyrm2` contains the BuildBuddy executor for the manual
+One always-running KubeVirt VM contains the BuildBuddy executor for the manual
 `wyrm2-kvm-vm` pool. It boots KubeVirt's digest-pinned Ubuntu 24.04 cloud image, with eight
 vCPUs, 24 GiB RAM and an 80 GiB `emptyDisk` for Docker layers, action workspaces and cache.
 Cloud-init installs Ubuntu's Docker package and the native
@@ -24,7 +24,11 @@ Docker packages the action's filesystem; the VM provides isolation from the oute
 
 The Kustomization is enabled, so Flux deploys the VM when this configuration lands.
 First boot configures the dedicated guest for nested KVM and reboots once before the
-executor starts. Verify guest boot, the outer network fence and these manual checks:
+executor starts. The VM selects nodes whose KubeVirt CPU feature labels advertise either
+`svm` or `vmx`; its guest loads the corresponding KVM driver. The 8-CPU, 24-GiB reservation
+currently fits only on `wyrm2`. The labels describe hypervisor CPU features, and the guest
+bootstrap fails if no KVM device is available; verify nested execution after moving the VM.
+Verify guest boot, the outer network fence and these manual checks:
 
 ```bash
 bbr test //devinfra/buildbuddy/kvm:kvm_vm_test --nocache_test_results

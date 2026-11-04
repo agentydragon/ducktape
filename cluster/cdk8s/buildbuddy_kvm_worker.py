@@ -4,6 +4,11 @@ import yaml
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from kubevirt_virtualmachine_crds.io.kubevirt import (
+    VirtualMachineSpecTemplateSpecAffinity,
+    VirtualMachineSpecTemplateSpecAffinityNodeAffinity,
+    VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
+    VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
+    VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
     VirtualMachineSpecTemplateSpecDomainCpu,
     VirtualMachineSpecTemplateSpecDomainCpuFeatures,
     VirtualMachineSpecTemplateSpecDomainResources,
@@ -107,7 +112,10 @@ def chart(app: App) -> Chart:
         cpu=VirtualMachineSpecTemplateSpecDomainCpu(
             cores=8,
             model="host-passthrough",
-            features=[VirtualMachineSpecTemplateSpecDomainCpuFeatures(name="svm", policy="require")],
+            features=[
+                VirtualMachineSpecTemplateSpecDomainCpuFeatures(name=feature, policy="optional")
+                for feature in ("svm", "vmx")
+            ],
         ),
         resources=VirtualMachineSpecTemplateSpecDomainResources(
             requests={
@@ -119,7 +127,23 @@ def chart(app: App) -> Chart:
                 "memory": VirtualMachineSpecTemplateSpecDomainResourcesLimits.from_string("24Gi"),
             },
         ),
-        node_selector={"kubernetes.io/hostname": "wyrm2"},
+        node_selector={},
+        affinity=VirtualMachineSpecTemplateSpecAffinity(
+            node_affinity=VirtualMachineSpecTemplateSpecAffinityNodeAffinity(
+                required_during_scheduling_ignored_during_execution=VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
+                    node_selector_terms=[
+                        VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms(
+                            match_expressions=[
+                                VirtualMachineSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions(
+                                    key=f"cpu-feature.node.kubevirt.io/{feature}", operator="In", values=["true"]
+                                )
+                            ]
+                        )
+                        for feature in ("svm", "vmx")
+                    ]
+                )
+            )
+        ),
         ports=[],
         disks={
             "work": VirtualMachineSpecTemplateSpecVolumes(
