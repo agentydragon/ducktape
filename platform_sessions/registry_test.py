@@ -32,7 +32,7 @@ def test_resolves_multiple_instances_and_type_settings(registry: IntegrationRegi
                     "upstream_base_url": "http://example.test:8080",
                     "settings": {"mode": "other"},
                 },
-            ],
+            ]
         }
     )
     assert result[0].upstream_base_url == "https://example.test"
