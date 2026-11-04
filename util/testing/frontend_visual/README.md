@@ -138,7 +138,7 @@ where the page is served:
   for uncaught page errors, including errors after the last screenshot. If another error is
   already propagating, the page error is attached to it as a note.
 - Native UI (GNOME shell, ...): `publish_output()` (`util/testing/output_writer.py`), as
-  `util/testing/gnome.py` does.
+  `gnome/testing/session.py` does.
 
 Traps, each of which renders differently from one execution to the next or hides a failure:
 

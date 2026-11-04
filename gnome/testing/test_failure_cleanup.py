@@ -8,9 +8,9 @@ import pytest
 import pytest_bazel
 from docker.models.containers import Container, ExecResult
 
-from util.testing.gnome import session
-from util.testing.gnome.fake_daemon import fake_daemon
-from util.testing.gnome.session import GnomeSession
+from gnome.testing import session
+from gnome.testing.fake_daemon import fake_daemon
+from gnome.testing.session import GnomeSession
 
 
 def _exec_result(exit_code: int, stdout: bytes = b"", stderr: bytes = b"") -> ExecResult:
