@@ -7,10 +7,23 @@ load("//devinfra/python:defs.bzl", "py_library")
 load("//props:py_test.bzl", "py_test")
 
 py_library(
+    name = "database",
+    srcs = ["database.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/db:config",
+        "//util:db_url",
+        "@pypi//fastapi",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "routes",
     srcs = ["routes.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
+        ":database",
         "//openai_utils:api_shape",
         "//openai_utils:model",
         "//props:config",
@@ -19,6 +32,7 @@ py_library(
         "//props/db:models",
         "@pypi//fastapi",
         "@pypi//httpx",
+        "@pypi//psycopg",
         "@pypi//sqlalchemy",
     ],
 )
@@ -28,10 +42,10 @@ py_library(
     srcs = ["app.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
+        ":database",
         ":routes",
         "//props:config",
         "//props/db:config",
-        "//props/db:database",
         "//util:logging",
         "@pypi//fastapi",
     ],
@@ -45,6 +59,31 @@ py_library(
         ":app",
         "@pypi//typer",
         "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_async_proxy",
+    srcs = ["test_async_proxy.py"],
+    requires_docker = True,
+    deps = [
+        ":app",
+        ":database",
+        ":routes",
+        "//:conftest",
+        "//props:config",
+        "//props:conftest",
+        "//props/core:agent_types",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/orchestration:agent_credentials",
+        "//props/testing:constants",
+        "//props/testing/fixtures:runs",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -72,6 +111,7 @@ py_test(
     srcs = ["test_budget.py"],
     requires_docker = True,
     deps = [
+        ":database",
         ":routes",
         "//:conftest",
         "//props:conftest",
@@ -92,6 +132,7 @@ py_test(
     srcs = ["test_routing.py"],
     requires_docker = True,
     deps = [
+        ":database",
         ":routes",
         "//:conftest",
         "//openai_utils:api_shape",
