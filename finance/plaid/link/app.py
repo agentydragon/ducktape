@@ -10,11 +10,11 @@ import sys
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from importlib import resources
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 from uuid import UUID
 
 import uvicorn
-from fastapi import FastAPI, Header, HTTPException, Path as ApiPath, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Path as ApiPath, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field, ValidationError
 
@@ -177,11 +177,40 @@ def _login_config(settings: PlaidWebSettings) -> LoginConfig:
 
 
 class AppState:
-    def __init__(self) -> None:
-        self.client: PlaidClient | None = None
-        self.webhook_verifier: PlaidWebhookVerifier | None = None
-        self.storage: PlaidLinkStorage | None = None
-        self.secrets: SecretStore | None = None
+    def __init__(self, client: PlaidClient, storage: PlaidLinkStorage, secrets: SecretStore) -> None:
+        self.client = client
+        self.webhook_verifier = PlaidWebhookVerifier(client)
+        self.storage = storage
+        self.secrets = secrets
+
+
+async def _app_state(request: Request) -> AppState:
+    return cast(AppState, request.app.state.plaid)
+
+
+AppStateDep = Annotated[AppState, Depends(_app_state)]
+
+
+async def _client(state: AppStateDep) -> PlaidClient:
+    return state.client
+
+
+async def _storage(state: AppStateDep) -> PlaidLinkStorage:
+    return state.storage
+
+
+async def _secrets(state: AppStateDep) -> SecretStore:
+    return state.secrets
+
+
+async def _webhook_verifier(state: AppStateDep) -> PlaidWebhookVerifier:
+    return state.webhook_verifier
+
+
+ClientDep = Annotated[PlaidClient, Depends(_client)]
+StorageDep = Annotated[PlaidLinkStorage, Depends(_storage)]
+SecretsDep = Annotated[SecretStore, Depends(_secrets)]
+WebhookVerifierDep = Annotated[PlaidWebhookVerifier, Depends(_webhook_verifier)]
 
 
 def create_app(
@@ -191,8 +220,6 @@ def create_app(
     secrets: SecretStore | None = None,
     client: PlaidClient | None = None,
 ) -> FastAPI:
-    state = AppState()
-
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         owned_client: PlaidClient | None = None
@@ -204,17 +231,15 @@ def create_app(
             runtime_client = owned_client
         else:
             runtime_client = client
-        state.client = runtime_client
-        state.webhook_verifier = PlaidWebhookVerifier(runtime_client)
         runtime_storage = storage or await PlaidLinkStorage.initialize(settings.database_url)
-        state.storage = runtime_storage
         runtime_secrets: SecretStore
         if secrets is None:
             owned_secrets = await K8sSecretStore.from_incluster(settings.namespace, settings.managed_by)
             runtime_secrets = owned_secrets
         else:
             runtime_secrets = secrets
-        state.secrets = runtime_secrets
+        state = AppState(runtime_client, runtime_storage, runtime_secrets)
+        app.state.plaid = state
         worker_task = asyncio.create_task(
             _item_sync_worker(
                 api=runtime_client, storage=runtime_storage, secrets=runtime_secrets, webhook_url=settings.webhook_url
@@ -226,37 +251,16 @@ def create_app(
             worker_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await worker_task
-            state.client = None
-            state.webhook_verifier = None
+            del app.state.plaid
             if owned_secrets is not None:
                 await owned_secrets.close()
-            if storage is None and state.storage is not None:
-                await state.storage.close()
+            if storage is None:
+                await runtime_storage.close()
             if owned_client is not None:
                 owned_client.close()
 
     app = FastAPI(title="Plaid Link Service", docs_url=None, redoc_url=None, lifespan=lifespan)
     install_login(app, _login_config(settings))
-
-    def require_client() -> PlaidClient:
-        if state.client is None:
-            raise RuntimeError("Plaid client not initialized")
-        return state.client
-
-    def require_storage() -> PlaidLinkStorage:
-        if state.storage is None:
-            raise RuntimeError("storage not initialized")
-        return state.storage
-
-    def require_secrets() -> SecretStore:
-        if state.secrets is None:
-            raise RuntimeError("secret store not initialized")
-        return state.secrets
-
-    def require_webhook_verifier() -> PlaidWebhookVerifier:
-        if state.webhook_verifier is None:
-            raise RuntimeError("webhook verifier not initialized")
-        return state.webhook_verifier
 
     @app.get("/healthz")
     async def healthz() -> dict[str, bool]:
@@ -264,16 +268,18 @@ def create_app(
 
     @app.post("/webhooks/plaid", include_in_schema=False)
     async def plaid_webhook(
-        request: Request, plaid_verification: Annotated[str | None, Header(alias="Plaid-Verification")] = None
+        request: Request,
+        verifier: WebhookVerifierDep,
+        storage: StorageDep,
+        plaid_verification: Annotated[str | None, Header(alias="Plaid-Verification")] = None,
     ) -> dict[str, str]:
         if plaid_verification is None:
             raise HTTPException(401, "missing Plaid-Verification header")
         raw_body = await request.body()
         try:
-            await require_webhook_verifier().verify(token=plaid_verification, body=raw_body)
+            await verifier.verify(token=plaid_verification, body=raw_body)
         except InvalidPlaidWebhookError as exc:
             raise HTTPException(401, "invalid Plaid webhook signature") from exc
-        storage = require_storage()
         delivery_id = await storage.record_plaid_webhook_delivery(raw_body.decode("utf-8"))
         try:
             event = PlaidWebhookEnvelope.model_validate_json(raw_body)
@@ -346,9 +352,7 @@ def create_app(
         return Response(status_code=204)
 
     @app.get("/api/links")
-    async def list_links() -> list[LinkSummary]:
-        client = require_client()
-        storage = require_storage()
+    async def list_links(client: ClientDep, storage: StorageDep) -> list[LinkSummary]:
         running = await storage.running_sync_item_ids()
         return [
             _link_summary(link, _addable_products(client, link), sync_running=link.item_id in running)
@@ -356,16 +360,17 @@ def create_app(
         ]
 
     @app.get("/api/account-inventory")
-    async def account_inventory() -> list[ItemInventory]:
-        return await require_storage().list_account_inventory()
+    async def account_inventory(storage: StorageDep) -> list[ItemInventory]:
+        return await storage.list_account_inventory()
 
     @app.get("/api/links/{item_id}/accounts/{account_id}/deletion-preview")
     async def account_deletion_preview(
         item_id: Annotated[str, ApiPath(description="Plaid item_id")],
         account_id: Annotated[str, ApiPath(description="Plaid account_id")],
+        storage: StorageDep,
     ) -> AccountDeletionPreview:
         try:
-            return await require_storage().get_account_deletion_preview(item_id=item_id, account_id=account_id)
+            return await storage.get_account_deletion_preview(item_id=item_id, account_id=account_id)
         except (AccountNotFoundError, AccountNotDetachedError, ItemSyncQueuedError, SyncAlreadyRunningError) as exc:
             raise _account_deletion_error(exc) from exc
 
@@ -374,9 +379,10 @@ def create_app(
         item_id: Annotated[str, ApiPath(description="Plaid item_id")],
         account_id: Annotated[str, ApiPath(description="Plaid account_id")],
         expected_preview: AccountDeletionPreview,
+        storage: StorageDep,
     ) -> dict[str, str]:
         try:
-            await require_storage().delete_detached_account(
+            await storage.delete_detached_account(
                 item_id=item_id, account_id=account_id, expected_preview=expected_preview
             )
         except (
@@ -390,11 +396,13 @@ def create_app(
         return {"status": "deleted"}
 
     @app.get("/api/links/{item_id}")
-    async def get_link_state(item_id: Annotated[str, ApiPath(description="Plaid item_id")]) -> LinkSummary:
-        link = await require_storage().get_link(item_id)
+    async def get_link_state(
+        item_id: Annotated[str, ApiPath(description="Plaid item_id")], client: ClientDep, storage: StorageDep
+    ) -> LinkSummary:
+        link = await storage.get_link(item_id)
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
-        return _link_summary(link, _addable_products(require_client(), link))
+        return _link_summary(link, _addable_products(client, link))
 
     @app.get("/api/config")
     async def web_config() -> WebConfigResponse:
@@ -402,20 +410,20 @@ def create_app(
 
     @app.get("/api/institutions")
     async def search_institutions(
-        q: Annotated[str, Query(min_length=2, description="Institution name typeahead")],
+        q: Annotated[str, Query(min_length=2, description="Institution name typeahead")], client: ClientDep
     ) -> list[InstitutionSearchResult]:
         try:
-            found = require_client().search_institutions(q)
+            found = client.search_institutions(q)
         except PlaidClientError as exc:
             raise HTTPException(502, exc.public_detail()) from exc
         return [InstitutionSearchResult(institution_id=i.institution_id, name=i.name) for i in found]
 
     @app.get("/api/institutions/{institution_id}")
     async def get_institution(
-        institution_id: Annotated[str, ApiPath(description="Plaid institution_id")],
+        institution_id: Annotated[str, ApiPath(description="Plaid institution_id")], client: ClientDep
     ) -> InstitutionProductsResponse:
         try:
-            institution = require_client().get_institution(institution_id)
+            institution = client.get_institution(institution_id)
         except PlaidClientError as exc:
             raise HTTPException(502, exc.public_detail()) from exc
         syncable = syncable_products(institution.products)
@@ -428,9 +436,9 @@ def create_app(
         )
 
     @app.post("/api/link-token")
-    async def create_link_token(body: LinkTokenRequest) -> LinkTokenResponse:
+    async def create_link_token(body: LinkTokenRequest, client: ClientDep) -> LinkTokenResponse:
         try:
-            result = require_client().create_link_token(
+            result = client.create_link_token(
                 products=[product.value for product in body.products],
                 redirect_uri=settings.redirect_uri,
                 client_user_id="owner",
@@ -446,15 +454,17 @@ def create_app(
         )
 
     @app.post("/api/exchange-public-token")
-    async def exchange_public_token(body: ExchangePublicTokenRequest) -> LinkSummary:
+    async def exchange_public_token(
+        body: ExchangePublicTokenRequest, client: ClientDep, storage: StorageDep, secrets: SecretsDep
+    ) -> LinkSummary:
         try:
-            exchange = require_client().exchange_public_token(body.public_token)
+            exchange = client.exchange_public_token(body.public_token)
         except PlaidClientError as exc:
             raise HTTPException(502, exc.public_detail()) from exc
         secret_name = _secret_name_for_item(exchange.item_id)
-        await require_secrets().write_access_token(secret_name, exchange.access_token)
+        await secrets.write_access_token(secret_name, exchange.access_token)
         requested = body.products
-        link = await require_storage().upsert_link(
+        link = await storage.upsert_link(
             item_id=exchange.item_id,
             access_token_secret=secret_name,
             products_requested=requested,
@@ -467,31 +477,35 @@ def create_app(
             label=body.label,
         )
         await sync_link(
-            api=require_client(),
-            storage=require_storage(),
-            secrets=require_secrets(),
+            api=client,
+            storage=storage,
+            secrets=secrets,
             link=link,
             trigger="link",
             windows=settings.sync_windows,
             webhook_url=settings.webhook_url,
         )
-        updated = await require_storage().get_link(exchange.item_id)
+        updated = await storage.get_link(exchange.item_id)
         if updated is None:
             raise RuntimeError("newly inserted Plaid link disappeared")
-        return _link_summary(updated, _addable_products(require_client(), updated))
+        return _link_summary(updated, _addable_products(client, updated))
 
     @app.post("/api/links/{item_id}/update-link-token")
     async def create_update_link_token(
-        item_id: Annotated[str, ApiPath(description="Plaid item_id")], body: LinkUpdateTokenRequest
+        item_id: Annotated[str, ApiPath(description="Plaid item_id")],
+        body: LinkUpdateTokenRequest,
+        client: ClientDep,
+        storage: StorageDep,
+        secrets: SecretsDep,
     ) -> LinkUpdateTokenResponse:
-        link = await require_storage().get_link(item_id)
+        link = await storage.get_link(item_id)
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
-        access_token = await require_secrets().read_access_token(link.access_token_secret)
+        access_token = await secrets.read_access_token(link.access_token_secret)
         requested = _requested_products_for_update(link, body)
         additional = [product for product in requested if product not in link.products_authorized]
         try:
-            result = require_client().create_update_link_token(
+            result = client.create_update_link_token(
                 access_token=access_token,
                 redirect_uri=settings.redirect_uri,
                 client_user_id="owner",
@@ -507,54 +521,60 @@ def create_app(
 
     @app.post("/api/links/{item_id}/complete-update")
     async def complete_link_update(
-        item_id: Annotated[str, ApiPath(description="Plaid item_id")], body: CompleteLinkUpdateRequest
+        item_id: Annotated[str, ApiPath(description="Plaid item_id")],
+        body: CompleteLinkUpdateRequest,
+        client: ClientDep,
+        storage: StorageDep,
+        secrets: SecretsDep,
     ) -> LinkSummary:
-        current = await require_storage().get_link(item_id)
+        current = await storage.get_link(item_id)
         if current is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
         products = _merge_products(current.products_requested, body.products)
-        link = await require_storage().mark_link_update_succeeded(item_id=item_id, products_requested=products)
+        link = await storage.mark_link_update_succeeded(item_id=item_id, products_requested=products)
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
         if body.sync:
             await _sync_one_link(
-                api=require_client(),
-                storage=require_storage(),
-                secrets=require_secrets(),
-                link=link,
-                webhook_url=settings.webhook_url,
+                api=client, storage=storage, secrets=secrets, link=link, webhook_url=settings.webhook_url
             )
-            refreshed = await require_storage().get_link(item_id)
+            refreshed = await storage.get_link(item_id)
             if refreshed is not None:
                 link = refreshed
-        return _link_summary(link, _addable_products(require_client(), link))
+        return _link_summary(link, _addable_products(client, link))
 
     @app.post("/api/links/{item_id}/sync")
-    async def sync_existing_link(item_id: Annotated[str, ApiPath(description="Plaid item_id")]) -> SyncResponse:
-        link = await require_storage().get_link(item_id)
+    async def sync_existing_link(
+        item_id: Annotated[str, ApiPath(description="Plaid item_id")],
+        client: ClientDep,
+        storage: StorageDep,
+        secrets: SecretsDep,
+    ) -> SyncResponse:
+        link = await storage.get_link(item_id)
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
         run_id = await _sync_one_link(
-            api=require_client(),
-            storage=require_storage(),
-            secrets=require_secrets(),
-            link=link,
-            webhook_url=settings.webhook_url,
+            api=client, storage=storage, secrets=secrets, link=link, webhook_url=settings.webhook_url
         )
         return SyncResponse(run_id=str(run_id))
 
     @app.post("/api/links/{item_id}/remove")
-    async def remove_link(item_id: Annotated[str, ApiPath(description="Plaid item_id")]) -> dict[str, str]:
-        link = await require_storage().get_link(item_id)
+    async def remove_link(
+        item_id: Annotated[str, ApiPath(description="Plaid item_id")],
+        client: ClientDep,
+        storage: StorageDep,
+        secrets: SecretsDep,
+    ) -> dict[str, str]:
+        link = await storage.get_link(item_id)
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
-        access_token = await require_secrets().read_access_token(link.access_token_secret)
+        access_token = await secrets.read_access_token(link.access_token_secret)
         try:
-            require_client().remove_item(access_token)
+            client.remove_item(access_token)
         except PlaidClientError as exc:
             raise HTTPException(502, exc.public_detail()) from exc
-        await require_secrets().delete_access_token(link.access_token_secret)
-        await require_storage().purge_link_data(item_id)
+        await secrets.delete_access_token(link.access_token_secret)
+        await storage.purge_link_data(item_id)
         return {"status": "removed"}
 
     return app
