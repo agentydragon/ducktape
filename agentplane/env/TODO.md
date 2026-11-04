@@ -11,7 +11,11 @@ shell when it is enabled.
 ## Reduce Firecracker checkpoint and restore disk I/O
 
 The production-guest acceptance captures RAM in seconds but spends minutes copying and verifying
-the backing disks, including the 8.5 GiB root image. Profile that storage path before optimizing;
+the backing disks, including the 8.5 GiB root image. Sparse copies already exist; complete logical
+file hashing still scans holes. The [storage probe](../debug/2026_11_04_firecracker_storage_probe.md)
+measured sparsity and built a variant without the pre-commit bundle, reducing closure bytes by
+67.2%, with reduced tool availability. Profile the launcher on the worker and boot a smaller
+variant before selecting an optimization. Consider keeping heavy tools in an immutable disk;
 preserve the paused disk/RAM boundary, durable manifest commit and identity fencing. The
 [hardware acceptance report](../debug/2026_11_03_firecracker_system_test.md) records the observed phases.
 
