@@ -358,6 +358,22 @@ impl EffectConflictRow<'_> {
     }
 }
 
+fn should_capture_example(examples: &[EffectConflictExample], has_modeled_cells: bool) -> bool {
+    examples.len() < EXAMPLE_LIMIT
+        || (has_modeled_cells && examples.iter().any(|example| example.cell_count == 0))
+}
+
+fn retain_example(examples: &mut Vec<EffectConflictExample>, example: EffectConflictExample) {
+    if examples.len() < EXAMPLE_LIMIT {
+        examples.push(example);
+    } else if example.cell_count > 0
+        && let Some(last_havoc_only) = examples.iter().rposition(|sample| sample.cell_count == 0)
+    {
+        examples.remove(last_havoc_only);
+        examples.push(example);
+    }
+}
+
 impl Serialize for EffectConflictCells<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut sequence = serializer.serialize_seq(Some(self.cells.len()))?;
@@ -425,8 +441,8 @@ pub struct EffectTranslationValidationResult {
 
 /// Run the candidate-order effect sweep once and return both its typed result
 /// and the existing report projection. This does not alter the legacy gate or
-/// its oracle. The visitor still receives the same bounded report rows in the
-/// same order.
+/// its oracle. An active visitor still receives every conflict in sweep order;
+/// only the bounded `examples` selection changes.
 pub(crate) fn effect_translation_assess<E>(
     inputs: EffectTranslationValidationInputs<'_>,
     mut visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
@@ -449,10 +465,11 @@ pub(crate) fn effect_translation_assess<E>(
         } else {
             legacy_comparison.effect_only_pairs += 1;
         }
-        if examples.len() < EXAMPLE_LIMIT || visitor.is_some() {
+        let capture_example = should_capture_example(&examples, conflict.cell_count > 0);
+        if capture_example || visitor.is_some() {
             let row = conflict.report_row(module_path);
-            if examples.len() < EXAMPLE_LIMIT {
-                examples.push(row.bounded_example());
+            if capture_example {
+                retain_example(&mut examples, row.bounded_example());
             }
             if let Some(visitor) = &mut visitor {
                 visitor(&EffectConflictDiagnosticRow {
@@ -498,7 +515,7 @@ pub(crate) fn effect_translation_assess<E>(
         limitations: vec![
             "Unknown global/property/host coverage remains global Havoc, independently of purity or execution completeness.",
             "Composed heap accesses lack per-access provenance; allocation sites do not prove heap locality.",
-            "Counts cover every conflicting swapped pair; examples are bounded and deterministic. Request --effect-conflicts-jsonl for full rows.",
+            "Counts cover every conflicting swapped pair; bounded examples prefer modeled-cell rows, then retain the earliest Havoc-only rows. Request --effect-conflicts-jsonl for full rows.",
             "The edge comparison excludes forward-edge and placement diagnostics; this assessment does not change acceptance or prove emission placement/rebinding obligations.",
         ],
     };

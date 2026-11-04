@@ -373,9 +373,11 @@ legacy gate and edge-TV oracle unchanged. Unknown global/property/host
 coverage remains conservative Havoc independently of purity or synchronous
 completeness. Counts include every conflicting swapped pair and existing
 pair-premise disposition; observed contradictions are diagnostics only.
-Twenty deterministic examples bound default output, with explicit truncation
-and coverage limitations. `run --effect-conflicts-jsonl` additionally streams
-every pair, cell, access provenance, premise disposition and endpoint opacity
+Twenty deterministic examples bound default output: rows with modeled cells
+are preferred, then the earliest Havoc-only rows fill unused slots; selected
+rows retain sweep order. Truncation and coverage limitations remain explicit.
+`run --effect-conflicts-jsonl` additionally streams every pair, cell, access
+provenance, premise disposition and endpoint opacity
 to `effect_conflicts.jsonl` in each chunk's report directory, using the same
 enumeration. Write and flush errors fail the run. Missing report roots and
 accepted dry runs that suppress reports refuse an explicit export request;
