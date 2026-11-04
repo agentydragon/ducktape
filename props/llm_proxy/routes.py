@@ -24,18 +24,18 @@ from typing import Annotated, Any
 from uuid import UUID
 
 import httpx
-import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openai_utils.api_shape import LLMApiShape
 from openai_utils.model import ResponseUsage
-from props.backend.auth import extract_agent_run_id_from_username, parse_credentials
+from props.backend.auth import parse_credentials, validate_postgres_credentials_async
 from props.backend.deps import Config
 from props.config import LLMProxyConfig, UpstreamConfig
+from props.db.async_database import AsyncDatabase
 from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, LLMRequest, ModelMetadata
-from props.llm_proxy.database import ProxyDatabase, ProxyDb
+from props.llm_proxy.database import ProxyDb
 
 logger = logging.getLogger(__name__)
 
@@ -151,21 +151,7 @@ async def require_llm_access(request: Request, admin_db: ProxyDb) -> LLMAccess:
     if parsed is None:
         raise HTTPException(status_code=401, detail="Invalid authorization format")
     username, password = parsed
-    agent_run_id = extract_agent_run_id_from_username(username)
-
-    try:
-        async with await psycopg.AsyncConnection.connect(
-            host=admin_db.config.host,
-            port=admin_db.config.port,
-            dbname=admin_db.config.database,
-            user=username,
-            password=password,
-            connect_timeout=5,
-        ):
-            pass
-    except psycopg.OperationalError as e:
-        logger.warning(f"Postgres auth failed for user {username}: {e}")
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    agent_run_id = await validate_postgres_credentials_async(username, password, admin_db.config)
 
     if agent_run_id is None:
         raise HTTPException(status_code=401, detail="Authorization required")
@@ -349,7 +335,7 @@ async def _read_json_object(request: Request) -> dict[str, Any]:
 
 async def _proxy_request(
     request: Request,
-    admin_db: ProxyDatabase,
+    admin_db: AsyncDatabase,
     config: Config,
     access: LLMAccess,
     *,

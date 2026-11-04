@@ -14,11 +14,11 @@ from sqlalchemy import select
 
 from props.config import LLMProxyConfig, UpstreamConfig
 from props.core.agent_types import FreeformTypeConfig
+from props.db.async_database import AsyncDatabase
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, LLMRequest
 from props.llm_proxy import routes
 from props.llm_proxy.app import create_app
-from props.llm_proxy.database import ProxyDatabase
 from props.orchestration.agent_credentials import ensure_agent_role
 from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
@@ -73,7 +73,7 @@ async def test_async_auth_route_and_logging(synced_db: Database, monkeypatch: py
     config = LLMProxyConfig(
         upstreams={"test": UpstreamConfig(url="http://upstream.test/v1", api_key_env="TEST_API_KEY")}
     )
-    async with ProxyDatabase(synced_db.config) as proxy_db:
+    async with AsyncDatabase(synced_db.config) as proxy_db:
         with TestClient(create_app(db=proxy_db, config=config)) as client:
             bad_auth = _authorization(credentials.username, "incorrect")
             assert client.post("/v1/responses", headers=bad_auth, json={"model": DEFAULT_TEST_MODEL}).status_code == 401

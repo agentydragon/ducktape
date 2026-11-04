@@ -13,9 +13,9 @@ from fastapi import HTTPException
 
 from openai_utils.api_shape import LLMApiShape
 from props.config import CustomModelConfig, PropsConfig, UpstreamConfig
+from props.db.async_database import AsyncDatabase
 from props.db.database import Database
 from props.db.models import ModelMetadata
-from props.llm_proxy.database import ProxyDatabase
 from props.llm_proxy.routes import (
     LLMAccess,
     _extract_usage,
@@ -79,7 +79,7 @@ async def test_custom_model_routes_to_configured_upstream(
         )
         session.commit()
 
-    async with ProxyDatabase(synced_db.config) as db:
+    async with AsyncDatabase(synced_db.config) as db:
         async with db.session() as session:
             with monkeypatch.context() as mp:
                 mp.setenv("LOCAL_API_KEY", "local-key")
@@ -92,7 +92,7 @@ async def test_custom_model_routes_to_configured_upstream(
 @pytest.mark.asyncio
 async def test_unknown_model_raises_400(synced_db: Database, sample_config: PropsConfig) -> None:
     """Unknown model ID raises HTTPException(400)."""
-    async with ProxyDatabase(synced_db.config) as db:
+    async with AsyncDatabase(synced_db.config) as db:
         async with db.session() as session:
             with pytest.raises(HTTPException) as exc_info:
                 await _get_upstream_route("nonexistent-model", session, sample_config, LLMApiShape.RESPONSES)
@@ -118,7 +118,7 @@ async def test_unknown_upstream_raises_500(synced_db: Database, sample_config: P
         )
         session.commit()
 
-    async with ProxyDatabase(synced_db.config) as db:
+    async with AsyncDatabase(synced_db.config) as db:
         async with db.session() as session:
             with pytest.raises(HTTPException) as exc_info:
                 await _get_upstream_route("broken-model", session, sample_config, LLMApiShape.RESPONSES)
@@ -144,7 +144,7 @@ async def test_api_shape_mismatch_raises_400(synced_db: Database, sample_config:
         )
         session.commit()
 
-    async with ProxyDatabase(synced_db.config) as db:
+    async with AsyncDatabase(synced_db.config) as db:
         async with db.session() as session:
             with pytest.raises(HTTPException) as exc_info:
                 await _get_upstream_route("chat-model", session, sample_config, LLMApiShape.RESPONSES)

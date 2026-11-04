@@ -24,17 +24,16 @@ from starlette.background import BackgroundTask
 from props.backend.auth import (
     AgentRole,
     AnonymousIdentity,
-    Auth,
     AuthenticatedIdentity,
     RequestIdentity,
     is_admin_or_evaluator,
     is_critic_dev_agent,
 )
-from props.backend.deps import AdminDb
 from props.core.oci_utils import BUILTIN_TAG, UpstreamRegistryConfig, get_upstream_registry_config, is_digest
-from props.db.database import Database
+from props.db.async_database import AsyncDatabase
 from props.db.models import AgentDefinition, AgentType
 from props.db.notifications import GRADER_DEFINITION_CHANGED_CHANNEL, GraderDefinitionChangedNotification
+from props.registry_proxy.auth import RegistryAuth, RegistryDb
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +153,7 @@ async def _extract_image_metadata(manifest_body: bytes, repository: str) -> _Ima
 
 
 async def _record_manifest_push(
-    repository: str, digest: str, manifest_body: bytes, agent_run_id: UUID | None, db: Database
+    repository: str, digest: str, manifest_body: bytes, agent_run_id: UUID | None, db: AsyncDatabase
 ) -> None:
     """Record a manifest push to agent_definitions table."""
     try:
@@ -165,16 +164,16 @@ async def _record_manifest_push(
             detail=f"Unknown repository name: {repository}. Must be a valid agent type: {[t.value for t in AgentType]}",
         )
 
-    with db.session() as session:
-        existing = session.get(AgentDefinition, digest)
+    async with db.session() as session:
+        existing = await session.get(AgentDefinition, digest)
         if existing:
             logger.info(f"Agent definition {digest} already exists, skipping")
             return
 
     metadata = await _extract_image_metadata(manifest_body, repository)
-    with db.session() as session:
+    async with db.session() as session:
         # Another push can insert this digest while the config blob is fetched.
-        inserted_digest = session.execute(
+        result = await session.execute(
             insert(AgentDefinition)
             .values(
                 digest=digest,
@@ -185,7 +184,8 @@ async def _record_manifest_push(
             )
             .on_conflict_do_nothing(index_elements=[AgentDefinition.digest])
             .returning(AgentDefinition.digest)
-        ).scalar_one_or_none()
+        )
+        inserted_digest = result.scalar_one_or_none()
 
     if inserted_digest is None:
         logger.info(f"Agent definition {digest} already exists, skipping")
@@ -206,7 +206,7 @@ async def _record_manifest_push(
 
 @router.get("/v2/", include_in_schema=False)
 @router.head("/v2/", include_in_schema=False)
-async def v2_check(auth: Auth) -> Response:
+async def v2_check(auth: RegistryAuth) -> Response:
     """OCI API version check with auth challenge.
 
     Per OCI distribution spec, returns 401 with WWW-Authenticate for
@@ -238,7 +238,7 @@ def _is_grader_builtin_push(repo: str, ref: str) -> bool:
 
 
 @router.put("/v2/{repo}/manifests/{ref}", include_in_schema=False)
-async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb, auth: Auth) -> Response:
+async def put_manifest(request: Request, repo: str, ref: str, admin_db: RegistryDb, auth: RegistryAuth) -> Response:
     """Push a manifest — records agent definition on success."""
     agent_run_id = (
         auth.role.agent_run_id if isinstance(auth, AuthenticatedIdentity) and isinstance(auth.role, AgentRole) else None
@@ -260,19 +260,18 @@ async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb,
         # can (re)start graders that failed due to missing image at startup.
         if _is_grader_builtin_push(repo, ref):
             notification = GraderDefinitionChangedNotification(digest=manifest_digest, tag=ref)
-            with admin_db.session() as session:
-                session.execute(
+            async with admin_db.session() as session:
+                await session.execute(
                     text("SELECT pg_notify(:channel, :payload)"),
                     {"channel": GRADER_DEFINITION_CHANGED_CHANNEL, "payload": notification.model_dump_json()},
                 )
-                session.commit()
             logger.info(f"Notified grader definition changed: {repo}:{ref} -> {manifest_digest}")
 
     return response
 
 
 @router.api_route("/v2/{path:path}", methods=["GET", "HEAD", "POST", "PATCH", "PUT"], include_in_schema=False)
-async def registry_proxy(request: Request, path: str, auth: Auth, admin_db: AdminDb) -> Response:
+async def registry_proxy(request: Request, path: str, auth: RegistryAuth) -> Response:
     """Proxy OCI registry requests with method-based ACL (read for GET/HEAD, write for mutations)."""
     if request.method in ("GET", "HEAD"):
         if not (is_admin_or_evaluator(auth) or is_critic_dev_agent(auth)):

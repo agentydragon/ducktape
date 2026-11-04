@@ -13,9 +13,9 @@ import pytest_bazel
 from fastapi import HTTPException
 
 from props.core.agent_types import CriticTypeConfig
+from props.db.async_database import AsyncDatabase
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, LLMRequest
-from props.llm_proxy.database import ProxyDatabase
 from props.llm_proxy.routes import _check_budget
 from props.testing.constants import BUDGET_TEST_MODEL, TRAIN_EXAMPLE
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
@@ -40,7 +40,7 @@ async def test_budget_allows_under_budget(synced_db: Database) -> None:
         session.commit()
 
     # No requests logged yet — budget should be fine
-    async with ProxyDatabase(synced_db.config) as db, db.session() as session:
+    async with AsyncDatabase(synced_db.config) as db, db.session() as session:
         await _check_budget(session, run_id, budget_usd=10.0)
 
 
@@ -77,7 +77,7 @@ async def test_budget_rejects_over_budget(synced_db: Database) -> None:
         )
         session.commit()
 
-    async with ProxyDatabase(synced_db.config) as db:
+    async with AsyncDatabase(synced_db.config) as db:
         async with db.session() as session:
             with pytest.raises(HTTPException) as exc_info:
                 await _check_budget(session, run_id, budget_usd=0.01)
@@ -134,7 +134,7 @@ async def test_budget_includes_child_run_costs(synced_db: Database) -> None:
         session.commit()
 
     # Parent budget check should see child's costs
-    async with ProxyDatabase(synced_db.config) as db:
+    async with AsyncDatabase(synced_db.config) as db:
         async with db.session() as session:
             with pytest.raises(HTTPException) as exc_info:
                 await _check_budget(session, parent_id, budget_usd=0.10)
@@ -160,7 +160,7 @@ async def test_budget_allows_zero_cost_with_zero_budget(synced_db: Database) -> 
         session.commit()
 
     # No costs incurred — zero spent against zero budget should pass
-    async with ProxyDatabase(synced_db.config) as db, db.session() as session:
+    async with AsyncDatabase(synced_db.config) as db, db.session() as session:
         await _check_budget(session, run_id, budget_usd=0.0)
 
 
