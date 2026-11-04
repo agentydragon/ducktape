@@ -2,7 +2,8 @@
 
 This follows the [launcher proof](2026_11_03_firecracker_environment.md) with an app-integrated,
 disposable k3s acceptance target: `//agentplane/system_tests/suites:test_firecracker`.
-The implementation branch was rebased onto `devel` commit `e397149010` before this work.
+The implementation branch was initially rebased onto `devel` commit `e397149010`, then onto
+`194ba5aa0d` to pick up the landed CRI image-cleanup fix during acceptance debugging.
 
 ## Execution path
 
@@ -99,3 +100,15 @@ of this test, the VMI was deleted at 04:20:10 UTC and replaced at 04:20:24 UTC b
 `4334a239-0ae9-42f3-a158-2eee7d121d7e`. The new guest completed cloud-init, explicitly rebooted,
 and started pulling its executor image. Neither the scheduling failure nor the first setup
 failure validates the keyring fix or RAM continuation scenario.
+
+The [third attempt](https://app.buildbuddy.io/invocation/aaa719da-59fe-4bcb-a151-985a7316b854)
+ran on the replacement worker (host `57dfd687-22ab-49e8-9bad-4b0fb1bf2fb5`, executor
+`c6af19b6-70be-4925-b52d-6e59a066e911`). It stopped at the old image-prune postcondition before
+deployment; devel PR #14194 already fixed that exact eligibility race. The rebase retains that fix.
+Its containerd log confirms the effective `NoNewKeyring=true` option, followed by a distinct
+`pivot_root .: operation not permitted` error from the initial system Pods. Docker's default
+seccomp profile also blocks `pivot_root`, so the same test-only drop-in now enables
+`NoPivotRoot=true`. The [containerd 2.1 option schema](https://github.com/containerd/containerd/blob/release/2.1/api/types/runc/options/oci.proto)
+supports both settings; [runc's implementation](https://github.com/opencontainers/runc/blob/main/libcontainer/configs/config.go)
+uses MS_MOVE and chroot when pivot-root is disabled. The outer worker security profile remains
+unchanged. These setup failures still precede the Firecracker guest and app continuation proof.
