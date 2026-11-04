@@ -6,9 +6,8 @@ import subprocess
 
 import pytest_bazel
 
-from util.oci import OciImage, load_oci_image
-
-IMAGE = OciImage("_main/agentplane/firecracker/test_image_layout.rloc", "agentplane-firecracker-launcher:test")
+from agentplane.firecracker import launcher_test_image
+from util.oci import load_oci_image
 
 
 def _run(image: str, *args: str, entrypoint: str | None = None) -> subprocess.CompletedProcess[str]:
@@ -21,7 +20,7 @@ def _run(image: str, *args: str, entrypoint: str | None = None) -> subprocess.Co
 
 
 def test_shipped_launcher_starts_and_has_required_tools() -> None:
-    image = load_oci_image(IMAGE)
+    image = load_oci_image(launcher_test_image.IMAGE)
 
     help_result = _run(image, "--help")
     assert "-config" in help_result.stdout + help_result.stderr

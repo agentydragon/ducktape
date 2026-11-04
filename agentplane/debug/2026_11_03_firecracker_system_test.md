@@ -3,7 +3,8 @@
 This follows the [launcher proof](2026_11_03_firecracker_environment.md) with an app-integrated,
 disposable k3s acceptance target: `//agentplane/system_tests/suites:test_firecracker`.
 The implementation branch was initially rebased onto `devel` commit `e397149010`, then onto
-`194ba5aa0d` for the landed CRI image-cleanup fix and `d2247659d0` for the managed worker keyring policy.
+`194ba5aa0d` for CRI image cleanup, `d2247659d0` for the managed worker keyring policy,
+and `3473e3fd82` for the landed OCI descriptor API and current Session command clients.
 
 ## Execution path
 
@@ -166,3 +167,9 @@ placed after shutdown. The app then received `no pg_hba.conf entry` permanently.
 before shutdown so that restart remains usable. The Firecracker fixture also joins the cold boot
 image import before starting app workloads, avoiding overlap with PostgreSQL initialization and
 its additional control-plane writes. No readiness or test timeout was increased.
+
+The [seventh submission](https://app.buildbuddy.io/invocation/3bd73418-b464-4273-9d2b-af9dd95bbe2d)
+remained queued behind other KVM work and was cancelled before execution after devel advanced.
+PR CI's merge commit exposed the changed `OciImage` API in the launcher image test. The branch
+was rebased again and that test now consumes `oci_image_py`'s generated descriptor, including its
+image runfiles, matching the landed API rather than hand-writing its positional arguments.
