@@ -158,6 +158,94 @@ impl ChunkPlanBuilder {
         &self.no_reentry_calls
     }
 
+    /// Restrict ownership to selected explicit modules after the full selector
+    /// solve, duplicate checks, analysis-assumption collection, and resolved
+    /// member-site collection have completed, but before rebind folds and
+    /// assignment analysis run.
+    ///
+    /// The selector outcomes, unmatched claims, and no-reentry assertions stay
+    /// attached to the builder so filtering cannot hide an invalid full spec.
+    /// Claims inferred for destructuring siblings and anonymous statements are
+    /// filtered through the same authoritative ownership maps as direct claims.
+    pub(super) fn retain_modules(&mut self, selected: &BTreeSet<spec::ModulePath>) -> Result<()> {
+        ensure!(
+            self.residual_plan_index.is_none(),
+            "cannot retain an ownership subset while a residual plan exists"
+        );
+        if let Some(plan) = self
+            .module_plans
+            .iter()
+            .find(|plan| plan.role != ModuleRole::Specified)
+        {
+            bail!(
+                "cannot retain an ownership subset with non-Specified module plan {:?}",
+                plan.id
+            );
+        }
+
+        let mut remapped_indices = vec![None; self.module_plans.len()];
+        let mut matched_selected = BTreeSet::new();
+        let mut next_index = 0;
+        for (old_index, plan) in self.module_plans.iter().enumerate() {
+            let path = spec::ModulePath::parse(&plan.target_path, "")
+                .with_context(|| format!("module plan {:?} has an invalid target path", plan.id))?;
+            if selected.contains(&path) {
+                ensure!(
+                    matched_selected.insert(path.clone()),
+                    "multiple module plans have selected target path {path}"
+                );
+                remapped_indices[old_index] = Some(next_index);
+                next_index += 1;
+            }
+        }
+
+        let missing_selected = selected
+            .difference(&matched_selected)
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        ensure!(
+            missing_selected.is_empty(),
+            "selected modules have no explicit plan: {}",
+            missing_selected.join(", ")
+        );
+
+        let remap_index = |old_index: usize| -> Result<Option<usize>> {
+            remapped_indices.get(old_index).copied().with_context(|| {
+                format!("ownership claim references missing module plan {old_index}")
+            })
+        };
+
+        let mut bindings_catalogue = HashMap::with_capacity(self.bindings_catalogue.len());
+        for (binding, kind) in &self.bindings_catalogue {
+            let mut retained_kind = kind.clone();
+            let referenced_module = match &mut retained_kind {
+                BindingKind::Owned { module } => module,
+                BindingKind::Imported { re_exporter, .. } => re_exporter,
+            };
+            if let Some(new_index) = remap_index(referenced_module.0)? {
+                referenced_module.0 = new_index;
+                bindings_catalogue.insert(binding.clone(), retained_kind);
+            }
+        }
+
+        let mut whole_statement_assignment = BTreeMap::new();
+        for (statement, old_index) in &self.whole_statement_assignment {
+            if let Some(new_index) = remap_index(*old_index)? {
+                whole_statement_assignment.insert(*statement, new_index);
+            }
+        }
+
+        let old_module_plans = std::mem::take(&mut self.module_plans);
+        self.module_plans = old_module_plans
+            .into_iter()
+            .enumerate()
+            .filter_map(|(old_index, plan)| remapped_indices[old_index].map(|_| plan))
+            .collect();
+        self.bindings_catalogue = bindings_catalogue;
+        self.whole_statement_assignment = whole_statement_assignment;
+        Ok(())
+    }
+
     /// Process one explicit (non-residual) logical-module request:
     /// claim each member that does not need chunk-analysis facts, and append a
     /// `ModulePlan`.
