@@ -235,15 +235,6 @@ class K3s:
         diagnostics = self.data_dir / "agent/etc/containerd/config-v3.toml.d/diagnostics.toml"
         diagnostics.parent.mkdir(parents=True, exist_ok=True)
         diagnostics.write_text(f'[debug]\n  address = "{CONTAINERD_DEBUG_SOCKET}"\n')
-        nested_runtime = diagnostics.with_name("nested-runtime.toml")
-        if os.environ.get("AGENTPLANE_K3S_REQUIRE_KVM") == "1":
-            # Docker's seccomp filter blocks keyctl. These trusted fixture Pods share the
-            # action's session keyring instead of asking nested runc to create a new one.
-            nested_runtime.write_text(
-                "[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]\nNoNewKeyring = true\n"
-            )
-        else:
-            nested_runtime.unlink(missing_ok=True)
         process = subprocess.Popen(
             [
                 str(self.binary),
