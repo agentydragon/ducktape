@@ -188,8 +188,9 @@ Retain each submission's Action idempotency key and request ID as well as the Se
 
 - `sessions__cancel_input` cancels only the named input while its exact Dispatch is still queued,
   before delivery starts. It needs the Session and command IDs; it cannot undo delivered input.
-- `sessions__interrupt_turn` targets the exact active `turn_id` you observed, in a Ready target. It
-  also needs the full target UID and a fresh command UUID. Interruption is not rollback of effects.
+- `sessions__interrupt_turn` queues an interrupt for the exact active `turn_id` you observed. It
+  also needs the full target UID and a caller-minted command UUID. The Dispatch reports delivery;
+  interruption is not rollback of effects.
 - If opening's reply is uncertain, read `sessions__get` with the same Session UUID. If input's reply
   is uncertain, call `sessions__observe_input` with the same Session and command UUIDs. Continue
   read-only reconciliation and inspect any observed effects; never send the uncertain work again

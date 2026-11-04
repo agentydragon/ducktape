@@ -62,7 +62,7 @@ caller-facing checks are separately audited; no new service or direct agent beco
 using a Session UUID. Retain actor, effective caller UID, and Action provenance on accepted work.
 Resolving the directory, reading a Session or subscribing to a source is not send permission.
 Dispatcher now requires a Session record for every Session-targeted command, including privileged
-calls and immediate interrupts. Gateway restricts direct Runtime Session mutation to the combined
+calls and interrupts. Gateway restricts direct Runtime Session mutation to the combined
 Gateway/Dispatcher workload. A Session record is distinct from a per-command receipt; this requirement
 does not itself change which operations are durably queued or journaled. The public command request
 still includes the Sandbox name and UID.
@@ -106,13 +106,10 @@ must validate an authoritative placement epoch or lease at admission. A local ca
 without such validation is not a fence. This is an implementation gate, not a reason to assume
 cross-service atomicity.
 
-An interrupt is an immediate, online control RPC with a required turn ID, not a queued input.
-Apply the same UUID resolution, caller check and exact UID fence before forwarding; it must not
-wake the environment. The directory may change between resolution and forwarding, so the same
-deletion/placement fence applies. Keep `NO_OP` for a currently blocked target, distinguish a
-runner's admission from a transport failure, and reconcile an uncertain reply by command ID and
-runner journal. Cancellation and dispatch reads retain their own caller checks; they cannot be
-used to discover placement without read authority.
+An interrupt uses the same durable command admission and exact-UID delivery fence, with a required
+turn ID. The Runtime checks that target at admission, so delayed delivery cannot interrupt a successor.
+Cancellation and dispatch reads retain their own caller checks; they cannot be used to discover
+placement without read authority.
 
 ## Recovery and decisions for review
 
@@ -137,9 +134,8 @@ The outcome and initial caller/wake rules above are selected. Remaining design a
    interrupt after Gateway routing through completed Runtime quiescence, verifies the actual
    receiver's sealed-journal refusal and unchanged sealed History, then proves old-UID refusal
    against a healthy same-name replacement. `deletionTimestamp` is not a cross-service linearization point, and
-   manual finalizer removal or foreground deletion bypasses the managed handshake. The immediate
-   interrupt's final Dispatcher recheck can race deletion and forwarding; it does not replace the
-   Runtime cutoff. See [SESSION_DELETION_FENCE](task_dag.md#session_deletion_fence--prove-and-enforce-the-session-deletion-fence).
+   manual finalizer removal or foreground deletion bypasses the managed handshake. The worker's
+   placement recheck can race deletion and forwarding; it does not replace the Runtime cutoff. See [SESSION_DELETION_FENCE](task_dag.md#session_deletion_fence--prove-and-enforce-the-session-deletion-fence).
 2. **Queued sender revocation.** The first cutover retains current service trust and effective-caller
    checks. Whether an accepted command is cancelled on a later user grant revocation remains a
    separate generalized-policy decision; a subscription is not a lasting send grant.
@@ -155,6 +151,6 @@ inbox-append grants unable to submit arbitrary commands or bypass notice wake po
 and conflict behavior across restarts; denial of commands to an absent Session for privileged and
 ordinary callers, including interrupts; queue/deletion and
 same-name replacement races; failed directory read before wake; suspended, unavailable and
-unknown Runtime outcomes; immediate interrupt denial and unknown-result reconciliation; and continued
+unknown Runtime outcomes; interrupt delivery and unknown-result reconciliation; and continued
 coverage of the enforced Gateway proxy restriction. Use deterministic integration tests for the transaction and race boundary
 and a bounded system test for the actual Gateway/Runtime UID fence.

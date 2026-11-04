@@ -1087,35 +1087,50 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 	}
 }
 
-func TestInterruptTurnRequiresTurnAndPropagatesRunnerRejection(t *testing.T) {
+func TestInterruptTurnQueuesAndReconcilesExactTurn(t *testing.T) {
 	ctx := admitted(t)
-
-	blocked := &Service{
-		Store: testStore(t, 3), DispatcherCallers: configuredDispatcherCallers(), Sandboxes: blockedSandbox{},
-	}
-	_, err := blocked.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
-		CommandId: "interrupt-empty-turn", SessionId: "api-session", ExpectedSandboxUid: sandboxUID,
-	})
-	if status.Code(err) != codes.InvalidArgument {
-		t.Fatalf("empty turn_id status = %v, want InvalidArgument", err)
-	}
-
-	rejection := status.Error(codes.FailedPrecondition, "turn is no longer current")
-	runner := &rejectingRunner{err: rejection}
-	service := &Service{
-		Store: testStore(t, 3), DispatcherCallers: configuredDispatcherCallers(), Sandboxes: oneSandbox{}, Runner: runner,
-	}
-	if _, err := service.Store.OpenSession(ctx, "api-session", "sandbox-api", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+	store := testStore(t, 3)
+	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: oneSandbox{}}
+	if _, err := store.OpenSession(ctx, "api-session", "sandbox-api", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	_, err = service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
-		CommandId: "interrupt-stale-turn", SessionId: "api-session", ExpectedSandboxUid: sandboxUID, TurnId: "turn-stale",
-	})
-	if status.Code(err) != codes.FailedPrecondition || status.Convert(err).Message() != "runner: turn is no longer current" {
-		t.Fatalf("runner rejection = %v, want propagated FailedPrecondition", err)
+	request := &dispatcherpb.InterruptTurnRequest{CommandId: "interrupt-stale-turn", SessionId: "api-session", ExpectedSandboxUid: sandboxUID, TurnId: "turn-stale"}
+	empty := proto.Clone(request).(*dispatcherpb.InterruptTurnRequest)
+	empty.TurnId = ""
+	if _, err := service.InterruptTurn(ctx, empty); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("empty turn_id status = %v, want InvalidArgument", err)
 	}
-	if got := runner.command.GetInterruptTurn().GetTurnId(); got != "turn-stale" {
-		t.Fatalf("runner received turn_id %q, want turn-stale", got)
+	first, err := service.InterruptTurn(ctx, request)
+	if err != nil || first.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetDispatch().GetOperation() != dispatcherpb.Operation_OPERATION_INTERRUPT_TURN {
+		t.Fatalf("queued interrupt: %v %v", first, err)
+	}
+	retry, err := service.InterruptTurn(ctx, request)
+	if err != nil || !proto.Equal(first, retry) {
+		t.Fatalf("interrupt retry: %v %v", retry, err)
+	}
+	conflict := proto.Clone(request).(*dispatcherpb.InterruptTurnRequest)
+	conflict.TurnId = "other-turn"
+	if _, err := service.InterruptTurn(ctx, conflict); status.Code(err) != codes.AlreadyExists {
+		t.Fatalf("conflicting target: %v", err)
+	}
+	head, err := store.GetDispatch(ctx, request.CommandId)
+	if err != nil || head.Command.GetInterruptTurn().GetTurnId() != request.TurnId {
+		t.Fatalf("stored exact turn: %+v %v", head, err)
+	}
+	owner, err := store.ClaimSandboxOwner(ctx, sandboxUID, "interrupt-lease", 1, "replica", 0)
+	if err != nil || owner == nil {
+		t.Fatalf("owner: %+v %v", owner, err)
+	}
+	runner := &rejectingRunner{err: status.Error(codes.FailedPrecondition, "turn is no longer current")}
+	worker := &DeliveryWorker{Store: store, Runner: runner}
+	worker.init()
+	defer worker.queue.ShutDown()
+	if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, *owner, nil) {
+		t.Fatal("worker did not attempt interrupt")
+	}
+	row, err := store.GetDispatch(ctx, request.CommandId)
+	if err != nil || row.State != UnknownState || runner.command.GetInterruptTurn().GetTurnId() != request.TurnId {
+		t.Fatalf("stale interrupt result: %+v %v", row, err)
 	}
 }
 
@@ -2005,14 +2020,10 @@ func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 	if ready, err := worker.prepareDispatch(ctx, row, sandbox, *owner); err != nil || !ready {
 		t.Fatalf("central command readiness %v %v", ready, err)
 	}
-	runner := &acceptingRunner{calls: make(chan string, 1)}
-	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: blockedSandbox{}, Runner: runner}
+	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: blockedSandbox{}}
 	result, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{CommandId: "central-interrupt", SessionId: opening.SessionID, ExpectedSandboxUid: sandboxUID, TurnId: "active-turn"})
-	if err != nil || result.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED {
+	if err != nil || result.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER {
 		t.Fatalf("central interrupt: %v %v", result, err)
-	}
-	if got := <-runner.calls; got != "central-interrupt" {
-		t.Fatalf("wrong command %s", got)
 	}
 }
 
@@ -2590,8 +2601,7 @@ func TestPrivilegedCommandsCannotCrossSessionPlacement(t *testing.T) {
 	if _, err := store.OpenSession(ctx, sessionID, "different-sandbox", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	runner := &rejectingRunner{}
-	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: oneSandbox{}, Runner: runner}
+	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: oneSandbox{}}
 	for _, invoke := range []func() error{
 		func() error {
 			_, err := service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: uuid.NewString(), SessionId: sessionID, ExpectedSandboxUid: sandboxUID, Text: "input"})
@@ -2613,9 +2623,6 @@ func TestPrivilegedCommandsCannotCrossSessionPlacement(t *testing.T) {
 		if err := invoke(); status.Code(err) != codes.PermissionDenied {
 			t.Fatalf("cross-placement command: %v", err)
 		}
-	}
-	if runner.command != nil {
-		t.Fatal("cross-placement interrupt reached runner")
 	}
 	if rows, err := store.ListDispatches(ctx, sessionID, "", nil); err != nil || len(rows) != 0 {
 		t.Fatalf("cross-placement command left work: %+v %v", rows, err)
@@ -2714,13 +2721,9 @@ func TestInterruptRechecksSessionAfterLiveAuthorization(t *testing.T) {
 	if _, err := store.OpenSessionForCaller(ctx, sessionID, "sandbox-api", sandboxUID, &sessionpb.SessionSpec{}, nil, nil, identity, admission); err != nil {
 		t.Fatal(err)
 	}
-	runner := &rejectingRunner{}
-	service := &Service{Store: store, Sandboxes: deletingSessionInventory{store: store, sessionID: sessionID}, Runner: runner}
+	service := &Service{Store: store, Sandboxes: deletingSessionInventory{store: store, sessionID: sessionID}}
 	if _, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{SessionId: sessionID, ExpectedSandboxUid: sandboxUID, CommandId: "deleted-interrupt", TurnId: "turn"}); status.Code(err) != codes.NotFound {
 		t.Fatalf("deleted Session interrupt: %v", err)
-	}
-	if runner.command != nil {
-		t.Fatal("interrupt reached runner after Session deletion")
 	}
 }
 

@@ -48,8 +48,7 @@ type SandboxSnapshot struct {
 	ReadyDetail    string
 }
 
-// RunnerCommands uses the Gateway's generated Runner proxy for direct
-// InterruptTurn. Durable commands are delivered by the worker, not this RPC.
+// RunnerCommands delivers durable commands through the Gateway or central sampler.
 type RunnerCommands interface {
 	Deliver(context.Context, SandboxSnapshot, string, *commandpb.Command) (*eventlogpb.EventEntry, error)
 }
@@ -61,7 +60,6 @@ type Service struct {
 	// bearer for one of these names remains an ordinary execution-principal caller.
 	DispatcherCallers map[auth.Account]struct{}
 	Sandboxes         SandboxReader
-	Runner            RunnerCommands
 	Hub               *WatchHub
 	WatchLease        time.Duration
 	CentralTarget     *CentralTarget
@@ -689,38 +687,15 @@ func (s *Service) ListDispatches(ctx context.Context, request *dispatcherpb.List
 }
 
 func (s *Service) InterruptTurn(ctx context.Context, request *dispatcherpb.InterruptTurnRequest) (*dispatcherpb.InterruptTurnResponse, error) {
-	if err := required(request.GetCommandId(), request.GetSessionId(), request.GetTurnId()); err != nil {
+	if err := required(request.GetTurnId()); err != nil {
 		return nil, err
 	}
-	caller, err := s.caller(ctx)
-	if err != nil {
-		return nil, err
-	}
-	opening, current, err := s.commandTarget(ctx, request.GetSessionId(), request.GetExpectedSandboxUid(), caller)
-	if err != nil {
-		return nil, err
-	}
-	requiresReady := sessionRequiresReadyExecutor(opening.Spec)
-	if !requiresReady {
-		if err := validateOpeningExecutor(opening, current); err != nil {
-			return nil, err
-		}
-	}
-	if current.Blocker != "" && requiresReady {
-		return &dispatcherpb.InterruptTurnResponse{State: dispatcherpb.DeliveryState_DELIVERY_STATE_NO_OP, Reason: &current.Blocker}, nil
-	}
-	if s.Runner == nil {
-		return nil, status.Error(codes.Unavailable, "runner proxy unavailable")
-	}
-	if err := s.Store.AuthorizeTarget(ctx, request.GetSessionId(), current.Name, current.UID, caller); err != nil {
-		return nil, apiError(err)
-	}
-	admission, err := s.Runner.Deliver(ctx, current, request.GetSessionId(),
+	row, err := s.enqueue(ctx, request.GetCommandId(), request.GetSessionId(), request.GetExpectedSandboxUid(),
 		&commandpb.Command{CommandId: request.GetCommandId(), Operation: &commandpb.Command_InterruptTurn{
 			InterruptTurn: &commandpb.InterruptTurn{TurnId: request.GetTurnId()},
 		}})
 	if err != nil {
-		return nil, status.Error(status.Code(err), fmt.Sprintf("runner: %s", status.Convert(err).Message()))
+		return nil, err
 	}
-	return &dispatcherpb.InterruptTurnResponse{State: dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED, Admission: admission}, nil
+	return &dispatcherpb.InterruptTurnResponse{Dispatch: row}, nil
 }

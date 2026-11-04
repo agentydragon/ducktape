@@ -40,7 +40,7 @@ defines native rejection, unconfirmed owner outcomes and dependent-command fenci
 the Session in Dispatcher; UUID uniqueness across a deleted record is a caller obligation, not a
 server-enforced lifetime guarantee. This does not complete the directory.
 All Session-targeted commands now require a Dispatcher Session record, including privileged callers and
-immediate interrupts. Gateway permits direct Runtime Session creation and mutation only to the combined
+interrupts. Gateway permits direct Runtime Session creation and mutation only to the combined
 Gateway/Dispatcher workload; its read-only diagnostics and separate Executor service have their own grants.
 These checks do not prove the deletion fence or change the public command address.
 
@@ -164,10 +164,10 @@ Current behavior: [native Sessions](https://github.com/agentydragon/ducktape/blo
 Selected direction: callers name a Session by one globally unique, unscoped public UUID. A durable Session directory resolves it to the current Session owner and placement. Dispatcher PostgreSQL owns that directory and live Session records, separate from History’s database; the directory does not require a separate Deployment. Whether placement generations are needed and their precise representation remain implementation questions.
 
 Every Session-targeted command requires a Dispatcher Session record, including commands from
-privileged services and immediate interrupts. The record establishes the Session to address; it is
+privileged services and interrupts. The record establishes the Session to address; it is
 not itself permission to send or wake. Dispatcher now enforces this for queued commands and interrupts,
-and the public Gateway restricts Runtime Session mutations to the Gateway/Dispatcher workload. Whether
-an individual operation also needs a durable command receipt is a separate contract question.
+and the public Gateway restricts Runtime Session mutations to the Gateway/Dispatcher workload.
+All four Session commands, including interrupts, receive a durable Dispatch receipt.
 
 For the first environment-hosted command cutover, keep the existing direct and delegated caller
 checks and scoped service trust; wake remains separately authorized. When deletion races accepted

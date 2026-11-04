@@ -115,7 +115,7 @@ type CancelInputArgs struct {
 type InterruptTurnArgs struct {
 	Target    TargetRef `json:"target"`
 	SessionID string    `json:"session_id" jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
-	CommandID string    `json:"command_id" jsonschema_description:"Fresh caller-minted UUID for this immediate interruption." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
+	CommandID string    `json:"command_id" jsonschema_description:"Caller-minted idempotency UUID for this interrupt command." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
 	TurnID    string    `json:"turn_id" jsonschema_description:"The exact active turn returned by a Session observation." jsonschema:"minLength=1"`
 }
 
@@ -181,8 +181,8 @@ func NewInputs() (Inputs, error) {
 		return Inputs{}, err
 	}
 	if inputs.InterruptTurn, err = newInput[InterruptTurnArgs](ActionInterruptTurn,
-		"Immediately interrupt exactly the active turn you observed in a Ready environment. Supply the full target UID, Session UUID, opaque turn ID, and a fresh caller-minted command UUID; the backend never redirects a stale turn ID to its successor. The typed Dispatcher response reports the existing admission/state facts, not task success. If the reply is uncertain, inspect the same turn before requesting another interruption.",
-		"Interrupt session turn", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(true), IdempotentHint: new(false)}); err != nil {
+		"Queue an interrupt for exactly the observed turn. Supply the full target UID, Session UUID, opaque turn ID, and a caller-minted command UUID. The backend never redirects a stale turn ID to its successor. The Dispatch records queue and admission state, not task success. If the reply is uncertain, read the Dispatch by the same command ID.",
+		"Interrupt session turn", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(true), IdempotentHint: new(true)}); err != nil {
 		return Inputs{}, err
 	}
 	return inputs, nil

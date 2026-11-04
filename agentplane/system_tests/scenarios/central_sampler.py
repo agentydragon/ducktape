@@ -341,7 +341,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
                 metadata=deployed.metadata,
                 timeout=15,
             )
-            assert interruption.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED
+            assert interruption.dispatch.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
             await _wait_for_turn_status(
                 deployed, interrupted_session_id, interrupted_command_id, event_pb2.TURN_STATUS_INTERRUPTED
             )

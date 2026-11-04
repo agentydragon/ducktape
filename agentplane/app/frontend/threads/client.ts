@@ -50,7 +50,6 @@ import {
   SubmitInputRequestSchema,
   SubmitInputResponseSchema,
   type Dispatch,
-  type InterruptTurnResponse,
 } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 
 export type CommandTarget = { sandbox: string; sandboxUid: string };
@@ -247,8 +246,7 @@ export async function threadNativeFrames(
 /** An explicit Dispatcher rejection of this request, not a durable admission receipt. */
 export class CommandSubmissionRefused extends Error {}
 
-export type CommandSubmission =
-  { kind: "dispatch"; dispatch: Dispatch } | { kind: "interrupt_result"; result: InterruptTurnResponse };
+export type CommandSubmission = { kind: "dispatch"; dispatch: Dispatch };
 
 export function dispatchFromJson(value: unknown): Dispatch {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -380,11 +378,8 @@ export async function interruptTurn(
     `/sessions/${encodeURIComponent(threadId)}:interruptTurn`,
     bodyWithoutSessionId(toJson(InterruptTurnRequestSchema, request))
   );
-  const result = fromJson(InterruptTurnResponseSchema, value);
-  if (result.state !== DeliveryState.RUNNER_ADMITTED && result.state !== DeliveryState.NO_OP) {
-    throw new Error("Command receipt could not be verified: invalid interrupt result");
-  }
-  return { kind: "interrupt_result", result };
+  const response = fromJson(InterruptTurnResponseSchema, value);
+  return { kind: "dispatch", dispatch: confirmedDispatch(response.dispatch, threadId, target, commandId) };
 }
 
 /** Reads the current projection scope through History's generated HTTP facade. The Session may

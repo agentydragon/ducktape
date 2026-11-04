@@ -105,8 +105,7 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
           default:
             throw new Error("Unknown retained operation");
         }
-        if (result.kind === "interrupt_result") store.acknowledgeInterrupt(value.command, result.result);
-        else store.acknowledgeDispatch(value.command, result.dispatch);
+        store.acknowledgeDispatch(value.command, result.dispatch);
         settle(null);
       } catch (reason) {
         settle(
@@ -124,8 +123,7 @@ export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]):
     [store, threadId]
   );
   // Deliver each retained command with no server receipt once on mount. An exact retry is safe after
-  // a lost reply because durable Dispatcher writes and direct runner interrupt admission
-  // deduplicate the same command ID and payload.
+  // a lost reply because durable Dispatcher writes deduplicate the same command ID and payload.
   useEffect(() => {
     for (const value of store.getSnapshot().commands)
       if (value.admission === null && value.dispatch === null && !value.interruptResult) void deliver(value);

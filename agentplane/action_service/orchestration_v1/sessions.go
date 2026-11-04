@@ -54,7 +54,7 @@ func (e *Executor) submitInput(ctx context.Context, args contract.SubmitInputArg
 	return protoResult(response.GetDispatch())
 }
 
-// interruptTurn sends a Session interrupt directly to the runner and answers with the admitted result.
+// interruptTurn queues an exact-turn interrupt and answers with its Dispatch.
 func (e *Executor) interruptTurn(ctx context.Context, args contract.InterruptTurnArgs) (json.RawMessage, error) {
 	if _, err := e.requireSandbox(ctx, args.Sandbox); err != nil {
 		return nil, err
@@ -65,7 +65,7 @@ func (e *Executor) interruptTurn(ctx context.Context, args contract.InterruptTur
 	if err != nil {
 		return nil, dispatcherError(err)
 	}
-	return protoResult(answer)
+	return protoResult(answer.GetDispatch())
 }
 
 // changeModel queues a Session model change and answers with its Dispatch.

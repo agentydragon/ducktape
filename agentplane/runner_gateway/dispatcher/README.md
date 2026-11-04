@@ -29,9 +29,9 @@ The manual queue, replica and wake probes are documented in the
   The `reason` describes queue or terminal state; `delivery_blocker` and `wake_assessment` separately
   expose the current environment blocker and latest typed wake observation. A denied or disabled wake
   leaves delivery queued.
-- **Order**: first in, first out per Session. `InterruptTurn` is not queued: it goes to a Ready
-  Sandbox at once, otherwise answers `NO_OP`. The runner rejects a stale target with
-  `FAILED_PRECONDITION` before admission. It never interrupts a successor turn.
+- **Order**: commands, including `InterruptTurn`, are delivered first in, first out per Session.
+  The Runtime checks the interrupt’s exact target at admission; it never interrupts a successor turn.
+  A delayed or uncertain delivery follows the same receipt and recovery rules as other commands.
 - **Opening a Session**: a new `OpenSession` requires the expected `sandbox_uid`, reads the current Sandbox and refuses
   a same-name replacement with `FAILED_PRECONDITION` before storing anything. It stores the request keyed by the
   caller-minted canonical lowercase UUID `session_id` and answers with a `SessionOpening` in the same delivery states.
@@ -103,7 +103,7 @@ The manual queue, replica and wake probes are documented in the
   execution ServiceAccount UID and `resumePolicy`, or the separately configured trusted wake broker
   grant against the row's retained effective sender. Dispatcher actor identity and admission-time
   eligibility do not grant wake authority. A `SuspendedBy=Requested` stop stays sticky for ordinary
-  sends and automatic wakes. `InterruptTurn` never wakes.
+  sends and automatic wakes. Interrupts follow the same wake rules as other queued commands.
 
   Each queued Dispatch and Session opening stores a typed `delivery_blocker` and `wake_assessment`.
   The receipt remains `QUEUED_IN_DISPATCHER` through disabled, denied, rate-limited, failed and

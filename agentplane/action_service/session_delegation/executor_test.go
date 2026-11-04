@@ -199,7 +199,7 @@ func (b *delegatedBackend) CancelDispatch(ctx context.Context, request *dispatch
 func (b *delegatedBackend) InterruptTurn(ctx context.Context, request *dispatcherpb.InterruptTurnRequest) (*dispatcherpb.InterruptTurnResponse, error) {
 	b.assertCaller(ctx, testRequestID, testExecutionID)
 	b.interruptCalls++
-	return &dispatcherpb.InterruptTurnResponse{}, nil
+	return &dispatcherpb.InterruptTurnResponse{Dispatch: &dispatcherpb.Dispatch{CommandId: request.GetCommandId(), SessionId: request.GetSessionId(), Operation: dispatcherpb.Operation_OPERATION_INTERRUPT_TURN, State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER}}, nil
 }
 
 type unavailableHistoryClient struct{ historypb.HistoryServiceClient }

@@ -109,8 +109,8 @@ get their Threads once it does.
 The browser sends `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, and `InterruptTurn` through
 the generated `/upstream/dispatcher/v1/sessions/{id}:<verb>` HTTP facade. Each request carries a
 stable command ID and the immutable Sandbox name and UID captured with the retained local command.
-The Dispatcher checks the current Sandbox UID and Session authority. Durable operations return their
-stored `Dispatch`; `InterruptTurn` returns its immediate result without a queue row. A lost response
+The Dispatcher checks the current Sandbox UID and Session authority. Each command returns its stored
+`Dispatch`, including an exact-turn interrupt. A lost response
 leaves admission unconfirmed, so the browser keeps the command for exact-ID retry and History
 reconciliation. Legacy retained commands without a stored destination remain visible for History
 reconciliation but cannot be resent to a newly resolved Sandbox.
