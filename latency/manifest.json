@@ -1,20 +1,22 @@
 {
-  "source_devel_commit": "16e20db2e165fb09958eba911715a50d17c1d7c5",
-  "window_start_utc": "2026-11-04T06:15:08Z",
-  "window_end_utc": "2026-11-04T07:45:08Z",
-  "published_at_utc": "2026-11-04T08:23:43.537032+00:00",
+  "source_devel_commit": "5ba096b454e3967a6dd1d82689b1a6c257060a6c",
+  "window_start_utc": "2026-11-02T12:45:00Z",
+  "window_end_utc": "2026-11-04T12:44:59Z",
+  "published_at_utc": "2026-11-04T13:30:23.400569+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "d1524439bfc4152af66a813a6d6ce13be724ca9d",
-  "report_html_sha256": "c7cf0cd5c56c78b94032761e18d6283e9ce8ead571dd0e182cd15b5f79ce66fb",
-  "evidence_sha256": "0f8d960a68cc7ef68a7ad23a197337ff97b3def5ce46875b7acf33fc69928b0a",
-  "analysis_scope": "Bounded read-only audit of existing hosted CI plus prior observed KVM comparison. No new performance experiments; under-five-minute goal remains paused.",
+  "previous_report_commit": "4c66263ec799649e8b2845d85cffbb62563c9186",
+  "report_html_sha256": "eeac36ffead9da70c81a14cf41dd15109b7320c34b8c130287aed8bfaa85ef0b",
+  "evidence_sha256": "e93a6cbcc8d68ce25ec62c94e9d907f9712e16bd1f1b3883f786872ac3a014a6",
+  "analysis_scope": "Existing performance evidence only:48h workflow-outcome census,24h exact-head required-gate cohort,bounded BuildBuddy execution/profile/OTel/journal analysis and pinned selector source review. Correctness/RBE render checks separately performed. Broader under-five-minute goal stays paused.",
   "visual_validation": {
     "target": "//x/ci_report_preview:visual_test",
     "result": "PASSED",
-    "bazel_invocation_id": "724a9d11-ceb9-4879-9cbc-21140358425c",
-    "outer_remote_runner_invocation_id": "2fcae46f-b361-4717-be8e-1edfd1c35acd",
-    "invocation_url": "https://app.buildbuddy.io/invocation/724a9d11-ceb9-4879-9cbc-21140358425c",
-    "reviewed_html_sha256": "c7cf0cd5c56c78b94032761e18d6283e9ce8ead571dd0e182cd15b5f79ce66fb",
+    "source_commit": "3aae4733d603e77cfe35d9fb6486ba5e64529f6a",
+    "source_branch": "codex/ci-latency-preview-20261104",
+    "bazel_invocation_id": "b015e4fd-5057-426e-acf8-9c8788218175",
+    "outer_remote_runner_invocation_id": "3ade723f-a1e5-4bcc-b903-834f80c19336",
+    "invocation_url": "https://app.buildbuddy.io/invocation/b015e4fd-5057-426e-acf8-9c8788218175",
+    "reviewed_html_sha256": "eeac36ffead9da70c81a14cf41dd15109b7320c34b8c130287aed8bfaa85ef0b",
     "viewports": [
       {
         "name": "desktop",
@@ -27,10 +29,9 @@
         "height": 844
       }
     ],
-    "details_expanded": 10,
+    "details_expanded": 8,
     "controls_exercised": [
-      "select:Speed up",
-      "select:Process reduction"
+      "select:Bazel finish advance"
     ],
     "horizontal_overflow": false,
     "document_dimensions_with_details_open": [
@@ -45,42 +46,44 @@
         "body_width": 390
       }
     ],
-    "wide_table_scroll_regions_checked": 10,
-    "keyboard_scroll_test": "All ten named focusable wide-table regions scrolled with ArrowRight at390px without document overflow.",
+    "wide_table_scroll_regions_checked": 8,
+    "keyboard_scroll_test": "All named focusable wide-table wrappers scroll after ArrowRight at390px;the harness waits for observable scroll movement. Document remains within viewport.",
+    "link_count": 50,
+    "link_audit_scope": "All anchors enumerated and same-document fragments checked;external links not visited by render test.",
+    "capture_hashes_verified": 14,
     "manual_review": {
-      "result": "Reviewed exact RBE desktop/mobile first screens, desktop policy/comparison/failure tables, and desktop/mobile critical-path chart. Other captures and the retained historical controls were checked automatically; this is not a claim to have visually inspected every line. Narrative, clocks, continuity and sanitized evidence were reviewed separately.",
+      "result": "Reviewed desktop/mobile first screens,desktop bottleneck chart and selection table,desktop/mobile intervention and conditional-model sections. Mobile table capture reflects horizontal scrolling from keyboard exercise. Other sections checked automatically;not a claim that every line was visually reviewed. Narrative and sanitized evidence separately reviewed.",
       "captures": [
         {
-          "name": "40ba8f06ed9d83bf49f3af2d7a6540b47f2e5933e021ca2220cd024d69e61869.png",
-          "sha256": "353539b1b9e8b1ba2e679b277f8ab1af3126d5295892d8f156af2fa3d9070a05"
+          "name": "a123fea680c199dd17658d553cf0262407f9caeed68577bca485a8b7161f9100.png",
+          "sha256": "46ce49ef1e15f0f5c19f3c134d815a98a3b111d575e837efa687e7f2c2b7db23"
         },
         {
-          "name": "5b2e446fafe9fd6d43a6df80f9a4a7eefd41c0b7640e3b12941f7aae495746d7.png",
-          "sha256": "5e37b01da915c42b6422ea3113b8cfb975d7d0232523bd251e8cba0ab793e352"
+          "name": "e69ca402b7766c6d8547d92613525b7dd2763f7d626d44b659f60304dd28963e.png",
+          "sha256": "b03b4d97eeebd22f56539cfe2a8f12ebf425fa2e2f94539820f6d2b171a47819"
         },
         {
-          "name": "8b44254f305f3eed8c01968d6a9a408580a208e6e42e1bf435c89403a29056c6.png",
-          "sha256": "61282c0a6b1b876f11569997fc1c82805bdac6ea541784363b5b095315b829d5"
+          "name": "80888a3d7e5861d5e8fcd331842c648efe7d18869fe1ace9261effff02106b66.png",
+          "sha256": "dca552453b677b1317074ea70da2b0806e9108f19d097f0a033535c228f82c32"
         },
         {
-          "name": "6bf5809ea86bf61d788ca9268720148fa370637a81f5d0737b5ed7e6d4647b15.png",
-          "sha256": "9e0fe52d822a7363d85595d1570191de0347e353a6ebeb85a921a1d92987295f"
+          "name": "7bacee6dd26acb027d0d7e6dfece67bb30adaa8fede9b41742e523fdc942a507.png",
+          "sha256": "6f810c4ad74895f07d71493871276b7635cddd16e2fcf970846a66e4ba31b28e"
         },
         {
-          "name": "21f802e89f5f346c3daa9d510435548733263a9770cef9dc26b078763e62668f.png",
-          "sha256": "9941fb215dbbadd639769ceb0c2487eb44eaf2f1b7b2d51842886958a7416242"
+          "name": "a73d255e008850aae7b91ff21575f75c216029d7aa7dc95d1f67c2c7739d6944.png",
+          "sha256": "b9a416744fe890a763a85064bfe2bf93e5e2100dd7cad1d472cdf58b4588ead5"
         },
         {
-          "name": "f006af65800ae92fe3da277595701ba20d5cbb6d50c0c85d968fae7bbd26b18f.png",
-          "sha256": "4fdb05c960842b764cea182e4652e489f93856f4e24d2a30a7186f411735b6b0"
-        },
-        {
-          "name": "5e44589c1bd2f407683738f41ea554ebd84f0ec58f2d1d83a199d3fe93894ebf.png",
-          "sha256": "9d888c1d040e81e4567e877f979921fd97989963e76bf568ded235e7f588218a"
+          "name": "2b5b7222b06f58adbc387830bde795b36f48dbf310bd1a39394a3b46588a570b.png",
+          "sha256": "8fd03473a049100e68e2c4ea094e8d7abd28db7a575986c914b7ac064b6b21e7"
         }
       ]
     },
-    "link_count": 134,
-    "link_audit_scope": "All134anchors enumerated; same-document fragments resolve. External links were not visited by the rendering test."
+    "initial_check": {
+      "invocation_id": "2d1b89f6-f186-4dcc-bf59-745a483931d5",
+      "result": "FAILED",
+      "reason": "Harness checked mobile keyboard scroll before browser position updated. Added condition wait;HTML unchanged. Subsequent exact-source RBE run passed."
+    }
   }
 }
