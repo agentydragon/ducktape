@@ -768,7 +768,8 @@ impl DepKind {
 /// [`DependencyEdgeId::report_key`].
 ///
 /// [`DependencyGraph::edges`]: super::dependency_graph::DependencyGraph
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
+#[serde(transparent)]
 pub struct DependencyEdgeId(pub usize);
 
 impl DependencyEdgeId {

@@ -807,7 +807,7 @@ fn decompose_modules(
             if !validation.atomic_group_conflicts.is_empty() {
                 break ModuleDecompositionCoarseningStopReason::AtomicGroupConflicts;
             }
-            if !validation.cross_rebinds.is_empty() {
+            if !validation.cross_rebind_edges.is_empty() {
                 break ModuleDecompositionCoarseningStopReason::CrossModuleRebinds;
             }
             if validation.cycles.is_empty() {
@@ -921,7 +921,7 @@ fn decompose_modules(
             !accepted_baseline
                 || (validation.atomic_group_conflicts.is_empty()
                     && validation.cycles.is_empty()
-                    && validation.cross_rebinds.is_empty()),
+                    && validation.cross_rebind_edges.is_empty()),
             "shared gate rejected the assignment after original-home rejoining"
         );
         coarsening_report.groups =
@@ -947,7 +947,7 @@ fn decompose_modules(
     let candidate_is_realizable = coverage_complete
         && validation.atomic_group_conflicts.is_empty()
         && validation.cycles.is_empty()
-        && validation.cross_rebinds.is_empty();
+        && validation.cross_rebind_edges.is_empty();
     let original_modules: BTreeSet<ModulePath> = source_unit_modules.into_iter().collect();
     let unchanged_module_count = original_modules.len().saturating_sub(split_module_count);
 
@@ -1454,6 +1454,7 @@ struct DecompositionValidation {
     atomic_group_conflicts: Vec<ModuleDecompositionAtomicConflict>,
     cycles: Vec<gate::CycleReport>,
     cross_rebinds: Vec<String>,
+    cross_rebind_edges: Vec<gate::CrossRebindEdge>,
 }
 
 fn validate_decomposition_candidate(
@@ -1498,16 +1499,18 @@ fn validate_decomposition_candidate(
         assignments,
         analysis::EntryDestination::from_module_id(ModuleId(0)),
     );
-    let gate_report = gate::validate_assignment(&dependency_graph, &assignment, &|module_id| {
-        paths_by_module_id
-            .get(&module_id)
-            .cloned()
-            .unwrap_or_else(|| residual_path.clone())
-    });
+    let gate_validation =
+        gate::validate_assignment_with_verdict(&dependency_graph, &assignment, &|module_id| {
+            paths_by_module_id
+                .get(&module_id)
+                .cloned()
+                .unwrap_or_else(|| residual_path.clone())
+        });
     Ok(DecompositionValidation {
         atomic_group_conflicts,
-        cycles: gate_report.cycles,
-        cross_rebinds: gate_report.cross_rebinds,
+        cycles: gate_validation.report.cycles,
+        cross_rebinds: gate_validation.report.cross_rebinds,
+        cross_rebind_edges: gate_validation.verdict.cross_rebinds,
     })
 }
 

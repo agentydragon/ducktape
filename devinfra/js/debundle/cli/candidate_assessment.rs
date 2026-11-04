@@ -129,7 +129,7 @@ impl ResolvedCandidateEffectAssessment<'_> {
         &self,
         edit_modules_root: &std::path::Path,
         candidate_modules: &BTreeMap<String, LogicalModule>,
-    ) -> Result<gate::EffectRelocationAssessment> {
+    ) -> Result<gate::CandidateRelocationAssessmentReport> {
         pipeline::assess_candidate_effect_relocation(
             &self.transform,
             AnalysisArtifactInput {

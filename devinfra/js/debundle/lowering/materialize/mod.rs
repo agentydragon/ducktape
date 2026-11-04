@@ -46,7 +46,6 @@ use artifact::paths::join_module_path;
 use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, SelectedModuleLowering};
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileRole, JsFile};
 use chunk_analysis::build_chunk_graph;
-use gate::EffectRelocationAssessment;
 use gate::{
     AssignmentAnalysis, RejectedAssignment, ValidatedAssignment,
     render_atomic_group_conflict_summary, render_cycle_summary,
@@ -54,9 +53,10 @@ use gate::{
 use graph_provenance::GraphProvenance;
 use js_ast::{ParsedJsModule, format_comment_block_lines, source_unit_ordinal_for_statement};
 use output_layout::{
-    ATOMIC_GROUP_CONFLICTS_REPORT, COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, CYCLES_REPORT,
-    DEPENDENCY_GRAPH_REPORT, EFFECT_TRANSLATION_VALIDATION_REPORT, EXPORT_REENTRY_REPORT,
-    GATE_REJECTED_MARKER, SELECTOR_DIAGNOSTICS_REPORT, TRANSLATION_VALIDATION_REPORT,
+    ATOMIC_GROUP_CONFLICTS_REPORT, CANDIDATE_RELOCATION_ASSESSMENT_REPORT,
+    COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, CYCLES_REPORT, DEPENDENCY_GRAPH_REPORT,
+    EFFECT_TRANSLATION_VALIDATION_REPORT, EXPORT_REENTRY_REPORT, GATE_REJECTED_MARKER,
+    SELECTOR_DIAGNOSTICS_REPORT, TRANSLATION_VALIDATION_REPORT,
 };
 use reconstruction::{ChunkGateRejection, GateVerdict};
 use spec::{
@@ -142,7 +142,7 @@ pub(super) enum FinishedLogicalChunk {
     Lowered(MaterializedLogicalChunk),
     Assessed {
         chunk_id: String,
-        assessment: EffectRelocationAssessment,
+        assessment: gate::CandidateRelocationAssessmentReport,
     },
 }
 
@@ -584,16 +584,49 @@ pub(super) fn finish_logical_chunk(
         entry_destination,
     )?;
     if assessment_only {
-        let assessment = assignment_analysis
-            .effect_relocation_assessment::<std::convert::Infallible>(
-                &analysis.facts,
+        let validation = assignment_analysis.validate_for_emission();
+        let legacy = match &validation {
+            Ok(assignment) => assignment.translation_validation::<std::convert::Infallible>(
                 None::<
                     &mut fn(
-                        &gate::EffectRelocationConflict<'_>,
+                        &gate::TranslationValidationEvidenceReport,
                     )
                         -> std::result::Result<(), std::convert::Infallible>,
                 >,
-            )?;
+            )?,
+            Err(rejected) => rejected.translation_validation::<std::convert::Infallible>(
+                None::<
+                    &mut fn(
+                        &gate::TranslationValidationEvidenceReport,
+                    )
+                        -> std::result::Result<(), std::convert::Infallible>,
+                >,
+            )?,
+        };
+        let assessment = match &validation {
+            Ok(assignment) => assignment
+                .candidate_relocation_assessment::<std::convert::Infallible>(
+                    &analysis.facts,
+                    &legacy,
+                    None::<
+                        &mut fn(
+                            &gate::EffectConflictDiagnosticRow<'_>,
+                        )
+                            -> std::result::Result<(), std::convert::Infallible>,
+                    >,
+                )?,
+            Err(rejected) => rejected.candidate_relocation_assessment::<std::convert::Infallible>(
+                &analysis.facts,
+                &legacy,
+                None::<
+                    &mut fn(
+                        &gate::EffectConflictDiagnosticRow<'_>,
+                    )
+                        -> std::result::Result<(), std::convert::Infallible>,
+                >,
+            )?,
+        }
+        .report();
         return Ok(FinishedLogicalChunk::Assessed {
             chunk_id: chunk_id.to_string(),
             assessment,
@@ -1271,8 +1304,7 @@ fn validate_and_emit_reports<'a>(
         Ok(assignment) => assignment.report(),
         Err(rejected) => rejected.report(),
     };
-    let rejected = !assignment_report.atomic_group_conflicts.is_empty()
-        || !assignment_report.cycles.is_empty();
+    let rejected = validation.is_err();
     // Report timing and full graph serialization are separate output choices.
     // All validation above and below runs regardless of either selection.
     let report_out_dir = if rejected {
@@ -1308,10 +1340,12 @@ fn validate_and_emit_reports<'a>(
                 .expect("active full-report sink")
                 .write(row)
         };
-        assignment_analysis.translation_validation(
-            assignment_report,
-            full_translation_validation.then_some(&mut write_row),
-        )?
+        match &validation {
+            Ok(assignment) => assignment
+                .translation_validation(full_translation_validation.then_some(&mut write_row))?,
+            Err(rejected) => rejected
+                .translation_validation(full_translation_validation.then_some(&mut write_row))?,
+        }
     };
     if let Some(writer) = full_tv {
         writer.finish()?;
@@ -1349,18 +1383,25 @@ fn validate_and_emit_reports<'a>(
         } else {
             None
         };
-        let effects = {
+        let candidate_assessment = {
             let mut write_row = |row: &gate::EffectConflictDiagnosticRow<'_>| -> Result<()> {
                 jsonl
                     .as_mut()
                     .expect("active effect-conflict sink")
                     .write(row)
             };
-            assignment_analysis.effect_translation_validation(
-                facts,
-                &translation_validation,
-                effect_conflicts_jsonl.then_some(&mut write_row),
-            )?
+            match &validation {
+                Ok(assignment) => assignment.candidate_relocation_assessment(
+                    facts,
+                    &translation_validation,
+                    effect_conflicts_jsonl.then_some(&mut write_row),
+                )?,
+                Err(rejected) => rejected.candidate_relocation_assessment(
+                    facts,
+                    &translation_validation,
+                    effect_conflicts_jsonl.then_some(&mut write_row),
+                )?,
+            }
         };
         if let Some(writer) = jsonl {
             writer.finish()?;
@@ -1369,7 +1410,13 @@ fn validate_and_emit_reports<'a>(
             report_out_dir,
             chunk_id,
             EFFECT_TRANSLATION_VALIDATION_REPORT,
-            &effects,
+            &candidate_assessment.effect.report,
+        )?;
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            CANDIDATE_RELOCATION_ASSESSMENT_REPORT,
+            &candidate_assessment.report(),
         )?;
         if graph_reports.enabled() {
             write_chunk_report_json(
@@ -1508,12 +1555,14 @@ fn validate_and_emit_reports<'a>(
     // point with a non-empty clause-2 verdict means the atomic-group
     // glue and the realizability gate disagree — refuse to emit
     // rather than materialize a bundle that reassigns an ESM import.
-    if !assignment_report.cross_rebinds.is_empty() {
-        bail!(
-            "materialize_logical_modules: chunk {chunk_id} — realizability verdict carries {n} cross-destination rebind(s) but no atomic-group conflict or blocking SCC was reported; this should be unreachable (rebinding writes co-locate with their target via atomic factor groups). Rebinds:\n  {rebinds}",
-            n = assignment_report.cross_rebinds.len(),
-            rebinds = assignment_report.cross_rebinds.join("\n  "),
-        );
+    if let Ok(validated) = &validation {
+        if !validated.cross_destination_rebinds().is_empty() {
+            bail!(
+                "materialize_logical_modules: chunk {chunk_id} — realizability verdict carries {n} cross-destination rebind(s) but no atomic-group conflict or blocking SCC was reported; this should be unreachable (rebinding writes co-locate with their target via atomic factor groups). Rebinds:\n  {rebinds}",
+                n = validated.cross_destination_rebinds().len(),
+                rebinds = assignment_report.cross_rebinds.join("\n  "),
+            );
+        }
     }
     match validation {
         Ok(validated) => Ok(GateOutcome::Accepted(validated)),

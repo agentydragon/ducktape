@@ -94,7 +94,7 @@ pub struct MergeOutcome {
     pub outcome: MutationOutcome,
     pub target: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub effect_relocation_assessment: Option<gate::EffectRelocationAssessment>,
+    pub effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -103,7 +103,7 @@ struct MergeBatchOutcome {
     outcome: MutationOutcome,
     targets: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    effect_relocation_assessment: Option<gate::EffectRelocationAssessment>,
+    effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
 }
 
 /// `modules delete` outcome: just the shared core (deleted paths in
@@ -113,7 +113,7 @@ pub struct DeleteOutcome {
     #[serde(flatten)]
     pub outcome: MutationOutcome,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub effect_relocation_assessment: Option<gate::EffectRelocationAssessment>,
+    pub effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
 }
 
 /// Why `modules merge` cannot compose its documents; the merge refuses before writing anything,

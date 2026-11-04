@@ -108,7 +108,7 @@ struct ApplyOutcome {
     bindings_claimed: usize,
     selector_reviews: Vec<SelectorReview>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    effect_relocation_assessment: Option<gate::EffectRelocationAssessment>,
+    effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
 }
 
 pub fn run_modules_apply(

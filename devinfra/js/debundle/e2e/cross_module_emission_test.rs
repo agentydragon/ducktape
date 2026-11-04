@@ -117,6 +117,92 @@ export { a };
 }
 
 #[test]
+fn cross_destination_rebind_is_rejected_when_effect_order_does_not_change() {
+    // Keep the declaration and deferred writer in separate explicit
+    // destinations. The ESM statement order still matches source order, but
+    // the writer module would assign through an imported, read-only binding.
+    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
+        r#"let mutable = 0;
+function write() {
+  mutable = 1;
+  return mutable;
+}
+write();
+console.log(mutable);
+export { mutable, write };
+"#,
+        vec![
+            logical_module("state", &[Member::new("mutable")]),
+            logical_module("writer", &[Member::new("write")]),
+        ],
+    ));
+
+    let effects = rejected.effect_translation_validation();
+    assert_eq!(effects["swapped_pairs"], 0, "{effects:#}");
+    assert_eq!(effects["decision"]["status"], "accepted", "{effects:#}");
+    assert_eq!(effects["decision"]["scope"], "no_reordering", "{effects:#}");
+    assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");
+
+    let candidate = rejected.candidate_relocation_assessment();
+    assert_eq!(candidate["status"], "blocked_by_placement", "{candidate:#}");
+    assert_eq!(candidate["emitted_order"], effects["emitted_order"]);
+    assert_eq!(candidate["legacy_gate_accepts"], false, "{candidate:#}");
+    assert_eq!(
+        candidate["legacy_gate_ordering_veto"], false,
+        "{candidate:#}"
+    );
+    assert_eq!(candidate["decision"]["status"], "accepted", "{candidate:#}");
+    assert_eq!(candidate["swapped_pairs"], 0, "{candidate:#}");
+    let unresolved = candidate["placement"]["coverage"]["unresolved_checks"]
+        .as_array()
+        .expect("typed structural coverage gaps");
+    assert!(
+        unresolved
+            .iter()
+            .any(|check| check == "destructuring_declarator_grouping"),
+        "{candidate:#}"
+    );
+    assert!(
+        unresolved
+            .iter()
+            .any(|check| check == "binding_and_shared_var_destination_projection"),
+        "{candidate:#}"
+    );
+    assert_eq!(candidate["placement"]["status"], "blocked");
+    assert_eq!(
+        candidate["placement"]["cross_destination_rebinds"]
+            .as_array()
+            .expect("typed cross-destination rebind obligations")
+            .len(),
+        1,
+        "{candidate:#}"
+    );
+    assert_eq!(
+        candidate["placement"]["atomic_group_obligations"][0]["classification"],
+        "structural_constraint",
+        "{candidate:#}"
+    );
+
+    let conflicts = rejected.atomic_group_conflicts();
+    assert_eq!(conflicts.len(), 1, "{conflicts:#?}");
+    assert!(
+        conflicts[0]["causes"]
+            .as_array()
+            .expect("atomic group causes")
+            .iter()
+            .any(|cause| cause == "lazy_rebind"),
+        "the gate rejection must retain the rebinding cause: {conflicts:#?}"
+    );
+    assert_module_source(
+        &rejected.app_root(),
+        "static/app/modules/writer.js",
+        &["import { mutable as mutable$1 }", "mutable$1 = 1;"],
+        &[],
+    );
+    assert_node_error(&rejected.entry_path(), "Assignment to constant variable");
+}
+
+#[test]
 fn object_pattern_and_static_property_keys_do_not_import_residual_binding() {
     let mut opts = FixtureOpts::new(
         r#"const id = "residual";

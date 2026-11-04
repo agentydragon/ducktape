@@ -369,6 +369,20 @@ unchanged. With no filter every materialized chunk can export.
 The Bazel pipeline exposes the same opt-in through `effect_conflicts_jsonl`
 and `effect_conflicts_chunks`; only its final run action receives these flags,
 and streams remain inside the existing reports tree.
+Full per-chunk report emission also writes
+`candidate_relocation_assessment.json`. It pairs the effect decision and exact
+statement order from the existing single sweep with typed cross-destination
+rebind and split-atomic-group obligations from the same assignment validation.
+Semantic-order SCCs remain distinct from structural causes such as rebind,
+co-declaration, co-location and local effects; mixed or unclassified causes
+remain blockers. `placement.coverage.unresolved_checks` names the remaining
+structural checks: destructuring-declarator grouping, source-unit-to-body
+mapping, binding and shared-var destination projection, and whole-statement
+destination projection. Completeness is derived from an empty unresolved set.
+The candidate status names effect and placement blockers separately; an
+ordering-only veto from the still-authoritative legacy gate is reported by
+`legacy_gate_ordering_veto` and does not count as a structural blocker. This
+report never claims overall acceptance and the legacy gate remains authoritative.
 Full semantic precision remains incomplete; see
 <docs/wire_format.md#translation-validation>.
 The report's `full_semantic_precision: false` is a policy-level field, not a

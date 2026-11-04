@@ -10,7 +10,7 @@ use clap::Args as ClapArgs;
 use artifact::reports::{ArtifactChunkRecord, ChunkDecompositionOutput};
 use artifact::{ChunkId, EmissionFiles};
 use emit_harness::emit_browser_harness;
-use gate::EffectRelocationAssessment;
+use gate::CandidateRelocationAssessmentReport;
 use graph_provenance::{
     CurrentRoots, GraphProvenance, InputCapture, ProvenanceRoots, VerifiedGraphSourceContext,
 };
@@ -351,7 +351,7 @@ pub fn assess_candidate_effect_relocation(
     graph_source: &VerifiedGraphSourceContext,
     edit_modules_root: &Path,
     candidate_modules: &BTreeMap<String, LogicalModule>,
-) -> Result<EffectRelocationAssessment> {
+) -> Result<CandidateRelocationAssessmentReport> {
     let TransformSpecSource::Tree(tree) = &cli.spec_source else {
         bail!("candidate effect assessment requires a tree-shaped transform context");
     };
@@ -687,7 +687,7 @@ fn prepare_transform(
 enum PreparedTransformResult {
     Completed,
     Projected(Box<AnalysisSpec>),
-    EffectAssessed(Vec<(String, EffectRelocationAssessment)>),
+    EffectAssessed(Vec<(String, CandidateRelocationAssessmentReport)>),
 }
 
 fn run_prepared_transform(

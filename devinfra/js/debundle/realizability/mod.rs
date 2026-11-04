@@ -56,9 +56,12 @@ mod translation_validation;
 pub use effect_translation_validation::{
     EffectConflictCell, EffectConflictDiagnosticRow, EffectConflictDisposition, EffectConflictRow,
     EffectCoverageReport, EffectOpacity, EffectRelocationAcceptanceScope,
-    EffectRelocationAssessment, EffectRelocationAssessmentInputs, EffectRelocationConflict,
-    EffectRelocationDecision, EffectTranslationValidationInputs, EffectTranslationValidationReport,
-    LegacyEdgeComparisonCounts, assess_effect_relocation, effect_translation_validate,
+    EffectRelocationAssessment, EffectRelocationConflict, EffectRelocationDecision,
+    EffectTranslationValidationReport, EffectTranslationValidationResult,
+    LegacyEdgeComparisonCounts,
+};
+pub(crate) use effect_translation_validation::{
+    EffectTranslationValidationInputs, effect_translation_assess,
 };
 use esm_simulator::EsmEvaluationSimulator;
 use incremental_quotient::{IncrementalQuotient, QuotientOverlay};
@@ -100,7 +103,8 @@ pub struct SccDiagnosis {
 /// How the realizability gate decided an SCC is unrealizable. See
 /// docs/design.md "Lemma 2: entry-side import ordering" for the
 /// two-pass gating rule.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SccRejection {
     /// Pass 1: the SCC is cyclic in the constraining-edge subgraph
     /// alone — a mutual-eager cycle no source import order can
@@ -122,7 +126,7 @@ pub enum SccRejection {
 /// Cross-destination rebinding write. ESM imports are read-only in the
 /// importing module, so any such edge violates clause 2. One entry per
 /// dependency edge.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, serde::Serialize)]
 pub struct CrossRebindEdge {
     pub from: ModuleId,
     pub to: ModuleId,

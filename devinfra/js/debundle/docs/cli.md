@@ -1024,11 +1024,15 @@ This assessment currently supports one materialized graph chunk whose
 the editor's `--modules`. The transform context and staged artifact are checked
 against the verified graph source and the artifact's engine, source digests and
 completed projection before the candidate plan is assessed. A missing, stale
-or mismatched input fails before YAML is written. The typed result reports the
-candidate's exact statement order, decision and proof dependencies; it does not
-change the legacy edit gate or establish placement, rebinding, vendor
-replacement, privacy or singleton guarantees. Without `--analysis`, the normal
-graph-backed edit path remains unchanged.
+or mismatched input fails before YAML is written. The JSON
+`effect_relocation_assessment` field contains the common candidate assessment:
+its effect decision and exact statement order plus typed placement obligations
+from the same assignment. Status distinguishes effect conflicts from
+structural placement blockers, and `legacy_gate_ordering_veto` makes the
+remaining semantic-order gate veto explicit. Unresolved typed structural
+checks keep the overall result incomplete. This does not change the legacy edit
+gate or establish vendor replacement, privacy or singleton guarantees. Without
+`--analysis`, the normal graph-backed edit path remains unchanged.
 
 ### `bindings assign --batch` JSON format
 
@@ -1133,10 +1137,10 @@ values do not alter ordinary apply, and an explicitly supplied auxiliary flag
 without `--analysis` is rejected. After the existing expected-member and
 realizability gates pass, the command assesses the exact typed documents that
 would be written. A missing, stale, or mismatched context fails before YAML
-writes. The JSON `effect_relocation_assessment` reports statement-order
-commutation only; it does not change edit acceptance or prove replacement,
-privacy, or singleton obligations. Scoped `--tree-config` behavior remains
-available without `--analysis`.
+writes. The JSON `effect_relocation_assessment` contains the effect component
+and typed placement obligations for the same exact candidate. It does not
+change edit acceptance or prove replacement, privacy or singleton obligations.
+Scoped `--tree-config` behavior remains available without `--analysis`.
 
 Optional `selectors` entries choose a reviewed selector for a binding; bindings
 without an entry use synthesis. A `source_match` entry uses the normal

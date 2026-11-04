@@ -158,6 +158,29 @@ importability, vendor replacement, privacy or singleton behavior, and never
 changes the legacy gate. `legacy_gate_accepts` and `legacy_tv_accepts` retain
 those current verdicts.
 
+`candidate_relocation_assessment.json` pairs the same emitted statement order
+and single effect sweep with typed structural placement obligations from the
+same assignment validation. `placement.cross_destination_rebinds` carries
+typed dependency-edge and source-unit identities; `atomic_group_obligations`
+retains each group's members, claims and causes. Pure `eager_use`/`sequenced`
+conflicts are classified as semantic-order SCCs, recognized write/co-location
+causes as structural constraints, and mixed or empty causes as explicit
+blockers. `placement.coverage.unresolved_checks` is a typed set naming the
+remaining source checks: `destructuring_declarator_grouping`,
+`source_unit_to_body_mapping`, `binding_and_shared_var_destination_projection`,
+and `whole_statement_destination_projection`. Coverage is complete only when
+that set is empty; completeness is derived and is not serialized separately.
+The top-level candidate `status` distinguishes `blocked_by_effect`,
+`blocked_by_placement`, and `blocked_by_effect_and_placement`; `incomplete`
+means neither component proves a blocker, while full placement coverage and
+authority remain open. `legacy_gate_ordering_veto` identifies semantic-order
+SCCs that still veto under the current legacy gate. Thus an ordering-only gate
+veto does not appear as a structural placement blocker. This report never
+says `accepted` and never changes the legacy gate's authority.
+Its flattened `decision`, `emitted_order` and `swapped_pairs` are projections
+of the same sweep reported in `effect_translation_validation.json`; the
+flattened `decision.status` describes the effect component only.
+
 `counts` includes every conflicting swapped pair, cell incidence, Havoc pair
 and premise disposition. `legacy_edge_comparison` separately counts
 `legacy_edge_only_pairs`, `effect_only_pairs` and `both_pairs`; it excludes the
