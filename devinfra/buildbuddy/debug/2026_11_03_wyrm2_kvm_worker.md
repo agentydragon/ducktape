@@ -70,7 +70,8 @@ KubeVirt v1.8.2 also runs its
 [node agents privileged](https://github.com/kubevirt/kubevirt/blob/v1.8.2/pkg/virt-operator/resource/generate/components/daemonsets.go),
 which asks the nested runtime for all capabilities. The worker configuration therefore
 supplies `docker_cap_add: ALL` inside the dedicated guest. Full VM-scenario acceptance
-remains blocked by the Docker seccomp restrictions below.
+remains pending; the latest revalidation below cleared the Docker seccomp blockers
+and exposed an image-cleanup failure.
 
 The recreated guest reached BuildBuddy over HTTPS, timed out connecting to `example.com`,
 and received a connection reset for the wrong TLS hostname directed to BuildBuddy's IP.
@@ -112,3 +113,28 @@ This validation session made no worker or outer-cluster configuration changes.
 Before accepting the lane, rerun the full suite after the worker policy update
 and verify all three scenarios, actual KVM acceleration, boot/shutdown evidence,
 traces and cleanup.
+
+## Revalidation after the worker policy update
+
+[The keyring policy change](https://github.com/agentydragon/ducktape/pull/14207)
+merged, and another session recreated the worker. At 05:37 UTC on November 4,
+its live Docker profile also allowed `pivot_root` with `CAP_SYS_ADMIN`; inspection
+of a running action's OCI configuration confirmed that rule was applied. The
+profile in devel `040c86945b996d2187a96744b16bc9fa4b5bf8e4` still lacked that
+additional rule, so this validates the live worker rather than reprovisioning
+from that source revision. This session made no worker configuration changes.
+
+The [fresh smoke](https://app.buildbuddy.io/invocation/eeee4cfa-23b9-4ecb-9d5f-d7d82556e4da)
+passed in 7.73 seconds of execution: KVM API/VM/vCPU creation, runc's three keyring
+operations, and a still-denied `KEYCTL_READ` operation.
+
+The [full VM suite](https://app.buildbuddy.io/invocation/286e880e-d146-41ee-b804-c8019df85345)
+used the same unmodified source and worker `6e2353c4-dc8c-4624-8116-233ea1e3eff0`.
+Its retained runtime log contains no session-key or `pivot_root` failures.
+Setup completed in 313.12 seconds and all three scenarios created their VM
+resources, but their launcher Pods hit `ImagePullBackOff`: the fixture's cleanup
+had deleted the newly imported pinned guest-root image. The
+[image-cleanup investigation](../../../agentplane/system_tests/debug/cri_image_cleanup.md)
+records the deletion sequence. No guest boot or complete scenario pass was established.
+Execution took 640.49 seconds after 563.53 seconds of scheduler wait; these
+failed-run timings do not establish a CI speedup.
