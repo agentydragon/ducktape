@@ -127,8 +127,8 @@ The outcome and initial caller/wake rules above are selected. Remaining design a
 
 1. **Complete bounded outcome visibility.** The managed receiver fence is covered; durable
    post-deletion outcomes and bounded watcher delivery remain unresolved as described above.
-   Session movement and UUID reuse after deletion remain separate decisions; a local cached
-   generation alone is not a fence.
+   Session movement remains a separate decision; a local cached generation alone is not a fence.
+   After deletion Dispatcher forgets the Session, so callers must not deliberately reuse its UUID.
    Ordinary managed deletion waits for the exact Runtime incarnation's final Session cutoffs,
    journal seals and History acknowledgements before removing its workload. The initial lameduck
    is earlier and still permits exact-turn interrupts. Gateway refuses Session mutation after its

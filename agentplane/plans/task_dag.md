@@ -2116,11 +2116,11 @@ principal. The sampler remains subject to its current contract until separately 
 
 The [native opening outcome contract](../runner_gateway/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands)
 separates proven rejection from unconfirmed owner outcomes and fences dependent queued work.
-Exact receipt retry, logical-opening discovery and post-cleanup environment-UID admission fencing
-are implemented. Remaining: decide whether cleanup forgets Session identity or retains deduplication
-facts, what UUID reuse means for retained History, and how held unconfirmed openings are explicitly
-resolved. Do not infer those policies from the current opening table or add permanent retention
-without that decision. Preserve authority and retained History across service-store boundaries;
+Exact receipt retry, logical-opening discovery, harness lookup, placement-checked routing and
+post-cleanup environment-UID admission fencing are implemented. On cleanup Dispatcher forgets the
+Session; callers must not deliberately reuse a UUID, and History can retain a conflicting identity.
+Remaining: specify how held unconfirmed openings are explicitly resolved and how the owner selects
+and retains the specific harness store and native Session ID. Preserve authority and retained History across service-store boundaries;
 never automatically replay an uncertain native effect. The caller can select an exact
 environment _at creation_; later Session addressing uses the UUID. Choose the minimum schema and
 read API as implementation details, and link its contract from the
@@ -2188,7 +2188,8 @@ removed. They are not durable future reads. Cleanup does not snapshot already-te
 connected watcher delayed behind an earlier invalidation can miss that outcome after cleanup.
 Broadcasting every retained receipt can overflow bounded terminal subscriptions and leaves no
 receipt for reconnect; close this gap with a reviewed bounded delivery design, not an unbounded
-broadcast. Session-record retention and UUID reuse remain open; this node must not choose them. The [command authority plan](session_send_authority.md#recovery-and-decisions-for-review)
+broadcast. Dispatcher forgets deleted Session records; callers must not deliberately reuse UUIDs.
+The [command authority plan](session_send_authority.md#recovery-and-decisions-for-review)
 keeps these outcome-evidence and authority decisions explicit.
 
 ### `DELIVERY_DESTINATION_CONTRACT` — send commands to a Session ID

@@ -2141,9 +2141,10 @@ func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
 			if uids, err := restarted.ListSandboxUIDs(ctx); err != nil || len(uids) != 0 {
 				t.Fatalf("live queue/ownership state resurrected: %v %v", uids, err)
 			}
-			// A new environment with the same name has an independent admission fence.
-			if _, err := restarted.OpenSession(ctx, uuid.NewString(), "sandbox-api", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
-				t.Fatalf("replacement environment rejected: %v", err)
+			// There is no UUID tombstone. This deliberately reuses the ID to test the
+			// limit of the caller contract; retained History may reject the new writer.
+			if _, err := restarted.OpenSession(ctx, sessionID, "sandbox-api", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
+				t.Fatalf("forgotten Session ID unexpectedly retained after cleanup: %v", err)
 			}
 		})
 	}

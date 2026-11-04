@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -99,7 +100,20 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner.Store = openingFixture{}
-	if _, err := runner.Deliver(context.Background(), sandbox, "old-session", &commandpb.Command{}); err != nil {
+	if _, err := runner.Deliver(context.Background(), sandbox, "old-session", &commandpb.Command{}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing Session routed to native Runtime: %v", err)
+	}
+	if native.calls != 1 {
+		t.Fatalf("missing Session caused native delivery: %d calls", native.calls)
+	}
+	runner.Store = openingFixture{&Opening{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Spec: nativeSpec}}
+	if _, err := runner.Deliver(context.Background(), changed, "native", &commandpb.Command{}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("native Session routed to replacement Sandbox: %v", err)
+	}
+	if native.calls != 1 {
+		t.Fatalf("replacement Sandbox caused native delivery: %d calls", native.calls)
+	}
+	if _, err := runner.Deliver(context.Background(), sandbox, "native", &commandpb.Command{}); err != nil {
 		t.Fatal(err)
 	}
 	if native.calls != 2 {

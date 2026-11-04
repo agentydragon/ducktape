@@ -789,14 +789,15 @@ func TestOpeningDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 	for _, row := range []struct {
 		id        string
 		principal *ServiceAccountIdentity
+		harness   sessionpb.Harness
 	}{
-		{failedID, owner},
-		{foreignID, foreign},
-		{queuedID, owner},
-		{pendingID, serviceAccountIdentityFor(caller, "")},
+		{failedID, owner, sessionpb.Harness_HARNESS_CLAUDE},
+		{foreignID, foreign, sessionpb.Harness_HARNESS_CENTRAL_SAMPLER},
+		{queuedID, owner, sessionpb.Harness_HARNESS_CODEX},
+		{pendingID, serviceAccountIdentityFor(caller, ""), sessionpb.Harness_HARNESS_CODEX},
 	} {
 		if _, err := store.OpenSessionForCaller(t.Context(), row.id, "discovery-sandbox", uid,
-			&sessionpb.SessionSpec{}, nil, nil, row.principal, CallerIdentity{Privileged: true, ServiceAccountIdentity: owner, Attribution: &AdmissionAttribution{Actor: owner, EffectiveCaller: owner}}); err != nil {
+			&sessionpb.SessionSpec{Harness: row.harness}, nil, nil, row.principal, CallerIdentity{Privileged: true, ServiceAccountIdentity: owner, Attribution: &AdmissionAttribution{Actor: owner, EffectiveCaller: owner}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -818,8 +819,16 @@ func TestOpeningDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 	if err != nil || len(first.GetOpenings()) != 1 || first.GetOpenings()[0].GetSessionId() != queuedID || first.GetNextPageToken() == "" {
 		t.Fatalf("owner first page: %v %v", first, err)
 	}
-	if first.GetOpenings()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetOpenings()[0].GetSandboxUid() != uid {
+	if first.GetOpenings()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetOpenings()[0].GetSandboxUid() != uid || first.GetOpenings()[0].GetHarness() != sessionpb.Harness_HARNESS_CODEX {
 		t.Fatalf("queued opening placement/state: %v", first)
+	}
+	got, err := client.GetSessionOpening(authorityContext(t, "discovery-owner"), &dispatcherpb.GetSessionOpeningRequest{SessionId: queuedID})
+	if err != nil || got.GetOpening().GetHarness() != sessionpb.Harness_HARNESS_CODEX {
+		t.Fatalf("owner opening harness: %v %v", got, err)
+	}
+	central, err := client.GetSessionOpening(authorityContext(t, "discovery-foreign"), &dispatcherpb.GetSessionOpeningRequest{SessionId: foreignID})
+	if err != nil || central.GetOpening().GetHarness() != sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
+		t.Fatalf("central opening harness: %v %v", central, err)
 	}
 	// The last row of a page can disappear between requests without invalidating its cursor.
 	if _, err := store.DB.ExecContext(t.Context(), "DELETE FROM session_opening WHERE session_id=$1", queuedID); err != nil {
@@ -829,7 +838,7 @@ func TestOpeningDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 		Limit: 1, PageToken: first.GetNextPageToken(),
 	})
 	if err != nil || len(second.GetOpenings()) != 1 || second.GetOpenings()[0].GetSessionId() != failedID || second.GetNextPageToken() != "" ||
-		second.GetOpenings()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED {
+		second.GetOpenings()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED || second.GetOpenings()[0].GetHarness() != sessionpb.Harness_HARNESS_CLAUDE {
 		t.Fatalf("owner second page: %v %v", second, err)
 	}
 	// A cursor carries position only; it never grants the original caller's authority.

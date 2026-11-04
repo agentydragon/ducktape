@@ -209,7 +209,8 @@ message CancelDispatchResponse {
 }
 
 message OpenSessionRequest {
-  string session_id = 1;  // caller-minted canonical lowercase UUID
+  // Caller-minted canonical lowercase UUID; never deliberately reuse it after deletion.
+  string session_id = 1;
   string sandbox = 2;
   agentplane.proto.SessionSpec spec = 3;
   optional string setup_script = 4;  // selected only at creation
@@ -232,6 +233,9 @@ message SessionOpening {
   agentplane.proto.DeliveryBlocker delivery_blocker = 9;
   // The latest typed automatic-wake assessment. Denied or failed wake requests do not fail the opening.
   agentplane.proto.WakeAssessment wake_assessment = 10;
+  // The harness selected in the immutable opening request. The Sandbox identifies the native
+  // harness placement; central sampler openings currently also carry their required executor.
+  agentplane.proto.Harness harness = 11;
 }
 
 message OpenSessionResponse {
