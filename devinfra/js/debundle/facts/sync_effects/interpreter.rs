@@ -1155,11 +1155,26 @@ impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
     }
 }
 
+#[derive(Clone, Copy)]
+enum LocalExecutionScope {
+    Callable(u32),
+    RootInitializer,
+}
+
+impl LocalExecutionScope {
+    fn caller(self) -> Option<u32> {
+        match self {
+            Self::Callable(key) => Some(key),
+            Self::RootInitializer => None,
+        }
+    }
+}
+
 struct LocalExecutionContext<'a, 'source, 'rule> {
     executor: &'a mut Executor<'source, 'rule>,
     outcome: &'a mut Outcome,
     owner: SourceUnitOrdinal,
-    callable: u32,
+    scope: LocalExecutionScope,
     body: &'a LocalBody,
 }
 
@@ -1194,7 +1209,16 @@ impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
     }
 }
 
-impl LocalExecutionContext<'_, '_, '_> {
+impl<'source> LocalExecutionContext<'_, 'source, '_> {
+    fn calls(&self) -> &'source [Call] {
+        match self.scope {
+            LocalExecutionScope::Callable(key) => &self.executor.inputs.index.callables[&key].calls,
+            LocalExecutionScope::RootInitializer => {
+                &self.executor.inputs.index.top_calls[self.owner.0]
+            }
+        }
+    }
+
     fn fallback(
         &mut self,
         frame: &LocalFrame,
@@ -1214,31 +1238,29 @@ impl LocalExecutionContext<'_, '_, '_> {
         // their unknown direct-callee alternatives at their lexical sites,
         // rather than reporting every loss only at the truncation point.
         // This inspects indexed operands; it executes no later operation.
-        if let Some(callable) = self.executor.inputs.index.callables.get(&self.callable) {
-            for call in &callable.calls {
-                if call.kind != CallKind::Call || call.span.lo < span.hi {
-                    continue;
-                }
-                let ValueExpr::Binding(binding) = &call.callee else {
-                    continue;
-                };
-                let values = if self.executor.inputs.top_bindings.contains(binding) {
-                    self.executor.state.prefix_values.get(binding)
-                } else if let Some(cell) = self.executor.state.active_cells.get(binding) {
-                    Some(&self.executor.state.lexical_cells[cell.0].values)
-                } else {
-                    frame.environment.get(binding)
-                };
-                if values.is_some_and(|values| {
-                    values.iter().any(|value| {
-                        matches!(
-                            value,
-                            AbstractValue::Value(Value::Top) | AbstractValue::SymbolicInput(_)
-                        )
-                    })
-                }) {
-                    self.outcome.lose_call_target(call.owner, call.span);
-                }
+        for call in self.calls() {
+            if call.kind != CallKind::Call || call.span.lo < span.hi {
+                continue;
+            }
+            let ValueExpr::Binding(binding) = &call.callee else {
+                continue;
+            };
+            let values = if self.executor.inputs.top_bindings.contains(binding) {
+                self.executor.state.prefix_values.get(binding)
+            } else if let Some(cell) = self.executor.state.active_cells.get(binding) {
+                Some(&self.executor.state.lexical_cells[cell.0].values)
+            } else {
+                frame.environment.get(binding)
+            };
+            if values.is_some_and(|values| {
+                values.iter().any(|value| {
+                    matches!(
+                        value,
+                        AbstractValue::Value(Value::Top) | AbstractValue::SymbolicInput(_)
+                    )
+                })
+            }) {
+                self.outcome.lose_call_target(call.owner, call.span);
             }
         }
     }
@@ -1393,8 +1415,8 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             .extend(self.executor.reachable_objects(&reached));
         // Reuse the canonical call's source policy and proof sites, while
         // transporting the operands selected by the ordered kernel.
-        let call = self.executor.inputs.index.callables[&self.callable]
-            .calls
+        let call = self
+            .calls()
             .iter()
             .find(|call| call.kind == CallKind::Call && call.span == span)
             .expect("a source-covered call has its canonical call record")
@@ -1491,14 +1513,22 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         span: Span,
         refusal: OrderedFieldReadRefusal,
     ) -> Option<super::super::allocation_transfer::AllocationValue> {
+        if matches!(self.scope, LocalExecutionScope::RootInitializer)
+            && let Some(read) = self.executor.present_own_data_read(receivers, property)
+        {
+            self.outcome.effects.heap_contents.reads.insert(read.cell);
+            return Some(super::super::allocation_transfer::AllocationValue::opaque(
+                read.values,
+            ));
+        }
         let callee = ValueExpr::Member(
             Arc::new(ValueExpr::Binding(receiver.clone())),
             Some(property.to_owned()),
             MemberKey::Static,
             span.into(),
         );
-        let lookup = self.executor.inputs.index.callables[&self.callable]
-            .calls
+        let lookup = self
+            .calls()
             .iter()
             .find(|call| call.kind == CallKind::AccessorCalleeLookup && call.span == span);
         let call = match lookup {
@@ -1509,7 +1539,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             {
                 lookup.clone()
             }
-            _ => Call::member_read(self.owner, Some(self.callable), callee, span),
+            _ => Call::member_read(self.owner, self.scope.caller(), callee, span),
         };
         // Retain established native, array and borrowed-record read proofs.
         // The receiver is only a declarative cell, so the value projection
@@ -7982,6 +8012,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         }
         let receivers = self.state.prefix_values.get(receiver)?;
+        self.present_own_data_read(receivers, property)
+    }
+
+    fn present_own_data_read(&self, receivers: &Values, property: &str) -> Option<OwnDataRead> {
         let slot = own_data_transfer::resolve_slot(
             self,
             receivers,
@@ -7999,6 +8033,62 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         }
         Some(slot.read(self))
+    }
+
+    fn local_call_target(&self, targets: &Values) -> Option<(u32, &Callable)> {
+        if targets.len() != 1 {
+            return None;
+        }
+        let key = match targets.first()? {
+            AbstractValue::Value(Value::Alloc(Kind::Function, key))
+            | AbstractValue::Closure(key, _) => key,
+            _ => return None,
+        };
+        self.inputs
+            .index
+            .callables
+            .get(key)
+            .map(|callable| (*key, callable))
+    }
+
+    /// Native and imported calls whose proofs still project source operands
+    /// retain their established whole-owner path. This chooses a source
+    /// family before execution; the ordered call transfer still checks each
+    /// actual target and never retries a failed invocation.
+    fn ordered_root_calls_are_local(&self, calls: &[Call]) -> bool {
+        calls
+            .iter()
+            .filter(|call| call.kind == CallKind::Call)
+            .all(|call| {
+                let (targets, member) = match &call.callee {
+                    ValueExpr::Binding(binding) if self.initialized_local_binding(binding) => {
+                        (self.state.prefix_values.get(binding).cloned(), false)
+                    }
+                    ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) => {
+                        let ValueExpr::Binding(receiver) = receiver.as_ref() else {
+                            return false;
+                        };
+                        if !self.initialized_local_binding(receiver) {
+                            return false;
+                        }
+                        let targets = self.state.prefix_values.get(receiver).and_then(|values| {
+                            self.present_own_data_read(values, property)
+                                .map(|read| read.values)
+                        });
+                        (targets, true)
+                    }
+                    _ => return false,
+                };
+                let Some(targets) = targets else {
+                    return false;
+                };
+                let Some((key, callable)) = self.local_call_target(&targets) else {
+                    return false;
+                };
+                !callable.generator
+                    && !self.inputs.index.async_callables.contains(&key)
+                    && (!member || self.method_receiver_is_unused(&targets))
+            })
     }
 
     fn evaluate_binding(&mut self, id: &Id, env: &Context) -> Values {
@@ -8758,7 +8848,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         body: &LocalBody,
         environment: Context,
         owner: SourceUnitOrdinal,
-        callable: u32,
+        scope: LocalExecutionScope,
     ) -> Outcome {
         let mut frame = LocalFrame::new(environment);
         frame.borrowed_records = self.reachable_objects(&frame.inputs);
@@ -8774,7 +8864,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 executor: self,
                 outcome: &mut outcome,
                 owner,
-                callable,
+                scope,
                 body,
             },
             body,
@@ -9023,7 +9113,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                                 .any(|(binding, _)| binding == &write.receiver)
                         }));
             if !established_writes {
-                let outcome = self.execute_local_body(body, env, callable.owner, key);
+                let outcome = self.execute_local_body(
+                    body,
+                    env,
+                    callable.owner,
+                    LocalExecutionScope::Callable(key),
+                );
                 self.state.active.remove(&active_invocation);
                 self.state.invocation_depth -= 1;
                 self.remember_invocation(signature, &outcome);
@@ -9963,14 +10058,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // Publication can change properties and captured state, but cannot
             // replace an ordinary source function's [[Call]]. Invocation reads
             // live capture cells and retains their existing havoc/heap guards.
-            let local_target = targets.len() == 1
-                && targets.first().is_some_and(|target| match target {
-                    AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                    | AbstractValue::Closure(key, _) => {
-                        self.inputs.index.callables.contains_key(key)
-                    }
-                    _ => false,
-                });
+            let local_target = self.local_call_target(&targets).is_some();
             let abrupt = !targets.is_empty()
                 && targets.iter().all(|target| {
                     matches!(
@@ -11765,76 +11853,128 @@ impl Executor<'_, '_> {
             complete: true,
             ..Outcome::default()
         };
-        // A source owner is indivisible, but can assign an existing binding
-        // before one of its calls, e.g. `(reader = () => later, host())`.
-        // Join these possible values before the flattened calls. Keep the
-        // previous values and do not mark initialization definite until the
-        // owner finishes; assignments on skipped/later paths are only may
-        // values. A lexical TDZ still blocks publication through that binding.
-        for (id, expression) in assignments {
-            if !needed.contains(id)
-                || !fact.rebinds.eager.contains(id)
-                || !(self.inputs.var_bindings.contains(id)
-                    || self.state.initialized_bindings.contains(id))
-            {
-                continue;
+        let ordered_initializer = (initializer_source.is_none()
+            && matches!(fact.kind, StatementKind::VarDecl)
+            && fact.declared.len() == 1
+            && matches!(assignments.as_slice(), [(binding, _)]
+                if fact.declared.contains(binding)
+                    && index.top_definite_initializers[owner.0].contains(binding))
+            && fact.rebinds.eager.is_empty()
+            && fact.global_writes.is_empty()
+            && !inputs.exported_owners.contains(&owner)
+            && index.dynamic_scope_owners.is_empty()
+            && !index.opaque_top.contains(&owner)
+            && index.top_property_writes[owner.0].is_empty()
+            && index.top_member_value_writes[owner.0].is_empty()
+            && index.top_callback_result_writes[owner.0].is_empty()
+            && index.top_exported_values[owner.0].is_empty()
+            // Migrate compound call/field operands first. A lone call keeps
+            // its established effect-only/result projection path; selecting
+            // it here would introduce a remainder fallback even when there
+            // is no later operand whose value needs ordered transport.
+            && (calls.iter().filter(|call| call.kind == CallKind::Call).nth(1).is_some()
+                || (calls.iter().any(|call| call.kind == CallKind::Call)
+                    && calls.iter().any(|call| call.kind == CallKind::LocalMemberRead))))
+        .then(|| index.ordered_initializers.get(&owner))
+        .flatten()
+        .filter(|body| {
+            !body.requires_keyed_collection_new()
+                && body.captured_writes().is_empty()
+                && self.ordered_root_calls_are_local(calls)
+        });
+        // Keep the selected result in this owner until publication. Operands
+        // and calls execute once, at their position in the shared local plan.
+        let mut ordered_initializer_result = if let Some(body) = ordered_initializer {
+            outcome = self.execute_local_body(
+                body,
+                Context::new(),
+                owner,
+                LocalExecutionScope::RootInitializer,
+            );
+            Some(std::mem::take(&mut outcome.returns))
+        } else {
+            None
+        };
+        if ordered_initializer.is_none() {
+            // A source owner is indivisible, but can assign an existing binding
+            // before one of its calls, e.g. `(reader = () => later, host())`.
+            // Join these possible values before the flattened calls. Keep the
+            // previous values and do not mark initialization definite until the
+            // owner finishes; assignments on skipped/later paths are only may
+            // values. A lexical TDZ still blocks publication through that binding.
+            for (id, expression) in assignments {
+                if !needed.contains(id)
+                    || !fact.rebinds.eager.contains(id)
+                    || !(self.inputs.var_bindings.contains(id)
+                        || self.state.initialized_bindings.contains(id))
+                {
+                    continue;
+                }
+                let values = self.evaluate(expression, &top_env, &top_captures);
+                top_env
+                    .entry(id.clone())
+                    .or_default()
+                    .extend(values.iter().cloned());
+                let possible = self.state.prefix_values.entry(id.clone()).or_default();
+                let before = possible.len();
+                possible.extend(values);
+                if possible.len() != before {
+                    self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+                }
             }
-            let values = self.evaluate(expression, &top_env, &top_captures);
-            top_env
-                .entry(id.clone())
-                .or_default()
-                .extend(values.iter().cloned());
-            let possible = self.state.prefix_values.entry(id.clone()).or_default();
-            let before = possible.len();
-            possible.extend(values);
-            if possible.len() != before {
-                self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
-            }
-        }
-        // Like callable writes above, top-level property writes are kept in a
-        // separate visitor lane. Applying all of this statement's writes
-        // before its flattened call list may expose a later write early, which
-        // is conservative and avoids missing a callback assigned before an
-        // opaque call in the same statement.
-        let member_writes = &index.top_member_value_writes[fact.ordinal.0];
-        self.apply_member_value_writes(
-            member_writes,
-            &top_env,
-            &top_captures,
-            &BTreeSet::new(),
-            certified_deferred_write,
-        );
-        if !certified_deferred_write {
-            self.promote_callback_result_writes(
-                &index.top_callback_result_writes[fact.ordinal.0],
+            // Like callable writes above, top-level property writes are kept in a
+            // separate visitor lane. Applying all of this statement's writes
+            // before its flattened call list may expose a later write early, which
+            // is conservative and avoids missing a callback assigned before an
+            // opaque call in the same statement.
+            let member_writes = &index.top_member_value_writes[fact.ordinal.0];
+            self.apply_member_value_writes(
+                member_writes,
                 &top_env,
                 &top_captures,
-                fact.ordinal,
-                &mut outcome,
                 &BTreeSet::new(),
+                certified_deferred_write,
             );
-        }
-        let validated_metadata = prevalidated_metadata.or_else(|| {
-            metadata_application.and_then(|application| {
-                self.validated_metadata_decoration(application, &top_env, &top_captures)
-            })
-        });
-        if let (Some(application), Some(validated)) = (metadata_application, validated_metadata) {
-            self.summarize_metadata_decoration(application, validated, fact.ordinal, &mut outcome);
-        } else {
-            for call in calls {
-                self.execute_call(call, &top_env, &top_captures, &mut outcome);
+            if !certified_deferred_write {
+                self.promote_callback_result_writes(
+                    &index.top_callback_result_writes[fact.ordinal.0],
+                    &top_env,
+                    &top_captures,
+                    fact.ordinal,
+                    &mut outcome,
+                    &BTreeSet::new(),
+                );
             }
-        }
-        // The fresh-instance proof applies only to this whole top-level
-        // assignment. Nested callable writes owned by the same statement
-        // still take the normal setter fallback when invoked later.
-        if !certified_deferred_write && !index.fresh_instance_field_writes.contains(&fact.ordinal) {
-            self.promote_property_writes(
-                &index.top_property_writes[fact.ordinal.0],
-                fact.ordinal,
-                &mut outcome,
-            );
+            let validated_metadata = prevalidated_metadata.or_else(|| {
+                metadata_application.and_then(|application| {
+                    self.validated_metadata_decoration(application, &top_env, &top_captures)
+                })
+            });
+            if let (Some(application), Some(validated)) = (metadata_application, validated_metadata)
+            {
+                self.summarize_metadata_decoration(
+                    application,
+                    validated,
+                    fact.ordinal,
+                    &mut outcome,
+                );
+            } else {
+                for call in calls {
+                    self.execute_call(call, &top_env, &top_captures, &mut outcome);
+                }
+            }
+            // The fresh-instance proof applies only to this whole top-level
+            // assignment. Nested callable writes owned by the same statement
+            // still take the normal setter fallback when invoked later.
+            if !certified_deferred_write
+                && !index.fresh_instance_field_writes.contains(&fact.ordinal)
+            {
+                self.promote_property_writes(
+                    &index.top_property_writes[fact.ordinal.0],
+                    fact.ordinal,
+                    &mut outcome,
+                );
+            }
         }
         let mut fallback = std::mem::take(&mut self.state.fallback_outcome);
         if fallback.unknown_call {
@@ -11917,6 +12057,8 @@ impl Executor<'_, '_> {
                 };
                 evaluated_initializer = evaluated;
                 initialization_coverage_refusal = initialization_coverage_refusal.or(refusal);
+                values
+            } else if let Some(values) = ordered_initializer_result.take() {
                 values
             } else {
                 self.evaluate(expression, &top_env, &top_captures)

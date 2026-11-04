@@ -2517,9 +2517,24 @@ settled, fresh, unborrowed ordinary record supplies a covered read; copying its
 value proves no property or callable behavior on that value. Application root
 reads use the same present-slot operation when one simple declarator reads an
 initialized module-local binding and no other call, write or opaque operation
-can intervene before its initializer result is projected. Applied accessors,
-compound owners, copies, arrays and missing/inherited fields retain their
-existing paths. The operation records an `own_property` heap cell identified
+can intervene before its initializer result is projected. A single original,
+non-exported declarator can also use the shared ordered local-operation plan
+when its whole initializer lowers into that grammar, combines at least two
+calls or a call with a field-value operand, and has no direct
+binding/global/property writes or dynamic scope.
+Every call must initially select a synchronous local callable;
+member callees require a present ordinary data slot and
+an unused implicit receiver. Native and imported whole-owner proof families
+retain their established dispatch until their value transfers accept evaluated
+operands. Evaluated return values pass directly to initializer publication;
+the flat call pass and later value projection do not repeat those operations.
+Calls within the initializer retain their effects and can mutate the prefix
+after an earlier operand has selected its value. Unsupported runtime paths
+summarize the remainder without retrying. Keyed-collection construction,
+split declarations, applied accessors, unsupported operators, arrays and
+missing/inherited fields retain their existing conservative paths.
+Root present-slot reads remain opaque allocation judgments and confer no
+whole-owner effect-coverage certificate. The operation records an `own_property` heap cell identified
 by allocation origin and static property. This cell includes every runtime
 generation of that source allocation; it proves neither a strong update nor
 privacy. Opaque heap barriers and uncovered effect domains remain authoritative.

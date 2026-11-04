@@ -116,6 +116,75 @@ fn compound_owner_keeps_the_value_read_before_its_later_mutation() {
 }
 
 #[test]
+fn compound_initializer_captures_a_callback_before_later_argument_mutation() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const early = 7;\nconst holder = { callback: () => early };\nfunction mutate() { holder.callback = () => later; return 0; }\nfunction take(value, unused) { return value; }\nconst selected = take(holder.callback, mutate());\nconst result = selected();\nconst later = (result, 42);\nconsole.log(result, later);\n",
+        vec![
+            logical_module("a_record", &[Member::new("early"), Member::new("holder")]),
+            logical_module("m_mutator", &[Member::new("mutate")]),
+            logical_module("n_take", &[Member::new("take")]),
+            logical_module(
+                "z_observed",
+                &[Member::new("selected"), Member::new("result")],
+            ),
+            logical_module("x_later", &[Member::new("later")]),
+            logical_module_with_anon("observe", &[], &["console.log(result, later);"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "7 42\n");
+}
+
+#[test]
+fn root_member_callee_is_selected_before_a_mutating_argument() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const early = 7;\nconst holder = { run: () => early };\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconst later = (result, 42);\nconsole.log(result, later);\n",
+        vec![
+            logical_module("a_record", &[Member::new("early"), Member::new("holder")]),
+            logical_module("m_mutator", &[Member::new("mutate")]),
+            logical_module("z_observed", &[Member::new("result")]),
+            logical_module("x_later", &[Member::new("later")]),
+            logical_module_with_anon("observe", &[], &["console.log(result, later);"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "7 42\n");
+}
+
+#[test]
+fn root_record_children_keep_their_values_before_a_later_call() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const early = 7;\nconst holder = { callback: () => early };\nfunction mutate() { holder.callback = () => later; return 0; }\nconst selected = { callback: holder.callback, unused: mutate() };\nconst result = selected.callback();\nconst later = (result, 42);\nconsole.log(result, later);\n",
+        vec![
+            logical_module("a_record", &[Member::new("early"), Member::new("holder")]),
+            logical_module("m_mutator", &[Member::new("mutate")]),
+            logical_module(
+                "z_observed",
+                &[Member::new("selected"), Member::new("result")],
+            ),
+            logical_module("x_later", &[Member::new("later")]),
+            logical_module_with_anon("observe", &[], &["console.log(result, later);"]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "7 42\n");
+}
+
+#[test]
+fn a_throwing_root_operand_keeps_later_calls_unexecuted() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "function take(value, unused) { return value; }\nfunction stop() { throw 'stopped'; }\nfunction later() { console.log('unexpected'); }\nconst result = take(stop(), later());\n",
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("take"),
+                Member::new("stop"),
+                Member::new("later"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_error(&fixture, "stopped");
+}
+
+#[test]
 fn an_own_getter_keeps_its_callback_effects() {
     let fixture = run_fixture(FixtureOpts::new(
         "const events = [];\nconst record = { get value() { events.push('get'); return 7; } };\nconst observed = record.value;\nconsole.log(observed, events.join(','));\n",
