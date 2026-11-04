@@ -274,7 +274,7 @@ func TestCloseControllerFailureStopsBlockedOperationWithoutRuntimeRun(t *testing
 	}
 	r := newLifecycleRunnerWithState(t, config, store)
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
-	if _, err := client.runner.OpenSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := client.runner.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	var release sync.Once
