@@ -2179,9 +2179,13 @@ or narrower nominal grants do not isolate them. Decide how the Environment workl
 ServiceAccount relates to a Session identity, including any authenticated mapping, and how to
 reject mismatches on native placement and central attachment. Never infer equality from a name or
 caller-supplied claim; preserve UID/replacement fencing and prevent concurrent check/admit races.
-Define policy for active attachments on identity change or revocation, without silently reassigning
-accepted work. Existing operator-only access when the Sandbox-owned account has disappeared stays
-distinct from a live independent identity whose Session has no Environment.
+For the initial Sandbox model, the operator favors one fixed ServiceAccount for the Sandbox's
+lifetime. Fence the exact account identity and fail closed if it disappears or is replaced; a
+same-name account is not the original. This does not choose whether the account is Sandbox-owned,
+or prevent token rotation and policy updates. Session identity reassignment remains a separate
+question; define revocation and any future identity-change behavior without silently reassigning
+accepted work. Operator-only access when a Sandbox-owned account has disappeared stays distinct
+from a live independent identity whose Session has no Environment.
 
 **Exit:** reviewed examples for a central Session with zero Environments, two same-identity
 Sessions sharing one Environment, and rejection of a different identity, including creation,

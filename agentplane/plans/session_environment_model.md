@@ -391,6 +391,13 @@ impersonation authority or supply a credential; define authenticated delegation 
 and validate compatible identity when an Environment is attached. No wire or storage change is
 selected by this candidate.
 
+**Initial Sandbox direction:** the operator favors keeping one fixed ServiceAccount for each
+Sandbox throughout that Sandbox's lifetime. Bind and fence the exact account identity; if it is
+deleted or replaced by a same-name account, do not silently adopt the replacement. This does not
+select Sandbox ownership of the account, prohibit sharing an account between Sandboxes, or prevent
+normal token rotation and permission changes. Whether a Session has an independent identity, and
+whether that Session association can change, remain separate decisions.
+
 **Changing permissions is different from changing identity.** The Sandbox controller already updates its PolicyBinding when `spec.policySets` changes without replacing the running Pod. Policy readers converge independently, so revocation is not globally instantaneous; existing connections and already obtained information have their own behavior. This preserves an individual Sandbox’s permission handle while keeping its current SA and Pod.
 
 **Shared-SA tradeoff:** PolicyBindings name a ServiceAccount subject, and matching grants combine additively. If two environments use the same SA, their bindings’ grants can combine for that subject, so a grant intended for one can apply to the other. A shared SA therefore changes the current per-Sandbox permission granularity unless policy is redesigned with additional trustworthy scope. Sharing may be right for environments intentionally in the same privilege domain; it is not automatically equivalent to today’s per-agent permission assignment.
@@ -1096,6 +1103,13 @@ co-resident agents have shared ambient access, including to the egress proxy and
 Enforce this for native placement and central attachment, including concurrent admission, rather than
 treating Session IDs or directories as isolation. The account representation and lifecycle remain
 open; placing an account reference in the Session spec is a candidate, not authorization by itself.
+
+**2026-11-04 · Fixed Sandbox ServiceAccount**
+
+The operator favors the simpler initial model: a Sandbox keeps one ServiceAccount throughout its
+lifetime. Preserve the account's exact identity rather than adopting a same-name replacement. This
+narrows the earlier discussion of changing a Sandbox's SA; it does not settle independent Session
+identity or account ownership, nor does it freeze permissions or credentials.
 
 **2026-11-04 · Session-facing APIs and service topology**
 
