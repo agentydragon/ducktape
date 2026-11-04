@@ -255,9 +255,9 @@ pub fn assert_cycle_edge_source_units(graph: &DependencyGraphReport, edge: &Valu
         graph.edges.iter().any(|candidate| {
             candidate.source == from_id
                 && candidate.target == to_id
-                && serde_json::to_value(&candidate.edge_kind).expect("DepKind serializes")
+                && serde_json::to_value(candidate.edge_kind).expect("DepKind serializes")
                     == edge["kind"]
-                && serde_json::to_value(&candidate.statement_ordinal)
+                && serde_json::to_value(candidate.statement_ordinal)
                     .expect("SourceUnitOrdinal serializes")
                     == edge["statement_ordinal"]
         }),
