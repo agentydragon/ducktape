@@ -20,8 +20,9 @@ import pytest
 from playwright.async_api import Locator, Page, TimeoutError as PlaywrightTimeoutError, async_playwright
 
 from agentplane.app.testing import history_probe, thread_view_marks
+from agentplane.app.testing.browser_certificate import BrowserCertificate, browser_certificate
 from agentplane.app.testing.history import SessionHistory
-from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
+from agentplane.app.testing.http2_proxy import Ingress, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.replication_source import (
     SANDBOX,

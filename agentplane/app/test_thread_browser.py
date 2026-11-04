@@ -30,8 +30,9 @@ from sqlalchemy import func, select, update
 
 from agentplane.app.frontend.testing.history_interactions import frames, holding_still, read_at, tool_call_in, wheel
 from agentplane.app.testing import thread_view_marks
+from agentplane.app.testing.browser_certificate import BrowserCertificate
 from agentplane.app.testing.history import SessionHistory
-from agentplane.app.testing.http2_proxy import BrowserCertificate, http2_proxy
+from agentplane.app.testing.http2_proxy import http2_proxy
 from agentplane.app.testing.replication_process import GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.testing.runner_gateway import APP, DISPATCHER_AUDIENCE, GATEWAY, GATEWAY_AUDIENCE
