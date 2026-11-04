@@ -202,7 +202,7 @@ export function PendingInputMessages({
             action={
               !admitted && !value.attempted && value.dispatch === null
                 ? { label: "Cancel", onClick: () => store.cancelUnsent(id) }
-                : !admitted && value.dispatch === null && value.target !== null
+                : !admitted && value.dispatch === null && (value.sessionAddressed || value.target !== null)
                   ? { label: "Retry", onClick: () => void deliver(value) }
                   : undefined
             }
@@ -293,7 +293,7 @@ function LocalControlRows({
                   !settled &&
                   value.dispatch === null &&
                   !value.interruptResult &&
-                  (!value.attempted || value.target !== null) && (
+                  (!value.attempted || value.sessionAddressed || value.target !== null) && (
                     <Button
                       size="xs"
                       variant="subtle"
