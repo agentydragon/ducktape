@@ -1434,11 +1434,9 @@ fn default_report_bounds_examples_without_losing_exact_counts() {
     ];
     let mut source = String::new();
     for (index, name) in names.iter().enumerate() {
-        // A host property read remains uncovered even when its value is
-        // discarded, preserving this control's opaque conflict inventory.
-        source.push_str(&format!(
-            "const {name} = (globalThis.unmodeled, {index});\n"
-        ));
+        // A static template is pure but outside the source-covered value
+        // subset, preserving this control's opaque conflict inventory.
+        source.push_str(&format!("const {name} = (``, {index});\n"));
     }
     source.push_str(&format!(
         "const tail = {};\nconsole.log(tail);\n",
