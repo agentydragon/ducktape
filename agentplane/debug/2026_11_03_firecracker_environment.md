@@ -105,3 +105,52 @@ restore; the existing detached-session grace is about 30 seconds of _running gue
 does not establish arbitrary delayed reattachment after resume. No production resources were
 changed. After saving the focused evidence, the disposable
 `firecracker-environment-proof` namespace was deleted and verified absent.
+
+## Generated-client transport decomposition (2026-11-04 UTC)
+
+The launcher now uses the generated Python `GuestManagement` stub directly over a private Unix
+socket. Its small Go bridge owns no protobuf messages: it uses the separately reviewed
+[`util/vsock/firecracker`](../../util/vsock/firecracker/README.md) stream transport from PR #14136.
+Agentplane owns port 52, private socket permissions, boot-ID checks and credential policy. The guest
+uses `github.com/mdlayher/vsock` for its native listener and keeps host-CID authorization in the
+management service. The protobuf-over-stdin/stdout helper and the hand-written native socket
+implementation are removed.
+
+[Transport and CLI tests](https://app.buildbuddy.io/invocation/ec134264-5bb7-4e83-829a-7db66712277c),
+[generated Python-client integration and direct library typing](https://app.buildbuddy.io/invocation/20423d7c-fa57-4164-8595-8e6e575dd5aa),
+and [rebased launcher/runner artifact builds](https://app.buildbuddy.io/invocation/11992c25-23f1-4db7-915f-3317e7239641)
+passed. The Python test runs the actual Go bridge between generated gRPC client/server code,
+covering a boot-time connection refusal, rejection before credentials are transmitted on a boot-ID
+mismatch, deadline propagation, cancellation and transport cleanup. The OCI entrypoint/tooling test,
+guest-management Go tests and supervisor tests also passed in
+[the earlier refactor run](https://app.buildbuddy.io/invocation/80417da5-9a0d-4f18-b3bb-aa6bc2de1b9a);
+that invocation as a whole failed on test runfiles/typing setup, repaired in the passing run above.
+
+The rebuilt artifacts from code commit `74b7036981a53d616ec809d02bf65d0ea4871bcd` passed a new
+manual KVM boot/suspend/restore check in a disposable Pod on `wyrm2`. The boot archive and extracted
+seed rootfs were checked against the accepted digests above before starting. An older scratch
+seed with hash `5dcc3a4f09a4ad419ba8c812acd6e7ca69323a4fd6c63d6cc9a33e9f8ca671b8` was rejected
+by this provenance check; the accepted run used the immutable Nix archive without a guest patch.
+
+Pod UID `c8989782-fd03-4631-ae8d-485e5d1c59dc`, guest boot ID
+`0bedd7f2-e7b3-494f-9e2e-c5575774de43` and Runtime boot ID
+`0179d3c6-f451-4c18-9b5e-283517ea3b6d` survived the checkpoint and restore. The manifest recorded
+1 GiB RAM and generation `checkpoint-50d06bcf27ed414f8cb45c25f2667ad6`. The Runtime probe opened
+native session `f23fce4c-ceba-4318-8837-293ea0966782`, then reattached with a higher connection epoch
+and the previous output cursor. Reattachment returned the same UUID marker
+`ef8755c6-c916-4cb2-aba5-5ead98d8e6a3`, shell PID 500 and child PID 501; the output counter advanced
+from 0 to 2 and the process was neither closed nor exited. `StartProcess` was called only before
+suspension. Reattachment was immediate, so the detached-session limitation described above remains.
+
+While the guest was suspended, the host published a new synthetic projected-TLS generation signed
+by the same CA. After restore, an authenticated TLS connection to Runtime returned the new leaf
+certificate: SHA-256 `d4bf57e552937487870041b69877c76d3363e4ee31d93a50e51386090a666160`,
+replacing `525d96274922b990dfd1be25fcafcae14a4585c88b2bd996b24d3753f7619cd0`. This checks the
+current credential generation through generated Python gRPC, the reusable bridge and native guest
+vsock, plus Runtime TLS reload without a Runtime restart. It does not test Kubernetes TokenReview
+or projected ServiceAccount token rotation.
+
+[Selected nonsecret events, manifest, certificate fingerprints and artifact digests](2026_11_03_firecracker_environment/grpc_bridge_evidence.json)
+are retained. The proof still uses manually supplied launcher inputs and a synthetic Gateway-protocol
+client, not a deployed Sandbox controller/Gateway/Session test. The disposable namespace was deleted
+after saving evidence; no VM disks, RAM snapshots or private keys are retained in Git.
