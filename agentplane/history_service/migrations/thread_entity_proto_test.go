@@ -19,7 +19,7 @@ func migrationDB(t *testing.T) *sql.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	provider, err := newProvider(db)
+	provider, err := legacyProvider(db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestThreadEntityMigrationPreservesAllKindsAndHistory(t *testing.T) {
 	if _, err := db.ExecContext(t.Context(), `INSERT INTO thread_payload_chunk(thread_id,projection_epoch,owner_cursor,owner_id,field,generation,chunk_index,text) VALUES($1,'old-python',1,'tool','output',1,0,$2::json)`, item.ThreadID, `"before\u0000after"`); err != nil {
 		t.Fatal(err)
 	}
-	provider, err := newProvider(db)
+	provider, err := legacyProvider(db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +157,7 @@ func TestThreadEntityMigrationFailureRollsBackAndRestarts(t *testing.T) {
 	}
 	bad := legacyRow("command", "z", `{"operation":"interrupt","outcome":"unknown","outcome_cursor":null,"outcome_reason":null}`)
 	insertLegacy(t, db, bad, threadEntityBatchSize+1)
-	provider, err := newProvider(db)
+	provider, err := legacyProvider(db)
 	if err != nil {
 		t.Fatal(err)
 	}

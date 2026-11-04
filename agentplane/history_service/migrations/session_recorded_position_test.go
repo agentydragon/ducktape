@@ -14,7 +14,7 @@ func TestSessionRecordedPositionMigrationPreservesCursorAndIdentity(t *testing.T
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	provider, err := newProvider(db)
+	provider, err := legacyProvider(db)
 	if err != nil {
 		t.Fatal(err)
 	}

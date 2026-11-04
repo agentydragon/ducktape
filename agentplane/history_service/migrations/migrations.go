@@ -33,13 +33,7 @@ func newProvider(db *sql.DB) (*goose.Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	backfill := goose.NewGoMigration(
-		4,
-		&goose.GoFunc{RunDB: backfillEventKinds},
-		&goose.GoFunc{RunDB: rollbackEventKindBackfill},
-	)
-	entities := goose.NewGoMigration(7, &goose.GoFunc{RunTx: migrateThreadEntities}, &goose.GoFunc{RunTx: rollbackThreadEntities})
 	return goose.NewProvider(goose.DialectPostgres, db, files,
 		goose.WithTableName("history_service_goose_version"), goose.WithSessionLocker(locker),
-		goose.WithDisableGlobalRegistry(true), goose.WithGoMigrations(backfill, entities, sessionPlacement, repairLegacySamplerSummary))
+		goose.WithDisableGlobalRegistry(true))
 }

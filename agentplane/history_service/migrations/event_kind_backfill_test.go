@@ -18,6 +18,13 @@ func TestBackfillSessionEventKindAndRequireIt(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	ctx := t.Context()
+	predecessor, err := legacyProvider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := predecessor.UpTo(ctx, 3); err != nil {
+		t.Fatal(err)
+	}
 	const rowCount = 514
 	const sessionID = "00000000-0000-0000-0000-000000000001"
 	if _, err := db.ExecContext(ctx, "INSERT INTO session_history (id, last_cursor) VALUES ($1, $2)", sessionID, rowCount); err != nil {
@@ -64,7 +71,7 @@ func TestBackfillSessionEventKindAndRequireIt(t *testing.T) {
 		}
 	}
 
-	provider, err := newProvider(db)
+	provider, err := legacyProvider(db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +82,7 @@ func TestBackfillSessionEventKindAndRequireIt(t *testing.T) {
 	if _, err := db.ExecContext(ctx, "UPDATE session_event SET payload = $3 WHERE session_id = $1 AND cursor = $2", sessionID, rowCount, knownPayload); err != nil {
 		t.Fatal(err)
 	}
-	provider, err = newProvider(db)
+	provider, err = legacyProvider(db)
 	if err != nil {
 		t.Fatal(err)
 	}
