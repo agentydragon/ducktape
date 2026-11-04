@@ -1555,14 +1555,14 @@ fn validate_and_emit_reports<'a>(
     // point with a non-empty clause-2 verdict means the atomic-group
     // glue and the realizability gate disagree — refuse to emit
     // rather than materialize a bundle that reassigns an ESM import.
-    if let Ok(validated) = &validation {
-        if !validated.cross_destination_rebinds().is_empty() {
-            bail!(
-                "materialize_logical_modules: chunk {chunk_id} — realizability verdict carries {n} cross-destination rebind(s) but no atomic-group conflict or blocking SCC was reported; this should be unreachable (rebinding writes co-locate with their target via atomic factor groups). Rebinds:\n  {rebinds}",
-                n = validated.cross_destination_rebinds().len(),
-                rebinds = assignment_report.cross_rebinds.join("\n  "),
-            );
-        }
+    if let Ok(validated) = &validation
+        && !validated.cross_destination_rebinds().is_empty()
+    {
+        bail!(
+            "materialize_logical_modules: chunk {chunk_id} — realizability verdict carries {n} cross-destination rebind(s) but no atomic-group conflict or blocking SCC was reported; this should be unreachable (rebinding writes co-locate with their target via atomic factor groups). Rebinds:\n  {rebinds}",
+            n = validated.cross_destination_rebinds().len(),
+            rebinds = assignment_report.cross_rebinds.join("\n  "),
+        );
     }
     match validation {
         Ok(validated) => Ok(GateOutcome::Accepted(validated)),
