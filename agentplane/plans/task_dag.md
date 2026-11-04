@@ -933,7 +933,9 @@ account and roles. Compare this with retaining ServiceAccounts as the permission
 the relationships and lifetimes of principals, Sessions and environments, who may act as a
 principal, whether associations can change, and how a central Session keeps its identity without
 an environment. The [Session/environment model](session_environment_model.md) records the
-related lifecycle discussion and selected direction.
+related lifecycle discussion and selected direction. `SESSION_IDENTITY_CONTRACT` tracks the focused
+identity and same-Environment admission decisions needed for Session separation; coordinate those
+decisions here without requiring the wider provisioning comparison to finish first.
 
 Today each Sandbox owns its own ServiceAccount and PolicyBinding so its permissions can be changed
 independently. Sharing an SA between environments combines their additive grants. The egress proxy
@@ -2066,6 +2068,16 @@ flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: delivery ownership and service topology]
     SESSION_DATA_OWNERSHIP_DESIGN[Later decision: Session data and service boundaries]
     SESSION_DIRECTORY_NATIVE[Ready: Dispatcher Session directory for native placement]
+    SESSION_IDENTITY_CONTRACT[Decision: Session identity and shared-Environment admission]
+    CENTRAL_SESSION_CREATION_CONTRACT[Decision: central Session creation without an Environment]
+    SESSION_ATTACHMENT_CONTRACT[Decision: Environment attachments and targeting]
+    SESSION_IDENTITY_ENFORCEMENT[Blocked: enforce identity in shared Environments]
+    CENTRAL_SESSION_WITHOUT_ENVIRONMENT[Blocked: central Session without an Environment]
+    SESSION_ENV_ATTACHMENTS[Blocked: attach and detach Environments]
+    SESSION_ATTACHMENT_SURFACES[Blocked: attachment tools and presentation]
+    SESSION_ATTACHMENT_HISTORY[Blocked: retain attachment transition history]
+    SESSION_LIFETIME_IMPLEMENTATION[Blocked: implement reviewed Session and inbox lifetimes]
+    CENTRAL_SESSION_NOTIFICATIONS[Blocked: environment-independent Session inbox delivery]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: send authority and internal fencing]
     SESSION_DELETION_FENCE[In progress: bounded deletion outcome delivery]
     SESSION_AND_INBOX_LIFETIME[Decision: Session and inbox lifetimes after environment deletion]
@@ -2073,12 +2085,25 @@ flowchart LR
     SESSION_NOTIFICATION_ADDRESS[Blocked: remaining Session notification addressing]
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
     SESSION_DIRECTORY_NATIVE --> DELIVERY_DESTINATION_CONTRACT
-    SESSION_DIRECTORY_NATIVE --> SESSION_NOTIFICATION_ADDRESS
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> SESSION_NOTIFICATION_ADDRESS
-    DELIVERY_DESTINATION_CONTRACT --> SESSION_NOTIFICATION_ADDRESS
-    SESSION_AND_INBOX_LIFETIME -. central lifetime .-> SESSION_NOTIFICATION_ADDRESS
-    SESSION_RUNTIME_MODEL_DESIGN --> SESSION_HISTORY_PRESENTATION
-    AGENT_PRINCIPAL_MODEL_DESIGN --> SESSION_HISTORY_PRESENTATION
+    SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
+    CENTRAL_SESSION_CREATION_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
+    SESSION_IDENTITY_CONTRACT --> SESSION_IDENTITY_ENFORCEMENT
+    SESSION_IDENTITY_CONTRACT --> SESSION_ATTACHMENT_CONTRACT
+    SESSION_ATTACHMENT_CONTRACT --> SESSION_ENV_ATTACHMENTS
+    SESSION_IDENTITY_ENFORCEMENT --> SESSION_ENV_ATTACHMENTS
+    CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> SESSION_ENV_ATTACHMENTS
+    SESSION_ENV_ATTACHMENTS --> SESSION_ATTACHMENT_SURFACES
+    SESSION_ENV_ATTACHMENTS --> SESSION_ATTACHMENT_HISTORY
+    CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> SESSION_HISTORY_PRESENTATION
+    SESSION_ENV_ATTACHMENTS -. multiple attachments .-> SESSION_HISTORY_PRESENTATION
+    SESSION_AND_INBOX_LIFETIME --> SESSION_LIFETIME_IMPLEMENTATION
+    SESSION_IDENTITY_CONTRACT -. independent identity .-> SESSION_LIFETIME_IMPLEMENTATION
+    CENTRAL_SESSION_WITHOUT_ENVIRONMENT -. central lifecycle .-> SESSION_LIFETIME_IMPLEMENTATION
+    SESSION_DELETION_FENCE -. disposing receipts .-> SESSION_LIFETIME_IMPLEMENTATION
+    SESSION_AND_INBOX_LIFETIME --> CENTRAL_SESSION_NOTIFICATIONS
+    SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_NOTIFICATIONS
+    CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> CENTRAL_SESSION_NOTIFICATIONS
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
     RUNNER_STORE_SESSION_IDENTITY[Blocked: implement reviewed private mapping]
     RUNNER_IDENTITY_LEGACY_CLEANUP[Blocked: retire old identity assumptions]
@@ -2137,6 +2162,150 @@ prerequisite for unrelated safe native-first work. See the
 
 **Exit:** an evidence-backed inventory and comparison, a reviewed ownership and database direction,
 and appropriately scoped follow-up work. This node authorizes no service move or data migration.
+
+### `SESSION_IDENTITY_CONTRACT` — Session identity and shared-Environment admission
+
+**Decision; operator direction on the trust boundary, 2026-11-04.** Select the minimum identity,
+ownership and authority contract needed for central and native Sessions. Compare an exact
+ServiceAccount reference in the Session spec, an independent Agentplane principal mapped to
+workload accounts, and other reviewed representations; decide account/principal lifetime, who may
+create a Session as it, authenticated delegation to the central sampler, access after identity
+deletion, revocation and identity changes. An identity reference is not a credential or authority.
+
+**Required shared-Environment invariant:** Sessions using the same Environment must have the same
+verified identity. An Environment is a shared trust domain: co-resident agents can communicate
+and use its ambient egress proxy and placeholder credentials, so different Session IDs, directories
+or narrower nominal grants do not isolate them. Decide how the Environment workload's actual
+ServiceAccount relates to a Session identity, including any authenticated mapping, and how to
+reject mismatches on native placement and central attachment. Never infer equality from a name or
+caller-supplied claim; preserve UID/replacement fencing and prevent concurrent check/admit races.
+Define policy for active attachments on identity change or revocation, without silently reassigning
+accepted work. Existing operator-only access when the Sandbox-owned account has disappeared stays
+distinct from a live independent identity whose Session has no Environment.
+
+**Exit:** reviewed examples for a central Session with zero Environments, two same-identity
+Sessions sharing one Environment, and rejection of a different identity, including creation,
+attachment, effective credentials and denial. This is the focused contract for this lane;
+`AGENT_PRINCIPAL_MODEL_DESIGN` can separately evaluate broader provisioning and external identities
+without holding the minimal decision on a general identity-governance system.
+
+### `CENTRAL_SESSION_CREATION_CONTRACT` — opening a central Session without an Environment
+
+**Decision.** Define the smallest zero-Environment creation and command contract consistent with
+the chosen Session UUID and Dispatcher-owned logical reservation: central owner/placement, immutable
+request and retry identity, owner unavailable or materialization rejected, and observable progress.
+Decide how optional setup, cwd and Environment-dependent instructions behave without an executor;
+do not silently run setup elsewhere or make an Environment a condition for provider-only work.
+Map authenticated Session identity, command authorization and History ingress to the selected owner.
+Coordinate with `SESSION_IDENTITY_CONTRACT`; either decision can be drafted independently, but both
+are prerequisites for implementing the complete zero-Environment path. Multi-attachment semantics
+belong to `SESSION_ATTACHMENT_CONTRACT`, not a prerequisite for this decision.
+
+**Exit:** reviewed API and state examples for create, retry, send and History observation while no
+Environment exists, with exact acceptance and unknown-outcome boundaries.
+
+### `SESSION_ATTACHMENT_CONTRACT` — Session-to-Environment relationships
+
+**Decision; finalize with the reviewed Session identity contract.** Define native required placement
+versus central zero-or-more attachments; who may attach, detach, inspect, execute and wake; and
+whether a default target is allowed. Decide attachment identity, exact Environment UID, revision,
+desired versus observed status, operation targeting and incarnation fencing, concurrent
+attach/detach, replacement, unavailable targets and in-flight effects. Enforce the shared-identity
+invariant from `SESSION_IDENTITY_CONTRACT`; do not treat an attachment or source subscription as a
+grant. Define an authoritative transition record and recoverable handoff for the separately tracked
+History work. A draft may proceed alongside identity review; implementation waits for both decisions.
+
+**Exit:** reviewed zero, one and multiple attachment examples, including denial, race/retry and
+Environment loss. Choose no service relocation or automatic reattachment by this decision alone.
+
+### `SESSION_IDENTITY_ENFORCEMENT` — enforce one identity per shared Environment
+
+**Blocked on `SESSION_IDENTITY_CONTRACT`.** Apply the reviewed invariant to existing native
+Session admission and provide an atomic identity gate for every path that permits Session use of an
+Environment. Verify the real Session and workload identities; serialize or fence concurrent
+admissions and identity changes so different identities cannot both pass. Cover direct, delegated
+and privileged callers, exact identity and Environment UIDs, revocation and already accepted work.
+A privileged caller must not accidentally bypass the trust-domain rule.
+
+**Exit:** automated coverage of matching Sessions sharing an Environment, mismatched admission,
+concurrent races, account replacement and policy change. The central attachment endpoint does not
+yet need to exist: `SESSION_ENV_ATTACHMENTS` must integrate and test this gate before shipping it.
+
+### `CENTRAL_SESSION_WITHOUT_ENVIRONMENT` — central Session without an Environment
+
+**Blocked on `SESSION_IDENTITY_CONTRACT` and `CENTRAL_SESSION_CREATION_CONTRACT`.** Implement the
+reviewed zero-Environment create, resolve, command and provider-only execution path through the
+Dispatcher and central sampler. Today both opening requests require a Sandbox/executor; the sampler
+also binds executor identity, setup and stored configuration to it, and History's sampler ingress
+requires an executor. Update the relevant producers, consumers, History ingress and retained data
+in the same coherent contract cutover. A Session can open and accept authorized work while its owner
+is temporarily unavailable; admission does not prove materialization or model/tool effects.
+
+An Environment-dependent operation without a target must report an actionable unavailable or
+unsupported outcome, not invent an Environment, reuse an old target or replay an uncertain effect.
+Preserve stable IDs, frozen prompt semantics, retained native/central data, source attribution and
+existing native behavior. Exact protobuf, storage and binary boundaries follow the reviewed contract;
+the optional service/database reshuffle is not a prerequisite.
+
+**Exit:** end-to-end create, retry, send, provider-only continuation and History reads with zero
+Environments; owner-unavailable, missing-target, authorization and restart/unknown-outcome coverage.
+No full multi-attachment UI or broader identity-provider integration is required.
+
+### `SESSION_ENV_ATTACHMENTS` — attach and detach Environments
+
+**Blocked on `SESSION_ATTACHMENT_CONTRACT`, `SESSION_IDENTITY_ENFORCEMENT` and
+`CENTRAL_SESSION_WITHOUT_ENVIRONMENT`.** Implement the reviewed central Session relationship for
+zero, one and multiple exact Environments, including explicit targeting, durable desired state,
+status, attachment revision and identity/authorization checks. Detaching the last Environment
+requires the zero-Environment path; native harness placement remains a distinct required constraint.
+Preserve exact-incarnation fencing, authorized wake, independent failure of one target, and
+unconfirmed effects on disconnect or detach. Do not silently retarget work to a replacement.
+
+Durably record enough attachment-transition evidence for `SESSION_ATTACHMENT_HISTORY` to recover
+later; that History delivery and full UI are independent follow-ups. Cover attach/detach retry,
+concurrent changes, identity mismatch, target deletion/recreation and in-flight work.
+
+### `SESSION_ATTACHMENT_SURFACES` — use attachments from agents, CLI and app
+
+**Blocked on `SESSION_ENV_ATTACHMENTS`.** Expose the reviewed discovery, attach/detach, target
+selection and status through the owning service's generated contracts, Agentplane tools and CLI,
+and the app/frontend where relevant. A Session with no Environment remains visible and usable for
+supported work; per-target failures and unsupported native attachment operations are explicit.
+Preserve authentication and avoid an app-only backend dependency. Exercise an ordinary central
+workflow with two Environments and a native workflow with its required placement; no attachment
+must be inferred from a mutable name or made a prerequisite for Session reads.
+
+### `SESSION_ATTACHMENT_HISTORY` — record attachment transitions in History
+
+**Blocked on the reviewed and implemented `SESSION_ENV_ATTACHMENTS` transition source.** Deliver
+time-qualified attachment and detachment evidence to History with a recoverable handoff, retaining
+exact identities, actor attribution and historical read authority. History remains independently
+readable if the live Session or Environment is absent. Test retries, delayed delivery, deletion and
+replay without inventing cross-store atomicity. This is the operator-requested eventual correctness
+work, not a prerequisite for the initial zero-Environment Session path or attachment UI.
+
+### `SESSION_LIFETIME_IMPLEMENTATION` — implement reviewed Session and inbox lifetimes
+
+**Blocked on `SESSION_AND_INBOX_LIFETIME`; an independent-principal implementation also needs
+`SESSION_IDENTITY_CONTRACT`.** Implement the chosen Session/environment deletion relationship,
+operator access after account disappearance, and coordinated inbox/History/receipt behavior at
+their authoritative owners. Do not silently delete authored or unread data, invent an automatic
+reattachment or equate app archive with Session deletion. If explicit deletion disposes of command
+receipts, resolve the relevant bounded-outcome gap in `SESSION_DELETION_FENCE` first. A native-only
+safe slice need not wait for central multi-attachment support; central lifecycle changes use the
+central no-Environment path. Test lost replies, deletion races, inaccessible principals and
+same-name replacements.
+
+### `CENTRAL_SESSION_NOTIFICATIONS` — inboxes for Sessions without Environments
+
+**Blocked on `SESSION_AND_INBOX_LIFETIME`, `SESSION_IDENTITY_CONTRACT` and
+`CENTRAL_SESSION_WITHOUT_ENVIRONMENT`.** Make subscription, inbox and notice authorization and
+delivery work for a central Session with no Environment, under the reviewed identity and lifetime
+contracts. Today the Notification worker resolves a Sandbox destination and passes its UID to
+Dispatcher; do not fabricate one or silently retire a live Session's inbox because an attachment
+is absent. Preserve pending messages, idempotency, source authorization, explicit acknowledgement
+and unattended wake where an actual Environment must be woken. Update affected backend, app and
+frontend consumers together; test no-Environment delivery, attachment loss and reconnect.
 
 ### `CNPG_FREE_K3S_INTEGRATION_TIER` — add a narrow database-independent integration tier
 
@@ -2297,34 +2466,35 @@ This decision does not block independently safe native-only addressing cleanup.
 
 ### `SESSION_NOTIFICATION_ADDRESS` — address inboxes and notices by Session ID
 
-**Remaining delivery cutover is blocked on `SESSION_DIRECTORY_NATIVE`, `DELIVERY_DESTINATION_CONTRACT`, and reviewed send authority.**
+**Native delivery cutover requires reviewed send authority.**
 [Session inbox diagnostics](../notification_service/docs/api.md#session-inbox-diagnostics) already
 read and watch by Session ID; inbox storage enforces one inbox per Session while retaining existing
-destination keys and state. Inbox reads, acknowledgement and retirement address the owning Session. Public message sends and their CLI use Session ID and resolve exact
-placement through Dispatcher; stored destination fences and output provenance remain. Migrate the
-remaining delivery worker and Action-facing guidance. Native and central tool processes now receive
-only `AGENTPLANE_SESSION_ID`; retained central prompts may still contain the old Sandbox-shaped
-instructions, as recorded in the [address inventory](session_environment_model.md#session-address-inventory).
-Resolve an environment only when an actual
-placement, authorization or wake decision needs it. Preserve subscription and message idempotency,
-inbox cursors, actor attribution, cross-Session denial, authorized unattended wake, and exact UID
-fencing of accepted work. Account for central Sessions without an environment without assuming the
-unresolved principal model. Review state ownership and data preservation before any store cutover;
-no silent inbox or message loss. Central Session inbox lifetime changes additionally require
-`SESSION_AND_INBOX_LIFETIME`. See the [inventory](session_environment_model.md#session-address-inventory).
+destination keys and state. Inbox reads, acknowledgement and retirement address the owning Session.
+Public message sends and their CLI use Session ID and resolve exact placement through Dispatcher.
+Migrate the remaining native delivery worker and Action-facing guidance using the existing Session
+opening and exact UID fences, subject to the reviewed send authority. This native slice does not
+require the full private native directory or a separate Action grant reshuffle.
+
+Native and central tool processes now receive only `AGENTPLANE_SESSION_ID`; retained central prompts
+may still contain Sandbox-shaped instructions, as recorded in the
+[address inventory](session_environment_model.md#session-address-inventory). Resolve an Environment
+only for actual placement, authorization or wake. Preserve subscription and message idempotency,
+inbox cursors, actor attribution, cross-Session denial, authorized unattended wake and exact UID
+fencing. `CENTRAL_SESSION_NOTIFICATIONS` separately covers central Sessions without Environments
+and the unresolved identity and lifetime decisions; neither slice may silently lose inbox data.
 
 ### `SESSION_HISTORY_PRESENTATION` — represent Sessions without a required Sandbox
 
-**Blocked on the central Session and principal/attachment contracts.** History's direct Session reads
-are already keyed by Session ID; retain exact environment references as provenance, filters and
-access-control evidence. Adapt single-Sandbox ingress, summary/projection, app Thread views, grouping,
-readiness controls and environment-filtered lists for central Sessions with zero or multiple
-attachments; do not make historical reads depend on a live directory. Record time-qualified
-attachment transitions as previously requested, with a recoverable History handoff and explicit
-read authority. Preserve retained history, UX visibility and exact UID attribution.
-The [app's listing follow-up](../app/TODO.md#session-and-environment-listings) covers bounded
-pagination and archived counts under that model, rather than optimizing the current single-Sandbox
-query as a separate migration. [Address inventory](session_environment_model.md#session-address-inventory).
+**Zero-Environment presentation follows `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`; multiple-attachment
+presentation also needs `SESSION_ENV_ATTACHMENTS`.** History's direct Session reads already use
+Session ID. Retain exact Environment references as provenance, filters and access-control evidence.
+Adapt summary/projection, app Thread views, grouping, readiness controls and Environment-filtered
+lists for central Sessions without an Environment, then for multiple attachments. Historical reads
+must not depend on a live directory. `SESSION_ATTACHMENT_HISTORY` separately tracks time-qualified
+attachment transitions and their recoverable handoff; its completion does not gate the first UI.
+Preserve retained history, UX visibility and exact UID attribution. The
+[app's listing follow-up](../app/TODO.md#session-and-environment-listings) covers bounded pagination
+and archived counts under that model. [Address inventory](session_environment_model.md#session-address-inventory).
 
 ### Service API transport tracks
 
