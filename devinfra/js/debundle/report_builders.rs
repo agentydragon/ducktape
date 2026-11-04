@@ -192,6 +192,14 @@ fn build_source_unit_nodes_and_edges(
             heap_native_integrity_uses: node.heap_native_integrity_uses.clone(),
             synchronous_execution: node.synchronous_execution.as_ref().map(|execution| {
                 let mut report = execution.clone();
+                for rejection in &mut report.local_record_factory_rejections {
+                    if let Some(publication) = &mut rejection.first_class_members_publication {
+                        publication.source_location = publication
+                            .top_level_owner
+                            .and_then(|owner| source_units_by_ordinal.get(&owner))
+                            .and_then(|source_unit| source_unit.source_location.clone());
+                    }
+                }
                 author_inputs.render_synchronous_execution(&mut report);
                 report.callback_factory_uses = node.callback_factory_uses.iter().map(|proof_use| {
                     CallbackFactoryUseReport {

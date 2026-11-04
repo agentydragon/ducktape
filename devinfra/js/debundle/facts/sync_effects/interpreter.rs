@@ -71,8 +71,9 @@ use crate::facts::{
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::{ChunkCodeGraph, Effects};
 use crate::reports::schema::{
-    AssumedEffectReason, CallbackFactoryUseKind, ConstructionRejection, ExecutionOperation,
-    ExecutionPrecisionLoss, ExecutionPrecisionLossReason, GlobalReachCause, HavocReach,
+    AssumedEffectReason, CallbackFactoryUseKind, ClassMembersPublicationWriter,
+    ConstructionRejection, ExecutionOperation, ExecutionPrecisionLoss,
+    ExecutionPrecisionLossReason, FirstClassMembersPublication, GlobalReachCause, HavocReach,
     InferenceRule, LocalRecordFactoryRejection, NativeIntegrityCheck, NativeIntegrityGuard,
     NativePrefixObservation, NativePrototypePropertyCheck, OrderedCallAdmissionRefusal,
     OrderedFieldReadRefusal, PossibleGetterLookupSite, PossibleGetterPromotion,
@@ -850,6 +851,8 @@ pub(super) struct ExecutionState {
     /// First top-level owner observed inserting each function callback into
     /// `global_escaped_callbacks` through `publish_values`.
     first_callback_publication_owners: BTreeMap<u32, SourceUnitOrdinal>,
+    /// First actual insertion of each class's members into the escaped pool.
+    first_class_members_publications: BTreeMap<u32, FirstClassMembersPublication>,
     top_env: Context,
     top_captures: Context,
     prefix_object_properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
@@ -2079,7 +2082,11 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         );
     }
     fn publish_throw(&mut self, values: &Values) {
-        self.executor.publish_values(values);
+        self.executor.publish_values(
+            values,
+            ClassMembersPublicationWriter::ThrowValuePublication,
+            None,
+        );
     }
 }
 
@@ -4179,7 +4186,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     ]);
                     self.join_accumulated_value(result, fallback);
                 }
-                self.invoke_possible_callbacks(&[original_callbacks], false, outcome);
+                self.invoke_possible_callbacks_at(
+                    &[original_callbacks],
+                    false,
+                    Some(span.source_span()),
+                    outcome,
+                );
                 return false;
             }
             match row.result {
@@ -5142,6 +5154,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             property,
             construction: None,
             first_callback_publication_owner: None,
+            first_class_members_publication: None,
             lexical_statement_ordinal: fact.ordinal,
             source_location: None,
             span: call.span,
@@ -5185,8 +5198,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         })
     }
 
-    /// The failed check of the factory's returned top-level allocation.
-    fn returned_construction_rejection(&self, factory: &Id) -> Option<ConstructionRejection> {
+    /// The failed check of the factory's returned top-level allocation, with
+    /// its class identity when the source resolves one.
+    fn returned_class_construction_rejection(
+        &self,
+        factory: &Id,
+    ) -> Option<(Option<u32>, ConstructionRejection)> {
         let key = self.inputs.index.hoisted_bindings.get(factory)?;
         let [ValueExpr::New(class, args, _)] =
             self.inputs.index.callables.get(key)?.returns.as_slice()
@@ -5197,9 +5214,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return None;
         };
         let Some(class) = self.stable_local_class_key(class) else {
-            return Some(ConstructionRejection::UncheckedConstructor);
+            return Some((None, ConstructionRejection::UncheckedConstructor));
         };
-        self.eligible_local_constructor(class, args.len()).err()
+        Some((
+            Some(class),
+            self.eligible_local_constructor(class, args.len()).err()?,
+        ))
     }
 
     fn unclosed_constructor_input(
@@ -6024,7 +6044,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .collect();
         self.unsettle(&reached);
         self.apply_rebind_effects(&outcome.effects.rebinds);
-        self.invoke_possible_callbacks(std::slice::from_ref(receivers), false, outcome);
+        self.invoke_possible_callbacks_at(
+            std::slice::from_ref(receivers),
+            false,
+            Some(call.span),
+            outcome,
+        );
         outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
         outcome.unknown_call = true;
     }
@@ -6741,11 +6766,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             receiver == AbstractValue::ArrayIntrinsic;
                         self.taint_objects(&values);
                         let callbacks = self.callback_values(&values);
-                        let before = self.state.global_escaped_callbacks.len();
-                        self.state.global_escaped_callbacks.extend(callbacks);
-                        if self.state.global_escaped_callbacks.len() != before {
-                            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
-                        }
+                        self.insert_escaped_callback_values(
+                            &callbacks,
+                            ClassMembersPublicationWriter::GlobalOrIntrinsicMemberWrite,
+                            Some(write.site.source_span()),
+                        );
                     }
                     AbstractValue::Value(Value::Alloc(kind, object))
                         if kind.tracks_prefix_own_properties() =>
@@ -6761,7 +6786,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         self.literal_heap()
                             .write_property(object, property.clone(), &values);
                         if may_be_published {
-                            self.publish_values(&values);
+                            self.publish_values(
+                                &values,
+                                ClassMembersPublicationWriter::PublishedObjectMemberWrite,
+                                Some(write.site.source_span()),
+                            );
                         }
                     }
                     AbstractValue::Instance(key, captured) => {
@@ -6769,20 +6798,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         self.taint_objects(&captured.values);
                         self.taint_objects(&values);
                         let callbacks = self.callback_values(&values);
-                        if !callbacks.is_subset(&self.state.global_escaped_callbacks) {
-                            self.state.global_escaped_callbacks.extend(callbacks);
-                            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
-                        }
+                        self.insert_escaped_callback_values(
+                            &callbacks,
+                            ClassMembersPublicationWriter::InstanceMemberWrite,
+                            Some(write.site.source_span()),
+                        );
                     }
                     AbstractValue::OwnDescriptorMap(site) => {
                         self.invalidate_own_descriptor_map(site);
                         self.taint_objects(&values);
                         let callbacks = self.callback_values(&values);
-                        let before = self.state.global_escaped_callbacks.len();
-                        self.state.global_escaped_callbacks.extend(callbacks);
-                        if self.state.global_escaped_callbacks.len() != before {
-                            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
-                        }
+                        self.insert_escaped_callback_values(
+                            &callbacks,
+                            ClassMembersPublicationWriter::OwnDescriptorMapMemberWrite,
+                            Some(write.site.source_span()),
+                        );
                     }
                     AbstractValue::Value(Value::Top)
                     | AbstractValue::DeferredCallbacks(_)
@@ -6793,11 +6823,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         // callback through that object before it is passed to
                         // opaque code. Retain it as an escaped callback root.
                         let callbacks = self.callback_values(&values);
-                        let before = self.state.global_escaped_callbacks.len();
-                        self.state.global_escaped_callbacks.extend(callbacks);
-                        if self.state.global_escaped_callbacks.len() != before {
-                            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
-                        }
+                        self.insert_escaped_callback_values(
+                            &callbacks,
+                            ClassMembersPublicationWriter::UntrackedReceiverMemberWrite,
+                            Some(write.site.source_span()),
+                        );
                     }
                     _ => {}
                 }
@@ -6876,7 +6906,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.note_unknown_execution(owner);
             let values = self.evaluate(&write.value, env, captures);
             self.promote_deferred_callbacks(&values, outcome);
-            self.invoke_possible_callbacks(&[callbacks, values], false, outcome);
+            self.invoke_possible_callbacks_at(
+                &[callbacks, values],
+                false,
+                Some(write.site.source_span()),
+                outcome,
+            );
         }
     }
 
@@ -6924,7 +6959,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     _ => false,
                 })
         {
-            self.publish_values(&values);
+            self.publish_values(
+                &values,
+                ClassMembersPublicationWriter::MemberChainStore,
+                Some(write.site.source_span()),
+            );
         }
         for receiver in receivers {
             if let AbstractValue::Value(Value::Alloc(kind, object)) = receiver
@@ -6998,7 +7037,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// A later store through a possibly published receiver exposes the new
     /// graph too. Taint its objects even if no callback exists yet: a later
     /// insertion through an alias must publish that callback.
-    fn publish_values(&mut self, values: &Values) {
+    fn publish_values(
+        &mut self,
+        values: &Values,
+        writer: ClassMembersPublicationWriter,
+        span: Option<Span>,
+    ) {
         self.taint_objects(values);
         let callbacks = self.callback_values(values);
         if let Some(owner) = self.state.current_top_owner {
@@ -7014,8 +7058,43 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
             }
         }
+        self.insert_escaped_callback_values(&callbacks, writer, span);
+    }
+
+    /// The only mutation point for the prefix-wide escaped callback set.
+    /// Per-writer admission and taint decisions stay at their callers.
+    fn insert_escaped_callback_values(
+        &mut self,
+        callbacks: &Values,
+        writer: ClassMembersPublicationWriter,
+        span: Option<Span>,
+    ) {
+        let source_span = span.filter(|span| *span != DUMMY_SP);
+        for callback in callbacks {
+            let AbstractValue::ClassMembers(key) = callback else {
+                continue;
+            };
+            if self.state.global_escaped_callbacks.contains(callback) {
+                continue;
+            }
+            let top_level_owner = self.state.current_top_owner;
+            let span_start = source_span.map(|span| span.lo.0);
+            let span_end = source_span.map(|span| span.hi.0);
+            self.state
+                .first_class_members_publications
+                .entry(*key)
+                .or_insert(FirstClassMembersPublication {
+                    writer,
+                    top_level_owner,
+                    span_start,
+                    span_end,
+                    source_location: None,
+                });
+        }
         let before = self.state.global_escaped_callbacks.len();
-        self.state.global_escaped_callbacks.extend(callbacks);
+        self.state
+            .global_escaped_callbacks
+            .extend(callbacks.iter().cloned());
         if self.state.global_escaped_callbacks.len() != before {
             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
         }
@@ -8143,12 +8222,23 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         no_sync_arguments: bool,
         outcome: &mut Outcome,
     ) {
+        self.invoke_possible_callbacks_at(args, no_sync_arguments, None, outcome);
+    }
+
+    fn invoke_possible_callbacks_at(
+        &mut self,
+        args: &[Values],
+        no_sync_arguments: bool,
+        publication_span: Option<Span>,
+        outcome: &mut Outcome,
+    ) {
         let prior_outcome = std::mem::take(outcome);
         // Opaque code may or may not invoke the pool: what it reaches is assumed.
         let result = self.assuming(AssumedEffectReason::OpaqueCallbackInvocation, |this| {
             this.request_callback_operation(CallbackOperation::InvokePossible {
                 arguments: args.to_vec(),
                 no_sync_arguments,
+                publication_span,
                 outcome: Box::new(prior_outcome),
             })
         });
@@ -8162,6 +8252,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &mut self,
         args: &[Values],
         no_sync_arguments: bool,
+        publication_span: Option<Span>,
         outcome: &mut Outcome,
     ) {
         // Opaque code may run each available callback any number of times and
@@ -8191,14 +8282,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         // An opaque callee can retain any callback passed to it and invoke it
         // during a later prefix event.
-        let before = self.state.global_escaped_callbacks.len();
         let values = args.iter().flatten().cloned().collect();
         self.taint_objects(&values);
         let callbacks = self.callback_values(&values);
-        self.state.global_escaped_callbacks.extend(callbacks);
-        if self.state.global_escaped_callbacks.len() != before {
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
-        }
+        self.insert_escaped_callback_values(
+            &callbacks,
+            ClassMembersPublicationWriter::PossibleCallbackRetention,
+            publication_span,
+        );
     }
 
     fn possible_callback_pool(
@@ -8605,11 +8696,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
 
         // The truncated body may have passed one of these callback values to
         // opaque code. Retain only this proven escape set for later calls.
-        let before = self.state.global_escaped_callbacks.len();
-        self.state.global_escaped_callbacks.extend(callbacks);
-        if self.state.global_escaped_callbacks.len() != before {
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
-        }
+        self.insert_escaped_callback_values(
+            &callbacks,
+            ClassMembersPublicationWriter::BoundedInvocationFallback,
+            Some(span),
+        );
         if outcome.effects.rebinds.len() != rebinds_before {
             self.apply_rebind_effects(&outcome.effects.rebinds);
         }
@@ -9760,7 +9851,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         );
         let cells: Vec<_> = self.state.active_cells.values().copied().collect();
         self.havoc_cells(cells);
-        self.publish_values(&reached);
+        self.publish_values(
+            &reached,
+            ClassMembersPublicationWriter::LocalOperationFallback,
+            Some(span),
+        );
         let mut fallback = self.bounded_invocation_fallback(
             owner,
             &[reached],
@@ -10522,7 +10617,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.note_unknown_call(call);
             self.unsettle(&reached);
             self.promote_escaped_callbacks(&reached, outcome);
-            self.invoke_possible_callbacks(&[reached], false, outcome);
+            self.invoke_possible_callbacks_at(&[reached], false, Some(call.span), outcome);
             outcome.unsupported(ExecutionOperation::OpaqueExecution, call.owner, call.span);
             outcome.unknown_call = true;
             return CallTransfer::EffectsOnly;
@@ -10538,7 +10633,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.note_unknown_call(call);
             self.unsettle(&reached);
             self.promote_escaped_callbacks(&reached, outcome);
-            self.invoke_possible_callbacks(&[reached], false, outcome);
+            self.invoke_possible_callbacks_at(&[reached], false, Some(call.span), outcome);
             outcome.unsupported(ExecutionOperation::OpaqueExecution, call.owner, call.span);
             outcome.unknown_call = true;
             return CallTransfer::EffectsOnly;
@@ -10655,7 +10750,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.expose_class_capabilities(&values);
             self.taint_objects(&values);
             self.promote_escaped_callbacks(&values, outcome);
-            self.invoke_possible_callbacks(&[values], false, outcome);
+            self.invoke_possible_callbacks_at(&[values], false, Some(call.span), outcome);
             self.note_unknown_call(call);
             outcome.unsupported(
                 match call.kind {
@@ -10692,7 +10787,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             {
                 let selected = self.evaluate(&call.callee, env, captures);
                 self.promote_escaped_callbacks(&selected, outcome);
-                self.invoke_possible_callbacks(&[selected], false, outcome);
+                self.invoke_possible_callbacks_at(&[selected], false, Some(call.span), outcome);
                 self.note_unknown_call(call);
                 outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
                 outcome.unknown_call = true;
@@ -10714,7 +10809,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if values.contains(&AbstractValue::ForeignDeferredRecord) {
                 self.promote_foreign_record(outcome);
                 self.note_unknown_call(call);
-                self.invoke_possible_callbacks(&[values], false, outcome);
+                self.invoke_possible_callbacks_at(&[values], false, Some(call.span), outcome);
                 return CallTransfer::EffectsOnly;
             }
             for value in &values {
@@ -10808,7 +10903,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             outcome.unknown_call = true;
             self.note_unknown_call(call);
             self.promote_escaped_callbacks(&values, outcome);
-            self.invoke_possible_callbacks(&[values], false, outcome);
+            self.invoke_possible_callbacks_at(&[values], false, Some(call.span), outcome);
             return CallTransfer::EffectsOnly;
         }
         if call.kind == CallKind::ArraySpread {
@@ -10828,7 +10923,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.note_unknown_call(call);
             // Consuming a custom iterator can execute deferred generator bodies.
             self.promote_escaped_callbacks(&values, outcome);
-            self.invoke_possible_callbacks(&[values], false, outcome);
+            self.invoke_possible_callbacks_at(&[values], false, Some(call.span), outcome);
             return CallTransfer::EffectsOnly;
         }
         if call.kind == CallKind::ImplicitCoercion {
@@ -10863,7 +10958,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // closure as well as invoking its directly visible callbacks so
             // effects in such returned functions remain visible.
             self.promote_deferred_callbacks(&possible_values, outcome);
-            self.invoke_possible_callbacks(&[possible_values], false, outcome);
+            self.invoke_possible_callbacks_at(&[possible_values], false, Some(call.span), outcome);
             return CallTransfer::EffectsOnly;
         }
         let (targets, mut args, prepared_receiver) = match operands {
@@ -11017,11 +11112,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // during this call, but may retain callbacks anywhere, including a
             // private cross-call registry. Every subsequent opaque operation
             // must therefore see them. Do not give the result a known shape.
-            let before = self.state.global_escaped_callbacks.len();
-            self.state.global_escaped_callbacks.extend(callbacks);
-            if self.state.global_escaped_callbacks.len() != before {
-                self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
-            }
+            self.insert_escaped_callback_values(
+                &callbacks,
+                ClassMembersPublicationWriter::NoReentryCallRetention,
+                Some(call.span),
+            );
             return CallTransfer::EffectsOnly;
         }
         if call.kind == CallKind::Call
@@ -11236,7 +11331,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             outcome.lose_call_target(call.owner, call.span);
             outcome.unknown_call = true;
             self.note_unknown_call(call);
-            self.invoke_possible_callbacks(&opaque_args, call.no_sync_arguments, outcome);
+            self.invoke_possible_callbacks_at(
+                &opaque_args,
+                call.no_sync_arguments,
+                Some(call.span),
+                outcome,
+            );
         }
         let mut invoked_unknown_callbacks = targets.is_empty();
         let mut result_values = Values::new();
@@ -11337,7 +11437,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::ForeignDeferredRecord => {
                     self.promote_foreign_record(outcome);
                     self.note_unknown_call(call);
-                    self.invoke_possible_callbacks(&opaque_args, false, outcome);
+                    self.invoke_possible_callbacks_at(
+                        &opaque_args,
+                        false,
+                        Some(call.span),
+                        outcome,
+                    );
                 }
                 AbstractValue::DeferredCallbacks(captured)
                 | AbstractValue::AuditedRetainedResult(_, captured) => {
@@ -11347,7 +11452,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     let mut possible_args = opaque_args.clone();
                     possible_args.push((*captured.values).clone());
                     self.promote_deferred_callbacks(&captured.values, outcome);
-                    self.invoke_possible_callbacks(&possible_args, false, outcome);
+                    self.invoke_possible_callbacks_at(
+                        &possible_args,
+                        false,
+                        Some(call.span),
+                        outcome,
+                    );
                 }
                 AbstractValue::ClassMembers(key) => {
                     outcome.lose_call_target(call.owner, call.span);
@@ -11356,7 +11466,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     self.assuming(AssumedEffectReason::EscapedCallbackClosure, |this| {
                         this.promote_class_members(key, outcome)
                     });
-                    self.invoke_possible_callbacks(&opaque_args, false, outcome);
+                    self.invoke_possible_callbacks_at(
+                        &opaque_args,
+                        false,
+                        Some(call.span),
+                        outcome,
+                    );
                 }
                 AbstractValue::Instance(key, captured) => {
                     outcome.lose_call_target(call.owner, call.span);
@@ -11367,7 +11482,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     });
                     let mut possible_args = opaque_args.clone();
                     possible_args.push((*captured.values).clone());
-                    self.invoke_possible_callbacks(&possible_args, false, outcome);
+                    self.invoke_possible_callbacks_at(
+                        &possible_args,
+                        false,
+                        Some(call.span),
+                        outcome,
+                    );
                 }
                 AbstractValue::Value(Value::Unavailable) | AbstractValue::Value(Value::Prim(_)) => {
                 }
@@ -11449,7 +11569,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             // callback argument to seed the opaque fallback.
                             self.promote_class_members(key, outcome);
                             if !invoked_unknown_callbacks {
-                                self.invoke_possible_callbacks(&args, false, outcome);
+                                self.invoke_possible_callbacks_at(
+                                    &args,
+                                    false,
+                                    Some(call.span),
+                                    outcome,
+                                );
                                 invoked_unknown_callbacks = true;
                             }
                         }
@@ -11530,9 +11655,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     outcome.unknown_call = true;
                     self.note_unknown_call(call);
                     if !invoked_unknown_callbacks {
-                        self.invoke_possible_callbacks(
+                        self.invoke_possible_callbacks_at(
                             &opaque_args,
                             call.no_sync_arguments,
+                            Some(call.span),
                             outcome,
                         );
                         invoked_unknown_callbacks = true;
@@ -12541,6 +12667,7 @@ pub(crate) fn annotate_synchronous_calls(
         initialized_bindings,
         global_escaped_callbacks: Values::new(),
         first_callback_publication_owners: BTreeMap::new(),
+        first_class_members_publications: BTreeMap::new(),
         top_env: Context::new(),
         top_captures: Context::new(),
         prefix_object_properties: OrdMap::new(),
@@ -12942,9 +13069,15 @@ impl Executor<'_, '_> {
         if let Err(reason) = &checked_local_constructor_factory
             && let Some((factory, span)) = &annotated_record_factory
         {
-            let construction = (*reason == RecordFactoryRejectionReason::ConstructorProof)
-                .then(|| self.returned_construction_rejection(factory))
-                .flatten();
+            let (construction_class_key, construction) =
+                if *reason == RecordFactoryRejectionReason::ConstructorProof {
+                    self.returned_class_construction_rejection(factory)
+                        .map_or((None, None), |(class_key, rejection)| {
+                            (class_key, Some(rejection))
+                        })
+                } else {
+                    (None, None)
+                };
             let (reason, property) = if *reason == RecordFactoryRejectionReason::UnsupportedValue {
                 self.record_factory_input_rejection(fact)
                     .unwrap_or((*reason, None))
@@ -12962,12 +13095,26 @@ impl Executor<'_, '_> {
                 } else {
                     None
                 };
+            let first_class_members_publication = if matches!(
+                construction.as_ref(),
+                Some(ConstructionRejection::ClassMembersEscaped)
+            ) {
+                construction_class_key.and_then(|key| {
+                    self.state
+                        .first_class_members_publications
+                        .get(&key)
+                        .cloned()
+                })
+            } else {
+                None
+            };
             record_factory_rejection = Some(LocalRecordFactoryRejection {
                 factory_binding: factory.0.to_string(),
                 reason,
                 property,
                 construction,
                 first_callback_publication_owner,
+                first_class_members_publication,
                 lexical_statement_ordinal: fact.ordinal,
                 source_location: None,
                 span: *span,
