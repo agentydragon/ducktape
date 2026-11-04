@@ -110,8 +110,9 @@ Omitted claims return to entry. Selected module names and explicit
 since recovered names from separate modules can collide in entry scope.
 The authored spec is unchanged.
 
-Ownership subsets require `inline_in_entry` for every materialized chunk.
-Other residual policies and full graph export are unsupported with this option.
+Ownership subsets require `inline_in_entry` or `per_atomic_group` for every
+materialized chunk. `catchall_file` and full graph export are unsupported with
+this option.
 Each chunk's graph summary and module report records its retained module paths
 in `ownership_subset`, including an empty list. Acceptance is for that selected
 assignment only; it does not establish acceptance of the full canonical

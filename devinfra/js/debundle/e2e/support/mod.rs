@@ -238,11 +238,23 @@ pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
 }
 
 pub fn run_fixture_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> Fixture {
+    run_fixture_with_options(opts, extra_args, true)
+}
+
+/// Run a fixture without `--graphs`, for CLI options that conflict with full
+/// graph export.
+pub fn run_fixture_without_graphs_with_args(opts: FixtureOpts<'_>, extra_args: &[&str]) -> Fixture {
+    run_fixture_with_options(opts, extra_args, false)
+}
+
+fn run_fixture_with_options(opts: FixtureOpts<'_>, extra_args: &[&str], graphs: bool) -> Fixture {
     let setup = prepare_fixture(&opts);
 
-    let args = std::iter::once("--graphs")
-        .chain(extra_args.iter().copied())
-        .collect::<Vec<_>>();
+    let mut args = Vec::new();
+    if graphs {
+        args.push("--graphs");
+    }
+    args.extend_from_slice(extra_args);
     let result = spawn_transform_with_args(&setup.spec_path, &args);
     assert!(
         result.status.success(),
@@ -473,11 +485,32 @@ pub fn run_rejection_fixture_with_args(
     extra_args: &[&str],
     exit_code: i32,
 ) -> RejectedFixture {
+    run_rejection_fixture_with_options(opts, extra_args, exit_code, true)
+}
+
+/// Run a rejected fixture without `--graphs`, for CLI options that conflict
+/// with full graph export.
+pub fn run_rejection_fixture_without_graphs_with_args(
+    opts: FixtureOpts<'_>,
+    extra_args: &[&str],
+    exit_code: i32,
+) -> RejectedFixture {
+    run_rejection_fixture_with_options(opts, extra_args, exit_code, false)
+}
+
+fn run_rejection_fixture_with_options(
+    opts: FixtureOpts<'_>,
+    extra_args: &[&str],
+    exit_code: i32,
+    graphs: bool,
+) -> RejectedFixture {
     let setup = prepare_fixture(&opts);
 
-    let args = std::iter::once("--graphs")
-        .chain(extra_args.iter().copied())
-        .collect::<Vec<_>>();
+    let mut args = Vec::new();
+    if graphs {
+        args.push("--graphs");
+    }
+    args.extend_from_slice(extra_args);
     let result = spawn_transform_with_args(&setup.spec_path, &args);
     assert_eq!(
         result.status.code(),

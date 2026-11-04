@@ -355,8 +355,9 @@ pub(crate) struct RunArgs {
     /// JSON {"modules":[{"chunk":"app","module":"features/view"}]}:
     /// retain only these modules after resolving the complete spec and its
     /// contracts. An empty list retains no named modules. Requires
-    /// inline_in_entry for every materialized chunk. Omitted members keep
-    /// their source names in entry; normal gates and emission still run.
+    /// inline_in_entry or per_atomic_group for every materialized chunk.
+    /// Omitted members keep their source names in entry or generated residual
+    /// modules; normal gates and emission still run.
     #[arg(long, conflicts_with = "graphs", value_name = "JSON")]
     pub(crate) ownership_subset: Option<std::path::PathBuf>,
     /// Take the cross-module summaries and per-chunk facts from this analysis

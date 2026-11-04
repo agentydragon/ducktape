@@ -74,9 +74,9 @@ impl OwnershipSubset {
             ensure!(
                 matches!(
                     unassigned_mode.get(chunk),
-                    Some(UnassignedMode::InlineInEntry)
+                    Some(UnassignedMode::InlineInEntry | UnassignedMode::PerAtomicGroup)
                 ),
-                "ownership subsets require inline_in_entry for chunk {chunk:?}"
+                "ownership subsets require inline_in_entry or per_atomic_group for chunk {chunk:?}"
             );
         }
         Ok(())

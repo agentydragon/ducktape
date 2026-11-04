@@ -617,7 +617,8 @@ debundle run <full tree args> --analysis analysis.dba \
 
 The full joint selector solve and all analysis assertions remain unchanged;
 only resolved output ownership is reduced. Every materialized chunk must use
-`inline_in_entry`. Selected module names and explicit entry renames stay intact.
+`inline_in_entry` or `per_atomic_group`. Selected module names and explicit
+entry renames stay intact.
 Omitted members keep their source names in entry, avoiding collisions between
 names originally scoped to separate modules. Their authored names remain in
 the complete spec. Invalid full-spec selectors or duplicate/unmatched claims
@@ -627,9 +628,10 @@ Normal gates, translation validation, reconstruction and emission run on the
 selected assignment. `graph_summary.json` and `modules.json` carry its
 `ownership_subset` paths, including empty selections. This is partial output;
 it does not validate the full canonical assignment. Full graph export and
-other residual policies are unsupported with this option. Use the same full
-projection and matching analysis artifact across selection edits; an engine,
-source or analysis-contract change still requires a matching fresh analysis.
+`catchall_file` residual routing are unsupported with this option. Use the same
+full projection and matching analysis artifact across selection edits; an
+engine, source or analysis-contract change still requires a matching fresh
+analysis.
 
 Bazel's `debundle_pipeline` accepts `ownership_subset = "retained.json"`.
 Keep `tree_modules` and its declared inputs complete. Only the Pipeline action

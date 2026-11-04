@@ -463,7 +463,13 @@ debundle_e2e_test(
     deps = ["@crates//:serde_json"],
 )
 
-debundle_e2e_test(name = "per_atomic_group_test")
+debundle_e2e_test(
+    name = "per_atomic_group_test",
+    deps = [
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
+)
 
 debundle_e2e_test(name = "naturalization_test")
 
