@@ -140,12 +140,7 @@ pub fn prepare_js_chunks(
         chunk_table,
     };
 
-    let manifests: Vec<ChunkAnalysisReport> = artifact
-        .chunks
-        .iter()
-        .map(|chunk| chunk.analysis.clone())
-        .collect();
-    let (counts, chunk_records) = build_prepare_output(&manifests);
+    let (counts, chunk_records) = build_prepare_output(&artifact.chunks);
     Ok(SourcePreparation {
         program: SourceProgram::new(artifact)?,
         counts,
@@ -215,34 +210,25 @@ fn canonical_parsed_file(chunk_id: &str, source_path: &str, parsed: ParsedJsModu
     }
 }
 
-fn build_prepare_output(
-    manifests: &[ChunkAnalysisReport],
-) -> (ArtifactCounts, Vec<ArtifactChunkRecord>) {
-    let counts = ArtifactCounts {
-        kept_top_level_declarations: manifests
-            .iter()
-            .map(|manifest| manifest.counts.kept_top_level_declarations)
-            .sum(),
-        top_level_side_effects: manifests
-            .iter()
-            .map(|manifest| manifest.counts.top_level_side_effects)
-            .sum(),
-        export_aliases: manifests
-            .iter()
-            .map(|manifest| manifest.counts.export_aliases)
-            .sum(),
-        unresolved_exports: manifests
-            .iter()
-            .map(|manifest| manifest.counts.unresolved_exports)
-            .sum(),
+fn build_prepare_output(chunks: &[ChunkArtifact]) -> (ArtifactCounts, Vec<ArtifactChunkRecord>) {
+    let mut counts = ArtifactCounts {
+        kept_top_level_declarations: 0,
+        top_level_side_effects: 0,
+        export_aliases: 0,
+        unresolved_exports: 0,
     };
-    let chunk_records = manifests
-        .iter()
-        .map(|manifest| ArtifactChunkRecord {
-            chunk_id: manifest.chunk_id.clone(),
-            source_path: manifest.source_path.clone(),
-        })
-        .collect();
+    let mut chunk_records = Vec::with_capacity(chunks.len());
+    for chunk in chunks {
+        let analysis = &chunk.analysis;
+        counts.kept_top_level_declarations += analysis.counts.kept_top_level_declarations;
+        counts.top_level_side_effects += analysis.counts.top_level_side_effects;
+        counts.export_aliases += analysis.counts.export_aliases;
+        counts.unresolved_exports += analysis.counts.unresolved_exports;
+        chunk_records.push(ArtifactChunkRecord {
+            chunk_id: analysis.chunk_id.clone(),
+            source_path: analysis.source_path.clone(),
+        });
+    }
     (counts, chunk_records)
 }
 
