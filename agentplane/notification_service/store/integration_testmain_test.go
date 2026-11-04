@@ -119,8 +119,8 @@ func (f fixture) insertInbox(t *testing.T, key string, ref model.DestinationRef,
 	f.exec(t, `
 		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
 			destination_namespace, destination_name, destination_uid, session_id,
-			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, now(), now(), now())`,
+			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until, owner_uid)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, now(), now(), now(), 'test-account-uid')`,
 		id, f.owner.Namespace, f.owner.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID)
 	return id
 }
@@ -175,7 +175,7 @@ const testSandboxUID = "test-uid"
 
 // incarnation is the fixture's owner as its Sandbox incarnation.
 func (f fixture) incarnation() Owner {
-	return Owner{Account: f.owner, SandboxUID: f.sandboxUID}
+	return Owner{Account: f.owner, AccountUID: "test-account-uid", SandboxUID: f.sandboxUID}
 }
 
 // body is a creation following one Action request, for the fixture's one Session. Copies keep the request and
@@ -197,7 +197,7 @@ func sessionBody(key, sessionID string) model.Subscribe {
 
 func (f fixture) subscribe(t *testing.T, creation model.Subscribe) Subscription {
 	t.Helper()
-	subscription, err := f.Subscribe(t.Context(), f.owner, creation, nil)
+	subscription, err := f.Subscribe(t.Context(), f.owner, creation, nil, "test-account-uid")
 	if err != nil {
 		t.Fatal(err)
 	}

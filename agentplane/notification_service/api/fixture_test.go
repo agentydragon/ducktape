@@ -18,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -128,7 +129,7 @@ type fakeActions struct {
 	calls []actionsCall
 }
 
-func (a *fakeActions) Events(_ context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64) ([]storagecodec.ActionEvent, error) {
+func (a *fakeActions) Events(_ context.Context, owner model.ServiceAccount, requestID uuid.UUID, afterSequence int64, _ string) ([]storagecodec.ActionEvent, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.calls = append(a.calls, actionsCall{owner: owner, requestID: requestID, afterSequence: afterSequence})
@@ -188,7 +189,15 @@ type fakeSessions struct {
 }
 
 func nativeSession(sessionID, name, uid string) *dispatcherpb.Session {
-	return &dispatcherpb.Session{SessionId: sessionID, Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{
+	identityName := name
+	if identityName == "" {
+		identityName = sandboxName
+	}
+	account, err := kube.ServiceAccount(context.Background(), auth.Account{Namespace: testNamespace, Name: identityName})
+	if err != nil {
+		panic(err)
+	}
+	return &dispatcherpb.Session{SessionId: sessionID, ExecutionIdentity: &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: name}, Uid: string(account.UID)}, Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{
 		EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: name, Uid: uid}},
 	}}}
 }
@@ -470,4 +479,13 @@ func (s testServer) record(t *testing.T, subscription *notificationspb.Subscript
 	if err := s.store.Release(t.Context(), *claim, nil, nil); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func accountUID(t *testing.T, name string) string {
+	t.Helper()
+	account, err := kube.ServiceAccount(t.Context(), auth.Account{Namespace: testNamespace, Name: name})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(account.UID)
 }

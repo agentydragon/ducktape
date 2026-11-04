@@ -18,6 +18,7 @@ import (
 // committed. A cursor is an entry's position, from 1.
 type Inbox struct {
 	ID             uuid.UUID
+	OwnerUID       *string
 	DestinationRef model.DestinationRef
 	SessionID      string
 	// LastCursor is the cursor of the newest committed entry, or 0.
@@ -65,7 +66,7 @@ type InboxPage struct {
 }
 
 const inboxColumns = `id, destination_namespace, destination_name, destination_uid,
-	session_id, last_cursor, acknowledged, covered, expired_through, retired, delivery_error`
+	session_id, last_cursor, acknowledged, covered, expired_through, retired, delivery_error, owner_uid`
 
 type rowScanner interface{ Scan(...any) error }
 
@@ -73,10 +74,10 @@ type rowScanner interface{ Scan(...any) error }
 func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 	var inbox Inbox
 	var namespace, name, uid sql.NullString
-	var deliveryError sql.NullString
+	var deliveryError, ownerUID sql.NullString
 	if err := row.Scan(append([]any{
 		&inbox.ID, &namespace, &name, &uid, &inbox.SessionID, &inbox.LastCursor, &inbox.Acknowledged,
-		&inbox.Covered, &inbox.ExpiredThrough, &inbox.Retired, &deliveryError,
+		&inbox.Covered, &inbox.ExpiredThrough, &inbox.Retired, &deliveryError, &ownerUID,
 	}, extra...)...); err != nil {
 		return Inbox{}, err
 	}
@@ -84,6 +85,9 @@ func scanInbox(row rowScanner, extra ...any) (Inbox, error) {
 	inbox.DestinationRef, err = destinationRefFromColumns(inbox.ID, namespace, name, uid)
 	if err != nil {
 		return Inbox{}, err
+	}
+	if ownerUID.Valid {
+		inbox.OwnerUID = &ownerUID.String
 	}
 	if deliveryError.Valid {
 		inbox.DeliveryError = &deliveryError.String
@@ -102,11 +106,11 @@ func destinationRefFromColumns(id uuid.UUID, namespace, name, uid sql.NullString
 func owned(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, owner Owner, lock bool) (Inbox, error) {
 	query := `SELECT ` + inboxColumns + ` FROM inbox
 		WHERE id = $1 AND owner_namespace = $2 AND owner_name = $3
-			AND destination_uid = $4`
+			AND destination_uid = $4 AND owner_uid = $5`
 	if lock {
 		query += ` FOR UPDATE`
 	}
-	inbox, err := scanInbox(tx.QueryRowContext(ctx, query, inboxID, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID))
+	inbox, err := scanInbox(tx.QueryRowContext(ctx, query, inboxID, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, owner.AccountUID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Inbox{}, ErrNotFound
 	}
@@ -116,7 +120,7 @@ func owned(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, owner Owner, lock
 // InboxIDForSession resolves only an inbox owned by the current Sandbox incarnation.
 func (s *Store) InboxIDForSession(ctx context.Context, owner Owner, sessionID string) (uuid.UUID, error) {
 	var id uuid.UUID
-	err := s.db.QueryRowContext(ctx, `SELECT id FROM inbox WHERE owner_namespace = $1 AND owner_name = $2 AND destination_uid = $3 AND session_id = $4`, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, sessionID).Scan(&id)
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM inbox WHERE owner_namespace = $1 AND owner_name = $2 AND destination_uid = $3 AND session_id = $4 AND owner_uid = $5`, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, sessionID, owner.AccountUID).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return uuid.Nil, ErrNotFound
 	}
@@ -124,7 +128,10 @@ func (s *Store) InboxIDForSession(ctx context.Context, owner Owner, sessionID st
 }
 
 // ensureInbox is the owner's inbox for a destination Session, created if absent and returned locked for update.
-func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner model.ServiceAccount, ref model.DestinationRef, sessionID string) (Inbox, error) {
+func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner model.ServiceAccount, ref model.DestinationRef, sessionID, ownerUID string) (Inbox, error) {
+	if ownerUID == "" {
+		return Inbox{}, ErrNotFound
+	}
 	written := now()
 	key := model.DestinationKey(ref, sessionID)
 	// Serialize only creation for an owner, to enforce the total destination quota.
@@ -152,15 +159,15 @@ func (s *Store) ensureInbox(ctx context.Context, tx *sql.Tx, owner model.Service
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
 			destination_namespace, destination_name, destination_uid, session_id,
-			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, $9, $9, $9)
+			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until, owner_uid)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, $9, $9, $9, $10)
 		ON CONFLICT DO NOTHING`,
-		uuid.New(), owner.Namespace, owner.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, written); err != nil {
+		uuid.New(), owner.Namespace, owner.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, written, ownerUID); err != nil {
 		return Inbox{}, err
 	}
 	inbox, err := scanInbox(tx.QueryRowContext(ctx,
-		`SELECT `+inboxColumns+` FROM inbox WHERE owner_namespace = $1 AND owner_name = $2 AND destination_key = $3 FOR UPDATE`,
-		owner.Namespace, owner.Name, key))
+		`SELECT `+inboxColumns+` FROM inbox WHERE owner_namespace = $1 AND owner_name = $2 AND destination_key = $3 AND owner_uid = $4 FOR UPDATE`,
+		owner.Namespace, owner.Name, key, ownerUID))
 	// A different destination or owner may already have this globally unique Session ID.
 	// Do not disclose that inbox or treat a conflicting creation as its owner.
 	if errors.Is(err, sql.ErrNoRows) {
@@ -180,8 +187,8 @@ func (s *Store) ListInboxes(ctx context.Context, owner Owner) ([]Inbox, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+inboxColumns+` FROM inbox
 		WHERE owner_namespace = $1 AND owner_name = $2
-			AND destination_uid = $3 ORDER BY id LIMIT 1000`,
-		owner.Account.Namespace, owner.Account.Name, owner.SandboxUID)
+			AND destination_uid = $3 AND owner_uid = $4 ORDER BY id LIMIT 1000`,
+		owner.Account.Namespace, owner.Account.Name, owner.SandboxUID, owner.AccountUID)
 	if err != nil {
 		return nil, err
 	}
@@ -490,4 +497,56 @@ func expirePayloads(ctx context.Context, tx *sql.Tx, inboxID uuid.UUID, expiredT
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE inbox SET expired_through = $2 WHERE id = $1`, inboxID, through)
 	return err
+}
+
+// UnestablishedInboxes returns retained inboxes whose original ServiceAccount UID is unknown.
+// This metadata is for reconciliation, never for authorizing an owner read.
+func (s *Store) UnestablishedInboxes(ctx context.Context, owner Owner) ([]Inbox, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+inboxColumns+` FROM inbox
+		WHERE owner_namespace = $1 AND owner_name = $2 AND destination_uid = $3
+		AND owner_uid IS NULL ORDER BY id LIMIT 1000`, owner.Account.Namespace, owner.Account.Name, owner.SandboxUID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var inboxes []Inbox
+	for rows.Next() {
+		inbox, err := scanInbox(rows)
+		if err != nil {
+			return nil, err
+		}
+		inboxes = append(inboxes, inbox)
+	}
+	return inboxes, rows.Err()
+}
+
+// EstablishInboxOwner pins an unestablished inbox to its authoritative Session execution identity.
+// The caller verifies that identity against the Session authority; every stored identity component
+// must agree. An existing UID is immutable, and an absent inbox needs no reconciliation.
+func (s *Store) EstablishInboxOwner(ctx context.Context, account model.ServiceAccount, ref model.DestinationRef, sessionID, uid string) error {
+	if uid == "" {
+		return ErrNotFound
+	}
+	return s.transaction(ctx, func(tx *sql.Tx) error {
+		var namespace, name string
+		var destination model.DestinationRef
+		var established sql.NullString
+		err := tx.QueryRowContext(ctx, `SELECT owner_namespace, owner_name, destination_namespace,
+			destination_name, destination_uid, owner_uid FROM inbox WHERE session_id = $1 FOR UPDATE`, sessionID).
+			Scan(&namespace, &name, &destination.Namespace, &destination.Name, &destination.UID, &established)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if account.Namespace != namespace || account.Name != name || destination != ref || (established.Valid && established.String != uid) {
+			return ErrNotFound
+		}
+		if established.Valid {
+			return nil
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE inbox SET owner_uid = $2 WHERE session_id = $1 AND owner_uid IS NULL`, sessionID, uid)
+		return err
+	})
 }

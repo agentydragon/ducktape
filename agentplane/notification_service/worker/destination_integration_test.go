@@ -208,7 +208,7 @@ func TestADestinationOutsideTheServedNamespaceIsRejectedWithoutALookup(t *testin
 	subscription, err := h.store.Subscribe(t.Context(), testOwner, model.Subscribe{
 		DestinationRef: model.DestinationRef{Namespace: "elsewhere", Name: testSandbox, UID: testSandboxUID},
 		SessionID:      testSession, IdempotencyKey: "first", Source: model.ActionsSource{RequestID: uuid.New()}, LifetimeDays: 7,
-	}, nil)
+	}, nil, "test-account-uid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,4 +231,19 @@ func TestAMatchingDestinationIsWorkedAndShowsNoError(t *testing.T) {
 	requireEqual(t, row.deliveryError, (*string)(nil))
 	requireEqual(t, h.sandboxes.lookupCount(), 1)
 	requireEqual(t, h.actions.callCount(), 1)
+}
+
+func TestWorkerDoesNotReadSourcesForUnknownOrChangedSessionOwner(t *testing.T) {
+	for _, uid := range []string{"", "replacement-account-uid"} {
+		t.Run(uid, func(t *testing.T) {
+			h := newHarness(t, debounce(0, 0))
+			subscription := h.subscribe(t, "owner-uid")
+			h.dispatcher.accountUID = uid
+			h.step(t)
+			if h.actions.callCount() != 0 || len(h.dispatcher.submitted()) != 0 {
+				t.Fatal("worked sources or delivered under an unproven owner")
+			}
+			requireNotRetired(t, h, subscription)
+		})
+	}
 }

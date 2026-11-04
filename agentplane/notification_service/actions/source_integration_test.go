@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -39,7 +40,7 @@ const (
 var testOwner = model.ServiceAccount{Namespace: testNamespace, Name: testSandbox}
 
 // testIncarnation is testOwner as the Sandbox the destinations name.
-var testIncarnation = store.Owner{Account: testOwner, SandboxUID: testSandboxUID}
+var testIncarnation = store.Owner{Account: testOwner, AccountUID: "test-account-uid", SandboxUID: testSandboxUID}
 
 // wireEvent is the payload the Notification Service retains for an Action event.
 func wireEvent(sequence int64) string {
@@ -156,7 +157,7 @@ func newFixture(t *testing.T) fixture {
 		t.Fatal(err)
 	}
 	service := &fakeActionService{
-		request: &actionpb.ActionRequest{Caller: &identitypb.ServiceAccount{Namespace: testNamespace, Name: testSandbox}},
+		request: &actionpb.ActionRequest{CallerUid: proto.String("test-account-uid"), Caller: &identitypb.ServiceAccount{Namespace: testNamespace, Name: testSandbox}},
 	}
 	server := grpc.NewServer()
 	actionpb.RegisterActionServiceServer(server, service)
@@ -196,7 +197,7 @@ func (f fixture) subscribe(t *testing.T) store.Subscription {
 		IdempotencyKey: "test-key",
 		Source:         model.ActionsSource{RequestID: uuid.New()},
 		LifetimeDays:   7,
-	}, nil)
+	}, nil, "test-account-uid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +373,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
 	})
 	request := uuid.New()
 
-	events, err := f.source.Events(t.Context(), testOwner, request, 1)
+	events, err := f.source.Events(t.Context(), testOwner, request, 1, "test-account-uid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +385,7 @@ func TestEventsReturnsTheOwnersEventsAndRefusesAnotherAccount(t *testing.T) {
 		t.Errorf("events call = %+v", call)
 	}
 
-	_, err = f.source.Events(t.Context(), model.ServiceAccount{Namespace: testNamespace, Name: "another-sandbox"}, request, 0)
+	_, err = f.source.Events(t.Context(), model.ServiceAccount{Namespace: testNamespace, Name: "another-sandbox"}, request, 0, "test-account-uid")
 	requireFailure(t, err, store.FailureAccessDenied, "SourceNotOwnedError")
 }
 
@@ -410,7 +411,7 @@ func TestEventsMapsTheActionEventActors(t *testing.T) {
 		}
 	})
 
-	events, err := f.source.Events(t.Context(), testOwner, uuid.New(), 0)
+	events, err := f.source.Events(t.Context(), testOwner, uuid.New(), 0, "test-account-uid")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -613,4 +614,24 @@ func sameJSON(t *testing.T, got, want string) bool {
 		t.Fatalf("%s: %v", want, err)
 	}
 	return reflect.DeepEqual(a, b)
+}
+
+func TestActionsRequireTheExactRecordedCallerUID(t *testing.T) {
+	for _, uid := range []string{"", "recreated-account-uid"} {
+		t.Run(uid, func(t *testing.T) {
+			f := newFixture(t)
+			subscription := f.subscribe(t)
+			f.service.set(func(s *fakeActionService) { s.request.CallerUid = &uid; s.eventCount = 3 })
+			err := f.reconcile(t, f.claim(t))
+			requireFailure(t, err, store.FailureAccessDenied, "SourceNotOwnedError")
+			for _, call := range f.service.log() {
+				if call.Method == "ListActionRequestEvents" {
+					t.Fatal("read events without a matching caller UID")
+				}
+			}
+			if entries := f.entries(t, subscription.InboxID); len(entries) != 0 {
+				t.Fatalf("entries = %v", entries)
+			}
+		})
+	}
 }

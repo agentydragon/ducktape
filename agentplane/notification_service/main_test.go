@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
@@ -84,9 +86,15 @@ type testActionService struct {
 	actionpb.UnimplementedActionServiceServer
 }
 
-func (testActionService) GetActionRequest(context.Context, *actionpb.GetActionRequestRequest) (*actionpb.GetActionRequestResponse, error) {
+func (testActionService) GetActionRequest(ctx context.Context, _ *actionpb.GetActionRequestRequest) (*actionpb.GetActionRequestResponse, error) {
+	account, err := kube.ServiceAccount(ctx, auth.Account{Namespace: testNamespace, Name: sandboxName})
+	if err != nil {
+		return nil, err
+	}
+	uid := string(account.UID)
 	return &actionpb.GetActionRequestResponse{ActionRequest: &actionpb.ActionRequest{
-		Caller: &identitypb.ServiceAccount{Namespace: testNamespace, Name: sandboxName},
+		CallerUid: &uid,
+		Caller:    &identitypb.ServiceAccount{Namespace: testNamespace, Name: sandboxName},
 	}}, nil
 }
 

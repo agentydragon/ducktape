@@ -96,7 +96,11 @@ func serveOwned[Request, Response any](
 		if err != nil {
 			return nil, err
 		}
-		return handle(ctx, store.Owner{Account: account, SandboxUID: sandbox.Identity.Uid}, request)
+		owner, err := s.owner(ctx, account, sandbox.Identity.Uid)
+		if err != nil {
+			return nil, err
+		}
+		return handle(ctx, owner, request)
 	})
 }
 

@@ -176,7 +176,7 @@ func (g githubFixture) followIn(t *testing.T, destination model.DestinationRef, 
 	access := g.access()
 	subscription, err := g.Subscribe(t.Context(), g.owner, model.Subscribe{
 		DestinationRef: destination, SessionID: g.sessionForDestination(destination), IdempotencyKey: key, Source: source, LifetimeDays: 7,
-	}, &access)
+	}, &access, "test-account-uid")
 	if err != nil {
 		t.Fatal(err)
 	}
