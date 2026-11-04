@@ -65,6 +65,11 @@ current cutover decision.
 
 ## Phase 1: inventory and contract
 
+The [source inventory](../../debug/gitlab_spike/2026-11-04-source-inventory.md) records the nine repositories, all
+advertised refs, default-branch trees, LFS metadata, registry version/manifest metadata, live Flux sources and workload
+references, and known owners. It is a point-in-time snapshot; private detail is kept outside this public repository.
+The remaining per-consumer dispositions, off-cluster clients and final cutover refresh are not yet complete.
+
 1. Inventory every Forgejo repository by owner, default branch, visibility, branches/tags, wikis and LFS use, active
    writers, mirror direction, Git/HTTP/SSH clients, credentials, branch policies, hooks, and CI workflows. Extend the
    initial Forgejo API and Git-ref inventory with per-repo LFS manifests; distinguish private user data from disposable
@@ -129,7 +134,8 @@ the most permissive rule for most settings, so test the resulting permissions ra
    cannot be assumed to work in GitLab. Prototype an appropriately scoped fork/MR or equivalent; test protected-branch
    enforcement, SSH, HTTP and injected credentials. Maintain Haku's allowed direct writes to its state while preserving
    branch protection.
-5. Implement GitHub -> GitLab mirror for each needed mirror. GitLab Free lacks built-in pull mirroring; either drop
+5. Implement GitHub -> GitLab mirror for each needed mirror. The observed Forgejo pull mirror is `haku/ducktape`;
+   determine the disposition of the separate `agentydragon/ducktape` copy. GitLab Free lacks built-in pull mirroring; either drop
    unused mirrors or run a narrowly credentialed, monitored fetch/push job. Define ref deletion and force-update
    behavior and prevent it from overwriting GitLab-owned refs. Native pull mirroring is Premium/Ultimate.
    [GitLab pull mirror](https://docs.gitlab.com/user/project/repository/mirror/pull/)
@@ -219,7 +225,7 @@ inconsistencies without separate evidence.
 - Promote the spike versus reproduce it as a production instance; whether to retain Forgejo read-only temporarily after
   cutover; explicit outage and data-loss objectives; production Git and registry hostname layout; per-image or shared
   registry project layout; and mirror policy.
-- First execution work: extend the [initial preflights](../../debug/gitlab_spike/2026-11-03-migration-preflight.md) into
-  a complete repo/registry/writer/credential inventory; rehearse a real private-repo/registry migration; prototype
-  Haku's fenced runner and review flow; then sequence the resulting independent implementation PRs. None of these
-  authorize cutover by themselves.
+- First execution work: assign dispositions and destination owners from the source inventory, including off-cluster
+  clients; rehearse a real private-repo/registry migration; prototype Haku's fenced runner and review flow; then
+  sequence the resulting independent implementation PRs. Refresh source inventories under the cutover freeze. None of
+  these authorize cutover by themselves.
