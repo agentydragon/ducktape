@@ -843,6 +843,10 @@ applies to text and JSON. By default, the command shows at most 32 items,
 512 bytes per source line, and 32 KiB of serialized output. It reports omitted
 items and source bytes. Set `--max-statements 0`, `--max-line-bytes 0`, or
 `--max-output-bytes 0` to disable the corresponding limit explicitly.
+A long single-line import can be clipped by the 512-byte line limit; set
+`--max-line-bytes 0` while selecting only the needed statement(s), and keep
+`--max-output-bytes` finite. If the total output cap omits part of that bounded
+selection, raise it deliberately.
 Text is the interactive default; pipes default to JSON.
 
 ### Selector outcomes

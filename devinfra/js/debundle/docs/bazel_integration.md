@@ -183,9 +183,23 @@ A live invocation's artifact index can omit completed action outputs, and local
 declared output directories can still be empty. To inspect one completed
 analysis before the invocation finishes, download its `result.outputFiles`
 artifact and reuse it with the matching CLI's `run --analysis ... --reports-only
-...`. Supply complete source and package inputs; preserve the mandatory identity
-checks. The local Bazel output directory's presence does not prove its inputs
-have been downloaded.
+...`. Before native replay, check that every supplied package-root directory
+and generated source file is materialized and readable. `cquery --output=files`
+lists paths but does not run their producing actions or materialize their
+outputs. Native `analyze` and `run --analysis` need the same complete
+source/package closure supplied through `input_data`, `tree_source_root`, and
+every `package_roots` target. `run` also needs its matching spec inputs. The
+rule's `analysis`, `debundler`, and optional `dependency_graphs` output groups
+contain no source or package inputs. Materialize them through the consuming
+adapter's existing input targets; the rule exposes no source-only output group.
+Preserve the mandatory identity checks. The local Bazel output directory's
+presence does not prove its inputs have been downloaded.
+
+When serializing a warm Bazel client with a file lock, invoke it through
+`flock --close -x <lock-file> <bazel-command>`. `--close` keeps the persistent
+Bazel server from inheriting the lock descriptor. A lock wait shows contention,
+not that the Analyze action is active; inspect the invocation's action progress
+before treating it as ongoing analysis.
 
 ## Solver build
 
