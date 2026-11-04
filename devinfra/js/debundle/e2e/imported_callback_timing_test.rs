@@ -1454,7 +1454,7 @@ fn private_factory_result_retains_the_audited_summary() {
 }
 
 #[test]
-fn exported_factory_result_does_not_record_a_private_root_exemption() {
+fn acyclic_exported_factory_result_keeps_its_initialization_exemption() {
     for declaration in [
         "export const wrapped = factory(() => later);",
         "const wrapped = factory(() => later);\nexport { wrapped };",
@@ -1467,14 +1467,18 @@ fn exported_factory_result_does_not_record_a_private_root_exemption() {
             "export function factory(callback) { return () => callback(); }\n",
         )]));
         assert_preserved_entry_output(&fixture, "42\n");
-        assert!(fixture.dependency_graph().nodes.iter().all(|node| {
-            node.synchronous_execution.as_ref().is_none_or(|execution| {
-                execution
-                    .callback_factory_uses
-                    .iter()
-                    .all(|proof| proof.kind != CallbackFactoryUseKind::ClosedResultRoot)
-            })
-        }));
+        assert_eq!(
+            fixture
+                .dependency_graph()
+                .nodes
+                .iter()
+                .filter_map(|node| node.synchronous_execution.as_ref())
+                .flat_map(|execution| &execution.callback_factory_uses)
+                .filter(|proof| proof.kind == CallbackFactoryUseKind::ClosedResultRoot)
+                .count(),
+            1,
+            "{declaration}"
+        );
     }
 }
 

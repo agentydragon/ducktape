@@ -32,7 +32,9 @@ Other classifier restrictions, including its refusal of parenthesized callees,
 remain independent of the canonical call-shape evidence.
 
 `PrivateCallbackFactoryResult` checks source/owner/binding and indexed call-site
-agreement, the definite non-exported binding, and the imported summary. It retains
+agreement, the definite binding's exposure under the existing synchronous importer
+reentry policy, and the imported summary. A closed export surface does not itself
+publish the result during initialization. The proof retains
 one current `PreparedPurity` premise: the callback-retention contract permits
 provider-private effects and cannot establish complete initializer evaluation
 freedom. Its typed dependencies include both the prefix and classifier premises.
