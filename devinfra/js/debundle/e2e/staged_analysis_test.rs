@@ -1002,6 +1002,7 @@ fn early_destructuring_split_refusal_matches_with_saved_facts() {
         );
     fs::write(&staged.spec, serde_yaml::to_string(&spec).unwrap()).unwrap();
     let direct = staged.run(&[]);
+    staged.set_aside("direct_refusal_output");
     let from_artifact = staged.run(&["--analysis", path(&staged.artifact)]);
 
     assert!(
