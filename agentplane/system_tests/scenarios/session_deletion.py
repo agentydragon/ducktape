@@ -1,5 +1,7 @@
 """The deployed deletion fence, including a command already routed to the old Runtime."""
 
+# gazelle:include_dep @pypi//protobuf
+
 import asyncio
 import json
 import os
