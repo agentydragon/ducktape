@@ -121,7 +121,7 @@ function bodyWithoutSessionId(value: JsonValue): string {
   return JSON.stringify(body);
 }
 
-function nextStored(cursor: bigint, ranges: ReadonlyArray<{ first: bigint; last: bigint }>): bigint {
+export function nextStored(cursor: bigint, ranges: ReadonlyArray<{ first: bigint; last: bigint }>): bigint {
   let following = cursor + 1n;
   for (const range of [...ranges].sort((left, right) =>
     left.first < right.first ? -1 : left.first > right.first ? 1 : 0

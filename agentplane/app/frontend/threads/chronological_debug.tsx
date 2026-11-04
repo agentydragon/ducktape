@@ -3,7 +3,7 @@ import { create, toJson } from "@bufbuild/protobuf";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
 import { IconHistory } from "../icons";
 
-import { threadObservationEntry, threadObservations } from "./client";
+import { nextStored, threadObservationEntry, threadObservations } from "./client";
 import { displayableError } from "../client";
 import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
 import { JsonView } from "../../../../util/frontend/json_view";
@@ -64,16 +64,6 @@ function observationRequest(
   bounds: { beforeCursor?: bigint; afterCursor?: bigint } = {}
 ): ReadSessionObservationsRequest {
   return create(ReadSessionObservationsRequestSchema, { sessionId, ...bounds, limit: 30 });
-}
-
-function nextStored(cursor: bigint, ranges: ReadonlyArray<{ first: bigint; last: bigint }>): bigint {
-  let following = cursor + 1n;
-  for (const range of [...ranges].sort((left, right) =>
-    left.first < right.first ? -1 : left.first > right.first ? 1 : 0
-  )) {
-    if (range.first <= following && following <= range.last) following = range.last + 1n;
-  }
-  return following;
 }
 
 function olderCursor(page: ReadSessionObservationsResponse): string | null {
