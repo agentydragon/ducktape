@@ -113,6 +113,14 @@ def pid1_container(
         .with_volume_mapping(str(runtime.resolve()), str(runtime), mode="ro")
         .with_command(shlex.join(command))
     )
+    # Gateway tests may issue certificates outside the Runtime's state directory.
+    # Mount only the configured files, at the paths the Runtime reads.
+    security = config["control"]["security"]
+    if security["mode"] == "mtls":
+        for file in security["tls"].values():
+            path = Path(file)
+            if not path.is_relative_to(directory):
+                container.with_volume_mapping(str(path.resolve()), str(path), mode="ro")
     for dialect in ("claude", "codex"):
         if native_config := config.get(dialect):
             native = Path(native_config["binary"]).absolute()
