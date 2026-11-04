@@ -183,9 +183,9 @@ def create_app(
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
-        if start is not None:
-            await start()
         try:
+            if start is not None:
+                await start()
             async with poll_integrations(integrations, transport):
                 yield
         finally:

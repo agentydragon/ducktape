@@ -57,6 +57,7 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx",  # keep: fastapi.testclient requires httpx at runtime
         "@pypi//pydantic",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
