@@ -5801,6 +5801,7 @@ struct ExecutionIndex {
     fresh_instance_field_writes: BTreeSet<SourceUnitOrdinal>,
     top_dynamic_property_receivers: Vec<Vec<ValueExpr>>,
     top_assignments: Vec<Vec<(Id, ValueExpr)>>,
+    ordered_initializers: BTreeMap<SourceUnitOrdinal, LocalBody>,
     noninvoking_initializers: BTreeMap<SourceUnitOrdinal, OriginalInitializer>,
     initialization_coverage_refusals: Vec<Option<OwnerInitializationCoverageRefusalReason>>,
     top_definite_initializers: Vec<BTreeSet<Id>>,
@@ -5984,6 +5985,7 @@ impl Default for ExecutionIndex {
             fresh_instance_field_writes: BTreeSet::new(),
             top_dynamic_property_receivers: Vec::new(),
             top_assignments: Vec::new(),
+            ordered_initializers: BTreeMap::new(),
             noninvoking_initializers: BTreeMap::new(),
             initialization_coverage_refusals: Vec::new(),
             top_definite_initializers: Vec::new(),
@@ -8497,6 +8499,7 @@ impl ExecutionIndex {
             top_property_writes: vec![Vec::new(); body.len()],
             top_dynamic_property_receivers: vec![Vec::new(); body.len()],
             top_assignments: vec![Vec::new(); body.len()],
+            ordered_initializers: BTreeMap::new(),
             initialization_coverage_refusals: vec![None; body.len()],
             top_definite_initializers: vec![BTreeSet::new(); body.len()],
             top_member_value_writes: vec![Vec::new(); body.len()],
@@ -8608,6 +8611,16 @@ impl ExecutionIndex {
         }
         for (ordinal, item) in body.iter().enumerate() {
             let owner = SourceUnitOrdinal(ordinal);
+            if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration)))) =
+                item
+                && !declaration.declare
+                && let [declarator] = declaration.decls.as_slice()
+                && matches!(declarator.name, Pat::Ident(_))
+                && let Some(expression) = declarator.init.as_deref()
+                && let Some(body) = LocalBody::from_initializer(expression)
+            {
+                index.ordered_initializers.insert(owner, body);
+            }
             match OriginalInitializer::collect(item, owner) {
                 Ok(initializer) => {
                     index.noninvoking_initializers.insert(owner, initializer);

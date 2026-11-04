@@ -482,6 +482,10 @@ impl LocalExpression {
 }
 
 impl LocalBody {
+    pub(super) fn from_initializer(expression: &Expr) -> Option<Self> {
+        Self::lower_expression(std::iter::empty(), expression)
+    }
+
     /// Called by the canonical function collector. Unsupported syntax discards
     /// the entire candidate; the ordinary conservative lanes remain available.
     pub(super) fn lower<'a>(
