@@ -267,11 +267,11 @@ func TestPreparationCompletingAfterShutdownCannotMakeSessionReady(t *testing.T) 
 }
 
 func TestPreparationJoinsExitedProcessReadersBeforeReplacingAttachment(t *testing.T) {
+	s, previous, _ := frameTestSession(t, []string{"/bin/true"})
+	if _, err := previous.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	synctest.Test(t, func(t *testing.T) {
-		s, previous, _ := frameTestSession(t, []string{"/bin/true"})
-		if _, err := previous.Wait(context.Background()); err != nil {
-			t.Fatal(err)
-		}
 		s.connection.readers.Add(1)
 		returned := make(chan struct{})
 		var prepareErr error

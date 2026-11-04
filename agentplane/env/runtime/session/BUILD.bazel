@@ -1,4 +1,5 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//agentplane/env/runtime/supervision/testing:defs.bzl", "pid1_go_test")
 
 go_library(
     name = "session",
@@ -49,7 +50,7 @@ go_library(
     ],
 )
 
-go_test(
+pid1_go_test(
     name = "session_test",
     srcs = glob(["*_test.go"]),
     embed = [":session"],

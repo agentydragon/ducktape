@@ -28,13 +28,6 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestMain(m *testing.M) {
-	if len(os.Args) > 1 && os.Args[1] == supervision.SupervisorMode {
-		os.Exit(supervision.SupervisorMain(os.Args[2:]))
-	}
-	os.Exit(m.Run())
-}
-
 type fixture struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -184,9 +177,13 @@ func newFixtureWithConfiguration(t *testing.T, onChange func(), configure func(*
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	supervisor, err := supervision.NewPID1Supervisor()
+	if err != nil {
+		t.Fatal(err)
+	}
 	f.host, err = NewHost(harness.LaunchConfig{Binary: binary, BaseURL: "https://codex.example.invalid/v1", Token: "test"}, Dependencies{
 		Context: ctx, State: f.store, Workers: &f.workers, Processes: processes,
-		Supervisor: supervision.NewSubprocessSupervisor(nil), StateDir: t.TempDir(),
+		Supervisor: supervisor, StateDir: t.TempDir(),
 		RequestAdmission: func(ctx context.Context, effect func(context.Context) error) error {
 			current, found, err := lifecycle.ReadEnvironmentDesired(ctx, f.store)
 			if err != nil {
