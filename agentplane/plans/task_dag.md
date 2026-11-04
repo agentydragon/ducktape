@@ -398,6 +398,10 @@ for cross-ServiceAccount sends and reads, and may be reconsidered. Their presenc
 or existing plans does not make them a permanent domain constraint. Use the realistic workflow
 examples to evaluate the mechanism; an alternative may require backend work and replanning.
 Existing authorization continues to apply until a replacement contract is selected and implemented.
+Session–Environment separation also requires revisiting what these groups label and how access
+survives attachment changes or Environment deletion. `SESSION_ACCESS_GROUPING_DESIGN` gates new
+cross-principal grouping and the proposed Sandbox history record; the Sandbox-scoped design below
+is historical direction, not a settled prerequisite. Existing send enforcement remains in force.
 SA-level caller attribution, configurable topology and live shared bundles are agreed constraints.
 Replacing the authorization machinery across services is a separate deferred evaluation, not a
 multiagent prerequisite. Preserve existing auth semantics; a concrete limitation must justify any
@@ -411,7 +415,8 @@ the broader contracts below retain their individual review gates.
 flowchart TD
     MULTIAGENT_MODEL[Decision: identities, relationships and native-child boundary]
     THREAD_READ_POLICY_DESIGN[Held decision: remaining history read contract]
-    HISTORY_SANDBOX_RECORD[Unscheduled: History's Sandbox record and history tags]
+    SESSION_ACCESS_GROUPING_DESIGN[Decision: Session access grouping, section 13]
+    HISTORY_SANDBOX_RECORD[Conditional: Sandbox history record and tags]
     THREAD_READ_POLICY[Blocked: scoped archive reads]
     HISTORY_SANDBOX_ASSOCIATION_SOURCE[Unscheduled: an authoritative Sandbox UID source for History]
     PLATFORM_GUIDANCE_OWNERSHIP_DESIGN[Later decision: platform-guidance ownership and composition]
@@ -427,7 +432,8 @@ flowchart TD
     AGENT_SANDBOX_LAUNCH[Blocked: enforce agent Sandbox-launch policy]
     MULTIAGENT_MODEL --> AGENT_LAUNCH_POLICY_DESIGN
     THREAD_READ_POLICY_DESIGN --> THREAD_READ_POLICY
-    HISTORY_SANDBOX_RECORD --> THREAD_READ_POLICY
+    SESSION_ACCESS_GROUPING_DESIGN --> HISTORY_SANDBOX_RECORD
+    SESSION_ACCESS_GROUPING_DESIGN --> THREAD_READ_POLICY
     ENVIRONMENT_TEMPLATE_CATALOGUE_DESIGN --> ENVIRONMENT_MANAGEMENT
     ENVIRONMENT_SHARED_ACCOUNT --> ENVIRONMENT_MANAGEMENT
     SCHEDULED_AGENT_WAKE[Selected P1: durable scheduled wake]
@@ -465,7 +471,8 @@ implementation.
 ### `THREAD_READ_POLICY_DESIGN` — scoped history read policy
 
 **Decision, held by the operator for now (2026-10-17 UTC): do not raise it until the operator reopens
-it. Tentative Session-access rules, Sandbox minimum, history tags and all-Sandboxes target selected.**
+it. Earlier Sandbox minimum, history tags and all-Sandboxes direction must be revisited with
+`SESSION_ACCESS_GROUPING_DESIGN` before selection for independent Sessions.**
 Reads get a rule type of their own, not the send rule's (operator, 2026-10-21 UTC), and this decision
 shapes it. Finalize caller replacement semantics. Collection reads match history tags on History's
 record of the Sandbox, which outlives it ([design](sandbox_tags.md)). V1 has no individual-Session
@@ -485,10 +492,10 @@ without a trustworthy principal remain limited to configured backend readers
 
 ### `THREAD_READ_POLICY` — authorized retained-history access
 
-**Blocked on reviewed read policy, held by the operator, and on `HISTORY_SANDBOX_RECORD`, which keeps
-the Sandbox UID and history tags the association needs.** Same-principal retained reads already use
-the exact recorded execution identity. Add reviewed broader Sandbox-scoped grants and association
-handling through shared rule evaluation at the owning backend across
+**Blocked on the held read policy and `SESSION_ACCESS_GROUPING_DESIGN`.** The proposed
+`HISTORY_SANDBOX_RECORD` is required only if the reviewed access design selects it. Same-principal
+retained reads already use the exact recorded execution identity. Add reviewed broader grants and
+association handling through shared rule evaluation at the owning backend across
 list, raw/native evidence, direct reads and feeds, including reconnect and revocation. Keep app-only UI
 folds separate. Test allowed/denied histories, two principals, deleted Sandboxes and revocation with
 deterministic service tests plus a bounded deployed auth check. Cover a listing-only caller separately
@@ -497,8 +504,9 @@ emission on observed grant loss or stale required policy state.
 
 ### `HISTORY_SANDBOX_RECORD` — History's Sandbox record and history tags
 
-**Unscheduled; no prerequisite left, since #11835 records the Sandbox UID it keys on. It lands in the Go History Service.**
-[Design](sandbox_tags.md#historys-record-of-a-sandbox). Add a set-typed `spec.historyTags` to `Sandbox`
+**Conditional on `SESSION_ACCESS_GROUPING_DESIGN` selecting a Sandbox-scoped record.** #11835
+records Sandbox UID, but does not decide access grouping for independent Sessions. The historical
+[design](sandbox_tags.md#historys-record-of-a-sandbox) would add a set-typed `spec.historyTags` to `Sandbox`
 in the same change, since History is its only reader; app presets supply a launch's initial history tags.
 The Role granting History `get`, `list` and `watch` on Sandboxes lands first, then the code. History
 keeps one record per Sandbox UID with namespace, name and history tags; a read-only watch writes it and
@@ -2072,6 +2080,7 @@ flowchart LR
     SESSION_DATA_OWNERSHIP_DESIGN[Later decision: Session data and service boundaries]
     SESSION_DIRECTORY_NATIVE[Ready: Dispatcher Session directory for native placement]
     SESSION_IDENTITY_CONTRACT[Decision: Session identity and shared-Environment admission]
+    SESSION_ACCESS_GROUPING_DESIGN[Decision: Session access grouping and tags]
     CENTRAL_SESSION_CREATION_CONTRACT[Decision: central Session creation without an Environment]
     SESSION_ATTACHMENT_CONTRACT[Decision: Environment attachments and targeting]
     SESSION_IDENTITY_ENFORCEMENT[Blocked: enforce identity in shared Environments]
@@ -2103,6 +2112,10 @@ flowchart LR
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT -. central lifecycle .-> SESSION_LIFETIME_IMPLEMENTATION
     SESSION_DELETION_FENCE -. disposing receipts .-> SESSION_LIFETIME_IMPLEMENTATION
     SESSION_AND_INBOX_LIFETIME --> CENTRAL_SESSION_NOTIFICATIONS
+    SESSION_IDENTITY_CONTRACT -. identity review .-> SESSION_ACCESS_GROUPING_DESIGN
+    SESSION_ATTACHMENT_CONTRACT -. attachment review .-> SESSION_ACCESS_GROUPING_DESIGN
+    SESSION_AND_INBOX_LIFETIME -. lifetime review .-> SESSION_ACCESS_GROUPING_DESIGN
+    SESSION_ACCESS_GROUPING_DESIGN -. cross-principal access .-> CENTRAL_SESSION_NOTIFICATIONS
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_NOTIFICATIONS
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> CENTRAL_SESSION_NOTIFICATIONS
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
@@ -2193,6 +2206,28 @@ Sessions sharing one Environment, and rejection of a different identity, includi
 attachment, effective credentials and denial. This is the focused contract for this lane;
 `AGENT_PRINCIPAL_MODEL_DESIGN` can separately evaluate broader provisioning and external identities
 without holding the minimal decision on a general identity-governance system.
+
+### `SESSION_ACCESS_GROUPING_DESIGN` — access groups across independent Sessions and Environments
+
+**Decision; coordinate with Session identity, attachment and lifetime reviews.** Inbox tags today are
+Sandbox attributes used by Notification to authorize sends. History tags and a retained per-Sandbox
+history record are proposed, not implemented. Reconsider whether either mechanism should instead
+group Sessions, inboxes, identities or another resource, or be replaced; choose authority and storage
+for membership and grants separately. Address zero, one and multiple Environment attachments,
+attachment changes and Environment deletion, retained history and inboxes, identity loss and
+replacement, edits and revocation. Distinguish Session access from Environment access and preserve
+independent send, history read, listing, inbox read/ack and Environment privileges. Co-resident
+Sessions remain in the same Environment trust domain regardless of narrower nominal grants.
+
+Existing Sandbox-tag enforcement remains authoritative until a reviewed replacement is implemented;
+never silently broaden grants or lose retained data or accepted messages in migration. A draft can
+proceed alongside the identity, attachment and lifetime decisions, but the final cross-principal
+contract must be consistent with them. Same-principal independent-Session work need not wait for
+this wider policy design. Reopen the held History read policy only when the operator chooses.
+
+**Exit:** reviewed access and revocation examples for a Session without an Environment, a shared
+Environment, changed or deleted attachments and retained history, including migration and ownership.
+The decision may retire or reshape `HISTORY_SANDBOX_RECORD` rather than require it.
 
 ### `CENTRAL_SESSION_CREATION_CONTRACT` — opening a central Session without an Environment
 
@@ -2306,7 +2341,8 @@ same-name replacements.
 **Blocked on `SESSION_AND_INBOX_LIFETIME`, `SESSION_IDENTITY_CONTRACT` and
 `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`.** Make subscription, inbox and notice authorization and
 delivery work for a central Session with no Environment, under the reviewed identity and lifetime
-contracts. Today the Notification worker resolves a Sandbox destination and passes its UID to
+contracts. Cross-principal grouping additionally uses `SESSION_ACCESS_GROUPING_DESIGN`; a safe
+same-principal slice can proceed independently. Today the Notification worker resolves a Sandbox destination and passes its UID to
 Dispatcher; do not fabricate one or silently retire a live Session's inbox because an attachment
 is absent. Preserve pending messages, idempotency, source authorization, explicit acknowledgement
 and unattended wake where an actual Environment must be woken. Update affected backend, app and

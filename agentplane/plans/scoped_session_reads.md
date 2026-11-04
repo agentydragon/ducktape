@@ -8,7 +8,13 @@ Narrow same-principal retained reads are already implemented for
 [caller-privilege delegation](session_delegation_workflows.md), independently of this held
 cross-ServiceAccount policy. Configured privileged readers remain a separate authority path.
 
-SA-level caller attribution and Sandbox-level authorization are agreed. Reads may request an
+**Reconsideration, 2026-11-04:** the Sandbox-scoped grouping below is earlier direction, not a
+settled boundary for independent Sessions. Revisit it with
+[`SESSION_ACCESS_GROUPING_DESIGN`](task_dag.md#session_access_grouping_design--access-groups-across-independent-sessions-and-environments)
+when the operator reopens this policy. Same-principal reads already use the retained principal and
+do not depend on a recorded Sandbox UID.
+
+SA-level caller attribution and Sandbox-level authorization were previously agreed. Reads may request an
 individual Session, but the permission covers its Sandbox's histories. V1 supports history tags on the
 Sandbox ([design](sandbox_tags.md)), an [`allSandboxes` target](multiagent_communication.md#target-collections-and-launch-enrollment)
 bounded to the rule's namespace and launch defaults at the same link, and no individual-Session

@@ -323,6 +323,17 @@ The binding becomes unavailable; it does not seal the central conversation or st
 
 ## Binding is not permission
 
+### Session access grouping and tags
+
+Inbox tags currently live on the Sandbox and authorize sends to its Sessions; separate history tags
+and a retained Sandbox record were proposed for history-read grants but are not implemented. Once
+Sessions can exist independently of Environments, revisit what the groups label and who owns them,
+rather than assuming an attached Sandbox supplies Session access. Review no attachment, shared or
+changing attachments, deleted Environments, retained History and inboxes, identity loss, revocation
+and migration under [`SESSION_ACCESS_GROUPING_DESIGN`](task_dag.md#session_access_grouping_design--access-groups-across-independent-sessions-and-environments).
+Keep send, history read, inbox read/ack and Environment authority distinct. The current Sandbox-based
+send rules remain enforced until a reviewed replacement is implemented.
+
 ### Authorize each boundary
 
 Check who may create or manage the Session, attach the environment, send commands, wake it, and invoke each environment capability. Recheck live policy and exact target identity before a side effect. A Session address, alias or history reference grants none of these rights.

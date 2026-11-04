@@ -3,6 +3,12 @@
 Status: **agreed with the operator, 2026-10-19 to 2026-10-20 UTC; not implemented.** History tags
 and History's per-Sandbox record remain open. The separate inbox tags have shipped; their behavior is
 in the [Sandboxes README](../sandboxes/README.md).
+**Reconsideration, 2026-11-04:** the Sandbox-scoped History design below records earlier direction,
+not an approved prerequisite for independent Sessions. Inbox tags currently authorize sends to
+Sandbox-hosted Session inboxes; history tags are proposed for retained reads. Revisit the resource,
+membership ownership, grants and lifetimes for both with
+[`SESSION_ACCESS_GROUPING_DESIGN`](task_dag.md#session_access_grouping_design--access-groups-across-independent-sessions-and-environments)
+before extending this model. Existing inbox enforcement stays in force until replaced.
 Implementation gates are in the [task DAG](task_dag.md#3-multiagent-decisions-before-implementations).
 The costs that led here and the directions weighed are in the
 [architecture overview](architecture_overview.md#keeping-finished-sandboxes-as-records).
