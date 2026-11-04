@@ -40,7 +40,7 @@ from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # pytest loads this plugin by name from the test target's args.
-# gazelle:include_dep //util/testing:pytest_logfile
+# gazelle:include_dep //agentplane/app/testing:pytest_logfile
 
 SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
 

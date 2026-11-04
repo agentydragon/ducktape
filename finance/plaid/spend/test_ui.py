@@ -20,11 +20,11 @@ from finance.plaid.spend.models import (
     SpendView,
     TransactionPeriodSummary,
 )
+from finance.plaid.spend.oidc_principal import InvalidOidcPrincipalError, VerifiedOidcPrincipal
 from finance.plaid.spend.service import SpendService
 from finance.plaid.spend.settings import SpendSettings
 from finance.plaid.spend.sustainability import SustainabilityDashboard, SustainabilityView, disabled_view
 from util.oidc_login import LoginSession
-from util.oidc_principal import InvalidOidcPrincipalError, VerifiedOidcPrincipal
 
 
 def test_ui_bundle() -> None:

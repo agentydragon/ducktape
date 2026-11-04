@@ -9,6 +9,7 @@ import pytest_bazel
 
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.series import IssuerId
+from finance.augur.x.models.jsonl import write_jsonl
 from finance.augur.x.models.private_equity_fit import (
     PrivateEquityTrainingConfig,
     PrivateEquityTrainingPriors,
@@ -22,7 +23,6 @@ from finance.augur.x.models.trained_private_equity import (
     TrainedPrivateEquityScalePrior,
 )
 from util.bazel.runfiles import get_required_path
-from util.testing.jsonl import write_jsonl
 
 PRIVATE_COMPANY_A = IssuerId("private_company_a")
 

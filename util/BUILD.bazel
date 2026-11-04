@@ -11,23 +11,10 @@ py_library(
 )
 
 py_library(
-    name = "visual_diff",
-    srcs = ["visual_diff.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pillow"],
-)
-
-py_library(
     name = "net",
     srcs = ["net.py"],
     visibility = ["//visibility:public"],
     deps = ["@pypi//tenacity"],
-)
-
-py_library(
-    name = "env",
-    srcs = ["env.py"],
-    visibility = ["//visibility:public"],
 )
 
 py_library(
@@ -51,12 +38,6 @@ py_library(
     srcs = ["sqlalchemy_types.py"],
     visibility = ["//visibility:public"],
     deps = ["@pypi//sqlalchemy"],
-)
-
-py_library(
-    name = "fmt",
-    srcs = ["fmt.py"],
-    visibility = ["//visibility:public"],
 )
 
 py_library(
@@ -111,13 +92,6 @@ py_test(
 )
 
 py_library(
-    name = "json_schema",
-    testonly = True,
-    srcs = ["json_schema.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
     name = "image_tag",
     srcs = ["image_tag.py"],
     visibility = ["//visibility:public"],
@@ -162,9 +136,6 @@ py_package(
     # outside Bazel and are needed by Nix-shipped wheels (Claude statusline,
     # ducktape-git-hooks).
     deps = [
-        ":agent_sandbox",
-        ":env",
-        ":fmt",
         ":net",
         ":otel",
         ":typer",
@@ -247,12 +218,6 @@ py_test(
 )
 
 py_library(
-    name = "agent_sandbox",
-    srcs = ["agent_sandbox.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
     name = "oidc_login",
     srcs = ["oidc_login.py"],
     visibility = ["//visibility:public"],
@@ -284,17 +249,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_visual_diff",
-    srcs = ["test_visual_diff.py"],
-    deps = [
-        ":visual_diff",
-        "//:conftest",
-        "@pypi//pillow",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "urls",
     srcs = ["urls.py"],
@@ -311,36 +265,6 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "oidc_principal",
-    srcs = ["oidc_principal.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":urls",
-        "@pypi//cryptography",
-        "@pypi//httpx",
-        "@pypi//pydantic",
-        "@pypi//pyjwt",
-    ],
-)
-
-py_test(
-    name = "test_oidc_principal",
-    srcs = ["test_oidc_principal.py"],
-    deps = [
-        ":oidc_principal",
-        "//:conftest",
-        "//util/testing:asgi",
-        "//util/testing:mock_oidc",
-        "@pypi//cryptography",
-        "@pypi//httpx",
-        "@pypi//pyjwt",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//starlette",
     ],
 )
 

@@ -19,7 +19,7 @@ rasterization, anti-aliasing) can declare it instead of flagging every run:
   `changeTolerance` (fraction of pixels that may differ) on visual asset
   records, with shared parity fixtures for the supported writers;
 - the publisher honors them when classifying `unchanged` vs `modified` (today
-  it compares exact decoded RGB via `util/visual_diff.compare_pngs`);
+  it compares exact decoded RGB via `devinfra/pr_visuals/visual_diff.compare_pngs`);
 - AI quota (`//aiquota/gnome:test_render`) becomes the first declarer, matching
   its existing golden comparator (`tolerance=0.02`, `intensity_threshold=16`);
 - `commentPriority` on assets so preview selection ranks by producer intent,

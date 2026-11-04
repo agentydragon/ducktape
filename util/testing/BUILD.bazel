@@ -22,24 +22,6 @@ py_library(
 )
 
 py_library(
-    name = "pytest_logfile",
-    testonly = True,
-    srcs = ["pytest_logfile.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":undeclared_outputs",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "jsonl",
-    testonly = True,
-    srcs = ["jsonl.py"],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
     name = "otel_tracing",
     testonly = True,
     srcs = ["otel_tracing.py"],

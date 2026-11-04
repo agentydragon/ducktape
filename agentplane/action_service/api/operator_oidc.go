@@ -88,7 +88,7 @@ const (
 
 // OperatorVerifier verifies the single-audience RS256 access tokens an operator's issuer signs. go-oidc checks the
 // signature, issuer, audience and expiry; the verifier adds the rules of the Python service's
-// `util/oidc_principal.py` the library leaves out: one audience, a subject, and the profile's `azp`.
+// `finance/plaid/spend/oidc_principal.py` the library leaves out: one audience, a subject, and the profile's `azp`.
 type OperatorVerifier struct {
 	settings OperatorOIDCSettings
 	verifier *oidc.IDTokenVerifier

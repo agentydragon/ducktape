@@ -51,7 +51,7 @@ from devinfra.pr_visuals.metadata import (
 )
 from devinfra.pr_visuals.pull_request import find_reviewable_pull_request
 from devinfra.pr_visuals.render_common import classification_totals, ordered_assets, shared_image_key, test_impact_key
-from util.visual_diff import compare_pngs
+from devinfra.pr_visuals.visual_diff import compare_pngs
 
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 REVIEW_PREFIX = "reviews-test-outputs"

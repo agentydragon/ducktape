@@ -294,3 +294,12 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_library(
+    name = "pytest_logfile",
+    srcs = ["pytest_logfile.py"],
+    deps = [
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+    ],
+)
