@@ -192,6 +192,10 @@ flowchart LR
     COMMAND_WATCH_SUBSCRIPTION_DESIGN[Unscheduled: a subscription kind that runs an agent's command on a schedule]
     COMMAND_WATCH_SUBSCRIPTION_DESIGN -. related .-> NOTIFICATION_SERVICE_SPLIT
     SESSION_INPUT_METADATA[Typed input annotations and provenance]
+    CENTRAL_SESSION_WITHOUT_ENVIRONMENT[Central Session without Environment, section 13]
+    CENTRAL_SESSION_INPUT_METADATA[Blocked: central sampler metadata passthrough]
+    SESSION_INPUT_METADATA --> CENTRAL_SESSION_INPUT_METADATA
+    CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> CENTRAL_SESSION_INPUT_METADATA
     SESSION_INPUT_METADATA_READ[Blocked: metadata reads and message correlation]
     NOTIFICATION_NOTICE_METADATA[Blocked: attach notice metadata to submissions]
     NOTIFICATION_PRESENTATION[Blocked: compact frontend presentation]
@@ -291,10 +295,22 @@ owns subscriptions and sources.
 **Unscheduled; operator's lean, 2026-10-12 PDT.**
 Typed metadata and restricted trusted producer provenance on input commands, so a notice the
 Notification Service sends is not rendered as a user message. The field must ride the durable
-Session Dispatcher path to the matching Runner input RPC; its trusted producer provenance and narrow
-authorization are open design points. The harness never sees it. Keep that authorization
-outside the generic command-admission path; attachments are invalid on controls. No
-untyped extension dictionary.
+Session Dispatcher path to the Session owner. For native Sessions the Runner journals it; the
+central sampler should similarly pass it through to History (operator, 2026-11-04), without needing an
+Environment. Its trusted producer provenance and narrow authorization are open design points. The
+harness/model never sees it. Keep that authorization outside the generic command-admission path;
+attachments are invalid on controls. No untyped extension dictionary. The native path can land
+independently; central support follows the applicable central Session path. See
+[metadata ownership](notification_presentation.md#history-and-read-path).
+
+### `CENTRAL_SESSION_INPUT_METADATA` — pass central Session input metadata to History
+
+**Blocked on `SESSION_INPUT_METADATA` and `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`.** The central
+sampler passes authorized input metadata through to History alongside the input, with the same
+provenance, command-ID correlation and retry/conflict contract as the native path. It must work
+without an Environment and keep metadata out of model input. Cover authorization denial, retained
+metadata after inbox expiry, duplicate/conflicting submissions and recovery. This is a separate
+backend slice; native annotations and same-principal central Session creation need not wait for it.
 
 ### `SESSION_INPUT_METADATA_READ` — authorized annotation reads
 
@@ -646,7 +662,11 @@ activation; activation is follow-up work after this planning review.
 **Deferred with fresh provisioning; identity choice accepted by the operator, 2026-10-31.**
 Add an
 explicit namespace/name/UID-pinned execution-account reference alongside the existing
-Sandbox-owned identity mode. Controller workload rendering, shared readers, gateway admission,
+Sandbox-owned identity mode. Borrowing the caller's exact SA is a scoped SA-backed case, not a
+choice that all future Agentplane principals must be Kubernetes SAs. Coordinate any logical-principal
+provisioning with `SESSION_IDENTITY_CONTRACT` and `AGENT_PRINCIPAL_MODEL_DESIGN`: choose direct SA
+identity versus an Agentplane-owned identity and verified SA mapping, and define who may delegate it.
+A safe same-SA slice need not wait for the broader identity design. Controller workload rendering, shared readers, gateway admission,
 History association and public projections must agree on the actual account. Shared mode must
 not create/label/own/delete that SA or manufacture grants/PolicyBindings for it. A recreated SA
 is a different account. A controller-only identity switch is incomplete while readers still
@@ -727,7 +747,10 @@ a grant its backend checks: Session open and commands after `THREAD_CREATE_AUTHO
 `AGENT_SANDBOX_LAUNCH`. The executor then calls as the caller, launcher grants write the backend rule instead of an
 `argument_schema` auto-approval ([target shape](mcp_orchestration.md#shape-matched-approval-is-the-v1-expedient)), and
 `send_message` joins the group. Exit: the Action Service is in neither the Dispatcher's callers and wake callers nor
-History's readers, and no launcher grant matches argument shapes.
+History's readers, and no launcher grant matches argument shapes. The older Sandbox-only grant
+sketch in the orchestration plan must be reconciled with `SESSION_ACCESS_GROUPING_DESIGN` and
+`DELIVERY_DESTINATION_AUTHORITY_DESIGN` before applying it to Environment-independent Sessions; the
+Session permission target and principal representation remain open.
 
 ### `RUNNER_HARNESS_OBJECTS_DESIGN` — decide process diagnostics and placement policy
 
@@ -794,7 +817,9 @@ a block StorageClass does not itself make Pod and VM layouts interchangeable. Se
 
 ```mermaid
 flowchart LR
+    ENVIRONMENT_SUSPEND_MODES_DESIGN[Decision: distinct suspend and resume modes]
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM]
+    ENVIRONMENT_SUSPEND_MODES_DESIGN --> VM_RAM_SUSPEND
     VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
     VM_INTRA_SANDBOX_HARDENING[Deferred: optional intra-Sandbox process/state hardening]
     RUNNER_LAYERING_VM[Paused: slim VM runtime, section 7]
@@ -814,9 +839,25 @@ inside one Sandbox. Revisit Runner-state privacy and tool-child-versus-harness h
 only if a concrete product requirement or incident warrants it. This node does not
 gate VM resource acceptance or lifecycle work.
 
+### `ENVIRONMENT_SUSPEND_MODES_DESIGN` — distinguish Environment suspend operations
+
+**Decision; operator direction, 2026-11-04.** Design distinct suspend/resume operations for a
+cold stop such as removing the Pod or VM and a memory-preserving VM suspend. Decide their API and
+status, capabilities and unsupported-mode behavior, selection and authorization, idle/wake policy,
+quiesce and journal boundaries, fencing, recovery and failure behavior. Specify what can be proved
+about processes, terminals, memory, workspace, control connections and credentials after each mode;
+never claim a resource survived or was lost without evidence. Coordinate with `VM_RAM_SUSPEND`,
+`AGENT_RESUME_NOTICE` and the [control ADR](../docs/adr_sandbox_session_control.md#d3-quiescing-is-one-operation-names-say-which-stage-a-sandbox-is-in).
+Existing cold-stop behavior and bounded notices about it can proceed independently. A
+memory-preserving mode must not reuse the current final seal contract without resolving how the
+running harness and journal resume safely.
+
+**Exit:** reviewed cold-stop and memory-preserving examples, observable outcomes and ownership,
+including failed/interrupted suspend and reconnect. This decision alone selects no VM mechanism.
+
 ### `VM_RAM_SUSPEND` — suspend a VM to disk with its RAM
 
-**Unscheduled; operator, 2026-10-13 PDT: nice to have.** A stopped VM Sandbox resumes with the memory
+**Unscheduled; blocked on `ENVIRONMENT_SUSPEND_MODES_DESIGN`; operator, 2026-10-13 PDT: nice to have.** A stopped VM Sandbox resumes with the memory
 it had, not a cold boot, so a quick resume loses no in-memory state. Find what KubeVirt offers (a
 memory dump or a snapshot with memory) and whether it works with the state volume (virtiofs today, block under `STATE_VOLUME_BLOCK`). The
 [VM Sandboxes design](../docs/vm_sandboxes.md#guest-and-storage) records that a VM supports neither
@@ -1484,6 +1525,7 @@ flowchart TD
     ENVIRONMENT_READINESS_WAIT[Unscheduled: bounded CLI and Action/MCP readiness waits]
     AGENT_EXECUTOR_LOSS_NOTICE[Unscheduled: tell agents when executor restarts or kills lose their processes]
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
+    ENVIRONMENT_SUSPEND_MODES_DESIGN[Decision: distinct suspend modes, section 4] -. multi-mode notice .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
@@ -1506,10 +1548,13 @@ ongoing reconciliation must work without starting the Session from the UI or kee
 integration app available. Long-running describes durable managed intent; decide separately
 whether the harness stays running or suspends and wakes on authorized events.
 
-Review a `Session` CRD, potentially with declarative subscription resources or references. Compare
-coexistence with service-owned Session records against replacing the relevant database authority;
+The operator's current direction (2026-11-04) is to put Session existence and placement in the
+Dispatcher first. A future `Session` CRD, potentially with declarative subscriptions, remains an
+option, not a prerequisite or a second concurrent authority. If revisited, compare Kubernetes-owned
+desired state reconciled into Dispatcher with an explicit reviewed replacement of that authority;
 first inventory the current runner, Dispatcher, History and app responsibilities rather than
-assuming one database owns Sessions. Recommend evaluating Kubernetes-owned desired state with
+assuming one database owns every Session fact. Coordinate with `SESSION_DIRECTORY_NATIVE` and
+`SESSION_AND_INBOX_LIFETIME` on identities, create/delete and recovery. Recommend evaluating Kubernetes-owned desired state with
 existing services retaining execution/history and Notification Service retaining subscription/inbox
 ownership. The operator must choose the resource boundaries and source of truth; no CRD or database
 replacement is selected by this task.
@@ -1769,23 +1814,18 @@ the automated Pod/VM lifecycle coverage.
 Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-coverage), and `VM_RAM_SUSPEND` for
 resuming with memory retained.
 
-### `AGENT_RESUME_NOTICE` — tell agents when their Sandbox was suspended and resumed
+### `AGENT_RESUME_NOTICE` — tell agents when their Environment was suspended and resumed
 
 **Unscheduled; operator, 2026-10-13 PDT: it would be good.** Central sampler execution already
-[reports verified incarnation changes](../central_sampler/SPEC.md#runtime-and-effects) when
-opening a replacement exec-server session. The broader lifecycle notice remains unfinished for
-other harness paths and before the next exec. An agent whose Sandbox was suspended and
-resumed needs to learn what changed: its tool processes are gone, a terminal or background process it started
-no longer runs, and whether its workspace survived depends on where it lived (the state PVC is kept; a
-VM-local disk is not, until `VM_RAM_SUSPEND`). Tell the agent when a new incarnation of its Sandbox
-started, how long it was down, what was kept (state PVC, workspace) and what was lost (processes,
-terminals). The runner knows the incarnation change; what survives is a fact of the Sandbox's kind and
-volumes, and a suspend ends processes and terminals that are not protected by an active execution
-connection (`RUNNER_BUSY_TRACKING`). Open: whether the notice is a runner
-platform instruction added at harness start, an event the History Service folds into the Session, or a
-message through the Dispatcher; and the wording agents act on. Test a suspend and resume with a
-background process, a terminal and workspace files, and a crash restart (no suspend) that reads
-differently.
+[reports verified incarnation changes](../central_sampler/SPEC.md#runtime-and-effects) when opening
+a replacement exec-server session. Broader lifecycle notices should state the observed suspend mode,
+duration, incarnation and what is known about processes, terminals, memory and workspace. Today's
+cold-stop path can lose processes and terminals; a future memory-preserving VM suspend may retain
+them. Do not claim either result without evidence. The `ENVIRONMENT_SUSPEND_MODES_DESIGN` review
+owns the distinction and gates notices that support both modes, not a bounded notice for today's
+cold-stop behavior. Account for `RUNNER_BUSY_TRACKING`, and distinguish a crash restart from an
+intentional suspend. Choose the event/delivery owner and wording; test retained, lost and unknown
+state as applicable to the implemented modes.
 
 Related: [lifecycle coverage](../system_tests/k3s/README.md#sandbox-lifecycle-coverage).
 
@@ -2083,6 +2123,7 @@ flowchart LR
     SESSION_ACCESS_GROUPING_DESIGN[Decision: Session access grouping and tags]
     CENTRAL_SESSION_CREATION_CONTRACT[Decision: central Session creation without an Environment]
     SESSION_ATTACHMENT_CONTRACT[Decision: Environment attachments and targeting]
+    SESSION_ENVIRONMENT_SETUP_DESIGN[Decision: setup ownership and scope]
     SESSION_IDENTITY_ENFORCEMENT[Blocked: enforce identity in shared Environments]
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT[Blocked: central Session without an Environment]
     SESSION_ENV_ATTACHMENTS[Blocked: attach and detach Environments]
@@ -2101,6 +2142,8 @@ flowchart LR
     SESSION_IDENTITY_CONTRACT --> SESSION_IDENTITY_ENFORCEMENT
     SESSION_IDENTITY_CONTRACT --> SESSION_ATTACHMENT_CONTRACT
     SESSION_ATTACHMENT_CONTRACT --> SESSION_ENV_ATTACHMENTS
+    SESSION_ENVIRONMENT_SETUP_DESIGN -. setup behavior .-> SESSION_ENV_ATTACHMENTS
+    SESSION_ENVIRONMENT_SETUP_DESIGN -. setup behavior .-> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     SESSION_IDENTITY_ENFORCEMENT --> SESSION_ENV_ATTACHMENTS
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> SESSION_ENV_ATTACHMENTS
     SESSION_ENV_ATTACHMENTS --> SESSION_ATTACHMENT_SURFACES
@@ -2108,6 +2151,7 @@ flowchart LR
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> SESSION_HISTORY_PRESENTATION
     SESSION_ENV_ATTACHMENTS -. multiple attachments .-> SESSION_HISTORY_PRESENTATION
     SESSION_AND_INBOX_LIFETIME --> SESSION_LIFETIME_IMPLEMENTATION
+    SESSION_AND_INBOX_LIFETIME -. avoid locking cleanup behavior .-> SESSION_DIRECTORY_NATIVE
     SESSION_IDENTITY_CONTRACT -. independent identity .-> SESSION_LIFETIME_IMPLEMENTATION
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT -. central lifecycle .-> SESSION_LIFETIME_IMPLEMENTATION
     SESSION_DELETION_FENCE -. disposing receipts .-> SESSION_LIFETIME_IMPLEMENTATION
@@ -2213,7 +2257,10 @@ without holding the minimal decision on a general identity-governance system.
 Sandbox attributes used by Notification to authorize sends. History tags and a retained per-Sandbox
 history record are proposed, not implemented. Reconsider whether either mechanism should instead
 group Sessions, inboxes, identities or another resource, or be replaced; choose authority and storage
-for membership and grants separately. Address zero, one and multiple Environment attachments,
+for membership and grants separately. Reconsider the older Sandbox-only orchestration authority for
+Session commands, interrupts and reads as well as inbox/history grouping, without choosing a new
+policy target prematurely; coordinate with `DELIVERY_DESTINATION_AUTHORITY_DESIGN` and
+`ORCHESTRATION_V1_BACKEND_GRANTS`. Address zero, one and multiple Environment attachments,
 attachment changes and Environment deletion, retained history and inboxes, identity loss and
 replacement, edits and revocation. Distinguish Session access from Environment access and preserve
 independent send, history read, listing, inbox read/ack and Environment privileges. Co-resident
@@ -2229,6 +2276,26 @@ this wider policy design. Reopen the held History read policy only when the oper
 Environment, changed or deleted attachments and retained history, including migration and ownership.
 The decision may retire or reshape `HISTORY_SANDBOX_RECORD` rather than require it.
 
+### `SESSION_ENVIRONMENT_SETUP_DESIGN` — choose where setup belongs
+
+**Decision; operator lean, 2026-11-04:** the current Session `setup_script` may belong to the
+Environment instead. Compare Environment creation/bootstrap, an explicitly scoped attachment or
+workspace setup operation, and any narrowly justified Session-specific setup. Do not make a
+zero-Environment Session run an Environment script or silently choose an attachment. Define behavior
+for zero, one and multiple Environments, later attach/detach, shared Environments, initial versus
+per-Session workspaces, readiness/failure visibility and authorized callers. Existing delegation uses
+Session setup to prepare a child workspace when the caller lacks direct execution; preserve that use
+case through an explicitly authorized operation if the field moves or is removed.
+
+Coordinate with `CENTRAL_SESSION_CREATION_CONTRACT`, `SESSION_ATTACHMENT_CONTRACT` and Environment
+creation/bootstrap ownership. Specify script/data ownership, when and how often effects may run,
+idempotency and uncertain-outcome recovery, and how existing stored/pending setup requests are handled;
+never replay an uncertain external effect or discard retained scripts silently. The decision gates
+changing setup semantics, not provider-only central Sessions with no setup or unrelated native work.
+
+**Exit:** a reviewed owner/API and examples for no Environment, a later attachment, multiple targets
+and a shared Environment, including caller authority, failure/retry and migration of retained work.
+
 ### `CENTRAL_SESSION_CREATION_CONTRACT` — opening a central Session without an Environment
 
 **Decision.** Define the smallest zero-Environment creation and command contract consistent with
@@ -2237,7 +2304,8 @@ request and retry identity, owner unavailable or materialization rejected, and o
 Decide how optional setup, cwd and Environment-dependent instructions behave without an executor;
 do not silently run setup elsewhere or make an Environment a condition for provider-only work.
 Map authenticated Session identity, command authorization and History ingress to the selected owner.
-Coordinate with `SESSION_IDENTITY_CONTRACT`; either decision can be drafted independently, but both
+Coordinate setup semantics with `SESSION_ENVIRONMENT_SETUP_DESIGN`; do not make provider-only Sessions
+wait for an Environment. Coordinate with `SESSION_IDENTITY_CONTRACT`; either decision can be drafted independently, but both
 are prerequisites for implementing the complete zero-Environment path. Multi-attachment semantics
 belong to `SESSION_ATTACHMENT_CONTRACT`, not a prerequisite for this decision.
 
@@ -2253,7 +2321,9 @@ desired versus observed status, operation targeting and incarnation fencing, con
 attach/detach, replacement, unavailable targets and in-flight effects. Enforce the shared-identity
 invariant from `SESSION_IDENTITY_CONTRACT`; do not treat an attachment or source subscription as a
 grant. Define an authoritative transition record and recoverable handoff for the separately tracked
-History work. A draft may proceed alongside identity review; implementation waits for both decisions.
+History work. Reconcile any setup during attachment with `SESSION_ENVIRONMENT_SETUP_DESIGN`; avoid
+implicitly running a Session script on every target. A draft may proceed alongside identity review;
+implementation waits for both decisions.
 
 **Exit:** reviewed zero, one and multiple attachment examples, including denial, race/retry and
 Environment loss. Choose no service relocation or automatic reattachment by this decision alone.
@@ -2341,7 +2411,8 @@ same-name replacements.
 **Blocked on `SESSION_AND_INBOX_LIFETIME`, `SESSION_IDENTITY_CONTRACT` and
 `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`.** Make subscription, inbox and notice authorization and
 delivery work for a central Session with no Environment, under the reviewed identity and lifetime
-contracts. Cross-principal grouping additionally uses `SESSION_ACCESS_GROUPING_DESIGN`; a safe
+contracts. `CENTRAL_SESSION_INPUT_METADATA` separately carries authorized annotations through the
+sampler to History when that feature is implemented. Cross-principal grouping additionally uses `SESSION_ACCESS_GROUPING_DESIGN`; a safe
 same-principal slice can proceed independently. Today the Notification worker resolves a Sandbox destination and passes its UID to
 Dispatcher; do not fabricate one or silently retire a live Session's inbox because an attachment
 is absent. Preserve pending messages, idempotency, source authorization, explicit acknowledgement
@@ -2380,8 +2451,12 @@ principal. The sampler remains subject to its current contract until separately 
 The [native opening outcome contract](../runner_gateway/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands)
 separates proven rejection from unconfirmed owner outcomes and fences dependent queued work.
 Exact receipt retry, logical-opening discovery, harness lookup, placement-checked routing and
-post-cleanup environment-UID admission fencing are implemented. On cleanup Dispatcher forgets the
+post-cleanup environment-UID admission fencing are implemented. On cleanup Dispatcher currently forgets the
 Session; callers must not deliberately reuse a UUID, and History can retain a conflicting identity.
+This is current behavior, not a decision that Environment deletion must delete the Session: reconcile
+that boundary with `SESSION_AND_INBOX_LIFETIME`. A native-first slice may proceed, but must not
+foreclose a retained Session or silently choose its lifetime. Dispatcher is the current first owner;
+`DECLARATIVE_SESSIONS_DESIGN` retains a future CRD as an option, not a competing authority.
 Remaining: specify how held unconfirmed openings are explicitly resolved and how the owner selects
 and retains the specific harness store and native Session ID. Preserve authority and retained History across service-store boundaries;
 never automatically replay an uncertain native effect. The caller can select an exact
@@ -2485,7 +2560,7 @@ the Session is deleted; the treatment of other services' data remains open.
 
 Compare ending an environment-hosted Session and retiring its inbox on deletion of its required
 environment with retaining an unavailable Session and inbox for an explicit lifetime or until an
-explicit end. The operator's 2026-11-04 candidate is an independent Session create/delete lifecycle:
+explicit end. The operator's 2026-11-04 candidate, still open for a decision, is an independent Session create/delete lifecycle:
 deleting the required environment leaves the Session and inbox present but its native harness
 unavailable; an explicit Session delete could instead coordinate cleanup of Session-associated data.
 Compare this with the other alternatives before selecting retention and deletion semantics. For central Sessions, environment loss or detachment must not by itself end the

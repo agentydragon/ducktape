@@ -26,6 +26,12 @@ Source anchors: [Dispatcher API](../runner_gateway/dispatcher/api.go),
 [Notification worker](../notification_service/worker/deliver.go),
 [delegated authorization](../docs/delegated_authorization.md).
 
+The native cleanup and authorization rules below describe the first slice, not the final lifetime
+or authority of an Environment-independent Session. Coordinate Environment deletion with
+[`SESSION_AND_INBOX_LIFETIME`](task_dag.md#session_and_inbox_lifetime--decide-session-and-inbox-lifetimes)
+and cross-principal Session targets with
+[`SESSION_ACCESS_GROUPING_DESIGN`](task_dag.md#session_access_grouping_design--access-groups-across-independent-sessions-and-environments).
+
 ## Native command contract and remaining authority decisions
 
 The external submit, model, reasoning-effort and interrupt requests name the Session UUID and a

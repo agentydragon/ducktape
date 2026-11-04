@@ -229,6 +229,11 @@ code mode can reach a CLI through `exec`, but has no `sessions` JavaScript globa
 client verifies protocol behavior; it does not establish that a natural model can discover or use
 these tools unaided.
 
+The current Session `setup_script` in these workflows is an implemented capability, not a settled
+future ownership boundary. [`SESSION_ENVIRONMENT_SETUP_DESIGN`](task_dag.md#session_environment_setup_design--choose-where-setup-belongs)
+will decide whether Environment or attachment/workspace setup should replace it, including how a
+caller without direct execution access prepares a child workspace.
+
 1. Discover tool schemas through MCP `tools/list`, or inspect the Action schema with
    `agentplane --json actions show environments/list`. Read `environments__list` and call:
 

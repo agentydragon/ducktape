@@ -354,6 +354,12 @@ For a native harness, built-in local tools operate with the environment's actual
 
 <a id="principals"></a>
 
+Session command, interrupt and history-read authorization must also be reconsidered for Sessions
+without an Environment. The older Sandbox-only orchestration rule is not a complete contract;
+[`SESSION_ACCESS_GROUPING_DESIGN`](task_dag.md#session_access_grouping_design--access-groups-across-independent-sessions-and-environments)
+and [`DELIVERY_DESTINATION_AUTHORITY_DESIGN`](task_dag.md#delivery_destination_authority_design--assign-session-send-authority-and-internal-fences)
+track the open target and authority choices.
+
 ## Sessions, ServiceAccounts and environments
 
 **Operator requirement, 2026-11-04:** Sessions using the same Environment must have the same
@@ -472,6 +478,12 @@ Standards and examples: [SCIM protocol](https://datatracker.ietf.org/doc/html/rf
 
 Today each Sandbox controller creates a ServiceAccount named after that Sandbox and owns it and its PolicyBinding; deletion removes them. Current admission and authorization deliberately check the exact account UID and its Sandbox controller ownerReference. This is closer to one account _per environment_ than an environment selecting a long-lived shared account. A central Session that survives all environments cannot keep operating as an account deleted with one of them, and two environments cannot currently select one existing ServiceAccount just by updating a field.
 
+The deferred [shared-account Environment provisioner](task_dag.md#environment_shared_account--environments-using-a-pinned-existing-sa)
+can support a verified same-SA caller, but does not settle whether the long-term Session identity is
+an SA or an independent Agentplane principal mapped to SAs. That mapping and who may provision or
+delegate it remain decisions under `SESSION_IDENTITY_CONTRACT` and `AGENT_PRINCIPAL_MODEL_DESIGN`.
+A Sandbox still holds one fixed SA throughout its lifetime in the initial model.
+
 ### Long-lived shared ServiceAccount
 
 Manage principal P independently of environment lifetime, authorize environments to run as P, and allow several environments to reference P. This makes exact ServiceAccount equality straightforward and uses existing policy subjects, but requires changing Sandbox account and PolicyBinding ownership, token projection, UID checks and managed deletion. Its shared subject also combines grants across environments under current policy semantics. Define revocation and who may bind P; do not silently adopt a recreated same-name account.
@@ -589,6 +601,16 @@ tracks it independently of the current native-first implementation.
 
 **Existing footprint:** the Gateway’s Dispatcher already requires PostgreSQL for its queue; the central sampler and History each have their own PostgreSQL databases. These are distinct ownership boundaries, not a single shared database or an existing global Session registry. Native runtime COSI state and the harness store remain environment-local.
 
+The current Dispatcher cleanup forgets Sessions on Sandbox deletion. That is current behavior, not
+an accepted lifetime for the new model: `SESSION_AND_INBOX_LIFETIME` must decide whether an
+Environment-hosted Session and its inbox survive Environment deletion. Native-directory work may
+proceed without making the current cleanup behavior a permanent contract.
+
+The current direction is Dispatcher-owned Session existence and placement first; a future Session
+CRD remains a possible declarative interface or reviewed authority change under
+[`DECLARATIVE_SESSIONS_DESIGN`](task_dag.md#declarative_sessions_design--long-running-sessions-and-managed-subscriptions-through-flux),
+not a competing writable authority now.
+
 ### App archive and environment deletion are different
 
 ### App archive
@@ -681,7 +703,14 @@ This contract leaves the classification of errors, retry triggers, queued-work o
 
 If the exact required environment UID is deleted, fence pending creation and delivery against that deletion and preserve History under its existing retention. When to end a native Session and remove its live Dispatcher record, how its inbox follows, outcome visibility, cleanup and the cross-database handoff remain open.
 
-**Setup and environment wake are explicit policy questions:** opening a central Session without an environment cannot run an environment setup script. If a script is supplied, require an explicit target and define when it runs, its readiness and failure status, and retry behavior. Opening must not require wake for acknowledgement; whether an optional eager attempt may request wake and which component owns wake remain open. Do not assume central and native setup happen at the same time today.
+**Setup and environment wake are explicit policy questions:** the operator suspects today's
+Session `setup_script` belongs to the Environment instead. Decide its owner, possible attachment or
+workspace scope, explicit authority, readiness/failure and no-replay behavior under
+[`SESSION_ENVIRONMENT_SETUP_DESIGN`](task_dag.md#session_environment_setup_design--choose-where-setup-belongs).
+A zero-Environment Session cannot run an Environment script; do not silently select a target or
+implicitly repeat setup on later attachments. Opening must not require wake for acknowledgement;
+wake ownership and optional eager wake remain open. Native and central setup do not necessarily run
+at the same time today.
 
 Where callers need progress, expose it through the existing get/watch mechanisms or an equivalent, with clear Dispatcher-accepted versus owner-accepted meaning; do not require a separate visible phase merely because an implementation has one. Show harness/setup readiness separately only where callers need it; avoid inventing a mandatory separate “start harness” API. A future explicit prepare/warm operation can be added if there is a real use case. Before removing the central Sandbox requirement, choose its independent execution principal, prompt context and optional attachment/setup semantics.
 
