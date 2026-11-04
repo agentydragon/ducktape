@@ -42,6 +42,10 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.postgres import create_temporary_database
 from util.testing.sqlalchemy_engines import postgres_async_engine
 
+# pytest loads the companion fixture only for this gateway integration test.
+# gazelle:include_dep //agentplane/env/runtime/execution/testing:codex_exec_server_container
+pytest_plugins = ("agentplane.env.runtime.execution.testing.codex_exec_server_container",)
+
 
 @pytest.fixture
 async def sandbox(api_server: KubernetesApiServer) -> AsyncIterator[SandboxCluster]:

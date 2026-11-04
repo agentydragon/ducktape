@@ -39,6 +39,9 @@ from util.testing.container_logs import LoggedContainer
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps.
 # gazelle:include_dep @pypi//protobuf
+# pytest loads the companion fixture only for this executor integration test.
+# gazelle:include_dep //agentplane/env/runtime/execution/testing:codex_exec_server_container
+pytest_plugins = ("agentplane.env.runtime.execution.testing.codex_exec_server_container",)
 
 pytestmark = pytest.mark.parametrize("harness", [session_pb2.HARNESS_CODEX], ids=["codex"])
 

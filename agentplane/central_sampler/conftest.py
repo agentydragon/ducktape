@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from agentplane.env.runtime.execution.testing.codex_exec_server_container import codex_exec_server_container
 from agentplane.testing.codex_fixtures import (
     ExecutorServer,
     code_mode_host,

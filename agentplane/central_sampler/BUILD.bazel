@@ -70,7 +70,6 @@ py_library(
     srcs = ["conftest.py"],
     data = ["//agentplane/env/runtime/execution/adapter/testing:adapter_bin"],
     deps = [
-        "//agentplane/env/runtime/execution/testing:codex_exec_server_container",
         "//agentplane/testing:codex_fixtures",
         "//agentplane/testing:kubernetes_apiserver_fixtures",
         "//devinfra/bazel:runfiles",
