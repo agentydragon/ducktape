@@ -23,10 +23,13 @@ pub use assignment_analysis::{
 pub use assignment_inputs::AssignmentInputs;
 pub use esm_import_order::EsmImportOrder;
 pub use realizability::{
-    EffectConflictCell, EffectConflictDisposition, EffectConflictRow, EffectOpacity,
-    EffectTranslationValidationReport, LadderDecision, ModuleAssignmentDelta, RealizabilityIndex,
-    RealizabilityVerdict, SccDiagnosis, SccRejection, TranslationValidationEvidenceReport,
-    TranslationValidationReport, TranslationValidationResult, check_realizability,
+    EffectConflictCell, EffectConflictDiagnosticRow, EffectConflictDisposition, EffectConflictRow,
+    EffectCoverageReport, EffectOpacity, EffectRelocationAcceptanceScope,
+    EffectRelocationAssessment, EffectRelocationAssessmentInputs, EffectRelocationConflict,
+    EffectRelocationDecision, EffectTranslationValidationReport, LadderDecision,
+    LegacyEdgeComparisonCounts, ModuleAssignmentDelta, RealizabilityIndex, RealizabilityVerdict,
+    SccDiagnosis, SccRejection, TranslationValidationEvidenceReport, TranslationValidationReport,
+    TranslationValidationResult, assess_effect_relocation, check_realizability,
     check_realizability_touching, simulated_evaluation_post_order,
 };
 pub use validation::{

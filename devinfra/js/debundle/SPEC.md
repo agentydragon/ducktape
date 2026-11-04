@@ -332,6 +332,20 @@ The report's `full_semantic_precision: false` is a policy-level field, not a
 computed per-chunk completeness verdict. Interpret each chunk through its
 unknown-coverage and refusal counts and its actual conflict rows.
 
+The typed effect relocation decision is scoped to statement-order commutation
+for the exact emitter order. `accepted/no_reordering` proves only that this
+candidate order has no statement inversion. For a reordered accepted
+candidate, every inverted pair has closed effect domains or crosses a
+statement proved to have no evaluation effects. Open effect sets are Havoc
+against every nonempty partner, so an open statement crossing a proved-empty
+statement needs no assumption about the open side. An uncovered modeled
+may-conflict or contradictory premise is `conflict`; an uncovered Havoc pair
+or a pair conditioned by an authored premise is `incomplete`. The assessment
+retains typed `relocation_dependencies` for covered owners among inverted
+participants and typed `premise_dependencies` for premises used by conflicting
+pairs. It does not replace the legacy gate and does not establish cross-rebind,
+importability, vendor replacement, privacy or singleton obligations.
+
 `coverage.owner_coverage_refusals` counts typed reasons why an original
 owner's whole-initialization certificate was not sealed. Bounded examples
 include an optional refusal and existing source location for each endpoint;

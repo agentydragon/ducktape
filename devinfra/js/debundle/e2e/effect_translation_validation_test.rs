@@ -749,12 +749,86 @@ console.log(marker);\n";
     let report = fixture.effect_translation_validation();
     assert_eq!(report["swapped_pairs"], 1, "{report:#}");
     assert_eq!(report["counts"]["havoc_pairs"], 0, "{report:#}");
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    assert_eq!(
+        report["decision"]["scope"], "statement_order_commutation",
+        "the verdict covers the exact closed candidate inversion: {report:#}"
+    );
+    assert_eq!(report["relocation_dependencies"], serde_json::json!({}));
     for domain in ["global_properties", "general_heap", "host_effects"] {
         assert_eq!(
             report["coverage"]["unknown_coverage"][domain], 1,
             "{report:#}"
         );
     }
+}
+
+#[test]
+fn no_swap_and_closed_empty_crossing_have_explicit_effect_decisions() {
+    let no_swap = run_fixture(FixtureOpts::new(
+        "const written = (globalThis.marker = 1);\n\
+const read = globalThis.marker;\n\
+console.log(written, read);\n",
+        vec![logical_module(
+            "all",
+            &[Member::new("written"), Member::new("read")],
+        )],
+    ));
+    let no_swap_report = no_swap.effect_translation_validation();
+    assert_eq!(no_swap_report["swapped_pairs"], 0, "{no_swap_report:#}");
+    assert_eq!(no_swap_report["decision"]["status"], "accepted");
+    assert_eq!(no_swap_report["decision"]["scope"], "no_reordering");
+    assert_eq!(
+        no_swap_report["relocation_dependencies"],
+        serde_json::json!({})
+    );
+
+    let empty_crossing = run_fixture(FixtureOpts::new(
+        "console.log(globalThis.marker);\nfunction inert() {}\n",
+        vec![logical_module("inert", &[Member::new("inert")])],
+    ));
+    assert_preserved_entry_output(&empty_crossing, "undefined\n");
+    let empty_report = empty_crossing.effect_translation_validation();
+    assert_eq!(empty_report["swapped_pairs"], 1, "{empty_report:#}");
+    assert_eq!(empty_report["counts"]["pairs"], 0, "{empty_report:#}");
+    assert_eq!(
+        empty_report["decision"]["status"], "accepted",
+        "{empty_report:#}"
+    );
+    assert_eq!(
+        empty_report["decision"]["scope"], "statement_order_commutation",
+        "the no-evaluation function declaration crosses an open console call: {empty_report:#}"
+    );
+    assert_eq!(
+        empty_report["relocation_dependencies"],
+        serde_json::json!({})
+    );
+}
+
+#[test]
+fn uncovered_modeled_and_havoc_pair_is_a_conflict() {
+    let source = "const written = (globalThis.marker = 1);\n\
+const read = globalThis.marker;\n\
+console.log(written, read);\n";
+    let fixture = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("reader", &[Member::new("read")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--effect-conflicts-jsonl"],
+        1,
+    );
+    let report = fixture.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "conflict", "{report:#}");
+    assert_eq!(
+        report["decision"]["uncovered_modeled_may_conflict"], true,
+        "{report:#}"
+    );
+    assert_eq!(report["decision"]["havoc"], true, "{report:#}");
+    assert_eq!(report["decision"]["uncovered_havoc"], true, "{report:#}");
+    let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
+    assert_full_rows_match_summary(&report, &rows);
 }
 
 #[test]
@@ -1512,7 +1586,12 @@ fn default_report_bounds_examples_without_losing_exact_counts() {
     );
     assert_eq!(
         count("pairs"),
-        count("effect_only_pairs") + count("both_pairs")
+        report["legacy_edge_comparison"]["effect_only_pairs"]
+            .as_u64()
+            .unwrap()
+            + report["legacy_edge_comparison"]["both_pairs"]
+                .as_u64()
+                .unwrap()
     );
     assert_eq!(examples(&report).len(), 20);
     assert_eq!(report["examples_truncated"], true);
@@ -1555,7 +1634,9 @@ fn assert_full_rows_match_summary(summary: &Value, rows: &[Value]) {
         rows.iter()
             .filter(|row| row["legacy_edge_conflict"] == true)
             .count() as u64,
-        count("both_pairs")
+        summary["legacy_edge_comparison"]["both_pairs"]
+            .as_u64()
+            .unwrap()
     );
     for row in rows {
         assert_eq!(
@@ -1571,6 +1652,7 @@ fn assert_full_rows_match_summary(summary: &Value, rows: &[Value]) {
             "havoc",
             "disposition",
             "premise_locations",
+            "premise_references",
             "cell_count",
         ] {
             assert_eq!(example[field], full[field], "{field}");
@@ -1639,11 +1721,22 @@ fn full_stream_retains_cells_beyond_examples_and_pair_dispositions() {
     let rows = read_jsonl(&fixture.report_path("effect_conflicts.jsonl"));
     assert_full_rows_match_summary(&summary, &rows);
     assert_eq!(summary["examples_truncated"], true);
+    assert_eq!(summary["decision"]["status"], "conflict", "{summary:#}");
     let covered = rows
         .iter()
         .find(|row| row["disposition"] == "covered_by_existing_premise")
         .expect("covered writer/reader pair");
     assert_eq!(covered["disposition"], "covered_by_existing_premise");
+    assert_eq!(
+        covered["premise_references"],
+        serde_json::json!([{"defining_chunk": "static/app", "input_index": 0}]),
+        "the premise remains a typed condition on the covered pair: {covered:#}"
+    );
+    assert_eq!(
+        summary["premise_dependencies"],
+        serde_json::json!([{"defining_chunk": "static/app", "input_index": 0}]),
+        "the full assessment retains the premise dependency: {summary:#}"
+    );
     assert_eq!(covered["cells"].as_array().unwrap().len(), slots.len());
     assert!(
         covered["cells"]

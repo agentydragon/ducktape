@@ -141,18 +141,38 @@ export-reentry classification, atomic/cycle checks, rejection markers, or stderr
 
 ### Translation validation
 
-`effect_translation_validation.json` contains conservative effect-set
-diagnostics beside the unchanged legacy gate and edge-TV reports. It is
-report-only: `legacy_gate_accepts` and `legacy_tv_accepts` retain the current
-verdicts. `counts` includes every conflicting swapped pair, cell incidence,
-Havoc pair, existing premise disposition and observed contradiction. The
-legacy comparison counts ordinary swapped edge conflicts separately from
-the legacy report's forward-edge and placement diagnostics.
+`effect_translation_validation.json` contains a typed effect relocation
+assessment beside the unchanged legacy gate and edge-TV reports. Its
+`emitted_order` is the exact statement-unit order produced from the candidate
+assignment and emitter import order. `decision` describes statement-order
+commutation only: `accepted/no_reordering` is vacuous; a reordered `accepted`
+proves that every inverted pair commutes under closed effect domains, or that
+one endpoint is a statement proved to have no evaluation effects. An open
+effect set is treated as Havoc against every nonempty partner, so crossing a
+proved-empty endpoint needs no assumption about the open endpoint. `conflict`
+means an uncovered modeled may-conflict or a contradiction with an existing
+premise; `incomplete` means an uncovered Havoc pair or a pair conditioned by
+an authored premise. A may-conflict does not prove a particular runtime trace
+executes both accesses. The assessment does not prove cross-module rebinding,
+importability, vendor replacement, privacy or singleton behavior, and never
+changes the legacy gate. `legacy_gate_accepts` and `legacy_tv_accepts` retain
+those current verdicts.
+
+`counts` includes every conflicting swapped pair, cell incidence, Havoc pair
+and premise disposition. `legacy_edge_comparison` separately counts
+`legacy_edge_only_pairs`, `effect_only_pairs` and `both_pairs`; it excludes the
+legacy report's forward-edge and placement diagnostics.
 
 `coverage.unknown_coverage` counts missing global/property/host domains
 independently of legacy dataflow opacity, execution incompleteness and heap
 opacity. Unknown domains remain global Havoc; `full_semantic_precision` is
-false. `coverage.owner_coverage_refusals` counts typed reasons why an original
+false. `coverage.covered_owner_dependencies` retains the typed conditions for
+all owner coverage certificates in the analyzed facts. `relocation_dependencies`
+retains the typed conditions for closed owners participating in candidate
+inversions; `premise_dependencies` names authored commuting premises used for
+conflicting inverted pairs. Neither dependency field turns a report into a
+trusted input artifact.
+`coverage.owner_coverage_refusals` counts typed reasons why an original
 owner's whole-initialization certificate was not sealed. Bounded examples
 include an optional refusal and existing source location for each endpoint;
 JSONL carries the same refusal inside each endpoint's opacity record. Reasons
@@ -171,7 +191,9 @@ it leaves every graph, bounded summary, source input and census scope intact.
 Each JSONL line is one pair in the same deterministic order used to select
 summary examples. It includes `runs_first`, `runs_later`, every `cells` entry
 with access provenance, exact `cell_count`, `havoc`, typed `disposition`,
-`premise_locations`, and `legacy_edge_conflict`. `first_opacity` and
+`premise_locations`, typed `premise_references`, and the report-only
+`legacy_edge_conflict` comparison.
+`first_opacity` and
 `later_opacity` retain each endpoint's unknown coverage, dataflow opacity,
 execution completeness/losses, heap opacity and an optional typed
 `owner_coverage_refusal` with its existing source location when available.

@@ -16,9 +16,10 @@ use analysis::{
 use crate::AssignmentInputs;
 use crate::esm_import_order::EsmImportOrder;
 use crate::realizability::{
-    EffectConflictRow, EffectTranslationValidationInputs, EffectTranslationValidationReport,
+    EffectConflictDiagnosticRow, EffectRelocationAssessment, EffectRelocationAssessmentInputs,
+    EffectRelocationConflict, EffectTranslationValidationInputs, EffectTranslationValidationReport,
     TranslationValidationEvidenceReport, TranslationValidationReport, TranslationValidationResult,
-    effect_translation_validate, translation_validate,
+    assess_effect_relocation, effect_translation_validate, translation_validate,
 };
 use crate::validation::{AssignmentReport, validate_assignment};
 
@@ -312,7 +313,7 @@ impl AssignmentAnalysis {
         &self,
         facts: &[analysis::facts::StatementFacts],
         legacy: &TranslationValidationResult,
-        visitor: Option<&mut impl FnMut(&EffectConflictRow<'_>) -> Result<(), E>>,
+        visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
     ) -> Result<EffectTranslationValidationReport, E> {
         effect_translation_validate(
             EffectTranslationValidationInputs {
@@ -326,6 +327,28 @@ impl AssignmentAnalysis {
                 facts,
                 legacy,
                 module_path: &|id| self.module_path(id),
+            },
+            visitor,
+        )
+    }
+
+    /// Facts-backed statement-order assessment. This typed result is ephemeral
+    /// and is not a persisted analysis artifact or an emission-gate verdict.
+    pub fn effect_relocation_assessment<E>(
+        &self,
+        facts: &[analysis::facts::StatementFacts],
+        visitor: Option<&mut impl FnMut(&EffectRelocationConflict<'_>) -> Result<(), E>>,
+    ) -> Result<EffectRelocationAssessment, E> {
+        assess_effect_relocation(
+            EffectRelocationAssessmentInputs {
+                graph: self.inputs.dependency_graph(),
+                assignment: &self.assignment,
+                emitted_modules: &emitted_modules(
+                    self.inputs.planned_modules().len(),
+                    self.assignment.entry_destination().module_id(),
+                ),
+                import_order: &self.import_order,
+                facts,
             },
             visitor,
         )

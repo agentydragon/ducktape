@@ -1694,7 +1694,7 @@ fn validate_and_emit_reports<'a>(
             None
         };
         let effects = {
-            let mut write_row = |row: &gate::EffectConflictRow<'_>| -> Result<()> {
+            let mut write_row = |row: &gate::EffectConflictDiagnosticRow<'_>| -> Result<()> {
                 jsonl
                     .as_mut()
                     .expect("active effect-conflict sink")

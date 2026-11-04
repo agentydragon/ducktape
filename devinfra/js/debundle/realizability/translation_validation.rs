@@ -303,7 +303,7 @@ pub(super) fn emitted_statement_order(
 
 /// Pairs `i < j` with `ordinals[i] > ordinals[j]`, by a Fenwick tree over
 /// ordinal ranks.
-fn count_inversions(ordinals: impl Iterator<Item = SourceUnitOrdinal>) -> u64 {
+pub(super) fn count_inversions(ordinals: impl Iterator<Item = SourceUnitOrdinal>) -> u64 {
     let ordinals: Vec<SourceUnitOrdinal> = ordinals.collect();
     let mut ranked = ordinals.clone();
     ranked.sort_unstable();
