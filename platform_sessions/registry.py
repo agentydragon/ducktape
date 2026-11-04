@@ -101,10 +101,7 @@ class IntegrationRegistry:
 
     def resolve(self, value: object) -> tuple[IntegrationInstance, ...]:
         """Validate all entries before returning any resolved instances."""
-        try:
-            config = HostConfig.model_validate(value)
-        except ValidationError:
-            raise IntegrationConfigError("Invalid integration configuration") from None
+        config = HostConfig.model_validate(value)
         instances = []
         ids: set[str] = set()
         directories: set[PurePosixPath] = set()

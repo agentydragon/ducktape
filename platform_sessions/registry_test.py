@@ -4,7 +4,7 @@ from pathlib import PurePosixPath
 
 import pytest
 import pytest_bazel
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from platform_sessions.registry import IntegrationConfigError, IntegrationRegistry, IntegrationType
 
@@ -67,9 +67,15 @@ def test_resolves_multiple_instances_and_type_settings(registry: IntegrationRegi
     ],
 )
 def test_invalid_configuration_is_rejected_without_echoing_values(registry: IntegrationRegistry, bad: object) -> None:
-    with pytest.raises(IntegrationConfigError) as error:
+    with pytest.raises((IntegrationConfigError, ValidationError)) as error:
         registry.resolve(bad)
     assert "secret" not in str(error.value)
+
+
+def test_host_validation_error_identifies_invalid_field(registry: IntegrationRegistry) -> None:
+    with pytest.raises(ValidationError) as error:
+        registry.resolve({"integrations": [{"id": "bad/id", "type": "example"}]})
+    assert error.value.errors()[0]["loc"] == ("integrations", 0, "id")
 
 
 def test_duplicate_types_are_rejected() -> None:
