@@ -173,3 +173,12 @@ remained queued behind other KVM work and was cancelled before execution after d
 PR CI's merge commit exposed the changed `OciImage` API in the launcher image test. The branch
 was rebased again and that test now consumes `oci_image_py`'s generated descriptor, including its
 image runfiles, matching the landed API rather than hand-writing its positional arguments.
+
+The [eighth run](https://app.buildbuddy.io/invocation/7156a60e-a693-4ea4-b3d7-2eee9dc56e82)
+completed the production boot import in 130.7 seconds and reached all app Deployments Available.
+It then failed at `kubectl wait clusterpolicy --all`: unlike the VM fixture, Firecracker has no
+launcher-injection ClusterPolicies. Infrastructure readiness is now a separate helper; the VM
+fixture retains its policy check, while Firecracker waits for infrastructure and KVM allocation.
+The refused API connection observed afterward was fixture teardown, not another k3s crash.
+The [rebased launcher OCI startup test](https://app.buildbuddy.io/invocation/16e551ec-09e0-4208-911b-d76ce6249170)
+passed in 14.4 seconds with the generated image descriptor.
