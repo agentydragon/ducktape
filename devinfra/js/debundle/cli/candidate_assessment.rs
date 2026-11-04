@@ -10,7 +10,9 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, ensure};
 use graph_provenance::VerifiedGraphSourceContext;
-use pipeline::{AnalysisArtifactInput, TransformCli, TransformContextArgs};
+use pipeline::{
+    AnalysisArtifactInput, TransformCli, TransformContextArgs, TransformContextAuxArgs,
+};
 use spec::LogicalModule;
 
 use crate::edit_gate::GraphEditArgs;
@@ -25,6 +27,21 @@ pub struct CandidateEffectAssessmentArgs {
     /// Verified staged analysis artifact for the candidate effect assessment.
     #[arg(long)]
     pub analysis: Option<PathBuf>,
+}
+
+/// Candidate assessment options for a command that already owns its tree
+/// config and module root arguments. The auxiliary transform inputs are the
+/// same shared group used by [`TransformContextArgs`]. `modules refine`
+/// disables the source/output environment defaults for these options so a
+/// supplied value always came from the CLI.
+#[derive(Debug, clap::Args, Clone, Default)]
+pub struct CandidateEffectAssessmentRefineArgs {
+    /// Verified staged analysis artifact for the candidate effect assessment.
+    #[arg(long)]
+    pub analysis: Option<PathBuf>,
+    /// Remaining tree source, output, and package inputs for assessment.
+    #[command(flatten)]
+    pub auxiliary: TransformContextAuxArgs,
 }
 
 /// Inputs resolved once for an explicit effect assessment request.
@@ -72,6 +89,37 @@ impl CandidateEffectAssessmentArgs {
             analysis_path: analysis_path.clone(),
             graph_source,
         }))
+    }
+}
+
+impl CandidateEffectAssessmentRefineArgs {
+    /// Resolve assessment inputs using the refine command's existing tree
+    /// config and module-root flags, so each option has one CLI owner.
+    pub fn resolve<'a>(
+        &self,
+        edit: &GraphEditArgs,
+        source_context: Option<&'a VerifiedGraphSourceContext>,
+        tree_config: Option<&std::path::Path>,
+    ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
+        let Some(analysis) = &self.analysis else {
+            ensure!(
+                !self.auxiliary.has_any_inputs(),
+                "transform context arguments require --analysis for candidate effect assessment"
+            );
+            return Ok(None);
+        };
+        let tree_config = tree_config
+            .context("candidate effect assessment requires the refine command's --tree-config")?;
+        let args = CandidateEffectAssessmentArgs {
+            transform: TransformContextArgs {
+                spec: None,
+                tree_config: Some(tree_config.to_path_buf()),
+                tree_modules: Some(edit.modules_root.clone()),
+                auxiliary: self.auxiliary.clone(),
+            },
+            analysis: Some(analysis.clone()),
+        };
+        args.resolve(edit, source_context)
     }
 }
 

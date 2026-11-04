@@ -1354,6 +1354,22 @@ that identity check does the shared atomic-group and realizability gate run.
 There is no `--no-verify` mode. `--dry-run` performs the same checks without
 writing YAML; a rejected batch leaves every module document unchanged.
 
+For a report-only effect relocation assessment of the exact candidate, add
+`--dry-run --analysis <staged-artifact>` and the tree transform inputs
+`--tree-vendor-marks`, `--tree-source-root`, and `--out-root`. The existing
+`--tree-config` and `--modules` arguments also supply the assessment's tree
+config and module root. The config must select exactly one full-tree root for
+the graph chunk, and the transform must materialize only that graph chunk.
+The assessment's source root and output root must be passed explicitly; it does
+not inherit `DEBUNDLE_TREE_SOURCE_ROOT` or `DEBUNDLE_OUT`.
+This assessment uses the complete post-refinement documents, after drained
+modules are removed, and runs after the unchanged identity and realizability
+gates pass but before YAML writes. It reports statement-order commutation only;
+it does not change edit acceptance or prove replacement, privacy, or singleton
+obligations. A missing or stale artifact, incomplete context, or scoped tree
+config is rejected before any YAML is written. The existing scoped
+`--tree-config` behavior remains available without `--analysis`.
+
 The primitive does not create selectors or choose semantic module names. It
 applies the reviewed source-unit map as written; inspect the resulting modules and
 run the project extraction gate after an accepted edit.

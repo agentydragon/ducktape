@@ -143,6 +143,14 @@ pub struct TransformContextArgs {
     /// Root directory containing tree-shaped logical module YAML files.
     #[arg(long = "tree-modules")]
     pub tree_modules: Option<PathBuf>,
+    #[command(flatten)]
+    pub auxiliary: TransformContextAuxArgs,
+}
+
+/// Common source, output and package inputs shared by transform context
+/// consumers that already own the tree config and module root arguments.
+#[derive(ClapArgs, Debug, Clone, Default)]
+pub struct TransformContextAuxArgs {
     /// Path to tree-shaped vendor marks YAML.
     #[arg(long = "tree-vendor-marks")]
     pub tree_vendor_marks: Option<PathBuf>,
@@ -168,16 +176,32 @@ impl TransformContextArgs {
         let spec_source = resolve_spec_source(&self)?;
         Ok(TransformCli {
             spec_source,
-            package_roots: collect_package_roots(self.package_roots)?
+            package_roots: collect_package_roots(self.auxiliary.package_roots)?
                 .into_iter()
                 .collect(),
-            packages_root: self.packages_root,
+            packages_root: self.auxiliary.packages_root,
         })
     }
 
     pub fn has_explicit_auxiliary_inputs(&self) -> bool {
-        self.tree_modules.is_some()
-            || self.tree_vendor_marks.is_some()
+        self.tree_modules.is_some() || self.auxiliary.has_explicit_inputs()
+    }
+}
+
+impl TransformContextAuxArgs {
+    pub fn has_explicit_inputs(&self) -> bool {
+        self.tree_vendor_marks.is_some()
+            || self.out_root.is_some()
+            || !self.package_roots.is_empty()
+            || self.packages_root.is_some()
+    }
+
+    /// Whether any transform input is present, including environment values.
+    /// `modules refine` separately uses this to check all caller-supplied inputs,
+    /// after its command disables the source/output environment defaults.
+    pub fn has_any_inputs(&self) -> bool {
+        self.tree_vendor_marks.is_some()
+            || self.tree_source_root.is_some()
             || self.out_root.is_some()
             || !self.package_roots.is_empty()
             || self.packages_root.is_some()
@@ -238,13 +262,13 @@ fn resolve_spec_source(args: &TransformContextArgs) -> Result<TransformSpecSourc
         (None, Some(config_path)) => {
             let modules_root = required_tree_arg("--tree-modules", &args.tree_modules)?;
             let vendor_marks_path =
-                required_tree_arg("--tree-vendor-marks", &args.tree_vendor_marks)?;
-            let out_root = required_tree_arg("--out-root", &args.out_root)?;
+                required_tree_arg("--tree-vendor-marks", &args.auxiliary.tree_vendor_marks)?;
+            let out_root = required_tree_arg("--out-root", &args.auxiliary.out_root)?;
             Ok(TransformSpecSource::Tree(CompileSpecTreeOptions {
                 config_path: config_path.clone(),
                 modules_root,
                 vendor_marks_path,
-                source_root: args.tree_source_root.clone(),
+                source_root: args.auxiliary.tree_source_root.clone(),
                 out_root,
             }))
         }

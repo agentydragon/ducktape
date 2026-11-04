@@ -451,11 +451,25 @@ enum DebundleCommand {
     Snapshot(snapshot::SnapshotArgs),
 }
 
+fn cli_command() -> clap::Command {
+    DebundleArgs::command().mut_subcommand("modules", |modules| {
+        modules.mut_subcommand("refine", |refine| {
+            // Refine's opt-in candidate assessment requires caller-supplied
+            // inputs. Keep the shared Clap env defaults on every existing
+            // transform command, but do not let them masquerade as explicit
+            // assessment arguments here.
+            refine
+                .mut_arg("tree_source_root", |arg| arg.env(None::<&'static str>))
+                .mut_arg("out_root", |arg| arg.env(None::<&'static str>))
+        })
+    })
+}
+
 /// Parse the current process arguments with Clap metadata available for
 /// resolving environment values and defaults, then dispatch the command.
 pub fn run_debundle_cli_from_process() -> ExitCode {
     let raw_argv = std::env::args_os().collect::<Vec<_>>();
-    let command = DebundleArgs::command();
+    let command = cli_command();
     let matches = command.clone().get_matches_from(raw_argv.clone());
     let args = DebundleArgs::from_arg_matches(&matches)
         .expect("Clap validated DebundleArgs before constructing ArgMatches");
@@ -546,13 +560,13 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
             full_report_chunks,
         }) => {
             if let Some(root) = &reports_only {
-                if let Some(out_root) = &args.context.out_root {
+                if let Some(out_root) = &args.context.auxiliary.out_root {
                     anyhow::ensure!(
                         graph_provenance::absolute(root)? == graph_provenance::absolute(out_root)?,
                         "--reports-only and --out-root must name the same output root"
                     );
                 }
-                args.context.out_root = Some(root.clone());
+                args.context.auxiliary.out_root = Some(root.clone());
             }
             let artifacts = reports_only.map_or(RunArtifacts::Program, |out_root| {
                 RunArtifacts::ReportsOnly { out_root }
