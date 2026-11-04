@@ -65,9 +65,9 @@ func terminalPayloads(event TerminalEvent) ([]string, error) {
 }
 
 // EndSandbox makes terminal snapshots visible to active Watch streams in the
-// same transaction that removes the deleted Sandbox rows. No queue row can be
-// retained as an address to a Sandbox UID that no longer exists. The tombstone
-// survives queue cleanup and prevents later admission against stale inventory.
+// same transaction that removes the deleted Sandbox work. The Session stays as
+// a durable record with its exact placement, while the tombstone prevents later
+// admission against stale inventory or a same-name replacement.
 func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEvent, error) {
 	var events []TerminalEvent
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
@@ -150,7 +150,12 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEv
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, "DELETE FROM session WHERE sandbox_uid=$1", sandboxUID); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE session SET
+			environment_deleted_at=COALESCE(environment_deleted_at, now()),
+			state=CASE state WHEN 'WAITING' THEN 'FAILED' WHEN 'IN_PROGRESS' THEN 'UNKNOWN' ELSE state END,
+			reason=CASE WHEN state IN ('WAITING','IN_PROGRESS') THEN 'sandbox_deleted' ELSE reason END,
+			updated_at=CASE WHEN environment_deleted_at IS NULL THEN now() ELSE updated_at END
+			WHERE sandbox_uid=$1 AND environment_deleted_at IS NULL`, sandboxUID); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, "DELETE FROM sandbox_ownership WHERE sandbox_uid=$1", sandboxUID); err != nil {
@@ -186,7 +191,7 @@ func executionAccountField(owner *ServiceAccountIdentity, field string) string {
 
 func (s *Store) ListSandboxUIDs(ctx context.Context) (map[string]struct{}, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT sandbox_uid::text FROM dispatch
-		UNION SELECT sandbox_uid::text FROM session
+		UNION SELECT sandbox_uid::text FROM session WHERE environment_deleted_at IS NULL
 		UNION SELECT sandbox_uid::text FROM sandbox_ownership`)
 	if err != nil {
 		return nil, err

@@ -45,15 +45,14 @@ It scopes existing Sessions and existing environments; it does not create enviro
   validates and routes from the stored spec; `Session.placement` projects that same message under
   retained-owner policy without exposing the full spec or instructions. Native harness store identity and harness-native ID
   are not represented by this cutover and remain future work.
-- Central sampler V1 keeps today's Sandbox-backed identity, admission, notification, wake and deletion
+- Central sampler V1 keeps today's Sandbox-backed identity, admission, notification and wake
   semantics. Its executor environment is required and fixed for the Session. This is not an optional
   attachment API, and it does not permit a central Session to open without an environment. See the
   explicit [future central Session environment-independence task](../plans/task_dag.md#central-session-environment-independence).
 - `CreateSession` requires `session_id` to be a canonical lowercase UUID before reading Sandbox state or recording a
-  Session. Callers must not deliberately reuse a Session UUID after deletion. Cleanup forgets the
-  Dispatcher record and does not retain a UUID marker: a subsequent request cannot be recognized as
-  an old retry, and retained History can reject a conflicting identity. Read RPCs can still address
-  retained rows by their stored IDs.
+  Session. Exact retries and authorized reads still find the record after its required Environment disappears.
+  Explicit Session deletion is separate and not yet implemented; callers must not deliberately reuse a Session UUID
+  after explicit deletion. No permanent Session UUID marker is planned, and retained History can reject conflicting reuse.
 - A new normal `CreateSession` can target only the current Sandbox-owned ServiceAccount whose namespace, name and UID
   equal the authenticated caller's reviewed ServiceAccount. The Sandbox and account are read from Kubernetes;
   callers cannot choose a different principal by supplying strings.
@@ -159,9 +158,17 @@ manager's typed assessment; see the lifecycle manager SPEC for its policy and mu
 
 Once Dispatcher cleanup for an exact Sandbox UID commits, later `CreateSession` and queued-command
 admissions for that UID fail with `FAILED_PRECONDITION`, including privileged callers using an
-inventory snapshot read before cleanup. The durable UID tombstone survives removal of the opening,
-dispatch and ownership rows and process restart. An ownership claim cannot recreate the removed
+inventory snapshot read before cleanup. The durable UID tombstone survives removal of dispatch and
+ownership rows and process restart. An ownership claim cannot recreate the removed
 worker fence. A same-name environment with a different UID has independent admission.
+
+Cleanup retains Sessions with their immutable placement and execution principal. It records that
+the required Environment is deleted separately from owner materialization: a not-yet-sent opening
+becomes `FAILED`, an opening in progress becomes `UNKNOWN`, and accepted or already-terminal
+materialization keeps its evidence. `GetSession`, `ListSessions` and exact `CreateSession` retries
+expose `SessionStatus.required_environment=DELETED` to authorized callers. No command can be
+admitted or routed through the deleted UID. Retained Session rows are excluded from the cleanup
+inventory so reconciliation does not repeat the deletion indefinitely.
 
 Admission transactions and cleanup serialize per Sandbox UID. Admission that commits first is
 included in cleanup; cleanup that commits first prevents admission. Existing terminal dispatch
@@ -223,7 +230,7 @@ entry and cursor. `UNKNOWN` does not negate that proven journal acceptance. An u
 as known-unsent; a requeued possibly-forwarded command becomes `UNKNOWN` on environment deletion.
 
 Deletion snapshots are transactional PostgreSQL notifications to connected `WatchDispatches`
-listeners. Cleanup then removes the command and opening receipts. These notifications provide no
+listeners. Cleanup then removes the command receipts but keeps the Session record. These notifications provide no
 durable outcome read for a later subscriber. An already-terminal row is not included in cleanup
 snapshots: a connected watcher delayed behind its earlier invalidation can miss that outcome when
 cleanup removes the row. Broadcasting all retained receipts is not a bounded solution: terminal

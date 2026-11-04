@@ -766,6 +766,59 @@ func TestDeletedSandboxBroadcastsTerminalRowsBeforeDeletingThem(t *testing.T) {
 	}
 }
 
+func TestDeletedSandboxRetainsSessionsAndSettlesUnfinishedMaterialization(t *testing.T) {
+	ctx := t.Context()
+	store := testStore(t, 3)
+	uid := uuid.NewString()
+	states := []struct{ before, after string }{
+		{SessionWaitingState, SessionFailedState},
+		{SessionInProgressState, SessionUnknownState},
+		{SessionAcceptedState, SessionAcceptedState},
+		{SessionFailedState, SessionFailedState},
+		{SessionUnknownState, SessionUnknownState},
+	}
+	ids := make([]string, len(states))
+	for i, state := range states {
+		ids[i] = uuid.NewString()
+		if _, err := store.CreateSession(ctx, ids[i], "deleted-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.DB.ExecContext(ctx, "UPDATE session SET state=$2,reason='prior evidence' WHERE session_id=$1", ids[i], state.before); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if events, err := store.EndSandbox(ctx, uid); err != nil || len(events) != 0 {
+		t.Fatalf("cleanup: %+v %v", events, err)
+	}
+	if uids, err := store.ListSandboxUIDs(ctx); err != nil || len(uids) != 0 {
+		t.Fatalf("retained Sessions re-entered cleanup inventory: %+v %v", uids, err)
+	}
+	for i, state := range states {
+		row, err := store.GetSession(ctx, ids[i])
+		if err != nil || row.EnvironmentDeletedAt == nil || row.SandboxUID != uid || row.State != state.after {
+			t.Fatalf("retained Session %d: %+v %v", i, row, err)
+		}
+		if state.before == SessionWaitingState || state.before == SessionInProgressState {
+			if row.Reason != "sandbox_deleted" {
+				t.Fatalf("unfinished Session reason %d = %q", i, row.Reason)
+			}
+		} else if row.Reason != "prior evidence" {
+			t.Fatalf("terminal Session evidence %d changed: %q", i, row.Reason)
+		}
+		projection, err := DescribeSession(row)
+		if err != nil || projection.GetStatus().GetRequiredEnvironment() != dispatcherpb.SessionStatus_REQUIRED_ENVIRONMENT_DELETED {
+			t.Fatalf("retained Session availability %d: %+v %v", i, projection, err)
+		}
+		if events, err := store.EndSandbox(ctx, uid); err != nil || len(events) != 0 {
+			t.Fatalf("repeated cleanup: %+v %v", events, err)
+		}
+		after, err := store.GetSession(ctx, ids[i])
+		if err != nil || !after.UpdatedAt.Equal(row.UpdatedAt) || !after.EnvironmentDeletedAt.Equal(*row.EnvironmentDeletedAt) {
+			t.Fatalf("repeated cleanup rewrote Session %d: %+v %v", i, after, err)
+		}
+	}
+}
+
 func TestTerminalPayloadRoundTripForWatchers(t *testing.T) {
 	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, pending: map[string]*terminalAssembly{}, connected: true}
 	sub, unsubscribe, err := hub.subscribe()
@@ -2159,6 +2212,12 @@ func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
 			if _, err := restarted.GetSession(ctx, sessionID); !errors.Is(err, ErrNotFound) {
 				t.Fatalf("opening resurrected: %v", err)
 			}
+			if existing {
+				retained, err := restarted.ListSessionsForCaller(ctx, "", 10, CallerIdentity{Privileged: true})
+				if err != nil || len(retained) != 1 || retained[0].EnvironmentDeletedAt == nil || retained[0].State != SessionFailedState {
+					t.Fatalf("Session lost during cleanup: %+v %v", retained, err)
+				}
+			}
 			if uids, err := restarted.ListSandboxUIDs(ctx); err != nil || len(uids) != 0 {
 				t.Fatalf("live queue/ownership state resurrected: %v %v", uids, err)
 			}
@@ -2244,8 +2303,9 @@ func TestSandboxCleanupWaitsForInFlightSession(t *testing.T) {
 	if err := <-cleaned; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.GetSession(ctx, sessionID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("cleanup missed the in-flight opening: %v", err)
+	retained, err := store.GetSession(ctx, sessionID)
+	if err != nil || retained.EnvironmentDeletedAt == nil || retained.State != SessionFailedState {
+		t.Fatalf("cleanup did not settle the in-flight opening: %+v %v", retained, err)
 	}
 }
 
@@ -2296,8 +2356,9 @@ func TestCleanupConfirmsAbsenceAfterReadingStoredWork(t *testing.T) {
 				t.Fatalf("reconcile: got %v, want %v", err, catalog.currentError)
 			}
 			if currentState == "absent" {
-				if _, err := store.GetSession(ctx, sessionID); !errors.Is(err, ErrNotFound) {
-					t.Fatalf("absent environment opening retained: %v", err)
+				row, err := store.GetSession(ctx, sessionID)
+				if err != nil || row.EnvironmentDeletedAt == nil || row.State != SessionFailedState {
+					t.Fatalf("absent environment Session not retained and settled: %+v %v", row, err)
 				}
 				if _, err := store.CreateSession(ctx, uuid.NewString(), "new-sandbox", uid, &sessionpb.SessionSpec{}, nil, nil); !errors.Is(err, ErrSandboxDeleted) {
 					t.Fatalf("absent environment not fenced: %v", err)

@@ -231,10 +231,17 @@ message SessionStatus {
     SESSION_MATERIALIZATION_FAILED = 4;
     SESSION_MATERIALIZATION_UNKNOWN = 5;
   }
+  enum RequiredEnvironment {
+    REQUIRED_ENVIRONMENT_UNSPECIFIED = 0;
+    REQUIRED_ENVIRONMENT_AVAILABLE = 1;
+    REQUIRED_ENVIRONMENT_DELETED = 2;
+  }
   Materialization materialization = 1;
   optional string reason = 2;
   agentplane.proto.DeliveryBlocker delivery_blocker = 3;
   agentplane.proto.WakeAssessment wake_assessment = 4;
+  // The exact Environment selected at creation. DELETED never adopts a same-name replacement.
+  RequiredEnvironment required_environment = 5;
 }
 
 // A minimal authorized read projection; immutable SessionSpec instructions remain private.

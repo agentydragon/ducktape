@@ -157,6 +157,7 @@ type Session struct {
 	WakeAssessment       *environmentpb.WakeAssessment
 	Traceparent          string
 	CreatedAt, UpdatedAt time.Time
+	EnvironmentDeletedAt *time.Time
 }
 
 // Owner is a fresh Kubernetes Lease proof paired with the committed DB generation.
@@ -691,7 +692,7 @@ const sessionColumns = `session_id, sandbox_name, sandbox_uid::text, execution_a
 	action_request_id::text, action_execution_id::text, wake_eligible,
 	wake_caller_namespace, wake_caller_name, wake_from_incarnation, wake_requested_at,
 	spec, setup_script, state, reason, traceparent, created_at, updated_at,
-	delivery_blocker, wake_assessment`
+	delivery_blocker, wake_assessment, environment_deleted_at`
 
 func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	o := &Session{}
@@ -699,13 +700,13 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	var effectiveNS, effectiveName, effectiveUID, creatorPodName, creatorPodUID sql.NullString
 	var actionRequestID, actionExecutionID sql.NullString
 	var callerNS, callerName, incarnation, script, reason sql.NullString
-	var wakeAt sql.NullTime
+	var wakeAt, environmentDeletedAt sql.NullTime
 	var spec, blockerBytes, wakeBytes []byte
 	err := row.Scan(&o.SessionID, &o.SandboxName, &o.SandboxUID, &ownerNS, &ownerName, &ownerUID,
 		&creatorNS, &creatorName, &creatorUID, &effectiveNS, &effectiveName, &effectiveUID, &creatorPodName, &creatorPodUID,
 		&actionRequestID, &actionExecutionID, &o.WakeEligible,
 		&callerNS, &callerName, &incarnation, &wakeAt, &spec, &script, &o.State,
-		&reason, &o.Traceparent, &o.CreatedAt, &o.UpdatedAt, &blockerBytes, &wakeBytes)
+		&reason, &o.Traceparent, &o.CreatedAt, &o.UpdatedAt, &blockerBytes, &wakeBytes, &environmentDeletedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -738,6 +739,9 @@ func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
 	}
 	if wakeAt.Valid {
 		o.WakeRequestedAt = &wakeAt.Time
+	}
+	if environmentDeletedAt.Valid {
+		o.EnvironmentDeletedAt = &environmentDeletedAt.Time
 	}
 	if script.Valid {
 		o.SetupScript = &script.String
