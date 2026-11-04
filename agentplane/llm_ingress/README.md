@@ -112,6 +112,13 @@ total size) and every raw response chunk with a per-request ID and chunk number,
 include prompts, reasoning, generated text, and tool arguments; keep it disabled by default and
 restrict access and retention while enabled. Authorization and other request headers are not logged.
 
+Backend transport failures and forwarding-slot acquisition timeouts also emit warnings when request
+body logging is disabled. Each warning carries the request `id`, method, path without its query, and
+verified namespace and pod when available. Transport warnings include the inner error text, such as a
+DNS lookup or connection failure; the `url.Error` wrapper is unwrapped so its URL, credentials, and
+query are not logged. The caller's request query, body, and headers are omitted. A request canceled
+while waiting for a forwarding slot exits without writing a gateway error.
+
 Each environment projects its Claude routes through the explicit runner budget map
 into `LlmIngressProps.models` (Codex budgets are catalog entries, above), then `settings.py`'s configuration schema. `models.py` owns the lightweight
 `ModelConfig` API contract shared by ingress, runner, and config generation.

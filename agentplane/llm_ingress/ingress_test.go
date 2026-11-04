@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -90,6 +92,14 @@ func newIngressTestServer(t *testing.T, reviews auth.TokenReviews, backendURL st
 
 func newConfiguredIngressTestServer(t *testing.T, reviews auth.TokenReviews, c config, options ...auth.Option) *httptest.Server {
 	t.Helper()
+	handler := newConfiguredIngressTestHandler(t, reviews, c, options...)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return server
+}
+
+func newConfiguredIngressTestHandler(t *testing.T, reviews auth.TokenReviews, c config, options ...auth.Option) *ingressHandler {
+	t.Helper()
 	if len(c.Attribution.JSONHeaders) == 0 && len(c.Attribution.Baggage) == 0 {
 		c.Attribution = defaultAttribution()
 	}
@@ -101,9 +111,7 @@ func newConfiguredIngressTestServer(t *testing.T, reviews auth.TokenReviews, c c
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(handler)
-	t.Cleanup(server.Close)
-	return server
+	return handler
 }
 
 type capturedRequest struct {
@@ -111,6 +119,12 @@ type capturedRequest struct {
 	path    string
 	headers http.Header
 	body    []byte
+}
+
+type ingressTestRoundTripper func(*http.Request) (*http.Response, error)
+
+func (roundTrip ingressTestRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	return roundTrip(request)
 }
 
 type fakeLiteLLM struct {
@@ -703,6 +717,114 @@ func TestBearerSchemeIsCaseInsensitiveAndAcceptsMultipleSpaces(t *testing.T) {
 	if response.StatusCode != 529 || !bytes.Equal(body, anthropicError) ||
 		len(got) != 1 || got[0].headers.Get("Authorization") != "Bearer "+testBackendKey {
 		t.Fatalf("status=%d body=%s requests=%+v", response.StatusCode, body, got)
+	}
+}
+
+func TestProxyTransportFailureWarnsWithSafeDiagnosticsWhenBodyLoggingIsDisabled(t *testing.T) {
+	pod, token := workload(t, "test-sandbox-transport-error", testAudience)
+	var logs bytes.Buffer
+	handler := newConfiguredIngressTestHandler(t, api.TokenReviews(), config{
+		LiteLLMURL: "http://upstream.invalid",
+		LiteLLMKey: testBackendKey,
+	})
+	handler.logger = slog.New(slog.NewJSONHandler(&logs, nil))
+	innerError := errors.New("dial tcp: lookup upstream.invalid: no such host")
+	handler.roundTripper = ingressTestRoundTripper(func(*http.Request) (*http.Response, error) {
+		return nil, &url.Error{
+			Op:  "Post",
+			URL: "http://backend-user:backend-password@upstream.invalid/v1/responses?api_key=query-secret",
+			Err: innerError,
+		}
+	})
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	client := testClient()
+	defer client.CloseIdleConnections()
+	response, body := request(t, client, http.MethodPost,
+		server.URL+"/v1/responses?request_token=query-secret", "prompt-secret", bearer(token))
+	if response.StatusCode != http.StatusBadGateway || !bytes.Contains(body, []byte("LiteLLM backend unavailable")) {
+		t.Fatalf("status=%d body=%s", response.StatusCode, body)
+	}
+	var record map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(logs.Bytes()), &record); err != nil {
+		t.Fatalf("warning log is not JSON: %v; logs=%s", err, logs.String())
+	}
+	requestID, okay := record["id"].(string)
+	if record["msg"] != "llm backend forwarding failed" || !okay || requestID == "" ||
+		record["method"] != http.MethodPost || record["path"] != "/v1/responses" ||
+		record["namespace"] != testNamespace || record["pod"] != pod.Name {
+		t.Fatalf("warning log omitted request context: %v", record)
+	}
+	if record["error"] != innerError.Error() {
+		t.Fatalf("warning log omitted the inner transport error: %v", record)
+	}
+	for _, secret := range []string{
+		"backend-user", "backend-password", "api_key", "query-secret", "request_token",
+		"prompt-secret", token, testBackendKey,
+	} {
+		if strings.Contains(logs.String(), secret) {
+			t.Errorf("warning log leaked %q: %s", secret, logs.String())
+		}
+	}
+}
+
+func TestForwardSlotTimeoutWarnsAndPreservesBadGatewayWhenBodyLoggingIsDisabled(t *testing.T) {
+	pod, token := workload(t, "test-sandbox-slot-timeout", testAudience)
+	var logs bytes.Buffer
+	handler := newConfiguredIngressTestHandler(t, api.TokenReviews(), config{
+		LiteLLMURL: "http://upstream.invalid",
+		LiteLLMKey: testBackendKey,
+	})
+	handler.logger = slog.New(slog.NewJSONHandler(&logs, nil))
+	handler.poolWaitTimeout = time.Millisecond
+	handler.pool = make(chan struct{}, 1)
+	handler.pool <- struct{}{}
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	client := testClient()
+	defer client.CloseIdleConnections()
+	response, body := request(t, client, http.MethodPost,
+		server.URL+"/v1/responses?request_token=query-secret", "prompt-secret", bearer(token))
+	if response.StatusCode != http.StatusBadGateway || !bytes.Contains(body, []byte("LiteLLM backend unavailable")) {
+		t.Fatalf("status=%d body=%s", response.StatusCode, body)
+	}
+	var record map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(logs.Bytes()), &record); err != nil {
+		t.Fatalf("warning log is not JSON: %v; logs=%s", err, logs.String())
+	}
+	requestID, okay := record["id"].(string)
+	if record["msg"] != "llm forwarding slot acquisition timed out" || !okay || requestID == "" ||
+		record["method"] != http.MethodPost || record["path"] != "/v1/responses" ||
+		record["namespace"] != testNamespace || record["pod"] != pod.Name || record["timeout"] != "1ms" {
+		t.Fatalf("slot timeout warning omitted request context: %v", record)
+	}
+	for _, secret := range []string{"query-secret", "request_token", "prompt-secret", token, testBackendKey} {
+		if strings.Contains(logs.String(), secret) {
+			t.Errorf("slot timeout warning leaked %q: %s", secret, logs.String())
+		}
+	}
+}
+
+func TestForwardSlotCancellationDoesNotWriteGatewayErrorOrWarning(t *testing.T) {
+	var logs bytes.Buffer
+	handler := &ingressHandler{
+		logger:          slog.New(slog.NewJSONHandler(&logs, nil)),
+		pool:            make(chan struct{}, 1),
+		poolWaitTimeout: time.Minute,
+	}
+	handler.pool <- struct{}{}
+	requestContext, cancel := context.WithCancel(context.Background())
+	cancel()
+	incoming := httptest.NewRequest(http.MethodPost, "/v1/responses?request_token=secret", nil).WithContext(requestContext)
+	response := httptest.NewRecorder()
+
+	handler.forward(response, incoming, auth.Principal{})
+
+	if response.Code != http.StatusOK || response.Body.Len() != 0 || logs.Len() != 0 || len(handler.pool) != 1 {
+		t.Fatalf("canceled slot wait wrote a response or warning: code=%d body=%q logs=%s pool=%d",
+			response.Code, response.Body.String(), logs.String(), len(handler.pool))
 	}
 }
 
