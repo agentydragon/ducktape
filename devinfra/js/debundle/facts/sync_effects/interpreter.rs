@@ -62,8 +62,9 @@ use crate::facts::sync_effects::property_inference::{
 use crate::facts::value_flow::{ChunkValueFlow, Values as FlowValues};
 use crate::facts::{
     DataflowOpacityCause, LocalClassConstructionProof, LocalClassConstructionShapes,
-    NativeOwnDataReadDiagnostic, OwnerInitializationCoverageRefusalReason, SetIterableShapes,
-    StatementPurityContext, set_iterables::SetIterableProof,
+    NativeIterableOperandOrigin, NativeOwnDataReadDiagnostic,
+    OwnerInitializationCoverageRefusalReason, SetIterableShapes, StatementPurityContext,
+    TopLevelNativeIterableOperandSite, set_iterables::SetIterableProof,
 };
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::{ChunkCodeGraph, Effects};
@@ -2976,13 +2977,28 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let [values] = arguments else {
             return None;
         };
-        let input = match expression {
-            ValueExpr::ObjectLiteral(array, _)
-                if self.inputs.index.array_elements.contains_key(array) =>
+        let input = if let Some((projection, _)) = self
+            .inputs
+            .set_iterable_proof
+            .native_iterable_operand(site.source_span())
+        {
+            let NativeIterableOperandOrigin::ImmediateArrayLiteral { allocation_site } =
+                projection.operand_origin();
+            if Some(projection.owner()) != self.state.current_top_owner
+                || !matches!(expression, ValueExpr::ObjectLiteral(array, _) if *array == allocation_site)
             {
-                NativeIterableInput::ImmediateArrayLiteral(*array)
+                return None;
             }
-            _ => NativeIterableInput::Borrowed,
+            NativeIterableInput::ImmediateArrayLiteral(allocation_site)
+        } else {
+            match expression {
+                ValueExpr::ObjectLiteral(array, _)
+                    if self.inputs.index.array_elements.contains_key(array) =>
+                {
+                    NativeIterableInput::ImmediateArrayLiteral(*array)
+                }
+                _ => NativeIterableInput::Borrowed,
+            }
         };
         self.native_iterable(NativeIterableUse::SetConstruction { site, input }, values)
     }
@@ -3061,7 +3077,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     return None;
                 }
                 let span = site.source_span();
-                let premise = proof.dependencies_for_constructor(span)?;
+                let premise =
+                    if let Some((projection, premise)) = proof.native_iterable_operand(span) {
+                        if Some(projection.owner()) != self.state.current_top_owner
+                            || !matches!(input,
+                            NativeIterableInput::ImmediateArrayLiteral(origin)
+                                if matches!(
+                                    projection.operand_origin(),
+                                    NativeIterableOperandOrigin::ImmediateArrayLiteral {
+                                        allocation_site
+                                    } if allocation_site == origin && allocation_site == *object
+                                ))
+                        {
+                            return None;
+                        }
+                        premise
+                    } else {
+                        proof.dependencies_for_constructor(span)?
+                    };
                 dependencies.extend(premise);
                 let yields = if let Some(slots) = self.settled_dense_array_slots(*object) {
                     if !slots.iter().all(|slot| !slot.is_empty() && slot.iter().all(|value| {
@@ -11706,6 +11739,38 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
         })
         .map(|(site, evidence)| (site.allocation_id(), evidence.clone()))
         .collect();
+    let constructor_operands: BTreeMap<_, _> = index
+        .top_calls
+        .iter()
+        .flatten()
+        .filter_map(|call| {
+            if call.kind != CallKind::New
+                || call.caller.is_some()
+                || call.has_spread
+                || !matches!(&call.callee, ValueExpr::Binding(binding) if binding.0.as_ref() == "Set")
+            {
+                return None;
+            }
+            let [ValueExpr::ObjectLiteral(allocation_site, _)] = call.args.as_slice() else {
+                return None;
+            };
+            // ObjectLiteral is the value-flow node for arrays and objects;
+            // only its array-elements index establishes the source kind.
+            if !index.array_elements.contains_key(allocation_site) {
+                return None;
+            }
+            Some((
+                call.span.lo.0,
+                TopLevelNativeIterableOperandSite {
+                    operation_span: call.span,
+                    operand: NativeIterableOperandOrigin::ImmediateArrayLiteral {
+                        allocation_site: *allocation_site,
+                    },
+                    owner: call.owner,
+                },
+            ))
+        })
+        .collect();
     let set_iterable_proof = SetIterableProof::new(
         facts,
         author_set_inputs,
@@ -11713,6 +11778,7 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
         &hints.inferred_set_constructions,
         &hints.assumptions.native_operation_inputs,
         stable_array_spread_shapes.clone(),
+        &constructor_operands,
     );
     index.local_constructors.retain(|key, constructor| {
         !constructor.checked_default_fields

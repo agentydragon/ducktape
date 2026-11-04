@@ -55,6 +55,7 @@ pub(crate) fn annotate_heap_contents(
     for (item, fact) in body.iter().zip(facts) {
         let mut collector = ArrayContentCollector {
             value_flow,
+            statement_owner: fact.ordinal,
             local_class_heap_proof: proofs.local_class,
             set_iterable_proof: proofs.set_iterable,
             fresh_freeze_proof: proofs.fresh_freeze,
@@ -103,7 +104,10 @@ pub(crate) fn annotate_heap_contents(
                                     .contains_key(&construction.span.lo.0)
                                     && proofs
                                         .set_iterable
-                                        .dependencies_for_constructor(construction.span)
+                                        .heap_constructor_dependencies(
+                                            construction.span,
+                                            fact.ordinal,
+                                        )
                                         .is_some()
                                     && collector.eager.allocations.contains(&cell))
                                 .then_some(cell)
@@ -157,6 +161,7 @@ impl Visit for ArrayOriginCollector {
 
 struct ArrayContentCollector<'a> {
     value_flow: &'a ChunkValueFlow,
+    statement_owner: source_identity::SourceUnitOrdinal,
     local_class_heap_proof: &'a LocalClassHeapProof,
     set_iterable_proof: &'a SetIterableProof,
     fresh_freeze_proof: &'a sync_effects::execution_index::interpreter::FreshRecordFreezeHeapProof,
@@ -531,10 +536,15 @@ impl Visit for ArrayContentCollector<'_> {
             // the platform result remains opaque to every subsequent use.
             return;
         }
+        // The projection constrains exact literal sites when present. Keep
+        // the previous flow-root admission for nonprojected Set sources.
         let certified_set = self
-            .value_flow
-            .native_set_allocations()
-            .contains_key(&node.span.lo.0);
+            .set_iterable_proof
+            .heap_constructor_in_owner(node.span, self.statement_owner)
+            && self
+                .value_flow
+                .native_set_allocations()
+                .contains_key(&node.span.lo.0);
         if certified_set {
             self.record_allocation(EffectCell::SetContents(node.span.lo.0));
         }

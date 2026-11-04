@@ -122,6 +122,76 @@ console.log("after", copied.size);
 }
 
 #[test]
+fn set_spread_reads_the_source_at_its_initialization_prefix() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"var seed = new Set(["a"]), sibling = new Set(["x"]), copied = new Set([...seed, "c"]);
+const updated = seed.add("late");
+console.log([...copied].join(","), [...seed].join(","));
+"#,
+        vec![
+            logical_module(
+                "collections",
+                &[
+                    Member::new("seed"),
+                    Member::new("sibling"),
+                    Member::new("copied"),
+                ],
+            ),
+            logical_module("update", &[Member::new("updated")]),
+            logical_module_with_anon(
+                "observe",
+                &[],
+                &["console.log([...copied].join(\",\"), [...seed].join(\",\"));"],
+            ),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "a,c a,late\n");
+    let graph_report = fixture.dependency_graph();
+    let copied = source_unit_for_binding(&graph_report, "copied").to_owned();
+    let updated = source_unit_for_binding(&graph_report, "updated").to_owned();
+    let graph = serde_json::to_value(graph_report).unwrap();
+    assert!(
+        graph["edges"].as_array().unwrap().iter().any(|edge| {
+            edge["source"] == updated
+                && edge["target"] == copied
+                && edge["edge_kind"] == "sequenced"
+        }),
+        "the copy's SetContents read must stay before the later source write: {graph}"
+    );
+}
+
+#[test]
+fn accessor_iterable_keeps_the_unknown_protocol_fallback() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const source = {
+    get [Symbol.iterator]() {
+        console.log("iterator getter");
+        return function* () { yield "value"; };
+    },
+};
+const copied = new Set(source);
+console.log([...copied].join(","));
+"#,
+        vec![],
+    ));
+    assert_preserved_entry_output(&fixture, "iterator getter\nvalue\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let copied = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|binding| binding["binding"] == "copied")
+        })
+        .unwrap();
+    assert_eq!(copied["synchronous_execution"]["complete"], false);
+}
+
+#[test]
 fn argument_throw_stops_evaluation_after_the_observed_prefix() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const seed = new Set(["a"]);

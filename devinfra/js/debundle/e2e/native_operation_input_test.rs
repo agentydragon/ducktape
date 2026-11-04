@@ -182,10 +182,10 @@ fn certified_fresh_sets_split_after_unrelated_constructor_heap_barrier() {
 }
 
 #[test]
-fn borrowed_set_array_keeps_its_read_across_an_unrelated_constructor_barrier() {
+fn borrowed_and_static_member_sets_keep_their_existing_frontier() {
     let fixture = run_fixture(
         FixtureOpts::new(
-            "import { Box } from './box.js';\nconst source = ['a'];\nconst alias = source;\nconst memo = new Box(() => 1);\nconst seed = new Set(alias);\nconsole.log(seed.size);\n",
+            "import { Box } from './box.js';\nconst source = ['a'];\nconst alias = source;\nconst memo = new Box(() => 1);\nconst seed = new Set(alias);\nconst lookup = { key: 'token' };\nconst unique = new Set([lookup.key]);\nconsole.log(seed.size, unique.size);\n",
             vec![],
         )
         .with_extra_chunks(&[(
@@ -197,7 +197,7 @@ fn borrowed_set_array_keeps_its_read_across_an_unrelated_constructor_barrier() {
             .with_retained_callback_constructor("Box", 1, &[0])
             .build()]),
     );
-    assert_preserved_entry_output(&fixture, "1\n");
+    assert_preserved_entry_output(&fixture, "1 1\n");
     let graph = fixture.dependency_graph();
     let seed = source_unit_for_binding(&graph, "seed");
     let memo = source_unit_for_binding(&graph, "memo");
@@ -211,6 +211,16 @@ fn borrowed_set_array_keeps_its_read_across_an_unrelated_constructor_barrier() {
     assert_eq!(
         node_for_binding(&graph, "seed")["synchronous_execution"]["complete"],
         true
+    );
+    assert_eq!(
+        node_for_binding(&graph, "unique")["purity"]["kind"],
+        "pure",
+        "the static-member source keeps its existing native purity admission: {graph}"
+    );
+    assert_eq!(
+        node_for_binding(&graph, "unique")["synchronous_execution"]["complete"],
+        true,
+        "the static-member source keeps its existing effect frontier: {graph}"
     );
 }
 
