@@ -44,7 +44,8 @@ flowchart LR
   ED --> RC
   BI & BS --> RC
   API -.->|"typed transition request"| RC
-  RC -.->|"operation and exact-generation Close completion"| API
+  RC -.->|"transition completion"| API
+  RC --> CloseStatus["EnvironmentRuntimeCloseStatuses"] --> API
   ED & Count & OwnerStatus & SS & AS & PS & EI --> Agg
   Agg --> Aggregate
   SR --> SOwner --> OwnerStatus
@@ -68,7 +69,7 @@ flowchart LR
 
 | Controller                      | Watched inputs                                                                                                                                      | Exclusive output and effect boundary                                                                                                                         |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `environment-runtime-lifecycle` | Environment desired state, bootstrap request and status; direct transition requests and worker-completion channels                                  | Direct operation completion; Runtime-owned workers perform blocking transition/shutdown steps                                                                |
+| `environment-runtime-lifecycle` | Environment desired state, bootstrap request and status; direct transition requests and worker-completion channels                                  | Live Runtime Close status; direct transition completion; Runtime-owned workers perform blocking transition/shutdown steps                                    |
 | `session-owner`                 | Session record (primary); explicit fresh-reservation retry (mapped)                                                                                 | Session owner status; construct and recover one live Session and its journal                                                                                 |
 | `environment-session-lifecycle` | Environment desired state, admission accounting, Session lifecycle and owner statuses, app-server status, process desired/status, Execution signals | Aggregate Session status; global native cleanup and exact fence, per-Session seal and delivery status                                                        |
 | `session-lifecycle`             | Session snapshot (primary); owner status, ingress ACKs, desired state, admissions, aggregate status and app-server status (mapped)                  | Session lifecycle status including generation-qualified pre-fence cleanup, admission, committed seal UID/cursor and delivery; guarded per-Session operations |
@@ -113,6 +114,9 @@ Runtime transition requests, cancellation and completion remain inside its coord
 waits for its accepted operation to settle, even after caller cancellation; Close cancels active
 transition work before waiting for the successor generation. The coordinator wakes callers before
 joining workers on exit and never replays accepted transition preparation after restart.
+The separate live Runtime Close status reports the Close worker's exact generation, stage and failure.
+Runtime watches it before reading it, and treats coordinator or engine exit before `ReadyToJoin` as
+failure. The status does not replace the Session aggregate's `Closed` or prove native owner release.
 
 The process registry supplies one controller and globally unique attempt IDs. Runtime and harness
 scoped views share that registry but retain distinct domains, native supervisors and worker joins.

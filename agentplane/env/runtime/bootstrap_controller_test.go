@@ -89,12 +89,11 @@ func TestCanceledBootstrapWaiterDoesNotCancelWorkAndCloseWaits(t *testing.T) {
 	r.mu.Lock()
 	closeGeneration := r.desired.Generation
 	r.mu.Unlock()
-	waitRuntime(t, r, func() bool {
-		progress := r.lifecycleCoordinator.closeProgress()
-		return progress.generation == closeGeneration && progress.stage == runtimeCloseBootstrapSettling
+	waitRuntimeCloseStatus(t, r, func(progress RuntimeCloseStatus) bool {
+		return progress.Generation == closeGeneration && progress.Stage == runtimeCloseBootstrapSettling
 	}, "generation-bound Runtime bootstrap settlement")
-	progress := r.lifecycleCoordinator.closeProgress()
-	if progress.stage == runtimeCloseReadyToJoin {
+	progress := mustRuntimeCloseStatus(t, r)
+	if progress.Stage == runtimeCloseReadyToJoin {
 		t.Fatalf("Close progress during accepted bootstrap = %+v", progress)
 	}
 	select {
@@ -160,8 +159,8 @@ func TestCloseWaitsForFailedBootstrapOutcome(t *testing.T) {
 	waitForFile(t, started)
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
-	waitRuntime(t, r, func() bool {
-		return r.lifecycleCoordinator.closeProgress().stage == runtimeCloseBootstrapSettling
+	waitRuntimeCloseStatus(t, r, func(progress RuntimeCloseStatus) bool {
+		return progress.Stage == runtimeCloseBootstrapSettling
 	}, "Close waiting for failed bootstrap outcome")
 	select {
 	case err := <-closeDone:
@@ -287,7 +286,7 @@ func TestCloseBootstrapStatusReadFailureRetainsOwner(t *testing.T) {
 	if err := r.Close(context.Background()); !errors.Is(err, failure) {
 		t.Fatalf("Close status observation = %v, want %v", err, failure)
 	}
-	if progress := r.lifecycleCoordinator.closeProgress(); progress.stage != runtimeCloseFailed {
+	if progress := mustRuntimeCloseStatus(t, r); progress.Stage != runtimeCloseFailed {
 		t.Fatalf("Close progress after read failure = %+v", progress)
 	}
 	if owner, err := openTestRuntimeStore(stateDir); err == nil {
@@ -311,9 +310,8 @@ func TestRuntimeCloseEngineCancelJoinsBootstrapWaitAndRetainsOwner(t *testing.T)
 	waitForFile(t, started)
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
-	waitRuntime(t, r, func() bool {
-		progress := r.lifecycleCoordinator.closeProgress()
-		return progress.stage == runtimeCloseBootstrapSettling
+	waitRuntimeCloseStatus(t, r, func(progress RuntimeCloseStatus) bool {
+		return progress.Stage == runtimeCloseBootstrapSettling
 	}, "Runtime bootstrap settlement barrier")
 	r.lifecycleCancel()
 	select {

@@ -103,9 +103,9 @@ successful recovery. Public control listens after that startup barrier. Runtime 
 wakes startup waiters even while recovery is unfinished.
 
 Adoption and conditional Quiesce pass a typed in-process request to the Runtime-owned lifecycle
-coordinator and wait for that operation's completion. Close uses the same coordinator with an
-exact-generation completion. These private handoffs are not COSI resources. Each blocking boundary
-runs in an owned worker so component observation continues.
+coordinator and wait for that operation's completion. Close observes the coordinator's live COSI
+status for its exact closing generation. Transition requests and completions remain private handoffs.
+Each blocking boundary runs in an owned worker so component observation continues.
 A canceled watch epoch ends future adoption stages but does not release a successor until accepted
 Execution starts and their fences settle. Repeated Quiesce preserves a healthy desired generation;
 only a failure for that exact generation can trigger retry.
@@ -134,6 +134,7 @@ Ordinary Close without a seal drains local work and creates no seal. Close prese
 for exact durable acknowledgements. Runtime first settles any accepted transition and fence before
 publishing Closing; it joins History before journals close, stops/joins the engine, joins workers,
 closes journals, fences the Pod PID namespace when applicable and releases its owner last.
+The Runtime Close status reports the ordered stage and any failure; it is never persisted.
 `ReadyToJoin` is permission to finish those steps, not successful owner release. Coordinator exit
 wakes callers before joining workers, preventing a shutdown worker from waiting on a transition
 caller that is itself waiting for engine exit. Joined workers and exact fences still determine

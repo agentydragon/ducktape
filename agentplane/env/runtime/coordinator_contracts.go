@@ -17,12 +17,6 @@ const (
 	runtimeCloseFailed
 )
 
-type runtimeCloseResult struct {
-	generation uint64
-	stage      runtimeCloseStage
-	err        error
-}
-
 type runtimeTransitionKind uint8
 
 const (

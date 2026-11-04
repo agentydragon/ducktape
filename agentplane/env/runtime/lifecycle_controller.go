@@ -25,11 +25,8 @@ type runtimeLifecycleController struct {
 	generation uint64
 	plan       closePlan
 	op         *closeOperation
-	failure    error
 	requests   chan *runtimeTransitionRequest
-	closeDone  chan struct{}
 	stopped    chan struct{}
-	result     runtimeCloseResult
 }
 
 type closePlan struct {
@@ -57,7 +54,9 @@ func (*runtimeLifecycleController) Inputs() []controller.Input {
 	}
 }
 
-func (*runtimeLifecycleController) Outputs() []controller.Output { return nil }
+func (*runtimeLifecycleController) Outputs() []controller.Output {
+	return []controller.Output{{Type: runtimeCloseStatusType, Kind: controller.OutputExclusive}}
+}
 
 func (c *runtimeLifecycleController) Run(ctx context.Context, r controller.Runtime, _ *zap.Logger) error {
 	select {
@@ -137,6 +136,9 @@ func (c *runtimeLifecycleController) reconcile(ctx, closeCtx context.Context, r 
 	} else if c.generation != desired.Generation {
 		return fmt.Errorf("Runtime Close generation changed from %d to %d", c.generation, desired.Generation)
 	}
+	if c.stage == runtimeCloseReadyToJoin || c.stage == runtimeCloseFailed {
+		return nil
+	}
 	if c.op != nil {
 		select {
 		case <-c.op.done:
@@ -144,12 +146,10 @@ func (c *runtimeLifecycleController) reconcile(ctx, closeCtx context.Context, r 
 			c.op = nil
 			if workErr != nil {
 				c.stage = runtimeCloseFailed
-				c.failure = workErr
 				if c.plan.cancelFence != nil {
 					c.plan.cancelFence()
 				}
-				c.publish()
-				return nil
+				return c.publish(ctx, r, workErr)
 			}
 			next, err := nextRuntimeCloseStage(c.stage)
 			if err != nil {
@@ -164,12 +164,10 @@ func (c *runtimeLifecycleController) reconcile(ctx, closeCtx context.Context, r 
 		settled, err := c.bootstrapSettled(ctx, r)
 		if err != nil {
 			c.stage = runtimeCloseFailed
-			c.failure = err
 			if c.plan.cancelFence != nil {
 				c.plan.cancelFence()
 			}
-			c.publish()
-			return nil
+			return c.publish(ctx, r, err)
 		}
 		if settled {
 			if err := ctx.Err(); err != nil {
@@ -178,7 +176,9 @@ func (c *runtimeLifecycleController) reconcile(ctx, closeCtx context.Context, r 
 			c.stage = runtimeCloseReadyToJoin
 		}
 	}
-	c.publish()
+	if err := c.publish(ctx, r, nil); err != nil {
+		return err
+	}
 	if c.stage == runtimeCloseReadyToJoin || c.stage == runtimeCloseFailed {
 		if c.plan.cancelFence != nil {
 			c.plan.cancelFence()
@@ -237,24 +237,8 @@ func nextRuntimeCloseStage(stage runtimeCloseStage) (runtimeCloseStage, error) {
 	}
 }
 
-func (c *runtimeLifecycleController) publish() {
-	c.r.mu.Lock()
-	c.result = runtimeCloseResult{generation: c.generation, stage: c.stage, err: c.failure}
-	c.r.changedLocked()
-	c.r.mu.Unlock()
-	if c.stage == runtimeCloseReadyToJoin || c.stage == runtimeCloseFailed {
-		select {
-		case <-c.closeDone:
-		default:
-			close(c.closeDone)
-		}
-	}
-}
-
-func (c *runtimeLifecycleController) closeProgress() runtimeCloseResult {
-	c.r.mu.Lock()
-	defer c.r.mu.Unlock()
-	return c.result
+func (c *runtimeLifecycleController) publish(ctx context.Context, writer controller.Writer, failure error) error {
+	return writeRuntimeCloseStatus(ctx, writer, RuntimeCloseStatus{Generation: c.generation, Stage: c.stage, Failure: failure})
 }
 
 func (c *runtimeLifecycleController) stopSessions(ctx context.Context) error {

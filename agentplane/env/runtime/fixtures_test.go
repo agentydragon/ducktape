@@ -26,6 +26,42 @@ import (
 
 const lifecycleTestTimeout = 10 * time.Second
 
+func mustRuntimeCloseStatus(t *testing.T, r *Runtime) RuntimeCloseStatus {
+	t.Helper()
+	status, _, err := readRuntimeCloseStatus(t.Context(), r.lifecycleState)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return status
+}
+
+func waitRuntimeCloseStatus(t *testing.T, r *Runtime, want func(RuntimeCloseStatus) bool, description string) RuntimeCloseStatus {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
+	defer cancel()
+	events := make(chan state.Event, 1)
+	if err := r.lifecycleState.Watch(ctx, runtimeCloseStatusResource(RuntimeCloseStatus{}).Metadata(), events); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		status, found, err := readRuntimeCloseStatus(ctx, r.lifecycleState)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if found && want(status) {
+			return status
+		}
+		select {
+		case event, ok := <-events:
+			if !ok || event.Type == state.Errored {
+				t.Fatalf("watch %s: closed or failed: %+v", description, event)
+			}
+		case <-ctx.Done():
+			t.Fatalf("wait for %s: %v", description, ctx.Err())
+		}
+	}
+}
+
 func TestMain(m *testing.M) {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {

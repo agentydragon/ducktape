@@ -327,7 +327,7 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	if err := engine.RegisterQController(r.bootstrapHost.Controller()); err != nil {
 		return err
 	}
-	r.lifecycleCoordinator = &runtimeLifecycleController{r: r, transition: runtimeTransitionSequence{r: r}, requests: make(chan *runtimeTransitionRequest), closeDone: make(chan struct{}), stopped: make(chan struct{})}
+	r.lifecycleCoordinator = &runtimeLifecycleController{r: r, transition: runtimeTransitionSequence{r: r}, requests: make(chan *runtimeTransitionRequest), stopped: make(chan struct{})}
 	if err := engine.RegisterController(r.lifecycleCoordinator); err != nil {
 		return err
 	}
@@ -443,22 +443,63 @@ func (r *Runtime) finishClose() error {
 	r.mu.Unlock()
 	r.transitionMu.Unlock()
 
-	// The coordinator's result names the exact generation; completion only
-	// permits joining the engine, and never proves owner release on its own.
-	select {
-	case <-r.lifecycleCoordinator.closeDone:
-		result := r.lifecycleCoordinator.closeProgress()
-		if result.generation != desired.Generation {
-			return fmt.Errorf("Runtime Close completed generation %d, want %d", result.generation, desired.Generation)
+	if err := r.waitRuntimeCloseStatus(desired.Generation); err != nil {
+		return err
+	}
+	return r.joinClose()
+}
+
+func (r *Runtime) waitRuntimeCloseStatus(generation uint64) error {
+	watchCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events := make(chan state.Event, 1)
+	if err := r.lifecycleState.Watch(watchCtx, runtimeCloseStatusResource(RuntimeCloseStatus{}).Metadata(), events); err != nil {
+		return fmt.Errorf("watch Runtime Close status: %w", err)
+	}
+	// Register before reading so a terminal publication cannot be lost.
+	// ReadyToJoin only grants permission to join the engine and native owners.
+	seenCurrent := false
+	for {
+		status, found, err := readRuntimeCloseStatus(watchCtx, r.lifecycleState)
+		if err != nil {
+			return fmt.Errorf("read Runtime Close status: %w", err)
 		}
-		if result.err != nil {
-			return result.err
+		if !found && seenCurrent {
+			return errors.New("Runtime Close status was destroyed before completion")
 		}
-		return r.joinClose()
-	case <-r.lifecycleCoordinator.stopped:
-		return r.coordinatorFailure("Close completion")
-	case <-r.lifecycleDone:
-		return r.coordinatorFailure("Close completion")
+		if found {
+			if status.Generation > generation {
+				return fmt.Errorf("Runtime Close observed future generation %d, want %d", status.Generation, generation)
+			}
+			if status.Generation == generation {
+				seenCurrent = true
+				switch status.Stage {
+				case runtimeCloseReadyToJoin:
+					return nil
+				case runtimeCloseFailed:
+					if status.Failure == nil {
+						return errors.New("Runtime Close failed without a failure")
+					}
+					return status.Failure
+				}
+			}
+		}
+		select {
+		case event, ok := <-events:
+			if !ok {
+				return errors.New("Runtime Close status watch closed")
+			}
+			if event.Type == state.Errored {
+				if event.Error == nil {
+					return errors.New("Runtime Close status watch failed")
+				}
+				return fmt.Errorf("watch Runtime Close status: %w", event.Error)
+			}
+		case <-r.lifecycleCoordinator.stopped:
+			return r.coordinatorFailure("Close completion")
+		case <-r.lifecycleDone:
+			return r.coordinatorFailure("Close completion")
+		}
 	}
 }
 
@@ -469,9 +510,10 @@ func (r *Runtime) joinClose() error {
 	<-r.lifecycleDone
 	r.mu.Lock()
 	lifecycleRunErr := r.lifecycleRunErr
+	lifecycleControllerErr := r.lifecycleControllerErr
 	r.mu.Unlock()
-	if lifecycleRunErr != nil {
-		return lifecycleRunErr
+	if lifecycleRunErr != nil || lifecycleControllerErr != nil {
+		return errors.Join(lifecycleRunErr, lifecycleControllerErr)
 	}
 	sessionLossErr := r.lifecycleCoordinator.plan.sessionLossErr
 	if sessionLossErr != nil {
