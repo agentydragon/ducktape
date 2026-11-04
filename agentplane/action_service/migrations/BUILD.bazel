@@ -19,8 +19,8 @@ go_test(
     name = "baseline_integration_test",
     size = "medium",
     srcs = ["baseline_integration_test.go"],
-    embedsrcs = glob(["testdata/legacy/*.sql"]),
     embed = [":migrations"],
+    embedsrcs = glob(["testdata/legacy/*.sql"]),
     tags = ["requires_docker"],
     deps = [
         "//agentplane/testing/postgres",

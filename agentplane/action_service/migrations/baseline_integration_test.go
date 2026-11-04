@@ -46,6 +46,7 @@ func TestMain(m *testing.M) {
 		return m.Run()
 	}))
 }
+
 func cloneDatabase(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("postgres", integrationDatabase.Clone(t))
@@ -55,12 +56,14 @@ func cloneDatabase(t *testing.T) *sql.DB {
 	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
+
 func exec(t *testing.T, db *sql.DB, query string) {
 	t.Helper()
 	if _, err := db.ExecContext(t.Context(), query); err != nil {
 		t.Fatal(err)
 	}
 }
+
 func count(t *testing.T, db *sql.DB, query string) int {
 	t.Helper()
 	var n int
@@ -69,10 +72,12 @@ func count(t *testing.T, db *sql.DB, query string) int {
 	}
 	return n
 }
+
 func seed(t *testing.T, db *sql.DB) {
 	t.Helper()
 	exec(t, db, `INSERT INTO action_request (id, idempotency_key, arguments, state, version, created_at, updated_at, title, caller_namespace, caller_name, action_group, action_name) VALUES ('00000000-0000-0000-0000-000000000001', 'key', '{"human":true}', 'denied', 1, now(), now(), 'keep', 'ns', 'name', 'group', 'action')`)
 }
+
 func TestFreshBaseline(t *testing.T) {
 	db := cloneDatabase(t)
 	exec(t, db, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`)
@@ -87,6 +92,7 @@ func TestFreshBaseline(t *testing.T) {
 		t.Fatalf("request rows = %d", got)
 	}
 }
+
 func TestFreshSchemaMatchesPreviousRelease(t *testing.T) {
 	old := cloneDatabase(t)
 	fresh := cloneDatabase(t)
@@ -131,6 +137,7 @@ func TestAdoptCompletedNinePreservesRowsAndHistory(t *testing.T) {
 		t.Fatalf("preserved rows = %d", got)
 	}
 }
+
 func TestRejectIncompleteHistoryAndSchema(t *testing.T) {
 	for _, tc := range []struct{ name, alter string }{
 		{"version eight", `DELETE FROM action_service_goose_version WHERE version_id=9`},
@@ -157,6 +164,7 @@ func TestRejectIncompleteHistoryAndSchema(t *testing.T) {
 		})
 	}
 }
+
 func TestConcurrentAdoption(t *testing.T) {
 	db := cloneDatabase(t)
 	var wg sync.WaitGroup
