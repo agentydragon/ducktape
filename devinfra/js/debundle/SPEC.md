@@ -387,10 +387,15 @@ destructuring and nested-`var` groups, and stable Set intervals. Its maps are
 available to lowering only when the projection is mappable; a projection failure
 for a finalized assignment that reaches this seam can still report typed
 blockers and unresolved checks without manufacturing an emission placement.
-Earlier plan-construction refusals in `pull_destructure_siblings` and
-`route_nested_var_statements` remain hard errors before a final assignment and
-do not produce a candidate assessment; this scoped projection does not claim
-coverage for those early failures.
+Earlier plan-construction refusals in `apply_destructuring_group_placement`
+and `route_nested_var_statements` remain hard errors before a final assignment
+and do not produce a candidate assessment; the destructuring refusal carries
+the shared typed owner-classification result in its error chain. Request
+planning supplies explicit owners to that classifier and retains the existing
+pull of unclaimed or residual-owned siblings. Final projection checks complete
+assignment ownership first, then classifies every binding destination,
+including entry/residual, with the same function. This scoped projection does
+not claim candidate-report coverage for those early failures.
 Semantic-order SCCs remain distinct from structural causes such as rebind,
 co-declaration, co-location and local effects; mixed or unclassified causes
 remain blockers. `placement.projection_violations` retains typed identities for

@@ -196,9 +196,11 @@ same non-deserializable source/destination projection produces this evidence
 and the binding/statement maps consumed by the lowerer. An unmappable candidate
 whose finalized assignment reaches the projection still emits its diagnostic
 assessment, but it does not produce emitter maps. Earlier plan-construction
-refusals in `pull_destructure_siblings` and `route_nested_var_statements` occur
-before candidate assessment and continue to return their existing hard
-refusals; they are outside this report's coverage.
+refusals in `apply_destructuring_group_placement` and
+`route_nested_var_statements` occur before candidate assessment and continue to
+return hard refusals; the destructuring refusal retains the shared typed
+owner-classification result in its error chain, but neither early refusal is a
+serialized candidate report.
 The top-level candidate `status` distinguishes `blocked_by_effect`,
 `blocked_by_placement`, and `blocked_by_effect_and_placement`; `incomplete`
 means the effect decision or one of the required placement domains remains

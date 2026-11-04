@@ -3318,9 +3318,16 @@ is mappable, the exact binding/statement maps consumed by lowering. For a
 finalized assignment that reaches this projection, failure produces a
 diagnostic candidate result with typed blockers and explicit unresolved checks;
 it does not fabricate an `EmissionPlacement`. Existing earlier plan-construction
-refusals in `pull_destructure_siblings` and `route_nested_var_statements` still
-fail before a final assignment exists, so those candidates do not produce this
-assessment. A legacy-gate-rejected but mappable candidate can still produce
+refusals in `apply_destructuring_group_placement` and
+`route_nested_var_statements` still fail before a final assignment exists, so
+those candidates do not produce this assessment. Destructuring request planning
+and finalized projection call the same typed owner classifier over the retained
+SWC binding identities. Planning supplies explicit claims only, then applies
+the classifier's one-owner result to pull unclaimed or residual-owned siblings;
+projection first requires complete finalized owner evidence and treats a split
+including the entry/residual destination as a blocker. The early refusal keeps
+the classifier result in the error chain, without inventing a finalized
+assignment. A legacy-gate-rejected but mappable candidate can still produce
 marked inspection output. This scoped candidate result is not emission
 authority: the existing realizability gate remains the only authority to emit
 runnable output until later coverage domains are closed. The candidate's effect
@@ -3507,8 +3514,9 @@ is one declarator binding two names; the lowerer's
 bindings (e.g. `x`) pulls every sibling (`y`) into the same
 module — sibling bindings join their claimed module with their
 local name as the export name. Claiming siblings into different
-modules is rejected with an explicit error from
-`pull_destructure_siblings`.
+modules is rejected by the shared destructuring owner classifier during
+request planning; the typed refusal retains the exact declarator and binding
+identities.
 
 ## Cycle resolution
 

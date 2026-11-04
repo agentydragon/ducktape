@@ -14,8 +14,10 @@ use crate::plans::ModulePlan;
 use crate::rebind_fold::RebindFold;
 use crate::util::target_file_for_request;
 use analysis::{
-    BindingCatalogue, BindingKind, ChunkId, DependencyGraphAndAtomicGroups, ModuleId, ModuleRole,
-    SourceUnitClass, SourceUnitId, SourceUnitLayout, top_level_id,
+    BindingCatalogue, BindingKind, ChunkId, DependencyGraphAndAtomicGroups,
+    DestructuringDeclaratorGroup, DestructuringGroupOwnerClassification, ModuleId, ModuleRole,
+    SourceUnitClass, SourceUnitId, SourceUnitLayout, classify_destructuring_group_owners,
+    top_level_id,
 };
 use anyhow::{Context, Result, bail, ensure};
 use selector_outcome::{
@@ -828,71 +830,111 @@ impl ChunkPlanBuilder {
         self.deferred_binding_claims_by_name = HashMap::new();
     }
 
-    /// Destructure-atomicity: a destructuring declarator like
-    /// `const { x, y } = obj` binds multiple names from a single
-    /// pattern that the lowerer's `split_var_decl` moves as one
-    /// unit. If the spec claims any one binding from such a pattern,
-    /// every sibling binding must travel to the same module —
-    /// otherwise the residual's export list would list a name whose
-    /// declarator has already moved away, and `node` would reject the
-    /// resulting module with `SyntaxError: Export 'y' is not defined
-    /// in module`.
-    ///
-    /// Implicitly-pulled siblings join the claimed module with their
-    /// own binding name as the export name. They aren't separately
-    /// spec'd, but the destructure pattern must keep its full name
-    /// set together regardless. Conflicting claims (two siblings
-    /// claimed by different modules) are rejected.
-    pub(super) fn pull_destructure_siblings(
+    /// Apply the shared placement-kernel decision to each retained
+    /// destructuring declarator. The kernel owns the colocation/refusal rule;
+    /// this builder applies its pull recommendation to the canonical binding
+    /// catalogue and export plans.
+    pub(super) fn apply_destructuring_group_placement(
         &mut self,
-        destructure_siblings: &BTreeMap<String, BTreeSet<String>>,
-        chunk_top_level_mark: swc_common::Mark,
+        destructuring_groups: &[DestructuringDeclaratorGroup],
     ) -> Result<()> {
-        for (claimed_name, sibling_set) in destructure_siblings {
-            let claimed_id = top_level_id(claimed_name, chunk_top_level_mark);
-            let Some(owner_index) = owned_destination(&self.bindings_catalogue, &claimed_id) else {
-                continue;
-            };
-            let owner_module_id = ModuleId(owner_index);
-            for sibling in sibling_set {
-                if sibling == claimed_name {
-                    continue;
-                }
-                let sibling_id = top_level_id(sibling, chunk_top_level_mark);
-                match owned_destination(&self.bindings_catalogue, &sibling_id) {
-                    None => {
-                        self.bindings_catalogue.insert(
-                            sibling_id,
-                            BindingKind::Owned {
-                                module: owner_module_id,
-                            },
-                        );
-                        let plan = &mut self.module_plans[owner_index];
-                        plan.bindings.insert(sibling.clone(), sibling.clone());
-                    }
-                    Some(other_index) if Some(other_index) == self.residual_plan_index => {
-                        self.bindings_catalogue.insert(
-                            sibling_id,
-                            BindingKind::Owned {
-                                module: owner_module_id,
-                            },
-                        );
-                        self.module_plans[other_index].bindings.remove(sibling);
-                        let plan = &mut self.module_plans[owner_index];
-                        plan.bindings.insert(sibling.clone(), sibling.clone());
-                    }
-                    Some(other_index) if other_index != owner_index => {
-                        let owner_plan_id = self.module_plans[owner_index].id.clone();
-                        let other_plan_id = self.module_plans[other_index].id.clone();
-                        bail!(
-                            "destructure declarator binds {claimed_name} (claimed by module \
-                             {owner_plan_id}) and {sibling} (claimed by module {other_plan_id}); \
+        // Overlapping `var` declarators can share a hygienic binding. Iterate
+        // until no more siblings move, so a pull through a later group also
+        // reaches earlier groups that share the newly placed binding.
+        loop {
+            let mut moved_sibling = false;
+            for group in destructuring_groups {
+                // The request-planning check intentionally sees explicit owners
+                // only. A residual-owned sibling is still movable and is pulled
+                // together with an unclaimed sibling below, matching the existing
+                // plan-construction behavior.
+                let explicit_owners = group.bindings.iter().filter_map(|binding| {
+                    owned_destination(&self.bindings_catalogue, binding)
+                        .filter(|destination| Some(*destination) != self.residual_plan_index)
+                        .map(|destination| (binding.clone(), ModuleId(destination)))
+                });
+                let decision = classify_destructuring_group_owners(group, explicit_owners);
+                match &decision.classification {
+                    DestructuringGroupOwnerClassification::Unclaimed => {}
+                    DestructuringGroupOwnerClassification::Split { .. } => {
+                        let mut named_owners: Vec<_> = decision
+                            .owners
+                            .iter()
+                            .map(|(binding, destination)| (binding.0.to_string(), destination.0))
+                            .collect();
+                        named_owners.sort();
+                        let (first_binding, first_owner) = &named_owners[0];
+                        let (other_binding, other_owner) = named_owners
+                            .iter()
+                            .find(|(_, destination)| destination != first_owner)
+                            .expect("a split decision has owners in distinct destinations");
+                        let first_plan_id = &self.module_plans[*first_owner].id;
+                        let other_plan_id = &self.module_plans[*other_owner].id;
+                        let diagnostic = format!(
+                            "destructure declarator binds {first_binding} (claimed by module \
+                             {first_plan_id}) and {other_binding} (claimed by module {other_plan_id}); \
                              destructuring declarators must move atomically — claim both \
                              bindings from the same module or claim neither.",
                         );
+                        return Err(anyhow::Error::new(decision).context(diagnostic));
                     }
-                    Some(_) => {}
+                    DestructuringGroupOwnerClassification::OneOwner { destination } => {
+                        let already_owned: BTreeSet<_> = decision
+                            .owners
+                            .iter()
+                            .filter(|(_, owner)| owner == destination)
+                            .map(|(binding, _)| binding.clone())
+                            .collect();
+                        let bindings: Vec<_> = group
+                            .bindings
+                            .iter()
+                            .filter(|binding| !already_owned.contains(*binding))
+                            .collect();
+                        let owner_index = destination.0;
+                        for sibling_id in bindings {
+                            let sibling = sibling_id.0.to_string();
+                            match owned_destination(&self.bindings_catalogue, sibling_id) {
+                                None => {
+                                    self.bindings_catalogue.insert(
+                                        sibling_id.clone(),
+                                        BindingKind::Owned {
+                                            module: *destination,
+                                        },
+                                    );
+                                    self.module_plans[owner_index]
+                                        .bindings
+                                        .insert(sibling.clone(), sibling);
+                                    moved_sibling = true;
+                                }
+                                Some(other_index)
+                                    if Some(other_index) == self.residual_plan_index =>
+                                {
+                                    self.bindings_catalogue.insert(
+                                        sibling_id.clone(),
+                                        BindingKind::Owned {
+                                            module: *destination,
+                                        },
+                                    );
+                                    self.module_plans[other_index].bindings.remove(&sibling);
+                                    self.module_plans[owner_index]
+                                        .bindings
+                                        .insert(sibling.clone(), sibling);
+                                    moved_sibling = true;
+                                }
+                                Some(other_index) if other_index == owner_index => {}
+                                Some(other_index) => {
+                                    unreachable!(
+                                        "shared destructuring decision missed explicit destination {} for binding {sibling}",
+                                        other_index
+                                    );
+                                }
+                            }
+                        }
+                    }
                 }
+            }
+            if !moved_sibling {
+                break;
             }
         }
         Ok(())
