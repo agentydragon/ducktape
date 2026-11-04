@@ -21,7 +21,9 @@ with a 733 MB root disk; production remains unchanged. Measure remaining populat
 latency, including the writes from unconditional restore. Establish required tools before selecting a smaller production guest;
 consider keeping heavy tools in an immutable disk. In every case,
 preserve the paused disk/RAM boundary, durable manifest commit and identity fencing. The
-[hardware acceptance report](../debug/2026_11_03_firecracker_system_test.md) records the observed phases.
+[system-test scenario](../system_tests/scenarios/firecracker.py) exercises the current CI guest. The
+[production Nix guest probe](../debug/2026_11_04_firecracker_storage_probe.md) records its separate
+image measurements and reduced-tool experiment.
 
 ## Explore keeping control services outside Firecracker guests
 

@@ -1753,10 +1753,10 @@ runtime we have, and Firecracker is a new runtime added beside it.
 The [Firecracker primitive spike](../debug/2026_11_02_firecracker_spike.md) has since landed in
 #13957. The opt-in environment backend is under review in #14029; its
 [contract](../docs/firecracker_sandboxes.md) and
-[validation report](../debug/2026_11_03_firecracker_environment.md) track the actual implementation.
+[system-test scenario](../system_tests/scenarios/firecracker.py) define the checked same-Pod behavior.
 It reuses the separate runner disk and preserves RAM within the same retained launcher Pod.
-Cross-Pod recovery, native execution-session parking with durable terminal release, and a deployed
-Session acceptance run remain separate work. KVM-enabled BuildBuddy execution on wyrm2 is tracked
+Cross-Pod recovery, native execution-session parking with durable terminal release, and staging
+acceptance with Cilium enforcement remain separate work. KVM-enabled BuildBuddy execution on wyrm2 is tracked
 in #14034. None of this selects a separate tools/harness disk layout.
 
 ### `RUNNER_LAYERING_SPIKE` — minimal guest, harness and tools-layer evidence
