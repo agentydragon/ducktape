@@ -255,6 +255,8 @@ pub(super) struct LexicalCellId(pub(super) usize);
 pub(super) struct LexicalCaptures {
     pub(super) snapshots: Context,
     pub(super) cells: OrdMap<Id, LexicalCellId>,
+    /// Source containment only, never a trusted receiver or instance identity.
+    pub(super) home_object: Option<u32>,
 }
 
 impl Hash for LexicalCaptures {
@@ -264,6 +266,7 @@ impl Hash for LexicalCaptures {
             binding.hash(state);
             values.hash(state);
         }
+        self.home_object.hash(state);
         self.cells.len().hash(state);
         for (binding, cell) in &self.cells {
             binding.hash(state);
@@ -274,7 +277,7 @@ impl Hash for LexicalCaptures {
 
 impl LexicalCaptures {
     pub(super) fn is_empty(&self) -> bool {
-        self.snapshots.is_empty() && self.cells.is_empty()
+        self.snapshots.is_empty() && self.cells.is_empty() && self.home_object.is_none()
     }
 }
 
@@ -425,6 +428,88 @@ pub(super) struct FrozenNamespaceProof {
     pub(super) freeze_site: CallSite,
     pub(super) define_site: CallSite,
     pub(super) stored_bindings: BTreeSet<Id>,
+}
+
+/// Ordered literal definitions keep accessor payloads distinct from data values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum LiteralPropertyKind {
+    Data,
+    Method,
+    Getter,
+    Setter,
+    Opaque,
+}
+
+#[derive(Debug, Clone)]
+pub(super) enum PropertyDefinition<T> {
+    Data { name: Option<String>, value: T },
+    Method { name: Option<String>, value: T },
+    Getter { name: Option<String>, value: T },
+    Setter { name: Option<String>, value: T },
+    Opaque { name: Option<String>, value: T },
+}
+
+impl<T> PropertyDefinition<T> {
+    pub(super) fn kind(&self) -> LiteralPropertyKind {
+        match self {
+            Self::Data { .. } => LiteralPropertyKind::Data,
+            Self::Method { .. } => LiteralPropertyKind::Method,
+            Self::Getter { .. } => LiteralPropertyKind::Getter,
+            Self::Setter { .. } => LiteralPropertyKind::Setter,
+            Self::Opaque { .. } => LiteralPropertyKind::Opaque,
+        }
+    }
+    pub(super) fn new(kind: LiteralPropertyKind, name: Option<String>, value: T) -> Self {
+        match kind {
+            LiteralPropertyKind::Data => Self::Data { name, value },
+            LiteralPropertyKind::Method => Self::Method { name, value },
+            LiteralPropertyKind::Getter => Self::Getter { name, value },
+            LiteralPropertyKind::Setter => Self::Setter { name, value },
+            LiteralPropertyKind::Opaque => Self::Opaque { name, value },
+        }
+    }
+    pub(super) fn name(&self) -> Option<&str> {
+        match self {
+            Self::Data { name, .. }
+            | Self::Method { name, .. }
+            | Self::Getter { name, .. }
+            | Self::Setter { name, .. }
+            | Self::Opaque { name, .. } => name.as_deref(),
+        }
+    }
+    pub(super) fn value(&self) -> &T {
+        match self {
+            Self::Data { value, .. }
+            | Self::Method { value, .. }
+            | Self::Getter { value, .. }
+            | Self::Setter { value, .. }
+            | Self::Opaque { value, .. } => value,
+        }
+    }
+    pub(super) fn map<'a, U>(&'a self, map: impl FnOnce(&'a T) -> U) -> PropertyDefinition<U> {
+        match self {
+            Self::Data { name, value } => PropertyDefinition::Data {
+                name: name.clone(),
+                value: map(value),
+            },
+            Self::Method { name, value } => PropertyDefinition::Method {
+                name: name.clone(),
+                value: map(value),
+            },
+            Self::Getter { name, value } => PropertyDefinition::Getter {
+                name: name.clone(),
+                value: map(value),
+            },
+            Self::Setter { name, value } => PropertyDefinition::Setter {
+                name: name.clone(),
+                value: map(value),
+            },
+            Self::Opaque { name, value } => PropertyDefinition::Opaque {
+                name: name.clone(),
+                value: map(value),
+            },
+        }
+    }
 }
 
 /// Syntax-only shape of one statically named own property. Evaluated values

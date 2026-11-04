@@ -3,6 +3,7 @@
 use super::super::allocation_transfer::{
     self, AllocationContext, AllocationJudgment, AllocationValue, LiteralHeap, LiteralLayout,
 };
+use super::super::local_operations::DeferredCallableCreation;
 use super::super::local_transfer::{
     self, EvaluatedCallee, LocalContext, LocalFrame, LocalValueResult,
 };
@@ -55,6 +56,13 @@ impl AllocationContext for ProviderContext<'_> {
     fn literal_layout(&self, allocation: u32) -> LiteralLayout {
         self.index.allocation_layout(allocation)
     }
+    fn literal_property_kind(
+        &self,
+        allocation: u32,
+        position: usize,
+    ) -> super::super::value_model::LiteralPropertyKind {
+        self.index.literal_property_kind(allocation, position)
+    }
     fn heap(&mut self) -> LiteralHeap<'_> {
         LiteralHeap {
             properties: &mut self.properties,
@@ -93,6 +101,7 @@ impl ProviderContext<'_> {
             _ => return None,
         };
         if self.shadowed.contains(name)
+            || self.index.property_key_declarations.contains(binding)
             || self
                 .local_bindings
                 .iter()
@@ -132,7 +141,17 @@ impl LocalContext for ProviderContext<'_> {
     // for retention, so internal property accesses need no caller effect.
     fn record_property_read(&mut self, _cell: crate::facts::EffectCell) {}
     fn record_property_write(&mut self, _cell: crate::facts::EffectCell) {}
-    fn closure(&mut self, frame: &mut LocalFrame, callable: u32) -> Option<AllocationValue> {
+    fn closure(
+        &mut self,
+        frame: &mut LocalFrame,
+        creation: DeferredCallableCreation,
+    ) -> Option<AllocationValue> {
+        let callable = creation.callable();
+        assert_eq!(
+            self.index.callable_creation(callable),
+            Some(creation),
+            "canonical callable creation kind/home-object association"
+        );
         let body = self.index.callables.get(&callable)?;
         let parameters: BTreeSet<_> = body
             .params
@@ -150,24 +169,43 @@ impl LocalContext for ProviderContext<'_> {
                 && !self.local_bindings.contains(binding)
         });
         let unavailable_capture = body.reads.iter().any(|binding| {
-            !body.declared_locals.contains(binding)
+            body.self_binding.as_ref() != Some(binding)
+                && !body.declared_locals.contains(binding)
                 && !body.pattern_locals.contains(binding)
                 && !parameter_bindings.contains(binding)
                 && !self.local_bindings.contains(binding)
                 && !frame.environment.contains_key(binding)
                 && !self.index.deferred_module_reference(binding)
         });
-        if self.class_mode && class_unavailable_capture {
+        if self.class_mode
+            && (class_unavailable_capture
+                || body.generator
+                || self.index.async_callables.contains(&callable))
+        {
             return None;
         }
-        if unavailable_capture || body.generator || self.index.async_callables.contains(&callable) {
+        if unavailable_capture
+            || ((self.class_mode || creation.home_object().is_none())
+                && (body.generator || self.index.async_callables.contains(&callable)))
+        {
             self.unsupported_closures.insert(callable);
         }
         let mut captures = self.argument_values.clone();
         if body.implicit_capture && self.class_mode {
+            // Method/accessor receivers are dynamic, not the constructor's
+            // lexical receiver. Keep class-mode admission conservative.
+            if creation.home_object().is_some() {
+                return None;
+            }
             captures.extend(frame.this_values.as_ref()?.iter().cloned());
-        } else if body.implicit_capture {
+        } else if body.implicit_capture && matches!(creation, DeferredCallableCreation::Arrow(_)) {
             self.unsupported_closures.insert(callable);
+        }
+        if let Some(home_object) = creation.home_object() {
+            captures.insert(AbstractValue::Value(Value::Alloc(
+                Kind::Object,
+                home_object,
+            )));
         }
         self.closure_captures.insert(callable, captures);
         Some(AllocationValue {
@@ -208,6 +246,13 @@ impl LocalContext for ProviderContext<'_> {
     }
     fn literal_layout(&self, allocation: u32) -> LiteralLayout {
         self.index.allocation_layout(allocation)
+    }
+    fn literal_property_kind(
+        &self,
+        allocation: u32,
+        position: usize,
+    ) -> super::super::value_model::LiteralPropertyKind {
+        self.index.literal_property_kind(allocation, position)
     }
     fn heap(&mut self) -> LiteralHeap<'_> {
         AllocationContext::heap(self)
@@ -282,17 +327,25 @@ fn closure_capture_projection(
             );
             closure_bindings.extend(nested.declared_locals.iter().cloned());
             closure_bindings.extend(nested.pattern_locals.iter().cloned());
+            closure_bindings.extend(nested.local_functions.keys().cloned());
+            closure_bindings.extend(nested.self_binding.iter().cloned());
         }
-        for (_, nested) in descendants {
-            for binding in &nested.reads {
-                if closure_bindings.contains(binding) {
-                    continue;
-                }
-                if outer_bindings.contains(binding) {
-                    local_reads.insert(binding.clone());
-                } else if index.private_var_binding(binding) {
-                    provider_reads.insert(binding.clone());
-                }
+        let reads = index
+            .prototype_callable_reads
+            .get(&callable)
+            .unwrap_or(&index.callables.get(&callable)?.reads);
+        for binding in reads {
+            if closure_bindings.contains(binding) {
+                continue;
+            }
+            if outer_bindings.contains(binding) {
+                local_reads.insert(binding.clone());
+            } else if index.private_var_binding(binding) {
+                provider_reads.insert(binding.clone());
+            } else if !index.deferred_module_reference(binding) {
+                // No final-frame cell or proved private capture represents this
+                // enclosing lexical value. Creation cannot invent its contents.
+                return None;
             }
         }
         projection.local_reads.insert(callable, local_reads);
@@ -378,6 +431,12 @@ pub(super) fn derive(
 ) -> Option<DerivedForeignCall> {
     let body = index.callables.get(&callable)?;
     let local_body = body.local_body.as_ref();
+    if body.allocation_return.is_none()
+        && !local_body
+            .is_some_and(|body| body.allocation_only_syntax() || body.closure_allocation_syntax())
+    {
+        return None;
+    }
     let closure_mode = local_body.is_some_and(|body| body.closure_allocation_syntax());
     let closure_projection = if closure_mode {
         Some(closure_capture_projection(index, local_body?)?)
@@ -493,6 +552,16 @@ pub(super) fn derive(
         }
         _ => None,
     };
+    let record = if body.params.is_empty() {
+        match result.values.iter().collect::<Vec<_>>().as_slice() {
+            [AbstractValue::Value(Value::Alloc(Kind::Object, allocation))] => {
+                index.method_record_members.get(allocation).cloned()
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
     for value in result.values {
         match value {
             AbstractValue::SymbolicInput(input) if input.scope == scope => {
@@ -550,7 +619,7 @@ pub(super) fn derive(
         retained_provider_captures,
         native_constructions: context.native_constructions,
         dependencies,
-        record: None,
+        record,
         closure,
     })
 }
@@ -799,43 +868,40 @@ mod tests {
     #[test]
     fn returned_closure_retains_capture_reached_through_final_local_heap() {
         js_ast::with_swc_globals(|| {
-            let source = "function outer() {\n\
-                             var captured = () => 42;\n\
-                             function make() {\n\
-                               const local = { callback: captured };\n\
-                               const wrapped = () => local;\n\
-                               return wrapped;\n\
-                             }\n\
-                           }\n";
-            let module = js_ast::parse_js_module("provider.js", source)
-                .unwrap()
-                .module;
-            let mut make = MakeFunctionKey::default();
-            module.visit_with(&mut make);
-            let key = make.0.expect("canonical nested make callable");
-            let views = top_level_item_views(&module.body);
-            let prepared = super::super::prepare_callable_capabilities(
-                &views,
-                StableArraySpreadShapes::default(),
-                BTreeSet::from(["make".into()]),
-                Vec::new(),
-                Vec::new(),
-                Default::default(),
-                Default::default(),
-            );
-            let summary = derive(&prepared.index, key, &BTreeSet::new())
-                .expect("local transfer retains the checked provider capture");
+            for returned in ["wrapped", "{ async run() { await 0; return local; } }"] {
+                let source = format!(
+                    "function outer() {{ var captured = () => 42; function make() {{ const local = {{ callback: captured }}; const wrapped = () => local; return {returned}; }} }}"
+                );
+                let module = js_ast::parse_js_module("provider.js", &source)
+                    .unwrap()
+                    .module;
+                let mut make = MakeFunctionKey::default();
+                module.visit_with(&mut make);
+                let key = make.0.expect("canonical nested make callable");
+                let views = top_level_item_views(&module.body);
+                let prepared = super::super::prepare_callable_capabilities(
+                    &views,
+                    StableArraySpreadShapes::default(),
+                    BTreeSet::from(["make".into()]),
+                    Vec::new(),
+                    Vec::new(),
+                    Default::default(),
+                    Default::default(),
+                );
+                let summary = derive(&prepared.index, key, &BTreeSet::new())
+                    .expect("local transfer retains the checked provider capture");
 
-            assert_eq!(
-                summary.returns,
-                BTreeSet::from([ForeignReturn::FreshAllocation])
-            );
-            assert!(summary.retained_arguments.is_empty());
-            assert_eq!(
-                summary.retained_provider_captures,
-                BTreeSet::from(["captured".to_owned()]),
-                "the returned closure reaches the capture through its final local record"
-            );
+                assert_eq!(
+                    summary.returns,
+                    BTreeSet::from([ForeignReturn::FreshAllocation])
+                );
+                assert!(summary.retained_arguments.is_empty());
+                assert_eq!(
+                    summary.retained_provider_captures,
+                    BTreeSet::from(["captured".to_owned()]),
+                    "the returned closure reaches the capture through its final local record, including after await"
+                );
+            }
         });
     }
 

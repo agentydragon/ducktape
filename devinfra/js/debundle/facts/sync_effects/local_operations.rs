@@ -1,6 +1,8 @@
 //! Source-covered local operations collected before value lowering erases writes.
 
-use super::value_model::{ValueExpr, object_data_property_name, static_property_name};
+use super::value_model::{
+    PropertyDefinition, ValueExpr, object_data_property_name, static_property_name,
+};
 use crate::facts::abstract_domain::value::Kind;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -13,6 +15,10 @@ pub(super) enum LocalBinding {
     Var,
     Let,
     Const,
+    /// These activation values must already be established by the caller.
+    /// Source identity alone does not instantiate a function value.
+    NamedSelf(u32),
+    HoistedFunction(u32),
 }
 
 #[derive(Debug, Clone)]
@@ -25,6 +31,35 @@ pub(super) enum LocalCallee {
     },
 }
 
+/// Home-object sites express source containment, never receiver ownership.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DeferredCallableCreation {
+    Function(u32),
+    Arrow(u32),
+    Method { callable: u32, home_object: u32 },
+    Getter { callable: u32, home_object: u32 },
+    Setter { callable: u32, home_object: u32 },
+}
+
+impl DeferredCallableCreation {
+    pub(super) fn callable(self) -> u32 {
+        match self {
+            Self::Function(key) | Self::Arrow(key) => key,
+            Self::Method { callable, .. }
+            | Self::Getter { callable, .. }
+            | Self::Setter { callable, .. } => callable,
+        }
+    }
+    pub(super) fn home_object(self) -> Option<u32> {
+        match self {
+            Self::Function(_) | Self::Arrow(_) => None,
+            Self::Method { home_object, .. }
+            | Self::Getter { home_object, .. }
+            | Self::Setter { home_object, .. } => Some(home_object),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(super) enum LocalExpression {
     Value(ValueExpr),
@@ -33,14 +68,18 @@ pub(super) enum LocalExpression {
     Sequence(Arc<[Self]>),
     Record {
         allocation: u32,
-        properties: Arc<[(String, Self)]>,
+        properties: Arc<[PropertyDefinition<Self>]>,
+    },
+    Array {
+        allocation: u32,
+        elements: Arc<[Option<Self>]>,
     },
     Assign {
         binding: Id,
         value: Arc<Self>,
         span: Span,
     },
-    Closure(u32),
+    Closure(DeferredCallableCreation),
     Call {
         callee: LocalCallee,
         arguments: Arc<[Self]>,
@@ -153,6 +192,15 @@ fn simple_binding(pattern: &Pat) -> Option<Id> {
     }
 }
 
+fn literal_definition_name(name: &PropName) -> Option<String> {
+    matches!(
+        name,
+        PropName::Ident(_) | PropName::Str(_) | PropName::Num(_)
+    )
+    .then(|| object_data_property_name(name))
+    .flatten()
+}
+
 /// The central allocation transfer has no conditional-path provenance. Keep
 /// branches outside this ordered subset until their effects can be tagged.
 fn unconditional_value(value: &ValueExpr) -> bool {
@@ -191,48 +239,61 @@ impl LocalExpression {
                             return None;
                         };
                         match property.as_ref() {
-                            Prop::Shorthand(binding) => Some((
-                                binding.sym.to_string(),
-                                Self::Value(ValueExpr::Binding(binding.to_id())),
-                            )),
-                            Prop::KeyValue(pair)
-                                if matches!(
-                                    pair.key,
-                                    PropName::Ident(_) | PropName::Str(_) | PropName::Num(_)
-                                ) =>
-                            {
-                                Some((
-                                    object_data_property_name(&pair.key)?,
-                                    Self::lower(&pair.value, class_template)?,
-                                ))
-                            }
+                            Prop::Shorthand(binding) => Some(PropertyDefinition::Data {
+                                name: Some(binding.sym.to_string()),
+                                value: Self::Value(ValueExpr::Binding(binding.to_id())),
+                            }),
+                            Prop::KeyValue(pair) => Some(PropertyDefinition::Data {
+                                name: Some(literal_definition_name(&pair.key)?),
+                                value: Self::lower(&pair.value, class_template)?,
+                            }),
                             Prop::Method(method)
-                                if class_template
-                                    && method.function.decorators.is_empty()
-                                    && object_data_property_name(&method.key).is_some() =>
+                                if method.function.decorators.is_empty()
+                                    && method
+                                        .function
+                                        .params
+                                        .iter()
+                                        .all(|parameter| parameter.decorators.is_empty()) =>
                             {
-                                Some((
-                                    object_data_property_name(&method.key)?,
-                                    Self::Closure(method.function.span.lo.0),
-                                ))
+                                Some(PropertyDefinition::Method {
+                                    name: Some(literal_definition_name(&method.key)?),
+                                    value: Self::Closure(DeferredCallableCreation::Method {
+                                        callable: method.function.span.lo.0,
+                                        home_object: object.span.lo.0,
+                                    }),
+                                })
                             }
                             Prop::Getter(getter)
-                                if class_template
-                                    && object_data_property_name(&getter.key).is_some() =>
+                                if getter.function.decorators.is_empty()
+                                    && getter
+                                        .function
+                                        .params
+                                        .iter()
+                                        .all(|parameter| parameter.decorators.is_empty()) =>
                             {
-                                Some((
-                                    object_data_property_name(&getter.key)?,
-                                    Self::Closure(getter.function.span.lo.0),
-                                ))
+                                Some(PropertyDefinition::Getter {
+                                    name: Some(literal_definition_name(&getter.key)?),
+                                    value: Self::Closure(DeferredCallableCreation::Getter {
+                                        callable: getter.function.span.lo.0,
+                                        home_object: object.span.lo.0,
+                                    }),
+                                })
                             }
                             Prop::Setter(setter)
-                                if class_template
-                                    && object_data_property_name(&setter.key).is_some() =>
+                                if setter.function.decorators.is_empty()
+                                    && setter
+                                        .function
+                                        .params
+                                        .iter()
+                                        .all(|parameter| parameter.decorators.is_empty()) =>
                             {
-                                Some((
-                                    object_data_property_name(&setter.key)?,
-                                    Self::Closure(setter.span.lo.0),
-                                ))
+                                Some(PropertyDefinition::Setter {
+                                    name: Some(literal_definition_name(&setter.key)?),
+                                    value: Self::Closure(DeferredCallableCreation::Setter {
+                                        callable: setter.function.span.lo.0,
+                                        home_object: object.span.lo.0,
+                                    }),
+                                })
                             }
                             _ => None,
                         }
@@ -243,8 +304,25 @@ impl LocalExpression {
                     properties,
                 })
             }
+            Expr::Array(array) => Some(Self::Array {
+                allocation: array.span.lo.0,
+                elements: array
+                    .elems
+                    .iter()
+                    .map(|element| match element {
+                        None => Some(None),
+                        Some(element) if element.spread.is_none() => {
+                            Some(Some(Self::lower(&element.expr, class_template)?))
+                        }
+                        _ => None,
+                    })
+                    .collect::<Option<Arc<[_]>>>()?,
+            }),
+            Expr::Tpl(template) if template.exprs.is_empty() => Some(Self::Value(
+                ValueExpr::NonCallable(crate::facts::abstract_domain::value::PrimKinds::STRING),
+            )),
             Expr::Fn(function)
-                if function.ident.is_none()
+                if (function.ident.is_none() || !class_template)
                     && function.function.decorators.is_empty()
                     && function
                         .function
@@ -252,9 +330,13 @@ impl LocalExpression {
                         .iter()
                         .all(|parameter| parameter.decorators.is_empty()) =>
             {
-                Some(Self::Closure(function.function.span.lo.0))
+                Some(Self::Closure(DeferredCallableCreation::Function(
+                    function.function.span.lo.0,
+                )))
             }
-            Expr::Arrow(arrow) => Some(Self::Closure(arrow.span.lo.0)),
+            Expr::Arrow(arrow) => Some(Self::Closure(DeferredCallableCreation::Arrow(
+                arrow.span.lo.0,
+            ))),
             Expr::Seq(sequence) => Some(Self::Sequence(
                 sequence
                     .exprs
@@ -361,7 +443,11 @@ impl LocalExpression {
             Self::Value(_) | Self::This | Self::ReadField { .. } | Self::Closure(_) => true,
             Self::Record { properties, .. } => properties
                 .iter()
-                .all(|(_, value)| value.local_targets(bindings)),
+                .all(|property| property.value().local_targets(bindings)),
+            Self::Array { elements, .. } => elements
+                .iter()
+                .flatten()
+                .all(|element| element.local_targets(bindings)),
             Self::Sequence(expressions) => expressions
                 .iter()
                 .all(|expression| expression.local_targets(bindings)),
@@ -380,8 +466,14 @@ impl LocalExpression {
         match self {
             Self::Value(value) => value.bindings(reads),
             Self::Record { properties, .. } => {
-                for (_, value) in properties.iter() {
+                for property in properties.iter() {
+                    let value = property.value();
                     value.reads(reads);
+                }
+            }
+            Self::Array { elements, .. } => {
+                for element in elements.iter().flatten() {
+                    element.reads(reads);
                 }
             }
             Self::Sequence(expressions) => {
@@ -432,13 +524,23 @@ impl LocalExpression {
                 (false, false)
             }
             Self::Closure(callable) => {
-                closure_sites.insert(*callable);
+                closure_sites.insert(callable.callable());
                 (false, true)
             }
             Self::Record { properties, .. } => {
                 let (mut allocation_only, mut closure_allowed) = (true, true);
-                for (_, value) in properties.iter() {
+                for property in properties.iter() {
+                    let value = property.value();
                     let (allocation, closure) = value.allocation_syntax(bindings, closure_sites);
+                    allocation_only &= allocation;
+                    closure_allowed &= closure;
+                }
+                (allocation_only, closure_allowed)
+            }
+            Self::Array { elements, .. } => {
+                let (mut allocation_only, mut closure_allowed) = (true, true);
+                for element in elements.iter().flatten() {
+                    let (allocation, closure) = element.allocation_syntax(bindings, closure_sites);
                     allocation_only &= allocation;
                     closure_allowed &= closure;
                 }
@@ -474,7 +576,11 @@ impl LocalExpression {
             Self::Value(value) => value_contains_keyed_collection_new(value),
             Self::Record { properties, .. } => properties
                 .iter()
-                .any(|(_, value)| value.requires_keyed_collection_new()),
+                .any(|property| property.value().requires_keyed_collection_new()),
+            Self::Array { elements, .. } => elements
+                .iter()
+                .flatten()
+                .any(Self::requires_keyed_collection_new),
             Self::Sequence(expressions) => {
                 expressions.iter().any(Self::requires_keyed_collection_new)
             }
@@ -491,13 +597,19 @@ impl LocalExpression {
     fn writes(&self, writes: &mut BTreeSet<Id>) {
         match self {
             Self::Record { properties, .. } => {
-                for (_, value) in properties.iter() {
+                for property in properties.iter() {
+                    let value = property.value();
                     value.writes(writes);
                 }
             }
             Self::Assign { binding, value, .. } => {
                 writes.insert(binding.clone());
                 value.writes(writes);
+            }
+            Self::Array { elements, .. } => {
+                for element in elements.iter().flatten() {
+                    element.writes(writes);
+                }
             }
             Self::Sequence(expressions) => {
                 for expression in expressions.iter() {
@@ -535,7 +647,10 @@ impl LocalBody {
         let mut terminal = false;
         for statement in &body.stmts {
             if terminal {
-                return None;
+                // The canonical collector supplies all declaration identities
+                // and kinds after visiting the complete body, including dead
+                // pattern and loop declarations. Their initializers do not run.
+                continue;
             }
             match statement {
                 Stmt::Empty(_) => {}
@@ -806,6 +921,36 @@ impl LocalBody {
             closure_sites,
             requires_keyed_collection_new,
         })
+    }
+
+    pub(super) fn with_declarations(
+        mut self,
+        variables: impl IntoIterator<Item = Id>,
+        lexical: impl IntoIterator<Item = (Id, LocalBinding)>,
+    ) -> Self {
+        for binding in variables {
+            self.bindings.entry(binding).or_insert(LocalBinding::Var);
+        }
+        for (binding, kind) in lexical {
+            self.bindings.insert(binding, kind);
+        }
+        self.free_reads = self.free_reads.as_ref().and_then(|reads| {
+            let reads: Arc<[_]> = reads
+                .iter()
+                .filter(|binding| !self.bindings.contains_key(*binding))
+                .cloned()
+                .collect();
+            (!reads.is_empty()).then_some(reads)
+        });
+        self.captured_writes = self.captured_writes.as_ref().and_then(|writes| {
+            let writes: Arc<[_]> = writes
+                .iter()
+                .filter(|binding| !self.bindings.contains_key(*binding))
+                .cloned()
+                .collect();
+            (!writes.is_empty()).then_some(writes)
+        });
+        self
     }
 
     pub(super) fn free_reads(&self) -> &[Id] {

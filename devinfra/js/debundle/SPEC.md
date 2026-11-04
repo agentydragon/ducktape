@@ -597,6 +597,9 @@ fully covered execution against its exact canonical owner, binding and
 initializer span after its result binding becomes initialized. Parameters,
 actual arguments, captures, local stores, property/native/global operations,
 unsupported transfers and abrupt completion remain uncovered by this route.
+Deferred function/method/accessor creation, record and array creation, named
+function self scopes, and activation-local declarations have no operation
+receipts in this route; successful allocation does not close their effects.
 Existing leaf/value initializer proofs keep their independent admission.
 These three domains do not establish completeness of source binding reads or
 rebinds. Closing them does not discharge unresolved-call closure or authorize
@@ -2807,14 +2810,28 @@ this local-binding fact grants no provider-body or class-closure coverage.
 Calls, field reads/writes, `this`, throws and captured writes in the provider
 body remain outside these transfer modes where their behavior is not proved.
 The returned closure body is deferred and its operations are not executed by
-this provider query. Methods, getters, setters and RegExp-related bodies still
-use the legacy whole-body derivation until their productive families migrate.
-Source classification selects one provider path before execution; refusal from
-a selected `LocalBody` query never retries another evaluator, and mixed bodies
-stay on the legacy path while they contain an unmigrated productive family.
+this provider query. Methods, getters and setters are typed property definitions:
+methods define data-valued functions, and accessors retain separate getter/setter
+payloads. Async and generator method bodies remain deferred. Definition order,
+paired accessors and overwritten values retain their source-order effects and
+conservative capability containment. Ordinary own-data reads refuse accessor or
+ambiguous descriptor shapes. A method's canonical home-object site records source
+containment only; it grants no receiver, unique-instance or ownership proof.
+Detached methods retain that object's capabilities under the existing heap
+multiplicity and taint rules. Dynamic method receivers never become lexical
+constructor captures. A sparse literal keeps holes absent and grants no dense
+array proof.
+
+Every function/arrow provider uses the shared canonical allocation/local-operation
+transfers. The shared provider projects root closure ranges and the existing
+parameterless, unique method/getter-only record metadata from canonical facts;
+setters, data mixtures and duplicate names still suppress record metadata.
+Unsupported syntax or a refused transfer stays unknown without another evaluator.
+Only the executable prefix through a return runs; full canonical declaration
+facts still govern hoisting, initialization and TDZ in that prefix.
 
 Source coverage excludes async/generator functions, defaults/rest/destructuring,
-template syntax, other operators,
+interpolated template syntax, other operators,
 nested/computed/optional member reads, computed/spread/accessor/prototype fields,
 member/optional/spread calls, direct `eval` and
 unsupported control-flow statements. A source-covered throw still prevents the

@@ -995,6 +995,66 @@ fn imported_cell_reads_do_not_receive_local_module_cell_receipts() {
 }
 
 #[test]
+fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
+    for (helper, result_kind, unknown) in [
+        ("function make() { return [seed]; }", "object", 2),
+        ("function make() { return [, seed]; }", "object", 2),
+        ("function make() { return { value: seed }; }", "object", 2),
+        (
+            "function make() { return { read() { return seed; }, get value() { return seed; }, set value(next) {} }; }",
+            "object",
+            2,
+        ),
+        ("function make() { return () => seed; }", "function", 2),
+        (
+            "const make = function self() { return seed; };",
+            "number",
+            2,
+        ),
+        (
+            "function make() { return seed; var { unused } = {}; }",
+            "number",
+            2,
+        ),
+        ("function make() { return seed; let unused; }", "number", 2),
+        (
+            "function make() { return seed; function unused() {} }",
+            "number",
+            2,
+        ),
+        (
+            "function make() { return seed; class Unused {} }",
+            "number",
+            2,
+        ),
+        ("function make() { return seed; }", "number", 1),
+    ] {
+        let source = format!(
+            "const seed = 41;\n{helper}\nvar result = (make(), make());\nconsole.log(typeof result);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "all",
+                &[
+                    Member::new("seed"),
+                    Member::new("make"),
+                    Member::new("result"),
+                ],
+            )],
+        ));
+        assert_preserved_entry_output(&fixture, &format!("{result_kind}\n"));
+        let report = fixture.effect_translation_validation();
+        for domain in ["global_properties", "general_heap", "host_effects"] {
+            assert_eq!(
+                report["coverage"]["unknown_coverage"][domain], unknown,
+                "only actual operation receipts may cover the initializer for {helper}: {report:#}"
+            );
+        }
+    }
+}
+
+#[test]
 fn refused_call_receipts_preserve_actual_argument_evaluation() {
     let fixture = run_fixture(FixtureOpts::new(
         "const seed = 41;\nfunction readSeed() { return seed; }\nfunction actual() { console.log('argument'); return seed; }\nvar result = (readSeed(actual()), readSeed(actual()));\nconsole.log(result);\n",

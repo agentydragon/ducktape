@@ -5,7 +5,7 @@ use super::allocation_transfer::{
 };
 use super::effect_coverage::EffectCoverageFragment;
 use super::local_operations::{
-    LocalBinding, LocalBody, LocalCallee, LocalExpression, LocalOperation,
+    DeferredCallableCreation, LocalBinding, LocalBody, LocalCallee, LocalExpression, LocalOperation,
 };
 use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataSlot};
 use super::value_model::{AbstractValue, CallSite, Context, ValueExpr, Values};
@@ -76,10 +76,15 @@ pub(super) struct LocalTransferResult {
 }
 
 pub(super) trait LocalContext: OwnDataContext {
+    fn array_created(&mut self, _allocation: u32, _sparse: bool) {}
     fn instantiate_bindings(&mut self, _frame: &mut LocalFrame) {}
     fn local_binding_stored(&mut self, _binding: &Id, _frame: &LocalFrame) {}
     fn read_binding(&mut self, binding: &Id, frame: &mut LocalFrame) -> Option<LocalValueResult>;
-    fn closure(&mut self, frame: &mut LocalFrame, callable: u32) -> Option<AllocationValue>;
+    fn closure(
+        &mut self,
+        frame: &mut LocalFrame,
+        creation: DeferredCallableCreation,
+    ) -> Option<AllocationValue>;
     fn assign_capture(
         &mut self,
         frame: &mut LocalFrame,
@@ -97,6 +102,11 @@ pub(super) trait LocalContext: OwnDataContext {
         span: Span,
     ) -> Option<LocalValueResult>;
     fn literal_layout(&self, allocation: u32) -> LiteralLayout;
+    fn literal_property_kind(
+        &self,
+        allocation: u32,
+        position: usize,
+    ) -> super::value_model::LiteralPropertyKind;
     fn heap(&mut self) -> LiteralHeap<'_>;
     fn record_property_read(&mut self, cell: crate::facts::EffectCell);
     fn record_property_write(&mut self, cell: crate::facts::EffectCell);
@@ -142,6 +152,9 @@ impl<C: LocalContext> AllocationContext for LocalValueContext<'_, C> {
     fn source_covered(&self) -> bool {
         true
     }
+    fn array_created(&mut self, allocation: u32, sparse: bool) {
+        self.context.array_created(allocation, sparse);
+    }
     fn binding(&mut self, binding: &Id) -> Option<AllocationValue> {
         let result = self.context.read_binding(binding, self.frame)?;
         self.frame.effect_coverage.compose(&result.effects);
@@ -157,6 +170,13 @@ impl<C: LocalContext> AllocationContext for LocalValueContext<'_, C> {
     }
     fn literal_layout(&self, allocation: u32) -> LiteralLayout {
         self.context.literal_layout(allocation)
+    }
+    fn literal_property_kind(
+        &self,
+        allocation: u32,
+        position: usize,
+    ) -> super::value_model::LiteralPropertyKind {
+        self.context.literal_property_kind(allocation, position)
     }
     fn heap(&mut self) -> LiteralHeap<'_> {
         self.context.heap()
@@ -297,7 +317,7 @@ fn expression(
                 *allocation,
                 properties
                     .iter()
-                    .map(|(name, value)| (Some(name.clone()), value)),
+                    .map(|property| property.map(|value| value)),
                 AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
                 |context, node| {
                     let mut judgment =
@@ -314,6 +334,27 @@ fn expression(
             )?;
             judgment.compose(&result.judgment);
             mark_fresh_record(context, frame, *allocation, new_record, &result.values);
+            Some(completing(result.values, frame))
+        }
+        LocalExpression::Array {
+            allocation,
+            elements,
+        } => {
+            let result = allocation_transfer::array(
+                &mut LocalValueContext { context, frame },
+                *allocation,
+                elements.iter().map(Option::as_ref),
+                AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
+                |context, node| {
+                    let mut judgment =
+                        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default());
+                    let values =
+                        expression(context.context, node, body, context.frame, &mut judgment)?;
+                    context.frame.inputs.extend(values.iter().cloned());
+                    Some(AllocationValue { values, judgment })
+                },
+            )?;
+            judgment.compose(&result.judgment);
             Some(completing(result.values, frame))
         }
         LocalExpression::Sequence(expressions) => {
@@ -357,7 +398,7 @@ fn expression(
                 judgment.compose(&result.judgment);
                 return Some(completing(result.values, frame));
             };
-            if *kind == LocalBinding::Const
+            if matches!(kind, LocalBinding::Const | LocalBinding::NamedSelf(_))
                 || (*kind == LocalBinding::Let
                     && frame
                         .environment
@@ -523,6 +564,22 @@ pub(super) fn execute(
     for (binding, kind) in &body.bindings {
         match kind {
             LocalBinding::Parameter => {}
+            LocalBinding::NamedSelf(function) | LocalBinding::HoistedFunction(function) => {
+                // A pre-prologue parameter/var value is not the hoisted
+                // function. Preserve only an already-established exact value;
+                // an unsupported activation value remains absent until use.
+                if frame.environment.get(binding).is_some_and(|values| {
+                    values.is_empty()
+                        || values.iter().any(|value| {
+                            !matches!(value,
+                                AbstractValue::Closure(key, _)
+                                | AbstractValue::Value(Value::Alloc(Kind::Function, key))
+                                    if key == function)
+                        })
+                }) {
+                    frame.environment.remove(binding);
+                }
+            }
             LocalBinding::Var => {
                 frame
                     .environment
@@ -538,8 +595,8 @@ pub(super) fn execute(
         }
     }
     if !body.bindings.is_empty() {
-        // Activation-local cell creation and parameter prologues have no
-        // operation receipts in this first module-cell-only family.
+        // Activation-local cells/functions, self bindings and parameter
+        // prologues have no operation receipts in this module-cell-only family.
         frame
             .effect_coverage
             .compose(&EffectCoverageFragment::default());
@@ -555,7 +612,9 @@ pub(super) fn execute(
                     Some(node) => expression(context, node, body, frame, &mut judgment)?,
                     None if matches!(
                         body.bindings[binding],
-                        LocalBinding::Var | LocalBinding::Parameter
+                        LocalBinding::Var
+                            | LocalBinding::Parameter
+                            | LocalBinding::HoistedFunction(_)
                     ) =>
                     {
                         continue;
