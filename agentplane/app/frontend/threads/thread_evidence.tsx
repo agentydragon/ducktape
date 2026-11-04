@@ -1,14 +1,23 @@
 import { Button, Group, Stack, Text } from "@mantine/core";
+import { create, toJson } from "@bufbuild/protobuf";
 import { type CSSProperties, type JSX, type MouseEvent, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { displayableError } from "../client";
-import { threadEvidence, threadNativeFrames, type EvidencePage, type NativeFramePage } from "./client";
+import { threadEvidence, threadNativeFrames } from "./client";
 import { DisclosureBody } from "../../../../util/frontend/disclosure";
 import { JsonView } from "../../../../util/frontend/json_view";
 import { ChronologicalDebugIcon } from "./chronological_debug";
 import { InspectionToggle } from "../../../../util/frontend/transcript/inspection";
 import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/transcript/retained_disclosures";
 import type { ThreadEntity } from "./thread_sync";
+import { EventEntrySchema } from "../../../proto/event_log_pb";
+import {
+  EntityKeySchema,
+  ReadEntityEvidenceRequestSchema,
+  ReadNativeFramesRequestSchema,
+  type ReadEntityEvidenceResponse,
+  type ReadNativeFramesResponse,
+} from "../../../history_service/history_service_pb";
 import "./thread_evidence.css";
 
 function EvidenceFramesPage({
@@ -20,7 +29,7 @@ function EvidenceFramesPage({
   entity: ThreadEntity;
   observationCursor: string;
 }): JSX.Element {
-  const [page, setPage] = useState<NativeFramePage | null>(null);
+  const [page, setPage] = useState<ReadNativeFramesResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [afterSequence, setAfterSequence] = useState("0");
@@ -41,7 +50,17 @@ function EvidenceFramesPage({
     const controller = new AbortController();
     request.current = controller;
     setLoading(true);
-    void threadNativeFrames(threadId, scope, observationCursor, after, controller.signal)
+    void threadNativeFrames(
+      create(ReadNativeFramesRequestSchema, {
+        sessionId: threadId,
+        projectionEpoch: scope.projectionEpoch,
+        entity: create(EntityKeySchema, { entityKind: scope.entityKind, entityId: scope.entityId }),
+        observationCursor: BigInt(observationCursor),
+        afterSequence: BigInt(after),
+        limit: 30,
+      }),
+      controller.signal
+    )
       .then(
         (value) => {
           if (!controller.signal.aborted) {
@@ -57,16 +76,17 @@ function EvidenceFramesPage({
         if (!controller.signal.aborted) setLoading(false);
       });
   };
+  const nextAfterSequence = page?.nextAfterSequence;
   return (
     <DisclosureBody>
       <Stack gap="xs">
         {error && <Text c="red">{error}</Text>}
         {page?.frames.map((frame) =>
-          frame.availability === "present" ? (
-            <JsonView key={frame.source_sequence} value={frame.entry} />
+          frame.entry ? (
+            <JsonView key={frame.sourceSequence.toString()} value={toJson(EventEntrySchema, frame.entry)} />
           ) : (
-            <Text size="xs" key={frame.source_sequence}>
-              Raw frame {frame.source_sequence} unavailable
+            <Text size="xs" key={frame.sourceSequence.toString()}>
+              Raw frame {frame.sourceSequence.toString()} unavailable
             </Text>
           )
         )}
@@ -80,8 +100,8 @@ function EvidenceFramesPage({
             First frames
           </Button>
         )}
-        {page?.next_after_sequence && (
-          <Button variant="subtle" loading={loading} onClick={() => load(page.next_after_sequence ?? "0")}>
+        {nextAfterSequence !== undefined && (
+          <Button variant="subtle" loading={loading} onClick={() => load(nextAfterSequence.toString())}>
             Load more frames
           </Button>
         )}
@@ -109,7 +129,7 @@ function EvidenceFrames(props: { threadId: string; entity: ThreadEntity; observa
 }
 
 function EvidencePageView({ threadId, entity }: { threadId: string; entity: ThreadEntity }): JSX.Element {
-  const [page, setPage] = useState<EvidencePage | null>(null);
+  const [page, setPage] = useState<ReadEntityEvidenceResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [afterCursor, setAfterCursor] = useState("0");
@@ -130,7 +150,16 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
     const controller = new AbortController();
     request.current = controller;
     setLoading(true);
-    void threadEvidence(threadId, scope, after, controller.signal)
+    void threadEvidence(
+      create(ReadEntityEvidenceRequestSchema, {
+        sessionId: threadId,
+        projectionEpoch: scope.projectionEpoch,
+        entity: create(EntityKeySchema, { entityKind: scope.entityKind, entityId: scope.entityId }),
+        afterCursor: BigInt(after),
+        limit: 30,
+      }),
+      controller.signal
+    )
       .then(
         (value) => {
           if (!controller.signal.aborted) {
@@ -146,6 +175,7 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
         if (!controller.signal.aborted) setLoading(false);
       });
   };
+  const nextAfterCursor = page?.nextAfterCursor;
   return (
     <Stack gap="xs">
       {error && (
@@ -154,29 +184,33 @@ function EvidencePageView({ threadId, entity }: { threadId: string; entity: Thre
         </DisclosureBody>
       )}
       {page?.observations.map((observation) => (
-        <Stack gap="xs" key={observation.observation_cursor} data-evidence-observation={observation.observation_cursor}>
-          {observation.has_native ? (
+        <Stack
+          gap="xs"
+          key={observation.observationCursor.toString()}
+          data-evidence-observation={observation.observationCursor.toString()}
+        >
+          {observation.hasNative ? (
             <EvidenceFrames
-              key={observation.observation_cursor}
+              key={observation.observationCursor.toString()}
               threadId={threadId}
               entity={entity}
-              observationCursor={observation.observation_cursor}
+              observationCursor={observation.observationCursor.toString()}
             />
           ) : (
-            <DisclosureBody key={observation.observation_cursor}>
+            <DisclosureBody key={observation.observationCursor.toString()}>
               <Group justify="space-between" wrap="nowrap" gap="xs">
-                <Text size="xs">Observation {observation.observation_cursor} has no native frame</Text>
-                <ChronologicalDebugIcon observationCursor={observation.observation_cursor} />
+                <Text size="xs">Observation {observation.observationCursor} has no native frame</Text>
+                <ChronologicalDebugIcon observationCursor={observation.observationCursor.toString()} />
               </Group>
             </DisclosureBody>
           )}
         </Stack>
       ))}
-      {(page?.next_after_cursor || afterCursor !== "0") && (
+      {(nextAfterCursor !== undefined || afterCursor !== "0") && (
         <DisclosureBody>
           <Stack gap="xs">
-            {page?.next_after_cursor && (
-              <Button variant="subtle" loading={loading} onClick={() => load(page.next_after_cursor ?? "0")}>
+            {nextAfterCursor !== undefined && (
+              <Button variant="subtle" loading={loading} onClick={() => load(nextAfterCursor.toString())}>
                 Load more evidence
               </Button>
             )}
