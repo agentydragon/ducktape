@@ -9,20 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type adoptionBarrierKind uint8
-
-const (
-	adoptionNativeStop adoptionBarrierKind = iota + 1
-	adoptionExecutionFence
-	adoptionExecutionStart
-	adoptionPublishDesired
-	adoptionBootstrap
-	adoptionAcknowledgement
-	adoptionIncarnation
-)
-
 type adoptionBarrier struct {
-	kind    adoptionBarrierKind
 	uid     string
 	sealUID string
 	mode    lifecycle.Mode
@@ -40,23 +27,23 @@ const (
 	adoptionRunningSuccessor
 )
 
-func (c *runtimeTransitionSequence) runAdoptionBarrier(ctx context.Context, step adoptionBarrier) (runtimeTransitionOutcome, error) {
+func (c *runtimeTransitionSequence) runAdoptionBarrier(ctx context.Context, step runtimeTransitionStep) (runtimeTransitionOutcome, error) {
 	r := c.r
 	switch step.kind {
-	case adoptionNativeStop:
+	case runtimeTransitionNativeStopping:
 		return runtimeTransitionOutcome{}, r.waitForNativeStopped(ctx, c.adoption.generation)
-	case adoptionExecutionFence:
+	case runtimeTransitionExecutionFencing:
 		return runtimeTransitionOutcome{}, r.waitForExecutionFenced(ctx, c.adoption.generation)
-	case adoptionExecutionStart:
-		return runtimeTransitionOutcome{}, r.startExecutionForUID(ctx, step.uid)
-	case adoptionPublishDesired:
-		generation, err := r.publishDesired(ctx, step.mode, step.uid, step.sealUID)
+	case runtimeTransitionExecutionStarting:
+		return runtimeTransitionOutcome{}, r.startExecutionForUID(ctx, step.adoption.uid)
+	case runtimeTransitionDesiredPublishing:
+		generation, err := r.publishDesired(ctx, step.adoption.mode, step.adoption.uid, step.adoption.sealUID)
 		return runtimeTransitionOutcome{generation: generation}, err
-	case adoptionBootstrap:
+	case runtimeTransitionBootstrapRequesting:
 		return runtimeTransitionOutcome{}, r.requestBootstrap(ctx)
-	case adoptionAcknowledgement:
+	case runtimeTransitionHistoryAcknowledging:
 		return runtimeTransitionOutcome{}, r.waitSessionStage(ctx, lifecycle.Quiesced)
-	case adoptionIncarnation:
+	case runtimeTransitionIncarnationAdopting:
 		if err := ctx.Err(); err != nil {
 			return runtimeTransitionOutcome{}, err
 		}
@@ -68,7 +55,7 @@ func (c *runtimeTransitionSequence) runAdoptionBarrier(ctx context.Context, step
 		}
 		return runtimeTransitionOutcome{adoption: adoptionRunningSuccessor}, nil
 	default:
-		return runtimeTransitionOutcome{}, errors.New("unknown adoption barrier")
+		return runtimeTransitionOutcome{}, errors.New("unknown Runtime transition step kind for adoption")
 	}
 }
 
@@ -76,13 +63,13 @@ func (c *runtimeTransitionSequence) recordAdoptionOutcome(step runtimeTransition
 	if outcome.generation != 0 {
 		c.adoption.generation = outcome.generation
 	}
-	if step.adoption.kind == adoptionIncarnation && outcome.adoption == adoptionRunningSuccessor {
+	if step.kind == runtimeTransitionIncarnationAdopting && outcome.adoption == adoptionRunningSuccessor {
 		uid := c.adoption.targetUID
 		c.steps = append(
 			c.steps,
-			runtimeTransitionStep{stage: runtimeTransitionExecutionStarting, adoption: adoptionBarrier{kind: adoptionExecutionStart, uid: uid}},
-			runtimeTransitionStep{stage: runtimeTransitionDesiredPublishing, adoption: adoptionBarrier{kind: adoptionPublishDesired, uid: uid, mode: lifecycle.Running}},
-			runtimeTransitionStep{stage: runtimeTransitionBootstrapRequesting, adoption: adoptionBarrier{kind: adoptionBootstrap}},
+			runtimeTransitionStep{kind: runtimeTransitionExecutionStarting, adoption: adoptionBarrier{uid: uid}},
+			runtimeTransitionStep{kind: runtimeTransitionDesiredPublishing, adoption: adoptionBarrier{uid: uid, mode: lifecycle.Running}},
+			runtimeTransitionStep{kind: runtimeTransitionBootstrapRequesting},
 		)
 	}
 	return nil
@@ -111,11 +98,11 @@ func (c *runtimeTransitionSequence) planAdoption(ctx context.Context, uid string
 		if !accepted {
 			return plan, nil, status.Error(codes.Unavailable, "environment revision has not completed preparation")
 		}
-		return plan, []runtimeTransitionStep{{stage: runtimeTransitionBootstrapRequesting, adoption: adoptionBarrier{kind: adoptionBootstrap}}}, nil
+		return plan, []runtimeTransitionStep{{kind: runtimeTransitionBootstrapRequesting}}, nil
 	}
 	var steps []runtimeTransitionStep
-	add := func(stage runtimeTransitionStage, barrier adoptionBarrier) {
-		steps = append(steps, runtimeTransitionStep{stage: stage, adoption: barrier})
+	add := func(kind runtimeTransitionStepKind, barrier adoptionBarrier) {
+		steps = append(steps, runtimeTransitionStep{kind: kind, adoption: barrier})
 	}
 	if desired.Mode == lifecycle.Inactive {
 		if err := r.waitForNativeStopped(ctx, desired.Generation); err != nil {
@@ -129,16 +116,16 @@ func (c *runtimeTransitionSequence) planAdoption(ctx context.Context, uid string
 		}
 		if desired.Mode != lifecycle.Quiescing || desired.IncarnationUID != oldUID || desired.SealUID != seal {
 			if sealed {
-				add(runtimeTransitionExecutionStarting, adoptionBarrier{kind: adoptionExecutionStart, uid: oldUID})
+				add(runtimeTransitionExecutionStarting, adoptionBarrier{uid: oldUID})
 			}
-			add(runtimeTransitionDesiredPublishing, adoptionBarrier{kind: adoptionPublishDesired, uid: oldUID, sealUID: seal, mode: lifecycle.Quiescing})
+			add(runtimeTransitionDesiredPublishing, adoptionBarrier{uid: oldUID, sealUID: seal, mode: lifecycle.Quiescing})
 		}
-		add(runtimeTransitionNativeStopping, adoptionBarrier{kind: adoptionNativeStop})
-		add(runtimeTransitionExecutionFencing, adoptionBarrier{kind: adoptionExecutionFence})
+		add(runtimeTransitionNativeStopping, adoptionBarrier{})
+		add(runtimeTransitionExecutionFencing, adoptionBarrier{})
 		if sealed {
-			add(runtimeTransitionHistoryAcknowledging, adoptionBarrier{kind: adoptionAcknowledgement})
+			add(runtimeTransitionHistoryAcknowledging, adoptionBarrier{})
 		}
 	}
-	add(runtimeTransitionIncarnationAdopting, adoptionBarrier{kind: adoptionIncarnation})
+	add(runtimeTransitionIncarnationAdopting, adoptionBarrier{})
 	return plan, steps, nil
 }
