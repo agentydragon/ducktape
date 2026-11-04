@@ -221,7 +221,6 @@ class Environment:
     vm_resources: GuestResources | None = None
     # Opt-in: trusted KVM launcher with same-Pod RAM checkpoints.
     firecracker_sandboxes: bool = False
-    firecracker_node_selector: Mapping[str, str] | None = None
     # Whether runner Pods delegate Codex command execution to a companion with its own PID namespace.
     isolated_codex_executor: bool = True
     # Whether a VM Sandbox's serial console is a root shell, for whoever holds the VMI `console`

@@ -42,7 +42,6 @@ class EnvironmentFirecrackerTemplate(Construct):
         boot_image: str = BOOT_IMAGE,
         launcher_image: str = LAUNCHER_IMAGE,
         image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
-        node_selector: Mapping[str, str] | None = None,
         session_reconcile_concurrency: int | None = None,
         codex_readiness: CodexReadiness | None = None,
     ) -> None:
@@ -128,7 +127,6 @@ class EnvironmentFirecrackerTemplate(Construct):
             sidecar_settings=relay,
             image_pull_secret_name=image_pull_secret_name,
             keep_sidecar_until_workload_exit=True,
-            node_selector=node_selector,
             restart_policy="Never",
             security_context=k8s.PodSecurityContext(run_as_user=0, run_as_group=0),
             workload_volumes=[

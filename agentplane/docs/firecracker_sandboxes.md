@@ -8,9 +8,8 @@ supervision, harnesses and Execution Service as the NixOS KubeVirt image.
 This backend is opt-in. `Environment.firecracker_sandboxes` defaults to false; this change does not
 add a staging launch preset or migrate existing Sandboxes. Enabling it requires a KVM-capable
 x86-64 node, the `devices.kubevirt.io/kvm` device resource, `/dev/net/tun`, native sidecars,
-Kubernetes image volumes and permission to run a privileged launcher. A dedicated node selector
-can be supplied through `firecracker_node_selector`. The launcher uses the Pod network namespace,
-not host networking, host PID or host cgroups.
+Kubernetes image volumes and permission to run a privileged launcher. The launcher uses the Pod
+network namespace, not host networking, host PID or host cgroups.
 
 ## Template and images
 

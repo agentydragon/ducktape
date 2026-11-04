@@ -268,7 +268,6 @@ class EnvironmentSandbox(Construct):
                 ),
                 harness_env=template.agent_cli_env,
                 image_pull_secret_name=image_pull_secret_name,
-                node_selector=env.firecracker_node_selector,
                 session_reconcile_concurrency=session_reconcile_concurrency,
                 codex_readiness=vm_codex_readiness,
             )
