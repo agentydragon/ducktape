@@ -51,7 +51,7 @@ async def test_fetch_enumerates_api_organizations_and_keeps_scopes_distinct(tmp_
     def response(request: httpx.Request) -> httpx.Response:
         requests.append(request)
         assert request.headers["authorization"] == "Bearer read-token"
-        if request.url.path == "/anthropic/api/organizations":
+        if request.url.path == "/proxy/anthropic/api/organizations":
             return httpx.Response(
                 200,
                 json=[
@@ -60,14 +60,14 @@ async def test_fetch_enumerates_api_organizations_and_keeps_scopes_distinct(tmp_
                     {"uuid": "api-org-2", "name": "Other API org", "capabilities": ["customer_terms:standard", "api"]},
                 ],
             )
-        if request.url.path == "/anthropic/api/organizations/api-org-1/prepaid/credits":
+        if request.url.path == "/proxy/anthropic/api/organizations/api-org-1/prepaid/credits":
             return httpx.Response(200, json=_credits_response())
-        if request.url.path == "/anthropic/api/organizations/api-org-2/prepaid/credits":
-            return httpx.Response(502, json={"error": "upstream_rejected", "upstream_status": 403})
+        if request.url.path == "/proxy/anthropic/api/organizations/api-org-2/prepaid/credits":
+            return httpx.Response(403, json={"error": "private upstream message"})
         raise AssertionError(f"unexpected URL path: {request.url.path}")
 
     provider = AnthropicPlatformProvider(
-        AnthropicPlatformSettings(enabled=True, url="https://proxy.example/anthropic", token_path=token_path),
+        AnthropicPlatformSettings(enabled=True, url="https://proxy.example/proxy/anthropic", token_path=token_path),
         provider_client(transport=httpx.MockTransport(response)),
     )
     result = (await provider.fetch()).result
@@ -87,9 +87,9 @@ async def test_fetch_enumerates_api_organizations_and_keeps_scopes_distinct(tmp_
     assert organizations[1].balance is None
     assert organizations[1].error == "upstream rejected request (HTTP 403)"
     assert {request.url.path for request in requests} == {
-        "/anthropic/api/organizations",
-        "/anthropic/api/organizations/api-org-1/prepaid/credits",
-        "/anthropic/api/organizations/api-org-2/prepaid/credits",
+        "/proxy/anthropic/api/organizations",
+        "/proxy/anthropic/api/organizations/api-org-1/prepaid/credits",
+        "/proxy/anthropic/api/organizations/api-org-2/prepaid/credits",
     }
 
 
@@ -97,7 +97,7 @@ async def test_organization_list_failure_is_a_provider_error(tmp_path):
     token_path = tmp_path / "token"
     token_path.write_text("read-token")
     provider = AnthropicPlatformProvider(
-        AnthropicPlatformSettings(enabled=True, url="https://proxy.example/anthropic", token_path=token_path),
+        AnthropicPlatformSettings(enabled=True, url="https://proxy.example/proxy/anthropic", token_path=token_path),
         provider_client(transport=httpx.MockTransport(lambda request: httpx.Response(502))),
     )
 

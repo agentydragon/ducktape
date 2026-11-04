@@ -21,11 +21,11 @@ configMapGenerator:
 
         [openai_platform]
         enabled = true
-        url = "http://platform-sessions.platform-sessions.svc:8080/openai"
+        url = "http://platform-sessions.platform-sessions.svc:8080/proxy/openai"
 
         [anthropic_platform]
         enabled = true
-        url = "http://platform-sessions.platform-sessions.svc:8080/anthropic"
+        url = "http://platform-sessions.platform-sessions.svc:8080/proxy/anthropic"
 
         [zai]
         enabled = false

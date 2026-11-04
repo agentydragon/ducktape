@@ -14,9 +14,9 @@ async def test_fetch_reports_balance_and_grant_expiry(tmp_path):
     token_path.write_text("read-token")
 
     def response(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/openai/v1/dashboard/billing/credit_grants"
+        assert request.url.path == "/proxy/openai/v1/dashboard/billing/credit_grants"
         assert request.headers["authorization"] == "Bearer read-token"
-        assert request.headers["openai-organization"] == "org-example"
+        assert "openai-organization" not in request.headers
         return httpx.Response(
             200,
             json={
@@ -46,9 +46,7 @@ async def test_fetch_reports_balance_and_grant_expiry(tmp_path):
         )
 
     provider = OpenAIPlatformProvider(
-        OpenAIPlatformSettings(
-            enabled=True, url="https://proxy.example/openai", token_path=token_path, organization="org-example"
-        ),
+        OpenAIPlatformSettings(enabled=True, url="https://proxy.example/proxy/openai", token_path=token_path),
         provider_client(transport=httpx.MockTransport(response)),
     )
     result = (await provider.fetch()).result
@@ -63,7 +61,7 @@ async def test_failed_fetch_does_not_report_zero(tmp_path):
     token_path = tmp_path / "token"
     token_path.write_text("read-token")
     provider = OpenAIPlatformProvider(
-        OpenAIPlatformSettings(enabled=True, url="https://proxy.example/openai", token_path=token_path),
+        OpenAIPlatformSettings(enabled=True, url="https://proxy.example/proxy/openai", token_path=token_path),
         provider_client(transport=httpx.MockTransport(lambda request: httpx.Response(503))),
     )
     assert isinstance((await provider.fetch()).result, FetchError)

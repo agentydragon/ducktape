@@ -596,7 +596,7 @@ def _aiquota_read(scope: Construct, *, reader: ServiceAccount, namespace: str, c
 
 
 def _quest_read(scope: Construct, *, namespace: str) -> None:
-    # ESO mints this read-only bearer in quest-diagnostics; Reflector copies it into the
+    # ESO mints this read-only bearer in platform-sessions; Reflector copies it into the
     # isolated credentials namespace. No Quest account session reaches the sandbox.
     _credential(
         scope,
@@ -604,11 +604,11 @@ def _quest_read(scope: Construct, *, namespace: str) -> None:
         namespace=namespace,
         credential=QUEST_READ_POLICY,
         description=(
-            "Quest scheduling, account, and insurance lookup API. Use "
-            "https://platform-sessions.allegedly.works/quest/openapi.json to discover the available routes. "
+            "Quest scheduling, account, and insurance lookup API. "
+            "The upstream paths are exposed under https://platform-sessions.allegedly.works/proxy/quest. "
             "The bearer is substituted only for the listed lookup paths."
         ),
-        secret="quest-agent-token",
+        secret="platform-sessions-quest-bearer",
         key="token",
         target=_BEARER,
     )
@@ -622,17 +622,16 @@ def _quest_read(scope: Construct, *, namespace: str) -> None:
                 "platform-sessions.allegedly.works",
                 method=PolicySetSpecRulesMethods.GET,
                 paths=[
-                    "/quest/openapi.json",
-                    "/quest/guest/getReasons/*",
-                    "/quest/guest/getPscDetails/*",
-                    "/quest/api/getInsuranceProfile",
-                    "/quest/guest/getTokenBasicInfoAPI/*",
-                    "/quest/guest/getEncounterInfo/appointment",
-                    "/quest/guest/getEncounterInfo/demographics",
-                    "/quest/guest/getEncounterInfo/insurance",
-                    "/quest/guest/getEncounterInfo/secondaryInsurance",
-                    "/quest/guest/getPayorList/*",
-                    "/quest/guest/getAppointment/*",
+                    "/proxy/quest/guest/getReasons/*",
+                    "/proxy/quest/guest/getPscDetails/*",
+                    "/proxy/quest/api/getInsuranceProfile",
+                    "/proxy/quest/guest/getTokenBasicInfoAPI/*",
+                    "/proxy/quest/guest/getEncounterInfo/appointment",
+                    "/proxy/quest/guest/getEncounterInfo/demographics",
+                    "/proxy/quest/guest/getEncounterInfo/insurance",
+                    "/proxy/quest/guest/getEncounterInfo/secondaryInsurance",
+                    "/proxy/quest/guest/getPayorList/*",
+                    "/proxy/quest/guest/getAppointment/*",
                 ],
             ),
             # Quest uses POST for these lookups; their inputs and outputs can contain sensitive health data.
@@ -641,12 +640,12 @@ def _quest_read(scope: Construct, *, namespace: str) -> None:
                 "platform-sessions.allegedly.works",
                 method=PolicySetSpecRulesMethods.POST,
                 paths=[
-                    "/quest/guest/getPscsWithAvailability",
-                    "/quest/api/getOpenEorders",
-                    "/quest/api/getUserDemographics",
-                    "/quest/guest/examoneEligibility",
-                    "/quest/guest/verifyInsurance/V2",
-                    "/quest/guest/getPricing",
+                    "/proxy/quest/guest/getPscsWithAvailability",
+                    "/proxy/quest/api/getOpenEorders",
+                    "/proxy/quest/api/getUserDemographics",
+                    "/proxy/quest/guest/examoneEligibility",
+                    "/proxy/quest/guest/verifyInsurance/V2",
+                    "/proxy/quest/guest/getPricing",
                 ],
             ),
         ],

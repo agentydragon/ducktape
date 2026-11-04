@@ -17,7 +17,6 @@ class OpenAIPlatformSettings(BaseModel):
     enabled: bool = False
     url: str | None = None
     token_path: Path | None = None
-    organization: str | None = None
 
 
 class _Grant(BaseModel):
@@ -77,8 +76,6 @@ class OpenAIPlatformProvider(Provider):
                 raise ValueError("OpenAI Platform proxy token is not configured")
             url = self.settings.url.rstrip("/") + "/v1/dashboard/billing/credit_grants"
             headers = {"Authorization": f"Bearer {token}"}
-            if self.settings.organization:
-                headers["OpenAI-Organization"] = self.settings.organization
             async with self.client_factory(self.name, {url}, 20.0) as client:
                 response = await client.get(url, headers=headers)
             response.raise_for_status()
