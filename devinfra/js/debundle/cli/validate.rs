@@ -261,12 +261,12 @@ impl ValidateArgs {
 }
 
 fn run_source_only_validate(args: &ValidateArgs) -> Result<SelectorOutcomeReport> {
-    if args.transform.spec.is_some()
-        || args.transform.tree_config.is_some()
-        || args.transform.tree_modules.is_some()
-        || args.transform.tree_vendor_marks.is_some()
-        || args.transform.tree_source_root.is_some()
-        || args.transform.out_root.is_some()
+    if args.transform.context.spec.is_some()
+        || args.transform.context.tree_config.is_some()
+        || args.transform.context.tree_modules.is_some()
+        || args.transform.context.tree_vendor_marks.is_some()
+        || args.transform.context.tree_source_root.is_some()
+        || args.transform.context.out_root.is_some()
     {
         bail!(
             "source-only validation uses --modules plus --source-file or --source-root + --chunk; \

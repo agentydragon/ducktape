@@ -15,6 +15,7 @@ use analysis_codec::ContextOrdinals;
 use artifact::paths::normalize_module_path;
 use artifact::reports::{SelectedModuleLowering, StaticModuleRequest, StaticModuleRequestMode};
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, JsFile};
+use gate::EffectRelocationAssessment;
 use graph_provenance::GraphProvenance;
 
 use output_layout::MODULES_REPORT;
@@ -70,8 +71,8 @@ use io::{
 use analysis_projection::AnalysisProjection;
 use materialize::{
     ChunkContext, ChunkSpec, ClaimedLogicalChunk, CommutingStatementsContext, EmissionChunkOutputs,
-    MaterializeLogicalChunkInputs, claim_prepared_chunk, collect_materialized_logical_chunks,
-    finish_logical_chunk, prepare_logical_chunk,
+    FinishedLogicalChunk, MaterializeLogicalChunkInputs, claim_prepared_chunk,
+    collect_materialized_logical_chunks, finish_logical_chunk, prepare_logical_chunk,
 };
 use spec_resolution::solve_projected_chunks;
 
@@ -349,6 +350,10 @@ pub struct MaterializeLogicalModulesOptions {
     pub full_reports: BTreeSet<FullReportKind>,
     pub full_report_chunks: BTreeSet<String>,
     pub gate_rejection: GateRejectionPolicy,
+    /// Return the exact typed effect relocation sweep from each finalized
+    /// assignment plan. This remains report-only and is used by the
+    /// assessment-only CLI path.
+    pub capture_effect_assessment: bool,
     pub analysis: AnalysisMode,
 }
 
@@ -376,6 +381,7 @@ pub enum AnalysisMode {
 pub enum Materialized {
     Lowered(MaterializeLogicalModulesResult),
     Projected(AnalysisSpec),
+    Assessed(Vec<(String, EffectRelocationAssessment)>),
 }
 
 /// Spec-derived inputs to [`materialize_logical_modules`], all keyed by
@@ -555,6 +561,7 @@ pub fn materialize_logical_modules(
                                 full_reports: &options.full_reports,
                                 full_report_chunks: &options.full_report_chunks,
                                 gate_rejection: options.gate_rejection,
+                                capture_effect_assessment: options.capture_effect_assessment,
                                 export_reentry_reports: &export_reentry_reports,
                                 vendor_import_oracle: vendor_import_oracle.as_ref(),
                                 export_reentry_policies: &export_reentry_policies,
@@ -685,6 +692,31 @@ pub fn materialize_logical_modules(
                 .collect::<Vec<_>>()
         })
         .into_iter()
+        .collect::<Result<Vec<_>>>()?;
+
+    if options.capture_effect_assessment {
+        let assessments = chunk_results
+            .into_iter()
+            .map(|result| match result {
+                FinishedLogicalChunk::Assessed {
+                    chunk_id,
+                    assessment,
+                } => Ok((chunk_id, assessment)),
+                FinishedLogicalChunk::Lowered(_) => {
+                    bail!("assessment-only materialization unexpectedly lowered a chunk")
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+        return Ok(Materialized::Assessed(assessments));
+    }
+    let chunk_results = chunk_results
+        .into_iter()
+        .map(|result| match result {
+            FinishedLogicalChunk::Lowered(chunk) => Ok(chunk),
+            FinishedLogicalChunk::Assessed { .. } => {
+                bail!("normal materialization unexpectedly returned an assessment")
+            }
+        })
         .collect::<Result<Vec<_>>>()?;
 
     let mut reports = Vec::with_capacity(chunk_results.len());

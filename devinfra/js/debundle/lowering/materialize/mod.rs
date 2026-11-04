@@ -47,6 +47,7 @@ use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileRole, JsFile, get_chun
 use chunk_analysis::{
     DynamicImportTarget, build_chunk_graph, check_chunk_facts, compute_chunk_facts,
 };
+use gate::EffectRelocationAssessment;
 use gate::{
     AssignmentAnalysis, RejectedAssignment, ValidatedAssignment,
     render_atomic_group_conflict_summary, render_cycle_summary,
@@ -109,6 +110,7 @@ pub(super) struct ChunkContext<'a> {
     pub(super) full_reports: &'a BTreeSet<super::FullReportKind>,
     pub(super) full_report_chunks: &'a BTreeSet<String>,
     pub(super) gate_rejection: GateRejectionPolicy,
+    pub(super) capture_effect_assessment: bool,
     pub(super) export_reentry_policies: &'a BTreeMap<ChunkId, ExportReentryPolicy>,
     pub(super) export_reentry_reports: &'a BTreeMap<ChunkId, ExportReentryReport>,
     /// Vendor-plan consultation for runtime re-import construction;
@@ -156,6 +158,14 @@ pub(super) struct MaterializedLogicalChunk {
     /// The gate rejected this chunk and [`GateRejectionPolicy::LowerUnrunnable`]
     /// lowered it anyway; its entry file carries the banner.
     pub(super) gate_rejection: Option<ChunkGateRejection>,
+}
+
+pub(super) enum FinishedLogicalChunk {
+    Lowered(MaterializedLogicalChunk),
+    Assessed {
+        chunk_id: String,
+        assessment: EffectRelocationAssessment,
+    },
 }
 
 /// Lowering state prepared before the shared spec-resolution service projects
@@ -504,7 +514,7 @@ pub(super) fn finish_logical_chunk(
     loaded_facts: Option<ChunkFactAnalysis>,
     program_graph: &ProgramGraphOutput<'_>,
     commuting_context: CommutingStatementsContext<'_>,
-) -> Result<MaterializedLogicalChunk> {
+) -> Result<FinishedLogicalChunk> {
     let ClaimedLogicalChunk {
         prepared,
         structural_analysis,
@@ -537,6 +547,7 @@ pub(super) fn finish_logical_chunk(
         full_reports,
         full_report_chunks,
         gate_rejection: gate_rejection_policy,
+        capture_effect_assessment,
         vendor_import_oracle,
         export_reentry_policies,
         export_reentry_reports,
@@ -682,6 +693,22 @@ pub(super) fn finish_logical_chunk(
         assignment_chunk_renames,
         entry_destination,
     )?;
+    if capture_effect_assessment {
+        let assessment = assignment_analysis
+            .effect_relocation_assessment::<std::convert::Infallible>(
+                &analysis.facts,
+                None::<
+                    &mut fn(
+                        &gate::EffectRelocationConflict<'_>,
+                    )
+                        -> std::result::Result<(), std::convert::Infallible>,
+                >,
+            )?;
+        return Ok(FinishedLogicalChunk::Assessed {
+            chunk_id: chunk_id.to_string(),
+            assessment,
+        });
+    }
     // Select only full-detail sinks. Facts, graph construction, emitted order
     // and every chunk's bounded summary use the unchanged full input.
     let effect_conflicts_jsonl = effect_conflicts_jsonl
@@ -833,7 +860,7 @@ pub(super) fn finish_logical_chunk(
         imported_callables,
         redundant_purity_hints,
     };
-    Ok(MaterializedLogicalChunk {
+    Ok(FinishedLogicalChunk::Lowered(MaterializedLogicalChunk {
         chunk_id: chunk_id_interned,
         unmatched_spec_claims,
         target_file,
@@ -846,7 +873,7 @@ pub(super) fn finish_logical_chunk(
         report,
         vendor_reference_rewrites,
         gate_rejection,
-    })
+    }))
 }
 
 /// What a chunk's fact analysis reads besides the projection and the

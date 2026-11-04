@@ -1475,11 +1475,18 @@ pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeR
         unassigned_mode.push_str(&format!("  {chunk}: {{ kind: inline_in_entry }}\n"));
     }
     write_text_file(&root.path().join("js-files.txt"), &js_list);
-    let module_roots = fixture
-        .module_roots
-        .iter()
-        .map(|(tree, chunk)| format!("  {tree}: {chunk}\n"))
-        .collect::<String>();
+    let module_roots = if fixture.module_roots.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "module_roots:\n{}",
+            fixture
+                .module_roots
+                .iter()
+                .map(|(tree, chunk)| format!("  {tree}: {chunk}\n"))
+                .collect::<String>()
+        )
+    };
     for (tree, _) in fixture.module_roots {
         fs::create_dir_all(modules.join(tree)).expect("create chunk module root");
     }
@@ -1490,7 +1497,7 @@ pub fn run_tree_fixture(fixture: &TreeFixture<'_>, extra_args: &[&str]) -> TreeR
     write_text_file(
         &config,
         &format!(
-            "main_chunk_id: {}\nmodule_roots:\n{module_roots}inputs:\n  root: snapshot\n  \
+            "main_chunk_id: {}\n{module_roots}inputs:\n  root: snapshot\n  \
              js_list_path: js-files.txt\nwrite_js_tree: true\nunassigned_mode:\n{unassigned_mode}",
             fixture.chunks[0].0,
         ),

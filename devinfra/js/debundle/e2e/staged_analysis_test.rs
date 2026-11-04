@@ -7,6 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use debundle_e2e_support::*;
+use debundle_e2e_support::{TreeFixture, TreeRun, run_tree_graph_fixture};
 use serde_json::Value;
 
 /// Two modules split across an at-init read, a cross-module pure import, and
@@ -120,6 +121,199 @@ impl Staged {
 
 fn path(path: &Path) -> &str {
     path.to_str().expect("UTF-8 test path")
+}
+
+struct TreeStaged {
+    run: TreeRun,
+    modules: PathBuf,
+    config: PathBuf,
+    vendor_marks: PathBuf,
+    graph: PathBuf,
+    source: PathBuf,
+    projection: PathBuf,
+    artifact: PathBuf,
+}
+
+impl TreeStaged {
+    fn root(&self) -> &Path {
+        self.run.root()
+    }
+
+    fn assign(
+        &self,
+        triple: Option<&str>,
+        analysis: Option<&Path>,
+        dry_run: bool,
+    ) -> CommandResult {
+        let root = self.root();
+        let mut args = vec![
+            "bindings".to_string(),
+            "assign".to_string(),
+            "--modules".to_string(),
+            path(&self.modules).to_string(),
+            "--graph".to_string(),
+            path(&self.graph).to_string(),
+            "--source-root".to_string(),
+            path(&root.join("snapshot")).to_string(),
+            "--format".to_string(),
+            "json".to_string(),
+        ];
+        if let Some(triple) = triple {
+            args.push(triple.to_string());
+        }
+        if dry_run {
+            args.push("--dry-run".to_string());
+        }
+        if let Some(analysis) = analysis {
+            args.extend([
+                "--tree-config".to_string(),
+                path(&self.config).to_string(),
+                "--tree-modules".to_string(),
+                path(&self.modules).to_string(),
+                "--tree-vendor-marks".to_string(),
+                path(&self.vendor_marks).to_string(),
+                "--tree-source-root".to_string(),
+                path(root).to_string(),
+                "--out-root".to_string(),
+                path(&root.join("candidate-out")).to_string(),
+                "--analysis".to_string(),
+                path(analysis).to_string(),
+            ]);
+        }
+        command(&args.iter().map(String::as_str).collect::<Vec<_>>())
+    }
+
+    fn run_with_analysis(
+        &self,
+        analysis: &Path,
+        out_root: &Path,
+        emit_on_rejection: bool,
+    ) -> CommandResult {
+        let root = self.root();
+        let mut args = vec![
+            "run".to_string(),
+            "--graphs".to_string(),
+            "--tree-config".to_string(),
+            path(&self.config).to_string(),
+            "--tree-modules".to_string(),
+            path(&self.modules).to_string(),
+            "--tree-vendor-marks".to_string(),
+            path(&self.vendor_marks).to_string(),
+            "--tree-source-root".to_string(),
+            path(root).to_string(),
+            "--out-root".to_string(),
+            path(out_root).to_string(),
+            "--analysis".to_string(),
+            path(analysis).to_string(),
+        ];
+        if emit_on_rejection {
+            args.push("--emit-on-rejection".to_string());
+        }
+        command(&args.iter().map(String::as_str).collect::<Vec<_>>())
+    }
+}
+
+fn staged_tree(chunks: &[(&str, &str)], modules: &[(&str, &str)]) -> TreeStaged {
+    let run = run_tree_graph_fixture(
+        &TreeFixture {
+            chunks,
+            module_roots: &[],
+            modules,
+        },
+        &[],
+    );
+    let root = run.root();
+    let staged = TreeStaged {
+        modules: root.join("modules"),
+        config: root.join("spec_config.yaml"),
+        vendor_marks: root.join("vendor_marks.yaml"),
+        graph: run.report_root.join("main/dependency_graph.json.gz"),
+        source: root.join("snapshot/main.js"),
+        projection: root.join("analysis.projection"),
+        artifact: root.join("analysis.dba"),
+        run,
+    };
+    assert!(staged.graph.is_file(), "tree graph was not written");
+    let root_path = staged.root().to_path_buf();
+    let project_out = root_path.join("project-out");
+    let project_args = [
+        "spec",
+        "project-analysis",
+        "--tree-config",
+        path(&staged.config),
+        "--tree-modules",
+        path(&staged.modules),
+        "--tree-vendor-marks",
+        path(&staged.vendor_marks),
+        "--tree-source-root",
+        path(&root_path),
+        "--out-root",
+        path(&project_out),
+        "--out",
+        path(&staged.projection),
+    ];
+    assert_ok(&command(&project_args), "tree spec project-analysis");
+    let analyze_args = [
+        "--projection",
+        path(&staged.projection),
+        "--tree-source-root",
+        path(&root_path),
+        "--out",
+        path(&staged.artifact),
+    ];
+    assert_ok(
+        &command_with(&analyzer_path(), &analyze_args),
+        "tree analyze",
+    );
+    staged
+}
+
+fn module_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    let mut files = BTreeMap::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                files.insert(path.clone(), fs::read(&path).unwrap());
+            }
+        }
+    }
+    files
+}
+
+fn assert_candidate_assessment_matches_run(
+    assessment: &Value,
+    run: &TreeStaged,
+    label: &str,
+    expect_success: bool,
+    emit_on_rejection: bool,
+) {
+    let out_root = run.root().join(format!("run-{label}"));
+    let result = run.run_with_analysis(&run.artifact, &out_root, emit_on_rejection);
+    assert_eq!(
+        result.status.success(),
+        expect_success,
+        "candidate run failed unexpectedly:\n{}",
+        result.stderr
+    );
+    let report: Value = serde_json::from_slice(
+        &fs::read(out_root.join("reports/tree/main/effect_translation_validation.json")).unwrap(),
+    )
+    .unwrap();
+    for field in [
+        "decision",
+        "emitted_order",
+        "swapped_pairs",
+        "relocation_dependencies",
+        "premise_dependencies",
+        "counts",
+        "coverage",
+    ] {
+        assert_eq!(assessment[field], report[field], "assessment field {field}");
+    }
 }
 
 fn command(args: &[&str]) -> CommandResult {
@@ -720,4 +914,159 @@ fn reports_only_requires_analysis_and_keeps_final_program_validation() {
     assert!(result.stderr.contains("missing"), "{}", result.stderr);
     assert!(!export.join("app").exists());
     assert!(!export.join("GATE_REJECTED").exists());
+}
+
+#[test]
+fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
+    let staged = staged_tree(
+        &[("main", "const value = 1;\nconsole.log(value);\n")],
+        &[(
+            "value.yaml",
+            "members: [{selector: {binding: {name: value}}}]\n",
+        )],
+    );
+    let result = staged.assign(Some("value:a_value"), Some(&staged.artifact), true);
+    assert_ok(&result, "bindings assign --dry-run --analysis");
+    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    let assessment = &outcome["effect_relocation_assessment"];
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert_eq!(assessment["swapped_pairs"], 0, "{assessment:#}");
+    assert_candidate_assessment_matches_run(assessment, &staged, "candidate", true, false);
+
+    // The same move, without requesting the optional report-only assessment,
+    // keeps the ordinary graph-backed editor path intact and applies the spec.
+    let applied = staged.assign(Some("value:a_value"), None, false);
+    assert_ok(&applied, "ordinary graph-backed bindings assign");
+    assert!(staged.modules.join("a_value.yaml").is_file());
+}
+
+#[test]
+fn bindings_assign_assessment_keeps_uncovered_havoc_conservative() {
+    let source = "const written = (globalThis.marker = 1);\n\
+const read = globalThis.marker;\n\
+console.log(written, read);\n";
+    let staged = staged_tree(
+        &[("main", source)],
+        &[(
+            "reader.yaml",
+            "members: [{selector: {binding: {name: read}}}]\n",
+        )],
+    );
+    let result = staged.assign(None, Some(&staged.artifact), true);
+    assert_ok(
+        &result,
+        "bindings assign --dry-run --analysis with no moves",
+    );
+    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    let assessment = &outcome["effect_relocation_assessment"];
+    assert_eq!(
+        assessment["decision"]["status"], "conflict",
+        "{assessment:#}"
+    );
+    assert_eq!(assessment["decision"]["havoc"], true, "{assessment:#}");
+    assert_eq!(
+        assessment["decision"]["uncovered_havoc"], true,
+        "{assessment:#}"
+    );
+    assert!(assessment["counts"]["havoc_pairs"].as_u64().unwrap() > 0);
+    assert_candidate_assessment_matches_run(assessment, &staged, "havoc", false, true);
+}
+
+#[test]
+fn bindings_assign_requested_assessment_refuses_stale_inputs_before_yaml_writes() {
+    let staged = staged_tree(
+        &[("main", "const value = 1;\nconsole.log(value);\n")],
+        &[(
+            "value.yaml",
+            "members: [{selector: {binding: {name: value}}}]\n",
+        )],
+    );
+    let before = module_snapshot(&staged.modules);
+    let original_artifact = fs::read(&staged.artifact).unwrap();
+
+    // Engine identity is checked by the production staged-artifact loader.
+    let (mut header, body) = lowering::analysis_artifact::read_header(&original_artifact).unwrap();
+    header.analysis_engine_sha256 = "another-compiled-engine".to_string();
+    let encoded_header = rmp_serde::to_vec_named(&header).unwrap();
+    let mut wrong_engine = Vec::new();
+    wrong_engine.extend_from_slice(&u32::try_from(encoded_header.len()).unwrap().to_le_bytes());
+    wrong_engine.extend_from_slice(&encoded_header);
+    wrong_engine.extend_from_slice(body);
+    fs::write(&staged.artifact, wrong_engine).unwrap();
+    let refused = staged.assign(Some("value:target"), Some(&staged.artifact), true);
+    assert!(!refused.status.success(), "wrong engine was accepted");
+    assert!(refused.stderr.contains("engine"), "{}", refused.stderr);
+    assert_eq!(module_snapshot(&staged.modules), before);
+    fs::write(&staged.artifact, &original_artifact).unwrap();
+
+    // The verified graph/source context rejects a changed source before the
+    // prospective YAML edit can be committed.
+    let original_source = fs::read(&staged.source).unwrap();
+    fs::write(&staged.source, "const value = 2;\nconsole.log(value);\n").unwrap();
+    let refused = staged.assign(Some("value:target"), Some(&staged.artifact), true);
+    assert!(!refused.status.success(), "changed source was accepted");
+    assert_eq!(module_snapshot(&staged.modules), before);
+    fs::write(&staged.source, original_source).unwrap();
+
+    // A different projection with the same source and engine is rejected by
+    // the same production `AnalysisMode::Load` path.
+    let root = staged.root().to_path_buf();
+    let alternate_list = root.join("js-files-alt.txt");
+    fs::write(&alternate_list, "main.js\n").unwrap();
+    let alternate_config = root.join("alternate_spec_config.yaml");
+    let config_text = fs::read_to_string(&staged.config).unwrap();
+    assert!(
+        config_text.contains("js_list_path: js-files.txt"),
+        "{config_text}"
+    );
+    fs::write(
+        &alternate_config,
+        config_text.replace(
+            "js_list_path: js-files.txt",
+            "js_list_path: js-files-alt.txt",
+        ),
+    )
+    .unwrap();
+    let alternate_projection = root.join("alternate.projection");
+    let alternate_artifact = root.join("alternate.dba");
+    let alternate_out = root.join("alternate-out");
+    let project_args = [
+        "spec",
+        "project-analysis",
+        "--tree-config",
+        path(&alternate_config),
+        "--tree-modules",
+        path(&staged.modules),
+        "--tree-vendor-marks",
+        path(&staged.vendor_marks),
+        "--tree-source-root",
+        path(&root),
+        "--out-root",
+        path(&alternate_out),
+        "--out",
+        path(&alternate_projection),
+    ];
+    assert_ok(&command(&project_args), "alternate project-analysis");
+    let analyze_args = [
+        "--projection",
+        path(&alternate_projection),
+        "--tree-source-root",
+        path(&root),
+        "--out",
+        path(&alternate_artifact),
+    ];
+    assert_ok(
+        &command_with(&analyzer_path(), &analyze_args),
+        "alternate analyze",
+    );
+    let refused = staged.assign(Some("value:target"), Some(&alternate_artifact), true);
+    assert!(
+        !refused.status.success(),
+        "different projection was accepted"
+    );
+    assert!(refused.stderr.contains("projection"), "{}", refused.stderr);
+    assert_eq!(module_snapshot(&staged.modules), before);
 }

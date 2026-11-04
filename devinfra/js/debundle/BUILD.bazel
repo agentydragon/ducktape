@@ -1127,6 +1127,7 @@ rust_library(
     deps = [
         ":artifact",
         ":emit_harness",
+        ":gate",
         ":graph_provenance",
         ":js_ast",
         ":lowering",
