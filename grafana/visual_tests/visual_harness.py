@@ -57,22 +57,22 @@ def grafana_dashboard(
         if prometheus_image:
             prometheus_image.result()
     client = docker.from_env()
-    data = tmp_path / "data"
-    if not render_fixture:
-        record_stage("creating synthetic TSDB")
-        data.mkdir()
-        (data / "fixture.om").write_text(samples)
-        mount = {str(data): {"bind": "/fixture", "mode": "rw"}}
-        client.containers.run(
-            prometheus_visual.IMAGE.tag,
-            ["tsdb", "create-blocks-from", "openmetrics", "/fixture/fixture.om", "/fixture/tsdb"],
-            entrypoint="/bin/promtool",
-            volumes=mount,
-            user="0",
-            remove=True,
-        )
-    record_stage("starting Grafana" if render_fixture else "starting Prometheus and Grafana")
     try:
+        data = tmp_path / "data"
+        if not render_fixture:
+            record_stage("creating synthetic TSDB")
+            data.mkdir()
+            (data / "fixture.om").write_text(samples)
+            mount = {str(data): {"bind": "/fixture", "mode": "rw"}}
+            client.containers.run(
+                prometheus_visual.IMAGE.tag,
+                ["tsdb", "create-blocks-from", "openmetrics", "/fixture/fixture.om", "/fixture/tsdb"],
+                entrypoint="/bin/promtool",
+                volumes=mount,
+                user="0",
+                remove=True,
+            )
+        record_stage("starting Grafana" if render_fixture else "starting Prometheus and Grafana")
         with Network(docker_network_kw={"internal": True}) as network:
             prometheus = (
                 LoggedContainer(prometheus_visual.IMAGE.tag, test_name="synthetic-prometheus", user="0")
@@ -152,8 +152,8 @@ def grafana_dashboard(
                 record_stage("dashboard ready")
                 yield url
     finally:
-        record_stage("stopping Grafana and Prometheus")
         client.close()
+        record_stage("stopping Grafana and Prometheus")
 
 
 def _prepare_render_fixture(dashboard: dict, variables: dict[str, list[str]]) -> None:

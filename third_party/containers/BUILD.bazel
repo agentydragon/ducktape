@@ -22,6 +22,14 @@ oci_image_py(
 )
 
 oci_image_py(
+    name = "grafana_image_renderer_spike",
+    testonly = True,
+    image = "@grafana_image_renderer_spike_linux_amd64",
+    tag = "grafana/grafana-image-renderer:v5.12.10",
+    visibility = ["//visibility:public"],
+)
+
+oci_image_py(
     name = "prometheus_visual",
     testonly = True,
     image = "@prometheus_visual_linux_amd64",
