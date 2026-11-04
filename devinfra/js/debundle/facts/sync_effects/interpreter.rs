@@ -8035,6 +8035,62 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         Some(slot.read(self))
     }
 
+    fn local_call_target(&self, targets: &Values) -> Option<(u32, &Callable)> {
+        if targets.len() != 1 {
+            return None;
+        }
+        let key = match targets.first()? {
+            AbstractValue::Value(Value::Alloc(Kind::Function, key))
+            | AbstractValue::Closure(key, _) => key,
+            _ => return None,
+        };
+        self.inputs
+            .index
+            .callables
+            .get(key)
+            .map(|callable| (*key, callable))
+    }
+
+    /// Native and imported calls whose proofs still project source operands
+    /// retain their established whole-owner path. This chooses a source
+    /// family before execution; the ordered call transfer still checks each
+    /// actual target and never retries a failed invocation.
+    fn ordered_root_calls_are_local(&self, calls: &[Call]) -> bool {
+        calls
+            .iter()
+            .filter(|call| call.kind == CallKind::Call)
+            .all(|call| {
+                let (targets, member) = match &call.callee {
+                    ValueExpr::Binding(binding) if self.initialized_local_binding(binding) => {
+                        (self.state.prefix_values.get(binding).cloned(), false)
+                    }
+                    ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) => {
+                        let ValueExpr::Binding(receiver) = receiver.as_ref() else {
+                            return false;
+                        };
+                        if !self.initialized_local_binding(receiver) {
+                            return false;
+                        }
+                        let targets = self.state.prefix_values.get(receiver).and_then(|values| {
+                            self.present_own_data_read(values, property)
+                                .map(|read| read.values)
+                        });
+                        (targets, true)
+                    }
+                    _ => return false,
+                };
+                let Some(targets) = targets else {
+                    return false;
+                };
+                let Some((key, callable)) = self.local_call_target(&targets) else {
+                    return false;
+                };
+                !callable.generator
+                    && !self.inputs.index.async_callables.contains(&key)
+                    && (!member || self.method_receiver_is_unused(&targets))
+            })
+    }
+
     fn evaluate_binding(&mut self, id: &Id, env: &Context) -> Values {
         if self.inputs.index.callback_factory_imports.contains(id) {
             return Values::from([AbstractValue::CallbackFactory]);
@@ -10002,14 +10058,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // Publication can change properties and captured state, but cannot
             // replace an ordinary source function's [[Call]]. Invocation reads
             // live capture cells and retains their existing havoc/heap guards.
-            let local_target = targets.len() == 1
-                && targets.first().is_some_and(|target| match target {
-                    AbstractValue::Value(Value::Alloc(Kind::Function, key))
-                    | AbstractValue::Closure(key, _) => {
-                        self.inputs.index.callables.contains_key(key)
-                    }
-                    _ => false,
-                });
+            let local_target = self.local_call_target(&targets).is_some();
             let abrupt = !targets.is_empty()
                 && targets.iter().all(|target| {
                     matches!(
@@ -11828,7 +11877,11 @@ impl Executor<'_, '_> {
                     && calls.iter().any(|call| call.kind == CallKind::LocalMemberRead))))
         .then(|| index.ordered_initializers.get(&owner))
         .flatten()
-        .filter(|body| !body.requires_keyed_collection_new() && body.captured_writes().is_empty());
+        .filter(|body| {
+            !body.requires_keyed_collection_new()
+                && body.captured_writes().is_empty()
+                && self.ordered_root_calls_are_local(calls)
+        });
         // Keep the selected result in this owner until publication. Operands
         // and calls execute once, at their position in the shared local plan.
         let mut ordered_initializer_result = if let Some(body) = ordered_initializer {

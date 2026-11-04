@@ -2521,8 +2521,12 @@ can intervene before its initializer result is projected. A single original,
 non-exported declarator can also use the shared ordered local-operation plan
 when its whole initializer lowers into that grammar, combines at least two
 calls or a call with a field-value operand, and has no direct
-binding/global/property writes or dynamic
-scope. Its evaluated return values pass directly to initializer publication;
+binding/global/property writes or dynamic scope.
+Every call must initially select a synchronous local callable;
+member callees require a present ordinary data slot and
+an unused implicit receiver. Native and imported whole-owner proof families
+retain their established dispatch until their value transfers accept evaluated
+operands. Evaluated return values pass directly to initializer publication;
 the flat call pass and later value projection do not repeat those operations.
 Calls within the initializer retain their effects and can mutate the prefix
 after an earlier operand has selected its value. Unsupported runtime paths
