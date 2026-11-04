@@ -8,8 +8,8 @@ from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
+from platform_sessions.host import IntegrationError, create_app
 from platform_sessions.registry import IntegrationInstance
-from platform_sessions.service import IntegrationError, create_app
 
 
 class FakeSettings(BaseModel):
