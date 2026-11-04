@@ -14,11 +14,12 @@ import (
 
 func TestLegacySamplerSummaryRepairPreservesFeedAndRejectsMismatch(t *testing.T) {
 	for _, test := range []struct {
-		name, service string
-		wantError     bool
+		name, service, provider string
+		wantError               bool
 	}{
-		{"matching retained service", "fixture-service", false},
-		{"mismatched retained service", "different-service", true},
+		{"matching retained configuration", "fixture-service", "fixture-provider", false},
+		{"mismatched retained service", "different-service", "fixture-provider", true},
+		{"mismatched retained provider", "fixture-service", "different-provider", true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			db, err := sql.Open("postgres", migrationDatabase.Clone(t))
@@ -35,6 +36,7 @@ func TestLegacySamplerSummaryRepairPreservesFeedAndRejectsMismatch(t *testing.T)
 			}
 			const id = "00000000-0000-4000-8000-000000000810"
 			oldConfig := protowire.AppendString(protowire.AppendTag(nil, 1, protowire.BytesType), "fixture-service")
+			oldConfig = protowire.AppendString(protowire.AppendTag(oldConfig, 2, protowire.BytesType), "fixture-provider")
 			spec := &sessionpb.SessionSpec{Cwd: "/fixture"}
 			spec.ProtoReflect().SetUnknown(protowire.AppendBytes(protowire.AppendTag(nil, 6, protowire.BytesType), oldConfig))
 			feed := &historypb.SessionFeedState{Attached: &sessionpb.Attached{SessionId: id, Spec: spec}}
@@ -45,7 +47,7 @@ func TestLegacySamplerSummaryRepairPreservesFeedAndRejectsMismatch(t *testing.T)
 			if _, err := db.ExecContext(t.Context(), `INSERT INTO session_history(id,last_cursor,feed_state) VALUES($1,0,$2)`, id, original); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := db.ExecContext(t.Context(), `INSERT INTO thread_history_summary(thread_id,attached) VALUES($1,jsonb_build_object('sessionId',$1::uuid::text,'spec',jsonb_build_object('cwd','/fixture','centralSampler',jsonb_build_object('service',$2::text))))`, id, test.service); err != nil {
+			if _, err := db.ExecContext(t.Context(), `INSERT INTO thread_history_summary(thread_id,attached) VALUES($1,jsonb_build_object('sessionId',$1::uuid::text,'spec',jsonb_build_object('cwd','/fixture','centralSampler',jsonb_build_object('service',$2::text,'provider',$3::text))))`, id, test.service, test.provider); err != nil {
 				t.Fatal(err)
 			}
 			_, err = provider.Up(t.Context())
