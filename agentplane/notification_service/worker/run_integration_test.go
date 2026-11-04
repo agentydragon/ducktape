@@ -163,7 +163,7 @@ func TestInfiniteGitHubRetentionStillCleansUpInboxPayloads(t *testing.T) {
 		$1, 1, '{}', 'github', $2, $3, $4, 'issue_comment',
 		now() - interval '31 days'
 	)`, sub.InboxID, 43, "00000000-0000-0000-0000-000000000003", repositoryID)
-	h.exec(t, `UPDATE inbox SET last_cursor = 1, next_attempt = now() + interval '1 hour' WHERE id = $1`, sub.InboxID)
+	h.exec(t, `UPDATE inbox SET last_cursor = 1, acknowledged = 1, next_attempt = now() + interval '1 hour' WHERE id = $1`, sub.InboxID)
 	h.exec(t, `INSERT INTO github_delivery
 		(app_id, delivery_id, installation_id, event, digest, payload, received_at)
 		VALUES (43, '00000000-0000-0000-0000-000000000003', 43, 'issue_comment', 'digest', '{}', now() - interval '4000 days')`)
