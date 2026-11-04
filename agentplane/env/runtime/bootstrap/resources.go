@@ -16,15 +16,18 @@ import (
 )
 
 const (
-	RequestType        = "BootstrapRequests.agentplane"
-	StatusType         = "BootstrapStatuses.agentplane"
-	OperationStateType = "BootstrapOperationStates.agentplane"
-	SelectionType      = "BootstrapSelections.agentplane"
-	EventType          = "BootstrapEvents.agentplane"
-	ControllerName     = "bootstrap-lifecycle"
-	ResourceID         = "bootstrap"
-	HostOwner          = "bootstrap-host"
+	RequestType         = "BootstrapRequests.agentplane"
+	StatusType          = "BootstrapStatuses.agentplane"
+	OperationSignalType = "BootstrapOperationSignals.agentplane"
+	SelectionType       = "BootstrapSelections.agentplane"
+	EventType           = "BootstrapEvents.agentplane"
+	ControllerName      = "bootstrap-lifecycle"
+	ResourceID          = "bootstrap"
+	HostOwner           = "bootstrap-host"
 )
+
+// oneoff.Operation publishes once before work and once after completion.
+const operationCompletionRevision uint64 = 2
 
 // Request records accepted Sandbox bootstrap demand under the Runtime admission lock.
 // It is live-only and must never be restored after a restart.
@@ -47,7 +50,7 @@ type Status struct {
 	Error string
 }
 
-type operationState struct{ Done bool }
+type operationSignal struct{ Revision uint64 }
 
 type componentSpec[T any] interface {
 	comparable
@@ -117,9 +120,9 @@ func isTerminal(phase Phase) bool {
 	return phase == Succeeded || phase == Failed || phase == Interrupted
 }
 
-func (Request) resourceType() resource.Type           { return RequestType }
-func (value Request) DeepCopy() Request               { return value }
-func (Status) resourceType() resource.Type            { return StatusType }
-func (value Status) DeepCopy() Status                 { return value }
-func (operationState) resourceType() resource.Type    { return OperationStateType }
-func (value operationState) DeepCopy() operationState { return value }
+func (Request) resourceType() resource.Type             { return RequestType }
+func (value Request) DeepCopy() Request                 { return value }
+func (Status) resourceType() resource.Type              { return StatusType }
+func (value Status) DeepCopy() Status                   { return value }
+func (operationSignal) resourceType() resource.Type     { return OperationSignalType }
+func (value operationSignal) DeepCopy() operationSignal { return value }

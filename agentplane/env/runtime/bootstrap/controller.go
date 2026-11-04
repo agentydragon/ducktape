@@ -22,7 +22,7 @@ func (*LifecycleController) Settings() controller.QSettings {
 		Inputs: []controller.Input{
 			{Namespace: lifecycle.Namespace, Type: RequestType, Kind: controller.InputQPrimary},
 			{Namespace: lifecycle.Namespace, Type: StatusType, Kind: controller.InputQMapped},
-			{Namespace: lifecycle.Namespace, Type: OperationStateType, Kind: controller.InputQMapped},
+			{Namespace: lifecycle.Namespace, Type: OperationSignalType, Kind: controller.InputQMapped},
 		},
 		Outputs:     []controller.Output{{Type: StatusType, Kind: controller.OutputExclusive}},
 		Concurrency: optional.Some(uint(1)),
@@ -34,9 +34,12 @@ func (*LifecycleController) MapInput(ctx context.Context, _ *zap.Logger, r contr
 	switch ptr.Type() {
 	case RequestType, StatusType:
 		return []resource.Pointer{input}, nil
-	case OperationStateType:
-		result, found, err := componentRead[operationState](ctx, r, ptr.ID())
-		if err != nil || !found || !result.Done {
+	case OperationSignalType:
+		if ptr.ID() != ResourceID {
+			return nil, nil
+		}
+		signal, found, err := componentRead[operationSignal](ctx, r, ResourceID)
+		if err != nil || !found || signal.Revision < operationCompletionRevision {
 			return nil, err
 		}
 		return []resource.Pointer{input}, nil
@@ -64,13 +67,13 @@ func (c *LifecycleController) Reconcile(ctx context.Context, _ *zap.Logger, r co
 		return err
 	}
 
-	op, done, err := h.takeOperation(ctx)
-	if err != nil {
-		return err
-	}
-	if done {
+	if op := h.completedOperation(); op != nil {
 		current = outcome(op.Err())
-		return write()
+		if err := write(); err != nil {
+			return err
+		}
+		h.consumeOperation(op)
+		return nil
 	}
 	if isTerminal(current.Phase) || !input.Requested {
 		return write()

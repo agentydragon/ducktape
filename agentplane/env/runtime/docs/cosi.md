@@ -30,7 +30,7 @@ flowchart LR
   EI["ExecutionLifecycleSignals"]
   ES["ExecutionStatuses"]
   BC(["bootstrap-lifecycle"])
-  BI["BootstrapRequests / BootstrapOperationStates"]
+  BI["BootstrapRequests / BootstrapOperationSignals"]
   BS["BootstrapStatuses"]
   PC(["process-lifecycle"])
   PD["ProcessDesiredStates / ProcessObservations"]
