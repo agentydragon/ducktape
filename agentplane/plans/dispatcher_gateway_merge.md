@@ -2,7 +2,9 @@
 
 > **Historical proposal:** on 2026-11-02 the operator selected a mandatory Dispatcher database
 > and queue. All queue-off alternatives and rollout steps below are superseded, including the
-> assumption that a database-free K3s tier can include Dispatcher admission. Service topology,
+> assumption that a database-free K3s tier can include Dispatcher admission. Gateway now restricts
+> Runtime Session mutations to the Gateway/Dispatcher workload; see its [authorization contract](../runner_gateway/gateway/SPEC.md).
+> Service topology,
 > delivery ownership and an immediate-or-fail request option remain separate decisions; this
 > document does not authorize implementing its former proposal. See the
 > [current Session/environment model](session_environment_model.md) and
@@ -77,8 +79,9 @@ account. The ADR row "The Dispatcher is its own service, not part of the gateway
   Notification. Waking admits `wake_callers`, which must be a subset of them. `Quiesce` admits only the Sandbox
   Controller, as `gateway/proxy.go:91` does. The Gateway's own account leaves the list once delivery is in
   process. The app and Notification already hold a token for this audience, so no new grant is needed first.
-- **Proxy.** The command methods leave the caller-visible proxy, which is what
-  `PROXY_START_METHODS_DISPATCHER_ONLY` asks for; delivery calls the held connection in process.
+- **Proxy.** This proposal would remove the command methods from the caller-visible proxy and have
+  delivery call the held connection in process. The implemented proxy restriction keeps the methods
+  for Gateway/Dispatcher workload credentials across replicas.
 - **HTTP facade.** One facade for the one service, routes unchanged.
 - **Naming the Sandbox** in a request is unchanged; `DELIVERY_DESTINATION_AUTHORITY_DESIGN` still decides it, and
   this service carries whatever it decides.
@@ -220,4 +223,4 @@ are independent once step 3 has landed.
    PostgreSQL.
 
 On approval, the ADR row about the Dispatcher being its own service is replaced, the Gateway and Dispatcher
-READMEs describe the modes, and `PROXY_START_METHODS_DISPATCHER_ONLY` leaves the DAG with the step that finishes it.
+READMEs describe the modes. The proxy restriction has since landed independently of this proposal.

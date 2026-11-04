@@ -16,8 +16,8 @@ policy for a central Session without an environment.
 | Same-principal Actions        | `session_delegation` sends the retained caller's namespace, name and UID in the reviewed delegation envelope. Dispatcher checks the effective caller, not Actions' actor privilege. Action approval does not enlarge backend authority.                                                                                                                                                                                                                                                                                   |
 | Orchestration Actions         | `orchestration_v1` is a documented temporary privileged service exception after an Action Decision. It verifies the named Sandbox incarnation before commands; backend grants for each operation remain separate work.                                                                                                                                                                                                                                                                                                    |
 | Notification API and worker   | Subscriptions check source access, exact Sandbox ownership and live Session membership at creation. A separate `session_inbox_access.send_message` policy permits inbox append for a target Sandbox, which can lead to a service-authored notice under Notification's wake policy. It does not grant arbitrary Runtime commands or direct wake. The worker rechecks its stored destination and sends its UID with a notice command. Dispatcher authenticates Notification's service account, not the original subscriber. |
-| Dispatcher                    | Queued command admission checks the supplied UID against a live Sandbox. A normal caller needs the opening's exact execution principal; a configured direct Pod-bound backend has an explicit privileged path, including commands with no opening. The queue transaction checks the opening binding and keeps actor/effective caller attribution.                                                                                                                                                                         |
-| Delivery, Gateway and Runtime | Dispatcher groups by Sandbox UID, rechecks live UID, lease and execution account, then calls the Gateway proxy. Gateway checks exact Sandbox UID, owner and ready Pod before forwarding. Runtime journals admitted commands and rejects an unknown Session. The proxy currently admits configured callers to command methods directly, which is an independent bypass to review under `PROXY_START_METHODS_DISPATCHER_ONLY`.                                                                                              |
+| Dispatcher                    | Queued commands and interrupts require an authorized Session opening with the exact Sandbox name and UID, including for privileged Pod-bound backends. A normal caller must match its execution principal. The queue transaction rechecks the opening binding and retains actor/effective caller attribution.                                                                                                                                                                                                             |
+| Delivery, Gateway and Runtime | Dispatcher groups by Sandbox UID, rechecks live UID, lease and execution account, then calls the Gateway proxy. Gateway checks exact Sandbox UID, owner and ready Pod before forwarding and restricts Runtime Session mutation to the combined Gateway/Dispatcher ServiceAccount. Runtime journals admitted commands and rejects an unknown Session.                                                                                                                                                                      |
 
 Source anchors: [Dispatcher API](../runner_gateway/dispatcher/api.go),
 [queue transaction](../runner_gateway/dispatcher/store.go),
@@ -61,14 +61,11 @@ App, Notification and orchestration service exceptions at their current scopes w
 caller-facing checks are separately audited; no new service or direct agent becomes privileged by
 using a Session UUID. Retain actor, effective caller UID, and Action provenance on accepted work.
 Resolving the directory, reading a Session or subscribing to a source is not send permission.
-The operator selected a Dispatcher Session record as a prerequisite for every Session-targeted
-command, including those from privileged services. The current no-opening path is to be removed;
-service privilege does not create a Session or replace the required record. This applies to the
-immediate interrupt path as well as queued commands. A Session record is distinct from a per-command
-receipt; this decision does not itself change which operations are durably queued or journaled.
-Audit and migrate existing direct Runtime creators and no-opening callers before enforcing the
-requirement; do not introduce an exception for them. This is a target contract, not a claim that
-current admission already enforces it.
+Dispatcher now requires a Session record for every Session-targeted command, including privileged
+calls and immediate interrupts. Gateway restricts direct Runtime Session mutation to the combined
+Gateway/Dispatcher workload. A Session record is distinct from a per-command receipt; this requirement
+does not itself change which operations are durably queued or journaled. The public command request
+still includes the Sandbox name and UID.
 
 General destination/operation grants and revocation of previously accepted queued work remain in
 `DISPATCHER_SEND_AUTHORIZATION_GENERALIZE`; retaining the existing rules does not select a new
@@ -124,6 +121,8 @@ The outcome and initial caller/wake rules above are selected. Remaining design a
    the selected deletion boundary, or select an authoritative receiver-checked epoch. Identify
    what enforces that boundary and where outcomes remain observable. Session movement and UUID
    reuse after deletion remain separate decisions; a local cached generation alone is not a fence.
+   The immediate interrupt's final Dispatcher recheck can race deletion and forwarding; it does not
+   close this boundary. See [SESSION_DELETION_FENCE](task_dag.md#session_deletion_fence--prove-and-enforce-the-session-deletion-fence).
 2. **Queued sender revocation.** The first cutover retains current service trust and effective-caller
    checks. Whether an accepted command is cancelled on a later user grant revocation remains a
    separate generalized-policy decision; a subscription is not a lasting send grant.
@@ -139,7 +138,6 @@ inbox-append grants unable to submit arbitrary commands or bypass notice wake po
 and conflict behavior across restarts; denial of commands to an absent Session for privileged and
 ordinary callers, including interrupts; queue/deletion and
 same-name replacement races; failed directory read before wake; suspended, unavailable and
-unknown Runtime outcomes; immediate interrupt denial and unknown-result reconciliation; and a
-proxy test showing an unauthorized direct command cannot bypass Dispatcher after its separate
-proxy narrowing lands. Use deterministic integration tests for the transaction and race boundary
+unknown Runtime outcomes; immediate interrupt denial and unknown-result reconciliation; and continued
+coverage of the enforced Gateway proxy restriction. Use deterministic integration tests for the transaction and race boundary
 and a bounded system test for the actual Gateway/Runtime UID fence.
