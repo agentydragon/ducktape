@@ -9,6 +9,8 @@ from pathlib import Path
 from agentplane.system_tests.vm.guest.boot_files import build_initramfs, read_kernel_package
 
 _BUILTIN_CONFIG = {
+    # Firecracker's ACPI tables discover MMIO devices when this driver is loaded.
+    "CONFIG_ACPI": "y",
     "CONFIG_BLK_DEV_INITRD": "y",
     "CONFIG_CGROUPS": "y",
     "CONFIG_CGROUP_BPF": "y",
