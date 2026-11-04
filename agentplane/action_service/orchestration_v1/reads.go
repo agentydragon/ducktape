@@ -299,7 +299,11 @@ func (e *Executor) sessionForRead(ctx context.Context, ref contract.SandboxRef, 
 	// The incarnations the Session's opening and its history tie it to, as far as each is known.
 	var tied []string
 	if opening != nil {
-		tied = append(tied, opening.GetOpening().GetSandboxUid())
+		target := opening.GetOpening().GetEnvironmentHosted().GetEnvironment()
+		if opening.GetOpening().GetCentralSampler() != nil {
+			target = opening.GetOpening().GetInitialExecutor()
+		}
+		tied = append(tied, target.GetSandboxUid())
 	}
 	if written := summary.GetSandbox(); written != nil && written.Uid != nil {
 		tied = append(tied, *written.Uid)

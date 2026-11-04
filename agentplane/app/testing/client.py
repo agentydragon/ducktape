@@ -270,9 +270,14 @@ class Client:
             "POST", f"/sandboxes/{name}/sessions", json=MessageToDict(body, preserving_proto_field_name=True)
         )
         opening = ParseDict(answered, session_dispatcher_pb2.SessionOpening())
-        if not sandbox_uid or opening.sandbox_uid != sandbox_uid:
+        target = (
+            opening.environment_hosted.environment
+            if opening.WhichOneof("placement") == "environment_hosted"
+            else opening.initial_executor
+        )
+        if not sandbox_uid or target.sandbox_uid != sandbox_uid:
             raise RuntimeError("Session opening acknowledged a different Sandbox UID")
-        self.opened_sandbox_uids.add(opening.sandbox_uid)
+        self.opened_sandbox_uids.add(target.sandbox_uid)
         return opening
 
     async def wait_for_session_admission(

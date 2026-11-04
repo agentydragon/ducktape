@@ -58,9 +58,14 @@ class SessionDispatcherClient:
     async def session_target(self, session_id: str) -> tuple[str, str]:
         """Read the opening's immutable destination, never the current Sandbox by name."""
         opening = await self.get_session_opening(session_id)
-        if not opening.sandbox or not opening.sandbox_uid:
+        target = (
+            opening.environment_hosted.environment
+            if opening.WhichOneof("placement") == "environment_hosted"
+            else opening.initial_executor
+        )
+        if not target.sandbox or not target.sandbox_uid:
             raise ValueError(f"Session {session_id} has no recorded Sandbox destination")
-        return opening.sandbox, opening.sandbox_uid
+        return target.sandbox, target.sandbox_uid
 
 
 async def delivered_opening(dispatcher: SessionDispatcherClient, session_id: UUID) -> None:

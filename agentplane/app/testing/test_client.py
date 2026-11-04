@@ -124,7 +124,12 @@ async def test_open_session_preserves_override_presence(
         await _respond(
             writer,
             "201 Created",
-            json.dumps({"sessionId": str(session_id), "sandboxUid": str(sandbox_uid)}).encode(),
+            json.dumps(
+                {
+                    "sessionId": str(session_id),
+                    "environmentHosted": {"environment": {"sandbox": "demo", "sandboxUid": sandbox_uid}},
+                }
+            ).encode(),
             "application/json",
         )
 

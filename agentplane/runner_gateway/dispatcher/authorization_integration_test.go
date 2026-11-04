@@ -219,7 +219,8 @@ func TestRPCExecutionPrincipalAndPodBoundBackendAuthority(t *testing.T) {
 
 	sessionID := uuid.NewString()
 	opened, err := client.OpenSession(authorityContext(t, "owner-account"), &dispatcherpb.OpenSessionRequest{
-		SessionId: sessionID, Sandbox: caller.Name, SandboxUid: authoritySandboxUID, Spec: &sessionpb.SessionSpec{},
+		Placement: &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: caller.Name, SandboxUid: authoritySandboxUID}}},
+		SessionId: sessionID, Spec: &sessionpb.SessionSpec{},
 	})
 	if err != nil {
 		t.Fatalf("owner OpenSession: %v", err)
@@ -385,14 +386,16 @@ func TestDelegatedActionsUseEffectiveCallerWithoutLeakingActorAuthority(t *testi
 	sessionID := uuid.NewString()
 	spec := &sessionpb.SessionSpec{}
 	directOpening, err := client.OpenSession(authorityContext(t, "effective-token"), &dispatcherpb.OpenSessionRequest{
-		SessionId: sessionID, Sandbox: snapshot.Name, SandboxUid: snapshot.UID, Spec: spec,
+		Placement: &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: snapshot.Name, SandboxUid: snapshot.UID}}},
+		SessionId: sessionID, Spec: spec,
 	})
 	if err != nil {
 		t.Fatalf("direct effective caller open: %v", err)
 	}
 	inventory.failSandboxRead(errors.New("inventory unavailable after accepted opening"))
 	openingRetry, err := client.OpenSession(delegated(), &dispatcherpb.OpenSessionRequest{
-		SessionId: sessionID, Sandbox: snapshot.Name, SandboxUid: snapshot.UID, Spec: spec,
+		Placement: &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: snapshot.Name, SandboxUid: snapshot.UID}}},
+		SessionId: sessionID, Spec: spec,
 	})
 	if err != nil || openingRetry.GetOpening().GetSessionId() != sessionID {
 		t.Fatalf("delegated idempotent opening retry: %#v %v", openingRetry, err)
@@ -657,8 +660,9 @@ func TestOpeningRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 	}, nil)
 	setup := "echo retained"
 	request := &dispatcherpb.OpenSessionRequest{
-		SessionId: uuid.NewString(), Sandbox: snapshot.Name,
-		SandboxUid: snapshot.UID, Spec: &sessionpb.SessionSpec{}, SetupScript: &setup,
+		Placement: &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: snapshot.Name, SandboxUid: snapshot.UID}}},
+		SessionId: uuid.NewString(),
+		Spec:      &sessionpb.SessionSpec{}, SetupScript: &setup,
 	}
 	first, err := client.OpenSession(authorityContext(t, "retry-owner"), request)
 	if err != nil {
@@ -696,8 +700,10 @@ func TestOpeningRetryReadsDurableReceiptWithoutOwnerInventory(t *testing.T) {
 		name  string
 		apply func(*dispatcherpb.OpenSessionRequest)
 	}{
-		{"environment name", func(r *dispatcherpb.OpenSessionRequest) { r.Sandbox += "-other" }},
-		{"environment UID", func(r *dispatcherpb.OpenSessionRequest) { r.SandboxUid = uuid.NewString() }},
+		{"environment name", func(r *dispatcherpb.OpenSessionRequest) { r.GetEnvironmentHosted().Environment.Sandbox += "-other" }},
+		{"environment UID", func(r *dispatcherpb.OpenSessionRequest) {
+			r.GetEnvironmentHosted().Environment.SandboxUid = uuid.NewString()
+		}},
 		{"spec", func(r *dispatcherpb.OpenSessionRequest) { r.Spec.Instructions = "different instructions" }},
 		{"absent spec", func(r *dispatcherpb.OpenSessionRequest) { r.Spec = nil }},
 		{"setup", func(r *dispatcherpb.OpenSessionRequest) { r.SetupScript = nil }},
@@ -817,7 +823,7 @@ func TestOpeningDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 	if err != nil || len(first.GetOpenings()) != 1 || first.GetOpenings()[0].GetSessionId() != queuedID || first.GetNextPageToken() == "" {
 		t.Fatalf("owner first page: %v %v", first, err)
 	}
-	if first.GetOpenings()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetOpenings()[0].GetSandboxUid() != uid || first.GetOpenings()[0].GetHarness() != sessionpb.Harness_HARNESS_CODEX {
+	if first.GetOpenings()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || first.GetOpenings()[0].GetEnvironmentHosted().GetEnvironment().GetSandboxUid() != uid || first.GetOpenings()[0].GetHarness() != sessionpb.Harness_HARNESS_CODEX {
 		t.Fatalf("queued opening placement/state: %v", first)
 	}
 	got, err := client.GetSessionOpening(authorityContext(t, "discovery-owner"), &dispatcherpb.GetSessionOpeningRequest{SessionId: queuedID})

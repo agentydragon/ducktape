@@ -32,11 +32,14 @@ The manual queue, replica and wake probes are documented in the
 - **Order**: commands, including `InterruptTurn`, are delivered first in, first out per Session.
   The Runtime checks the interrupt’s exact target at admission; it never interrupts a successor turn.
   A delayed or uncertain delivery follows the same receipt and recovery rules as other commands.
-- **Opening a Session**: a new `OpenSession` requires the expected `sandbox_uid`, reads the current Sandbox and refuses
+- **Opening a Session**: a new `OpenSession` requires a typed placement. `environment_hosted`
+  contains the one exact native environment; `central_sampler` identifies the central owner and
+  currently requires a separate exact `initial_executor`, fixed for the life of today's central
+  execution binding. This is not an attachment API. Both paths read the current Sandbox and refuse
   a same-name replacement with `FAILED_PRECONDITION` before storing anything. It stores the request keyed by the
   caller-minted canonical lowercase UUID `session_id` and answers with a `SessionOpening` in the same delivery states.
   An exact retry uses retained receipt-read authority and returns the stored record without reading live
-  Sandbox or execution-account inventory. It compares the same immutable Sandbox name, UID, spec and
+  Sandbox or execution-account inventory. It compares the same immutable placement, exact target, spec and
   optional `setup_script` as transactional creation; a mismatch is `ALREADY_EXISTS` only for an authorized
   caller. Unauthorized retries return `NOT_FOUND` before comparing the request. A retry never updates
   attribution, binds an identity, wakes, requeues or materializes work, including failed or uncertain

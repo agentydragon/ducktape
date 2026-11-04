@@ -71,7 +71,13 @@ func (b *RunnerBridge) OpenSession(
 		return nil, fmt.Errorf("setup script exceeds %d characters", MaxSetupScriptCharacters)
 	}
 	request := &dispatcherpb.OpenSessionRequest{
-		Sandbox: sandbox, SandboxUid: sandboxUID, SessionId: sessionID.String(), Spec: proto.Clone(spec).(*sessionpb.SessionSpec),
+		SessionId: sessionID.String(), Spec: proto.Clone(spec).(*sessionpb.SessionSpec),
+	}
+	target := &dispatcherpb.ExactSandbox{Sandbox: sandbox, SandboxUid: sandboxUID}
+	request.Placement = &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: target}}
+	if spec.GetHarness() == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
+		request.Placement = &dispatcherpb.OpenSessionRequest_CentralSampler{CentralSampler: &dispatcherpb.CentralSamplerPlacement{}}
+		request.InitialExecutor = target
 	}
 	if setupScript != nil {
 		value := *setupScript
@@ -88,8 +94,15 @@ func (b *RunnerBridge) OpenSession(
 		return nil, err
 	}
 	opening := response.GetOpening()
-	if opening == nil || opening.GetSessionId() != sessionID.String() || opening.GetSandbox() != sandbox ||
-		opening.GetSandboxUid() != sandboxUID {
+	var returnedTarget *dispatcherpb.ExactSandbox
+	if opening != nil {
+		returnedTarget = opening.GetEnvironmentHosted().GetEnvironment()
+		if opening.GetCentralSampler() != nil {
+			returnedTarget = opening.GetInitialExecutor()
+		}
+	}
+	if opening == nil || opening.GetSessionId() != sessionID.String() || returnedTarget.GetSandbox() != sandbox ||
+		returnedTarget.GetSandboxUid() != sandboxUID {
 		return nil, &SessionOpeningNotFoundError{SessionID: sessionID, Sandbox: sandbox}
 	}
 	return opening, nil

@@ -247,8 +247,9 @@ def thread_browser_session(
                 session_dispatcher.stub.OpenSession,
                 session_dispatcher_pb2.OpenSessionRequest(
                     session_id=str(thread_id),
-                    sandbox=SANDBOX,
-                    sandbox_uid=sandbox.uid,
+                    environment_hosted=session_dispatcher_pb2.EnvironmentHostedPlacement(
+                        environment=session_dispatcher_pb2.ExactSandbox(sandbox=SANDBOX, sandbox_uid=sandbox.uid)
+                    ),
                     spec=thread_source.attached.spec,
                 ),
             )

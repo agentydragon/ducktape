@@ -37,11 +37,16 @@ It scopes existing Sessions and existing environments; it does not create enviro
 
 ## Session binding
 
-- The committed opening is Dispatcher's live Session reservation and placement authority. It records
-  the selected harness and exact Sandbox identity independently of owner materialization or History.
-  `SessionOpening` exposes the harness and placement under the existing retained-owner read policy.
-  A central opening currently names its required executor Sandbox; it is not yet an environment-free
-  central placement.
+- The committed opening is Dispatcher's live Session reservation and placement authority. Its
+  immutable placement variant names either the Harness Host in one exact environment or the central
+  sampler. The native variant contains its required Sandbox name and UID. The central variant owns
+  the Session independently of its separately named `initial_executor`; current central admission
+  still requires that exact Sandbox and executor incarnation. The initial executor remains fixed
+  for this central Session under the current protocol; this change adds no attach/detach operation.
+  Dispatcher persists one placement
+  discriminator, validates it against the selected harness, and routes from the stored variant.
+  `SessionOpening` exposes the same typed placement under retained-owner read policy. Neither
+  variant promises environment-free central opening or multiple environment attachments yet.
 - `OpenSession` requires `session_id` to be a canonical lowercase UUID before reading Sandbox state or recording an
   opening. Callers must not deliberately reuse a Session UUID after deletion. Cleanup forgets the
   Dispatcher record and does not retain a UUID marker: a subsequent request cannot be recognized as

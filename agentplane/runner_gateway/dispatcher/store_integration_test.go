@@ -2031,9 +2031,13 @@ func TestCentralOpeningUsesConfiguredSampler(t *testing.T) {
 	ctx := admitted(t)
 	store := testStore(t, 3)
 	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: blockedSandbox{}, CentralTarget: &CentralTarget{Target: "configured", TokenFile: "configured"}}
-	request := &dispatcherpb.OpenSessionRequest{SessionId: uuid.NewString(), Sandbox: "sandbox-api", SandboxUid: sandboxUID, Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test"}}
-	if _, err := service.OpenSession(ctx, request); err != nil {
+	request := &dispatcherpb.OpenSessionRequest{Placement: &dispatcherpb.OpenSessionRequest_CentralSampler{CentralSampler: &dispatcherpb.CentralSamplerPlacement{}}, InitialExecutor: &dispatcherpb.ExactSandbox{Sandbox: "sandbox-api", SandboxUid: sandboxUID}, SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test"}}
+	opened, err := service.OpenSession(ctx, request)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if opened.GetOpening().GetCentralSampler() == nil || opened.GetOpening().GetInitialExecutor().GetSandboxUid() != sandboxUID {
+		t.Fatalf("central opening lost its owner or initial executor: %v", opened.GetOpening())
 	}
 	// Simulate a pre-upgrade stored spec containing retired field 6.
 	legacy := proto.Clone(request.Spec).(*sessionpb.SessionSpec)
@@ -2045,8 +2049,12 @@ func TestCentralOpeningUsesConfiguredSampler(t *testing.T) {
 	if _, err := store.DB.ExecContext(ctx, "UPDATE session_opening SET spec=$1 WHERE session_id=$2", encoded, request.SessionId); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.OpenSession(ctx, request); err != nil {
+	retried, err := service.OpenSession(ctx, request)
+	if err != nil {
 		t.Fatalf("retry with retired metadata: %v", err)
+	}
+	if retried.GetOpening().GetCentralSampler() == nil || retried.GetOpening().GetInitialExecutor().GetSandboxUid() != sandboxUID {
+		t.Fatalf("central retry changed placement: %v", retried.GetOpening())
 	}
 	service.CentralTarget = nil
 	request.SessionId = uuid.NewString()
@@ -2069,7 +2077,8 @@ func TestOpenSessionRejectsNonCanonicalUUIDBeforeRecording(t *testing.T) {
 	} {
 		t.Run(sessionID, func(t *testing.T) {
 			_, err := service.OpenSession(ctx, &dispatcherpb.OpenSessionRequest{
-				SessionId: sessionID, Sandbox: "sandbox-api", SandboxUid: sandboxUID,
+				Placement: &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: "sandbox-api", SandboxUid: sandboxUID}}},
+				SessionId: sessionID,
 			})
 			if status.Code(err) != codes.InvalidArgument || status.Convert(err).Message() != "session_id must be a canonical UUID" {
 				t.Fatalf("OpenSession(%q) = %v, want canonical UUID InvalidArgument", sessionID, err)
@@ -2132,7 +2141,8 @@ func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
 				},
 			}
 			_, err = service.OpenSession(ctx, &dispatcherpb.OpenSessionRequest{
-				SessionId: sessionID, Sandbox: "sandbox-api", SandboxUid: uid, Spec: &sessionpb.SessionSpec{},
+				Placement: &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: "sandbox-api", SandboxUid: uid}}},
+				SessionId: sessionID, Spec: &sessionpb.SessionSpec{},
 			})
 			if status.Code(err) != codes.FailedPrecondition {
 				t.Fatalf("opening after cleanup: %v", err)

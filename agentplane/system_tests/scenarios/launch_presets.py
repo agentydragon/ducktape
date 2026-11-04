@@ -54,9 +54,9 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         retried = await client.open_session(
             view.target.name, first_id, sandbox_uid=view.target.uid, overrides={"instructions": INSTRUCTIONS}
         )
-        assert (retried.session_id, retried.sandbox, retried.created_at) == (
+        assert (retried.session_id, retried.environment_hosted.environment.sandbox, retried.created_at) == (
             opening.session_id,
-            opening.sandbox,
+            opening.environment_hosted.environment.sandbox,
             opening.created_at,
         )
         await client.wait_for_session_admission(dispatcher, first_id, opening=opening, timeout_s=RUNNER_ANSWERS_SECONDS)
@@ -77,8 +77,8 @@ async def a_preset_launches_an_initialized_editable_codex_thread(
         dispatcher,
         thread_id=first.id,
         cursor=first.last_cursor,
-        sandbox=opening.sandbox,
-        sandbox_uid=opening.sandbox_uid,
+        sandbox=opening.environment_hosted.environment.sandbox,
+        sandbox_uid=opening.environment_hosted.environment.sandbox_uid,
     )
     with tracer.start_as_current_span(
         "system_test.launch_preset.initialized_turn", record_exception=False, set_status_on_exception=False

@@ -78,7 +78,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 	native := &nativeFixture{}
 	spec := &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER}
 	sandbox := SandboxSnapshot{Name: "executor", Namespace: "test", UID: "sandbox-uid", Incarnation: "pod-uid", Blocker: "sandbox_not_ready"}
-	runner := &RoutingRunner{Native: native, Store: openingFixture{&Opening{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Spec: spec}}, Target: &CentralTarget{Target: listener.Addr().String(), TokenFile: tokenFile}, Timeout: time.Second}
+	runner := &RoutingRunner{Native: native, Store: openingFixture{&Opening{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: CentralSampler, Spec: spec}}, Target: &CentralTarget{Target: listener.Addr().String(), TokenFile: tokenFile}, Timeout: time.Second}
 	setup := "printf 'executor setup\\n'"
 	if err := runner.OpenSession(context.Background(), sandbox, "session", spec, &setup, nil); err != nil {
 		t.Fatal(err)
@@ -96,6 +96,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 		t.Fatalf("changed binding accepted: %v", err)
 	}
 	nativeSpec := &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CODEX}
+	runner.Store = openingFixture{&Opening{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: EnvironmentHosted, Spec: nativeSpec}}
 	if err := runner.OpenSession(context.Background(), sandbox, "native", nativeSpec, nil, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +107,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 	if native.calls != 1 {
 		t.Fatalf("missing Session caused native delivery: %d calls", native.calls)
 	}
-	runner.Store = openingFixture{&Opening{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Spec: nativeSpec}}
+	runner.Store = openingFixture{&Opening{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: EnvironmentHosted, Spec: nativeSpec}}
 	if _, err := runner.Deliver(context.Background(), changed, "native", &commandpb.Command{}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("native Session routed to replacement Sandbox: %v", err)
 	}
@@ -120,6 +121,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 		t.Fatalf("native calls %d", native.calls)
 	}
 	runner.Target = nil
+	runner.Store = openingFixture{&Opening{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: CentralSampler, Spec: spec}}
 	if err := runner.OpenSession(context.Background(), sandbox, "disabled", spec, nil, nil); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("disabled sampler accepted: %v", err)
 	}

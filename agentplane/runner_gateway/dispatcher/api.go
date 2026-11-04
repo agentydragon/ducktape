@@ -442,11 +442,11 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 		ctx, "Dispatcher OpenSession",
 		trace.WithAttributes(
 			attribute.String("session.id", request.GetSessionId()),
-			attribute.String("sandbox.name", request.GetSandbox()),
+			attribute.String("sandbox.name", requestTarget(request).GetSandbox()),
 		),
 	)
 	defer func() { observability.End(span, resultErr) }()
-	if err := required(request.GetSessionId(), request.GetSandbox(), request.GetSandboxUid()); err != nil {
+	if err := required(request.GetSessionId()); err != nil {
 		return nil, err
 	}
 	if err := canonicalSessionID(request.GetSessionId()); err != nil {
@@ -463,7 +463,12 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 		if err := row.authorizeRetry(caller); err != nil {
 			return nil, apiError(err)
 		}
-		if err := row.matchRequest(request.GetSandbox(), request.GetSandboxUid(), request.GetSpec(), request.SetupScript); err != nil {
+		placement, err := placementFromRequest(request)
+		if err != nil {
+			return nil, apiError(ErrOpeningConflict)
+		}
+		target := requestTarget(request)
+		if err := row.matchRequest(target.GetSandbox(), target.GetSandboxUid(), placement, request.GetSpec(), request.SetupScript); err != nil {
 			return nil, apiError(err)
 		}
 		opening, err := DescribeOpening(row)
@@ -475,14 +480,19 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 	if !errors.Is(err, ErrNotFound) {
 		return nil, apiError(err)
 	}
-	current, err := s.sandbox(ctx, request.GetSandbox())
+	placement, err := placementFromRequest(request)
 	if err != nil {
 		return nil, err
 	}
-	if current.UID != request.GetSandboxUid() {
+	target := requestTarget(request)
+	current, err := s.sandbox(ctx, target.GetSandbox())
+	if err != nil {
+		return nil, err
+	}
+	if current.UID != target.GetSandboxUid() {
 		return nil, status.Error(codes.FailedPrecondition, "sandbox identity changed")
 	}
-	if err := ValidateRuntime(request.GetSpec(), request.SetupScript, s.CentralTarget); err != nil {
+	if err := ValidateRuntime(placement, request.SetupScript, s.CentralTarget); err != nil {
 		return nil, err
 	}
 	execution := &ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: current.Namespace, Name: current.Name}}
@@ -504,7 +514,7 @@ func (s *Service) OpenSession(ctx context.Context, request *dispatcherpb.OpenSes
 		}
 		execution = account
 	}
-	row, err = s.Store.OpenSessionForCaller(ctx, request.GetSessionId(), request.GetSandbox(), current.UID,
+	row, err = s.Store.OpenSessionWithPlacementForCaller(ctx, request.GetSessionId(), target.GetSandbox(), current.UID, placement,
 		request.GetSpec(), request.SetupScript, nil, execution, caller)
 	if err != nil {
 		return nil, apiError(err)

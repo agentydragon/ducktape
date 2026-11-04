@@ -270,7 +270,13 @@ async def deployed_session_command_cannot_cross_deletion(
         )
         metadata = _metadata(gateway, cluster, name, uid)
         await dispatcher.OpenSession(
-            session_dispatcher_pb2.OpenSessionRequest(sandbox=name, sandbox_uid=uid, session_id=session, spec=spec),
+            session_dispatcher_pb2.OpenSessionRequest(
+                environment_hosted=session_dispatcher_pb2.EnvironmentHostedPlacement(
+                    environment=session_dispatcher_pb2.ExactSandbox(sandbox=name, sandbox_uid=uid)
+                ),
+                session_id=session,
+                spec=spec,
+            ),
             metadata=app.metadata,
             timeout=15,
         )
@@ -425,7 +431,11 @@ async def deployed_session_command_cannot_cross_deletion(
         # Use a fresh Session ID: the test imposes no retention policy on old Session UUIDs.
         await dispatcher.OpenSession(
             session_dispatcher_pb2.OpenSessionRequest(
-                sandbox=name, sandbox_uid=replacement, session_id=replacement_session, spec=spec
+                environment_hosted=session_dispatcher_pb2.EnvironmentHostedPlacement(
+                    environment=session_dispatcher_pb2.ExactSandbox(sandbox=name, sandbox_uid=replacement)
+                ),
+                session_id=replacement_session,
+                spec=spec,
             ),
             metadata=app.metadata,
             timeout=15,

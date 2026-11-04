@@ -268,10 +268,16 @@ func (d *recordingDispatcher) OpenSession(_ context.Context, request *dispatcher
 	if err := d.record(request); err != nil {
 		return nil, err
 	}
-	return &dispatcherpb.OpenSessionResponse{Opening: &dispatcherpb.SessionOpening{
-		SessionId: request.GetSessionId(), Sandbox: request.GetSandbox(),
-		State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
-	}}, nil
+	opening := &dispatcherpb.SessionOpening{
+		SessionId: request.GetSessionId(), State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+	}
+	if request.GetCentralSampler() != nil {
+		opening.Placement = &dispatcherpb.SessionOpening_CentralSampler{CentralSampler: request.GetCentralSampler()}
+		opening.InitialExecutor = request.GetInitialExecutor()
+	} else {
+		opening.Placement = &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: request.GetEnvironmentHosted()}
+	}
+	return &dispatcherpb.OpenSessionResponse{Opening: opening}, nil
 }
 
 func (d *recordingDispatcher) SubmitInput(_ context.Context, request *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {

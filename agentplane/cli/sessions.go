@@ -243,7 +243,13 @@ prints the Dispatcher opening record; it does not wait for History.`,
 				return err
 			}
 			request := &dispatcherpb.OpenSessionRequest{
-				SessionId: args[0], Sandbox: sandbox, SandboxUid: sandboxUID, Spec: spec,
+				SessionId: args[0], Spec: spec,
+			}
+			target := &dispatcherpb.ExactSandbox{Sandbox: sandbox, SandboxUid: sandboxUID}
+			request.Placement = &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: target}}
+			if spec.GetHarness() == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
+				request.Placement = &dispatcherpb.OpenSessionRequest_CentralSampler{CentralSampler: &dispatcherpb.CentralSamplerPlacement{}}
+				request.InitialExecutor = target
 			}
 			if setupScriptSet {
 				contents, err := a.readSessionValue("--setup-script", setupScript)
@@ -518,11 +524,15 @@ func sessionOpeningLine(raw json.RawMessage) (string, error) {
 	if opening.GetSessionId() == "" {
 		return "", invalidResponse("no session ID in the opening")
 	}
+	target := opening.GetEnvironmentHosted().GetEnvironment()
+	if opening.GetCentralSampler() != nil {
+		target = opening.GetInitialExecutor()
+	}
 	line := fields(
 		opening.GetSessionId(),
 		enumSuffix(opening.GetState().String(), "DELIVERY_STATE_"),
-		opening.GetSandbox(),
-		"Kubernetes Sandbox UID "+opening.GetSandboxUid(),
+		target.GetSandbox(),
+		"Kubernetes Sandbox UID "+target.GetSandboxUid(),
 	)
 	if opening.Reason != nil {
 		line += fields("reason", fmt.Sprintf("%q", opening.GetReason()))

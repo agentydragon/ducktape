@@ -177,7 +177,11 @@ async def test_dispatcher_resumes_a_dormant_session_and_proxy_reports_it(
     await session_dispatcher.unary(
         session_dispatcher.stub.OpenSession,
         session_dispatcher_pb2.OpenSessionRequest(
-            session_id=session_id, sandbox=SANDBOX, sandbox_uid=sandbox.uid, spec=spec
+            session_id=session_id,
+            environment_hosted=session_dispatcher_pb2.EnvironmentHostedPlacement(
+                environment=session_dispatcher_pb2.ExactSandbox(sandbox=SANDBOX, sandbox_uid=sandbox.uid)
+            ),
+            spec=spec,
         ),
     )
     await delivered_opening(session_dispatcher, UUID(session_id))

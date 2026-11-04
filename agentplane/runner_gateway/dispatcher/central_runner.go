@@ -45,14 +45,6 @@ type RoutingRunner struct {
 	Timeout time.Duration
 }
 
-func centralSpec(spec *sessionpb.SessionSpec) bool {
-	return spec.GetHarness() == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER
-}
-
-func sessionRequiresReadyExecutor(spec *sessionpb.SessionSpec) bool {
-	return !centralSpec(spec)
-}
-
 func validateOpeningExecutor(opening *Opening, sandbox SandboxSnapshot) error {
 	if opening.SandboxName != sandbox.Name || opening.SandboxUID != sandbox.UID {
 		return status.Error(codes.FailedPrecondition, "session executor identity changed")
@@ -60,8 +52,8 @@ func validateOpeningExecutor(opening *Opening, sandbox SandboxSnapshot) error {
 	return nil
 }
 
-func ValidateRuntime(spec *sessionpb.SessionSpec, setup *string, target *CentralTarget) error {
-	if !centralSpec(spec) {
+func ValidateRuntime(placement SessionPlacement, setup *string, target *CentralTarget) error {
+	if placement != CentralSampler {
 		return nil
 	}
 	if target == nil {
@@ -93,10 +85,17 @@ func (r *RoutingRunner) withClient(ctx context.Context, call func(context.Contex
 }
 
 func (r *RoutingRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot, id string, spec *sessionpb.SessionSpec, setup *string, executionPrincipal *identitypb.ServiceAccountIdentity) error {
-	if err := ValidateRuntime(spec, setup, r.Target); err != nil {
+	opening, err := r.Store.GetOpening(ctx, id)
+	if err != nil {
 		return err
 	}
-	if !centralSpec(spec) {
+	if err := validateOpeningExecutor(opening, sandbox); err != nil {
+		return err
+	}
+	if err := ValidateRuntime(opening.Placement, setup, r.Target); err != nil {
+		return err
+	}
+	if opening.Placement == EnvironmentHosted {
 		return r.Native.OpenSession(ctx, sandbox, id, spec, setup, executionPrincipal)
 	}
 	if sandbox.Incarnation == "" {
@@ -120,7 +119,7 @@ func (r *RoutingRunner) Deliver(ctx context.Context, sandbox SandboxSnapshot, id
 	if err := validateOpeningExecutor(opening, sandbox); err != nil {
 		return nil, err
 	}
-	if !centralSpec(opening.Spec) {
+	if opening.Placement == EnvironmentHosted {
 		return r.Native.Deliver(ctx, sandbox, id, command)
 	}
 	var admission *eventlogpb.EventEntry

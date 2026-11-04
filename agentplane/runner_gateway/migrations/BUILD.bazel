@@ -3,13 +3,18 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 go_library(
     name = "migrations",
-    srcs = ["migrations.go"],
+    srcs = [
+        "migrations.go",
+        "placement.go",
+    ],
     embedsrcs = glob(["dispatcher/*.sql"]),
     importpath = "github.com/agentydragon/ducktape/agentplane/runner_gateway/migrations",
     visibility = ["//agentplane/runner_gateway:__subpackages__"],
     deps = [
+        "//agentplane/proto:session_go_proto",
         "@com_github_pressly_goose_v3//:goose",
         "@com_github_pressly_goose_v3//lock",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -22,8 +27,10 @@ go_test(
     embed = [":migrations"],
     tags = ["requires_docker"],
     deps = [
+        "//agentplane/proto:session_go_proto",
         "//agentplane/testing/postgres",
         "@com_github_lib_pq//:pq",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 

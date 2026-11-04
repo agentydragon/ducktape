@@ -131,6 +131,7 @@ type Dispatch struct {
 
 type Opening struct {
 	SessionID, SandboxName, SandboxUID string
+	Placement                          SessionPlacement
 	// ExecutionPrincipal is the immutable logical owner of the Session. A nil account means a
 	// legacy row with no trustworthy owner; an empty UID with a set account is a privileged open
 	// waiting to bind the controller-owned ServiceAccount.
@@ -511,7 +512,7 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if !centralSpec(opening.Spec) && (opening.State == FailedState || opening.State == UnknownState) {
+		if opening.Placement.requiresReadyExecutor() && (opening.State == FailedState || opening.State == UnknownState) {
 			return ErrOpeningUnconfirmed
 		}
 		var count int
@@ -677,7 +678,7 @@ func (s *Store) cancel(ctx context.Context, id string, caller *CallerIdentity) (
 	return nil, ErrNotCancellable
 }
 
-const openingColumns = `session_id, sandbox_name, sandbox_uid::text, execution_account_namespace,
+const openingColumns = `session_id, sandbox_name, sandbox_uid::text, placement, execution_account_namespace,
 	execution_account_name, execution_account_uid::text, creator_account_namespace,
 	creator_account_name, creator_account_uid::text, effective_caller_account_namespace,
 	effective_caller_account_name, effective_caller_account_uid, creator_pod_name, creator_pod_uid,
@@ -694,13 +695,16 @@ func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
 	var callerNS, callerName, incarnation, script, reason sql.NullString
 	var wakeAt sql.NullTime
 	var spec, blockerBytes, wakeBytes []byte
-	err := row.Scan(&o.SessionID, &o.SandboxName, &o.SandboxUID, &ownerNS, &ownerName, &ownerUID,
+	err := row.Scan(&o.SessionID, &o.SandboxName, &o.SandboxUID, &o.Placement, &ownerNS, &ownerName, &ownerUID,
 		&creatorNS, &creatorName, &creatorUID, &effectiveNS, &effectiveName, &effectiveUID, &creatorPodName, &creatorPodUID,
 		&actionRequestID, &actionExecutionID, &o.WakeEligible,
 		&callerNS, &callerName, &incarnation, &wakeAt, &spec, &script, &o.State,
 		&reason, &o.Traceparent, &o.CreatedAt, &o.UpdatedAt, &blockerBytes, &wakeBytes)
 	if err != nil {
 		return nil, err
+	}
+	if o.Placement != EnvironmentHosted && o.Placement != CentralSampler {
+		return nil, fmt.Errorf("unknown stored Session placement %q", o.Placement)
 	}
 	if ownerNS.Valid != ownerName.Valid || ownerUID.Valid && !ownerNS.Valid || creatorNS.Valid != creatorName.Valid ||
 		creatorNS.Valid != creatorUID.Valid {
@@ -753,13 +757,9 @@ func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
 	return o, nil
 }
 
-func (s *Store) OpenSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account) (*Opening, error) {
-	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller, nil, nil)
-}
-
 // OpenSessionForCaller stores the immutable execution account separately from the verified
 // caller attribution. Retrying a concurrently inserted opening requires retained read authority.
-func (s *Store) OpenSessionForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal *ServiceAccountIdentity, caller CallerIdentity) (*Opening, error) {
+func (s *Store) OpenSessionWithPlacementForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal *ServiceAccountIdentity, caller CallerIdentity) (*Opening, error) {
 	if executionPrincipal == nil || executionPrincipal.GetAccount().GetNamespace() == "" ||
 		executionPrincipal.GetAccount().GetName() == "" || caller.Attribution == nil || caller.Attribution.Actor == nil ||
 		caller.Attribution.Actor.GetAccount().GetNamespace() == "" || caller.Attribution.Actor.GetAccount().GetName() == "" ||
@@ -769,7 +769,7 @@ func (s *Store) OpenSessionForCaller(ctx context.Context, sessionID, sandboxName
 	if err := validateAttribution(caller.Attribution, wakeCaller); err != nil {
 		return nil, err
 	}
-	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller, executionPrincipal, &caller)
+	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, placement, spec, setupScript, wakeCaller, executionPrincipal, &caller)
 }
 
 // authorizeRetry uses retained read authority: a receipt retry performs no new execution.
@@ -781,7 +781,7 @@ func (o *Opening) authorizeRetry(caller CallerIdentity) error {
 	return nil
 }
 
-func (o *Opening) matchRequest(sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string) error {
+func (o *Opening) matchRequest(sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string) error {
 	if spec == nil {
 		return ErrOpeningConflict
 	}
@@ -793,15 +793,18 @@ func (o *Opening) matchRequest(sandboxName, sandboxUID string, spec *sessionpb.S
 	if err != nil {
 		return err
 	}
-	if o.SandboxName != sandboxName || o.SandboxUID != sandboxUID || !bytes.Equal(oldBytes, data) || !equalOptional(o.SetupScript, setupScript) {
+	if o.SandboxName != sandboxName || o.SandboxUID != sandboxUID || o.Placement != placement || !bytes.Equal(oldBytes, data) || !equalOptional(o.SetupScript, setupScript) {
 		return ErrOpeningConflict
 	}
 	return nil
 }
 
-func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal *ServiceAccountIdentity, caller *CallerIdentity) (*Opening, error) {
+func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal *ServiceAccountIdentity, caller *CallerIdentity) (*Opening, error) {
 	if sessionID == "" || sandboxName == "" || spec == nil {
 		return nil, errors.New("session_id, sandbox and spec are required")
+	}
+	if !placement.matchesHarness(spec) {
+		return nil, errors.New("Session placement does not match harness")
 	}
 	data, err := wire(spec)
 	if err != nil {
@@ -826,7 +829,7 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 					return err
 				}
 			}
-			if err := existing.matchRequest(sandboxName, sandboxUID, spec, setupScript); err != nil {
+			if err := existing.matchRequest(sandboxName, sandboxUID, placement, spec, setupScript); err != nil {
 				return err
 			}
 			result = existing
@@ -854,12 +857,12 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 		}
 		attributionArgs := attributionValues(attribution)
 		result, err = scanOpening(tx.QueryRowContext(ctx, `INSERT INTO session_opening
-			(session_id,sandbox_name,sandbox_uid,execution_account_namespace,execution_account_name,execution_account_uid,
+			(session_id,sandbox_name,sandbox_uid,placement,execution_account_namespace,execution_account_name,execution_account_uid,
 			 creator_account_namespace,creator_account_name,creator_account_uid,effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid,
 			 creator_pod_name,creator_pod_uid,action_request_id,action_execution_id,wake_eligible,wake_caller_namespace,wake_caller_name,
 			 spec,setup_script,state,traceparent,created_at,updated_at,delivery_blocker,wake_assessment)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,now(),now(),$24,$25) RETURNING `+openingColumns,
-			sessionID, sandboxName, sandboxUID, ownerNS, ownerName, ownerUID, creatorNS, creatorName, creatorUID,
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,now(),now(),$25,$26) RETURNING `+openingColumns,
+			sessionID, sandboxName, sandboxUID, placement, ownerNS, ownerName, ownerUID, creatorNS, creatorName, creatorUID,
 			attributionArgs[5], attributionArgs[6], attributionArgs[7], attributionArgs[3], attributionArgs[4], attributionArgs[8], attributionArgs[9],
 			wakeCaller != nil, ns, name, data, setupScript, QueueState,
 			observability.Traceparent(ctx), nil, wakeAssessment))

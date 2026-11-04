@@ -563,7 +563,13 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             reasoning_effort="low",
         )
         opened = await stub.OpenSession(
-            pb.OpenSessionRequest(sandbox=sandbox, sandbox_uid=uid, session_id=session, spec=spec),
+            pb.OpenSessionRequest(
+                environment_hosted=pb.EnvironmentHostedPlacement(
+                    environment=pb.ExactSandbox(sandbox=sandbox, sandbox_uid=uid)
+                ),
+                session_id=session,
+                spec=spec,
+            ),
             metadata=authentication.metadata,
             timeout=15,
         )
@@ -657,7 +663,13 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             cleanup_sessions = [session, deletion_session]
             cleanup_commands = [command, deletion_command]
             await stub.OpenSession(
-                pb.OpenSessionRequest(sandbox=sandbox, sandbox_uid=uid, session_id=deletion_session, spec=spec),
+                pb.OpenSessionRequest(
+                    environment_hosted=pb.EnvironmentHostedPlacement(
+                        environment=pb.ExactSandbox(sandbox=sandbox, sandbox_uid=uid)
+                    ),
+                    session_id=deletion_session,
+                    spec=spec,
+                ),
                 metadata=authentication.metadata,
                 timeout=15,
             )
@@ -838,8 +850,9 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                 stub: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
                 opened = await stub.OpenSession(
                     pb.OpenSessionRequest(
-                        sandbox=sandbox,
-                        sandbox_uid=uid,
+                        environment_hosted=pb.EnvironmentHostedPlacement(
+                            environment=pb.ExactSandbox(sandbox=sandbox, sandbox_uid=uid)
+                        ),
                         session_id=session,
                         spec=session_pb2.SessionSpec(
                             harness=session_pb2.HARNESS_CODEX,

@@ -767,7 +767,13 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
     await session_dispatcher.unary(
         session_dispatcher.stub.OpenSession,
         session_dispatcher_pb2.OpenSessionRequest(
-            session_id=str(session_id), sandbox=SANDBOX, sandbox_uid=sandbox.destination.target.uid, spec=spec
+            session_id=str(session_id),
+            environment_hosted=session_dispatcher_pb2.EnvironmentHostedPlacement(
+                environment=session_dispatcher_pb2.ExactSandbox(
+                    sandbox=SANDBOX, sandbox_uid=sandbox.destination.target.uid
+                )
+            ),
+            spec=spec,
         ),
     )
     await delivered_opening(session_dispatcher, session_id)

@@ -149,7 +149,7 @@ func (p *sessionTestPeer) OpenSession(ctx context.Context, name, uid string, id 
 	if p.failOpen != nil {
 		return nil, p.failOpen
 	}
-	return &dispatcherpb.SessionOpening{SessionId: id.String(), Sandbox: name, SandboxUid: uid, State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER}, nil
+	return &dispatcherpb.SessionOpening{SessionId: id.String(), Placement: &dispatcherpb.SessionOpening_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: name, SandboxUid: uid}}}, State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER}, nil
 }
 
 type sessionTokenReviewer struct{}

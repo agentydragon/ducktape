@@ -55,7 +55,10 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
         self.bearers.append(dict(context.invocation_metadata() or ()).get("authorization"))
         return session_dispatcher_pb2.GetSessionOpeningResponse(
             opening=session_dispatcher_pb2.SessionOpening(
-                session_id=request.session_id, sandbox="original", sandbox_uid="original-uid"
+                session_id=request.session_id,
+                environment_hosted=session_dispatcher_pb2.EnvironmentHostedPlacement(
+                    environment=session_dispatcher_pb2.ExactSandbox(sandbox="original", sandbox_uid="original-uid")
+                ),
             )
         )
 
@@ -71,7 +74,11 @@ async def test_native_submission_preserves_identity_and_rotates_service_credenti
         SessionDispatcherClient.connect(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=5) as client,
     ):
         opening = await client.get_session_opening("session")
-        assert (opening.session_id, opening.sandbox, opening.sandbox_uid) == ("session", "original", "original-uid")
+        assert (
+            opening.session_id,
+            opening.environment_hosted.environment.sandbox,
+            opening.environment_hosted.environment.sandbox_uid,
+        ) == ("session", "original", "original-uid")
         sandbox, uid = await client.session_target("session")
         first = await client.submit_input("session", "same-command", sandbox, uid, "original input")
         token_file.write_text("rotated-service-token")

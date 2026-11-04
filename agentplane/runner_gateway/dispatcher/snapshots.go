@@ -74,9 +74,12 @@ func DescribeOpening(row *Opening) (*dispatcherpb.SessionOpening, error) {
 		return nil, err
 	}
 	result := &dispatcherpb.SessionOpening{
-		SessionId: row.SessionID, Sandbox: row.SandboxName, SandboxUid: row.SandboxUID,
-		State: state, CreatedAt: timestamppb.New(row.CreatedAt), UpdatedAt: timestamppb.New(row.UpdatedAt),
+		SessionId: row.SessionID,
+		State:     state, CreatedAt: timestamppb.New(row.CreatedAt), UpdatedAt: timestamppb.New(row.UpdatedAt),
 		DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment, Harness: row.Spec.GetHarness(),
+	}
+	if err := row.Placement.setWire(result, row.SandboxName, row.SandboxUID); err != nil {
+		return nil, err
 	}
 	if row.Reason != "" {
 		result.Reason = &row.Reason

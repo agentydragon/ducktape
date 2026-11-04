@@ -173,15 +173,22 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		if !strings.HasPrefix(args.Spec.Cwd, "/") {
 			return nil, refuse("invalid_arguments", "spec.cwd must be an absolute path")
 		}
-		response, err := e.dispatcher.OpenSession(ctx, &dispatcherpb.OpenSessionRequest{
-			SessionId: args.SessionID, Sandbox: args.Target.Name, SandboxUid: args.Target.UID,
+		request := &dispatcherpb.OpenSessionRequest{
+			SessionId:   args.SessionID,
 			SetupScript: args.SetupScript,
 			Spec: &sessionpb.SessionSpec{
 				Harness: harness, Model: args.Spec.Model,
 				Cwd:             strings.ReplaceAll(args.Spec.Cwd, "{session_id}", args.SessionID),
 				ReasoningEffort: args.Spec.ReasoningEffort, Instructions: args.AdditionalInstructions,
 			},
-		})
+		}
+		target := &dispatcherpb.ExactSandbox{Sandbox: args.Target.Name, SandboxUid: args.Target.UID}
+		request.Placement = &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: target}}
+		if harness == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
+			request.Placement = &dispatcherpb.OpenSessionRequest_CentralSampler{CentralSampler: &dispatcherpb.CentralSamplerPlacement{}}
+			request.InitialExecutor = target
+		}
+		response, err := e.dispatcher.OpenSession(ctx, request)
 		if err != nil {
 			return nil, writeFailure("Session Dispatcher", err)
 		}

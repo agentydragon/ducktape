@@ -14,6 +14,7 @@ go_library(
         "delivery.go",
         "delivery_wake.go",
         "ownership.go",
+        "placement.go",
         "runner_client.go",
         "sandbox_kubernetes.go",
         "snapshots.go",
@@ -105,6 +106,7 @@ go_test(
     size = "medium",
     srcs = [
         "authorization_integration_test.go",
+        "placement_test.go",
         "store_integration_test.go",
         "store_integration_testmain_test.go",
         "wake_integration_test.go",

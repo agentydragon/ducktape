@@ -55,7 +55,7 @@ func (w *DeliveryWorker) prepareDispatch(ctx context.Context, row *Dispatch, san
 		return false, err
 	}
 	var commands []*Dispatch
-	if opening != nil && opening.State == QueueState && sessionRequiresReadyExecutor(opening.Spec) &&
+	if opening != nil && opening.State == QueueState && opening.Placement.requiresReadyExecutor() &&
 		sandbox.Blocker == "sandbox_suspended" && sandbox.WakeOnSend && !sandbox.ManualStop {
 		commands, err = w.Store.WakeCommands(ctx, row.SessionID, sandbox.Name, sandbox.UID)
 		if err != nil {
@@ -71,7 +71,7 @@ func (w *DeliveryWorker) prepareCommand(ctx context.Context, row *Dispatch, open
 		wakeFrom: row.WakeFromIncarnation, wakeRequestedAt: row.WakeRequestedAt, wakeAssessment: row.WakeAssessment,
 		otherWake: barrier.other(row.CommandID, false),
 	}
-	if opening != nil && !sessionRequiresReadyExecutor(opening.Spec) {
+	if opening != nil && !opening.Placement.requiresReadyExecutor() {
 		return w.prepareCentral(ctx, work, sandbox, owner)
 	}
 	return w.prepare(ctx, work, sandbox, owner)
@@ -83,7 +83,7 @@ func (w *DeliveryWorker) prepareOpening(ctx context.Context, row *Opening, sandb
 		attribution: row.Attribution,
 		wakeFrom:    row.WakeFromIncarnation, wakeRequestedAt: row.WakeRequestedAt, wakeAssessment: row.WakeAssessment,
 	}
-	if !sessionRequiresReadyExecutor(row.Spec) {
+	if !row.Placement.requiresReadyExecutor() {
 		return w.prepareCentral(ctx, work, sandbox, owner)
 	}
 	assessDownstream := sandbox.Blocker == "sandbox_suspended" && sandbox.WakeOnSend && !sandbox.ManualStop

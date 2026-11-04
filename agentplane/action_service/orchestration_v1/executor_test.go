@@ -213,7 +213,7 @@ func TestSessionCommandsReachTheDispatcherForTheLaunchedIncarnationOnly(t *testi
 	}
 	want := []proto.Message{
 		&dispatcherpb.OpenSessionRequest{
-			SessionId: session, Sandbox: launched.Name, SandboxUid: string(launched.UID), SetupScript: new("true"),
+			SessionId: session, Placement: &dispatcherpb.OpenSessionRequest_EnvironmentHosted{EnvironmentHosted: &dispatcherpb.EnvironmentHostedPlacement{Environment: &dispatcherpb.ExactSandbox{Sandbox: launched.Name, SandboxUid: string(launched.UID)}}}, SetupScript: new("true"),
 			Spec: &sessionpb.SessionSpec{
 				Harness: sessionpb.Harness_HARNESS_CODEX, Model: "test-model", Cwd: "/test/" + session, Instructions: "test",
 			},
@@ -248,7 +248,7 @@ func TestCentralSamplerHarnessReachesDispatcher(t *testing.T) {
 		"spec": {"harness": "HARNESS_CENTRAL_SAMPLER", "model": "test-model", "cwd": "/test/{session_id}"}
 	}`, launched.Name, launched.UID, session)))
 	want := &dispatcherpb.OpenSessionRequest{
-		SessionId: session, Sandbox: launched.Name, SandboxUid: string(launched.UID),
+		SessionId: session, Placement: &dispatcherpb.OpenSessionRequest_CentralSampler{CentralSampler: &dispatcherpb.CentralSamplerPlacement{}}, InitialExecutor: &dispatcherpb.ExactSandbox{Sandbox: launched.Name, SandboxUid: string(launched.UID)},
 		Spec: &sessionpb.SessionSpec{
 			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Model: "test-model", Cwd: "/test/" + session,
 		},

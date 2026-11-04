@@ -7,8 +7,51 @@ import (
 	"testing"
 	"time"
 
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	_ "github.com/lib/pq"
+	"google.golang.org/protobuf/proto"
 )
+
+func TestSessionPlacementUpgradePreservesRetainedCentralOwner(t *testing.T) {
+	db := openMigrationDatabase(t)
+	provider, err := newProvider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 10); err != nil {
+		t.Fatal("apply predecessor schema:", err)
+	}
+	for _, test := range []struct {
+		id, want string
+		harness  sessionpb.Harness
+	}{
+		{"retained-native", "environment_hosted", sessionpb.Harness_HARNESS_CLAUDE},
+		{"retained-central", "central_sampler", sessionpb.Harness_HARNESS_CENTRAL_SAMPLER},
+	} {
+		if err := insertCurrentOpeningWriterRow(t.Context(), db, test.id); err != nil {
+			t.Fatal(err)
+		}
+		data, err := proto.Marshal(&sessionpb.SessionSpec{Harness: test.harness})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(t.Context(), "UPDATE session_opening SET spec=$2 WHERE session_id=$1", test.id, data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := Up(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct{ id, want string }{{"retained-native", "environment_hosted"}, {"retained-central", "central_sampler"}} {
+		var got string
+		if err := db.QueryRowContext(t.Context(), "SELECT placement FROM session_opening WHERE session_id=$1", test.id).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != test.want {
+			t.Fatalf("%s placement = %q, want %q", test.id, got, test.want)
+		}
+	}
+}
 
 func TestUpgradeFromVersionTwoDropsStopDispatches(t *testing.T) {
 	db := openMigrationDatabase(t)

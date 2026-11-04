@@ -392,7 +392,7 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 			return err
 		}
 	}
-	if head != nil && principalOpening != nil && !centralSpec(principalOpening.Spec) &&
+	if head != nil && principalOpening != nil && principalOpening.Placement.requiresReadyExecutor() &&
 		(principalOpening.State == FailedState || principalOpening.State == UnknownState) {
 		return w.Store.NoteWaiting(ctx, head.CommandID, owner, "session_opening_unconfirmed")
 	}
@@ -525,7 +525,7 @@ func (w *DeliveryWorker) deliveryFailure(sessionID, workID, uid, incarnation str
 // conflicting retained request. Other terminal codes do not prove native rejection.
 func (w *DeliveryWorker) openingFailure(opening *Opening, sandbox SandboxSnapshot, err error) (string, string, *status.Status) {
 	key := "opening:" + opening.SessionID
-	if centralSpec(opening.Spec) {
+	if opening.Placement == CentralSampler {
 		state, reason := w.deliveryFailure(opening.SessionID, key, opening.SandboxUID, sandbox.Incarnation, err)
 		return state, reason, nil
 	}
