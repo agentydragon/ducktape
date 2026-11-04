@@ -9,7 +9,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/app/go/auth"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	sandboxinventory "github.com/agentydragon/ducktape/agentplane/sandboxes/inventory"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
