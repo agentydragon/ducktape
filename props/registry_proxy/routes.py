@@ -18,6 +18,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import insert
 from starlette.background import BackgroundTask
 
 from props.backend.auth import (
@@ -170,17 +171,25 @@ async def _record_manifest_push(
             logger.info(f"Agent definition {digest} already exists, skipping")
             return
 
-        metadata = await _extract_image_metadata(manifest_body, repository)
-        definition = AgentDefinition(
-            digest=digest,
-            agent_type=agent_type,
-            created_by_agent_run_id=agent_run_id,
-            base_digest=metadata.base_digest,
-            display_name=metadata.display_name,
-        )
-        session.add(definition)
-        session.commit()
+    metadata = await _extract_image_metadata(manifest_body, repository)
+    with db.session() as session:
+        # Another push can insert this digest while the config blob is fetched.
+        inserted_digest = session.execute(
+            insert(AgentDefinition)
+            .values(
+                digest=digest,
+                agent_type=agent_type,
+                created_by_agent_run_id=agent_run_id,
+                base_digest=metadata.base_digest,
+                display_name=metadata.display_name,
+            )
+            .on_conflict_do_nothing(index_elements=[AgentDefinition.digest])
+            .returning(AgentDefinition.digest)
+        ).scalar_one_or_none()
 
+    if inserted_digest is None:
+        logger.info(f"Agent definition {digest} already exists, skipping")
+    else:
         logger.info(
             f"Recorded agent definition: {repository}@{digest} "
             f"(type={agent_type}, created_by={agent_run_id}, "
