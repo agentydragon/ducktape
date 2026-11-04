@@ -197,10 +197,8 @@ unknown later execution/effect outcome on deletion; its terminal snapshot retain
 entry and cursor. `UNKNOWN` does not negate that proven journal acceptance. An unmarked command, including a claimed row still before the forwarding marker, can fail
 as known-unsent; a requeued possibly-forwarded command becomes `UNKNOWN` on environment deletion.
 
-Deletion snapshots include every removed command receipt with its last established state, reason,
-admission and recorded read principal. Transactional PostgreSQL notifications deliver them to
-connected `WatchDispatches` listeners even when an earlier settlement invalidation has not been
-processed. Cleanup then removes the command and opening receipts. These notifications provide no
+Deletion snapshots are transactional PostgreSQL notifications to connected `WatchDispatches`
+listeners. Cleanup then removes the command and opening receipts. These notifications provide no
 durable outcome read for a later subscriber. Runtime journals and History remain separate evidence
 owners; cleanup neither deletes retained History nor converts missing evidence into failure.
 
