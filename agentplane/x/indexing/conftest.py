@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.x.indexing.chunking import DEFAULT_CHUNK_BUDGET
 from agentplane.x.indexing.store import Store
-from devinfra.oci.oci import OciImage
 from third_party.containers import pgvector_pg18
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container

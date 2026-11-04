@@ -222,7 +222,6 @@ py_library(
         "@pypi//httpx",
         ":settings",
         "//util/testing:sqlalchemy_engines",
-        "//devinfra/oci",
     ],
 )
 

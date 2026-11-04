@@ -125,7 +125,6 @@ py_library(
     deps = [
         ":chunking",
         ":store",
-        "//devinfra/oci",
         "//third_party/containers:pgvector_pg18",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
