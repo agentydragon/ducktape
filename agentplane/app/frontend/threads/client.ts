@@ -25,7 +25,6 @@ import {
   type ReadSessionEventsRequest,
   type ReadSessionEventsResponse,
   type ReadSessionObservationsRequest,
-)
   ReadSessionEventsResponseSchema,
   ReadSessionObservationsResponseSchema,
   SessionSummarySchema,
