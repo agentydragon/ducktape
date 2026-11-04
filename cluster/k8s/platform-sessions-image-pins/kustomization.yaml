@@ -2,4 +2,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/platform-sessions
-    newTag: main-20261104120552-394f48f # {"$imagepolicy": "flux-system:platform-sessions:tag"}
+    newTag: main-20261104124723-8543485 # {"$imagepolicy": "flux-system:platform-sessions:tag"}
