@@ -61,22 +61,11 @@ class IntegrationRuntime:
         try:
             generation = self.store.path.stat().st_mtime_ns if self.store.path.exists() else None
         except OSError:
-            return {"state": "storage_error", "message": "Could not read the session", "details": []}
+            return {"state": "storage_error", "outcome": "storage_error", "details": []}
         value = self.observation if generation == self.observation_generation else {"outcome": "not_checked"}
         outcome = value.get("outcome", "not_checked")
         if generation is None and outcome == "not_checked":
             outcome = "uninitialized"
-        labels = {
-            "success": "Session verified",
-            "uninitialized": "No session configured",
-            "not_checked": "Not checked yet",
-            "reauth_required": "Session needs reauthentication",
-            "upstream_http_error": "Provider could not verify the session",
-            "network_error": "Could not reach provider",
-            "invalid_response": "Provider returned an unexpected response",
-            "storage_error": "Could not read the session",
-            "superseded": "Session changed during check; check again",
-        }
         return {
             "state": {
                 "success": "ready",
@@ -85,12 +74,12 @@ class IntegrationRuntime:
                 "invalid_response": "upstream_unavailable",
                 "superseded": "not_checked",
             }.get(outcome, outcome),
-            "message": labels.get(outcome, "Status unavailable"),
+            "outcome": outcome,
             "details": [
-                {"label": "Imported", "value": value.get("imported_at"), "format": "time"},
-                {"label": "Age at check", "value": value.get("age_seconds"), "format": "duration"},
-                {"label": "Last checked", "value": value.get("checked_at"), "format": "time"},
-                {"label": "Last check result", "value": outcome.replace("_", " ")},
+                {"key": "imported_at", "value": value.get("imported_at"), "format": "time"},
+                {"key": "age_seconds", "value": value.get("age_seconds"), "format": "duration"},
+                {"key": "checked_at", "value": value.get("checked_at"), "format": "time"},
+                {"key": "outcome", "value": outcome},
             ],
         }
 

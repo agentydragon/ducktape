@@ -179,3 +179,15 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "probe_test",
+    srcs = ["probe_test.py"],
+    deps = [
+        ":probe",
+        ":session_store",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+    ],
+)

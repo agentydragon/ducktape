@@ -167,3 +167,23 @@ assert.equal(ui.calls.findLast(({ url }) => url === "/api/integrations/one/verif
 ui.replies.set("/api/integrations/one/verify", response({}, 401));
 await ui.nodes.integrations.children[0].children[4].listeners.click();
 assert.equal(ui.redirect(), "/auth/login");
+
+// Generic outcomes and detail names are rendered by the frontend.
+const generic = page([entry("generic", "example")]);
+await settle();
+await settle();
+generic.replies.set(
+  "/api/integrations/generic",
+  response({
+    state: "reauth_required",
+    outcome: "reauth_required",
+    details: [{ key: "outcome", value: "reauth_required" }],
+  })
+);
+generic.timers[0]();
+await settle();
+await settle();
+const genericCard = generic.nodes.integrations.children[0];
+assert.equal(genericCard.children[1].textContent, "Session needs reauthentication");
+assert.equal(genericCard.children[3].children[0].textContent, "Last check result");
+assert.equal(genericCard.children[3].children[1].textContent, "reauth required");

@@ -23,7 +23,7 @@ def probe_session(
         session, imported_ns = store.snapshot()
     except OSError, ValueError:
         event = {"event": "session_probe", **identity, "outcome": "storage_error", "source": source}
-        logger.exception("%s", json.dumps(event))
+        logger.error("%s", json.dumps(event))  # noqa: TRY400 - validation errors may include session data
         return event
     if session is None or imported_ns is None:
         event = {"event": "session_probe", **identity, "outcome": "uninitialized", "source": source}
@@ -50,7 +50,7 @@ def probe_session(
             return {"event": "session_probe", **identity, "outcome": "superseded", "source": source}
     except OSError, ValueError:
         event = {"event": "session_probe", **identity, "outcome": "storage_error", "source": source}
-        logger.exception("%s", json.dumps(event))
+        logger.error("%s", json.dumps(event))  # noqa: TRY400 - validation errors may include session data
         return event
     checked_at = datetime.datetime.now(datetime.UTC)
     imported_at = datetime.datetime.fromtimestamp(imported_ns / 1e9, datetime.UTC)
@@ -66,7 +66,7 @@ def probe_session(
     if status is not None:
         event["upstream_status"] = status
     if failure is None:
-        logger.info("%s", json.dumps(event, separators=(",", ":")))
+        logger.info("%s", json.dumps(event))
     else:
-        logger.error("%s", json.dumps(event, separators=(",", ":")), exc_info=failure)
+        logger.error("%s", json.dumps(event), exc_info=failure)
     return event

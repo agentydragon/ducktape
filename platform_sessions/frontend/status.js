@@ -92,6 +92,25 @@ function formatDetail(item) {
   return String(item.value);
 }
 
+const outcomeLabels = {
+  success: "Session verified",
+  uninitialized: "No session configured",
+  not_checked: "Not checked yet",
+  reauth_required: "Session needs reauthentication",
+  upstream_http_error: "Provider could not verify the session",
+  network_error: "Could not reach provider",
+  invalid_response: "Provider returned an unexpected response",
+  storage_error: "Could not read the session",
+  superseded: "Session changed during check; check again",
+};
+
+const detailLabels = {
+  imported_at: "Imported",
+  age_seconds: "Age at check",
+  checked_at: "Last checked",
+  outcome: "Last check result",
+};
+
 function setupIntegration(info) {
   const card = element("section");
   card.className = "card";
@@ -121,12 +140,18 @@ function setupIntegration(info) {
       if (!response.ok) throw new Error("Status unavailable");
       const data = await response.json();
       if (sequence !== refreshSequence || importing) return;
-      state.textContent = typeof data.message === "string" ? data.message : "Status unavailable";
+      state.textContent =
+        typeof data.message === "string" ? data.message : (outcomeLabels[data.outcome] ?? "Status unavailable");
       state.dataset.state = typeof data.state === "string" ? data.state : "unavailable";
       help.textContent = typeof data.help === "string" ? data.help : "";
       details.replaceChildren();
       for (const item of Array.isArray(data.details) ? data.details : []) {
-        details.append(element("dt", item.label), element("dd", formatDetail(item)));
+        const label = detailLabels[item.key] ?? item.label;
+        const value =
+          item.key === "outcome" && typeof item.value === "string"
+            ? item.value.replaceAll("_", " ")
+            : formatDetail(item);
+        details.append(element("dt", label), element("dd", value));
       }
     } catch {
       if (sequence !== refreshSequence || importing) return;

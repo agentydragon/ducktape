@@ -2,7 +2,7 @@
 
 import pytest
 import pytest_bazel
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from platform_sessions.session_store import ProviderSessionStore
 
@@ -35,7 +35,7 @@ def test_rejects_insecure_or_invalid_session_file(tmp_path):
     with pytest.raises(ValueError, match="private"):
         store.load()
     store.path.chmod(0o600)
-    with pytest.raises(ValueError, match="Invalid stored session"):
+    with pytest.raises(ValidationError):
         store.load()
 
 

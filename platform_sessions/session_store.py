@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from atomicwrites import atomic_write
-from pydantic import TypeAdapter, ValidationError
+from pydantic import TypeAdapter
 
 
 class ProviderSessionStore[T]:
@@ -36,10 +36,7 @@ class ProviderSessionStore[T]:
             return None
         if self.path.stat().st_mode & 0o077:
             raise ValueError("Session file must be private")
-        try:
-            return self.adapter.validate_json(self.path.read_bytes())
-        except ValidationError:
-            raise ValueError("Invalid stored session") from None
+        return self.adapter.validate_json(self.path.read_bytes())
 
     def install(self, candidate: T, *, transport=None) -> None:
         # Do not disturb a working session if validation fails.
