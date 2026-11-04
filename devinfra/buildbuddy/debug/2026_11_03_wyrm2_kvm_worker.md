@@ -68,11 +68,47 @@ OOM scores requires `SYS_RESOURCE`.
 
 KubeVirt v1.8.2 also runs its
 [node agents privileged](https://github.com/kubevirt/kubevirt/blob/v1.8.2/pkg/virt-operator/resource/generate/components/daemonsets.go),
-which asks the nested runtime for all capabilities. The proposed worker configuration
-therefore supplies `docker_cap_add: ALL` inside the dedicated guest. Full VM-scenario
-acceptance with this capability set is still pending.
+which asks the nested runtime for all capabilities. The worker configuration therefore
+supplies `docker_cap_add: ALL` inside the dedicated guest. Full VM-scenario acceptance
+remains blocked by the Docker seccomp restrictions below.
 
 The recreated guest reached BuildBuddy over HTTPS, timed out connecting to `example.com`,
 and received a connection reset for the wrong TLS hostname directed to BuildBuddy's IP.
 Cilium endpoint 1167 was ready with ingress and egress policy enabled. These observations
 do not include a separate negative ingress test.
+
+## Default Docker seccomp blocks nested runc
+
+After the worker update was reported ready, the
+[unmodified devel run](https://app.buildbuddy.io/invocation/fa0471c2-a9d1-4d0a-a3c7-a1c2d73db333)
+at `22771892d0251c0432fb94889857a506c8d52751` failed before scenarios. Nested runc
+reported `unable to create session key: operation not permitted` for supporting
+Pods. The existing 180-second cert-manager rollout deadline then expired.
+
+A [direct syscall probe](https://app.buildbuddy.io/invocation/ef144a2d-ffc7-47a8-86c5-a98be3b2a7e8)
+had reproduced `KEYCTL_JOIN_SESSION_KEYRING` returning `EPERM` while KVM API version
+12, VM creation and vCPU creation succeeded. Read-only inspection of the updated
+worker showed Docker's built-in seccomp profile and no executor `SecurityOpt`
+override. [Docker documents](https://docs.docker.com/engine/security/seccomp/) that
+its default profile denies both `keyctl` and `pivot_root`, including when the
+action has the capabilities needed for mounts.
+
+A [fixture-only experiment](https://app.buildbuddy.io/invocation/a423660b-4e4c-44ba-9a22-8676498a194f)
+at runtime commit `5d4422d221` enabled containerd's standard `NoNewKeyring` option.
+The retained containerd startup log confirmed `NoNewKeyring=true`: session-key
+creation errors stopped, exposing 74 `pivot_root .: operation not permitted`
+errors. Supporting Pods still could not start, so cert-manager's rollout expired
+and no guest scenario ran. The experimental fixture change was dropped; the
+worker's runtime policy needs to support nested container startup.
+
+Both full runs used worker `57dfd687-22ab-49e8-9bad-4b0fb1bf2fb5`. The unmodified
+run spent 324.03 seconds waiting for a worker and 376.30 seconds executing. The
+experiment waited 1,056.76 seconds behind another session's action, then executed
+for 260.04 seconds. These times come from remote execution metadata; Bazel's test
+summary reports the experiment's start before worker assignment. Neither failed
+setup measures guest boot latency or establishes a CI speedup.
+
+This validation session made no worker or outer-cluster configuration changes.
+Before accepting the lane, rerun the full suite after the worker policy update
+and verify all three scenarios, actual KVM acceleration, boot/shutdown evidence,
+traces and cleanup.
