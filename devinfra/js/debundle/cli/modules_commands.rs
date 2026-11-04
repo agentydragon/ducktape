@@ -155,8 +155,10 @@ enum ModulesNsCommand {
     /// `--- from <source>:` divider, and `merged from: <sources>`
     /// provenance lands in the target's `note:`. Validates the
     /// post-merge assignment with the realizability gate (requires
-    /// `--graph` unless `--no-verify`).
-    Merge(MergeArgs),
+    /// `--graph` unless `--no-verify`). `--dry-run --analysis` additionally
+    /// reports statement-order commutation for the exact merged candidate; it
+    /// requires the full tree transform context and does not change the gate.
+    Merge(Box<MergeArgs>),
     /// Delete one or more module YAML files. Refuses non-empty modules unless `--force`.
     ///
     /// "Non-empty" means any `members:`, `source_matches:`,
@@ -719,7 +721,7 @@ pub(super) fn run(
 ) -> Result<()> {
     match args.command {
         ModulesNsCommand::Comment(c) => run_module_comment_cmd(c),
-        ModulesNsCommand::Merge(m) => run_merge(m, source_context),
+        ModulesNsCommand::Merge(m) => run_merge(*m, source_context),
         ModulesNsCommand::Delete(d) => run_delete(d, source_context),
         ModulesNsCommand::Propose(p) => {
             let report = run_plan_work_report(&p, source_context)?;

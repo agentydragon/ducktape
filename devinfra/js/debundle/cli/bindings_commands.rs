@@ -5,6 +5,7 @@ use crate::binding::{
     UnassignOutcome, parse_batch_json, parse_move_triple, rename_binding, rename_bindings,
     run_bindings_assign, run_bindings_list, run_bindings_unassign,
 };
+use crate::candidate_assessment::CandidateEffectAssessmentArgs;
 use crate::comment::{BindingCommentArgs, run_binding_comment_cmd};
 use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
@@ -13,7 +14,7 @@ use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::OutputFormat;
-use pipeline::{AnalysisArtifactInput, TransformContextArgs};
+use pipeline::AnalysisArtifactInput;
 use std::path::PathBuf;
 
 /// Top-level `debundle bindings ...` argument node.
@@ -197,13 +198,10 @@ struct BindingsUnassignArgs {
 struct BindingsAssignArgs {
     #[command(flatten)]
     pub edit: GraphEditArgs,
-    /// Full tree transform inputs used only with `--analysis` to assess the
-    /// in-memory post-batch candidate through the canonical lowering path.
+    /// Optional full-context report-only assessment of the in-memory
+    /// post-batch candidate through the canonical lowering path.
     #[command(flatten)]
-    pub transform: TransformContextArgs,
-    /// Verified staged analysis artifact for the candidate effect assessment.
-    #[arg(long)]
-    pub analysis: Option<PathBuf>,
+    pub effect_assessment: CandidateEffectAssessmentArgs,
     /// Positional `<sym>:<module>[:<readable>]` triples. May be empty
     /// when `--batch` is supplied.
     ///
@@ -335,51 +333,22 @@ fn run_bindings_assign_cmd(
         };
         moves.extend(parse_batch_json(&text)?);
     }
-    let candidate_context = if let Some(analysis_path) = &args.analysis {
-        anyhow::ensure!(
-            args.edit.dry_run,
-            "candidate effect assessment requires --dry-run"
-        );
-        anyhow::ensure!(
-            !args.edit.no_verify && args.edit.dependency_graph_path.is_some(),
-            "candidate effect assessment requires graph validation"
-        );
-        let graph_source = source_context
-            .context("candidate effect assessment requires a verified graph source context")?;
-        anyhow::ensure!(
-            args.transform.tree_config.is_some() && args.transform.spec.is_none(),
-            "candidate effect assessment currently requires the full --tree-config transform context"
-        );
-        Some((
-            args.transform.clone().resolve()?,
-            analysis_path.as_path(),
-            graph_source,
-        ))
-    } else {
-        anyhow::ensure!(
-            args.transform.spec.is_none()
-                && args.transform.tree_config.is_none()
-                && !args.transform.has_explicit_auxiliary_inputs(),
-            "transform context arguments require --analysis for candidate effect assessment"
-        );
-        None
-    };
+    let candidate_context = args.effect_assessment.resolve(&args.edit, source_context)?;
     // `GraphEditArgs::gate` is the shared "graph or no-verify" policy
     // every mutating verb uses; no verb can silently skip the
     // realizability gate.
     let gate = args.edit.gate(source_context)?;
-    let effect_assessment = candidate_context
-        .as_ref()
-        .map(
-            |(cli, analysis_path, graph_source)| CandidateEffectAssessmentContext {
-                transform: cli,
+    let effect_assessment =
+        candidate_context
+            .as_ref()
+            .map(|context| CandidateEffectAssessmentContext {
+                transform: &context.transform,
                 analysis: AnalysisArtifactInput {
-                    path: analysis_path,
+                    path: &context.analysis_path,
                     analysis_engine_sha256: analysis_identity::ANALYSIS_ENGINE_SHA256,
                 },
-                graph_source,
-            },
-        );
+                graph_source: context.graph_source,
+            });
     let out = match run_bindings_assign(
         &args.edit.modules_root,
         moves,

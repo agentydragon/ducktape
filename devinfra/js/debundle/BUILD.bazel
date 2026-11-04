@@ -1162,6 +1162,7 @@ rust_library(
     srcs = [
         "cli/binding.rs",
         "cli/bindings_commands.rs",
+        "cli/candidate_assessment.rs",
         "cli/comment.rs",
         "cli/contract_audit.rs",
         "cli/edit_gate.rs",

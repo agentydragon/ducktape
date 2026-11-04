@@ -310,9 +310,18 @@ each verb prints **one outcome object** sharing a common schema core:
 Verb-specific fields flatten in alongside the core: `moves_applied`
 (assign), `unassigned` (unassign), `identity` / `old_readable` /
 `new_readable` (rename), `target` (single merge) / `targets` (merge batch).
-When requested, `bindings assign` also returns
-`effect_relocation_assessment`, a report-only assessment of its exact
-in-memory candidate plan. Gate rejections replace the
+When requested, `bindings assign` and `modules merge` also return
+`effect_relocation_assessment`, a report-only assessment of their exact
+in-memory candidate plan. It requires `--dry-run --analysis <artifact>`,
+`--graph`, and the full tree transform inputs (`--tree-config`,
+`--tree-modules`, `--tree-vendor-marks`, `--tree-source-root`, and
+`--out-root`); `--modules` and `--tree-modules` must resolve to the same root.
+The current path supports one full-tree graph chunk. It loads complete typed
+facts through the canonical pipeline and verifies source, engine and analysis
+projection identities; diagnostic reports are never decoded as facts. The
+assessment does not replace or change the legacy edit gate, and requested
+assessment failures occur before YAML writes. Omitting `--analysis` preserves
+the ordinary graph-backed edit behavior. Gate rejections replace the
 success object with a structured rejection object — see "Rejection
 diagnostics" below.
 
