@@ -28,7 +28,9 @@ service HistoryService {
     option (google.api.http) = {post: "/v1/sessions:batchGetSummaries" body: "*"};
   }
   // Fails with FAILED_PRECONDITION when the caller's projection epoch is no longer current.
-  rpc ReadThreadEntities(ReadThreadEntitiesRequest) returns (ReadThreadEntitiesResponse);
+  rpc ReadThreadEntities(ReadThreadEntitiesRequest) returns (ReadThreadEntitiesResponse) {
+    option (google.api.http) = {post: "/v1/sessions/{session_id}/entities" body: "*"};
+  }
   // The observations an entity was folded from, and the native harness frames behind each.
   rpc ReadEntityEvidence(ReadEntityEvidenceRequest) returns (ReadEntityEvidenceResponse) {
     option (google.api.http) = {post: "/v1/sessions/{session_id}/entity-evidence" body: "*"};

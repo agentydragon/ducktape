@@ -31,6 +31,7 @@ import {
   type Decision,
 } from "../../../egress/egress_admin_pb";
 import { GetActionPolicyResponseSchema } from "../../../action_service/action_service_pb";
+import { ReadThreadEntitiesRequestSchema } from "../../../history_service/history_service_pb";
 import { decisionFixture, type DecisionFixture } from "../sandboxes/decision_fixture";
 import { DurationSchema, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { ServiceAccountIdentitySchema } from "../../../proto/identity_pb";
@@ -2244,9 +2245,9 @@ function realisticRolloutRows(
   return [{ ...viewState(entries.length, null), thread_id: threadId }, ...rows];
 }
 
-function threadScope(threadId: string): Record<string, string> {
+function threadScope(threadId: string): Record<string, unknown> {
   const through = threadEntityRows(threadId).find((row) => row.entity_kind === "view_state")?.revision_cursor ?? "0";
-  return { projection_epoch: CONVERSATION_EPOCH, through_cursor: String(through) };
+  return { projection_epoch: CONVERSATION_EPOCH, through_cursor: String(through), entities: [] };
 }
 
 function rememberPendingInput(): void {
@@ -2482,7 +2483,7 @@ type Flag =
   | "inventoryStreamDropped"
   | "entityStreamDisconnected"
   | "entitySegmentsWithheld"
-  | "syncScopeUnavailable"
+  | "threadScopeUnavailable"
   | "commandAdmissionTimedOut"
   | "pendingActions"
   | "pendingActionOverflow"
@@ -3058,14 +3059,23 @@ routes.push(
       ),
   ],
   [
-    "GET",
-    /^\/threads\/([0-9a-f-]+)\/sync\/scope$/,
-    (match) =>
-      flags.has("syncScopeUnavailable")
-        ? // This persistent service failure is distinct from a retired epoch's 410, which the
-          // production store resolves by reading the scope again.
-          Response.json({ detail: "thread fold is temporarily unavailable" }, { status: 503 })
-        : threadScope(match[1]),
+    "POST",
+    /^\/upstream\/history\/v1\/sessions\/([0-9a-f-]+)\/entities$/,
+    (match, _query, _signal, body) => {
+      if (body === undefined) throw new Error("ReadThreadEntities must use a JSON request body");
+      const request = fromJson(ReadThreadEntitiesRequestSchema, JSON.parse(body));
+      if (
+        request.projectionEpoch !== "" ||
+        request.window.case !== "range" ||
+        request.window.value.startEntityIndex !== 0n ||
+        request.window.value.limit !== 1
+      ) {
+        throw new Error("scope read must request range 0 with limit 1 at the current projection");
+      }
+      return flags.has("threadScopeUnavailable")
+        ? Response.json({ detail: "thread fold is temporarily unavailable" }, { status: 503 })
+        : Response.json(threadScope(match[1]));
+    },
   ],
   [
     "GET",

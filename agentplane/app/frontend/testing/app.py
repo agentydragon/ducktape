@@ -29,7 +29,7 @@ class Flag(StrEnum):
     INVENTORY_STREAM_DROPPED = "inventoryStreamDropped"
     ENTITY_STREAM_DISCONNECTED = "entityStreamDisconnected"
     ENTITY_SEGMENTS_WITHHELD = "entitySegmentsWithheld"
-    SYNC_SCOPE_UNAVAILABLE = "syncScopeUnavailable"
+    THREAD_SCOPE_UNAVAILABLE = "threadScopeUnavailable"
     COMMAND_ADMISSION_TIMED_OUT = "commandAdmissionTimedOut"
     PENDING_ACTIONS = "pendingActions"
     # Two opted-in reads ahead of PENDING_ACTIONS: a queue that overflows the attention strip even

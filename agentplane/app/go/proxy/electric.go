@@ -11,12 +11,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 )
 
 const (
-	// ScopeHoldSeconds is the long-poll window before a not-yet-folded thread returns no content.
-	ScopeHoldSeconds = 20 * time.Second
 	// SubsetRowLimit bounds one entity snapshot.
 	SubsetRowLimit = 200
 	// SubsetBodyLimit bounds one payload-chunk snapshot.
@@ -48,20 +45,9 @@ var (
 	threadIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 )
 
-// ThreadScope is the version and fold cursor a client uses to pin all its shape requests.
-type ThreadScope struct {
-	ProjectionEpoch string `json:"projection_epoch"`
-	ThroughCursor   string `json:"through_cursor"`
-}
-
-// ThreadScopeStore is the integration point for the future thread store. SubscribeThreadChanges
-// must register before returning; its channel should wake a scope waiter after the thread changes.
-// The cancel function releases that subscription. Notifications may be coalesced because the
-// ElectricProxy rereads CurrentScope after every wakeup.
-type ThreadScopeStore interface {
-	ThreadExists(context.Context, string) (bool, error)
-	CurrentScope(context.Context, string) (ThreadScope, bool, error)
-	SubscribeThreadChanges(context.Context, string) (<-chan struct{}, func())
+// ThreadEpochStore reads the current projection epoch so Electric cannot serve stale shapes.
+type ThreadEpochStore interface {
+	CurrentEpoch(context.Context, string) (string, bool, error)
 }
 
 // SubsetRequest is the constrained subset shape accepted by Electric POST requests.
@@ -75,33 +61,25 @@ type SubsetRequest struct {
 // ElectricProxy forwards the app's pinned thread shapes to Electric.
 type ElectricProxy struct {
 	upstream *UpstreamProxy
-	store    ThreadScopeStore
-	hold     time.Duration
+	store    ThreadEpochStore
 }
 
 // NewElectricProxy creates the Electric sync handler. client should be shared with other callers
 // of the upstream service; the proxy applies the same streaming/no-redirect semantics as UpstreamProxy.
-func NewElectricProxy(client *http.Client, electricURL string, store ThreadScopeStore, hold time.Duration) (*ElectricProxy, error) {
+func NewElectricProxy(client *http.Client, electricURL string, store ThreadEpochStore) (*ElectricProxy, error) {
 	if store == nil {
-		return nil, errors.New("thread scope store is required")
-	}
-	if hold < 0 {
-		return nil, errors.New("scope hold must not be negative")
+		return nil, errors.New("thread epoch store is required")
 	}
 	upstream, err := NewUpstreamProxy(client, electricURL)
 	if err != nil {
 		return nil, err
 	}
-	if hold == 0 {
-		hold = ScopeHoldSeconds
-	}
-	return &ElectricProxy{upstream: upstream, store: store, hold: hold}, nil
+	return &ElectricProxy{upstream: upstream, store: store}, nil
 }
 
 // Register mounts the authenticated-by-caller sync routes on mux. Callers should mount this handler
 // behind the app's operator/session authorization middleware.
 func (p *ElectricProxy) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /threads/{thread_id}/sync/scope", p.scope)
 	mux.HandleFunc("GET /threads/{thread_id}/sync/entities", p.entities)
 	mux.HandleFunc("POST /threads/{thread_id}/sync/entities", p.entities)
 	mux.HandleFunc("GET /threads/{thread_id}/sync/chunks/{field}", p.chunks)
@@ -113,50 +91,6 @@ func (p *ElectricProxy) Handler() http.Handler {
 	mux := http.NewServeMux()
 	p.Register(mux)
 	return mux
-}
-
-func (p *ElectricProxy) scope(w http.ResponseWriter, r *http.Request) {
-	threadID, ok := parseThreadID(w, r)
-	if !ok {
-		return
-	}
-	exists, err := p.store.ThreadExists(r.Context(), threadID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "thread scope is unavailable")
-		return
-	}
-	if !exists {
-		writeError(w, http.StatusNotFound, "no thread "+threadID)
-		return
-	}
-	changes, unsubscribe := p.store.SubscribeThreadChanges(r.Context(), threadID)
-	if unsubscribe != nil {
-		defer unsubscribe()
-	}
-	timer := time.NewTimer(p.hold)
-	defer timer.Stop()
-	for {
-		scope, found, err := p.store.CurrentScope(r.Context(), threadID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "thread scope is unavailable")
-			return
-		}
-		if found {
-			writeJSON(w, http.StatusOK, scope)
-			return
-		}
-		select {
-		case <-r.Context().Done():
-			return
-		case <-timer.C:
-			w.WriteHeader(http.StatusNoContent)
-			return
-		case _, open := <-changes:
-			if !open {
-				changes = nil
-			}
-		}
-	}
 }
 
 func (p *ElectricProxy) entities(w http.ResponseWriter, r *http.Request) {
@@ -207,12 +141,12 @@ func (p *ElectricProxy) prepareShape(w http.ResponseWriter, r *http.Request) (st
 		writeError(w, http.StatusUnprocessableEntity, "projection_epoch is required exactly once")
 		return "", "", nil, false
 	}
-	scope, found, err := p.store.CurrentScope(r.Context(), threadID)
+	epoch, found, err := p.store.CurrentEpoch(r.Context(), threadID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "thread scope is unavailable")
 		return "", "", nil, false
 	}
-	if !found || scope.ProjectionEpoch != epochs[0] {
+	if !found || epoch != epochs[0] {
 		writeError(w, http.StatusGone, "the selected thread scope is unavailable")
 		return "", "", nil, false
 	}

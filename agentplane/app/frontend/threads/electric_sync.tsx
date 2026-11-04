@@ -27,11 +27,18 @@ import {
   type SubsetParams,
 } from "@electric-sql/client";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState, useSyncExternalStore } from "react";
+import { fromJson } from "@bufbuild/protobuf";
 import { z } from "zod";
 
 import { displayableError, fetchWithLogin } from "../client";
-import { threadScope, type ThreadScope } from "./client";
+import { threadScope } from "./client";
 import { backoff, type StreamConnection } from "../stream_reader";
+import { followWatch } from "../watch_stream";
+import { protoJson } from "./proto_json";
+import {
+  WatchSessionSummariesResponseSchema,
+  type ReadThreadEntitiesResponse,
+} from "../../../history_service/history_service_pb";
 import {
   decimalBigInt,
   type Decimal,
@@ -604,11 +611,11 @@ class EpochWindow extends Listeners {
   #position: ShapePosition | null = null;
   #state: WindowState = NO_WINDOW;
 
-  constructor(threadId: string, scope: ThreadScope, onGone: () => void) {
+  constructor(threadId: string, scope: ReadThreadEntitiesResponse, onGone: () => void) {
     super();
     this.#threadId = threadId;
-    this.epoch = scope.projection_epoch;
-    this.#through = BigInt(scope.through_cursor);
+    this.epoch = scope.projectionEpoch;
+    this.#through = scope.throughCursor;
     this.#onGone = onGone;
     this.#shape = this.#open(null);
     void this.#guard(async () => {
@@ -904,7 +911,11 @@ class ThreadEpochs extends Listeners {
   readonly #threadId: string;
   #next: EpochWindow | null = null;
   #resolving: AbortController | null = null;
-  #retry: number | undefined;
+  #stopScopeWatch: (() => void) | null = null;
+  #scopeRetry: number | undefined;
+  #scopeRetryAttempt = 0;
+  #scopeReading = false;
+  #scopeDirty = false;
   #closed = false;
   #suspended = false;
   #state: SyncState = { window: null, error: null };
@@ -912,21 +923,23 @@ class ThreadEpochs extends Listeners {
   constructor(threadId: string) {
     super();
     this.#threadId = threadId;
-    void this.#resolve();
+    this.#watchScope();
   }
 
   getState = (): SyncState => this.#state;
 
   refresh = (): void => {
-    // A suspended thread follows nothing, whatever a read it had in flight finds.
-    if (!this.#suspended) void this.#resolve();
+    if (!this.#suspended && !this.#closed) this.#watchScope();
   };
 
   /** Stops following the thread; its window stays, off the network, until `resume` or `close`. */
   suspend(): void {
     this.#suspended = true;
     this.#resolving?.abort();
-    window.clearTimeout(this.#retry);
+    window.clearTimeout(this.#scopeRetry);
+    this.#scopeRetry = undefined;
+    this.#stopScopeWatch?.();
+    this.#stopScopeWatch = null;
     this.#next?.close();
     this.#next = null;
     this.#state.window?.suspend();
@@ -934,29 +947,84 @@ class ThreadEpochs extends Listeners {
 
   resume(): void {
     this.#suspended = false;
-    void this.#resolve();
+    this.#watchScope();
   }
 
   close(): void {
     this.#closed = true;
     this.#resolving?.abort();
-    window.clearTimeout(this.#retry);
+    window.clearTimeout(this.#scopeRetry);
+    this.#scopeRetry = undefined;
+    this.#stopScopeWatch?.();
+    this.#stopScopeWatch = null;
     this.#next?.close();
     this.#state.window?.close();
   }
 
+  #watchScope(): void {
+    if (this.#stopScopeWatch !== null || this.#closed || this.#suspended) return;
+    this.#stopScopeWatch = followWatch("/upstream/history/v1/session-summaries:watch", {
+      onOpen: () => {},
+      onFrame: (value) => {
+        const frame = fromJson(WatchSessionSummariesResponseSchema, protoJson(value));
+        switch (frame.observation.case) {
+          case "changed":
+          case "reconnectRequired":
+            this.#scopeChanged();
+            break;
+          case "sessionOpened":
+            throw new Error("History emitted a SessionOpened frame without an opened_after request.");
+          case undefined:
+            throw new Error("History returned an empty Session summary watch frame.");
+        }
+      },
+      onConnection: (connection) => {
+        if (connection.phase === "reconnecting" && connection.lastError) {
+          this.#set({ ...this.#state, error: connection.lastError });
+        }
+      },
+    });
+  }
+
+  #scopeChanged(): void {
+    if (this.#closed || this.#suspended) return;
+    window.clearTimeout(this.#scopeRetry);
+    this.#scopeRetry = undefined;
+    if (this.#scopeReading) {
+      this.#scopeDirty = true;
+      return;
+    }
+    void this.#resolve();
+  }
+
   async #resolve(): Promise<void> {
-    window.clearTimeout(this.#retry);
-    this.#resolving?.abort();
+    if (this.#scopeReading) {
+      this.#scopeDirty = true;
+      return;
+    }
+    window.clearTimeout(this.#scopeRetry);
+    this.#scopeRetry = undefined;
+    this.#scopeReading = true;
+    this.#scopeDirty = false;
     const resolving = (this.#resolving = new AbortController());
+    let scopeMissing = false;
     try {
       const scope = await threadScope(this.#threadId, resolving.signal);
       if (resolving.signal.aborted || this.#closed) return;
-      // No admitted view has materialized during the server's hold: hold another read.
-      if (scope === null) return this.refresh();
+      // History may not have recorded this Session or materialized its first fold yet.
+      if (scope === null || scope.projectionEpoch === "") {
+        scopeMissing = true;
+        return;
+      }
+      this.#scopeDirty = false;
+      window.clearTimeout(this.#scopeRetry);
+      this.#scopeRetry = undefined;
+      this.#scopeRetryAttempt = 0;
       const suspended = this.#state.window?.suspended ? this.#state.window : null;
-      if (suspended?.resumable && suspended.epoch === scope.projection_epoch) {
-        suspended.resume(BigInt(scope.through_cursor));
+      this.#stopScopeWatch?.();
+      this.#stopScopeWatch = null;
+      if (suspended?.resumable && suspended.epoch === scope.projectionEpoch) {
+        suspended.resume(scope.throughCursor);
         return this.#set({ window: suspended, error: null });
       }
       this.#next?.close();
@@ -977,8 +1045,16 @@ class ThreadEpochs extends Listeners {
     } catch (error) {
       if (resolving.signal.aborted || this.#closed) return;
       this.#set({ ...this.#state, error: displayableError(error) });
-      // A failed read reconnects after a pause; an answered one never waits.
-      this.#retry = window.setTimeout(this.refresh, 1_000);
+      this.#scopeRetry = window.setTimeout(() => {
+        this.#scopeRetry = undefined;
+        void this.#resolve();
+      }, backoff(this.#scopeRetryAttempt++));
+    } finally {
+      this.#scopeReading = false;
+      if (scopeMissing && this.#scopeDirty && !this.#closed && !this.#suspended) {
+        this.#scopeDirty = false;
+        this.#scopeChanged();
+      }
     }
   }
 

@@ -194,21 +194,16 @@ func (s *Store) ReadWatermark(ctx context.Context, id uuid.UUID) (uint64, error)
 	return page.GetLastCursor(), nil
 }
 
-type Scope struct {
-	ProjectionEpoch string
-	ThroughCursor   uint64
-}
-
-func (s *Store) CurrentScope(ctx context.Context, id uuid.UUID) (*Scope, error) {
+func (s *Store) CurrentEpoch(ctx context.Context, id uuid.UUID) (string, bool, error) {
 	message, err := s.reader.GetSessionSummary(ctx, &historypb.GetSessionSummaryRequest{SessionId: id.String()})
 	if status.Code(err) == codes.NotFound {
-		return nil, nil
+		return "", false, nil
 	}
 	if err != nil {
-		return nil, err
+		return "", false, err
 	}
 	if message.ProjectionEpoch == nil {
-		return nil, nil
+		return "", false, nil
 	}
-	return &Scope{ProjectionEpoch: message.GetProjectionEpoch(), ThroughCursor: message.GetFoldedThrough()}, nil
+	return message.GetProjectionEpoch(), true, nil
 }

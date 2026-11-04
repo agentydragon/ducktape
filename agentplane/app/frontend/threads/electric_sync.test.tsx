@@ -169,7 +169,7 @@ interface Connection {
 class FakeSync {
   epoch = "epoch-1";
   through = "70";
-  /** Whether the thread has a fold: a scope read before it has one is held, as the proxy holds it. */
+  /** Whether the thread has a fold materialized in History. */
   folded = true;
   entities: Json[] = [];
   chunks: Json[] = [];
@@ -194,20 +194,48 @@ class FakeSync {
   readonly requests: { thread: string; method: string; path: string; query: URLSearchParams; subset: Subset | null }[] =
     [];
   readonly #live = new Map<string, Connection>();
-  // The held scope read, answered by `respond`.
-  #held: ((response: Response) => void) | null = null;
+  readonly #summaryWatches = new Set<ReadableStreamDefaultController<Uint8Array>>();
   // Handles Electric has rotated away from, each with the one its 409 names instead.
   readonly #rotated = new Map<string, string>();
   // Each subset answers from further along the log than any stream has read.
   #snapshots = 0;
 
   fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const url = new URL(input instanceof Request ? input.url : String(input));
+    const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
     const method = init?.method ?? "GET";
+    if (url.pathname === "/upstream/history/v1/session-summaries:watch") {
+      return this.watchSummaries(init?.signal);
+    }
+    const historyScope = url.pathname.match(/^\/upstream\/history\/v1\/sessions\/([^/]+)\/entities$/);
+    if (historyScope) {
+      if (method !== "POST" || typeof init?.body !== "string") {
+        throw new Error("scope reads use the History ReadThreadEntities POST route");
+      }
+      const body = JSON.parse(init.body) as {
+        projectionEpoch?: unknown;
+        range?: { startEntityIndex?: unknown; limit?: unknown };
+      };
+      if (
+        (body.projectionEpoch !== undefined && body.projectionEpoch !== "") ||
+        (body.range?.startEntityIndex !== undefined && body.range.startEntityIndex !== "0") ||
+        body.range?.limit !== 1
+      ) {
+        throw new Error("scope read must request range 0 with limit 1 at the current projection");
+      }
+      this.requests.push({
+        thread: decodeURIComponent(historyScope[1]!),
+        method,
+        path: "scope",
+        query: url.searchParams,
+        subset: null,
+      });
+      if (this.loggedOut) return Response.json({ detail: "test session expired" }, { status: 401 });
+      if (this.unreachable) throw new TypeError("Failed to fetch");
+      return this.scope();
+    }
     const subset = typeof init?.body === "string" ? (JSON.parse(init.body) as Subset) : null;
     const [thread, path] = url.pathname.replace("/threads/", "").split("/sync/");
     this.requests.push({ thread: decodeURIComponent(thread), method, path, query: url.searchParams, subset });
-    if (path === "scope") return this.folded ? this.scope() : this.#hold(init?.signal);
     if (this.loggedOut) return Response.json({ detail: "test session expired" }, { status: 401 });
     if (this.unreachable) throw new TypeError("Failed to fetch");
     if (url.searchParams.get("projection_epoch") !== this.epoch) return Response.json({}, { status: 410 });
@@ -268,27 +296,38 @@ class FakeSync {
   };
 
   scope(): Response {
-    return Response.json({ projection_epoch: this.epoch, through_cursor: this.through });
-  }
-
-  #hold(signal?: AbortSignal | null): Promise<Response> {
-    return new Promise((resolve, reject) => {
-      this.#held = resolve;
-      signal?.addEventListener("abort", () => {
-        this.#held = null;
-        reject(new DOMException("aborted", "AbortError"));
-      });
+    return Response.json({
+      projection_epoch: this.folded ? this.epoch : "",
+      through_cursor: this.through,
+      entities: [],
     });
   }
 
-  /** Answer the held scope read. */
-  async respond(response: () => Response): Promise<void> {
-    await vi.waitFor(() => {
-      if (this.#held === null) throw new Error("No scope read is held");
+  private watchSummaries(signal?: AbortSignal | null): Response {
+    const body = new ReadableStream<Uint8Array>({
+      start: (controller) => {
+        this.#summaryWatches.add(controller);
+        controller.enqueue(new TextEncoder().encode('{"result":{"changed":{}}}\n'));
+        signal?.addEventListener("abort", () => {
+          this.#summaryWatches.delete(controller);
+          controller.close();
+        });
+      },
     });
-    const resolve = this.#held!;
-    this.#held = null;
-    await act(async () => resolve(response()));
+    return new Response(body, { headers: { "content-type": "application/x-ndjson" } });
+  }
+
+  async changeScope(): Promise<void> {
+    await act(async () => {
+      const frame = new TextEncoder().encode('{"result":{"changed":{}}}\n');
+      for (const watch of this.#summaryWatches) {
+        try {
+          watch.enqueue(frame);
+        } catch {
+          this.#summaryWatches.delete(watch);
+        }
+      }
+    });
   }
 
   /** The offset the shape's open SSE connection reads from. */
@@ -525,6 +564,10 @@ function olderPages(sync: FakeSync): Subset[] {
   return sync.posted("entities").filter((subset) => subset.where === "entity_index < $1");
 }
 
+function shapeReads(requests: FakeSync["requests"]): FakeSync["requests"] {
+  return requests.filter((request) => request.method === "POST" && request.path !== "scope");
+}
+
 it("shows a page before the tail as loading until it lands, and asks for it once however often asked", async () => {
   const sync = stubSync();
   thread(sync, 130);
@@ -573,7 +616,7 @@ it("asks for no page before the tail after one found the window's epoch gone", a
   const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(90));
   const before = olderPages(sync).length;
-  // The scope read the 410 prompts is held, so the retired window stays on screen.
+  // A 410 prompts a new scope read, while the retired window stays on screen until replacement catches up.
   sync.folded = false;
   sync.epoch = "epoch-2";
   const older = container.querySelector("button")!;
@@ -586,20 +629,18 @@ it("asks for no page before the tail after one found the window's epoch gone", a
   expect(olderPages(sync).length - before).toBe(1);
 });
 
-it("re-issues a scope read the server answered without a fold at once, and opens the thread once it has one", async () => {
+it("waits on History's summaries watch until the first fold materializes", async () => {
   const sync = stubSync();
   thread(sync, 3);
   sync.folded = false;
   const container = await renderThread(<Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>);
 
-  await sync.respond(() => new Response(null, { status: 204 }));
-  // Already held again, before any timer could have fired.
-  expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(2);
+  await vi.waitFor(() => expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(1));
   // No window has opened: the view has nothing to show yet.
   expect(container.textContent).toBe("");
 
   sync.folded = true;
-  await sync.respond(() => sync.scope());
+  await sync.changeScope();
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(3));
   expect(sync.requests.filter((request) => request.path === "scope")).toHaveLength(2);
 });
@@ -913,7 +954,7 @@ it("reads only what changed when the reader comes back to a thread, keeping the 
   expect(itemsShown(container)).toContain("item-11@11");
 
   const asked = since(sync, left, "thread");
-  expect(asked.filter((request) => request.method === "POST")).toEqual([]);
+  expect(shapeReads(asked)).toEqual([]);
   // The log is read on from where the reader left it.
   const [read] = asked.filter((request) => request.path === "entities");
   expect([read.query.get("handle"), read.query.get("offset")]).toEqual(["entities-1", reading]);
@@ -930,7 +971,7 @@ it("shows the rows it held at once on coming back to a thread that has not moved
   await switchThread(threads, "thread", itemsView);
 
   await vi.waitFor(() => expect(itemsShown(container)).toHaveLength(120));
-  expect(since(sync, left, "thread").filter((request) => request.method === "POST")).toEqual([]);
+  expect(shapeReads(since(sync, left, "thread"))).toEqual([]);
 });
 
 it("opens a new window on coming back to a thread whose epoch changed while the reader was away", async () => {
@@ -1000,7 +1041,7 @@ it("keeps the bodies it held when the reader leaves a thread, and follows their 
     change(relation, "update", item(1, "epoch-1", { text_ref: textRef("a", 3) })),
   ]);
   await vi.waitFor(() => expect(bodyText(container)).toBe("Hello there"));
-  expect(since(sync, left, "thread").filter((request) => request.method === "POST")).toEqual([]);
+  expect(shapeReads(since(sync, left, "thread"))).toEqual([]);
 });
 
 it("reads the bodies it held again on coming back when their log was retired meanwhile", async () => {
@@ -1123,10 +1164,10 @@ it("retains the windows of the last few threads the reader left, not every one",
   // The first thread left is the one forgotten; the latest is not.
   let mark = sync.requests.length;
   await visit("thread");
-  expect(since(sync, mark, "thread").filter((request) => request.method === "POST")).not.toEqual([]);
+  expect(shapeReads(since(sync, mark, "thread"))).not.toEqual([]);
   mark = sync.requests.length;
   await visit("other-9");
-  expect(since(sync, mark, "other-9").filter((request) => request.method === "POST")).toEqual([]);
+  expect(shapeReads(since(sync, mark, "other-9"))).toEqual([]);
 });
 
 /** The owners of the bodies the thread's reads named, in the order they were read. */

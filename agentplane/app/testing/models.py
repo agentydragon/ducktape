@@ -87,11 +87,6 @@ def thread_view_from_proto_json(metadata: dict[str, object], summary: dict[str, 
     )
 
 
-class ThreadScopeResponse(BaseModel):
-    projection_epoch: str
-    through_cursor: str
-
-
 class SubsetRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

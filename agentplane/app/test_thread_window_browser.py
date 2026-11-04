@@ -180,7 +180,7 @@ async def test_a_growing_thread_stays_one_shape_and_scrolling_back_keeps_the_rea
     # while scrollTop is within a full screen of the top, so a taller viewport can settle one page
     # further before the buffer clears that (viewport-height-relative) threshold.
     urls = [request.url for request in requests]
-    assert len([url for url in urls if "/sync/scope" in url]) == 1
+    assert len([url for url in urls if "/upstream/history/v1/sessions/" in url and url.endswith("/entities")]) == 1
     assert len(_handles(urls)) == 1
     assert len([request for request in requests if _older_page(request)]) >= eager + 1
     await page.screenshot(path=undeclared_outputs_dir() / "thread-window-retained-reader.png")
@@ -357,8 +357,8 @@ async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draf
         latest = append_items(thread_browser, "offline-item", range(70))
         async with asyncio.timeout(15):
             while True:
-                scope = await thread_browser.content.current_scope(thread.id)
-                if scope is not None and scope.through_cursor >= latest.cursor:
+                summary = await thread_browser.content.session_summary(thread.id)
+                if summary is not None and summary.folded_through >= latest.cursor:
                     break
                 await asyncio.sleep(0.01)
         await expect(composer).to_have_value("Draft retained across a long offline gap")
@@ -370,7 +370,7 @@ async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draf
         assert await document.evaluate("original => original === document")
         # The gap is read from the shape's log, from the offset the reader had reached.
         assert _handles(requests) == before
-        assert not [url for url in requests if "/sync/scope" in url]
+        assert not [url for url in requests if "/upstream/history/v1/sessions/" in url and url.endswith("/entities")]
         await page.screenshot(path=undeclared_outputs_dir() / "thread-long-offline-recovery.png")
     finally:
         await page.context.set_offline(False)

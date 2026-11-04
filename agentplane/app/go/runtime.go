@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -349,8 +348,7 @@ func run(ctx context.Context, config Config) error {
 		Console: consoleConnector, Logger: logger,
 	})
 	if config.ElectricURL != "" {
-		electric, electricErr := proxy.NewElectricProxy(baseClient, config.ElectricURL,
-			threadScopeStore{threads: threadStore, history: history, changes: wakeupHub}, 20*time.Second)
+		electric, electricErr := proxy.NewElectricProxy(baseClient, config.ElectricURL, threadEpochStore{history: history})
 		if electricErr != nil {
 			return fmt.Errorf("configure Electric thread sync: %w", electricErr)
 		}
@@ -378,41 +376,16 @@ func (c historyWatchAdapter) WatchSessionSummaries(
 
 func (c historyWatchAdapter) Redial() { c.client.Redial() }
 
-type threadScopeStore struct {
-	threads *threads.Store
+type threadEpochStore struct {
 	history *historydata.Store
-	changes auth.ChangeSource
 }
 
-func (s threadScopeStore) ThreadExists(ctx context.Context, rawID string) (bool, error) {
+func (s threadEpochStore) CurrentEpoch(ctx context.Context, rawID string) (string, bool, error) {
 	id, err := uuid.Parse(rawID)
 	if err != nil || id.String() != rawID {
-		return false, nil
+		return "", false, nil
 	}
-	thread, err := s.threads.GetThread(ctx, id)
-	return thread != nil, err
-}
-
-func (s threadScopeStore) CurrentScope(ctx context.Context, rawID string) (proxy.ThreadScope, bool, error) {
-	id, err := uuid.Parse(rawID)
-	if err != nil || id.String() != rawID {
-		return proxy.ThreadScope{}, false, nil
-	}
-	scope, err := s.history.CurrentScope(ctx, id)
-	if err != nil || scope == nil {
-		return proxy.ThreadScope{}, false, err
-	}
-	return proxy.ThreadScope{ProjectionEpoch: scope.ProjectionEpoch, ThroughCursor: strconv.FormatUint(scope.ThroughCursor, 10)}, true, nil
-}
-
-func (s threadScopeStore) SubscribeThreadChanges(_ context.Context, _ string) (<-chan struct{}, func()) {
-	signal, unsubscribe, err := s.changes.Subscribe(threads.UpdatesChannel)
-	if err != nil {
-		closed := make(chan struct{})
-		close(closed)
-		return closed, func() {}
-	}
-	return signal, unsubscribe
+	return s.history.CurrentEpoch(ctx, id)
 }
 
 func postgresDriverURL(value string) string {

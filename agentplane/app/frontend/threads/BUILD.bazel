@@ -512,18 +512,29 @@ agentplane_vitest_test(
 )
 
 ts_library(
+    name = "proto_json",
+    srcs = ["proto_json.ts"],
+    tsconfig = TSCONFIG,
+    deps = ["//:node_modules/@bufbuild/protobuf"],
+)
+
+ts_library(
     name = "electric_sync",
     srcs = ["electric_sync.tsx"],
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":proto_json",
         ":thread_sync",
+        "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@electric-sql/client",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/zod",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:stream_reader",
+        "//agentplane/app/frontend:watch_stream",
+        "//agentplane/history_service:history_service_pb",
     ],
 )
 
@@ -830,6 +841,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":proto_json",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
         "//:node_modules/react",

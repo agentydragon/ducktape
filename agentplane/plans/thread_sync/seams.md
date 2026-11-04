@@ -14,8 +14,9 @@ Electric sits behind one module on each side:
 
 - **Backend:** `agentplane/app/go/proxy/electric.go` holds `ElectricProxy` and the
   `/threads/{thread_id}/sync/*` routes, which `runtime.go` mounts only when `electric_url` is set.
-  Its only read of the fold is `ThreadScopeStore.CurrentScope` (`historydata.Store.CurrentScope`),
-  which any implementation needs for **P7**.
+  Its fold check is `ThreadEpochStore.CurrentEpoch` (`historydata.Store.CurrentEpoch`), which any
+  implementation needs for **P7**. The browser reads projection scope from History's generated
+  HTTP facade and follows `WatchSessionSummaries` while the first fold is absent or an epoch retires.
 - **Frontend:** `thread_sync.ts` defines the `ThreadSync` interface, and `page.tsx`
   reads only that, from a context `app.tsx` fills. `electric_sync.tsx` implements it as
   `electricThreadSync`, on the raw `@electric-sql/client`.
@@ -23,8 +24,8 @@ Electric sits behind one module on each side:
 ## Backend
 
 - **Shared, below the seam:** the fold tables; `historydata.Store`;
-  `threads.Store`; the app's `wakeups.Hub` subscription to `threads.UpdatesChannel`, the replica-local signal that a thread was written — what
-  a long poll or a push waits on. The `/threads` routes for thread metadata and commands
+  `threads.Store`; the app's `wakeups.Hub` subscription to `threads.UpdatesChannel` for thread
+  metadata updates. The `/threads` routes for thread metadata and commands
   (the five typed command POST routes under `/threads/{thread_id}`) stay shared: commands are writes,
   not sync.
 - **One new shared read**, which every non-Electric option needs: rows by `entity_index` range, and

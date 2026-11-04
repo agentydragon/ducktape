@@ -12,47 +12,27 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
-type fakeThreadScopeStore struct {
+type fakeThreadEpochStore struct {
 	mu       sync.Mutex
-	exists   bool
-	scope    ThreadScope
-	hasScope bool
-	changes  chan struct{}
+	epoch    string
+	hasEpoch bool
 }
 
-func newFakeThreadScopeStore(exists bool, scope ThreadScope, hasScope bool) *fakeThreadScopeStore {
-	return &fakeThreadScopeStore{exists: exists, scope: scope, hasScope: hasScope, changes: make(chan struct{}, 1)}
+func newFakeThreadEpochStore(epoch string, hasEpoch bool) *fakeThreadEpochStore {
+	return &fakeThreadEpochStore{epoch: epoch, hasEpoch: hasEpoch}
 }
 
-func (s *fakeThreadScopeStore) ThreadExists(context.Context, string) (bool, error) {
+func (s *fakeThreadEpochStore) CurrentEpoch(context.Context, string) (string, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.exists, nil
+	return s.epoch, s.hasEpoch, nil
 }
 
-func (s *fakeThreadScopeStore) CurrentScope(context.Context, string) (ThreadScope, bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.scope, s.hasScope, nil
-}
-
-func (s *fakeThreadScopeStore) SubscribeThreadChanges(context.Context, string) (<-chan struct{}, func()) {
-	return s.changes, func() {}
-}
-
-func (s *fakeThreadScopeStore) setScope(scope ThreadScope) {
-	s.mu.Lock()
-	s.scope, s.hasScope = scope, true
-	s.mu.Unlock()
-	s.changes <- struct{}{}
-}
-
-func mustElectricProxy(t *testing.T, client *http.Client, serverURL string, store ThreadScopeStore, hold time.Duration) *ElectricProxy {
+func mustElectricProxy(t *testing.T, client *http.Client, serverURL string, store ThreadEpochStore) *ElectricProxy {
 	t.Helper()
-	proxy, err := NewElectricProxy(client, serverURL, store, hold)
+	proxy, err := NewElectricProxy(client, serverURL, store)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,9 +59,9 @@ func TestElectricEntityForwardPinsThreadAndStreamsFilteredResponse(t *testing.T)
 		_, _ = io.WriteString(w, "streamed electric body")
 	}))
 	defer server.Close()
-	store := newFakeThreadScopeStore(true, ThreadScope{ProjectionEpoch: epoch, ThroughCursor: "42"}, true)
+	store := newFakeThreadEpochStore(epoch, true)
 	mux := http.NewServeMux()
-	mustElectricProxy(t, server.Client(), server.URL, store, time.Second).Register(mux)
+	mustElectricProxy(t, server.Client(), server.URL, store).Register(mux)
 
 	request := httptest.NewRequest(http.MethodGet,
 		"/threads/"+threadID+"/sync/entities?projection_epoch="+epoch+"&offset=now&handle=h&live=true&live_sse=true&experimental_live_sse=true&cursor=c&expired_handle=old&cache-buster=b&log=changes_only",
@@ -154,9 +134,9 @@ func TestElectricSubsetIsValidatedAndForwarded(t *testing.T) {
 		w.WriteHeader(http.StatusNotModified)
 	}))
 	defer server.Close()
-	store := newFakeThreadScopeStore(true, ThreadScope{ProjectionEpoch: epoch}, true)
+	store := newFakeThreadEpochStore(epoch, true)
 	mux := http.NewServeMux()
-	mustElectricProxy(t, server.Client(), server.URL, store, time.Second).Register(mux)
+	mustElectricProxy(t, server.Client(), server.URL, store).Register(mux)
 	for _, test := range []struct{ where, value string }{
 		{"entity_index < $1", "40"},
 		{"entity_kind = 'command' AND entity_id = ANY($1)", `{selected-command,"id-with-comma,quote\\\""}`},
@@ -199,9 +179,9 @@ func TestElectricChunksPinsFieldAndAcceptsBoundedBodySubset(t *testing.T) {
 		_, _ = io.WriteString(w, "[]")
 	}))
 	defer server.Close()
-	store := newFakeThreadScopeStore(true, ThreadScope{ProjectionEpoch: epoch}, true)
+	store := newFakeThreadEpochStore(epoch, true)
 	mux := http.NewServeMux()
-	mustElectricProxy(t, server.Client(), server.URL, store, time.Second).Register(mux)
+	mustElectricProxy(t, server.Client(), server.URL, store).Register(mux)
 	where := "(owner_id = $1 AND generation = $2) OR (owner_id = $3 AND generation = $4)"
 	body := `{"where":"` + where + `","params":{"1":"item-a","2":"4","3":"item-b","4":"5"}}`
 	request := httptest.NewRequest(http.MethodPost,
@@ -220,67 +200,15 @@ func TestElectricChunksPinsFieldAndAcceptsBoundedBodySubset(t *testing.T) {
 	}
 }
 
-func TestElectricScopeChecksThreadAndWaitsForFold(t *testing.T) {
-	const threadID = "00000000-0000-0000-0000-000000000004"
-	store := newFakeThreadScopeStore(true, ThreadScope{}, false)
-	mux := http.NewServeMux()
-	mustElectricProxy(t, nil, "https://electric.invalid", store, 300*time.Millisecond).Register(mux)
-	request := httptest.NewRequest(http.MethodGet, "/threads/"+threadID+"/sync/scope", nil)
-	response := httptest.NewRecorder()
-	completed := make(chan struct{})
-	go func() {
-		mux.ServeHTTP(response, request)
-		close(completed)
-	}()
-	time.Sleep(10 * time.Millisecond)
-	store.setScope(ThreadScope{ProjectionEpoch: "epoch-2", ThroughCursor: "91"})
-	select {
-	case <-completed:
-	case <-time.After(time.Second):
-		t.Fatal("scope request did not wake after a thread change")
-	}
-	if response.Code != http.StatusOK {
-		t.Fatalf("scope status = %d body=%q", response.Code, response.Body.String())
-	}
-	var got ThreadScope
-	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
-	}
-	if got != (ThreadScope{ProjectionEpoch: "epoch-2", ThroughCursor: "91"}) {
-		t.Fatalf("scope = %+v", got)
-	}
-
-	missing := newFakeThreadScopeStore(false, ThreadScope{}, false)
-	missingMux := http.NewServeMux()
-	mustElectricProxy(t, nil, "https://electric.invalid", missing, time.Millisecond).Register(missingMux)
-	missingResponse := httptest.NewRecorder()
-	missingMux.ServeHTTP(missingResponse, httptest.NewRequest(http.MethodGet, "/threads/"+threadID+"/sync/scope", nil))
-	if missingResponse.Code != http.StatusNotFound {
-		t.Fatalf("missing thread status = %d", missingResponse.Code)
-	}
-}
-
-func TestElectricScopeReturnsNoContentAfterHold(t *testing.T) {
-	const threadID = "00000000-0000-0000-0000-000000000005"
-	store := newFakeThreadScopeStore(true, ThreadScope{}, false)
-	mux := http.NewServeMux()
-	mustElectricProxy(t, nil, "https://electric.invalid", store, time.Millisecond).Register(mux)
-	response := httptest.NewRecorder()
-	mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/threads/"+threadID+"/sync/scope", nil))
-	if response.Code != http.StatusNoContent || response.Body.Len() != 0 {
-		t.Fatalf("scope response = %d %q", response.Code, response.Body.String())
-	}
-}
-
 func TestElectricRejectsUnpinnedRequestsBeforeUpstream(t *testing.T) {
 	const threadID = "00000000-0000-0000-0000-000000000006"
 	const epoch = "epoch"
 	var calls int
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
 	defer server.Close()
-	store := newFakeThreadScopeStore(true, ThreadScope{ProjectionEpoch: epoch}, true)
+	store := newFakeThreadEpochStore(epoch, true)
 	mux := http.NewServeMux()
-	mustElectricProxy(t, server.Client(), server.URL, store, time.Second).Register(mux)
+	mustElectricProxy(t, server.Client(), server.URL, store).Register(mux)
 	for _, test := range []struct {
 		name string
 		path string
@@ -336,9 +264,9 @@ func TestSubsetLimitsAndRequestSize(t *testing.T) {
 	}
 
 	const threadID = "00000000-0000-0000-0000-000000000007"
-	store := newFakeThreadScopeStore(true, ThreadScope{ProjectionEpoch: "epoch"}, true)
+	store := newFakeThreadEpochStore("epoch", true)
 	mux := http.NewServeMux()
-	mustElectricProxy(t, nil, "https://electric.invalid", store, time.Second).Register(mux)
+	mustElectricProxy(t, nil, "https://electric.invalid", store).Register(mux)
 	largeBody := `{"where":"` + strings.Repeat("x", MaxSubsetRequestBytes) + `"}`
 	request := httptest.NewRequest(http.MethodPost,
 		"/threads/"+threadID+"/sync/entities?projection_epoch=epoch", strings.NewReader(largeBody))

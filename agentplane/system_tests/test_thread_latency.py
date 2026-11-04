@@ -10,10 +10,10 @@ clock in the frame that ends it: Claude's `result` `duration_ms`, Codex's `turn/
 difference, the runner's and the app's share, since the model's leg alone varies by seconds.
 
 **The open.** The reads `electric_sync.tsx` makes before it can show that answer, through the app's
-sync proxy (`agentplane/app/go/proxy/electric.go`), each stage timed from sending its first request to
-reading its last body:
+generated History facade and Electric sync proxy (`agentplane/app/go/proxy/electric.go`), each stage
+timed from sending its first request to reading its last body:
 
-- `scope`: `GET /threads/{id}/sync/scope`, the projection epoch every shape request names.
+- `scope`: `POST /upstream/history/v1/sessions/{id}/entities`, the projection every shape request names.
 - `entity_shape`: the thread's entity shape, opened from now; Electric creates it here, or finds it.
 - `tail`: the tail, view-state and pending-command subsets of that shape, sent together as the
   browser sends them before it shows the thread.
@@ -41,12 +41,14 @@ from uuid import UUID
 
 import httpx
 import pytest_bazel
+from google.protobuf.json_format import ParseDict
 from more_itertools import one
 from pydantic import BaseModel, Field
 
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
-from agentplane.app.testing.models import SUBSET_ROW_LIMIT, SubsetRequest, ThreadScopeResponse
+from agentplane.app.testing.models import SUBSET_ROW_LIMIT, SubsetRequest
 from agentplane.env.runtime.harness import Harness
+from agentplane.history_service import history_service_pb2
 from agentplane.history_service.fold.views import EntityKind, PayloadField, ThreadItemState, ThreadPayloadReference
 from agentplane.native.claude import wire as claude_wire  # Both harnesses name their frame module `wire`.
 from agentplane.native.codex import wire as codex_wire
@@ -201,9 +203,12 @@ async def _open_thread(http: httpx.AsyncClient, thread_id: UUID) -> ThreadOpen:
     seconds: dict[Stage, float] = {}
     sync = f"/threads/{thread_id}/sync"
     with _timed(seconds, Stage.SCOPE):
-        response = await http.get(f"{sync}/scope")
+        response = await http.post(
+            f"/upstream/history/v1/sessions/{thread_id}/entities",
+            json={"projection_epoch": "", "range": {"start_entity_index": "0", "limit": 1}},
+        )
         response.raise_for_status()
-        scope = ThreadScopeResponse.model_validate(response.json())
+        scope = ParseDict(response.json(), history_service_pb2.ReadThreadEntitiesResponse())
     with _timed(seconds, Stage.ENTITY_SHAPE):
         entities = await _open_shape(http, f"{sync}/entities", scope.projection_epoch)
     with _timed(seconds, Stage.TAIL):

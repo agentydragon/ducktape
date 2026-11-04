@@ -1,4 +1,4 @@
-import { fromJson, type JsonValue } from "@bufbuild/protobuf";
+import { fromJson } from "@bufbuild/protobuf";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { useMatch } from "react-router";
 
@@ -7,6 +7,7 @@ import { type Live, type WatchHealth } from "../live";
 import { backoff, type StreamConnection } from "../stream_reader";
 import { useStreamStatus } from "../stream_status";
 import { followWatch } from "../watch_stream";
+import { protoJson } from "./proto_json";
 import { WatchThreadMetadataResponseSchema } from "../../app_service_pb";
 import { WatchSessionSummariesResponseSchema } from "../../../history_service/history_service_pb";
 
@@ -40,19 +41,6 @@ interface ThreadListingState {
 
 const ThreadsLiveContext = createContext<Live<ThreadsSnapshot> | null>(null);
 const ThreadListingContext = createContext<ThreadListingState | null>(null);
-
-function protoJson(value: unknown): JsonValue {
-  if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-    return value;
-  }
-  if (Array.isArray(value)) return value.map(protoJson);
-  if (typeof value === "object") {
-    const result: { [key: string]: JsonValue } = {};
-    for (const [key, child] of Object.entries(value)) result[key] = protoJson(child);
-    return result;
-  }
-  throw new Error("Thread watch returned a non-JSON value.");
-}
 
 function combinedConnection(history: StreamConnection, metadata: StreamConnection): StreamConnection {
   const sources = [history, metadata];
