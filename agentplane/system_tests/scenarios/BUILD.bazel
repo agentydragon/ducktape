@@ -224,8 +224,6 @@ py_library(
         "//agentplane/system_tests:executor",
         "//agentplane/system_tests:sandbox",
         "//agentplane/system_tests:tracing",
-        "//agentplane/system_tests/k3s:block_storage",
-        "//agentplane/system_tests/k3s:guest_logs",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//kubernetes_asyncio",
         "@pypi//pyyaml",

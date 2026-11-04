@@ -123,6 +123,8 @@ k3s_suite(
         "//agentplane/system_tests:executor",
         "//agentplane/system_tests:sandbox",
         "//agentplane/system_tests:scripted_upstream",
+        "//agentplane/system_tests/k3s:block_storage",
+        "//agentplane/system_tests/k3s:guest_logs",
         "//agentplane/system_tests/scenarios:storage",
         "//agentplane/system_tests/scenarios:suspend_resume",
         "//agentplane/system_tests/scenarios:vm_workspace_ownership",
