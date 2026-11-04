@@ -62,6 +62,37 @@ def validate_fixture(dashboard: dict[str, Any], fixture: dict[str, Any]) -> None
                 raise ValueError(f"missing recorded frames for panel {panel_id}, query {ref}")
 
 
+def prepare_recorded_dashboard_fixture(dashboard: dict[str, Any], variables: dict[str, list[str]]) -> None:
+    """Prepare an isolated dashboard copy for intercepted recorded responses.
+
+    ClickHouse is an external plugin, not present in the pinned Grafana image. This
+    conversion affects the isolated candidate only and never changes source JSON.
+    """
+
+    def walk(value: object) -> None:
+        if isinstance(value, list):
+            for item in value:
+                walk(item)
+        elif isinstance(value, dict):
+            source = value.get("datasource")
+            if isinstance(source, dict) and source.get("type") in {"loki", "grafana-clickhouse-datasource"}:
+                value["datasource"] = {"type": "prometheus", "uid": "mimir"}
+            if "rawSql" in value:
+                value["expr"] = "vector(1)"
+            for item in value.values():
+                walk(item)
+
+    walk(dashboard)
+    for variable in dashboard.get("templating", {}).get("list", []):
+        if variable.get("type") != "query":
+            continue
+        name = variable["name"]
+        if name not in variables:
+            raise ValueError(f"missing recorded choices for dashboard variable {name}")
+        values = variables[name]
+        variable.update(type="custom", query=",".join(values), options=[], current={})
+
+
 def recorded_result(query: dict[str, Any], fixture: dict[str, Any], dashboard: dict[str, Any]) -> dict[str, Any]:
     ref = query["refId"]
     panel_id = query.get("requestId", "").removesuffix(ref)

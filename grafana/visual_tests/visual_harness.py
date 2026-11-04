@@ -16,6 +16,7 @@ from testcontainers.core.network import Network
 
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+from grafana.visual_tests.recorded import prepare_recorded_dashboard_fixture
 from third_party.containers import grafana_visual, prometheus_visual, ryuk
 from util.testing.container_logs import LoggedContainer
 
@@ -149,7 +150,7 @@ def grafana_dashboard(
                         .replace("${DS_LOKI}", "Mimir" if render_fixture else "Loki")
                     )
                     if render_fixture:
-                        _prepare_render_fixture(dashboard, variables or {})
+                        prepare_recorded_dashboard_fixture(dashboard, variables or {})
                     response = http.post("/api/dashboards/db", json={"dashboard": dashboard, "overwrite": False})
                     response.raise_for_status()
                 record_stage("dashboard ready")
@@ -157,34 +158,3 @@ def grafana_dashboard(
     finally:
         record_stage("stopping Grafana and Prometheus")
         client.close()
-
-
-def _prepare_render_fixture(dashboard: dict, variables: dict[str, list[str]]) -> None:
-    """Use the built-in Prometheus frontend for intercepted synthetic query results.
-
-    ClickHouse is an external plugin, not present in the pinned Grafana image. This
-    conversion affects the isolated candidate only and never changes source JSON.
-    """
-
-    def walk(value: object) -> None:
-        if isinstance(value, list):
-            for item in value:
-                walk(item)
-        elif isinstance(value, dict):
-            source = value.get("datasource")
-            if isinstance(source, dict) and source.get("type") in {"loki", "grafana-clickhouse-datasource"}:
-                value["datasource"] = {"type": "prometheus", "uid": "mimir"}
-            if "rawSql" in value:
-                value["expr"] = "vector(1)"
-            for item in value.values():
-                walk(item)
-
-    walk(dashboard)
-    for variable in dashboard.get("templating", {}).get("list", []):
-        if variable.get("type") != "query":
-            continue
-        name = variable["name"]
-        if name not in variables:
-            raise ValueError(f"missing recorded choices for dashboard variable {name}")
-        values = variables[name]
-        variable.update(type="custom", query=",".join(values), options=[], current={})

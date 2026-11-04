@@ -7,8 +7,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import pytest_bazel
 
-from grafana.visual_tests.recorded import recorded_result, replay_query, validate_fixture
-from grafana.visual_tests.visual_harness import _prepare_render_fixture
+from grafana.visual_tests.recorded import (
+    prepare_recorded_dashboard_fixture,
+    recorded_result,
+    replay_query,
+    validate_fixture,
+)
 
 
 def test_recorded_results_and_repeated_panels() -> None:
@@ -52,8 +56,8 @@ async def test_missing_result_fails_instead_of_generating_data() -> None:
 def test_query_variables_require_fixture_choices() -> None:
     dashboard = {"templating": {"list": [{"name": "rack", "type": "query"}]}}
     with pytest.raises(ValueError, match="missing recorded choices"):
-        _prepare_render_fixture(dashboard, {})
-    _prepare_render_fixture(dashboard, {"rack": ["east", "west"]})
+        prepare_recorded_dashboard_fixture(dashboard, {})
+    prepare_recorded_dashboard_fixture(dashboard, {"rack": ["east", "west"]})
     assert dashboard["templating"]["list"][0]["query"] == "east,west"
 
 
