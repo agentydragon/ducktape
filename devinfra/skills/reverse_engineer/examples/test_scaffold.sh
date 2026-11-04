@@ -9,33 +9,20 @@
 #   PCLNTOOL  — rlocation path to the compiled pclntool binary
 #   RECIPE    — rlocation path to garble_re_recipe.sh
 #   REDRESS   — rlocation path to the redress go_binary
-#   GO_MOD    — rlocation path to third_party/go.mod
-#   VICTIM_MAIN — rlocation path to the garble target source
 set -euo pipefail
-
-# --- begin runfiles.bash initialization v3 ---
-f=bazel_tools/tools/bash/runfiles/runfiles.bash
-source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null \
-  || source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null \
-  || source "$0.runfiles/$f" 2>/dev/null \
-  || source "$(dirname "$0").runfiles/$f" 2>/dev/null \
-  || {
-    echo >&2 "ERROR: cannot find $f"
-    exit 1
-  }
-# --- end runfiles.bash initialization v3 ---
 
 # ── 1. Resolve GOROOT via go_bin_runner ──────────────────────────────────────
 # go_bin_runner needs third_party/go.mod to locate GOROOT.
+# In bzlmod runfiles the workspace root is at $TEST_SRCDIR/_main, where
+# _main/third_party/go.mod exists (declared as data dep).
 mkdir -p "$TEST_TMPDIR/bin"
-ln -s "$(rlocation "$GO")" "$TEST_TMPDIR/bin/go_bin_runner"
-ln -s "$(rlocation "$PCLNTOOL")" "$TEST_TMPDIR/bin/pclntool"
-ln -s "$(rlocation "$REDRESS")" "$TEST_TMPDIR/bin/redress"
-ln -s "$(rlocation "$GORESYM")" "$TEST_TMPDIR/bin/GoReSym"
+ln -s "$TEST_SRCDIR/$GO" "$TEST_TMPDIR/bin/go_bin_runner"
+ln -s "$TEST_SRCDIR/$PCLNTOOL" "$TEST_TMPDIR/bin/pclntool"
+ln -s "$TEST_SRCDIR/$REDRESS" "$TEST_TMPDIR/bin/redress"
+ln -s "$TEST_SRCDIR/$GORESYM" "$TEST_TMPDIR/bin/GoReSym"
 
 export GOROOT
-workspace_root="$(dirname "$(dirname "$(rlocation "$GO_MOD")")")"
-GOROOT=$(cd "$workspace_root" && "$TEST_TMPDIR/bin/go_bin_runner" env GOROOT)
+GOROOT=$(cd "$TEST_SRCDIR/_main" && "$TEST_TMPDIR/bin/go_bin_runner" env GOROOT)
 
 # Symlink the real go binary (not go_bin_runner) so garble and go tool work
 # without needing workspace context.
@@ -47,7 +34,10 @@ SRCDIR="$TEST_TMPDIR/src"
 mkdir -p "$SRCDIR"
 
 # Copy victim source files (filegroup srcs) from bzlmod runfiles layout.
-cp "$(rlocation "$VICTIM_MAIN")" "$SRCDIR/main.go"
+VICTIM_DIR="$TEST_SRCDIR/_main/devinfra/skills/reverse_engineer/cmd/garble_target"
+for f in "$VICTIM_DIR"/*.go; do
+  cp "$f" "$SRCDIR/"
+done
 printf 'module garble_target\ngo 1.26.0\n' >"$SRCDIR/go.mod"
 
 export GOCACHE="$TEST_TMPDIR/.gocache"
@@ -61,9 +51,9 @@ mkdir -p "$XDG_CACHE_HOME"
 # binaries have a short "redacted" build ID — garble is patched to pad it to
 # 15 bytes instead of panicking. Use -seed=random for non-deterministic output
 # that exercises the full obfuscation path.
-GARBLE_BIN="$(rlocation "$GARBLE")"
+GARBLE_BIN="$TEST_SRCDIR/$GARBLE"
 (cd "$SRCDIR" && "$GARBLE_BIN" -seed=random build -o "$TEST_TMPDIR/garbled-binary" .)
 
 # ── 3. Run the recipe in TEST_TMPDIR where 'garbled-binary' lives ────────────
 cd "$TEST_TMPDIR"
-exec bash "$(rlocation "$RECIPE")"
+exec bash "$TEST_SRCDIR/$RECIPE"

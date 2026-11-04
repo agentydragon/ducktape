@@ -14,23 +14,11 @@
 
 set -euo pipefail
 
-# --- begin runfiles.bash initialization v3 ---
-f=bazel_tools/tools/bash/runfiles/runfiles.bash
-source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null \
-  || source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null \
-  || source "$0.runfiles/$f" 2>/dev/null \
-  || source "$(dirname "$0").runfiles/$f" 2>/dev/null \
-  || {
-    echo >&2 "ERROR: cannot find $f"
-    exit 1
-  }
-# --- end runfiles.bash initialization v3 ---
-
 cd "$TEST_TMPDIR"
-cp "$(rlocation "$V2_GARBLED")" garbled
+cp "$TEST_SRCDIR/$V2_GARBLED" garbled
 chmod +w garbled
 
-"$(rlocation "$INLINE_STRINGS")" garbled /dev/null >out.txt
+"$TEST_SRCDIR/$INLINE_STRINGS" garbled /dev/null >out.txt
 
 total=$(wc -l <out.txt)
 echo "== recovered $total inline strings =="
