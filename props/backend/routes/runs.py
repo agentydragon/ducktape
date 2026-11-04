@@ -390,6 +390,9 @@ def get_registry(request: Request) -> AgentRegistry:
     return registry  # type: ignore[no-any-return]
 
 
+Registry = Annotated[AgentRegistry, Depends(get_registry)]
+
+
 # --- Helper functions ---
 
 
@@ -569,15 +572,13 @@ def list_runs(
 
 @router.post("/validation", dependencies=[Depends(require_evaluator_or_admin_access)])
 async def trigger_validation_runs(
-    request: Request, body: ValidationRunRequest, admin_db: AdminDb
+    body: ValidationRunRequest, admin_db: AdminDb, registry: Registry
 ) -> ValidationRunResponse:
     """Trigger validation critic runs: sample N examples, run 1 critic per example.
 
     Runs are started in the background in parallel. Poll /api/runs/jobs for status.
     Grading is handled automatically by snapshot graders.
     """
-    registry = get_registry(request)
-
     # Get examples of the requested kind and split
     with admin_db.session() as session:
         examples = (
@@ -698,9 +699,8 @@ class OptimizeRunResponse(BaseModel):
 
 
 @router.post("/optimize", dependencies=[Depends(require_evaluator_or_admin_access)])
-async def trigger_optimize_run(request: Request, body: OptimizeRunRequest) -> OptimizeRunResponse:
+async def trigger_optimize_run(body: OptimizeRunRequest, registry: Registry) -> OptimizeRunResponse:
     """Launch a critic developer optimize agent."""
-    registry = get_registry(request)
     image = await registry.resolve_image(AgentType.CRITIC_DEV_OPTIMIZE, BUILTIN_TAG)
     run_id = await registry.start_critic_dev_optimize(
         image=image,
@@ -734,15 +734,13 @@ class ImproveRunResponse(BaseModel):
 
 
 @router.post("/improve", dependencies=[Depends(require_evaluator_or_admin_access)])
-async def trigger_improve_run(request: Request, body: ImproveRunRequest, admin_db: AdminDb) -> ImproveRunResponse:
+async def trigger_improve_run(body: ImproveRunRequest, admin_db: AdminDb, registry: Registry) -> ImproveRunResponse:
     """Launch a critic developer improve agent.
 
     When baseline_image_digests and examples are provided, uses them directly.
     Otherwise, auto-selects the best critic definition (by validation LCB) and
     top Pareto training examples.
     """
-    registry = get_registry(request)
-
     if body.baseline_image_digests and body.examples:
         # Use provided values directly
         definition_id = body.baseline_image_digests[0]
@@ -845,10 +843,10 @@ async def trigger_improve_run(request: Request, body: ImproveRunRequest, admin_d
 
 @router.post("/critic")
 async def start_critic(
-    request: Request,
     body: RunCriticRequest,
     admin_db: AdminDb,
     auth: Annotated[RequestIdentity, Depends(require_critic_run_access)],
+    registry: Registry,
 ) -> StartCriticResponse:
     """Start a critic agent using an agent package. Returns immediately with critic_run_id.
 
@@ -865,8 +863,6 @@ async def start_critic(
     parent_run_id = (
         auth.role.agent_run_id if isinstance(auth, AuthenticatedIdentity) and isinstance(auth.role, AgentRole) else None
     )
-    registry = get_registry(request)
-
     # Validate snapshot and example
     with admin_db.session() as session:
         snapshot_slug = body.example.snapshot_slug
