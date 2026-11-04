@@ -23,7 +23,7 @@ py_library(
         "//agentplane/system_tests:offered_models",
         "//agentplane/system_tests:sandbox",
         "//agentplane/system_tests:scripted_upstream",
-        "//util/testing:undeclared_outputs",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//tenacity",
     ],

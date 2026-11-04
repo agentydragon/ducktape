@@ -7,7 +7,7 @@ import subprocess
 import pytest_bazel
 
 from agentplane.firecracker import launcher_test_image
-from util.oci import load_oci_image
+from devinfra.oci.oci import load_oci_image
 
 
 def _run(image: str, *args: str, entrypoint: str | None = None) -> subprocess.CompletedProcess[str]:

@@ -210,3 +210,23 @@ before this late recovery completed disk preparation; cleanup also timed out. No
 RAM pass is claimed for this modified run. The clean rerun uses regenerated source manifests.
 The CRD generator invocation `0395176a-2ae3-4574-9ef7-8c0a3ee2d4a1` completed successfully; most of
 its elapsed time waited for the running Bazel test's local server lock, not for code generation.
+
+The [eleventh run](https://app.buildbuddy.io/invocation/95b88e56-7e6d-4ce4-8b6e-2745278a521e)
+used the corrected schema without live intervention. The launcher prepared the production disks,
+started Firecracker under nested KVM, booted the kernel, discovered all eight virtio block devices,
+and mounted the ext4 root. Kernel init began after about 10 seconds; NixOS reported its stage-2
+configuration at about 18 seconds and entered activation. At 07:15:07 UTC, the launcher's shared
+30-second management deadline expired before the guest management listener was ready. It failed
+closed and reaped the VMM; the acceptance and cleanup waits subsequently expired.
+
+Boot readiness now has a separate two-minute `GetStatus` transport wait. Credential synchronization
+retains a fresh 30-second RPC deadline, no replay, and the existing boot-identity fence before key
+transmission. The serial-console progress establishes that the old budget cut off an active boot;
+the next clean run must establish whether activation completes. The
+[Go supervisor tests](https://app.buildbuddy.io/invocation/fa18ed2d-c15a-4ccc-b106-706386eeb0fe)
+pass with this change. [Generated manifests and real API-server admission](https://app.buildbuddy.io/invocation/a87ebb0a-3afe-43ef-9748-239996a4abc2)
+also pass, including the new durable state-binding cases.
+
+The branch was rebased again onto `c85180ea40`. New scenario and launcher-test imports follow
+devel's moved undeclared-output and OCI helpers; the retained OpenTelemetry fixture helper remains
+in its existing owning package.

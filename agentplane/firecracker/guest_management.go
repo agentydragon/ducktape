@@ -14,9 +14,10 @@ import (
 )
 
 const (
-	guestManagementPort       = 52
-	guestManagementRPCTimeout = 30 * time.Second
-	maxGuestManagementMessage = 1 << 20
+	guestManagementPort         = 52
+	guestManagementReadyTimeout = 2 * time.Minute
+	guestManagementRPCTimeout   = 30 * time.Second
+	maxGuestManagementMessage   = 1 << 20
 )
 
 // SynchronizeGuest reads one coherent TLS credential generation, checks the
@@ -26,9 +27,6 @@ func SynchronizeGuest(ctx context.Context, socketPath, expectedBootID, credentia
 	if err != nil {
 		return "", fmt.Errorf("read guest management credentials: %w", err)
 	}
-
-	rpcCtx, cancel := context.WithTimeout(ctx, guestManagementRPCTimeout)
-	defer cancel()
 
 	connection, err := grpc.NewClient(
 		"passthrough:///firecracker-guest-management",
@@ -48,7 +46,11 @@ func SynchronizeGuest(ctx context.Context, socketPath, expectedBootID, credentia
 	defer connection.Close()
 
 	client := managementpb.NewGuestManagementClient(connection)
-	statusResponse, err := client.GetStatus(rpcCtx, &managementpb.GetStatusRequest{}, grpc.WaitForReady(true))
+	// Readiness includes the kernel and NixOS cold boot. It must not consume the
+	// credential update's RPC budget, and only this read waits for connectivity.
+	readyCtx, cancelReady := context.WithTimeout(ctx, guestManagementReadyTimeout)
+	statusResponse, err := client.GetStatus(readyCtx, &managementpb.GetStatusRequest{}, grpc.WaitForReady(true))
+	cancelReady()
 	if err != nil {
 		return "", fmt.Errorf("get guest management status: %w", err)
 	}
@@ -60,6 +62,8 @@ func SynchronizeGuest(ctx context.Context, socketPath, expectedBootID, credentia
 		return "", errors.New("restored guest boot ID differs from checkpoint")
 	}
 
+	rpcCtx, cancel := context.WithTimeout(ctx, guestManagementRPCTimeout)
+	defer cancel()
 	response, err := client.Synchronize(rpcCtx, &managementpb.SynchronizeRequest{
 		UnixNano:       time.Now().UnixNano(),
 		TlsCert:        credentials.TLSCert,

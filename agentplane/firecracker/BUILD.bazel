@@ -111,7 +111,7 @@ py_test(
     deps = [
         "//:conftest",
         "//agentplane/firecracker:launcher_test_image",
-        "//util:oci",
+        "//devinfra/oci",
         "@pypi//pytest_bazel",
     ],
 )

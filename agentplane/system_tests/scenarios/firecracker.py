@@ -22,7 +22,7 @@ from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.offered_models import models_offered_for
 from agentplane.system_tests.sandbox import VM_WORKING_DIRECTORY, Sandboxes, wait_until_running
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
-from util.testing.undeclared_outputs import undeclared_outputs_dir
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 
