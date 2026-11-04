@@ -240,13 +240,6 @@ type hostTestRuntime struct {
 	closeOnce   sync.Once
 }
 
-func TestMain(m *testing.M) {
-	if len(os.Args) > 1 && os.Args[1] == supervision.SupervisorMode {
-		os.Exit(supervision.SupervisorMain(os.Args[2:]))
-	}
-	os.Exit(m.Run())
-}
-
 func newHostTestRuntime(t *testing.T, script *string, stateDir string, admission lifecycle.EnvironmentAdmissionGuard) *hostTestRuntime {
 	t.Helper()
 
@@ -268,7 +261,10 @@ func newHostTestRuntime(t *testing.T, script *string, stateDir string, admission
 		}
 	}
 	processes := supervision.NewHost(ctx, store, lifecycle.Namespace, supervision.RuntimeDomain, workers, reportError)
-	supervisor := supervision.NewSubprocessSupervisor(nil)
+	supervisor, err := supervision.NewPID1Supervisor()
+	if err != nil {
+		t.Fatal(err)
+	}
 	scriptRunner, err := scripts.New(scripts.Config{
 		LaunchProcess: func(ctx context.Context, owner string, config supervision.ProcessConfig) (*supervision.ManagedProcess, error) {
 			return processes.Launch(ctx, owner, 1, supervisor, config)

@@ -1,0 +1,5 @@
+# gazelle:exclude pid1_go_test.py
+
+package(default_visibility = ["//agentplane/env:__subpackages__"])
+
+exports_files(["pid1_go_test.py"])
