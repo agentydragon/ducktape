@@ -3,7 +3,7 @@
 use super::value_model::{
     PropertyDefinition, ValueExpr, object_data_property_name, static_property_name,
 };
-use crate::facts::abstract_domain::value::Kind;
+use crate::facts::abstract_domain::value::{Kind, PrimKinds};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use swc_common::{Span, Spanned};
@@ -63,6 +63,8 @@ impl DeferredCallableCreation {
 #[derive(Debug, Clone)]
 pub(super) enum LocalExpression {
     Value(ValueExpr),
+    /// A canonical primitive literal has no coercion or user-code effect.
+    PrimitiveLiteral(PrimKinds),
     /// The fresh receiver supplied by a checked constructor query.
     This,
     Sequence(Arc<[Self]>),
@@ -230,6 +232,11 @@ impl LocalExpression {
 
     fn lower(expression: &Expr, class_template: bool) -> Option<Self> {
         match expression.unwrap_parens() {
+            Expr::Lit(Lit::Str(_)) => Some(Self::PrimitiveLiteral(PrimKinds::STRING)),
+            Expr::Lit(Lit::Num(_)) => Some(Self::PrimitiveLiteral(PrimKinds::NUMBER)),
+            Expr::Lit(Lit::Bool(_)) => Some(Self::PrimitiveLiteral(PrimKinds::BOOLEAN)),
+            Expr::Lit(Lit::Null(_)) => Some(Self::PrimitiveLiteral(PrimKinds::NULL)),
+            Expr::Lit(Lit::BigInt(_)) => Some(Self::PrimitiveLiteral(PrimKinds::BIGINT)),
             Expr::Object(object) => {
                 let properties = object
                     .props
@@ -438,33 +445,10 @@ impl LocalExpression {
         }
     }
 
-    fn local_targets(&self, bindings: &BTreeMap<Id, LocalBinding>) -> bool {
-        match self {
-            Self::Value(_) | Self::This | Self::ReadField { .. } | Self::Closure(_) => true,
-            Self::Record { properties, .. } => properties
-                .iter()
-                .all(|property| property.value().local_targets(bindings)),
-            Self::Array { elements, .. } => elements
-                .iter()
-                .flatten()
-                .all(|element| element.local_targets(bindings)),
-            Self::Sequence(expressions) => expressions
-                .iter()
-                .all(|expression| expression.local_targets(bindings)),
-            Self::Assign { value, .. } => value.local_targets(bindings),
-            Self::Call { arguments, .. } => arguments
-                .iter()
-                .all(|argument| argument.local_targets(bindings)),
-            Self::AssignField {
-                receiver, value, ..
-            } => bindings.contains_key(receiver) && value.local_targets(bindings),
-            Self::DefineThisField { value, .. } => value.local_targets(bindings),
-        }
-    }
-
     fn reads(&self, reads: &mut BTreeSet<Id>) {
         match self {
             Self::Value(value) => value.bindings(reads),
+            Self::PrimitiveLiteral(_) => {}
             Self::Record { properties, .. } => {
                 for property in properties.iter() {
                     let value = property.value();
@@ -567,6 +551,7 @@ impl LocalExpression {
                 (allocation_only, false)
             }
             Self::Value(value) => (true, unconditional_value(value)),
+            Self::PrimitiveLiteral(_) => (true, true),
             Self::This | Self::ReadField { .. } => (true, false),
         }
     }
@@ -590,7 +575,9 @@ impl LocalExpression {
             Self::Call { arguments, .. } => {
                 arguments.iter().any(Self::requires_keyed_collection_new)
             }
-            Self::This | Self::Closure(_) | Self::ReadField { .. } => false,
+            Self::PrimitiveLiteral(_) | Self::This | Self::Closure(_) | Self::ReadField { .. } => {
+                false
+            }
         }
     }
 
@@ -624,7 +611,11 @@ impl LocalExpression {
             Self::AssignField { value, .. } | Self::DefineThisField { value, .. } => {
                 value.writes(writes)
             }
-            Self::Value(_) | Self::This | Self::ReadField { .. } | Self::Closure(_) => {}
+            Self::Value(_)
+            | Self::PrimitiveLiteral(_)
+            | Self::This
+            | Self::ReadField { .. }
+            | Self::Closure(_) => {}
         }
     }
 }
@@ -700,7 +691,7 @@ impl LocalBody {
                 _ => return None,
             }
         }
-        Self::from_operations(bindings, operations)
+        Some(Self::from_operations(bindings, operations))
     }
 
     /// A concise arrow has the same ordered return semantics as a block body.
@@ -709,12 +700,12 @@ impl LocalBody {
         parameters: impl Iterator<Item = &'a Pat>,
         expression: &Expr,
     ) -> Option<Self> {
-        Self::from_operations(
+        Some(Self::from_operations(
             Self::parameter_bindings(parameters)?,
             vec![LocalOperation::Return(Some(LocalExpression::lower(
                 expression, false,
             )?))],
-        )
+        ))
     }
 
     /// Canonically lower the allocation effects of a base class constructor.
@@ -859,7 +850,7 @@ impl LocalBody {
 
         field_operations.extend(constructor_operations);
         Some((
-            Self::from_operations(bindings, field_operations)?,
+            Self::from_operations(bindings, field_operations),
             parameters,
         ))
     }
@@ -882,10 +873,7 @@ impl LocalBody {
     fn from_operations(
         bindings: BTreeMap<Id, LocalBinding>,
         operations: Vec<LocalOperation>,
-    ) -> Option<Self> {
-        if !Self::expressions(&operations).all(|expression| expression.local_targets(&bindings)) {
-            return None;
-        }
+    ) -> Self {
         let mut reads = BTreeSet::new();
         for expression in Self::expressions(&operations) {
             expression.reads(&mut reads);
@@ -910,7 +898,7 @@ impl LocalBody {
         let requires_keyed_collection_new =
             Self::expressions(&operations).any(LocalExpression::requires_keyed_collection_new);
         let closure_sites: Arc<[_]> = closure_sites.into_iter().collect();
-        Some(Self {
+        Self {
             bindings,
             operations: operations.into(),
             initializer_span: None,
@@ -920,7 +908,7 @@ impl LocalBody {
             closure_allocation_syntax,
             closure_sites,
             requires_keyed_collection_new,
-        })
+        }
     }
 
     pub(super) fn with_declarations(

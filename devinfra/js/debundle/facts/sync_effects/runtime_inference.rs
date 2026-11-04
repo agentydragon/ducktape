@@ -275,6 +275,10 @@ impl RuntimeQueries<'_, '_> {
         self.dependencies.borrow().clone()
     }
 
+    pub(super) fn extend_dependencies(&self, dependencies: &mut ProofDependencies) {
+        dependencies.extend(&self.dependencies.borrow());
+    }
+
     fn child_point(&self, kind: NativeProgramPointKind) -> ProgramPoint {
         let ordinal = self.next_child.get();
         self.next_child.set(ordinal + 1);

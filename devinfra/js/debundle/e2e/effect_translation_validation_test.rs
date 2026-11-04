@@ -1029,7 +1029,7 @@ fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
         ),
         (
             "41",
-            "function readSeed() { return seed; }",
+            "function readSeed(unused) { return seed; }",
             "readSeed(seed)",
         ),
         (
@@ -1039,7 +1039,7 @@ fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
         ),
         (
             "({value: 41})",
-            "function readSeed() { return seed.value; }",
+            "function readSeed() { return seed.value.toString(); }",
             "readSeed()",
         ),
         (

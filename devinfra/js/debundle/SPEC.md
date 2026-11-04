@@ -606,20 +606,34 @@ rebinds. Closing them does not discharge unresolved-call closure or authorize
 skipping its binding-effect fallback.
 
 The ordered root can separately seal lexical read and rebind coverage from
-the shared local-operation receipts. A normally completed read of an
-initialized local module cell accounts for that read; each admitted direct
-zero-argument local call carries the operation receipts and exact caller,
-call-site and target-body edge, including memo-reused outcomes. The root checks
-that these flat edges connect back to its exact body without expanding every
-root-to-leaf path.
-Its read and rebind domains retain the conditions used to select those
-operations. Values, `complete`, and the existing three effect domains cannot
+receipts produced by the shared local-operation interpreter. Covered lexical
+operations include initialized module-cell reads, canonical primitive
+literal operations, exact deferred-function creation with no captured cells
+or unsupported body mode, successful static own-data reads, and guarded
+own-data writes through initialized non-imported module bindings. A module
+slot write requires separate monotonic writable-at-prefix evidence from its
+literal definition; an own-data read or current value alone does not prove
+writability. Freeze/integrity changes, descriptor changes, taint, escape, or
+unsettled reach invalidate that evidence. A successful selected direct local
+call records its exact caller body, source call-site, target body, and
+consumed prefix prerequisites, including each memo-reused use. A static
+module-slot callee retains its GetValue receipt before argument evaluation;
+surplus actual arguments are admitted only when the target has no formals or
+other prologue work, and their own evaluation remains separately covered.
+The root checks that its exact root call-site set matches and that the flat
+call edges connect back to its exact body without expanding root-to-leaf paths.
+
+The lexical read and rebind domains retain the conditions used to select each
+operation. Values, `complete`, and the existing three effect domains cannot
 mint lexical coverage. The root identity is installed before ordered
 execution. Sealing additionally requires the exact source owner, binding and
 initializer span, a final initialized binding, complete execution, no unknown
 call, precision loss, uninitialized read, or fallback-only lexical effect.
-Any failed condition leaves the selected root explicitly uncovered and keeps
-the syntactic fallback. Children and memo entries cannot seal a parent.
+Plain callable aliases, accessors, imported or uninitialized receivers,
+activation/formal borrowed stores, unwritable stores, unsupported
+prologues/transfers, and abrupt completion remain uncovered. Any failed
+condition leaves the selected root explicitly uncovered and keeps the
+syntactic fallback. Children and memo entries cannot seal a parent.
 
 The graph first emits all existing observed and assumed read/rebind
 contributions, then skips only its remaining syntactic call fallback when an

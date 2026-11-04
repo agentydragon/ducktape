@@ -68,6 +68,7 @@ impl AllocationContext for ProviderContext<'_> {
             properties: &mut self.properties,
             arrays: &mut self.arrays,
             revision: &mut self.revision,
+            writable_prefix: None,
         }
     }
     fn keyed_collection_new(
@@ -133,6 +134,12 @@ impl OwnDataContext for ProviderContext<'_> {
             .get(&allocation)?
             .get(&Some(property.to_owned()))
     }
+    fn property_is_accessor(&self, _allocation: u32, _property: &str) -> bool {
+        false
+    }
+    fn property_is_writable(&self, _allocation: u32, _property: &str) -> bool {
+        false
+    }
 }
 
 impl LocalContext for ProviderContext<'_> {
@@ -145,7 +152,7 @@ impl LocalContext for ProviderContext<'_> {
         &mut self,
         frame: &mut LocalFrame,
         creation: DeferredCallableCreation,
-    ) -> Option<AllocationValue> {
+    ) -> Option<LocalValueResult> {
         let callable = creation.callable();
         assert_eq!(
             self.index.callable_creation(callable),
@@ -208,9 +215,16 @@ impl LocalContext for ProviderContext<'_> {
             )));
         }
         self.closure_captures.insert(callable, captures);
-        Some(AllocationValue {
-            values: Values::from([AbstractValue::Value(Value::Alloc(Kind::Function, callable))]),
-            judgment: AllocationJudgment::CoveredAllocationOnly(Default::default()),
+        Some(LocalValueResult {
+            allocation: AllocationValue {
+                values: Values::from([AbstractValue::Value(Value::Alloc(
+                    Kind::Function,
+                    callable,
+                ))]),
+                judgment: AllocationJudgment::CoveredAllocationOnly(Default::default()),
+            },
+            // Provider queries have no application call/execution receipt.
+            effects: Default::default(),
         })
     }
     fn assign_capture(

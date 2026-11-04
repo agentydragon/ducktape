@@ -811,6 +811,7 @@ pub(super) struct ExecutionState {
     top_env: Context,
     top_captures: Context,
     prefix_object_properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
+    writable_prefix: OrdMap<u32, super::super::allocation_transfer::WritablePrefixState>,
     own_descriptor_maps: OrdMap<CallSite, OwnDescriptorMapState>,
     applied_accessors: OrdMap<u32, BTreeMap<String, AppliedAccessor>>,
     dense_arrays: OrdMap<u32, DenseArray>,
@@ -1237,6 +1238,30 @@ impl OwnDataContext for Executor<'_, '_> {
             .get(&allocation)?
             .get(&Some(property.to_owned()))
     }
+
+    fn property_is_accessor(&self, allocation: u32, property: &str) -> bool {
+        self.state
+            .applied_accessors
+            .get(&allocation)
+            .is_some_and(|properties| properties.contains_key(property))
+    }
+
+    fn property_is_writable(&self, allocation: u32, property: &str) -> bool {
+        let has_writable_property = match self.state.writable_prefix.get(&allocation) {
+            Some(super::super::allocation_transfer::WritablePrefixState::Proven(properties)) => {
+                properties.contains(property)
+            }
+            _ => false,
+        };
+        has_writable_property
+            && !self.state.tainted_objects.contains(&allocation)
+            && !self.state.unsettled_objects.contains(&allocation)
+            && !self
+                .state
+                .applied_accessors
+                .get(&allocation)
+                .is_some_and(|properties| properties.contains_key(property))
+    }
 }
 
 impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
@@ -1250,6 +1275,14 @@ impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
 
     fn property_values(&self, allocation: u32, property: &str) -> Option<&Values> {
         self.executor.property_values(allocation, property)
+    }
+
+    fn property_is_accessor(&self, allocation: u32, property: &str) -> bool {
+        self.executor.property_is_accessor(allocation, property)
+    }
+
+    fn property_is_writable(&self, allocation: u32, property: &str) -> bool {
+        self.executor.property_is_writable(allocation, property)
     }
 }
 
@@ -1268,6 +1301,97 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
             self.body.bindings.get(binding),
             Some(LocalBinding::NamedSelf(_) | LocalBinding::HoistedFunction(_))
         ) && !frame.environment.contains_key(binding)
+    }
+
+    fn binding_values<'a>(&'a self, binding: &Id, frame: &'a LocalFrame) -> Option<&'a Values> {
+        if self.executor.inputs.top_bindings.contains(binding) {
+            self.executor.state.prefix_values.get(binding)
+        } else if let Some(cell) = self.executor.state.active_cells.get(binding) {
+            Some(&self.executor.state.lexical_cells[cell.0].values)
+        } else {
+            frame.environment.get(binding)
+        }
+    }
+
+    fn retain_global_fallback_accesses(
+        &mut self,
+        frame: &LocalFrame,
+        reason: &ExecutionPrecisionLossReason,
+        truncation: Span,
+    ) {
+        let mut accesses = Vec::new();
+        for call in self.calls() {
+            if !matches!(
+                call.kind,
+                CallKind::LocalMemberRead | CallKind::AccessorCalleeLookup
+            ) || call.owner != self.owner
+                || call.caller != self.scope.caller()
+                || call.span.hi < truncation.lo
+            {
+                continue;
+            }
+            let ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) = &call.callee
+            else {
+                continue;
+            };
+            let ValueExpr::Binding(binding) = receiver.as_ref() else {
+                continue;
+            };
+            if self
+                .binding_values(binding, frame)
+                .is_some_and(|values| values.contains(&AbstractValue::GlobalObject))
+            {
+                accesses.push((
+                    call.owner,
+                    call.span,
+                    GlobalAccessKind::Read,
+                    property.clone(),
+                ));
+            }
+        }
+
+        let writes = match self.scope {
+            LocalExecutionScope::Callable(key) => {
+                &self.executor.inputs.index.callables[&key].member_value_writes
+            }
+            LocalExecutionScope::RootInitializer => {
+                &self.executor.inputs.index.top_member_value_writes[self.owner.0]
+            }
+        };
+        for write in writes {
+            let source_span = write.site.source_span();
+            let Some(property) = &write.property else {
+                continue;
+            };
+            if write.owner != self.owner || source_span.hi < truncation.lo {
+                continue;
+            }
+            if self
+                .binding_values(&write.receiver, frame)
+                .is_some_and(|values| values.contains(&AbstractValue::GlobalObject))
+            {
+                accesses.push((
+                    write.owner,
+                    source_span,
+                    GlobalAccessKind::Write,
+                    property.clone(),
+                ));
+            }
+        }
+
+        if accesses.is_empty() {
+            return;
+        }
+        let mut fallback_accesses = EvaluationEffects::default();
+        for (owner, span, kind, property) in accesses {
+            fallback_accesses.record(owner, span, kind, &property);
+        }
+        let dependencies = self.executor.boxed_settled_prefix_dependencies();
+        fallback_accesses.depend_on(&dependencies);
+        fallback_accesses.assume(Some(&AssumedEffectReason::FallbackSummary {
+            loss: reason.clone(),
+        }));
+        self.executor.evaluation_effects.extend(&fallback_accesses);
     }
 
     fn refuse_activation_value(&mut self, frame: &LocalFrame) {
@@ -1296,6 +1420,7 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
         reason: ExecutionPrecisionLossReason,
         span: Span,
     ) {
+        self.retain_global_fallback_accesses(frame, &reason, span);
         self.executor.local_operation_fallback(
             frame,
             reached,
@@ -1315,13 +1440,7 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
             let ValueExpr::Binding(binding) = &call.callee else {
                 continue;
             };
-            let values = if self.executor.inputs.top_bindings.contains(binding) {
-                self.executor.state.prefix_values.get(binding)
-            } else if let Some(cell) = self.executor.state.active_cells.get(binding) {
-                Some(&self.executor.state.lexical_cells[cell.0].values)
-            } else {
-                frame.environment.get(binding)
-            };
+            let values = self.binding_values(binding, frame);
             if values.is_some_and(|values| {
                 values.iter().any(|value| {
                     matches!(
@@ -1425,11 +1544,17 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             }
         }
     }
+    fn module_prefix_receiver(&self, binding: &Id, _receivers: &Values) -> bool {
+        self.executor.initialized_local_binding(binding)
+    }
+    fn selection_prerequisites(&self) -> Box<ProofDependencies> {
+        self.executor.boxed_settled_prefix_dependencies()
+    }
     fn closure(
         &mut self,
         frame: &mut LocalFrame,
         creation: super::super::local_operations::DeferredCallableCreation,
-    ) -> Option<super::super::allocation_transfer::AllocationValue> {
+    ) -> Option<LocalValueResult> {
         let callable = creation.callable();
         assert_eq!(
             self.executor.inputs.index.callable_creation(callable),
@@ -1454,9 +1579,30 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         let captures = self.executor.closure_captures(callable, &frame.environment);
         let values = Values::from([AbstractValue::Closure(callable, captures)]);
         frame.inputs.extend(values.iter().cloned());
-        Some(super::super::allocation_transfer::AllocationValue::opaque(
-            values,
-        ))
+        let captured_cells_are_empty = matches!(
+            values.first(),
+            Some(AbstractValue::Closure(_, captured)) if captured.values.cells.is_empty()
+        );
+        let effects = if captured_cells_are_empty
+            && !body.opaque
+            && !body.generator
+            && !self
+                .executor
+                .inputs
+                .index
+                .async_callables
+                .contains(&callable)
+        {
+            let mut effects = EffectCoverageFragment::lexical_operation();
+            effects.depend_on(&self.executor.settled_prefix_dependencies());
+            effects
+        } else {
+            EffectCoverageFragment::default()
+        };
+        Some(LocalValueResult {
+            allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
+            effects,
+        })
     }
     fn assign_capture(
         &mut self,
@@ -1823,6 +1969,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn settled_prefix_dependencies(&self) -> ProofDependencies {
         let mut dependencies = self.state.ledger_dependencies.clone();
         dependencies.extend(&self.queries.dependencies());
+        dependencies
+    }
+
+    fn boxed_settled_prefix_dependencies(&self) -> Box<ProofDependencies> {
+        let mut dependencies = Box::<ProofDependencies>::default();
+        dependencies.extend(&self.state.ledger_dependencies);
+        self.queries.extend_dependencies(&mut dependencies);
         dependencies
     }
 
@@ -2360,6 +2513,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         else {
             return;
         };
+        self.invalidate_writable_object(*target);
         let Some(map) = self
             .state
             .own_descriptor_maps
@@ -3444,6 +3598,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             properties: &mut state.prefix_object_properties,
             arrays: &mut state.dense_arrays,
             revision: &mut state.prefix_revision,
+            writable_prefix: Some(&mut state.writable_prefix),
         }
     }
 
@@ -6647,6 +6802,41 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    /// Any mutation or escape that can alter own descriptors invalidates the
+    /// independent literal writability witness. The transition is monotonic
+    /// and versions the execution prefix even when ordinary values do not
+    /// change, so invocation memos cannot retain a stale descriptor premise.
+    fn invalidate_writable_object(&mut self, object: u32) {
+        if matches!(
+            self.state.writable_prefix.get(&object),
+            Some(super::super::allocation_transfer::WritablePrefixState::InProgress)
+                | Some(super::super::allocation_transfer::WritablePrefixState::Proven(_))
+        ) {
+            self.state.writable_prefix.insert(
+                object,
+                super::super::allocation_transfer::WritablePrefixState::Unknown,
+            );
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+        }
+    }
+
+    fn invalidate_writable_values(&mut self, values: &Values) {
+        let objects: BTreeSet<_> = values
+            .iter()
+            .filter_map(|value| match value {
+                AbstractValue::Value(Value::Alloc(kind, object))
+                    if kind.tracks_prefix_own_properties() =>
+                {
+                    Some(*object)
+                }
+                _ => None,
+            })
+            .collect();
+        for object in objects {
+            self.invalidate_writable_object(object);
+        }
+    }
+
     /// Code the interpreter did not run may have reached `values`: every
     /// object they reach, through stored references or through what a
     /// reachable body reads, may since hold anything.
@@ -6675,6 +6865,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     if kind.tracks_prefix_own_properties() =>
                 {
                     changed |= self.state.unsettled_objects.insert(*object);
+                    self.invalidate_writable_object(*object);
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
                 | AbstractValue::Closure(key, _) => {
@@ -6722,6 +6913,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 AbstractValue::Value(Value::Alloc(kind, object))
                     if kind.tracks_prefix_own_properties() =>
                 {
+                    self.invalidate_writable_object(*object);
                     if !self.state.tainted_objects.insert(*object) {
                         expand_stored_references = false;
                     }
@@ -9437,8 +9629,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // invocation can forward its body receipt without a separate parameter,
         // arguments, capture or receiver operation receipt.
         let callable = &self.inputs.index.callables[&key];
-        let covered_prologue = args.is_empty()
-            && callable.params.is_empty()
+        let covered_prologue = callable.params.is_empty()
             && !uses_arguments
             && !callable.implicit_capture
             && !callable.generator
@@ -9911,6 +10102,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         operands: Option<CallOperands>,
     ) -> CallTransfer {
         let needs_value = operands.is_some();
+        let selected_member_dependencies =
+            operands
+                .as_ref()
+                .and_then(|operands| match &operands.callee {
+                    EvaluatedCallee::Member {
+                        selection_dependencies,
+                        ..
+                    } => selection_dependencies.clone(),
+                    EvaluatedCallee::Direct(_) => None,
+                });
         if let Some(operands) = &operands {
             assert!(call.kind == CallKind::Call && !call.has_spread);
             assert!(match (&call.callee, &operands.callee) {
@@ -10293,9 +10494,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 assert_eq!(operands.arguments.len(), call.args.len());
                 match operands.callee {
                     EvaluatedCallee::Direct(targets) => (targets, operands.arguments, None),
-                    EvaluatedCallee::Member { receiver, targets } => {
-                        (targets, operands.arguments, Some(receiver))
-                    }
+                    EvaluatedCallee::Member {
+                        receiver, targets, ..
+                    } => (targets, operands.arguments, Some(receiver)),
                 }
             }
             None => {
@@ -10391,6 +10592,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 &args,
             )
         {
+            // `resolve_native_call` is also used as a pure admission query.
+            // This branch is the consumed runtime transfer: operands have
+            // completed, and the shared native row is applied to this prefix.
+            // Integrity and descriptor definitions can invalidate ordinary
+            // own-property writability without changing the abstract values.
+            for mutation in resolution.row.mutates.iter() {
+                let argument = match mutation {
+                    Mutation::Integrity(ArgSel::Arg(index)) => args.get(*index),
+                    Mutation::DefineProperties {
+                        target: ArgSel::Arg(index),
+                        ..
+                    } => args.get(*index),
+                    _ => None,
+                };
+                if let Some(values) = argument {
+                    self.invalidate_writable_values(values);
+                }
+            }
             if let Some(receipt) = &resolution.iterable {
                 outcome.effects.record_heap_contents(
                     &receipt.external_heap_contents(),
@@ -10652,25 +10871,47 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             result_values.insert(AbstractValue::Value(Value::Unavailable));
         }
-        // The receipt belongs to this exact direct invocation, using the
-        // operands already evaluated by LocalBody. Retain canonical ordinary
-        // declaration provenance; methods/aliases and native/imported targets
-        // do not acquire coverage from a known returned value.
+        // The receipt belongs to this exact selected invocation. A member
+        // target is admitted only when LocalBody already consumed its
+        // initialized-module own-data selection before evaluating arguments;
+        // aliases, native/imported targets and known return values do not
+        // manufacture a selection receipt.
+        let direct_binding = match &call.callee {
+            ValueExpr::Binding(binding)
+                if self
+                    .inputs
+                    .index
+                    .direct_top_level_functions
+                    .contains(binding)
+                    && prepared_receiver.is_none()
+                    && self.inputs.index.hoisted_bindings.contains_key(binding) =>
+            {
+                Some(binding)
+            }
+            _ => None,
+        };
+        let member_selection = matches!(
+            (&call.callee, prepared_receiver.as_ref(), selected_member_dependencies.as_ref()),
+            (
+                ValueExpr::Member(receiver, Some(_), MemberKey::Static, _),
+                Some(_),
+                Some(_)
+            ) if matches!(receiver.as_ref(), ValueExpr::Binding(_))
+        );
         let coverage_target = if needs_value
             && call.kind == CallKind::Call
-            && args.is_empty()
+            && !call.has_spread
             && !operands_may_throw
-            && prepared_receiver.is_none()
-            && let ValueExpr::Binding(binding) = &call.callee
-            && self
-                .inputs
-                .index
-                .direct_top_level_functions
-                .contains(binding)
+            && (direct_binding.is_some() || member_selection)
             && let Some((key, callable)) = self.local_call_target(&targets)
             && let Some(caller) = self.local_body_identity_for_call(call)
-            && self.inputs.index.hoisted_bindings.get(binding) == Some(&key)
+            && direct_binding
+                .is_none_or(|binding| self.inputs.index.hoisted_bindings.get(binding) == Some(&key))
         {
+            let mut prerequisites = self.boxed_settled_prefix_dependencies();
+            if let Some(selection) = &selected_member_dependencies {
+                prerequisites.extend(selection);
+            }
             Some((
                 key,
                 caller,
@@ -10678,7 +10919,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     key,
                     owner: callable.owner,
                 },
-                self.settled_prefix_dependencies(),
+                prerequisites,
             ))
         } else {
             None
@@ -11857,6 +12098,7 @@ pub(crate) fn annotate_synchronous_calls(
         top_env: Context::new(),
         top_captures: Context::new(),
         prefix_object_properties: OrdMap::new(),
+        writable_prefix: OrdMap::new(),
         own_descriptor_maps: OrdMap::new(),
         applied_accessors: OrdMap::new(),
         dense_arrays: OrdMap::new(),

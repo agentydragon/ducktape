@@ -60,7 +60,7 @@ pub(super) struct LocalCallReceipt {
     pub(super) caller: LocalBodyIdentity,
     pub(super) call_span: Span,
     pub(super) target: LocalBodyIdentity,
-    pub(super) dependencies: ProofDependencies,
+    pub(super) dependencies: Box<ProofDependencies>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -199,7 +199,7 @@ impl LexicalBindingEffectReceipt {
                             }
                         }
                     },
-                    dependencies: call.dependencies.clone(),
+                    dependencies: call.dependencies.as_ref().clone(),
                 })
                 .collect(),
         }
@@ -210,11 +210,19 @@ impl LexicalBindingEffectReceipt {
 /// or certifies a whole source owner, and may travel through invocation memos.
 #[derive(Debug, Clone, Default)]
 pub(super) struct EffectCoverageFragment {
+    initialization: Option<Box<InitializationEffectCoverage>>,
+    lexical: Option<Box<LexicalEffectCoverage>>,
+    completion: Completion,
+}
+
+/// The three existing initialization domains remain independent, but are
+/// grouped behind one pointer so every recursive fragment does not carry
+/// three inline proof-dependency payloads.
+#[derive(Debug, Clone, Default)]
+struct InitializationEffectCoverage {
     global_properties: DomainCoverage,
     general_heap: DomainCoverage,
     host_effects: DomainCoverage,
-    lexical: Option<Box<LexicalEffectCoverage>>,
-    completion: Completion,
 }
 
 /// Kept behind one pointer because `ProofDependencies` contains several
@@ -233,9 +241,11 @@ impl EffectCoverageFragment {
     /// Source identity and actual binding effects remain separate evidence.
     pub(super) fn no_effects() -> Self {
         Self {
-            global_properties: DomainCoverage::Covered(ProofDependencies::default()),
-            general_heap: DomainCoverage::Covered(ProofDependencies::default()),
-            host_effects: DomainCoverage::Covered(ProofDependencies::default()),
+            initialization: Some(Box::new(InitializationEffectCoverage {
+                global_properties: DomainCoverage::Covered(ProofDependencies::default()),
+                general_heap: DomainCoverage::Covered(ProofDependencies::default()),
+                host_effects: DomainCoverage::Covered(ProofDependencies::default()),
+            })),
             lexical: Some(Box::new(LexicalEffectCoverage {
                 reads: DomainCoverage::Covered(ProofDependencies::default()),
                 rebinds: DomainCoverage::Covered(ProofDependencies::default()),
@@ -251,9 +261,11 @@ impl EffectCoverageFragment {
     /// write. This is body coverage, not completion of operand evaluation.
     pub(super) fn native_iterable_protocol(dependencies: &ProofDependencies) -> Self {
         Self {
-            global_properties: DomainCoverage::Covered(dependencies.clone()),
-            general_heap: DomainCoverage::Covered(dependencies.clone()),
-            host_effects: DomainCoverage::Covered(dependencies.clone()),
+            initialization: Some(Box::new(InitializationEffectCoverage {
+                global_properties: DomainCoverage::Covered(dependencies.clone()),
+                general_heap: DomainCoverage::Covered(dependencies.clone()),
+                host_effects: DomainCoverage::Covered(dependencies.clone()),
+            })),
             // Native operand paths are outside the bounded lexical migration.
             // Preserve their initialization coverage without granting authority
             // to suppress binding fallback.
@@ -274,10 +286,49 @@ impl EffectCoverageFragment {
         fragment
     }
 
+    /// An executed lexical operation whose global, heap, and host effects
+    /// remain outside this receipt family. Keeping those domains Unknown is
+    /// deliberate: this proof can seal binding-effect coverage only.
+    pub(super) fn lexical_operation() -> Self {
+        Self {
+            lexical: Some(Box::new(LexicalEffectCoverage {
+                reads: DomainCoverage::Covered(ProofDependencies::default()),
+                rebinds: DomainCoverage::Covered(ProofDependencies::default()),
+                calls: Vec::new(),
+            })),
+            completion: Completion::Normal,
+            ..Self::default()
+        }
+    }
+
+    /// Proof prerequisites for a successfully consumed own-data selection.
+    /// Unknown lexical coverage never becomes positive through dependencies.
+    pub(super) fn lexical_selection_dependencies(&self) -> Option<Box<ProofDependencies>> {
+        if self.completion != Completion::Normal {
+            return None;
+        }
+        let lexical = self.lexical.as_ref()?;
+        let DomainCoverage::Covered(reads) = &lexical.reads else {
+            return None;
+        };
+        let DomainCoverage::Covered(rebinds) = &lexical.rebinds else {
+            return None;
+        };
+        let mut dependencies = Box::<ProofDependencies>::default();
+        dependencies.extend(reads);
+        dependencies.extend(rebinds);
+        Some(dependencies)
+    }
+
     pub(super) fn compose(&mut self, next: &Self) {
-        self.global_properties.compose(&next.global_properties);
-        self.general_heap.compose(&next.general_heap);
-        self.host_effects.compose(&next.host_effects);
+        match (&mut self.initialization, &next.initialization) {
+            (Some(current), Some(next)) => {
+                current.global_properties.compose(&next.global_properties);
+                current.general_heap.compose(&next.general_heap);
+                current.host_effects.compose(&next.host_effects);
+            }
+            _ => self.initialization = None,
+        }
         match (&mut self.lexical, &next.lexical) {
             (Some(current), Some(next)) => {
                 current.reads.compose(&next.reads);
@@ -296,13 +347,15 @@ impl EffectCoverageFragment {
     /// Prerequisites of selecting an already covered operation. Conditions
     /// never turn an unknown domain into a covered one.
     pub(super) fn depend_on(&mut self, dependencies: &ProofDependencies) {
-        for domain in [
-            &mut self.global_properties,
-            &mut self.general_heap,
-            &mut self.host_effects,
-        ] {
-            if let DomainCoverage::Covered(current) = domain {
-                current.extend(dependencies);
+        if let Some(initialization) = &mut self.initialization {
+            for domain in [
+                &mut initialization.global_properties,
+                &mut initialization.general_heap,
+                &mut initialization.host_effects,
+            ] {
+                if let DomainCoverage::Covered(current) = domain {
+                    current.extend(dependencies);
+                }
             }
         }
         if let Some(lexical) = &mut self.lexical {
@@ -415,11 +468,12 @@ impl EffectCoverageFragment {
         if self.completion != Completion::Normal {
             return None;
         }
+        let initialization = self.initialization.as_ref()?;
         let mut dependencies = ProofDependencies::default();
         for domain in [
-            &self.global_properties,
-            &self.general_heap,
-            &self.host_effects,
+            &initialization.global_properties,
+            &initialization.general_heap,
+            &initialization.host_effects,
         ] {
             let DomainCoverage::Covered(domain_dependencies) = domain else {
                 return None;
@@ -491,24 +545,34 @@ mod tests {
     #[test]
     fn domains_compose_independently_and_unknown_is_absorbing() {
         let mut first = EffectCoverageFragment::no_effects();
-        let DomainCoverage::Covered(dependencies) = &mut first.global_properties else {
+        let initialization = first.initialization.as_mut().unwrap();
+        let DomainCoverage::Covered(dependencies) = &mut initialization.global_properties else {
             unreachable!();
         };
         dependencies
             .program_premises
             .insert(ProgramPremiseKey::IntrinsicsNeverWritten);
         let mut second = EffectCoverageFragment::no_effects();
-        second.general_heap = DomainCoverage::Unknown;
+        second.initialization.as_mut().unwrap().general_heap = DomainCoverage::Unknown;
         first.compose(&second);
         assert!(
-            matches!(&first.global_properties, DomainCoverage::Covered(dependencies)
+            matches!(&first.initialization.as_ref().unwrap().global_properties, DomainCoverage::Covered(dependencies)
             if dependencies.program_premises.contains(&ProgramPremiseKey::IntrinsicsNeverWritten))
         );
-        assert!(matches!(first.general_heap, DomainCoverage::Unknown));
-        assert!(matches!(first.host_effects, DomainCoverage::Covered(_)));
+        assert!(matches!(
+            &first.initialization.as_ref().unwrap().general_heap,
+            DomainCoverage::Unknown
+        ));
+        assert!(matches!(
+            &first.initialization.as_ref().unwrap().host_effects,
+            DomainCoverage::Covered(_)
+        ));
         assert!(first.normal_dependencies().is_none());
         first.compose(&EffectCoverageFragment::no_effects());
-        assert!(matches!(first.general_heap, DomainCoverage::Unknown));
+        assert!(matches!(
+            &first.initialization.as_ref().unwrap().general_heap,
+            DomainCoverage::Unknown
+        ));
     }
 
     #[test]
@@ -520,7 +584,7 @@ mod tests {
         let mut unknown = EffectCoverageFragment::default();
         unknown.depend_on(&dependencies);
         assert!(unknown.normal_dependencies().is_none());
-        assert!(matches!(unknown.global_properties, DomainCoverage::Unknown));
+        assert!(unknown.initialization.is_none());
         let mut covered = EffectCoverageFragment::no_effects();
         covered.depend_on(&dependencies);
         assert_eq!(covered.normal_dependencies(), Some(dependencies));

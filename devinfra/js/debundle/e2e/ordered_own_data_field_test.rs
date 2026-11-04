@@ -1,4 +1,4 @@
-use analysis::{DepKind, DependencyGraphReport};
+use analysis::{DepKind, DependencyGraphReport, reports::schema::BindingEffectAuthorityReport};
 use debundle_e2e_support::*;
 
 fn assert_property_frontier(graph: &DependencyGraphReport, later: usize, earlier: usize) {
@@ -44,6 +44,35 @@ fn assert_sequenced_order(graph: &DependencyGraphReport, later: usize, earlier: 
         }),
         "ordering {later} -> {earlier}: {:#?}",
         graph.edges
+    );
+}
+
+fn assert_no_fallback_suppressing_authority(fixture: &Fixture, binding: &str, case: &str) {
+    let graph = fixture.dependency_graph();
+    let source = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == binding)
+        })
+        .unwrap_or_else(|| panic!("{case}: missing {binding} source unit: {graph:#?}"));
+    let execution = source
+        .synchronous_execution
+        .as_ref()
+        .unwrap_or_else(|| panic!("{case}: missing ordered execution report: {source:#?}"));
+    let fallback_safe = matches!(
+        execution.binding_effect_authority.as_ref(),
+        Some(
+            BindingEffectAuthorityReport::Unclassified
+                | BindingEffectAuthorityReport::OrderedRootInitializerUncovered { .. }
+                | BindingEffectAuthorityReport::LegacyExecution { complete: false }
+        )
+    );
+    assert!(
+        fallback_safe,
+        "{case}: unsafe input must retain fallback authority: {execution:#?}"
     );
 }
 
@@ -147,6 +176,136 @@ fn root_member_callee_is_selected_before_a_mutating_argument() {
         ],
     ));
     assert_preserved_entry_output(&fixture, "7 42\n");
+    let graph = fixture.dependency_graph();
+    let result = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "result")
+        })
+        .expect("root member-call result source unit");
+    let execution = result
+        .synchronous_execution
+        .as_ref()
+        .expect("root execution report");
+    assert!(execution.complete, "{execution:#?}");
+    let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+        execution.binding_effect_authority.as_ref()
+    else {
+        panic!("member selection and calls have lexical receipts: {execution:#?}");
+    };
+    assert_eq!(
+        receipt.calls.len(),
+        2,
+        "both the mutating argument and saved member target are represented: {receipt:#?}"
+    );
+    let early = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|binding| binding.binding == "early")
+        })
+        .expect("selected callback's observed binding source unit");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == result.id
+                && edge.target == early.id
+                && edge.binding.as_deref() == Some("early")
+        }),
+        "the selected target's observed binding read remains a graph edge: {graph:#?}"
+    );
+}
+
+#[test]
+fn invalid_or_borrowed_own_data_receivers_do_not_seal_root_receipts() {
+    let frozen = run_fixture(FixtureOpts::new(
+        "const early = 7;\nconst later = 42;\nconst holder = Object.freeze({ run: () => early });\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconsole.log(result);\n",
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("early"),
+                Member::new("later"),
+                Member::new("holder"),
+                Member::new("mutate"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_error(&frozen, "Cannot assign to read only property 'run'");
+    assert_no_fallback_suppressing_authority(&frozen, "result", "frozen receiver");
+
+    let descriptor = run_fixture(FixtureOpts::new(
+        "const early = 7;\nconst later = 42;\nconst source = Object.freeze({ run: () => early });\nconst holder = {};\nObject.defineProperties(holder, Object.getOwnPropertyDescriptors(source));\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconsole.log(result);\n",
+        vec![logical_module_with_anon(
+            "all",
+            &[
+                Member::new("early"),
+                Member::new("later"),
+                Member::new("source"),
+                Member::new("holder"),
+                Member::new("mutate"),
+                Member::new("result"),
+            ],
+            &["Object.defineProperties(holder, Object.getOwnPropertyDescriptors(source));"],
+        )],
+    ));
+    assert_preserved_entry_error(&descriptor, "Cannot assign to read only property 'run'");
+    assert_no_fallback_suppressing_authority(&descriptor, "result", "non-writable descriptor");
+
+    let accessor = run_fixture(FixtureOpts::new(
+        "const early = 7;\nconst later = 42;\nconst holder = { get run() { return () => early; }, set run(value) { console.log('setter'); } };\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconsole.log(result);\n",
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("early"),
+                Member::new("later"),
+                Member::new("holder"),
+                Member::new("mutate"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&accessor, "setter\n7\n");
+    assert_no_fallback_suppressing_authority(&accessor, "result", "accessor receiver");
+
+    let tainted = run_fixture(FixtureOpts::new(
+        "globalThis.accept = function(value) {};\nconst early = 7;\nconst later = 42;\nconst holder = { run: () => early };\nglobalThis.accept(holder);\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconsole.log(result);\n",
+        vec![logical_module_with_anon(
+            "all",
+            &[
+                Member::new("early"),
+                Member::new("later"),
+                Member::new("holder"),
+                Member::new("mutate"),
+                Member::new("result"),
+            ],
+            &[
+                "globalThis.accept = function(value) {};",
+                "globalThis.accept(holder);",
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&tainted, "7\n");
+    assert_no_fallback_suppressing_authority(&tainted, "result", "externally tainted receiver");
+
+    let borrowed = run_fixture(FixtureOpts::new(
+        "const holder = { value: 1 };\nfunction mutate(record) { record.value = 42; return 0; }\nfunction take() { return 0; }\nconst result = take(mutate(holder));\nconsole.log(result, holder.value);\n",
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("holder"),
+                Member::new("mutate"),
+                Member::new("take"),
+                Member::new("result"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&borrowed, "0 42\n");
+    assert_no_fallback_suppressing_authority(&borrowed, "result", "borrowed formal receiver");
 }
 
 #[test]
