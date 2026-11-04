@@ -4,12 +4,12 @@ package(default_visibility = ["//visibility:public"])
 
 go_library(
     name = "firecracker",
-    srcs = ["bridge.go"],
+    srcs = ["dial.go"],
     importpath = "github.com/agentydragon/ducktape/util/vsock/firecracker",
 )
 
 go_test(
     name = "firecracker_test",
-    srcs = ["bridge_test.go"],
+    srcs = ["dial_test.go"],
     embed = [":firecracker"],
 )
