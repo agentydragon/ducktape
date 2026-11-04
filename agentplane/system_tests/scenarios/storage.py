@@ -6,8 +6,9 @@ import asyncio
 import copy
 import json
 import shlex
+from collections.abc import Callable
 from contextlib import AsyncExitStack
-from enum import StrEnum
+from dataclasses import dataclass
 from uuid import uuid4
 
 import yaml
@@ -19,8 +20,6 @@ from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatche
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
-from agentplane.system_tests.k3s import guest_logs
-from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
 from agentplane.system_tests.sandbox import ENVIRONMENT_RUNTIME_CONTAINER
 from agentplane.system_tests.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -29,9 +28,10 @@ BOUND_SECONDS = 300
 RECORD = "agentplane.allegedly.works/workspace-record"
 
 
-class StorageLayout(StrEnum):
-    POD_DIRECTORY = "pod-directory"
-    VM_RAW = "vm-raw"
+@dataclass(frozen=True)
+class VmStorage:
+    storage_class: str
+    check_boot: Callable[[], None]
 
 
 async def _object(cluster: Cluster, kind: str, name: str) -> dict:
@@ -40,13 +40,13 @@ async def _object(cluster: Cluster, kind: str, name: str) -> dict:
     return decoded
 
 
-async def _condition(cluster: Cluster, name: str, condition: str, value: str = "True") -> None:
+async def _condition(cluster: Cluster, name: str, condition: str, *, check_boot: Callable[[], None] | None) -> None:
     await cluster.kubectl(
         "wait",
         f"sandboxes.{GROUP}/{name}",
-        f'--for=jsonpath={{.status.conditions[?(@.type=="{condition}")].status}}={value}',
+        f'--for=jsonpath={{.status.conditions[?(@.type=="{condition}")].status}}=True',
         f"--timeout={BOUND_SECONDS}s",
-        check_failure=guest_logs.check_boot if condition == "Ready" and value == "True" else None,
+        check_failure=check_boot if condition == "Ready" else None,
     )
 
 
@@ -257,15 +257,17 @@ async def fresh_workspace_storage_survives_replacement(
     client: Client,
     dispatcher: SessionDispatcherClient,
     executor: Executor,
-    storage_layout: StorageLayout,
+    *,
+    vm_storage: VmStorage | None,
 ) -> None:
-    case = storage_layout.value
+    vm = vm_storage is not None
+    check_boot = vm_storage.check_boot if vm_storage is not None else None
+    case = "vm-raw" if vm else "pod-directory"
     controller = await _object(cluster, "deployment", "sandbox-controller")
     assert controller["status"].get("readyReplicas") == 1
     controller_image = controller["spec"]["template"]["spec"]["containers"][0]["image"]
     existing = json.loads(await cluster.kubectl("get", f"sandboxes.{GROUP}", "-o", "json"))["items"]
     assert not existing, "serialize this scenario with the deployment's other Sandbox users"
-    vm = storage_layout is StorageLayout.VM_RAW
     base = await _object(cluster, f"sandboxtemplates.{GROUP}", executor.template)
     name = f"systest-storage-{case}-{uuid4().hex[:8]}"
     template = name
@@ -363,7 +365,7 @@ async def fresh_workspace_storage_survives_replacement(
             with tracer.start_as_current_span(
                 "system_test.storage.ready", attributes={"storage.case": case, "sandbox.name": name}
             ):
-                await _condition(cluster, name, "Ready")
+                await _condition(cluster, name, "Ready", check_boot=check_boot)
         except Exception as error:
             evidence["readiness_error"] = str(error)
             try:
@@ -386,14 +388,15 @@ async def fresh_workspace_storage_survives_replacement(
         with tracer.start_as_current_span(
             "system_test.storage.bootstrapped", attributes={"storage.case": case, "sandbox.name": name}
         ):
-            await _condition(cluster, name, "Bootstrapped")
+            await _condition(cluster, name, "Bootstrapped", check_boot=check_boot)
         old_incarnation = (await _object(cluster, f"sandboxes.{GROUP}", name))["status"]["incarnation"]
         before = await _volumes(cluster, name, uid)
         if vm:
             workspace_pv = await _object(cluster, "pv", before["workspace"]["pv"])
             assert before["state"]["storage_class"] == "local-path"
             assert before["state"]["volume_mode"] == "Filesystem"
-            assert before["workspace"]["storage_class"] == STORAGE_CLASS
+            assert vm_storage is not None
+            assert before["workspace"]["storage_class"] == vm_storage.storage_class
             assert before["workspace"]["volume_mode"] == workspace_pv["spec"]["volumeMode"] == "Block"
             assert workspace_pv["spec"]["local"]["path"].startswith("/dev/loop")
             assert json.loads(before["workspace"]["record"])["layout"] == {
@@ -475,11 +478,11 @@ async def fresh_workspace_storage_survives_replacement(
         with tracer.start_as_current_span(
             "system_test.storage.resumed_ready", attributes={"storage.case": case, "sandbox.name": name}
         ):
-            await _condition(cluster, name, "Ready")
+            await _condition(cluster, name, "Ready", check_boot=check_boot)
         with tracer.start_as_current_span(
             "system_test.storage.resumed_bootstrapped", attributes={"storage.case": case, "sandbox.name": name}
         ):
-            await _condition(cluster, name, "Bootstrapped")
+            await _condition(cluster, name, "Bootstrapped", check_boot=check_boot)
         new_incarnation = (await _object(cluster, f"sandboxes.{GROUP}", name))["status"]["incarnation"]
         assert new_incarnation["uid"] != old_incarnation["uid"]
         with tracer.start_as_current_span(
@@ -511,8 +514,8 @@ async def fresh_workspace_storage_survives_replacement(
             await _delete(cluster, "virtualmachines", name, workload_uid, group="kubevirt.io", version="v1")
             assert await _volumes(cluster, name, uid) == before
             await _running(cluster, name, uid, True)
-            await _condition(cluster, name, "Ready")
-            await _condition(cluster, name, "Bootstrapped")
+            await _condition(cluster, name, "Ready", check_boot=check_boot)
+            await _condition(cluster, name, "Bootstrapped", check_boot=check_boot)
             replacement = await _object(cluster, "virtualmachine", name)
             assert replacement["metadata"]["uid"] != workload_uid
             replacement_incarnation = (await _object(cluster, f"sandboxes.{GROUP}", name))["status"]["incarnation"]

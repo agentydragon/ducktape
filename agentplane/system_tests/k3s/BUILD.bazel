@@ -14,21 +14,10 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 package(default_testonly = True)
 
 py_test(
-    name = "test_certificates",
-    srcs = ["test_certificates.py"],
-    deps = [
-        ":certificates",
-        "//:conftest",
-        "//agentplane/system_tests:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_executor_persistence",
     srcs = ["test_executor_persistence.py"],
     deps = [
+        ":baseline",
         ":stack",
         "//:conftest",
         "//agentplane/system_tests:conftest",
@@ -54,7 +43,7 @@ py_test(
     },
     tags = K3S_TAGS + ["manual"],
     deps = [
-        ":stack",
+        ":baseline",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//devinfra/bazel:runfiles",
@@ -291,6 +280,7 @@ py_test(
         ":fixture_database",
         ":namespaces",
         ":rendered_fixture",
+        ":vm_infrastructure",
         ":vm_sandboxes",
         "//:conftest",
         "//agentplane/app:settings",
@@ -323,11 +313,11 @@ py_library(
     srcs = ["system_test_target.py"],
     visibility = ["//agentplane/system_tests:__subpackages__"],
     deps = [
-        ":guest_logs",
+        ":baseline",
         ":rendered_fixture",
         ":stack",
+        ":virtualization",
         "//devinfra/bazel:runfiles",
-        "//devinfra/testing:undeclared_outputs",
         "//util:net",
         "@pypi//pytest",
     ],
@@ -359,14 +349,12 @@ py_library(
     srcs = ["stack.py"],
     visibility = ["//agentplane/system_tests:__subpackages__"],
     deps = [
-        ":block_storage",
-        ":bootstrap",
+        ":baseline",
         ":certificates",
-        ":guest_logs",
-        ":iptables_rule",
+        ":pki_infrastructure",
         ":process_traces",
         ":rendered_fixture",
-        ":vm_sandboxes",
+        ":virtualization",
         "//agentplane/system_tests:cluster",
         "//agentplane/system_tests:port_forward",
         "//agentplane/system_tests:tracing",
@@ -374,7 +362,6 @@ py_library(
         "//devinfra/bazel:runfiles",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//pyyaml",
-        "@pypi//tenacity",
     ],
 )
 
@@ -619,12 +606,8 @@ py_library(
     name = "vm_sandboxes",
     srcs = ["vm_sandboxes.py"],
     deps = [
-        ":release_manifests",
-        "//agentplane/system_tests:tracing",
         "//agentplane/system_tests:vm_configuration",
-        "//devinfra/bazel:runfiles",
         "@pypi//more_itertools",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -734,12 +717,9 @@ py_library(
     testonly = True,
     srcs = ["certificates.py"],
     deps = [
-        ":release_manifests",
+        ":pki_infrastructure",
         "//agentplane/system_tests:tracing",
-        "//devinfra/bazel:runfiles",
         "//devinfra/testing:undeclared_outputs",
-        "@pypi//pyyaml",
-        "@pypi//tenacity",
     ],
 )
 
@@ -823,4 +803,131 @@ oci_image_manifest(
     name = "deletion_test_disk",
     images = {":deletion_test_disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"},
     visibility = ["//agentplane/system_tests:__subpackages__"],
+)
+
+py_library(
+    name = "baseline",
+    srcs = ["baseline.py"],
+    deps = [
+        ":bootstrap",
+        ":iptables_rule",
+        ":pki_infrastructure",
+        ":release_manifests",
+        "//agentplane/system_tests:tracing",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "virtualization",
+    srcs = ["virtualization.py"],
+    deps = [
+        ":baseline",
+        "//agentplane/system_tests:cluster",
+    ],
+)
+
+py_library(
+    name = "vm_infrastructure",
+    srcs = ["vm_infrastructure.py"],
+    deps = [
+        ":release_manifests",
+        "//agentplane/system_tests:tracing",
+        "//devinfra/bazel:runfiles",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "vm_runtime",
+    srcs = ["vm_runtime.py"],
+    deps = [
+        ":baseline",
+        ":block_storage",
+        ":guest_logs",
+        ":vm_infrastructure",
+        ":vm_sandboxes",
+        "//agentplane/system_tests:cluster",
+        "//devinfra/testing:undeclared_outputs",
+    ],
+)
+
+py_library(
+    name = "vm_test_target",
+    srcs = ["vm_test_target.py"],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+    deps = [
+        ":guest_logs",
+        ":virtualization",
+        ":vm_runtime",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_baseline",
+    srcs = ["test_baseline.py"],
+    deps = [
+        ":baseline",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_stack",
+    srcs = ["test_stack.py"],
+    deps = [
+        ":baseline",
+        ":rendered_fixture",
+        ":stack",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "pki_infrastructure",
+    srcs = ["pki_infrastructure.py"],
+    deps = [
+        ":release_manifests",
+        "//agentplane/system_tests:tracing",
+        "//devinfra/bazel:runfiles",
+        "@pypi//pyyaml",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_pki_infrastructure",
+    srcs = ["test_pki_infrastructure.py"],
+    deps = [
+        ":pki_infrastructure",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_vm_runtime",
+    srcs = ["test_vm_runtime.py"],
+    deps = [
+        ":baseline",
+        ":rendered_fixture",
+        ":stack",
+        ":vm_infrastructure",
+        ":vm_runtime",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

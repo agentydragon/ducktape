@@ -148,7 +148,7 @@ async def fresh_workspace_storage_survives_replacement(resources: Resources) -> 
             client,
             resources.dispatcher,
             Executor(template=POD_TEMPLATE, cwd="/state/work"),
-            storage.StorageLayout.POD_DIRECTORY,
+            vm_storage=None,
         )
 
 

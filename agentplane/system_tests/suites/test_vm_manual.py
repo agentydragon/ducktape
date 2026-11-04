@@ -9,6 +9,8 @@ from agentplane.app.testing.client import Client
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.executor import Executor
+from agentplane.system_tests.k3s import guest_logs
+from agentplane.system_tests.k3s.block_storage import STORAGE_CLASS
 from agentplane.system_tests.sandbox import Sandboxes
 from agentplane.system_tests.scenarios import storage, suspend_resume, vm_workspace_ownership
 from agentplane.system_tests.scripted_upstream import ScriptedUpstream
@@ -17,23 +19,20 @@ pytestmark = pytest.mark.vm_sandboxes
 
 
 async def test_fresh_workspace_storage_survives_replacement(
-    cluster: Cluster,
-    client: Client,
-    dispatcher: SessionDispatcherClient,
-    executor: Executor,
-    storage_layout: storage.StorageLayout,
+    cluster: Cluster, client: Client, dispatcher: SessionDispatcherClient, executor: Executor
 ) -> None:
-    await storage.fresh_workspace_storage_survives_replacement(cluster, client, dispatcher, executor, storage_layout)
+    await storage.fresh_workspace_storage_survives_replacement(
+        cluster,
+        client,
+        dispatcher,
+        executor,
+        vm_storage=storage.VmStorage(storage_class=STORAGE_CLASS, check_boot=guest_logs.check_boot),
+    )
 
 
 @pytest.fixture
 def executor() -> Executor:
     return Executor(template="environment-vm", cwd="/state/workspaces/accept")
-
-
-@pytest.fixture
-def storage_layout() -> storage.StorageLayout:
-    return storage.StorageLayout.VM_RAW
 
 
 @pytest.mark.scripted_model

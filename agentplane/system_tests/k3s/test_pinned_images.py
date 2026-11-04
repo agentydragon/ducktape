@@ -8,16 +8,16 @@ from typing import Any
 
 import pytest
 
-from agentplane.system_tests.k3s import stack
-from agentplane.system_tests.k3s.stack import K3s
+from agentplane.system_tests.k3s import baseline
+from agentplane.system_tests.k3s.baseline import K3s
 from devinfra.bazel.runfiles import get_required_path
 
 
 def _assert_cri_pinned(k3s: K3s, reference: str, work: Path) -> str:
     config = work / "crictl.yaml"
-    config.write_text(f"runtime-endpoint: unix://{stack.CONTAINERD_SOCKET}\n")
+    config.write_text(f"runtime-endpoint: unix://{baseline.CONTAINERD_SOCKET}\n")
     images = json.loads(
-        stack.run(str(k3s.binary), "crictl", "--config", str(config), "images", "-o", "json", stdout_only=True)
+        baseline.run(str(k3s.binary), "crictl", "--config", str(config), "images", "-o", "json", stdout_only=True)
     )["images"]
     matches = [image for image in images if reference in image.get("repoTags", [])]
     assert len(matches) == 1, f"CRI image {reference}: {matches}"
@@ -30,7 +30,7 @@ def test_imported_image_is_pinned_after_clean_attach(tmp_path: Path, monkeypatch
     layout = get_required_path(os.environ["K3S_TEST_IMAGE_RLOCATION"])
     reference = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset"
     fingerprint = "pinned-image-probe-v1:" + uuid.uuid4().hex
-    k3s, marker, warm = stack._baseline_open(binary, fingerprint, layers_in_memory=True)
+    k3s, marker, warm = baseline.open_baseline(binary, fingerprint, layers_in_memory=True)
     try:
         assert not warm
         identity = marker["identity"].copy()
@@ -54,8 +54,8 @@ def test_imported_image_is_pinned_after_clean_attach(tmp_path: Path, monkeypatch
         # A successful suite leaves a clean marker. The next action must attach to the
         # same process and keep the CRI pin, including when it repeats the import.
         marker["state"] = "clean"
-        stack._baseline_write_marker(marker)
-        k3s, marker, warm = stack._baseline_open(binary, fingerprint, layers_in_memory=True)
+        baseline.write_marker(marker)
+        k3s, marker, warm = baseline.open_baseline(binary, fingerprint, layers_in_memory=True)
         assert warm
         assert marker["identity"] == identity
         _assert_cri_pinned(k3s, reference, tmp_path)
@@ -63,11 +63,11 @@ def test_imported_image_is_pinned_after_clean_attach(tmp_path: Path, monkeypatch
         _assert_cri_pinned(k3s, reference, tmp_path)
     finally:
         marker["state"] = "dirty"
-        stack._baseline_write_marker(marker)
+        baseline.write_marker(marker)
         try:
-            stack._baseline_stop_owned(k3s, marker)
+            baseline.stop_owned(k3s, marker)
         finally:
-            stack._BASELINE_MARKER.unlink(missing_ok=True)
+            baseline._BASELINE_MARKER.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
