@@ -89,6 +89,10 @@ not proof that a command ran or passed; retain each executed command's
 resolved `argv` and `cwd`, then separately save its actual exit status,
 `stdout`, `stderr` and result artifacts.
 
+For native replay of Bazel analysis artifacts, preflight the complete generated
+source and package-root inputs using the
+[Bazel replay procedure](../../docs/bazel_integration.md#preserve-the-pipeline-cli-from-rbe).
+
 Public skills must not encode private project names or fixed app taxonomies.
 
 ## Drive specs and tool improvements
@@ -168,6 +172,13 @@ ownership selection does not hide them.
    lower bound. Alternatively start from an existing passing partial spec or
    the residual-only baseline. Include anonymous statements and complete
    atomic units in each group.
+   An atomic-group rejection is a co-location constraint: inspect the complete
+   group and try assigning it to one coherent owner before treating it as
+   requiring semantic improvement. Preserve anonymous units and full selector
+   context in the probe; group size alone does not establish incoherence. This
+   only addresses the co-location requirement: rerun the normal gate, since
+   module cycles, order, exports, or interaction with entry co-location may
+   still reject the assignment.
 2. Restore groups, run the normal gate, and split failing additions against
    the same passing base. Keep passing groups and continue on rejected
    combinations. If both halves
