@@ -1325,6 +1325,10 @@ struct Callable {
     calls: Vec<Call>,
     local_assignments: Vec<(Id, ValueExpr)>,
     declared_locals: BTreeSet<Id>,
+    /// Catch bindings are lexical locals for closure projection but stay
+    /// separate because direct callback-factory admission inspects
+    /// `declared_locals`.
+    catch_bindings: BTreeSet<Id>,
     returns: Vec<ValueExpr>,
     /// One source-ordered return covering the complete simple-parameter body.
     /// Syntax coverage is retained during the same value lowering below.
@@ -1561,6 +1565,7 @@ impl Default for Callable {
             calls: Vec::new(),
             local_assignments: Vec::new(),
             declared_locals: BTreeSet::new(),
+            catch_bindings: BTreeSet::new(),
             returns: Vec::new(),
             direct_return_site: None,
             allocation_return: None,
@@ -11341,6 +11346,13 @@ impl Visit for ExecutionIndex {
     fn visit_catch_clause(&mut self, clause: &CatchClause) {
         if let Some(parameter) = &clause.param {
             self.invalidate_property_key_pattern(parameter);
+            if let Some(callable) = self.current {
+                self.callables
+                    .get_mut(&callable)
+                    .unwrap()
+                    .catch_bindings
+                    .extend(Parameter::from_pattern(parameter).bindings);
+            }
         }
         clause.visit_children_with(self);
     }
