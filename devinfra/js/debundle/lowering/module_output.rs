@@ -31,6 +31,7 @@ use artifact::reports::SelectedModuleLowering;
 use artifact::{ChunkId, FileMetadata, FileRole, JsFile, JsFileBody};
 use gate::AssignmentAnalysis;
 use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
+use output_layout::{CHUNK_REPORT, REPORTS_DIR, TREE_DIR};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 use swc_ecma_visit::VisitMutWith;
@@ -495,14 +496,12 @@ fn build_module_output(
     header.extend([
         LOWERING_FILE_PRAGMA.to_string(),
         LOWERING_GENERATOR_HEADER.to_string(),
-        format!(
-            "// Selected-module lowered region; original source_unit ids: {}.",
-            source_unit_ids.join(", ")
+        provenance_header(
+            "original source_unit ids",
+            &source_unit_ids,
+            context.chunk_id,
         ),
-        format!(
-            "// Selected-module lowered region; source bindings: {}.",
-            binding_names.join(", ")
-        ),
+        provenance_header("source bindings", &binding_names, context.chunk_id),
     ]);
     let leading_item_comments = anonymous_statement_comments_by_span(plan, context.runtime_ast);
     // `plan.binding_comments` is keyed by the member's ORIGINAL binding
@@ -559,6 +558,22 @@ fn build_module_output(
         target_path: plan.target_path.clone(),
     };
     (file, record, lowering)
+}
+
+fn provenance_header(label: &str, values: &[String], chunk_id: &str) -> String {
+    let prefix = format!("// Selected-module lowered region; {label}: ");
+    let inline_len = prefix.len()
+        + values.iter().map(String::len).sum::<usize>()
+        + values.len().saturating_sub(1) * 2
+        + 1;
+    if inline_len <= 160 {
+        format!("{prefix}{}.", values.join(", "))
+    } else {
+        format!(
+            "{prefix}{} entries; see {REPORTS_DIR}/{TREE_DIR}/{chunk_id}/{CHUNK_REPORT}.",
+            values.len()
+        )
+    }
 }
 
 fn anonymous_statement_comments_by_span(

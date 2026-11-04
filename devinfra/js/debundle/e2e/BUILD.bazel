@@ -717,6 +717,7 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "spec_comments_test",
     size = "small",
+    deps = ["@crates//:serde_json"],
 )
 
 debundle_e2e_test(
