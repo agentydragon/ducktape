@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 import pytest_bazel
 
-from util.chrome.profile import ChromeProfile
+from platform_sessions.chrome.profile import ChromeProfile
 
 
 def test_cookie_selection_uses_network_database_and_preserves_metadata(tmp_path):
@@ -53,7 +53,7 @@ def test_local_storage_passes_only_selectors_to_helper(tmp_path, monkeypatch):
         calls.append((args, kwargs))
         return SimpleNamespace(stdout=b'{"auth":"secret"}')
 
-    monkeypatch.setattr("util.chrome.profile.subprocess.run", run)
+    monkeypatch.setattr("platform_sessions.chrome.profile.subprocess.run", run)
     result = ChromeProfile(tmp_path).local_storage(
         extractor=tmp_path / "helper", origin="https://example.com", keys=("auth",), prefixes=("legacy:",)
     )

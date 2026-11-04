@@ -220,7 +220,7 @@ mod tests {
             .unwrap();
         drop(db);
         let binary = PathBuf::from(std::env::var_os("TEST_SRCDIR").unwrap())
-            .join("_main/util/chrome/chrome_storage");
+            .join("_main/platform_sessions/chrome/chrome_storage");
         let output = std::process::Command::new(binary)
             .arg(path)
             .args(["https://example.com", "--key", "session"])

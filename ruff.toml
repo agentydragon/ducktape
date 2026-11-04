@@ -182,6 +182,7 @@ known-first-party = [
     "haku",
     "mako_utils",
     "nix",
+    "platform_sessions",
     "plaid_utils",
     "skills",
     "third_party",
