@@ -863,7 +863,156 @@ fn assert_same_trees(direct: &Path, staged: &Path) {
 }
 
 fn assert_same_invocation_trees(direct: &StagedInvocation, staged: &StagedInvocation) {
-    assert_same_trees(&direct.output_root(), &staged.output_root());
+    let direct = invocation_tree(direct);
+    let staged = invocation_tree(staged);
+    assert_eq!(
+        direct.keys().collect::<Vec<_>>(),
+        staged.keys().collect::<Vec<_>>()
+    );
+    for (file, bytes) in &direct {
+        assert!(
+            staged[file] == *bytes,
+            "{} differs between direct and staged runs",
+            file.display()
+        );
+    }
+}
+
+fn invocation_tree(invocation: &StagedInvocation) -> BTreeMap<PathBuf, Vec<u8>> {
+    let output_root = invocation.output_root();
+    let mut files = tree(&output_root);
+    let spec_path = invocation.invocation_spec();
+    if let Some(spec_path) = spec_path {
+        assert!(spec_path.is_file(), "invocation spec disappeared");
+    }
+    for (relative, bytes) in &mut files {
+        if relative == Path::new("GATE_REJECTED") {
+            *bytes = normalize_invocation_rejection_marker(invocation, bytes);
+            continue;
+        }
+        if relative.starts_with("app") && relative.extension().is_some_and(|ext| ext == "js") {
+            *bytes = normalize_invocation_gate_banner(invocation, bytes);
+            continue;
+        }
+        let Ok(mut report) = serde_json::from_slice::<Value>(bytes) else {
+            continue;
+        };
+        if let Some(spec_path) = spec_path {
+            normalize_invocation_spec_locations(&mut report, spec_path);
+        }
+        *bytes = serde_json::to_vec(&report).unwrap();
+    }
+    files
+}
+
+fn normalize_invocation_rejection_marker(invocation: &StagedInvocation, marker: &[u8]) -> Vec<u8> {
+    let marker = std::str::from_utf8(marker).expect("rejection marker is UTF-8");
+    let output_root = invocation.output_root();
+    let reports_root = output_root.join("reports");
+    assert!(
+        reports_root.is_dir(),
+        "rejected invocation has no report tree"
+    );
+    let mut normalized = marker.to_string();
+    for report in module_snapshot(&reports_root).keys() {
+        assert!(report.starts_with(&reports_root) && report.is_file());
+        let relative = report
+            .strip_prefix(&output_root)
+            .expect("invocation report is under its output root");
+        normalized = normalized.replace(
+            &report.to_string_lossy().to_string(),
+            &format!("<invocation-output>/{}", relative.to_string_lossy()),
+        );
+    }
+    assert!(
+        !normalized.contains(&reports_root.to_string_lossy().to_string()),
+        "rejection marker contains an unrecognized path under this invocation's report tree:\n{normalized}"
+    );
+    normalized.into_bytes()
+}
+
+fn normalize_invocation_gate_banner(invocation: &StagedInvocation, code: &[u8]) -> Vec<u8> {
+    let code = std::str::from_utf8(code).expect("emitted JavaScript is UTF-8");
+    let lines: Vec<_> = code.split_inclusive('\n').collect();
+    let leading_comments: Vec<_> = lines
+        .iter()
+        .take_while(|line| line.trim_end_matches(['\r', '\n']).starts_with("//"))
+        .collect();
+    if !leading_comments
+        .iter()
+        .any(|line| line.contains("GATE_REJECTED: NOT RUNNABLE"))
+    {
+        return code.as_bytes().to_vec();
+    }
+
+    let mut normalized = String::with_capacity(code.len());
+    for (index, raw_line) in lines.iter().enumerate() {
+        let line = raw_line.trim_end_matches(['\r', '\n']);
+        if index < leading_comments.len()
+            && let Some(path) = line.strip_prefix("// Evidence: ")
+        {
+            normalized.push_str("// Evidence: ");
+            normalized.push_str(&normalize_invocation_report_path(invocation, path));
+            normalized.push_str(&raw_line[line.len()..]);
+        } else {
+            normalized.push_str(raw_line);
+        }
+    }
+    normalized.into_bytes()
+}
+
+fn normalize_invocation_report_path(invocation: &StagedInvocation, report: &str) -> String {
+    let report = Path::new(report);
+    let output_root = invocation.output_root();
+    let reports_root = output_root.join("reports");
+    assert!(
+        report.starts_with(&reports_root) && report.is_file(),
+        "evidence path {} does not identify this invocation's report tree",
+        report.display()
+    );
+    format!(
+        "<invocation-output>/{}",
+        report
+            .strip_prefix(&output_root)
+            .expect("checked invocation output prefix")
+            .to_string_lossy()
+    )
+}
+
+fn normalize_invocation_spec_locations(report: &mut Value, spec_path: &Path) {
+    match report {
+        Value::Object(fields) => {
+            for (field, value) in fields {
+                if field == "spec_location" {
+                    normalize_invocation_spec_location(value, spec_path);
+                } else if field == "argument_input_spec_locations"
+                    && let Value::Array(locations) = value
+                {
+                    for location in locations {
+                        normalize_invocation_spec_location(location, spec_path);
+                    }
+                }
+                normalize_invocation_spec_locations(value, spec_path);
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                normalize_invocation_spec_locations(value, spec_path);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn normalize_invocation_spec_location(location: &mut Value, spec_path: &Path) {
+    let Some(text) = location.as_str() else {
+        return;
+    };
+    let prefix = format!("{}:", spec_path.display());
+    let Some(suffix) = text.strip_prefix(&prefix) else {
+        return;
+    };
+    *location = Value::String(format!("<invocation-spec>:{suffix}"));
 }
 
 fn assert_staged_run_matches(opts: FixtureOpts<'_>, run_args: &[&str]) {
@@ -1236,10 +1385,17 @@ fn staged_invocations_keep_outputs_and_refuse_reused_reports_destinations() {
     assert_ne!(refused_first.output_root(), refused_second.output_root());
     for refused in [&refused_first, &refused_second] {
         assert!(
-            !refused.output_root().join("app").exists()
-                && !refused.output_root().join("reports").exists(),
-            "refused invocation wrote output under {}",
-            refused.output_root().display()
+            !refused.output_root().join("app").exists(),
+            "refused invocation emitted an app under {}",
+            refused.output_root().display(),
+        );
+        assert!(
+            !refused
+                .harness_root()
+                .expect("fixture requests a browser harness")
+                .exists(),
+            "refused invocation emitted a browser harness under {}",
+            refused.harness_root().unwrap().display(),
         );
     }
     assert_eq!(fs::read(&first_entry).unwrap(), first_entry_bytes);
