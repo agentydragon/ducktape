@@ -50,7 +50,8 @@ async def test_lazy_scoped_evidence_and_native_expansion(
     await history.set_attached(thread, source.attached)
     await history.record(thread, source.entries)
     scope = await content.session_summary(thread)
-    assert scope is not None and scope.HasField("projection_epoch")
+    assert scope is not None
+    assert scope.HasField("projection_epoch")
     await store.wait(thread)
     path = f"/upstream/history/v1/sessions/{thread}"
     evidence_path = f"{path}/entity-evidence"

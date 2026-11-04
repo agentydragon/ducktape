@@ -373,7 +373,8 @@ async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draf
     assert len(before) == 1
     requests = _recording_requests(page)
     scope_before = await thread_browser.content.session_summary(thread.id)
-    assert scope_before is not None and scope_before.HasField("projection_epoch")
+    assert scope_before is not None
+    assert scope_before.HasField("projection_epoch")
 
     await page.context.set_offline(True)
     try:
