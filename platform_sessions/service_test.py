@@ -19,7 +19,7 @@ class FakeSettings(BaseModel):
 class FakeIntegration:
     def __init__(self):
         self.config = IntegrationInstance(
-            "example", "example", True, "https://example.test", PurePosixPath("/data/example"), 900, BaseModel()
+            "example", "example", True, "https://example.test", PurePosixPath("/data/example"), 900, FakeSettings()
         )
         self.periodic = False
         self.candidate_verification = True
