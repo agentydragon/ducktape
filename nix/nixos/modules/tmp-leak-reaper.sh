@@ -19,7 +19,14 @@ for dir in "$@"; do
   # bb run leaves its generated launcher behind after builds succeed or fail.
   find "$dir" -mindepth 1 -maxdepth 1 -ignore_readdir_race -type f -mmin +1440 -name 'bb-run-*' -delete
 
-  # Empty only: a nix shell open for over a day keeps a stale-mtime dir in use.
+  # TODO: Empty is not a liveness check: a long-running shell may still use its
+  # TMPDIR after a day of inactivity. This rule can therefore delete a live dir.
+  # nix-shell.* has a random suffix, not a PID. nix-develop-<pid>-* uses the
+  # creator's PID namespace, so checking that PID on the host is not sufficient;
+  # descendants can also outlive the creator. Process environments and open files
+  # can identify possible users, but their absence does not prove a dir is unused.
+  # Replace this rule with explicit lifetime tracking that covers child processes
+  # before reclaiming non-empty dirs or relying on a dead creator PID.
   find "$dir" -mindepth 1 -maxdepth 1 -ignore_readdir_race -type d -mmin +1440 -empty \( \
     -name 'nix-shell.*' -o -name 'nix-develop-*' \
     \) -delete
