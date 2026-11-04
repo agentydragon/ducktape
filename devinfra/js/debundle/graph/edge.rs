@@ -308,6 +308,7 @@ pub enum EffectCellReport {
     GlobalProp { key: String },
     ArrayContents { origin: u32 },
     SetContents { origin: u32 },
+    OwnProperty { origin: u32, property: String },
 }
 
 impl From<&EffectCell> for EffectCellReport {
@@ -319,6 +320,10 @@ impl From<&EffectCell> for EffectCellReport {
             EffectCell::GlobalProp(key) => Self::GlobalProp { key: key.clone() },
             EffectCell::ArrayContents(origin) => Self::ArrayContents { origin: *origin },
             EffectCell::SetContents(origin) => Self::SetContents { origin: *origin },
+            EffectCell::OwnProperty { origin, property } => Self::OwnProperty {
+                origin: *origin,
+                property: property.clone(),
+            },
         }
     }
 }
@@ -330,6 +335,9 @@ impl fmt::Display for EffectCellReport {
             Self::GlobalProp { key } => write!(f, "global property `{key}`"),
             Self::ArrayContents { origin } => write!(f, "array contents #{origin}"),
             Self::SetContents { origin } => write!(f, "Set contents #{origin}"),
+            Self::OwnProperty { origin, property } => {
+                write!(f, "own property `{property}` of allocation #{origin}")
+            }
         }
     }
 }

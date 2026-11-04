@@ -426,6 +426,12 @@ pub enum EffectCell {
     ArrayContents(u32),
     /// Mutable contents of one author-certified fresh native Set.
     SetContents(u32),
+    /// One static own property, conservatively shared by every runtime
+    /// generation of the source allocation. This supplies no strong update.
+    OwnProperty {
+        origin: u32,
+        property: String,
+    },
 }
 
 /// The (writes, reads) cell view of one statement, derived by

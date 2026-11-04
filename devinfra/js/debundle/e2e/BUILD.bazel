@@ -4,6 +4,14 @@ load(":defs.bzl", "debundle_e2e_test")
 package(default_testonly = True)
 
 debundle_e2e_test(
+    name = "ordered_own_data_field_test",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
     name = "compressed_graph_reports_test",
     deps = [
         "@crates//:serde_json",

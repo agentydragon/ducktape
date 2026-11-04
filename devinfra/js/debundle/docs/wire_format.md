@@ -166,7 +166,10 @@ legacy report's forward-edge and placement diagnostics.
 `coverage.unknown_coverage` counts missing global/property/host domains
 independently of legacy dataflow opacity, execution incompleteness and heap
 opacity. Unknown domains remain global Havoc; `full_semantic_precision` is
-false. `coverage.covered_owner_dependencies` retains the typed conditions for
+false. Cell conflicts can include `own_property` with `origin` and `property`;
+the origin includes all runtime generations of its source allocation and
+supplies no strong-update or privacy proof.
+`coverage.covered_owner_dependencies` retains the typed conditions for
 all owner coverage certificates in the analyzed facts. `relocation_dependencies`
 retains the typed conditions for closed owners participating in candidate
 inversions; `premise_dependencies` names authored commuting premises used for
