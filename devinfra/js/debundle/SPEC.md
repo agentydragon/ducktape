@@ -663,9 +663,12 @@ diagnostic DTO and is never an analysis input.
 An original simple variable declarator may also close those
 coverage domains for a direct bare `new Map()` or `new Set()` with exactly zero
 arguments. The original AST and lowered `New` site must identify the same
-constructor, and the dedicated root initializer transfer must actually select
-the matching native Construct/Fresh/Never row with no present coercions,
-writes or invocations. Its exact identity premise comes from the existing intact
+constructor. For Map, the checked shared zero-argument collection operation
+returns normal global-property, general-heap and host-effect coverage; only the
+root source owner can seal it after its binding is initialized. Set retains its
+dedicated root transfer. Both require the matching native Construct/Fresh/Never
+row with no present coercions, writes or invocations. Their exact identity
+premise comes from the existing intact
 intrinsic census or an accepted exact-site `map_empty` / `set_empty` input.
 The transfer result stays `Top`: it proves successful initialization of this
 owner, not a Map or Set identity, contents, prototype, or method behavior. The

@@ -117,7 +117,7 @@ impl ProviderContext<'_> {
         };
         let result = allocation_transfer::keyed_collection_new(row, site, dependencies.clone())?;
         self.native_constructions.insert(family);
-        Some(result)
+        Some(result.allocation)
     }
 }
 

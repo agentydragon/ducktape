@@ -15,7 +15,6 @@ use swc_ecma_ast::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum NativeConstructorKind {
-    Map,
     Set,
     TextEncoder,
 }
@@ -32,7 +31,6 @@ pub(super) enum NativeConstructorForm {
 impl NativeConstructorKind {
     pub(super) fn global_name(self) -> &'static str {
         match self {
-            Self::Map => "Map",
             Self::Set => "Set",
             Self::TextEncoder => "TextEncoder",
         }
@@ -45,6 +43,11 @@ enum Leaf {
     Function(u32),
     Class(u32),
     RegExp(u32),
+    /// Exact direct source form; only a checked operation receipt may cover it.
+    MapOperation {
+        callee: Id,
+        call_site: CallSite,
+    },
     NativeConstructor {
         callee: Id,
         call_site: CallSite,
@@ -418,7 +421,7 @@ fn inert_class_declaration(declaration: &ClassDecl) -> bool {
         && class.body.iter().all(plain_class_member)
 }
 
-fn empty_native_constructor(expression: &Expr) -> Option<(Id, CallSite, NativeConstructorKind)> {
+fn empty_direct_constructor(expression: &Expr) -> Option<(Id, CallSite)> {
     let Expr::New(construction) = expression.unwrap_parens() else {
         return None;
     };
@@ -433,13 +436,17 @@ fn empty_native_constructor(expression: &Expr) -> Option<(Id, CallSite, NativeCo
     let Expr::Ident(callee) = construction.callee.unwrap_parens() else {
         return None;
     };
-    let kind = match callee.sym.as_ref() {
-        "Map" => NativeConstructorKind::Map,
+    Some((callee.to_id(), CallSite::from(construction.span)))
+}
+
+fn empty_native_constructor(expression: &Expr) -> Option<(Id, CallSite, NativeConstructorKind)> {
+    let (callee, call_site) = empty_direct_constructor(expression)?;
+    let kind = match callee.0.as_ref() {
         "Set" => NativeConstructorKind::Set,
         "TextEncoder" => NativeConstructorKind::TextEncoder,
         _ => return None,
     };
-    Some((callee.to_id(), CallSite::from(construction.span), kind))
+    Some((callee, call_site, kind))
 }
 
 fn primitive_literal(expression: &Expr) -> bool {
@@ -516,7 +523,13 @@ impl OriginalInitializer {
         let (identity, initializer) = source?;
         let leaf = match initializer.unwrap_parens() {
             Expr::New(_) => {
-                if let Some((callee, call_site, kind)) = empty_native_constructor(initializer) {
+                if let Some((callee, call_site)) = empty_direct_constructor(initializer)
+                    && callee.0.as_ref() == "Map"
+                {
+                    Leaf::MapOperation { callee, call_site }
+                } else if let Some((callee, call_site, kind)) =
+                    empty_native_constructor(initializer)
+                {
                     Leaf::NativeConstructor {
                         callee,
                         call_site,
@@ -585,6 +598,26 @@ impl OriginalInitializer {
             Leaf::Composed(expression) => Some(expression),
             _ => None,
         }
+    }
+
+    pub(super) fn operation_source(
+        &self,
+        expression: &ValueExpr,
+    ) -> Option<&InitializationSourceIdentity> {
+        let Leaf::MapOperation {
+            callee: expected,
+            call_site,
+        } = &self.leaf
+        else {
+            return None;
+        };
+        let ValueExpr::New(callee, arguments, evaluated_site) = expression else {
+            return None;
+        };
+        (arguments.is_empty()
+            && call_site == evaluated_site
+            && matches!(callee.as_ref(), ValueExpr::Binding(binding) if binding == expected))
+        .then_some(&self.identity)
     }
 
     pub(super) fn native_constructor_candidate(
