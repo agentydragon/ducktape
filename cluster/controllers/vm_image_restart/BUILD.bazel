@@ -17,8 +17,8 @@ py_library(
     name = "controller",
     srcs = ["controller.py"],
     deps = [
+        ":kubernetes_watch",
         ":settings",
-        "//util:kubernetes_watch",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",
     ],
@@ -63,5 +63,14 @@ py_test(
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "kubernetes_watch",
+    srcs = ["kubernetes_watch.py"],
+    deps = [
+        "@pypi//kubernetes_asyncio",
+        "@pypi//tenacity",
     ],
 )
