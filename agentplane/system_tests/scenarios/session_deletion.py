@@ -447,14 +447,14 @@ async def deployed_session_command_cannot_cross_deletion(
                     session_pb2.ListSessionsRequest(), metadata=replacement_metadata, timeout=15
                 )
                 assert replacement_session in {item.session_id for item in sessions.sessions}
-        admitted = await runner.ChangeReasoningEffort(
+        replacement_admitted = await runner.ChangeReasoningEffort(
             environment_runtime_pb2.ChangeReasoningEffortRequest(
                 session_id=replacement_session, command_id=str(uuid4()), effort="low"
             ),
             metadata=replacement_metadata,
             timeout=15,
         )
-        assert admitted.admission.event.HasField("command_admitted")
+        assert replacement_admitted.admission.event.HasField("command_admitted")
         # This RPC has no Session ID: NOT_FOUND proves UID routing refused the request, even if
         # an installation retains old Sessions across a name replacement.
         with pytest.raises(grpc.aio.AioRpcError) as stale_read:
