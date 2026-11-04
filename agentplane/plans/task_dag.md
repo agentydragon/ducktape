@@ -1754,8 +1754,8 @@ no longer runs, and whether its workspace survived depends on where it lived (th
 VM-local disk is not, until `VM_RAM_SUSPEND`). Tell the agent when a new incarnation of its Sandbox
 started, how long it was down, what was kept (state PVC, workspace) and what was lost (processes,
 terminals). The runner knows the incarnation change; what survives is a fact of the Sandbox's kind and
-volumes, and a suspend ends background processes and terminals, which do not count as busy
-(`RUNNER_BUSY_TRACKING`). Open: whether the notice is a runner
+volumes, and a suspend ends processes and terminals that are not protected by an active execution
+connection (`RUNNER_BUSY_TRACKING`). Open: whether the notice is a runner
 platform instruction added at harness start, an event the History Service folds into the Session, or a
 message through the Dispatcher; and the wording agents act on. Test a suspend and resume with a
 background process, a terminal and workspace files, and a crash restart (no suspend) that reads
@@ -1788,10 +1788,11 @@ claiming a whole-Pod restart, lost files or a cause that was not observed. Relat
 ### `RUNNER_BUSY_TRACKING` — the runner counts terminals and background processes as busy
 
 **Unscheduled; operator, 2026-10-14: not now, an open TODO that may be looked at later.** The runner
-publishes `idle_since` (`EnvironmentRuntimeFacts`), busy while a delivery is under way, the bootstrap runs, or any
-Session has a turn, an unfinished command or a setup script. A background or durable process or an
-attached terminal or console does not make the Sandbox busy, so an idle suspend ends them. The runner
-does not supervise these, so who would report them (the harness adapters, the VM console) is open.
+publishes `idle_since` (`EnvironmentRuntimeFacts`), busy while a delivery is under way, the bootstrap runs, any
+Session has a turn, an unfinished command or a setup script, or an Execution connection is active.
+An active Execution connection therefore blocks suspension, but detached processes and the VM
+console do not have a general busy-lifetime contract. Decide which surviving background work and
+attached terminals should block idle suspension and who reports them.
 Test an attached terminal that detaches, a background process that outlives a turn, and a runner
 restart. `AGENT_RESUME_NOTICE` tells the agent what a suspend ended.
 
