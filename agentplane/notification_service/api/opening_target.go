@@ -6,17 +6,21 @@ import (
 )
 
 // openingTarget selects the exact environment used by a native Session or the
-// fixed initial executor currently used by a central Session.
+// fixed executor currently used by a central Session.
 func openingTarget(opening *dispatcherpb.SessionOpening, sessionID string) *sessionpb.ExactEnvironment {
 	if opening.GetSessionId() != sessionID {
 		return nil
 	}
+	placement := opening.GetPlacement()
+	if placement == nil {
+		return nil
+	}
 	var target *sessionpb.ExactEnvironment
-	switch opening.GetPlacement().(type) {
+	switch placement.Kind.(type) {
 	case *sessionpb.SessionPlacement_EnvironmentHosted:
-		target = opening.GetPlacement().GetEnvironmentHosted().GetEnvironment()
+		target = placement.GetEnvironmentHosted().GetEnvironment()
 	case *sessionpb.SessionPlacement_CentralSamplerV1:
-		target = opening.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
+		target = placement.GetCentralSamplerV1().GetExecutorEnvironment()
 	}
 	if target.GetName() == "" || target.GetUid() == "" {
 		return nil
