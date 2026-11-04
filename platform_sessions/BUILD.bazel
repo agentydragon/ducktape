@@ -1,0 +1,21 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "registry",
+    srcs = ["registry.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "registry_test",
+    srcs = ["registry_test.py"],
+    deps = [
+        ":registry",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
