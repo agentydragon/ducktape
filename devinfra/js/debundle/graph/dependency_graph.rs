@@ -2,7 +2,6 @@ use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
 use swc_ecma_ast::Id;
 
 use crate::analysis_inputs::CommutingStatementsRef;
