@@ -6,6 +6,44 @@ The implementation branch was initially rebased onto `devel` commit `e397149010`
 `194ba5aa0d` for CRI image cleanup, `d2247659d0` for the managed worker keyring policy,
 and `3473e3fd82` for the landed OCI descriptor API and current Session command clients.
 
+## Accepted RAM continuation
+
+The [hardware run](https://app.buildbuddy.io/invocation/4c4ebb53-f4c8-4fc4-a7d1-2a3ec179e083)
+used clean source `36160a6dce635e784b15cb3fa8d018481e17554a` on the existing wyrm2 VM. Its
+functional scenario completed both real Codex tool turns and app-driven suspend/resume. Pytest recorded
+`1 passed, 1 error`: the functional case passed, but teardown failed after disk-pressure eviction. The [retained continuation JSON](2026_11_03_firecracker_system_test_continuation.json)
+records the assertions' inputs:
+
+| Evidence                        | Before and after resume                            |
+| ------------------------------- | -------------------------------------------------- |
+| Sandbox UID                     | `e4e5317c-fa14-44e9-add3-ebaa025d5848`             |
+| Same Pod, no container restarts | `1c8c9cbf-c8b8-449d-9b27-5ede0295221e`             |
+| Kernel boot ID                  | `2a5340db-87f0-4a5d-a630-8d799fb94b28`             |
+| Runtime boot ID                 | `13dc241c-8670-4df9-8ec5-3fb3f72c2102`             |
+| Managed native process ID       | `ec81ccc7-9459-4b12-9aa4-065080a3e08c`             |
+| Native session ID               | `01a1a59e-fa51-7703-9596-5c129dea9d14`             |
+| Child PID / start ticks         | `582` / `6031`                                     |
+| Child counter                   | `2` → `70`                                         |
+| Random marker held in the child | `452e8902b0c758d9b3752270966aad3c4c807af1ef9afdd1` |
+
+The second probe never starts a replacement child. It observes a fresh counter increment and
+checks the live PID/start ticks before reporting the retained marker. The two observations are
+464.784 seconds apart in wall time. PID 1 is systemd; root, state and workspace are separate ext4
+mounts, the runner is EROFS, and config/launch/trust are ISO9660. The canonical projected
+ServiceAccount token path is absent in both observations. The launcher's suspended phase was
+observed only after checkpoint commit and VMM reap, before the app requested resume.
+
+In this run Firecracker acknowledged the first full RAM snapshot in 3.55 seconds, at 08:13:55 UTC.
+The replacement VMM started at 08:16:41; disk verification and restoration preceded the guest's
+second thaw acknowledgement at 08:21:23, with the same boot ID. Copying/verifying backing disks
+dominates this unoptimized implementation. These single-fixture observations are not a comparative
+latency benchmark. Follow-up storage work is recorded in `agentplane/env/TODO.md`.
+
+Before the new test container started, logs from the previous failed attempt were retained and
+its two disposable volume directories were removed. No action container was running at deletion. No source, CRD or configuration
+was patched in the running acceptance cluster. Ordinary PR checks were all green at this source
+head; the hardware target is manual and was run separately.
+
 ## Execution path
 
 The existing `buildbuddy-executor/buildbuddy-kvm-worker` KubeVirt VM on wyrm2 serves the
@@ -80,7 +118,7 @@ credentials stay in a temporary Docker config on the Bazel client, outside test 
   producing an 8,280,714-byte hash file. Both private-image input targets are tagged `manual`.
 - [Post-rebase fixture checks](https://app.buildbuddy.io/invocation/86ae21db-00f3-499c-bc70-c2e4d9330670):
   render, determinism, retained logs and all six changed library aspects passed.
-- Full Firecracker acceptance: attempts below; no deployed-system pass claimed yet.
+- Full Firecracker functional scenario: passed at `36160a6dce`; the enclosing target failed during teardown, as described above.
 
 ## Acceptance attempts
 
@@ -258,3 +296,16 @@ same workflow-owned repository under nondeployable tag
 `spike-firecracker-57efc97b8c315ababd4046cd40f2bb7f58926dcf`, manifest digest
 `sha256:79cec82bc56731b75128797df9e9d2ef9fd954b60fbed089c5348493b58d1a97`. The manual acceptance
 input now pins that digest. This publication does not enable Firecracker in staging.
+
+The thirteenth run's functional scenario passed, but its cleanup checkpoint crossed the node's
+5% free-disk eviction threshold. Kubelet evicted PostgreSQL, the Gateway and the Firecracker Pod;
+the app watch then returned HTTP 503. This was not a RAM continuation assertion failure. At the
+end, containerd retained 26.9 GB of unpacked snapshots and 7.47 GB of content, including obsolete
+pinned Nix boot inputs. The second checkpoint temporarily coexists with the prior checkpoint and
+live backing disks. The worker reached roughly 4 GiB free on its 79 GiB work filesystem.
+
+The Firecracker fixture now explicitly starts with a fresh containerd image store, removing
+previous test state through the existing owned-stack reset before importing current declared
+inputs. Metadata and layers are discarded together. This preserves checkpoint durability and
+normal kubelet eviction thresholds, and does not retain an executor snapshot or live cluster.
+The next full run must establish that this capacity change also permits teardown to finish.

@@ -8,6 +8,13 @@ or prove Runtime readiness. Add production-guest coverage that waits for Runtime
 verifies the serial console shows a login prompt when `console_autologin` is disabled and a root
 shell when it is enabled.
 
+## Reduce Firecracker checkpoint and restore disk I/O
+
+The production-guest acceptance captures RAM in seconds but spends minutes copying and verifying
+the backing disks, including the 8.5 GiB root image. Profile that storage path before optimizing;
+preserve the paused disk/RAM boundary, durable manifest commit and identity fencing. The
+[hardware acceptance report](../debug/2026_11_03_firecracker_system_test.md) records the observed phases.
+
 ## Explore keeping control services outside Firecracker guests
 
 Consider keeping the runner/Environment Runtime, Codex exec-server and other control services
