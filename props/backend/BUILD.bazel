@@ -44,7 +44,9 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//authlib",
+        "@pypi//httpx",
         "@pypi//pydantic_settings",
+        "@pypi//starlette",
     ],
 )
 
@@ -201,7 +203,9 @@ py_test(
         "//props/orchestration:agent_credentials",
         "//props/testing:constants",
         "//props/testing/fixtures:credentials",
+        "//props/testing/fixtures:db",
         "//props/testing/fixtures:runs",
+        "//util/testing:postgres_fixtures",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],

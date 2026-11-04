@@ -21,6 +21,10 @@ from props.core.ids import SnapshotSlug
 from props.core.models.examples import WholeSnapshotExample
 from props.db.database import Database
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+
 
 def _render(db: Database, template_path: str, helpers: dict | None = None) -> str:
     """Render a template from package resources using the standard pipeline."""

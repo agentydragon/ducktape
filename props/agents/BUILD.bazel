@@ -85,7 +85,6 @@ py_test(
     ],
     requires_docker = True,
     deps = [
-        ":conftest",
         ":runtime",
         "//:conftest",
         "//devinfra/testing:undeclared_outputs",
@@ -94,19 +93,10 @@ py_test(
         "//props/core:ids",
         "//props/core/models:examples",
         "//props/db:database",
+        "//props/testing/fixtures:db",
+        "//util/testing:postgres_fixtures",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    visibility = ["//props/agents:__subpackages__"],
-    deps = [
-        "//props/testing/fixtures:e2e_container",
-        "//props/testing/fixtures:e2e_infra",
     ],
 )
 

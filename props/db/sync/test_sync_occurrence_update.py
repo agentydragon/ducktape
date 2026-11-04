@@ -25,6 +25,10 @@ from props.db.sync.sync import (
 )
 from props.db.sync.yaml_loader import SyncFalsePositive, SyncTruePositive
 
+# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //props/testing/fixtures:db
+pytest_plugins = ("util.testing.postgres_fixtures", "props.testing.fixtures.db")
+
 SLUG = SnapshotSlug("test-fixtures/train1")
 
 
