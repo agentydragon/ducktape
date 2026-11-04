@@ -693,6 +693,28 @@
           "op": "SCMP_CMP_EQ"
         }
       ]
+    },
+    {
+      "names": ["keyctl"],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 5,
+          "op": "SCMP_CMP_EQ"
+        }
+      ]
+    },
+    {
+      "names": ["keyctl"],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 0,
+          "value": 6,
+          "op": "SCMP_CMP_EQ"
+        }
+      ]
     }
   ]
 }
