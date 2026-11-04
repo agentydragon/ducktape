@@ -282,7 +282,6 @@ it("passes History protobuf evidence and native frame pages through unchanged", 
     expect(body).not.toHaveProperty("sessionId");
     expect(body).toMatchObject({
       projectionEpoch: "history-v1",
-      entity: { entityKind: ThreadEntityKind.ITEM, entityId: "item-id" },
       limit: 30,
     });
     const entity = fromJson(EntityKeySchema, body.entity);
