@@ -7,6 +7,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Subcommand};
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::{OutputFormat, print_report};
+use pipeline::ProjectAnalysisArgs;
 use selector_codemod::match_selector::{
     MatchSelectorConfig, render_match_selector_text, run_match_selector,
 };
@@ -17,16 +18,6 @@ use selector_debt::{
 };
 use spec_stats::{compute_spec_stats, render_spec_stats_text};
 use std::path::PathBuf;
-
-/// Args for `debundle spec project-analysis`.
-#[derive(Debug, ClapArgs)]
-struct ProjectAnalysisArgs {
-    #[command(flatten)]
-    transform: pipeline::TransformArgs,
-    /// Where to write the projection.
-    #[arg(long)]
-    out: PathBuf,
-}
 
 /// Args for `debundle spec ...`.
 #[derive(Debug, ClapArgs)]
@@ -507,9 +498,7 @@ pub(super) fn run(args: SpecNs, source_context: Option<&VerifiedGraphSourceConte
             run_validate_cmd(v).context("running keep-going selector validation")
         }
         SpecNsCommand::AuditContracts(a) => run_audit_contracts(a),
-        SpecNsCommand::ProjectAnalysis(args) => {
-            pipeline::project_analysis_cli(&args.transform.resolve()?, &args.out)
-        }
+        SpecNsCommand::ProjectAnalysis(args) => args.run(),
         SpecNsCommand::ProposeCommutations(p) => crate::propose_commutations::run(
             p,
             source_context.context("propose-commutations verifies its graph before dispatch")?,

@@ -1259,6 +1259,10 @@ pub fn analyzer_path() -> PathBuf {
     tool_path("DEBUNDLE_TEST_ANALYZER")
 }
 
+pub fn projector_path() -> PathBuf {
+    tool_path("DEBUNDLE_TEST_PROJECTOR")
+}
+
 fn tool_path(variable: &str) -> PathBuf {
     let relative = std::env::var(variable).unwrap_or_else(|_| panic!("{variable} runfile label"));
     let r = Runfiles::create().expect("create runfiles");

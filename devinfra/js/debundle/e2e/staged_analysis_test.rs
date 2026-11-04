@@ -679,6 +679,49 @@ fn staged(opts: FixtureOpts<'_>) -> (Staged, ValidateFixture) {
     (staged, fixture)
 }
 
+fn assert_projector_matches_flat(staged: &Staged, label: &str) {
+    let output = staged.root().join(format!("{label}.projector"));
+    let args = ["--spec", path(&staged.spec), "--out", path(&output)];
+    assert_ok(
+        &command_with(&projector_path(), &args),
+        &format!("{label} dedicated project-analysis"),
+    );
+    assert_eq!(
+        fs::read(&staged.projection).unwrap(),
+        fs::read(output).unwrap(),
+        "{label} dedicated projector changed the canonical flat projection bytes",
+    );
+}
+
+fn assert_projector_matches_tree(staged: &TreeStaged) {
+    let output = staged.root().join("dedicated.projector");
+    let project_out = staged.root().join("dedicated-project-out");
+    let root = staged.root();
+    let args = [
+        "--tree-config",
+        path(&staged.config),
+        "--tree-modules",
+        path(&staged.modules),
+        "--tree-vendor-marks",
+        path(&staged.vendor_marks),
+        "--tree-source-root",
+        path(root),
+        "--out-root",
+        path(&project_out),
+        "--out",
+        path(&output),
+    ];
+    assert_ok(
+        &command_with(&projector_path(), &args),
+        "tree dedicated project-analysis",
+    );
+    assert_eq!(
+        fs::read(&staged.projection).unwrap(),
+        fs::read(output).unwrap(),
+        "dedicated projector changed the canonical tree projection bytes",
+    );
+}
+
 /// Every file under `root`, JSON reports without their `provenance` (it
 /// records the generating command line, which differs by design).
 fn tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
@@ -928,6 +971,35 @@ fn standalone_cli_and_dedicated_analyzer_write_identical_artifacts() {
         ]),
         "standalone staged run",
     );
+}
+
+#[test]
+fn dedicated_projector_matches_flat_tree_and_resolved_member_inputs() {
+    let (flat, _flat_fixture) = staged(FixtureOpts::new(
+        "const value = 41;\nconsole.log(value);\n",
+        vec![logical_module("all", &[Member::new("value")])],
+    ));
+    assert_projector_matches_flat(&flat, "flat");
+
+    let tree = staged_tree(
+        &[("main", "const value = 41;\nconsole.log(value);\n")],
+        &[(
+            "value.yaml",
+            "members: [{selector: {binding: {name: value}}}]\n",
+        )],
+    );
+    assert_projector_matches_tree(&tree);
+
+    let (resolved_member, _resolved_member_fixture) = staged(native_member_fixture());
+    let spec: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&resolved_member.spec).unwrap()).unwrap();
+    assert_eq!(
+        spec["chunk_analysis_options"]["static/app"]["native_operation_inputs"][0]["resolved_member"]
+            ["name"],
+        "alias",
+        "fixture must exercise the resolved-member native premise",
+    );
+    assert_projector_matches_flat(&resolved_member, "resolved-member");
 }
 
 #[test]

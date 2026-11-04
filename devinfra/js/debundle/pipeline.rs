@@ -61,6 +61,25 @@ pub struct TransformCli {
     pub packages_root: Option<PathBuf>,
 }
 
+/// Arguments for the standalone projection executable and
+/// `debundle spec project-analysis`.
+#[derive(Debug, ClapArgs)]
+pub struct ProjectAnalysisArgs {
+    #[command(flatten)]
+    transform: TransformArgs,
+    /// Where to write the projection.
+    #[arg(long)]
+    out: PathBuf,
+}
+
+impl ProjectAnalysisArgs {
+    /// Resolve the shared transform arguments and write the canonical
+    /// analysis projection.
+    pub fn run(self) -> Result<()> {
+        project_analysis_cli(&self.transform.resolve()?, &self.out)
+    }
+}
+
 /// What a run writes once the pipeline checks have run. The checks themselves
 /// (selectors, realizability gate, final program validation) are the same in
 /// every mode, as is the nonzero exit on rejection.

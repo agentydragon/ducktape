@@ -28,11 +28,12 @@ debundle_pipeline(
 ```
 
 The rule writes a tree artifact named `<target>.out` under `bazel-bin`. It
-declares the spec, input data, package roots, and debundler binary as Bazel
-inputs/tools, then runs the debundler from `BAZEL_BINDIR` so source-relative
-spec paths resolve the same way they do in ordinary builds. By default the rule
-uses `@ducktape//devinfra/js/debundle:debundle`; consumers can select a
-different binary at repo or command-line scope with:
+declares the spec, input data, package roots, and action tools as Bazel
+inputs/tools, then runs them from `BAZEL_BINDIR` so source-relative spec paths
+resolve the same way they do in ordinary builds. By default the rule uses
+`@ducktape//devinfra/js/debundle:debundle` for the full pipeline and
+`:debundle_project_analysis` for projection; consumers can select another full
+CLI at repo or command-line scope with:
 
 ```sh
 bazelisk build //path/to:debundle \
@@ -41,7 +42,12 @@ bazelisk build //path/to:debundle \
 
 `DebundleAnalyze` uses the separate `:debundle_analyze` executable, selected by
 the `:analyzer` label flag or the rule's `analyzer` attribute. It accepts the
-`analyze` command's options directly. The other actions use the full CLI.
+`analyze` command's options directly. `DebundleProjectAnalysis` uses the small
+`:debundle_project_analysis` executable, selected by the `:projector` label flag
+or the rule's `projector` attribute. It accepts the transform inputs and
+`--out` directly, and calls the same `pipeline::project_analysis_cli` function
+as `debundle spec project-analysis`. Only the Pipeline and optional graph-export
+actions use the full CLI.
 The analyzer depends on `:staged_analysis`, independently of `:pipeline`,
 `:lowering` and `:cli`. Edits confined to those latter crates leave the Analyze
 tool and its compiled identity unchanged. Source inputs and projection bytes
@@ -109,15 +115,16 @@ This can still run actions that produce source or package inputs. `native_inputs
 does not select `DebundleProjectAnalysis`, `DebundleAnalyze`, or
 `DebundlePipeline`. The `analysis` group includes the projection and analysis
 artifact and runs Analyze; `dependency_graphs` also depends on that shared
-analysis artifact. `debundler` contains only the exact executable selected by
-the rule's `debundler` attribute or label flag.
+analysis artifact. `debundler` contains only the exact full CLI selected by the
+rule's `debundler` attribute or label flag. `projector` contains only the exact
+projection executable selected by its `projector` attribute or label flag.
 
 For a complete native replay packet containing inputs, analysis artifacts, and
-the matching CLI, request all three groups:
+both action executables, request all four groups:
 
 ```sh
 bazelisk build //path/to:debundle \
-  --output_groups=analysis,debundler,native_inputs \
+  --output_groups=analysis,debundler,projector,native_inputs \
   --remote_download_outputs=all
 ```
 
@@ -129,7 +136,8 @@ at the valid roots in the relocated input tree.
 ## Integration boundary
 
 Corpus integrations use `pipeline.bzl`'s `debundle_pipeline`, the public
-`:debundler` and `:analyzer` label flags, or the public `:debundle` executable.
+`:debundler`, `:analyzer`, and `:projector` label flags, or the public CLI
+executables.
 `README.md`, `SPEC.md`, and `perf_wrapper.sh` are exported resources.
 
 The Rust libraries in the root BUILD are internal to this subtree (including
@@ -169,8 +177,8 @@ bb execution get EXECUTION_ID --output=json > /tmp/TASK/cli-action.json
 bbapi blob download --manifest /tmp/TASK/downloads.json
 ```
 
-Use the pipeline's `DebundleProjectAnalysis` command to identify its full CLI
-tool path, then choose the completed `Rustc` execution with that exact
+Use the pipeline's `DebundlePipeline` command to identify its full CLI tool
+path, then choose the completed `Rustc` execution with that exact
 `primaryOutputPath`, ending in `/devinfra/js/debundle/debundle`. This matters
 when the invocation builds several configurations. In its response,
 `result.outputFiles` gives the executable's path and

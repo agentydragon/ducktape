@@ -1563,6 +1563,12 @@ label_flag(
     visibility = ["//visibility:public"],
 )
 
+label_flag(
+    name = "projector",
+    build_setting_default = ":debundle_project_analysis",
+    visibility = ["//visibility:public"],
+)
+
 rust_binary(
     name = "debundle_analyze",
     srcs = ["analyze_main.rs"],
@@ -1572,6 +1578,19 @@ rust_binary(
     deps = [
         ":analysis_identity",
         ":staged_analysis",
+        "@crates//:clap",
+        "@crates//:swc_common",
+    ],
+)
+
+rust_binary(
+    name = "debundle_project_analysis",
+    srcs = ["project_analysis_main.rs"],
+    crate_root = "project_analysis_main.rs",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pipeline",
         "@crates//:clap",
         "@crates//:swc_common",
     ],
