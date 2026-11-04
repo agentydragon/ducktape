@@ -903,8 +903,8 @@ fn graph_options_survive_the_source_only_analysis_boundary() {
         let reused = staged.set_aside(&format!("reused-{enabled}"));
         let graph: DependencyGraphReport =
             read_gzip_json(&reused.join("out/reports/tree/static/app/dependency_graph.json.gz"));
-        let a = source_unit_for_binding(&graph, "a");
-        let b = source_unit_for_binding(&graph, "b");
+        let a = debundle_e2e_support::source_unit_for_binding(&graph, "a");
+        let b = debundle_e2e_support::source_unit_for_binding(&graph, "b");
         let has_edge = graph.edges.iter().any(|edge| {
             edge.edge_kind == DepKind::Sequenced
                 && ((edge.source == a && edge.target == b)
