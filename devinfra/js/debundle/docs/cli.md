@@ -310,8 +310,9 @@ each verb prints **one outcome object** sharing a common schema core:
 Verb-specific fields flatten in alongside the core: `moves_applied`
 (assign), `unassigned` (unassign), `identity` / `old_readable` /
 `new_readable` (rename), `target` (single merge) / `targets` (merge batch).
-When requested, `bindings assign`, `bindings unassign`, and `modules merge` also return
-`effect_relocation_assessment`, a report-only assessment of their exact
+When requested, `bindings assign`, `bindings unassign`, `modules merge`, and
+`modules delete` also return `effect_relocation_assessment`, a report-only
+assessment of their exact
 in-memory candidate plan. It requires `--dry-run --analysis <artifact>`,
 `--graph`, and the full tree transform inputs (`--tree-config`,
 `--tree-modules`, `--tree-vendor-marks`, `--tree-source-root`, and
@@ -324,6 +325,13 @@ assessment failures occur before YAML writes. Omitting `--analysis` preserves
 the ordinary graph-backed edit behavior. Gate rejections replace the
 success object with a structured rejection object — see "Rejection
 diagnostics" below.
+
+For `modules delete`, every requested file must resolve to a module in the
+complete typed module tree. The exact resolved deletion set is used by both the
+legacy edit gate and the assessment candidate; non-empty files still require
+`--force`. The assessment reports the emitted order after those module
+documents are removed. As with the other edit assessments, it proves only
+statement-order commutation for that candidate and does not replace the gate.
 
 ## Whole-module merge batches
 

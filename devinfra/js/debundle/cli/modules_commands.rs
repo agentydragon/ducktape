@@ -168,7 +168,10 @@ enum ModulesNsCommand {
     /// assignment, so the gate is a no-op; `--force` deletions of
     /// non-empty modules run the realizability gate against the
     /// post-delete spec (requires `--graph` unless `--no-verify`).
-    Delete(DeleteArgs),
+    /// `--dry-run --analysis` additionally reports statement-order
+    /// commutation for the exact post-delete candidate. It requires the full
+    /// tree transform context and does not change the legacy gate.
+    Delete(Box<DeleteArgs>),
     /// Emit module-assignment proposals derived from the atomic DAG.
     ///
     /// Read-only: surfaces *suggested* binding → module assignments +
@@ -722,7 +725,7 @@ pub(super) fn run(
     match args.command {
         ModulesNsCommand::Comment(c) => run_module_comment_cmd(c),
         ModulesNsCommand::Merge(m) => run_merge(*m, source_context),
-        ModulesNsCommand::Delete(d) => run_delete(d, source_context),
+        ModulesNsCommand::Delete(d) => run_delete(*d, source_context),
         ModulesNsCommand::Propose(p) => {
             let report = run_plan_work_report(&p, source_context)?;
             emit_report(

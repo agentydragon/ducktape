@@ -265,6 +265,52 @@ impl TreeStaged {
         command(&args.iter().map(String::as_str).collect::<Vec<_>>())
     }
 
+    fn delete(
+        &self,
+        module: &str,
+        force: bool,
+        analysis: Option<&Path>,
+        dry_run: bool,
+    ) -> CommandResult {
+        let root = self.root();
+        let mut args = vec![
+            "modules".to_string(),
+            "delete".to_string(),
+            module.to_string(),
+            "--modules".to_string(),
+            path(&self.modules).to_string(),
+            "--graph".to_string(),
+            path(&self.graph).to_string(),
+            "--source-root".to_string(),
+            path(&root.join("snapshot")).to_string(),
+            "--format".to_string(),
+            "json".to_string(),
+        ];
+        if force {
+            args.push("--force".to_string());
+        }
+        if dry_run {
+            args.push("--dry-run".to_string());
+        }
+        if let Some(analysis) = analysis {
+            args.extend([
+                "--tree-config".to_string(),
+                path(&self.config).to_string(),
+                "--tree-modules".to_string(),
+                path(&self.modules).to_string(),
+                "--tree-vendor-marks".to_string(),
+                path(&self.vendor_marks).to_string(),
+                "--tree-source-root".to_string(),
+                path(root).to_string(),
+                "--out-root".to_string(),
+                path(&root.join("candidate-out")).to_string(),
+                "--analysis".to_string(),
+                path(analysis).to_string(),
+            ]);
+        }
+        command(&args.iter().map(String::as_str).collect::<Vec<_>>())
+    }
+
     fn run_with_analysis(
         &self,
         analysis: &Path,
@@ -1255,6 +1301,114 @@ fn modules_merge_assessment_matches_the_staged_run_for_its_candidate_plan() {
         "first second third\n",
         "",
     );
+}
+
+#[test]
+fn modules_delete_assessment_matches_the_staged_run_for_its_candidate_plan() {
+    let staged = staged_tree(
+        &[(
+            "main",
+            "function first() { return \"first\"; }\n\
+             function second() { return \"second\"; }\n\
+             console.log(first(), second());\n",
+        )],
+        &[
+            (
+                "a_earlier.yaml",
+                "members: [{selector: {binding: {name: first}}}]\n",
+            ),
+            (
+                "z_later.yaml",
+                "members: [{selector: {binding: {name: second}}}]\n",
+            ),
+        ],
+    );
+    fs::create_dir_all(staged.modules.join("alternate")).unwrap();
+    let baseline_out = staged.root().join("run-baseline");
+    let baseline = staged.run_with_analysis(&staged.artifact, &baseline_out, false);
+    assert_ok(&baseline, "baseline staged run");
+    let baseline_report = read_effect_report(&baseline_out);
+    assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
+
+    let before = module_snapshot(&staged.modules);
+    let ordinary = staged.delete("a_earlier", true, None, true);
+    assert_ok(&ordinary, "ordinary graph-backed modules delete dry-run");
+    let ordinary_outcome: Value = serde_json::from_str(&ordinary.stdout).unwrap();
+    assert!(
+        ordinary_outcome
+            .get("effect_relocation_assessment")
+            .is_none()
+    );
+    assert_eq!(module_snapshot(&staged.modules), before);
+
+    let result = staged.delete("alternate/../a_earlier", true, Some(&staged.artifact), true);
+    assert_ok(&result, "modules delete --force --dry-run --analysis");
+    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    let assessment = &outcome["effect_relocation_assessment"];
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
+    assert_ne!(
+        assessment["emitted_order"], baseline_report["emitted_order"],
+        "deleting the earliest module must move its binding to residual and invert emitted order"
+    );
+    assert_eq!(module_snapshot(&staged.modules), before);
+
+    let applied = staged.delete("a_earlier", true, None, false);
+    assert_ok(&applied, "ordinary graph-backed modules delete");
+    assert!(!staged.modules.join("a_earlier.yaml").exists());
+    assert!(staged.modules.join("z_later.yaml").is_file());
+    assert_candidate_assessment_matches_run(assessment, &staged, "deleted-candidate", true, false);
+    assert_node_output(
+        &staged
+            .root()
+            .join("run-deleted-candidate/app/main/entry.js"),
+        "first second\n",
+        "",
+    );
+}
+
+#[test]
+fn modules_delete_requested_assessment_refuses_stale_artifacts_before_yaml_writes() {
+    let staged = staged_tree(
+        &[(
+            "main",
+            "function first() { return \"first\"; }\n\
+             function second() { return \"second\"; }\n\
+             console.log(first(), second());\n",
+        )],
+        &[
+            (
+                "a_earlier.yaml",
+                "members: [{selector: {binding: {name: first}}}]\n",
+            ),
+            (
+                "z_later.yaml",
+                "members: [{selector: {binding: {name: second}}}]\n",
+            ),
+        ],
+    );
+    let foreign = staged_tree(
+        &[("main", "function other() { return \"other\"; }\n")],
+        &[(
+            "other.yaml",
+            "members: [{selector: {binding: {name: other}}}]\n",
+        )],
+    );
+    let before = module_snapshot(&staged.modules);
+    let result = staged.delete("a_earlier", true, Some(&foreign.artifact), true);
+    assert_eq!(result.status.code(), Some(1), "{}", result.stderr);
+    assert!(
+        result.stderr.contains("projection") || result.stderr.contains("analysis"),
+        "{}\nexpected staged projection/artifact mismatch",
+        result.stderr
+    );
+    assert_eq!(module_snapshot(&staged.modules), before);
 }
 
 #[test]
