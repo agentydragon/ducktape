@@ -105,10 +105,11 @@ annotations are checked before ownership is reduced. The selection does not
 change the analysis projection or source graph. Retained bindings, imported
 re-exports, destructuring companions and anonymous statements use the same
 normal assignment assembly, gate, translation validation and emission.
-Omitted claims return to entry. Selected module names and explicit
-`chunk_renames` remain intact; omitted members retain original source names,
-since recovered names from separate modules can collide in entry scope.
-The authored spec is unchanged.
+Omitted claims follow the selected residual policy: they return to entry under
+`inline_in_entry`, or move into generated atomic-group modules under
+`per_atomic_group`. Selected module names and explicit `chunk_renames` remain
+intact; omitted members retain original source names. The authored spec is
+unchanged.
 
 Ownership subsets require `inline_in_entry` or `per_atomic_group` for every
 materialized chunk. `catchall_file` and full graph export are unsupported with
