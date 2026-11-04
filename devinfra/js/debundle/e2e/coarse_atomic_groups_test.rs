@@ -201,7 +201,7 @@ console.log(late);
         FixtureOpts::new(
             source,
             vec![logical_module(
-                "features/endpoints",
+                "features/__auto/residual_groups/endpoints",
                 &[Member::new("early"), Member::new("late")],
             )],
         )
@@ -214,5 +214,86 @@ console.log(late);
             .any(|cycle| cycle["rejection"] == "mutual_constraining_cycle"),
         "the final normal gate must reject the incompatible named boundary: {cycles:#?}"
     );
+    let mixed_authored_and_generated_scc = cycles.iter().any(|cycle| {
+        let Some(modules) = cycle["modules"].as_array() else {
+            return false;
+        };
+        let has_path_lookalike_authored_module = modules.iter().any(|module| {
+            module
+                .as_str()
+                .is_some_and(|path| path.contains("features/__auto/residual_groups/endpoints"))
+        });
+        let has_generated_residual = modules.iter().any(|module| {
+            module
+                .as_str()
+                .is_some_and(|path| path.contains("::__auto/residual_groups/"))
+        });
+        has_path_lookalike_authored_module && has_generated_residual
+    });
+    assert!(
+        mixed_authored_and_generated_scc,
+        "the authored path that resembles generated output must stay a distinct SCC member: {cycles:#?}"
+    );
     assert_gate_rejected_banner(&rejected.entry_path(), &rejected.report_path("cycles.json"));
+}
+
+#[test]
+fn coarse_residual_sccs_contract_actual_cycles_and_preserve_source_order() {
+    let source = r#"const x = 1;
+const y = 2;
+const a1 = (console.log("a1"), x);
+console.log("between");
+const b1 = (console.log("b1"), y);
+const a2 = (console.log("a2"), x);
+const b2 = (console.log("b2"), y);
+console.log([a1, b1, a2, b2].join("|"));
+"#;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("features/x", &[Member::new("x")]),
+                logical_module("features/y", &[Member::new("y")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_coarse_atomic_groups()),
+    );
+    assert_preserved_entry_output(&fixture, "a1\nbetween\nb1\na2\nb2\n1|2|1|2\n");
+    let residual = module_containing(
+        &fixture.out_root,
+        "static/app/modules/__auto/residual_groups",
+        "const a1",
+    );
+    let residual_relative = residual
+        .strip_prefix(&fixture.out_root)
+        .expect("generated residual module remains under the app root")
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(
+        residual,
+        module_containing(
+            &fixture.out_root,
+            "static/app/modules/__auto/residual_groups",
+            "console.log(\"between\")",
+        ),
+        "the anonymous statement from the residual SCC must remain with its merged members"
+    );
+    assert_module_source(
+        &fixture.out_root,
+        &residual_relative,
+        &[
+            "const a1",
+            "console.log(\"between\")",
+            "const b1",
+            "const a2",
+            "const b2",
+        ],
+        &[],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        &residual_relative,
+        &["a1", "b1", "a2", "b2"],
+        &[],
+    );
 }

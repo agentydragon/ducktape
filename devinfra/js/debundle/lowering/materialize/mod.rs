@@ -39,8 +39,9 @@ use crate::{
 };
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis::{
-    AnalysisAssumptions, BindingId, DependencyGraphAndAtomicGroups, EntryDestination, ModuleId,
-    ModuleRole, PlacementProjectionInput, PlannedModule, SourceUnitLayout, top_level_id,
+    AnalysisAssumptions, BindingCatalogue, BindingId, BindingKind, DependencyGraphAndAtomicGroups,
+    EntryDestination, ModuleId, ModuleRole, PlacementProjectionInput, PlannedModule,
+    SourceUnitLayout, top_level_id,
 };
 use anyhow::{Context, Result, bail, ensure};
 use artifact::paths::join_module_path;
@@ -48,8 +49,8 @@ use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, Selecte
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileRole, JsFile};
 use chunk_analysis::build_chunk_graph;
 use gate::{
-    AssignmentAnalysis, CandidateAssessmentSelection, RejectedAssignment, ValidatedAssignment,
-    render_atomic_group_conflict_summary, render_cycle_summary,
+    AssignmentAnalysis, CandidateAssessmentSelection, RejectedAssignment, SccRejection,
+    ValidatedAssignment, render_atomic_group_conflict_summary, render_cycle_summary,
 };
 use graph_provenance::GraphProvenance;
 use js_ast::{ParsedJsModule, format_comment_block_lines};
@@ -551,52 +552,112 @@ pub(super) fn finish_logical_chunk(
     // Plan construction is finished — consume the builder and use
     // owned state from here on.
     let ChunkPlan {
-        module_plans,
-        bindings_catalogue,
-        whole_statement_assignment,
+        mut module_plans,
+        mut bindings_catalogue,
+        mut whole_statement_assignment,
+        mut generated_residual_plans,
         unmatched_spec_claims,
     } = builder.finalize(chunk_id_interned)?;
-    // Plan structure is final — collect the explicit rename contributors
-    // into the chunk's rename ledger and seal it. Seal hard-errors when
-    // same-priority intents disagree on one binding's target; the sealed
-    // output feeds the same application sites the pre-ledger maps fed
-    // (Chunk scope → `chunk_renames_map` below, Module scope → the
-    // per-plan naturalize pass in `lower_chunk`). No occupancy facts are
-    // passed: the post-split bodies these renames must not collide with
-    // don't exist yet, so target occupancy is validated downstream — the
-    // entry ledger in `lower_chunk` re-collects the Chunk-scope intents
-    // and the per-module naturalize ledgers re-collect the Module-scope
-    // ones, each sealing against its body's occupancy.
-    let sealed_renames = {
-        let mut ledger = RenameLedger::default();
-        if let Some(renames) = chunk_renames.get(chunk_id) {
-            collect_chunk_renames(renames, chunk_top_level_mark, &mut ledger)?;
-        }
-        collect_plan_export_rename_intents(&module_plans, chunk_top_level_mark, &mut ledger);
-        ledger.seal(&SealValidation::default())
-    }?;
-    let chunk_renames_map = sealed_renames.chunk_renames_by_name();
-    let (planned_modules, entry_destination) =
-        project_planned_modules(&module_plans, &source_unit_layout, chunk_top_level_mark)?;
-    let redundant_purity_hints = analysis.redundant_purity_hints;
-    let assignment_chunk_renames: HashMap<Id, swc_atoms::Atom> = chunk_renames_map
-        .iter()
-        .map(|(local, exported)| {
+    let coarse_residual_mode = matches!(chunk_unassigned_mode, UnassignedMode::CoarseAtomicGroups);
+    let initial_generated_residual_count = generated_residual_plans.len();
+    let maximum_coarsening_rounds = initial_generated_residual_count.saturating_sub(1);
+    let refine_coarse_residuals = coarse_residual_mode && initial_generated_residual_count > 0;
+    let mut graph_for_assignment = Some(precomputed);
+    let mut catalogue_for_assignment = Some(bindings_catalogue);
+    let mut coarsening_rounds = 0usize;
+    // Each pass uses the real assignment/gate result for the current complete
+    // layout. Only a whole typed Pass 1 SCC made entirely from plans created by
+    // coarse synthesis can be contracted; cuts, rendered reports and the
+    // diagnostic-only Pass 2 summary are not inputs here.
+    let (sealed_renames, chunk_renames_map, assignment_analysis) = loop {
+        let sealed_renames = {
+            let mut ledger = RenameLedger::default();
+            if let Some(renames) = chunk_renames.get(chunk_id) {
+                collect_chunk_renames(renames, chunk_top_level_mark, &mut ledger)?;
+            }
+            collect_plan_export_rename_intents(&module_plans, chunk_top_level_mark, &mut ledger);
+            ledger.seal(&SealValidation::default())
+        }?;
+        let chunk_renames_map = sealed_renames.chunk_renames_by_name();
+        let (planned_modules, entry_destination) =
+            project_planned_modules(&module_plans, &source_unit_layout, chunk_top_level_mark)?;
+        let assignment_chunk_renames: HashMap<Id, swc_atoms::Atom> = chunk_renames_map
+            .iter()
+            .map(|(local, exported)| {
+                (
+                    top_level_id(local, chunk_top_level_mark),
+                    exported.as_str().into(),
+                )
+            })
+            .collect();
+        let (precomputed_for_assignment, bindings_for_assignment) = if refine_coarse_residuals {
             (
-                top_level_id(local, chunk_top_level_mark),
-                exported.as_str().into(),
+                graph_for_assignment
+                    .as_ref()
+                    .expect("coarse assignment graph is retained for rebuilds")
+                    .clone(),
+                catalogue_for_assignment
+                    .as_ref()
+                    .expect("coarse binding catalogue is retained for rebuilds")
+                    .clone(),
             )
-        })
-        .collect();
-    let assignment_analysis = AssignmentAnalysis::build_with(
-        chunk_id.to_string(),
-        chunk_id_interned,
-        precomputed,
-        bindings_catalogue,
-        planned_modules,
-        assignment_chunk_renames,
-        entry_destination,
-    )?;
+        } else {
+            (
+                graph_for_assignment
+                    .take()
+                    .expect("non-coarse assignment graph is consumed once"),
+                catalogue_for_assignment
+                    .take()
+                    .expect("non-coarse binding catalogue is consumed once"),
+            )
+        };
+        let assignment_analysis = AssignmentAnalysis::build_with(
+            chunk_id.to_string(),
+            chunk_id_interned,
+            precomputed_for_assignment,
+            bindings_for_assignment,
+            planned_modules,
+            assignment_chunk_renames,
+            entry_destination,
+        )?;
+        if !refine_coarse_residuals {
+            break (sealed_renames, chunk_renames_map, assignment_analysis);
+        }
+        let validation = assignment_analysis.validate_with_verdict();
+        let residual_sccs = generated_residual_mutual_sccs(
+            &validation.verdict.unrealizable_sccs,
+            &generated_residual_plans,
+            module_plans.len(),
+        );
+        if residual_sccs.is_empty() {
+            drop(graph_for_assignment.take());
+            drop(catalogue_for_assignment.take());
+            break (sealed_renames, chunk_renames_map, assignment_analysis);
+        }
+
+        ensure!(
+            coarsening_rounds < maximum_coarsening_rounds,
+            "coarse residual SCC contraction exceeded its finite plan-count bound"
+        );
+        let old_plan_count = module_plans.len();
+        let old_generated_count = generated_residual_plans.len();
+        contract_generated_residual_sccs(
+            &mut module_plans,
+            catalogue_for_assignment
+                .as_mut()
+                .expect("coarse binding catalogue is retained for contractions"),
+            &mut whole_statement_assignment,
+            &mut generated_residual_plans,
+            &residual_sccs,
+        )?;
+        ensure!(
+            module_plans.len() < old_plan_count
+                && generated_residual_plans.len() < old_generated_count,
+            "coarse residual SCC contraction must reduce generated plan count"
+        );
+        coarsening_rounds += 1;
+    };
+    let redundant_purity_hints = analysis.redundant_purity_hints;
     let stable_set_intervals = cross_module_purities
         .stable_set_spreads
         .get(chunk_id)
@@ -876,6 +937,201 @@ fn project_planned_modules(
     }
     let entry_destination = EntryDestination::after_planned_modules(planned_modules.len());
     Ok((planned_modules, entry_destination))
+}
+
+/// Return only complete Pass 1 SCCs whose module IDs have explicit provenance
+/// as coarse-generated residual plans. This consumes the gate's typed in-memory
+/// diagnosis; the rendered cycle report and its cut are intentionally ignored.
+fn generated_residual_mutual_sccs(
+    diagnoses: &[gate::SccDiagnosis],
+    generated_residual_plans: &BTreeSet<usize>,
+    module_count: usize,
+) -> Vec<Vec<usize>> {
+    diagnoses
+        .iter()
+        .filter(|diagnosis| diagnosis.rejection == SccRejection::MutualConstrainingCycle)
+        .filter_map(|diagnosis| {
+            let modules = &diagnosis.core.modules;
+            if modules.len() < 2
+                || modules.iter().any(|module| {
+                    module.0 >= module_count || !generated_residual_plans.contains(&module.0)
+                })
+            {
+                return None;
+            }
+            Some(modules.iter().map(|module| module.0).collect())
+        })
+        .collect()
+}
+
+/// Contract disjoint, complete SCCs of generated residual plans and reproject
+/// every positional owner. Authored plans, source-unit identities, and module
+/// contents survive; the survivor is the earliest plan in original plan order.
+fn contract_generated_residual_sccs(
+    module_plans: &mut Vec<ModulePlan>,
+    bindings_catalogue: &mut BindingCatalogue,
+    whole_statement_assignment: &mut BTreeMap<source_identity::StatementId, usize>,
+    generated_residual_plans: &mut BTreeSet<usize>,
+    sccs: &[Vec<usize>],
+) -> Result<()> {
+    let old_plan_count = module_plans.len();
+    ensure!(
+        generated_residual_plans
+            .iter()
+            .all(|module| *module < old_plan_count),
+        "generated residual provenance contains an invalid module ID"
+    );
+    let mut absorbed_by = vec![None; old_plan_count];
+    let mut seen_members = BTreeSet::new();
+
+    for scc in sccs {
+        let mut members = scc.clone();
+        members.sort_unstable();
+        members.dedup();
+        ensure!(members.len() >= 2, "cannot contract a singleton SCC");
+        let survivor = members[0];
+        ensure!(
+            survivor < old_plan_count,
+            "SCC contains an invalid module ID"
+        );
+        ensure!(
+            members.iter().all(|member| {
+                *member < old_plan_count && generated_residual_plans.contains(member)
+            }),
+            "SCC contraction received a module without generated-residual provenance"
+        );
+        for member in &members {
+            ensure!(
+                seen_members.insert(*member),
+                "SCC module appears more than once"
+            );
+        }
+
+        let mut merged = module_plans[survivor].clone();
+        for member in members.iter().copied().skip(1) {
+            merge_generated_residual_plan(&mut merged, &module_plans[member])?;
+            absorbed_by[member] = Some(survivor);
+        }
+        module_plans[survivor] = merged;
+    }
+
+    let mut old_to_new = vec![ModuleId(usize::MAX); old_plan_count + 1];
+    let mut compacted_plans = Vec::with_capacity(old_plan_count - seen_members.len() + sccs.len());
+    for (old_id, plan) in std::mem::take(module_plans).into_iter().enumerate() {
+        if let Some(survivor) = absorbed_by[old_id] {
+            ensure!(
+                survivor < old_id,
+                "SCC survivor must preserve original order"
+            );
+            old_to_new[old_id] = old_to_new[survivor];
+        } else {
+            old_to_new[old_id] = ModuleId(compacted_plans.len());
+            compacted_plans.push(plan);
+        }
+    }
+    old_to_new[old_plan_count] = ModuleId(compacted_plans.len());
+
+    let chunk_id = bindings_catalogue.chunk_id();
+    let mut remapped_bindings = bindings_catalogue.local_view(chunk_id)?.as_map().clone();
+    for binding in remapped_bindings.values_mut() {
+        match binding {
+            BindingKind::Owned { module } => {
+                *module = remap_planned_or_entry_module(*module, &old_to_new, old_plan_count)?;
+            }
+            BindingKind::Imported { re_exporter, .. } => {
+                *re_exporter =
+                    remap_planned_or_entry_module(*re_exporter, &old_to_new, old_plan_count)?;
+            }
+        }
+    }
+    *bindings_catalogue = BindingCatalogue::new(chunk_id, remapped_bindings);
+
+    for module in whole_statement_assignment.values_mut() {
+        ensure!(
+            *module < old_plan_count,
+            "anonymous statement has invalid module ID"
+        );
+        *module = old_to_new[*module].0;
+    }
+    *generated_residual_plans = generated_residual_plans
+        .iter()
+        .map(|module| old_to_new[*module].0)
+        .collect();
+    *module_plans = compacted_plans;
+    Ok(())
+}
+
+fn remap_planned_or_entry_module(
+    module: ModuleId,
+    old_to_new: &[ModuleId],
+    old_plan_count: usize,
+) -> Result<ModuleId> {
+    ensure!(
+        module.0 <= old_plan_count,
+        "binding catalogue has invalid module ID"
+    );
+    Ok(old_to_new[module.0])
+}
+
+fn merge_generated_residual_plan(target: &mut ModulePlan, source: &ModulePlan) -> Result<()> {
+    ensure!(
+        target.role == ModuleRole::Unassigned && source.role == ModuleRole::Unassigned,
+        "generated residual plans must retain their unassigned role"
+    );
+    for (name, export) in &source.bindings {
+        if let Some(existing) = target.bindings.get(name) {
+            ensure!(
+                existing == export,
+                "generated residual plans disagree on export for {name:?}"
+            );
+        } else {
+            target.bindings.insert(name.clone(), export.clone());
+        }
+    }
+    target
+        .spec_named_bindings
+        .extend(source.spec_named_bindings.iter().cloned());
+    target
+        .anonymous_statements
+        .extend(source.anonymous_statements.iter().copied());
+    target.anonymous_statements.sort_unstable();
+    target.anonymous_statements.dedup();
+    merge_equal_keyed_values(
+        &mut target.anonymous_statement_comments,
+        &source.anonymous_statement_comments,
+    )?;
+    merge_equal_keyed_values(&mut target.binding_comments, &source.binding_comments)?;
+    merge_equal_keyed_values(
+        &mut target.binding_claim_origins,
+        &source.binding_claim_origins,
+    )?;
+    match (&target.comment, &source.comment) {
+        (Some(target), Some(source)) => ensure!(target == source, "residual comments disagree"),
+        (None, Some(source)) => target.comment = Some(source.clone()),
+        _ => {}
+    }
+    Ok(())
+}
+
+fn merge_equal_keyed_values<K, V>(
+    target: &mut BTreeMap<K, V>,
+    source: &BTreeMap<K, V>,
+) -> Result<()>
+where
+    K: Ord + Clone + std::fmt::Debug,
+    V: Clone + PartialEq,
+{
+    for (key, value) in source {
+        if let Some(existing) = target.get(key) {
+            ensure!(
+                existing == value,
+                "merged residual metadata conflicts at {key:?}"
+            );
+        } else {
+            target.insert(key.clone(), value.clone());
+        }
+    }
+    Ok(())
 }
 
 /// Separate resolved binding contracts into source-analysis assumptions and
