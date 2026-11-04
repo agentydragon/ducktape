@@ -415,6 +415,73 @@ func TestProcessControllerPublishesSystemdEvidenceWhileStartIsBlocked(t *testing
 	})
 }
 
+// teardownPhaseRace reproduces a second caller moving the desired resource
+// to teardown between COSI's initial read and its phase-checked update.
+type teardownPhaseRace struct {
+	state.State
+	once sync.Once
+	phaseConflict atomic.Bool
+}
+
+func (s *teardownPhaseRace) Teardown(ctx context.Context, ptr resource.Pointer, opts ...state.TeardownOption) (bool, error) {
+	var injected bool
+	var err error
+	s.once.Do(func() {
+		injected = true
+		_, err = s.State.Teardown(ctx, ptr, opts...)
+		if err == nil {
+			_, err = s.State.UpdateWithConflicts(ctx, ptr, func(resource.Resource) error { return nil }, state.WithUpdateOwner(hostOwner))
+			s.phaseConflict.Store(state.IsPhaseConflictError(err))
+		}
+	})
+	if injected {
+		return false, err
+	}
+	return s.State.Teardown(ctx, ptr, opts...)
+}
+
+func TestConcurrentTeardownStillWaitsForProcessFence(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := newProcessControllerTestRuntime(t)
+		race := &teardownPhaseRace{State: f.state}
+		f.host.state = race
+		const id = "concurrent-teardown"
+		stopEntered, releaseStop := make(chan struct{}), make(chan struct{})
+		var release sync.Once
+		t.Cleanup(func() { release.Do(func() { close(releaseStop) }) })
+		f.request(t, id, func(context.Context) (*Instance, error) {
+			return &Instance{Done: make(chan error), Stop: func(context.Context) error {
+				close(stopEntered)
+				<-releaseStop
+				return nil
+			}}, nil
+		})
+		waitProcessStatus(t, f, id, "running", func(status Status) bool { return status.Phase == Running })
+		stopDone := f.stop(id)
+		synctest.Wait()
+		if !race.phaseConflict.Load() {
+			t.Fatal("test did not reproduce a teardown phase conflict")
+		}
+		select {
+		case <-stopEntered:
+		default:
+			t.Fatal("teardown did not start the process fence")
+		}
+		select {
+		case err := <-stopDone:
+			t.Fatalf("stop returned before the process fence: %v", err)
+		default:
+		}
+		release.Do(func() { close(releaseStop) })
+		if err := <-stopDone; err != nil {
+			t.Fatalf("stop after concurrent teardown: %v", err)
+		}
+		if f.desiredExists(t, id) {
+			t.Fatal("desired state remained after the process fence")
+		}
+	})
+}
+
 func TestProcessTeardownWaitsForLateStartAndStopBarrier(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		f := newProcessControllerTestRuntime(t)

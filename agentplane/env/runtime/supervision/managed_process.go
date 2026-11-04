@@ -132,6 +132,20 @@ func (p *ManagedProcess) Stop(ctx context.Context) error {
 	if state.IsNotFoundError(err) {
 		return nil
 	}
+	if state.IsPhaseConflictError(err) {
+		// Another waiter may have moved the same intent to teardown between
+		// COSI's initial read and its update. Continue only after confirming
+		// that the same owner is tearing it down; the fence is still required.
+		current, readErr := p.host.state.Get(ctx, p.Pointer())
+		if state.IsNotFoundError(readErr) {
+			return nil
+		}
+		if readErr == nil && current.Metadata().Owner() == hostOwner && current.Metadata().Phase() == resource.PhaseTearingDown {
+			err = nil
+		} else {
+			return errors.Join(err, readErr)
+		}
+	}
 	if err != nil {
 		return err
 	}
