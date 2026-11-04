@@ -121,7 +121,7 @@ func (w *DeliveryWorker) Run(ctx context.Context) error {
 		}
 	}
 	defer unsubscribe()
-	// A queue key is a Session ID, so even with multiple workers an session
+	// A queue key is a Session ID, so even with multiple workers a Session
 	// and its commands cannot be delivered concurrently in this process.
 	for range deliveryWorkerCount {
 		go w.runQueue(ctx)
