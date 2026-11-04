@@ -326,3 +326,16 @@ restore from the checkpoint. This removes redundant writes and temporary disk al
 preserving the paused RAM/disk boundary, active marker and identity checks. No readiness, cleanup
 or overall test deadline was increased. [Storage and supervisor tests](https://app.buildbuddy.io/invocation/c023dee1-cf28-40a9-8ddf-04d4bda41e27)
 passed, including unchanged-inode reuse, equal-sized corrupt live contents and a missing live disk.
+
+The [fifteenth run](https://app.buildbuddy.io/invocation/ce7e31f8-b685-484c-bffc-7bdd0b06ff83),
+at source `598b82f6f8`, failed before guest boot: while copying the boot disk, k3s logged slow
+SQLite writes and a fatal `Transaction commit failed: sql: transaction has already been committed
+or rolled back` at 09:13:00 UTC. The API disappeared and the app returned HTTP 503. The restore
+optimization was not reached. Ordinary PR checks were all green at that source head.
+
+The disposable control database shared the same filesystem/write queue as the large guest files.
+Its database, WAL and shared-memory files occupied approximately 55 MB. The Firecracker fixture
+now mounts its ordinary `server/db` directory on a bounded 256 MiB tmpfs, with cleanup registered
+immediately and unmount after the k3s server is reaped. This keeps the default SQLite configuration
+and does not change guest/PVC/checkpoint durability. Firecracker still rejects retained cluster
+snapshots; the retained baseline path explicitly keeps its database on disk.
