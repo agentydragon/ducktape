@@ -1,10 +1,9 @@
 """Bazel-driven debundle pipeline rule.
 
-Runs the ducktape debundler with `--out-root` pointing at a tree-artifact
-output directory. All pipeline outputs (manifests, analysis, emitted JS) land
-under the rule's declared output directory in `bazel-bin/`. Each corpus may
-layer a `write_source_files` regen target on top to commit a subset of outputs
-into the source tree.
+Runs the debundle projection, analysis and pipeline executables. All pipeline
+outputs (manifests, analysis, emitted JS) land under the rule's declared
+output directory in `bazel-bin/`. Each corpus may layer a `write_source_files`
+regen target on top to commit a subset of outputs into the source tree.
 
 Three actions: `DebundleProjectAnalysis` writes what analysis reads from the
 spec, `DebundleAnalyze` computes the analysis from that projection and the
@@ -40,12 +39,13 @@ def _debundle_pipeline_impl(ctx):
         ctx,
         inputs = plan.inputs,
         outputs = [projection],
-        command = plan.debundler + " " + " ".join(
-            ["spec", "project-analysis"] + plan.spec_args + plan.package_args +
+        command = _shell_execroot_path(ctx.executable.projector.path) + " " + " ".join(
+            plan.spec_args + plan.package_args +
             ["--out", shell.quote(projection.short_path)],
         ),
         mnemonic = "DebundleProjectAnalysis",
         progress = "Projecting debundle analysis inputs for %{label}",
+        tool = ctx.executable.projector,
     )
     _run_debundler(
         ctx,
@@ -67,6 +67,7 @@ def _debundle_pipeline_impl(ctx):
     output_groups = {
         "analysis": depset([projection, analysis]),
         "debundler": depset([ctx.executable.debundler]),
+        "projector": depset([ctx.executable.projector]),
         "native_inputs": depset(ctx.files.ownership_subset, transitive = [plan.inputs]),
     }
     _run_debundler(
@@ -306,6 +307,12 @@ _DEBUNDLE_PIPELINE_ATTRS = {
         cfg = "exec",
         default = Label("//devinfra/js/debundle:analyzer"),
         doc = "Analysis-only binary; custom analyzers must share the CLI's compiled analysis identity.",
+    ),
+    "projector": attr.label(
+        executable = True,
+        cfg = "exec",
+        default = Label("//devinfra/js/debundle:projector"),
+        doc = "Small projection binary; custom projectors must write the canonical pipeline analysis projection.",
     ),
     "input_data": attr.label_list(
         allow_files = True,

@@ -78,8 +78,14 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "staged_analysis_test",
-    data = ["//devinfra/js/debundle:debundle_analyze"],
-    env = {"DEBUNDLE_TEST_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)"},
+    data = [
+        "//devinfra/js/debundle:debundle_analyze",
+        "//devinfra/js/debundle:debundle_project_analysis",
+    ],
+    env = {
+        "DEBUNDLE_TEST_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)",
+        "DEBUNDLE_TEST_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
+    },
     deps = [
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:staged_analysis",

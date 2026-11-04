@@ -45,10 +45,19 @@ def _pipeline_report_flags_test_impl(ctx):
     analysis_inputs = actions["DebundleAnalyze"].inputs.to_list()
     asserts.true(env, any([file.basename == "debundle_analyze" for file in analysis_inputs]))
     asserts.false(env, any([file.basename == "debundle" for file in analysis_inputs]))
-    for mnemonic in [name for name in expected_actions if name != "DebundleAnalyze"]:
+    asserts.false(env, any([file.basename == "debundle_project_analysis" for file in analysis_inputs]))
+    for mnemonic in [name for name in expected_actions if name in ["DebundlePipeline", "DebundleExportGraphs"]]:
         files = actions[mnemonic].inputs.to_list()
         asserts.true(env, any([file.basename == "debundle" for file in files]))
         asserts.false(env, any([file.basename == "debundle_analyze" for file in files]))
+        asserts.false(env, any([file.basename == "debundle_project_analysis" for file in files]))
+    project_inputs = actions["DebundleProjectAnalysis"].inputs.to_list()
+    asserts.true(env, any([file.basename == "debundle_project_analysis" for file in project_inputs]))
+    asserts.false(env, any([file.basename == "debundle" for file in project_inputs]))
+    asserts.false(env, any([file.basename == "debundle_analyze" for file in project_inputs]))
+    project_command = actions["DebundleProjectAnalysis"].argv[-1]
+    asserts.true(env, "debundle_project_analysis" in project_command)
+    asserts.false(env, "spec project-analysis" in project_command)
     asserts.false(env, "--effect-conflicts" in baseline["DebundlePipeline"].argv[-1])
     asserts.false(env, "--full-report" in baseline["DebundlePipeline"].argv[-1])
     asserts.equals(env, ctx.attr.readable, '[ "$status" -eq 3 ] || exit "$status"' in command)
@@ -65,6 +74,8 @@ def _pipeline_report_flags_test_impl(ctx):
     )
     groups = target[OutputGroupInfo]
     asserts.equals(env, 2, len(groups.analysis.to_list()))
+    asserts.equals(env, ["debundle_project_analysis"], [file.basename for file in groups.projector.to_list()])
+    asserts.equals(env, ["debundle"], [file.basename for file in groups.debundler.to_list()])
     analyzed = actions["DebundleAnalyze"].outputs.to_list()[0]
     native_inputs = groups.native_inputs.to_list()
     pipeline_inputs = actions["DebundlePipeline"].inputs.to_list()
