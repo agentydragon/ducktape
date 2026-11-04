@@ -60,7 +60,7 @@ export interface ThreadView {
   id: ThreadMetadata["threadId"];
   sandbox: string;
   sandbox_uid: string | null;
-  harness: Harness | "HARNESS_UNSPECIFIED" | null;
+  harness: Harness | null;
   model: string | null;
   cwd: string | null;
   created_at: string;
@@ -475,11 +475,14 @@ function composeThreadView(metadata: ThreadMetadata, summary: SessionSummary): T
     throw new Error(`History Service returned an unknown FeedStatus: ${feedStatusName}`);
   }
 
+  const harness = spec ? enumName(spec.harness, HarnessSchema, "Harness") : null;
+  if (harness === "HARNESS_UNSPECIFIED") throw new Error("History Service returned an unspecified Harness");
+
   return {
     id: metadata.threadId,
     sandbox: summary.sandbox?.name ?? "",
     sandbox_uid: sandboxUID || null,
-    harness: spec ? (enumName(spec.harness, HarnessSchema, "Harness") as Harness | "HARNESS_UNSPECIFIED") : null,
+    harness: harness as Harness | null,
     model: spec?.model ?? null,
     cwd: spec?.cwd ?? null,
     created_at: createdAt,
