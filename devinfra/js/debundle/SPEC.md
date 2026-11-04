@@ -365,16 +365,22 @@ An original, non-exported simple variable declarator with an unannotated
 binding may close global-property, general-heap and host-effect coverage when
 its initializer is a primitive literal, checked JavaScript
 function/arrow creation, a read of an initialized module-local binding, a
-regular-expression literal, or a static ordinary record or dense array literal.
-Record values and array elements may be primitive literals, initialized
-module-local binding reads, or nested records and dense arrays in the same
-subset; `void` and logical-not expressions may wrap those values recursively.
-Identifier and string data keys and shorthand fields are supported; array
+regular-expression literal, or an expression covered by the shared value
+transfers. Covered expressions compose primitive literals, initialized
+module-local binding reads, static ordinary records, dense arrays, sequences,
+strict equality (`===`/`!==`), `void`, logical-not and terminal-arm conditionals.
+Conditional arms are restricted to direct binding reads or primitive values;
+compound unsupported arms remain uncovered. Record values and array elements
+compose the same transfers. Identifier, string and numeric data keys and
+shorthand fields are supported; array
 holes, computed keys, spreads, accessors, methods, colon-form `__proto__`, and
-other value expressions remain uncovered. Creating these own data fields
+other unmodeled operations remain uncovered. Creating these own data fields
 invokes no receiver getter, setter, user-defined coercion or callable body.
 The only admitted unary operators are non-invoking: `void` discards its
 evaluated operand, while `!` applies JavaScript's non-invoking `ToBoolean`.
+Every evaluated operand, including a discarded sequence operand, composes its
+access/coverage judgment and possible abrupt outcome. A normally completing
+last value does not discharge an earlier unproved read or throw.
 All operand binding reads remain subject to the initialized-local check. Array
 creation does not consult the global `Array` binding or iterate the element
 values. Every source binding read, including one in an overwritten duplicate
@@ -417,13 +423,16 @@ defaults, destructuring and rest, remain lazy together with the body. Async
 and generator function creation follow the same rule. This certifies no call:
 later parameter evaluation, iterator/getter access, bodies and scheduling
 retain their ordinary effects and coverage requirements.
-Sequences, assignments, templates, exports, destructured variable bindings, class expressions,
+Assignments, templates, exports, destructured variable bindings, class expressions,
 imported/global/uninitialized binding reads, decorated/type-annotated
 functions remain uncovered. For class declarations,
 all other shapes remain uncovered. Parentheses alone preserve admissibility for
 variable initializers.
-The owner certificate survives staged analysis; generic child results and
-invocation memos never propagate it. Binding/allocation cells, other opacity
+The source-covered expression is retained from canonical lowering. Dedicated
+initializer execution uses that exact expression and shared child transfers;
+generic values or an empty ledger cannot mint coverage. Composed child judgments
+never propagate a whole-owner certificate, and invocation memos carry none.
+The owner certificate survives staged analysis. Binding/allocation cells, other opacity
 flags, purity and the authoritative legacy gates retain their existing rules.
 
 An original, non-exported simple variable declarator may also close those

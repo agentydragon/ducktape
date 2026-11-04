@@ -173,6 +173,22 @@ pub(super) fn transfer(
                 judgment,
             );
         }
+        ValueExpr::LogicalNot(child) => {
+            return primitive_operation(
+                context,
+                [child.as_ref()],
+                AbstractValue::Value(Value::Prim(PrimKinds::BOOLEAN)),
+                judgment,
+            );
+        }
+        ValueExpr::Sequence(expressions) => {
+            return sequence(
+                context,
+                expressions.iter(),
+                judgment,
+                |context, expression| context.child(expression),
+            );
+        }
         ValueExpr::Conditional { test, alternatives } => {
             // Decide support before evaluating any child: application children
             // have real effects and cannot be rolled back before a fallback.
@@ -274,6 +290,32 @@ pub(super) fn transfer(
         }
         _ => return None,
     };
+    Some(AllocationValue { values, judgment })
+}
+
+/// Source-ordered composition retains every child's effects and possible
+/// abrupt completion even though only the final completing value survives.
+pub(super) fn sequence<'a, C, E: 'a>(
+    context: &mut C,
+    expressions: impl IntoIterator<Item = &'a E>,
+    mut judgment: AllocationJudgment,
+    mut child: impl FnMut(&mut C, &'a E) -> Option<AllocationValue>,
+) -> Option<AllocationValue> {
+    let mut values = Values::from([AbstractValue::UNDEFINED]);
+    let mut may_throw = false;
+    for expression in expressions {
+        let evaluated = child(context, expression)?;
+        judgment.compose(&evaluated.judgment);
+        values = evaluated.values;
+        may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
+        if values.is_empty() {
+            break;
+        }
+    }
+    if may_throw || values.is_empty() {
+        judgment = AllocationJudgment::Opaque;
+        values.insert(AbstractValue::Value(Value::Unavailable));
+    }
     Some(AllocationValue { values, judgment })
 }
 

@@ -575,6 +575,9 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
         ("`text`", false),
         ("({value: 1})", true),
         ("[1]", true),
+        ("(0, {value: 1})", true),
+        ("({value: (0, 1), negated: !0, ignored: void 0})", true),
+        ("[void 0, !1, 1 === 2]", true),
         ("/pattern/", true),
         ("class {}", false),
         ("function (parameter = 1) { return parameter; }", true),
@@ -638,6 +641,60 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
                 "{declaration}: {report:#}"
             );
         }
+    }
+}
+
+#[test]
+fn composed_initializer_coverage_retains_discarded_reads_and_child_results() {
+    let source = "const first = 1;\n\
+const value = (first, {value: !first, ignored: void first, equal: first === first, items: [first]});\n\
+console.log(JSON.stringify(value));\n";
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "values",
+            &[Member::new("first"), Member::new("value")],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "{\"value\":false,\"equal\":true,\"items\":[1]}\n");
+    let report = fixture.effect_translation_validation();
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            report["coverage"]["unknown_coverage"][domain], 1,
+            "only the output call remains uncovered: {report:#}"
+        );
+    }
+}
+
+#[test]
+fn discarded_uninitialized_reads_cannot_complete_initializer_coverage() {
+    for (kind, expected_error) in [("const", true), ("var", false)] {
+        let source = format!(
+            "const value = (later, {{value: 1}});\n{kind} later = 2;\nconsole.log(value.value);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "values",
+                &[Member::new("value"), Member::new("later")],
+            )],
+        ));
+        if expected_error {
+            assert_preserved_entry_error(&fixture, "ReferenceError");
+        } else {
+            assert_preserved_entry_output(&fixture, "1\n");
+        }
+        let report = fixture.effect_translation_validation();
+        for domain in ["global_properties", "general_heap", "host_effects"] {
+            assert_eq!(
+                report["coverage"]["unknown_coverage"][domain], 2,
+                "the discarded uninitialized read and output remain uncovered: {report:#}"
+            );
+        }
+        assert_eq!(
+            report["coverage"]["owner_coverage_refusals"]["initializer_result_unproved"], 1,
+            "the final literal must not erase the discarded read: {report:#}"
+        );
     }
 }
 
@@ -1377,9 +1434,11 @@ fn default_report_bounds_examples_without_losing_exact_counts() {
     ];
     let mut source = String::new();
     for (index, name) in names.iter().enumerate() {
-        // Keep an erased sequence operand: this control exercises bounded
-        // opaque diagnostics even after literal-only owners gain coverage.
-        source.push_str(&format!("const {name} = (0, {index});\n"));
+        // A host property read remains uncovered even when its value is
+        // discarded, preserving this control's opaque conflict inventory.
+        source.push_str(&format!(
+            "const {name} = (globalThis.unmodeled, {index});\n"
+        ));
     }
     source.push_str(&format!(
         "const tail = {};\nconsole.log(tail);\n",

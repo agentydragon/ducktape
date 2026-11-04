@@ -119,7 +119,7 @@ fn contained_roots(
                 roots.extend(contained_roots(argument, aliases, index, declared));
             }
         }
-        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => {
+        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
             let options = value.result_alternatives().expect("alternative expression");
             for option in options {
                 roots.extend(contained_roots(option, aliases, index, declared));
@@ -185,7 +185,7 @@ fn contained_root_bindings(value: &ValueExpr, index: &ExecutionIndex, bindings: 
                 contained_root_bindings(argument, index, bindings);
             }
         }
-        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } => {
+        ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
             let options = value.result_alternatives().expect("alternative expression");
             for option in options {
                 contained_root_bindings(option, index, bindings);
@@ -194,6 +194,7 @@ fn contained_root_bindings(value: &ValueExpr, index: &ExecutionIndex, bindings: 
         ValueExpr::Binding(_)
         | ValueExpr::Primitive(_)
         | ValueExpr::StrictEquality(..)
+        | ValueExpr::LogicalNot(_)
         | ValueExpr::Void(_)
         | ValueExpr::Undefined
         | ValueExpr::NonCallable(_)
