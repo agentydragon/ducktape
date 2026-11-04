@@ -18,9 +18,9 @@ from agentplane.crd_group import GROUP, VERSION
 from agentplane.proto.identity_pb2 import EnvironmentTarget, SandboxDestination, ServiceAccount
 from agentplane.sandboxes.launch import SandboxIdentity
 from agentplane.subjects import ServiceAccountRef
+from agentplane.testing.kubernetes import CustomObjectsClient
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.tls import environment_runtime_identity_uri
-from util.kubernetes import CustomObjectsClient
 
 # gazelle:include_dep @pypi//protobuf
 

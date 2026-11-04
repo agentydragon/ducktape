@@ -4,13 +4,6 @@ load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
-    name = "kubernetes",
-    srcs = ["kubernetes.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//kubernetes_asyncio"],
-)
-
-py_library(
     name = "otel",
     srcs = ["otel.py"],
     visibility = ["//visibility:public"],

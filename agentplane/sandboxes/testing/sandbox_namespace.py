@@ -20,8 +20,8 @@ from agentplane.egress.resources import CREDENTIALS_PLURAL
 from agentplane.policy_sets import FLUX_KUSTOMIZATION_LABEL, POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.subjects import ServiceAccountRef
+from agentplane.testing.kubernetes import CustomObjectsClient
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from util.kubernetes import CustomObjectsClient
 
 TEMPLATE = "test-runner-template"
 RUNNER_IMAGE = "registry.test/runner:test"
