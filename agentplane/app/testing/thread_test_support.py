@@ -13,7 +13,15 @@ from agentplane.app.testing.models import ThreadMetadata
 from agentplane.proto import event_log_pb2, event_pb2, session_pb2
 
 SPEC = session_pb2.SessionSpec(
-    harness=session_pb2.HARNESS_CLAUDE, cwd="/state/work", model="test-model", reasoning_effort="low"
+    placement=session_pb2.SessionPlacement(
+        environment_hosted=session_pb2.EnvironmentHostedPlacement(
+            environment=session_pb2.ExactEnvironment(name="test-sandbox", uid="test-sandbox-uid"),
+            harness=session_pb2.HARNESS_CLAUDE,
+        )
+    ),
+    cwd="/state/work",
+    model="test-model",
+    reasoning_effort="low",
 )
 
 

@@ -90,7 +90,7 @@ func TestUncertainSessionReservationFailsRuntimeUntilRestart(t *testing.T) {
 			script := fmt.Sprintf("touch %s", shellQuote(marker))
 			request.SetupScript = &script
 			ctx := sessionCallContext(r, t.Context())
-			if _, err := r.OpenSession(ctx, request); status.Code(err) != codes.Unavailable {
+			if _, err := r.CreateSession(ctx, request); status.Code(err) != codes.Unavailable {
 				t.Fatalf("first OpenSession = %v, want Unavailable", err)
 			}
 			select {
@@ -101,12 +101,12 @@ func TestUncertainSessionReservationFailsRuntimeUntilRestart(t *testing.T) {
 			default:
 				t.Fatal("uncertain write did not fail Runtime")
 			}
-			if _, err := r.OpenSession(ctx, request); status.Code(err) != codes.Unavailable {
+			if _, err := r.CreateSession(ctx, request); status.Code(err) != codes.Unavailable {
 				t.Fatalf("retry before restart = %v, want Unavailable", err)
 			}
 			conflict := openLifecycleSession(request.SessionId, filepath.Join(workspace, "project"))
 			conflict.Spec.Model = "other-model"
-			if _, err := r.OpenSession(ctx, conflict); status.Code(err) != codes.Unavailable {
+			if _, err := r.CreateSession(ctx, conflict); status.Code(err) != codes.Unavailable {
 				t.Fatalf("conflicting retry before restart = %v, want Unavailable", err)
 			}
 			backing.mu.Lock()
@@ -136,10 +136,10 @@ func TestUncertainSessionReservationFailsRuntimeUntilRestart(t *testing.T) {
 			recovered := newSessionTestRuntimeWithState(t, config, reservationState(backing))
 			recoveredCtx := sessionCallContext(recovered, t.Context())
 			if committed {
-				if _, err := recovered.OpenSession(recoveredCtx, conflict); status.Code(err) != codes.AlreadyExists {
+				if _, err := recovered.CreateSession(recoveredCtx, conflict); status.Code(err) != codes.AlreadyExists {
 					t.Fatalf("conflicting retry after restart = %v, want AlreadyExists", err)
 				}
-				if _, err := recovered.OpenSession(recoveredCtx, request); err != nil {
+				if _, err := recovered.CreateSession(recoveredCtx, request); err != nil {
 					t.Fatalf("identical retry after restart: %v", err)
 				}
 				record, err := recovered.store.Read(request.SessionId)
@@ -156,7 +156,7 @@ func TestUncertainSessionReservationFailsRuntimeUntilRestart(t *testing.T) {
 			} else {
 				// The reload proves no reservation exists, so a fresh request may proceed.
 				request.SetupScript = nil
-				if _, err := recovered.OpenSession(recoveredCtx, request); err != nil {
+				if _, err := recovered.CreateSession(recoveredCtx, request); err != nil {
 					t.Fatalf("fresh open after restart: %v", err)
 				}
 			}

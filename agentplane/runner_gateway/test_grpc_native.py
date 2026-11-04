@@ -23,7 +23,7 @@ from agentplane.proto import command_pb2, event_log_pb2, session_pb2
 from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2
-from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, admitted, delivered_opening
+from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient, accepted_session, admitted
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.testing.scripted_model import ScriptedModel, Text
@@ -52,7 +52,17 @@ async def inspect(runner: SandboxRunner, session_id: str) -> session_pb2.Session
     return one(summary for summary in await runner.list_sessions() if summary.session_id == session_id)
 
 
-async def open_session(
+def _spec_at_target(spec: session_pb2.SessionSpec, target: SandboxDestination) -> session_pb2.SessionSpec:
+    exact = session_pb2.SessionSpec()
+    exact.CopyFrom(spec)
+    if exact.placement.WhichOneof("kind") != "environment_hosted":
+        raise ValueError("Native runner tests require an environment-hosted Session")
+    exact.placement.environment_hosted.environment.name = target.target.name
+    exact.placement.environment_hosted.environment.uid = target.target.uid
+    return exact
+
+
+async def create_session(
     dispatcher: SessionDispatcherClient,
     runner: SandboxRunner,
     *,
@@ -61,16 +71,12 @@ async def open_session(
     setup_script: str | None = None,
 ) -> session_pb2.SessionSummary:
     await dispatcher.unary(
-        dispatcher.stub.OpenSession,
-        session_dispatcher_pb2.OpenSessionRequest(
-            session_id=str(session_id),
-            sandbox=runner.destination.target.name,
-            sandbox_uid=runner.destination.target.uid,
-            spec=spec,
-            setup_script=setup_script,
+        dispatcher.stub.CreateSession,
+        session_dispatcher_pb2.CreateSessionRequest(
+            session_id=str(session_id), spec=_spec_at_target(spec, runner.destination), setup_script=setup_script
         ),
     )
-    await delivered_opening(dispatcher, session_id)
+    await accepted_session(dispatcher, session_id)
     return await inspect(runner, str(session_id))
 
 
@@ -79,18 +85,17 @@ async def rejected_opening(
 ) -> None:
     session_id = str(uuid4())
     await dispatcher.unary(
-        dispatcher.stub.OpenSession,
-        session_dispatcher_pb2.OpenSessionRequest(
-            session_id=session_id, sandbox=destination.target.name, sandbox_uid=destination.target.uid, spec=spec
-        ),
+        dispatcher.stub.CreateSession, session_dispatcher_pb2.CreateSessionRequest(session_id=session_id, spec=spec)
     )
     # Native validation is a delivery outcome after durable Dispatcher admission.
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError), reraise=True
     ):
         with attempt:
-            opening = await dispatcher.get_session_opening(session_id)
-            assert opening.state == session_dispatcher_pb2.DELIVERY_STATE_FAILED, opening
+            session = await dispatcher.get_session(session_id)
+            assert (
+                session.status.materialization == session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_FAILED
+            ), session
 
 
 async def submit_input(
@@ -204,7 +209,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     )
     destination = remote.runner(sandbox.destination)
     requested = uuid4()
-    created = await open_session(
+    created = await create_session(
         session_dispatcher, destination, session_id=requested, spec=launch_spec, setup_script=setup_script
     )
     session = created.session_id
@@ -230,7 +235,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     assert opened.setup_state == session_pb2.SETUP_STATE_SUCCEEDED
     assert session in opened.spec.instructions
     assert (
-        await open_session(
+        await create_session(
             session_dispatcher, destination, session_id=requested, spec=launch_spec, setup_script=setup_script
         )
     ).spec == opened.spec
@@ -240,7 +245,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     different_spec.CopyFrom(launch_spec)
     different_spec.instructions = "Different task"
     with pytest.raises(ServiceError) as refused:
-        await open_session(
+        await create_session(
             session_dispatcher, destination, session_id=requested, spec=different_spec, setup_script=setup_script
         )
     assert refused.value.code == grpc.StatusCode.ALREADY_EXISTS
@@ -284,6 +289,8 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     invalid_spec = session_pb2.SessionSpec()
     invalid_spec.CopyFrom(launch_spec)
     invalid_spec.model = ""
+    invalid_spec.placement.environment_hosted.environment.name = sandbox.destination.target.name
+    invalid_spec.placement.environment_hosted.environment.uid = sandbox.destination.target.uid
     await rejected_opening(session_dispatcher, sandbox.destination, invalid_spec)
     assert [summary.session_id for summary in await destination.list_sessions()] == [session]
     assert bootstrap_marker.read_text() == "B"
@@ -313,7 +320,9 @@ async def test_failed_setup_reports_command_failure(
     session_dispatcher: SessionDispatcherClient,
 ) -> None:
     destination = remote.runner(sandbox.destination)
-    created = await open_session(session_dispatcher, destination, session_id=uuid4(), spec=spec, setup_script="exit 42")
+    created = await create_session(
+        session_dispatcher, destination, session_id=uuid4(), spec=spec, setup_script="exit 42"
+    )
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(15), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
     ):
@@ -343,9 +352,24 @@ async def test_invalid_launch_never_creates(
     remote: SandboxControlClient, sandbox: SandboxCluster, session_dispatcher: SessionDispatcherClient
 ) -> None:
     runner = remote.runner(sandbox.destination)
-    invalid_specs = [session_pb2.SessionSpec(), session_pb2.SessionSpec(harness=session_pb2.HARNESS_CODEX, model="m")]
+    invalid_specs = [
+        session_pb2.SessionSpec(),
+        session_pb2.SessionSpec(
+            placement=session_pb2.SessionPlacement(
+                environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                    environment=session_pb2.ExactEnvironment(), harness=session_pb2.HARNESS_CODEX
+                )
+            ),
+            model="m",
+        ),
+    ]
     for invalid in invalid_specs:
-        await rejected_opening(session_dispatcher, sandbox.destination, invalid)
+        with pytest.raises(ServiceError) as refused:
+            await session_dispatcher.unary(
+                session_dispatcher.stub.CreateSession,
+                session_dispatcher_pb2.CreateSessionRequest(session_id=str(uuid4()), spec=invalid),
+            )
+        assert refused.value.code == grpc.StatusCode.INVALID_ARGUMENT
     assert not await runner.list_sessions()
 
 
@@ -358,7 +382,7 @@ async def test_failed_bootstrap_reports_failure_when_input_arrives(
     session_dispatcher: SessionDispatcherClient,
 ) -> None:
     destination = remote.runner(sandbox.destination)
-    opened = await open_session(session_dispatcher, destination, session_id=uuid4(), spec=spec)
+    opened = await create_session(session_dispatcher, destination, session_id=uuid4(), spec=spec)
     status = await destination.status()
     assert not status.processes
     (session,) = [row for row in status.sessions if row.session_id == opened.session_id]

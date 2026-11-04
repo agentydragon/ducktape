@@ -106,7 +106,7 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
     assert sender.kubernetes_diagnostics.HasField("pod")
     recipient_model = scripted.model(recipient.kubernetes_diagnostics.pod.name, harness)
     sender_model = scripted.model(sender.kubernetes_diagnostics.pod.name, harness)
-    recipient_agent = await Agent.open(
+    recipient_agent = await Agent.create(
         client,
         dispatcher,
         sandbox=recipient.target.name,
@@ -114,7 +114,7 @@ async def an_agent_messages_another_which_reads_and_acknowledges_it(
         harness=harness,
         model=offered_model,
     )
-    sender_agent = await Agent.open(
+    sender_agent = await Agent.create(
         client,
         dispatcher,
         sandbox=sender.target.name,

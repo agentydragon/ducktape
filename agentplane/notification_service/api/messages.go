@@ -42,21 +42,21 @@ func (s *Notifications) sendMessage(ctx context.Context, sender model.ServiceAcc
 	if !s.policy.Health.Available() {
 		return nil, errSendPolicyUnavailable
 	}
-	opening, err := s.openings.GetSessionOpening(ctx, &dispatcherpb.GetSessionOpeningRequest{SessionId: request.GetSessionId()})
+	session, err := s.sessions.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: request.GetSessionId()})
 	if status.Code(err) == codes.NotFound {
 		return nil, errNoSession
 	}
 	if err != nil {
-		return nil, unavailable("session opening", err)
+		return nil, unavailable("Session", err)
 	}
-	placement := opening.GetOpening()
-	if placement.GetSessionId() != request.GetSessionId() || placement.GetSandbox() == "" || placement.GetSandboxUid() == "" {
-		return nil, unavailable("session opening", errors.New("incomplete Session placement"))
+	target := sessionTarget(session.GetSession(), request.GetSessionId())
+	if target == nil {
+		return nil, unavailable("Session", errors.New("incomplete Session placement"))
 	}
 	message := store.Message{
 		Sender: sender,
 		DestinationRef: model.DestinationRef{
-			Namespace: s.namespace, Name: placement.GetSandbox(), UID: placement.GetSandboxUid(),
+			Namespace: s.namespace, Name: target.GetName(), UID: target.GetUid(),
 		},
 		SessionID: request.GetSessionId(), IdempotencyKey: request.GetIdempotencyKey(), Body: request.GetBody(),
 		FromSession: request.FromSession,

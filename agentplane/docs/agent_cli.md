@@ -32,42 +32,41 @@ configuration is absent exits `2` naming the missing
 variables and leaves the others usable. Output, configuration, errors and exit codes are shared by every
 group, so another service joins as one more group under them.
 
-| Command                                                                                                                                            | Request                                                                 |
-| -------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `actions groups`                                                                                                                                   | `ActionService.ListActionGroups`                                        |
-| `actions list [GROUP]`                                                                                                                             | the same, one Action per line                                           |
-| `actions show GROUP/ACTION`                                                                                                                        | `ActionService.GetAction`                                               |
-| `actions policy`                                                                                                                                   | `ActionService.GetActionPolicy`                                         |
-| `actions submit GROUP/ACTION --title TEXT [--description TEXT] [--arguments JSON\|@FILE\|-] [--key KEY] [--wait [--until decision\|terminal]]`     | `SubmitActionRequest`, then optional watch                              |
-| `actions get {ID \| --key KEY}`                                                                                                                    | `GetActionRequest` or `ListActionRequests` by key                       |
-| `actions result {ID \| --key KEY}`                                                                                                                 | watch to terminal, then the stored result                               |
-| `actions wait {ID \| --key KEY} [--until decision\|terminal]`                                                                                      | `GetActionRequest` and `WatchActionRequest`                             |
-| `actions requests [--state STATE]...`                                                                                                              | `ListActionRequests`, paged                                             |
-| `actions events ID [--after SEQUENCE]`                                                                                                             | `ListActionRequestEvents`, paged                                        |
-| `actions cancel ID`                                                                                                                                | `CancelActionRequest`                                                   |
-| `sessions open SESSION_ID --sandbox NAME --sandbox-uid UID --spec JSON\|@FILE\|- [--setup-script TEXT\|@FILE\|-] [--additional-instructions TEXT]` | `SessionDispatcher.OpenSession`                                         |
-| `sessions submit-input SESSION_ID --command-id ID --text TEXT`                                                                                     | `SessionDispatcher.SubmitInput`                                         |
-| `sessions list [--limit N] [--after TOKEN]`                                                                                                        | `SessionDispatcher.ListSessionOpenings`                                 |
-| `sessions get-opening SESSION_ID`                                                                                                                  | `SessionDispatcher.GetSessionOpening`                                   |
-| `sessions get SESSION_ID`                                                                                                                          | `GetSessionOpening` and `HistoryService.GetSessionSummary`              |
-| `sessions read-turns SESSION_ID [--count N] [--page-cursor TOKEN]`                                                                                 | `HistoryService.ReadSessionEvents`, projected as retained turns         |
-| `sessions get-dispatch COMMAND_ID`                                                                                                                 | `SessionDispatcher.GetDispatch`                                         |
-| `sessions cancel-input COMMAND_ID`                                                                                                                 | `SessionDispatcher.CancelDispatch`                                      |
-| `sessions interrupt-turn SESSION_ID --command-id ID --turn-id ID`                                                                                  | `SessionDispatcher.InterruptTurn`                                       |
-| `sessions observe-input SESSION_ID --command-id ID [--wait-seconds N] [--resume-token TOKEN]`                                                      | Dispatcher receipt and correlated `HistoryService.FollowSession` events |
-| `environments list [--limit N] [--after TOKEN]`                                                                                                    | `EnvironmentService.ListEnvironments`                                   |
-| `environments get NAMESPACE NAME UID`                                                                                                              | `EnvironmentService.GetEnvironment`                                     |
-| `environments resume NAMESPACE NAME UID --resume-token TOKEN`                                                                                      | `EnvironmentService.ResumeEnvironment`                                  |
-| `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY] [--session ID]`           | `POST /v1/subscriptions`                                                |
-| `notifications inbox read SESSION_ID [--after CURSOR] [--limit N]`                                                                                 | `GET /v1/sessions/{session_id}/inbox/entries`, one page                 |
-| `notifications inbox ack SESSION_ID --through CURSOR`                                                                                              | `PUT /v1/sessions/{session_id}/inbox/acknowledgement`                   |
-| `notifications subscriptions`                                                                                                                      | `GET /v1/subscriptions`, paged                                          |
-| `notifications subscription ID`                                                                                                                    | `GET /v1/subscriptions/{id}`                                            |
-| `notifications renew ID [--lifetime-days N]`                                                                                                       | `GET`, then `PATCH` with the read `version`                             |
-| `notifications cancel ID`                                                                                                                          | `DELETE /v1/subscriptions/{id}`                                         |
-| `notifications send SESSION_ID {--body TEXT \| --body-file FILE\|-} [--from-session ID] [--key KEY]`                                               | `POST /v1/messages`                                                     |
-| `notifications message ID`                                                                                                                         | `GET /v1/messages/{id}`                                                 |
-| `egress rules`                                                                                                                                     | `GET /v1/rules`                                                         |
+| Command                                                                                                                                              | Request                                                                 |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `actions groups`                                                                                                                                     | `ActionService.ListActionGroups`                                        |
+| `actions list [GROUP]`                                                                                                                               | the same, one Action per line                                           |
+| `actions show GROUP/ACTION`                                                                                                                          | `ActionService.GetAction`                                               |
+| `actions policy`                                                                                                                                     | `ActionService.GetActionPolicy`                                         |
+| `actions submit GROUP/ACTION --title TEXT [--description TEXT] [--arguments JSON\|@FILE\|-] [--key KEY] [--wait [--until decision\|terminal]]`       | `SubmitActionRequest`, then optional watch                              |
+| `actions get {ID \| --key KEY}`                                                                                                                      | `GetActionRequest` or `ListActionRequests` by key                       |
+| `actions result {ID \| --key KEY}`                                                                                                                   | watch to terminal, then the stored result                               |
+| `actions wait {ID \| --key KEY} [--until decision\|terminal]`                                                                                        | `GetActionRequest` and `WatchActionRequest`                             |
+| `actions requests [--state STATE]...`                                                                                                                | `ListActionRequests`, paged                                             |
+| `actions events ID [--after SEQUENCE]`                                                                                                               | `ListActionRequestEvents`, paged                                        |
+| `actions cancel ID`                                                                                                                                  | `CancelActionRequest`                                                   |
+| `sessions create SESSION_ID --sandbox NAME --sandbox-uid UID --spec JSON\|@FILE\|- [--setup-script TEXT\|@FILE\|-] [--additional-instructions TEXT]` | `SessionDispatcher.CreateSession`                                       |
+| `sessions submit-input SESSION_ID --command-id ID --text TEXT`                                                                                       | `SessionDispatcher.SubmitInput`                                         |
+| `sessions list [--limit N] [--after TOKEN]`                                                                                                          | `SessionDispatcher.ListSessions`                                        |
+| `sessions get SESSION_ID`                                                                                                                            | `SessionDispatcher.GetSession` and `HistoryService.GetSessionSummary`   |
+| `sessions read-turns SESSION_ID [--count N] [--page-cursor TOKEN]`                                                                                   | `HistoryService.ReadSessionEvents`, projected as retained turns         |
+| `sessions get-dispatch COMMAND_ID`                                                                                                                   | `SessionDispatcher.GetDispatch`                                         |
+| `sessions cancel-input COMMAND_ID`                                                                                                                   | `SessionDispatcher.CancelDispatch`                                      |
+| `sessions interrupt-turn SESSION_ID --command-id ID --turn-id ID`                                                                                    | `SessionDispatcher.InterruptTurn`                                       |
+| `sessions observe-input SESSION_ID --command-id ID [--wait-seconds N] [--resume-token TOKEN]`                                                        | Dispatcher receipt and correlated `HistoryService.FollowSession` events |
+| `environments list [--limit N] [--after TOKEN]`                                                                                                      | `EnvironmentService.ListEnvironments`                                   |
+| `environments get NAMESPACE NAME UID`                                                                                                                | `EnvironmentService.GetEnvironment`                                     |
+| `environments resume NAMESPACE NAME UID --resume-token TOKEN`                                                                                        | `EnvironmentService.ResumeEnvironment`                                  |
+| `notifications subscribe github pr OWNER/REPO#NUMBER [--event NAME[:ACTION[,ACTION]]]... [--lifetime-days N] [--key KEY] [--session ID]`             | `POST /v1/subscriptions`                                                |
+| `notifications inbox read SESSION_ID [--after CURSOR] [--limit N]`                                                                                   | `GET /v1/sessions/{session_id}/inbox/entries`, one page                 |
+| `notifications inbox ack SESSION_ID --through CURSOR`                                                                                                | `PUT /v1/sessions/{session_id}/inbox/acknowledgement`                   |
+| `notifications subscriptions`                                                                                                                        | `GET /v1/subscriptions`, paged                                          |
+| `notifications subscription ID`                                                                                                                      | `GET /v1/subscriptions/{id}`                                            |
+| `notifications renew ID [--lifetime-days N]`                                                                                                         | `GET`, then `PATCH` with the read `version`                             |
+| `notifications cancel ID`                                                                                                                            | `DELETE /v1/subscriptions/{id}`                                         |
+| `notifications send SESSION_ID {--body TEXT \| --body-file FILE\|-} [--from-session ID] [--key KEY]`                                                 | `POST /v1/messages`                                                     |
+| `notifications message ID`                                                                                                                           | `GET /v1/messages/{id}`                                                 |
+| `egress rules`                                                                                                                                       | `GET /v1/rules`                                                         |
 
 Every command takes `--json` and `--timeout`; paged lists take `--limit` and `--after`, as does the one-page inbox read.
 
@@ -83,13 +82,14 @@ can refresh the exact target and use only a fresh descriptor's token for another
 It never replays earlier input or exec.
 
 Session mutations require caller-supplied IDs; the CLI does not mint or replace them and gRPC retries
-are disabled. `SESSION_ID` is the idempotency key for `open`; `COMMAND_ID` is the caller's key for
-`submit-input` and `interrupt-turn`. After an unknown open or input outcome,
-inspect it with `get-opening` or `get-dispatch` using the same ID before deciding what to do. `open`
-returns the Dispatcher opening record and does not create a model turn; the caller sends input separately.
-An optional setup script may execute during opening. `interrupt-turn` queues an exact-turn command
+are disabled. `SESSION_ID` is the idempotency key for `create`; `COMMAND_ID` is the caller's key for
+`submit-input` and `interrupt-turn`. After an unknown create or input outcome,
+inspect it with `get` or `get-dispatch` using the same ID before deciding what to do. `create`
+returns the minimal Dispatcher `Session` resource and does not create a model turn; the caller sends
+input separately. An optional setup script may execute during owner materialization. `interrupt-turn` queues an exact-turn command
 and returns its Dispatch; use `get-dispatch` to observe delivery. `--sandbox-uid` is the expected UID of the Kubernetes Sandbox object, not a Pod or VM
-incarnation identifier. `get-opening` reports only the Dispatcher record, not a combined History snapshot.
+incarnation identifier. `get` reads the Dispatcher Session and History summary independently, not a
+live environment snapshot.
 `observe-input` uses the caller-held `COMMAND_ID` from `submit-input`, reads its Dispatcher receipt, then
 follows retained History from that receipt's admission cursor. `--wait-seconds` is bounded to 30 seconds;
 zero reads once. `not_observed` means the requested evidence was not seen in this read, not that input
@@ -97,16 +97,16 @@ failed or the model turn ended. The structured result preserves source errors an
 ranges. A resume token is tied to its Session and command and confers no permission; the command rebuilds
 the observation from the retained admission cursor so it can restore command-to-turn correlation.
 
-`agentplane sessions list` discovers current Dispatcher opening records, including queued and failed
+`agentplane sessions list` discovers current Dispatcher Session records, including waiting and failed
 materialization with no History yet. It requires only the Sessions credential and never contacts an
 environment. Results use retained owner authorization; the configured Pod-bound backend read scope
 also applies. `--limit` is 1-100 (default 50), and `--after` accepts the returned continuation token.
-Text output prints openings and a continuation hint; `--json` returns one page object with `openings`
+Text output prints Sessions and a continuation hint; `--json` returns one page object with `sessions`
 and `nextPageToken`. Ordering is ascending Session UUID, with current reads rather than a frozen
-snapshot. Deleted opening records remain absent even if History is retained. This does not discover
+snapshot. Deleted Session records remain absent even if History is retained. This does not discover
 environment-free central Sessions.
 
-`sessions get` reads the Dispatcher opening and History summary independently; its structured result
+`sessions get` reads the Dispatcher Session and History summary independently; its structured result
 keeps missing and unavailable sources distinct. It does not query a live environment. `sessions
 read-turns` reads retained History through the cursor captured on its first page, returns at most 100
 turns (default 20), and resumes after completed turns with its opaque Session-scoped `--page-cursor`.
@@ -117,7 +117,7 @@ by turn ID when combining these pages. Tool results do not establish task succes
 from another turn.
 
 Dispatcher authorizes ordinary callers against the target's actual ServiceAccount UID and scopes
-retained opening/command reads to their recorded principal. Configured privileged backend callers
+retained Session/command reads to their recorded principal. Configured privileged backend callers
 remain a separate authority path. The CLI supplies no additional grant or identity.
 `sessions observe-input` also requires independent History URL/credential configuration and backend
 authorization; the CLI does not add reader authority or fall back to another caller.
@@ -150,9 +150,15 @@ Left out on purpose:
   `ACTION_STATE_DENIED`, `ACTION_STATE_DISPATCHING`, `ACTION_STATE_RUNNING`, `ACTION_STATE_SUCCEEDED`,
   `ACTION_STATE_FAILED`, `ACTION_STATE_CANCELLED` and `ACTION_STATE_EXECUTION_UNKNOWN`. Other enum
   fields use their generated protobuf value names too (for example, `mcp` becomes `EXECUTOR_KIND_MCP`).
-  Session JSON preserves the full returned `SessionOpening` or `Dispatch`, including
-  UID, delivery state, reason and timestamps where present. `sessions get` emits source-part states and
-  each observed opening or summary as its service's ProtoJSON; `sessions read-turns` emits UUID command IDs,
+  Dispatcher `Session` JSON is the minimal authorized projection: Session ID, placement, timestamps
+  and nested `SessionStatus` with materialization, reason, delivery blocker and wake assessment where
+  present. It contains neither the full `SessionSpec` nor instructions. Materialization values are
+  `SESSION_MATERIALIZATION_WAITING`, `SESSION_MATERIALIZATION_IN_PROGRESS`,
+  `SESSION_MATERIALIZATION_ACCEPTED`, `SESSION_MATERIALIZATION_FAILED` and
+  `SESSION_MATERIALIZATION_UNKNOWN`; accepted means the placement owner durably admitted the logical
+  Session, not that a harness is ready or History has projected a Thread. Dispatch JSON retains its
+  delivery state, reason and timestamps where present. `sessions get` emits source-part states and
+  each observed Session or summary as its service's ProtoJSON; `sessions read-turns` emits UUID command IDs,
   opaque provider turn/item IDs, ProtoJSON enum names and decimal-string cursor values. `observe-input`
   emits its structured Dispatcher `SourcePart` and History coverage/observation projection; it does not
   wrap that value in a second response envelope. Its History gap cursor bounds now serialize
@@ -392,7 +398,7 @@ is omitted without it.
 | `events`                   | `after_sequence` and `limit`, at most 128 a page | follows pages; `--after SEQUENCE` |
 | `subscriptions`            | `afterId`, 128 a page                            | follows pages; `--after ID`       |
 
-`sessions list` reads one page of up to 100 openings (`--limit` defaults to 50); use its opaque
+`sessions list` reads one page of up to 100 Sessions (`--limit` defaults to 50); use its opaque
 `nextPageToken` with `--after`. The lists in the table follow server pages until `--limit` items (default 50; `0` is unlimited). To resume, pass the
 last printed item's `id` or `sequence` to `--after`; text mode prints that hint on stderr when the limit
 cut the list. A list prints only once complete, so a failure on a later page leaves stdout empty.

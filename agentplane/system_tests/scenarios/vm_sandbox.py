@@ -185,7 +185,7 @@ async def vm_sandbox_turn(
                 )
     model = scripted.model(view.kubernetes_diagnostics.pod.name, harness)
     with tracer.start_as_current_span(
-        "system_test.session.open",
+        "system_test.session.create",
         attributes={"harness": session_pb2.Harness.Name(harness), "sandbox.name": view.target.name},
     ):
         agent = await session_setup_is_supervised(
@@ -260,9 +260,9 @@ async def codex_tool_oom(
     evidence: dict[str, Any] = {}
     try:
         with tracer.start_as_current_span(
-            "system_test.session.open", attributes={"harness": "HARNESS_CODEX", "sandbox.name": view.target.name}
+            "system_test.session.create", attributes={"harness": "HARNESS_CODEX", "sandbox.name": view.target.name}
         ):
-            agent = await Agent.open(
+            agent = await Agent.create(
                 client,
                 dispatcher,
                 sandbox=view.target.name,

@@ -29,7 +29,7 @@ from agentplane.central_sampler.settings import (
     ModelConfig,
     Settings,
 )
-from agentplane.central_sampler.testing import METADATA, open_request, service, settings
+from agentplane.central_sampler.testing import METADATA, create_request, service, settings
 from agentplane.central_sampler.testing_store import IntentSnapshot, Store
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.proto import event_pb2
@@ -236,7 +236,7 @@ async def test_live_anthropic_exec_compaction_restart_and_signed_thinking_replay
         per_message_effort=True,
         cache_diagnostics=True,
     ).model_copy(update={"turn_timeout_seconds": TURN_TIMEOUT_SECONDS})
-    request = open_request(tmp_path)
+    request = create_request(tmp_path)
     request.spec.model = ROUTE
     request.spec.reasoning_effort = "low"
     token = f"sampler-anthropic-{uuid4().hex}"
@@ -248,7 +248,7 @@ async def test_live_anthropic_exec_compaction_restart_and_signed_thinking_replay
     resumed_marker = f"ANTHROPIC_RESUMED_{uuid4().hex}"
 
     async with service(config) as stub:
-        await stub.OpenSession(request, metadata=METADATA, timeout=10)
+        await stub.CreateSession(request, metadata=METADATA, timeout=10)
         first = await submit(
             stub,
             request.session_id,
@@ -470,13 +470,13 @@ async def test_live_anthropic_prompt_cache_survives_effort_change(
     config = anthropic_settings(base, model, max_tokens=2048, prompt_cache=True, per_message_effort=True).model_copy(
         update={"turn_timeout_seconds": TURN_TIMEOUT_SECONDS}
     )
-    request = open_request(tmp_path)
+    request = create_request(tmp_path)
     request.spec.model = ROUTE
     request.spec.reasoning_effort = "low"
     markers = [f"ANTHROPIC_CACHE_TURN_{index}_{uuid4().hex}" for index in range(1, 4)]
 
     async with service(config) as stub:
-        await stub.OpenSession(request, metadata=METADATA, timeout=10)
+        await stub.CreateSession(request, metadata=METADATA, timeout=10)
         first = await submit(stub, request.session_id, "cache-first", f"{markers[0]}: reply READY.")
         second = await submit(stub, request.session_id, "cache-second", f"{markers[1]}: reply READY again.")
         assert first.completed.status == event_pb2.TURN_STATUS_COMPLETED, first.completed.error
@@ -546,7 +546,7 @@ async def test_live_anthropic_automatic_compaction_resumes_sampling(
         max_tokens=1200,
         compaction=AnthropicCompactionConfig(max_tokens=1200, auto_compact_tokens=1, keep_recent_turns=0),
     ).model_copy(update={"turn_timeout_seconds": TURN_TIMEOUT_SECONDS})
-    request = open_request(tmp_path)
+    request = create_request(tmp_path)
     request.spec.model = ROUTE
     request.spec.reasoning_effort = "low"
     fact = f"the automatic-compaction code is {uuid4().hex}"
@@ -555,7 +555,7 @@ async def test_live_anthropic_automatic_compaction_resumes_sampling(
     stable_filler = "stable maple reference " * 2048
 
     async with service(config) as stub:
-        await stub.OpenSession(request, metadata=METADATA, timeout=10)
+        await stub.CreateSession(request, metadata=METADATA, timeout=10)
         first = await submit(
             stub,
             request.session_id,

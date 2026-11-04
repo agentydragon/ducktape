@@ -31,7 +31,7 @@ import (
 )
 
 type sessionOpener interface {
-	OpenSession(context.Context, string, string, uuid.UUID, *sessionpb.SessionSpec, *string) (*dispatcherpb.SessionOpening, error)
+	CreateSession(context.Context, string, string, uuid.UUID, *sessionpb.SessionSpec, *string) (*dispatcherpb.Session, error)
 }
 
 type sessionEnvironmentReader interface {
@@ -47,7 +47,7 @@ type threadOpener interface {
 func RegisterSessionRoutes(server *HTTPServer, service *appService) error {
 	mux := gatewayruntime.NewServeMux(
 		gatewayruntime.WithForwardResponseOption(func(ctx context.Context, w http.ResponseWriter, _ proto.Message) error {
-			if method, ok := gatewayruntime.RPCMethod(ctx); ok && strings.HasSuffix(method, "/OpenSession") {
+			if method, ok := gatewayruntime.RPCMethod(ctx); ok && strings.HasSuffix(method, "/CreateSession") {
 				w.WriteHeader(http.StatusCreated)
 			}
 			return nil
@@ -63,7 +63,7 @@ func RegisterSessionRoutes(server *HTTPServer, service *appService) error {
 
 var sessionSandboxName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 
-func validateSessionOpeningIdentity(name, id string) (uuid.UUID, error) {
+func validateSessionIdentity(name, id string) (uuid.UUID, error) {
 	if len(name) < 1 || len(name) > 57 || !sessionSandboxName.MatchString(name) {
 		return uuid.Nil, status.Error(codes.InvalidArgument, "invalid Sandbox name")
 	}
@@ -74,10 +74,10 @@ func validateSessionOpeningIdentity(name, id string) (uuid.UUID, error) {
 	return parsed, nil
 }
 
-func (s *appService) OpenSession(ctx context.Context, request *apppb.OpenSessionRequest) (_ *apppb.OpenSessionResponse, routeErr error) {
+func (s *appService) CreateSession(ctx context.Context, request *apppb.CreateSessionRequest) (_ *apppb.CreateSessionResponse, routeErr error) {
 	ctx, span := observability.Start(ctx, "agentplane.session.create")
 	defer func() { observability.End(span, routeErr) }()
-	id, err := validateSessionOpeningIdentity(request.GetName(), request.GetSessionId())
+	id, err := validateSessionIdentity(request.GetName(), request.GetSessionId())
 	if err != nil {
 		return nil, err
 	}
@@ -116,21 +116,21 @@ func (s *appService) OpenSession(ctx context.Context, request *apppb.OpenSession
 		slog.ErrorContext(ctx, "create Thread metadata", "session_id", id, "error", err)
 		return nil, status.Error(codes.Unavailable, "Thread metadata is unavailable")
 	}
-	opening, err := s.bridge.OpenSession(ctx, request.GetName(), request.GetSandboxUid(), id, spec, setupScript)
+	session, err := s.bridge.CreateSession(ctx, request.GetName(), request.GetSandboxUid(), id, spec, setupScript)
 	if err != nil {
-		var unconfirmed *appbridge.SessionOpeningNotFoundError
+		var unconfirmed *appbridge.SessionNotFoundError
 		if errors.As(err, &unconfirmed) {
-			slog.ErrorContext(ctx, "Dispatcher opening response did not confirm requested identity", "session_id", id, "error", err)
+			slog.ErrorContext(ctx, "Dispatcher session response did not confirm requested identity", "session_id", id, "error", err)
 			return nil, status.Errorf(codes.Unknown, "Dispatcher result for session %s was not confirmed; reconcile this identity", id)
 		}
 		return nil, sessionRPCError(err)
 	}
-	return &apppb.OpenSessionResponse{Opening: opening}, nil
+	return &apppb.CreateSessionResponse{Session: session}, nil
 }
 
 func sessionRPCError(err error) error {
 	var timeout *appbridge.DispatcherRequestTimeoutError
-	var missing *appbridge.SessionOpeningNotFoundError
+	var missing *appbridge.SessionNotFoundError
 	var service *appbridge.ServiceError
 	var refused *appbridge.RefusedError
 	var quiescing *sandboxes.SandboxQuiescingError
@@ -148,7 +148,7 @@ func sessionRPCError(err error) error {
 	case apierrors.IsConflict(err):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.As(err, &quiescing):
-		slog.Error("Session opening dependency failed", "error", err)
+		slog.Error("Session dependency failed", "error", err)
 		return status.Error(codes.Unavailable, err.Error())
 	case errors.Is(err, context.Canceled):
 		return status.Error(codes.Canceled, "Request canceled")
@@ -167,7 +167,7 @@ func sessionRPCError(err error) error {
 func sessionUpstreamRPCError(code codes.Code, message string, cause error) error {
 	switch code {
 	case codes.Unknown, codes.DeadlineExceeded, codes.Unimplemented, codes.Internal, codes.Unavailable, codes.DataLoss:
-		slog.Error("Session opening dependency failed", "error", cause)
+		slog.Error("Session dependency failed", "error", cause)
 		return status.Error(code, "Upstream service unavailable")
 	default:
 		if upstream, ok := status.FromError(cause); ok && upstream.Code() == code {
@@ -208,7 +208,13 @@ func sessionDefaults(config Config, sandbox *environmentpb.EnvironmentDescriptor
 		if !ok {
 			return nil, nil, errors.New("ThreadPreset names an unknown Harness " + quote(thread.Harness))
 		}
-		defaults.Harness = sessionpb.Harness(harness)
+		target := sandbox.GetTarget()
+		exact := &sessionpb.ExactEnvironment{Name: target.GetName(), Uid: target.GetUid()}
+		if sessionpb.Harness(harness) == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
+			defaults.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: exact}}}
+		} else {
+			defaults.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: exact, Harness: sessionpb.Harness(harness)}}}
+		}
 		defaults.Model = thread.Model
 		defaults.Cwd = thread.CWD
 		if thread.ReasoningEffort != nil {

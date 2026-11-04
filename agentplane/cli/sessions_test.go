@@ -10,6 +10,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -33,11 +34,22 @@ func TestObserveInputRejectsWaitOverBoundBeforeConnecting(t *testing.T) {
 	}
 }
 
-func TestOpenSessionRequiresCanonicalUUIDBeforeConnecting(t *testing.T) {
+func TestCreateSessionRequiresCanonicalUUIDBeforeConnecting(t *testing.T) {
 	for _, sessionID := range []string{"not-a-uuid", "ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF", "abcdefabcdef4abcdefabcdefabcdef"} {
-		code, stdout, stderr := invoke(nil, "sessions", "open", sessionID, "--sandbox", "sandbox", "--sandbox-uid", "uid", "--spec", "{}")
+		code, stdout, stderr := invoke(nil, "sessions", "create", sessionID, "--sandbox", "sandbox", "--sandbox-uid", "uid", "--spec", "{}")
 		if code != exitUsage || stdout != "" || !strings.Contains(stderr, "SESSION_ID must be a canonical UUID") {
-			t.Errorf("sessions open %q: exit %d, stdout %q, stderr %q; want canonical UUID usage error", sessionID, code, stdout, stderr)
+			t.Errorf("sessions create %q: exit %d, stdout %q, stderr %q; want canonical UUID usage error", sessionID, code, stdout, stderr)
+		}
+	}
+}
+
+func TestSessionLineRejectsIncompleteResource(t *testing.T) {
+	for _, raw := range []string{
+		`{"sessionId":"session","placement":{"environmentHosted":{"environment":{"name":"sandbox","uid":"uid"}}}}`,
+		`{"sessionId":"session","status":{"materialization":"SESSION_MATERIALIZATION_WAITING"}}`,
+	} {
+		if _, err := sessionLine(json.RawMessage(raw)); err == nil {
+			t.Errorf("sessionLine(%s) accepted an incomplete Session", raw)
 		}
 	}
 }
@@ -71,9 +83,9 @@ func TestSessionGetAndReadTurnsExposeNeutralProjections(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &snapshot); err != nil {
 		t.Fatalf("sessions get JSON: %v", err)
 	}
-	opening := snapshot["opening"].(map[string]any)
+	session := snapshot["session"].(map[string]any)
 	history := snapshot["history"].(map[string]any)
-	if opening["kind"] != "observed" || history["kind"] != "observed" {
+	if session["kind"] != "observed" || history["kind"] != "observed" {
 		t.Fatalf("sessions get source parts = %#v", snapshot)
 	}
 	delete(env, "AGENTPLANE_SESSIONS_URL")
@@ -97,9 +109,9 @@ type sessionProjectionFixture struct {
 	historypb.UnimplementedHistoryServiceServer
 }
 
-func (sessionProjectionFixture) GetSessionOpening(_ context.Context, request *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error) {
-	return &dispatcherpb.GetSessionOpeningResponse{Opening: &dispatcherpb.SessionOpening{
-		SessionId: request.GetSessionId(), State: dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED,
+func (sessionProjectionFixture) GetSession(_ context.Context, request *dispatcherpb.GetSessionRequest) (*dispatcherpb.GetSessionResponse, error) {
+	return &dispatcherpb.GetSessionResponse{Session: &dispatcherpb.Session{
+		SessionId: request.GetSessionId(), Status: &dispatcherpb.SessionStatus{Materialization: dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_ACCEPTED},
 	}}, nil
 }
 
@@ -121,13 +133,13 @@ func (sessionProjectionFixture) ReadSessionEvents(_ context.Context, request *hi
 	return response, nil
 }
 
-func TestSessionListDiscoversOpeningsWithoutHistoryConfiguration(t *testing.T) {
+func TestSessionListDiscoversSessionsWithoutHistoryConfiguration(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	fixture := &sessionListFixture{requests: make(chan *dispatcherpb.ListSessionOpeningsRequest, 1)}
+	fixture := &sessionListFixture{requests: make(chan *dispatcherpb.ListSessionsRequest, 1)}
 	dispatcherpb.RegisterSessionDispatcherServer(server, fixture)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() {
@@ -152,14 +164,14 @@ func TestSessionListDiscoversOpeningsWithoutHistoryConfiguration(t *testing.T) {
 			t.Fatalf("list request: %v", request)
 		}
 		if asJSON {
-			page := &dispatcherpb.ListSessionOpeningsResponse{}
+			page := &dispatcherpb.ListSessionsResponse{}
 			if err := protojson.Unmarshal([]byte(stdout), page); err != nil {
 				t.Fatal(err)
 			}
-			if len(page.GetOpenings()) != 1 || page.GetOpenings()[0].GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER || page.GetNextPageToken() != "next-page" || stderr != "" {
+			if len(page.GetSessions()) != 1 || page.GetSessions()[0].GetStatus().GetMaterialization() != dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_WAITING || page.GetNextPageToken() != "next-page" || stderr != "" {
 				t.Fatalf("list JSON page: %v, stderr %q", page, stderr)
 			}
-		} else if !strings.Contains(stdout, "58cae82c-453d-4de7-ae5b-17a8f7596077") || !strings.Contains(stdout, "queued_in_dispatcher") || !strings.Contains(stderr, "--after next-page") {
+		} else if !strings.Contains(stdout, "58cae82c-453d-4de7-ae5b-17a8f7596077") || !strings.Contains(stdout, "waiting") || !strings.Contains(stderr, "--after next-page") {
 			t.Fatalf("list text: stdout %q, stderr %q", stdout, stderr)
 		}
 	}
@@ -167,15 +179,15 @@ func TestSessionListDiscoversOpeningsWithoutHistoryConfiguration(t *testing.T) {
 
 type sessionListFixture struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
-	requests chan *dispatcherpb.ListSessionOpeningsRequest
+	requests chan *dispatcherpb.ListSessionsRequest
 }
 
-func (f *sessionListFixture) ListSessionOpenings(_ context.Context, request *dispatcherpb.ListSessionOpeningsRequest) (*dispatcherpb.ListSessionOpeningsResponse, error) {
+func (f *sessionListFixture) ListSessions(_ context.Context, request *dispatcherpb.ListSessionsRequest) (*dispatcherpb.ListSessionsResponse, error) {
 	f.requests <- request
-	return &dispatcherpb.ListSessionOpeningsResponse{
-		Openings: []*dispatcherpb.SessionOpening{{
-			SessionId: "58cae82c-453d-4de7-ae5b-17a8f7596077", Sandbox: "queued-sandbox", SandboxUid: "queued-sandbox-uid",
-			State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+	return &dispatcherpb.ListSessionsResponse{
+		Sessions: []*dispatcherpb.Session{{
+			SessionId: "58cae82c-453d-4de7-ae5b-17a8f7596077", Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "queued-sandbox", Uid: "queued-sandbox-uid"}}}},
+			Status: &dispatcherpb.SessionStatus{Materialization: dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_WAITING},
 		}},
 		NextPageToken: "next-page",
 	}, nil

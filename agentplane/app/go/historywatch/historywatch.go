@@ -128,7 +128,7 @@ func receive(stream Stream) (*historypb.WatchSessionSummariesResponse, error) {
 	return response, nil
 }
 
-// HistoryWatch wakes the caller when the stream's opening notice or a later fold change arrives.
+// HistoryWatch wakes the caller when the stream's session notice or a later fold change arrives.
 type HistoryWatch struct {
 	client  Client
 	changed func()
@@ -175,25 +175,25 @@ func (w *HistoryWatch) follow(ctx context.Context, progress func()) error {
 		case response.GetChanged() != nil:
 			w.changed()
 			progress()
-		case response.GetSessionOpened() != nil:
-			return fmt.Errorf("unexpected session_opened observation on summary-only watch")
+		case response.GetSessionRecorded() != nil:
+			return fmt.Errorf("unexpected session_recorded observation on summary-only watch")
 		default:
 			return errors.New("History Service watch response has no observation")
 		}
 	}
 }
 
-// SessionOpenings materializes every History Session in the app's thread table. The position stays
+// Sessions materializes every History Session in the app's thread table. The position stays
 // behind any failed open so the next stream offers that Session again.
-type SessionOpenings struct {
+type Sessions struct {
 	client        Client
 	threads       ThreadOpener
 	rewatch       rewatch
 	openedThrough uint64
 }
 
-// NewSessionOpenings creates a worker resuming from position zero.
-func NewSessionOpenings(client Client, threads ThreadOpener, options Options) (*SessionOpenings, error) {
+// NewSessions creates a worker resuming from position zero.
+func NewSessions(client Client, threads ThreadOpener, options Options) (*Sessions, error) {
 	if client == nil || threads == nil {
 		return nil, errors.New("history watch client and thread store are required")
 	}
@@ -201,7 +201,7 @@ func NewSessionOpenings(client Client, threads ThreadOpener, options Options) (*
 	if err != nil {
 		return nil, err
 	}
-	w := &SessionOpenings{client: client, threads: threads}
+	w := &Sessions{client: client, threads: threads}
 	w.rewatch = rewatch{
 		client: client, retryInterval: options.RetryInterval,
 		freshChannelAfter: options.FreshChannelAfter, logger: options.Logger,
@@ -210,14 +210,14 @@ func NewSessionOpenings(client Client, threads ThreadOpener, options Options) (*
 	return w, nil
 }
 
-// Run processes openings until ctx is cancelled or an invalid Session ID is received.
-func (w *SessionOpenings) Run(ctx context.Context) error { return w.rewatch.run(ctx) }
+// Run processes sessions until ctx is cancelled or an invalid Session ID is received.
+func (w *Sessions) Run(ctx context.Context) error { return w.rewatch.run(ctx) }
 
-func (w *SessionOpenings) follow(ctx context.Context, progress func()) error {
+func (w *Sessions) follow(ctx context.Context, progress func()) error {
 	after := w.openedThrough
 	streamCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stream, err := w.client.WatchSessionSummaries(streamCtx, &historypb.WatchSessionSummariesRequest{OpenedAfter: &after})
+	stream, err := w.client.WatchSessionSummaries(streamCtx, &historypb.WatchSessionSummariesRequest{RecordedAfter: &after})
 	if err != nil {
 		return err
 	}
@@ -234,22 +234,22 @@ func (w *SessionOpenings) follow(ctx context.Context, progress func()) error {
 		case response.GetReconnectRequired() != nil:
 			return nil
 		case response.GetChanged() != nil:
-			// The opening changed notice asks summary readers to refresh; it names no Session.
+			// The changed notice asks summary readers to refresh; it names no Session.
 			continue
-		case response.GetSessionOpened() != nil:
-			opened := response.GetSessionOpened()
-			id, err := uuid.Parse(opened.GetSessionId())
-			if err != nil || id.String() != opened.GetSessionId() {
-				return permanent(fmt.Errorf("%w: %q", ErrInvalidSessionID, opened.GetSessionId()))
+		case response.GetSessionRecorded() != nil:
+			recorded := response.GetSessionRecorded()
+			id, err := uuid.Parse(recorded.GetSessionId())
+			if err != nil || id.String() != recorded.GetSessionId() {
+				return permanent(fmt.Errorf("%w: %q", ErrInvalidSessionID, recorded.GetSessionId()))
 			}
-			openingCtx, span := observability.Start(spanParent, "agentplane.session.opening.record")
-			span.SetAttributes(attribute.Int64("agentplane.session.opening.position", int64(opened.GetPosition())))
-			if err := w.threads.OpenThread(openingCtx, id); err != nil {
+			recordingCtx, span := observability.Start(spanParent, "agentplane.session.recording.record")
+			span.SetAttributes(attribute.Int64("agentplane.session.recording.position", int64(recorded.GetPosition())))
+			if err := w.threads.OpenThread(recordingCtx, id); err != nil {
 				observability.End(span, err)
 				return fmt.Errorf("open app thread for History Session %s: %w", id, err)
 			}
 			observability.End(span, nil)
-			w.openedThrough = opened.GetPosition()
+			w.openedThrough = recorded.GetPosition()
 			progress()
 		default:
 			return errors.New("History Service watch response has no observation")

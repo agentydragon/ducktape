@@ -455,9 +455,13 @@ function validateThread(metadata: ThreadMetadata, summary: SessionSummary): void
   if (!metadata.createdAt) throw new Error("App returned Thread metadata without created_at");
   const attachment = summary.attached;
   const spec = attachment?.spec;
-  if (spec) {
-    assertKnownEnum(spec.harness, HarnessSchema, "Harness");
-    if (spec.harness === Harness.UNSPECIFIED) throw new Error("History Service returned an unspecified Harness");
+  if (spec?.placement?.kind.case === "environmentHosted") {
+    const harness = spec.placement.kind.value.harness;
+    assertKnownEnum(harness, HarnessSchema, "Harness");
+    if (harness === Harness.UNSPECIFIED) throw new Error("History Service returned an unspecified Harness");
+  } else if (attachment && attachment.historicalHarness !== Harness.UNSPECIFIED) {
+    // Archived snapshots may have no reconstructible environment or harness provenance.
+    assertKnownEnum(attachment.historicalHarness, HarnessSchema, "historical Harness");
   }
   assertKnownEnum(attachment?.harnessState ?? HarnessState.UNSPECIFIED, HarnessStateSchema, "HarnessState");
   if (attachment) {

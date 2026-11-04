@@ -55,11 +55,11 @@ type SourcePart struct {
 	Error      *SourceError    `json:"error,omitempty"`
 }
 
-// SessionSnapshot composes the durable Dispatcher opening and retained History summary. It makes
+// SessionSnapshot composes the durable Dispatcher Session and retained History summary. It makes
 // no live-environment lookup and owns neither credentials nor authorization.
 type SessionSnapshot struct {
 	SessionID uuid.UUID  `json:"session_id"`
-	Opening   SourcePart `json:"opening"`
+	Session   SourcePart `json:"session"`
 	History   SourcePart `json:"history"`
 }
 
@@ -73,31 +73,31 @@ func GetSession(
 ) (SessionSnapshot, error) {
 	snapshot := SessionSnapshot{
 		SessionID: sessionID,
-		Opening:   SourcePart{Kind: SourceNotObserved, Source: SourceDispatcher},
+		Session:   SourcePart{Kind: SourceNotObserved, Source: SourceDispatcher},
 		History:   SourcePart{Kind: SourceNotObserved, Source: SourceHistory},
 	}
-	opening, openingErr := dispatcher.GetSessionOpening(ctx, &dispatcherpb.GetSessionOpeningRequest{SessionId: sessionID.String()})
-	if openingErr != nil {
+	session, sessionErr := dispatcher.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: sessionID.String()})
+	if sessionErr != nil {
 		if ctx.Err() != nil {
 			return snapshot, status.FromContextError(ctx.Err()).Err()
 		}
-		if status.Code(openingErr) != codes.NotFound {
-			snapshot.Opening.Kind = SourceUnavailable
-			snapshot.Opening.Error = sourceFailure(openingErr)
+		if status.Code(sessionErr) != codes.NotFound {
+			snapshot.Session.Kind = SourceUnavailable
+			snapshot.Session.Error = sourceFailure(sessionErr)
 		}
-	} else if opening == nil || opening.GetOpening() == nil {
-		snapshot.Opening.Kind = SourceUnavailable
-		snapshot.Opening.Error = &SourceError{Code: codes.DataLoss.String(), Message: "Dispatcher returned no opening"}
-	} else if opening.GetOpening().GetSessionId() != sessionID.String() {
-		snapshot.Opening.Kind = SourceUnavailable
-		snapshot.Opening.Error = &SourceError{Code: codes.DataLoss.String(), Message: "Dispatcher returned an opening for a different Session"}
+	} else if session == nil || session.GetSession() == nil {
+		snapshot.Session.Kind = SourceUnavailable
+		snapshot.Session.Error = &SourceError{Code: codes.DataLoss.String(), Message: "Dispatcher returned no Session"}
+	} else if session.GetSession().GetSessionId() != sessionID.String() {
+		snapshot.Session.Kind = SourceUnavailable
+		snapshot.Session.Error = &SourceError{Code: codes.DataLoss.String(), Message: "Dispatcher returned a different Session"}
 	} else {
-		value, marshalErr := protojson.Marshal(opening.GetOpening())
+		value, marshalErr := protojson.Marshal(session.GetSession())
 		if marshalErr != nil {
-			return snapshot, fmt.Errorf("marshal Dispatcher Session opening: %w", marshalErr)
+			return snapshot, fmt.Errorf("marshal Dispatcher Session: %w", marshalErr)
 		}
 		now := time.Now().UTC()
-		snapshot.Opening = SourcePart{Kind: SourceObserved, Source: SourceDispatcher, ObservedAt: &now, Value: value}
+		snapshot.Session = SourcePart{Kind: SourceObserved, Source: SourceDispatcher, ObservedAt: &now, Value: value}
 	}
 
 	summary, historyErr := history.GetSessionSummary(ctx, &historypb.GetSessionSummaryRequest{SessionId: sessionID.String()})

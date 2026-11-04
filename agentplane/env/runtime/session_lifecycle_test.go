@@ -58,7 +58,7 @@ func TestAggregateRequiresCurrentSessionPreFenceSettlement(t *testing.T) {
 	config := lifecycleConfig(t, modelConfigServer(t).URL, workspace, nil, "/bin/false")
 	config.expectCloseError = true
 	r := newSessionTestRuntime(t, config)
-	if _, err := r.OpenSession(sessionCallContext(r, t.Context()), openLifecycleSession("pre-fence", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := r.CreateSession(sessionCallContext(r, t.Context()), openLifecycleSession("pre-fence", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	waitLifecycle(t, r, func() bool {
@@ -244,7 +244,7 @@ func lifecycleTestSession(t *testing.T) (*Runtime, *session.Session) {
 	workspace := t.TempDir()
 	proxy := modelConfigServer(t)
 	r := newSessionTestRuntime(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"))
-	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	return r, r.sessions.Get("session-1")
@@ -283,7 +283,7 @@ func lifecycleTestBlockedSetupWithState(t *testing.T, store state.State) (*Runti
 	request := openLifecycleSession("session-1", filepath.Join(workspace, "project"))
 	script := fmt.Sprintf("printf ready; IFS= read -r gate < %s", shellQuote(gate))
 	request.SetupScript = &script
-	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), request); err != nil {
+	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), request); err != nil {
 		t.Fatal(err)
 	}
 	s := r.sessions.Get("session-1")
@@ -754,7 +754,7 @@ func TestClosePublicationFailureKeepsAdmissionClosed(t *testing.T) {
 	config.expectCloseError = true
 	r := newSessionTestRuntimeWithState(t, config, store)
 	request := openLifecycleSession("session-1", filepath.Join(workspace, "project"))
-	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), request); err != nil {
+	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), request); err != nil {
 		t.Fatal(err)
 	}
 	s := r.sessions.Get(request.SessionId)
@@ -791,7 +791,7 @@ func TestMissingAdmissionStateRejectsDurableWork(t *testing.T) {
 	config.expectCloseError = true
 	store := &harnessHostAdmissionProbeState{State: state.WrapCore(namespaced.NewState(inmem.Build))}
 	r := newSessionTestRuntimeWithState(t, config, store)
-	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	s := r.sessions.Get("session-1")
@@ -838,7 +838,7 @@ func TestMissingAdmissionStateRejectsDurableWork(t *testing.T) {
 		t.Fatalf("rejected command changed journal cursor: %d -> %d", cursor, after)
 	}
 	request := openLifecycleSession("new-session", filepath.Join(r.config.WorkspaceRoot, "project"))
-	if _, err := r.OpenSession(sessionCallContext(r, r.lifecycleContext), request); status.Code(err) != codes.Unavailable {
+	if _, err := r.CreateSession(sessionCallContext(r, r.lifecycleContext), request); status.Code(err) != codes.Unavailable {
 		t.Fatalf("Session reservation with missing accounting = %v, want Unavailable", err)
 	}
 	if exists, err := r.store.Exists(request.SessionId); err != nil || exists {
@@ -852,7 +852,7 @@ func TestAdmissionCompletionStateFailureIsReported(t *testing.T) {
 	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
 	config.expectCloseError = true
 	r := newSessionTestRuntime(t, config)
-	if _, err := r.OpenSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := r.CreateSession(sessionCallContext(r, context.Background()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	s := r.sessions.Get("session-1")

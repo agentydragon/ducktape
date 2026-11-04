@@ -152,9 +152,9 @@ async def test_sandboxes(view: VisualPage, app: AgentplaneFixture) -> None:
     [
         ("suspended-sandbox", False, "Resume it or enable wake on send"),
         ("pending-sandbox", False, "ImagePullBackOff"),
-        ("ready-sandbox", True, "Check opening status"),
+        ("ready-sandbox", True, "Check its status"),
     ],
-    ids=["suspended", "not-ready", "unconfirmed-open"],
+    ids=["suspended", "not-ready", "unconfirmed-create"],
 )
 async def test_create_thread_disabled_tooltip(
     view: VisualPage, app: AgentplaneFixture, sandbox: str, pending: bool, reason: str
@@ -162,13 +162,17 @@ async def test_create_thread_disabled_tooltip(
     page = view.page
     if pending:
         await page.evaluate(
-            "name => sessionStorage.setItem(`agentplane:pending-open:${name}`, 'unconfirmed-session')", sandbox
+            "name => sessionStorage.setItem(`agentplane:pending-create:${name}`, 'unconfirmed-session')", sandbox
         )
     await app.mount_app(f"/sandboxes/{sandbox}")
     await page.get_by_role("button", name="New thread", exact=True).click()
     await expect(page.get_by_role("combobox", name="Model")).not_to_have_value("")
     button = page.get_by_role("button", name="Create thread", exact=True)
     await expect(button).to_be_disabled()
+    if pending:
+        await expect(
+            page.get_by_role("button", name="Forget attempt; Session creation may still complete")
+        ).to_be_visible()
     wrapper = button.locator("..")
     await wrapper.hover()
     tooltip = page.get_by_role("tooltip")

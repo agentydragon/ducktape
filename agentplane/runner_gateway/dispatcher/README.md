@@ -11,8 +11,10 @@ The manual queue, replica and wake probes are documented in the
 
 ## Contract
 
-- **One RPC per command**: `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn`,
-  `OpenSession`, `GetSessionOpening`, `ListSessionOpenings`, plus `GetDispatch`, `ListDispatches`, `WatchDispatches` and `CancelDispatch`
+- **One RPC per command**: `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, and `InterruptTurn`.
+  `CreateSession`, `GetSession`, and `ListSessions` create and read logical Session records; the
+  other Session RPCs operate on them. `GetDispatch`, `ListDispatches`, `WatchDispatches`, and
+  `CancelDispatch` read or cancel command receipts
   ([proto](session_dispatcher.proto)). Commands name the Session; Dispatcher resolves its placement.
   A broker with an incarnation-scoped grant supplies `expected_sandbox_uid` as an authorization
   precondition. `command_id` is the idempotency key across every command RPC.
@@ -20,47 +22,76 @@ The manual queue, replica and wake probes are documented in the
   again whenever it changes. `DispatchFilter.command_ids` (at most 1000) narrows either scope to those
   commands, so a caller holding a few of them does not replay a whole Session.
 - **HTTP/JSON form**: every RPC also answers over HTTP on the Gateway's optional `http_listen_address` setting,
-  [generated from the proto](../../docs/grpc_services.md#httpjson-facades): reads under `/v1/dispatches`
-  and `/v1/sessions/{session_id}/opening`, commands as `POST /v1/sessions/{session_id}:<verb>` and
+  [generated from the proto](../../docs/grpc_services.md#httpjson-facades): Session reads use
+  `/v1/sessions` and `/v1/sessions/{session_id}`, command reads use `/v1/dispatches`, commands as
+  `POST /v1/sessions/{session_id}:<verb>` and creation as `POST /v1/sessions`,
   `POST /v1/dispatches/{command_id}:cancel`. Both transports use the same ServiceAccount TokenReview and
   per-Session owner checks; a browser reaches it through the app's authenticated command facade.
-- **Delivery states** say where a command is: `QUEUED_IN_DISPATCHER`, `DELIVERING_TO_RUNNER`,
-  `RUNNER_ADMITTED`, `HARNESS_CONFIRMED`, `NO_OP`, `FAILED`, `CANCELLED_IN_DISPATCHER`, `UNKNOWN` (an unconfirmed native opening or a deleted Sandbox's command).
+- **Delivery states** say where a command is: `DELIVERY_STATE_QUEUED_IN_DISPATCHER`,
+  `DELIVERY_STATE_DELIVERING_TO_RUNNER`, `DELIVERY_STATE_RUNNER_ADMITTED`,
+  `DELIVERY_STATE_HARNESS_CONFIRMED`, `DELIVERY_STATE_NO_OP`, `DELIVERY_STATE_FAILED`,
+  `DELIVERY_STATE_CANCELLED_IN_DISPATCHER`, and `DELIVERY_STATE_UNKNOWN` (an unconfirmed effect or a
+  deleted Sandbox's command).
   The `reason` describes queue or terminal state; `delivery_blocker` and `wake_assessment` separately
   expose the current environment blocker and latest typed wake observation. A denied or disabled wake
   leaves delivery queued.
 - **Order**: commands, including `InterruptTurn`, are delivered first in, first out per Session.
   The Runtime checks the interrupt’s exact target at admission; it never interrupts a successor turn.
   A delayed or uncertain delivery follows the same receipt and recovery rules as other commands.
-- **Opening a Session**: a new `OpenSession` requires the expected `sandbox_uid`, reads the current Sandbox and refuses
-  a same-name replacement with `FAILED_PRECONDITION` before storing anything. It stores the request keyed by the
-  caller-minted canonical lowercase UUID `session_id` and answers with a `SessionOpening` in the same delivery states.
-  An exact retry uses retained receipt-read authority and returns the stored record without reading live
-  Sandbox or execution-account inventory. It compares the same immutable Sandbox name, UID, spec and
+- **Creating a Session**: `CreateSession` durably commits the logical Session using the caller-minted
+  canonical lowercase UUID `session_id` and returns a minimal `Session` resource. Its `placement`
+  projects the shared `SessionPlacement` in `SessionSpec.placement`; the read projection does not
+  expose SessionSpec or instructions. `status` reports owner materialization using
+  `SESSION_MATERIALIZATION_WAITING`, `SESSION_MATERIALIZATION_IN_PROGRESS`,
+  `SESSION_MATERIALIZATION_ACCEPTED`, `SESSION_MATERIALIZATION_FAILED` or
+  `SESSION_MATERIALIZATION_UNKNOWN`, with `reason`, `delivery_blocker` and `wake_assessment` where
+  available. This is owner materialization state, not harness readiness.
+  `SESSION_MATERIALIZATION_ACCEPTED` means the placement owner durably admitted the Session; it does
+  not mean a native harness is ready, a model turn ran, or History projected a Thread.
+  `environment_hosted` carries one exact environment and the native Claude/Codex harness selection;
+  `central_sampler_v1` carries one exact `executor_environment`. Central sampler V1 still uses the
+  existing Sandbox-backed identity, admission, notification, wake and deletion behavior. Its
+  executor environment is fixed for the Session; it is not an optional attachment, and the central
+  Session cannot yet open without an environment. Both placements resolve the named environment to
+  the current Sandbox and reject a same-name replacement with `FAILED_PRECONDITION` before storing
+  anything. The request is keyed by the caller-minted canonical lowercase UUID `session_id`.
+  An exact retry uses retained Session-read authority and returns the same Session without reading live
+  Sandbox or execution-account inventory. It compares the same immutable placement, exact target, spec and
   optional `setup_script` as transactional creation; a mismatch is `ALREADY_EXISTS` only for an authorized
   caller. Unauthorized retries return `NOT_FOUND` before comparing the request. A retry never updates
   attribution, binds an identity, wakes, requeues or materializes work, including failed or uncertain
-  openings. If the row has been cleaned up, ordinary fresh-admission checks apply; the retry is not evidence
-  that it still exists. Once the Sandbox is `Ready` the runner's idempotent `OpenSession` is called before any of the Session's commands; a central sampler Session bypasses executor readiness. A
+  Sessions. If the row has been cleaned up, ordinary fresh-admission checks apply; the retry is not evidence
+  that it still exists. Once the Sandbox is `Ready` the placement owner's `CreateSession` receives
+  the logical Session before any of its commands; a central sampler Session bypasses executor
+  readiness. The separate streaming `Executor.OpenSession` handshake opens an execution connection
+  when needed; it is not the logical Session creation call. A
   matching runner retry returns its durable Session reservation; native preparation waits for work.
   A reservation does not assert a running harness; `ALREADY_EXISTS` means a requested spec or
-  setup conflicts, which the Dispatcher records as a failed opening.
-  Native opening rejection and unconfirmed outcomes fence dependent queued commands; see
+  setup conflicts, which the Dispatcher records as failed Session materialization.
+  Native creation rejection and unconfirmed owner outcomes fence dependent queued commands; see
   [the outcome contract](SPEC.md#native-opening-outcomes-and-dependent-commands).
-  Openings follow the deletion and retention rules below.
-- **Discovering openings**: `ListSessionOpenings` (`GET /v1/session-openings`) returns one bounded
-  page of the current Dispatcher opening records, including queued and failed materialization before
+  Session records follow the deletion and retention rules below.
+- **Discovering Sessions**: `ListSessions` (`GET /v1/sessions`) returns one bounded
+  page of current Session records, including waiting and failed materialization before
   any Runtime or History record exists. It uses the same retained-owner read scope as
-  `GetSessionOpening`, without contacting a live environment or History. `limit` defaults to 50 and
+  `GetSession`, without contacting a live environment or History. `limit` defaults to 50 and
   is capped at 100; `page_token` continues in ascending Session UUID order. A cursor grants no
   authority and remains usable if its last record was deleted. Pages are current reads, not a frozen
   snapshot: concurrent creation before the cursor is seen on a fresh listing, and cleanup removes
-  records. This includes today's environment-bound central openings without defining environment-free
-  central Sessions. The CLI exposes it as `agentplane sessions list`.
-- **Wire rollout**: command requests changed shape; an old Dispatcher requires fields no longer sent by new
-  callers, and an old JSON client sends fields the new facade no longer recognizes. Roll out the Dispatcher and
-  its callers together. To roll back, revert the Dispatcher and callers together and check command admission
-  and authorization. Existing Session openings and running Sessions are unaffected.
+  records. This includes today's environment-bound central Sessions without defining environment-free
+  central Sessions. The CLI exposes it as `agentplane sessions list`; `agentplane sessions create`
+  creates one and `agentplane sessions get` reads the Session alongside its independent History
+  summary.
+- **Wire and data cutover**: this cutover moves placement into the `SessionSpec` oneof; the flat
+  harness field and Dispatcher-level placement fields are retired. Coordinate the Dispatcher,
+  sampler, app/CLI and other logical Session callers with the matching environment/runtime images.
+  The logical creation/read APIs are `CreateSession`, `GetSession` and `ListSessions` across Dispatcher,
+  App, Environment Runtime and central Sampler; old opening RPCs and resource projections have no
+  compatibility route. The Runner's distinct streaming `Executor.OpenSession` remains the transport
+  that opens an execution connection. Old callers and old Sandbox binaries are not supported in an
+  overlap window. The in-place migrations convert retained session and sampler request records and
+  preserve Session/History data; they do not requeue commands or replay effects. See the
+  [placement cutover details](SPEC.md#sessionspec-placement-cutover).
 - **Caller authority**: a normal workload token must prove the target Sandbox's exact controller-owned
   execution ServiceAccount UID. New Sessions retain that UID as their immutable logical principal, and
   retain the actual opening caller separately as creator/broker. Normal command writes, cancellation,
@@ -69,10 +100,10 @@ The manual queue, replica and wake probes are documented in the
   filter by the retained UID and do not require a live Sandbox or account. The configured backend
   accounts keep their existing privileged behavior only when TokenReview also proves a Pod binding;
   an account-only token for the same name uses normal per-Session authority.
-- **Open before Ready**: a configured Pod-bound backend can open a Session before the controller has
-  created the execution ServiceAccount. The opening stores the expected target account with its UID
-  pending. Delivery binds that UID only after confirming the account has a controller OwnerReference
-  to the exact Sandbox UID. Legacy openings with no recorded owner remain unowned by normal callers and
+- **Create before Ready**: a configured Pod-bound backend can create a Session before the controller
+  has created the execution ServiceAccount. The Session record stores the expected target account with
+  its UID pending. Delivery binds that UID only after confirming the account has a controller OwnerReference
+  to the exact Sandbox UID. Legacy Session records with no recorded owner remain unowned by normal callers and
   are never adopted based on a matching current account name.
 - **Queue**: no TTL; at most `max_queued_per_session` queued commands per Session, then
   `RESOURCE_EXHAUSTED`. A command for a Sandbox that does not exist is refused `NOT_FOUND` and stores nothing.
@@ -83,13 +114,13 @@ The manual queue, replica and wake probes are documented in the
   gap or incomplete event fails active streams with `UNAVAILABLE`; terminal events have no durable replay,
   so a later read or watch is `NOT_FOUND`/empty.
 - **Deletion admission fence**: cleanup retains an exact-UID tombstone in Dispatcher PostgreSQL.
-  Later openings, queued commands and ownership claims cannot recreate deleted state, even from
+  Later Session creation requests, queued commands and ownership claims cannot recreate deleted state, even from
   another replica's stale inventory. Admissions that commit before cleanup are included in cleanup.
   This starts at Dispatcher cleanup, not the Kubernetes deletion instant; see
   [the deletion contract](SPEC.md#deletion-admission-fence).
 - **Retention**: a Sandbox's Dispatches are kept as long as it exists. Other policies may come later.
 - **Replica ownership**: a per-Sandbox Lease assigns delivery scheduling ownership while the Sandbox
-  has a `QUEUED_IN_DISPATCHER` or `DELIVERING_TO_RUNNER` Dispatch or Session opening. Its PostgreSQL
+  has a `QUEUED_IN_DISPATCHER` or `DELIVERING_TO_RUNNER` Dispatch or Session creation. Its PostgreSQL
   generation fences stale claims, settlements and recovery. A Sandbox without such work is no longer
   renewed and its Lease lapses; the next work reacquires it. The Runner Gateway's separate connection
   Lease still owns the runner stream; Dispatcher scheduling does not affect it. A new owner requeues
@@ -97,7 +128,8 @@ The manual queue, replica and wake probes are documented in the
 - **Runner statuses**: `ABORTED` (quiescing) returns the command to the queue until the Sandbox has a new
   incarnation; `UNAVAILABLE` and deadline retry with backoff;
   other command errors are `FAILED` with the runner's status. The runner deduplicates redelivery on `command_id`.
-  Native openings use the separate outcome contract above; an arbitrary error is not proof of rejection.
+  Native Session materialization uses the separate outcome contract above; an arbitrary error is not
+  proof of rejection.
 - **Automatic wake**: `wakeOnSend` opts a Sandbox into wake attempts; it is not a permission grant.
   Before each automatic attempt, the shared lifecycle service checks the live target UID, current
   execution ServiceAccount UID and `resumePolicy`, or the separately configured trusted wake broker
@@ -105,7 +137,7 @@ The manual queue, replica and wake probes are documented in the
   eligibility do not grant wake authority. A `SuspendedBy=Requested` stop stays sticky for ordinary
   sends and automatic wakes. Interrupts follow the same wake rules as other queued commands.
 
-  Each queued Dispatch and Session opening stores a typed `delivery_blocker` and `wake_assessment`.
+  Each queued Dispatch and pending Session creation stores a typed `delivery_blocker` and `wake_assessment`.
   The receipt remains `QUEUED_IN_DISPATCHER` through disabled, denied, rate-limited, failed and
   uncertain wake outcomes; those observations never become command failures. `observed_at`, target
   generation, optional retry time and structured status details describe the latest decision. A

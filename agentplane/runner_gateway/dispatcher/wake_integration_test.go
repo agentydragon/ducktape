@@ -70,7 +70,7 @@ func openWakeableSession(
 	t.Helper()
 	attribution := wakeAttribution(actor, effective)
 	effectiveAccount := accountOfIdentity(effective)
-	if _, err := store.OpenSessionForCaller(context.Background(), sessionID, sandboxName, sandboxUID,
+	if _, err := store.CreateSessionForCaller(context.Background(), sessionID, sandboxName, sandboxUID,
 		&sessionpb.SessionSpec{}, nil, &effectiveAccount, effective, CallerIdentity{ServiceAccountIdentity: effective, Attribution: attribution}); err != nil {
 		t.Fatal("open wakeable Session:", err)
 	}
@@ -150,11 +150,11 @@ func TestDeliveryUsesRetainedEffectiveCallerUIDForWakeBudget(t *testing.T) {
 			}
 			ready, prepareErr = worker.prepareDispatch(ctx, row, sandbox, *owner)
 		} else {
-			row, err := store.GetOpening(ctx, sessionID)
+			row, err := store.GetSession(ctx, sessionID)
 			if err != nil {
 				t.Fatal("read attributed wake opening:", err)
 			}
-			ready, prepareErr = worker.prepareOpening(ctx, row, sandbox, *owner)
+			ready, prepareErr = worker.prepareSession(ctx, row, sandbox, *owner)
 		}
 		if prepareErr != nil || ready {
 			t.Fatalf("prepare %s: ready=%v error=%v", kind, ready, prepareErr)
@@ -260,7 +260,7 @@ func TestStoreRejectsMismatchedWakeCaller(t *testing.T) {
 			}
 			write := func(wakeCaller *Account) error {
 				if kind == "opening" {
-					_, err := store.OpenSessionForCaller(ctx, sessionID, "sandbox", sandboxUID,
+					_, err := store.CreateSessionForCaller(ctx, sessionID, "sandbox", sandboxUID,
 						&sessionpb.SessionSpec{}, nil, wakeCaller, effective, CallerIdentity{ServiceAccountIdentity: effective, Attribution: attribution})
 					return err
 				}
@@ -279,7 +279,7 @@ func TestStoreRejectsMismatchedWakeCaller(t *testing.T) {
 			}
 			var err error
 			if kind == "opening" {
-				_, err = store.DB.ExecContext(ctx, "UPDATE session_opening SET wake_caller_name=$1 WHERE session_id=$2", actorAccount.Name, sessionID)
+				_, err = store.DB.ExecContext(ctx, "UPDATE session SET wake_caller_name=$1 WHERE session_id=$2", actorAccount.Name, sessionID)
 			} else {
 				_, err = store.DB.ExecContext(ctx, "UPDATE dispatch SET wake_caller_name=$1 WHERE command_id=$2", actorAccount.Name, commandID)
 			}
@@ -287,7 +287,7 @@ func TestStoreRejectsMismatchedWakeCaller(t *testing.T) {
 				t.Fatal("modify persisted wake caller:", err)
 			}
 			if kind == "opening" {
-				_, err = store.GetOpening(ctx, sessionID)
+				_, err = store.GetSession(ctx, sessionID)
 			} else {
 				_, err = store.GetDispatch(ctx, commandID)
 			}

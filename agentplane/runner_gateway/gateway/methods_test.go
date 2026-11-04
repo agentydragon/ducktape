@@ -70,7 +70,7 @@ func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
 					if !special {
 						admitted = desc.caller
 						switch method.Name {
-						case environmentruntimepb.EnvironmentRuntime_OpenSession_FullMethodName,
+						case environmentruntimepb.EnvironmentRuntime_CreateSession_FullMethodName,
 							environmentruntimepb.EnvironmentRuntime_SubmitInput_FullMethodName,
 							environmentruntimepb.EnvironmentRuntime_ChangeModel_FullMethodName,
 							environmentruntimepb.EnvironmentRuntime_ChangeReasoningEffort_FullMethodName,

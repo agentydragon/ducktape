@@ -15,6 +15,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/proto"
 )
 
 var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
@@ -90,14 +91,14 @@ func WriteDurable(path string, data []byte) error {
 type Record = persistencepb.SessionRecordSpec
 
 func NewRecord(spec *sessionpb.SessionSpec, setupScript string, totalContextBudgetTokens *int) (*Record, error) {
-	if spec == nil {
-		return nil, errors.New("session spec is required")
+	if spec == nil || spec.GetPlacement().GetEnvironmentHosted() == nil {
+		return nil, errors.New("native session placement is required")
 	}
 	if totalContextBudgetTokens != nil && *totalContextBudgetTokens <= 0 {
 		return nil, errors.New("total context budget must be positive")
 	}
 	record := &Record{
-		Harness: spec.GetHarness(), Cwd: spec.GetCwd(), InitialModel: spec.GetModel(),
+		Placement: proto.Clone(spec.GetPlacement().GetEnvironmentHosted()).(*sessionpb.EnvironmentHostedPlacement), Cwd: spec.GetCwd(), InitialModel: spec.GetModel(),
 		InitialReasoningEffort: spec.GetReasoningEffort(), Instructions: spec.GetInstructions(),
 		SetupScript: []byte(setupScript), EventSourceId: uuid.NewString(),
 	}
@@ -109,7 +110,7 @@ func NewRecord(spec *sessionpb.SessionSpec, setupScript string, totalContextBudg
 }
 
 // MatchesSetupScript compares a supplied script against the retained source.
-// Callers should skip this check when the OpenSession request omits setup_script.
+// Callers should skip this check when the CreateSession request omits setup_script.
 func MatchesSetupScript(record *Record, script string) bool {
 	return string(record.SetupScript) == script
 }
@@ -119,7 +120,7 @@ func HasSetupScript(record *Record) bool { return len(record.SetupScript) != 0 }
 
 func ReservationSpec(record *Record) *sessionpb.SessionSpec {
 	return &sessionpb.SessionSpec{
-		Harness: record.Harness, Cwd: record.Cwd, Model: record.InitialModel,
+		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: proto.Clone(record.Placement).(*sessionpb.EnvironmentHostedPlacement)}}, Cwd: record.Cwd, Model: record.InitialModel,
 		ReasoningEffort: record.InitialReasoningEffort, Instructions: record.Instructions,
 	}
 }

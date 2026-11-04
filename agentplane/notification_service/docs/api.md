@@ -11,14 +11,21 @@ removed in a cutover.
 
 Workload calls require a Pod-bound Kubernetes ServiceAccount bearer token with the configured
 audience. Owner authority is the verified ServiceAccount, shared by its workloads. Subscription creation
-addresses a Session by `session_id`. The service resolves its existing Dispatcher opening, checks the exact
+addresses a Session by `session_id`. The service reads its existing Dispatcher Session, checks the exact
 Sandbox UID and caller ownership, and confirms current Runtime membership before source authorization.
-An absent opening is `NOT_FOUND`; an unavailable lookup is `UNAVAILABLE`. Direct Runtime-only Sessions
+It reads the required environment from `environment_hosted` or the fixed `executor_environment` from
+`central_sampler_v1`. Both currently resolve to the existing Sandbox-backed destination. Central
+sampler V1 remains tied to that exact Sandbox identity and does not support optional attachments or
+environment-free Sessions.
+An absent Dispatcher Session is `NOT_FOUND`; an unavailable lookup is `UNAVAILABLE`. Direct Runtime-only Sessions
 cannot create subscriptions or receive new messages. Message sends specify only `session_id`; the
-service resolves the opening and checks the sender's scoped grant against its exact Sandbox.
+service resolves the Session placement and checks the sender's scoped grant against its exact Sandbox.
 Inbox and subscription IDs identify subsequent operations.
 The caller's inboxes and subscriptions are those opened for the Sandbox that runs as its account now: a Sandbox
 recreated under a deleted one's name sees none of the deleted one's, and an account no Sandbox runs as has none.
+The placement wire change is a coordinated cutover with the Dispatcher and sampler; pre-cutover
+Sandbox/service binaries are not a supported compatibility tier. Existing subscription, inbox and
+retained History data remain subject to their current UID-pinned retirement and retention rules.
 
 - `POST /v1/subscriptions`: immutable provider-owned source/filter and `idempotency_key`; identical retries return
   the same subscription, conflicting reuse returns 409. Actions replay defaults to sequence zero;
@@ -121,8 +128,8 @@ refuses sends as `UNAVAILABLE` until its permission view is initialized, or whil
 A grant or revocation takes effect on each replica as that replica observes it. Revocation stops new sends
 only; accepted messages stay in the inbox. The recipient needs no subscription or consent of its own.
 
-A send names only the Session ID. The service resolves its Dispatcher opening and pins the exact Sandbox UID;
-a missing opening or replaced Sandbox returns `NOT_FOUND`, and an incomplete opening returns `UNAVAILABLE`.
+A send names only the Session ID. The service resolves its Dispatcher Session and pins the exact Sandbox UID;
+a missing Session record or replaced Sandbox returns `NOT_FOUND`, and a Session without a usable placement returns `UNAVAILABLE`.
 A suspended Sandbox accepts messages; its
 notice waits until the Sandbox runs again unless wake-on-send is enabled and authorized for this
 service. The inbox belongs to the Sandbox ServiceAccount for that Session. Creating a recipient inbox

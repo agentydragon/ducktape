@@ -124,7 +124,7 @@ class SessionFollow:
             except ServiceError as error:
                 if error.code != grpc.StatusCode.NOT_FOUND:
                     raise
-                # OpenSession can be acknowledged before its first ingress push binds the History row.
+                # CreateSession can be acknowledged before its first ingress push binds the History row.
                 await wait_for_history_session(self._history, session_id)
                 continue
             self._pending.extend(page.entries)
@@ -257,10 +257,10 @@ class RunnerDriver:
             )
             return self._follow(attached, after_cursor)
         runner = await self.gateway.control.runner()
-        opening = environment_runtime_pb2.OpenSessionRequest(session_id=session_id, spec=spec)
+        create = environment_runtime_pb2.CreateSessionRequest(session_id=session_id, spec=spec)
         if setup_script is not None:
-            opening.setup_script = setup_script
-        attached = (await runner.OpenSession(opening)).attached
+            create.setup_script = setup_script
+        attached = (await runner.CreateSession(create)).attached
         return self._follow(attached, after_cursor)
 
     def _follow(self, attached: session_pb2.Attached, after_cursor: int) -> SessionFollow:

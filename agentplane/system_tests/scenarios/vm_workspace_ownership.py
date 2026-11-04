@@ -24,7 +24,7 @@ AGENT_GID = 107
 async def fresh_vm_session_workspace_is_created_for_harness_identity(
     client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes
 ) -> None:
-    """Check absence before opening, then use the ordinary Session setup and Git paths."""
+    """Check absence before Session creation, then use the ordinary setup and Git paths."""
     view = await sandbox(f"systest-vm-workspace-{uuid4().hex[:10]}", template=VM_TEMPLATE)
     harness = session_pb2.HARNESS_CODEX
     offered = (await client.models()).harnesses[Harness.CODEX]
@@ -46,13 +46,13 @@ async def fresh_vm_session_workspace_is_created_for_harness_identity(
         setup_script=(
             "set -eu\n"
             f"if test -e {shlex.quote(workspace)} || test -L {shlex.quote(workspace)}; then\n"
-            f"  printf 'workspace existed before Session open: %s\\n' {shlex.quote(workspace)} >&2\n"
+            f"  printf 'workspace existed before Session creation: %s\\n' {shlex.quote(workspace)} >&2\n"
             "  exit 1\n"
             "fi\n"
-            f"printf 'WORKSPACE_ABSENT_BEFORE_OPEN=%s\\n' {shlex.quote(workspace)}\n"
+            f"printf 'WORKSPACE_ABSENT_BEFORE_SESSION_CREATE=%s\\n' {shlex.quote(workspace)}\n"
         ),
     )
-    assert f"WORKSPACE_ABSENT_BEFORE_OPEN={workspace}" in absent
+    assert f"WORKSPACE_ABSENT_BEFORE_SESSION_CREATE={workspace}" in absent
 
     setup_script = "\n".join(
         [

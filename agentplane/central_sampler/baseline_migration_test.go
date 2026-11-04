@@ -220,7 +220,7 @@ func TestSnapshotCheckpointMigrationReconcilesLegacyMarkersOnce(t *testing.T) {
 	if err := store.CommitCheckpoint(t.Context(), session.ID, target, session.Cursor); err != nil {
 		t.Fatal(err)
 	}
-	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id=9`)
+	migrationExec(t, store.DB(), `DELETE FROM central_sampler_goose_version WHERE version_id>=9`)
 	if err := Migrate(t.Context(), store.DB()); err != nil {
 		t.Fatal(err)
 	}

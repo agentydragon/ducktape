@@ -75,9 +75,9 @@ func TestOptionalPointersRejectNullAndPreserveAbsentDefaults(t *testing.T) {
 	}
 	base := `{"sandbox":{"name":"test-worker","uid":"00000000-0000-0000-0000-000000000000"},"session_id":"00000000-0000-0000-0000-000000000000"`
 	spec := `"spec":{"harness":"HARNESS_CODEX","model":"test-model","cwd":"/test"}`
-	input := inputFor(inputs.OpenSession)
+	input := inputFor(inputs.CreateSession)
 	input.decode = func(raw json.RawMessage) error {
-		args, err := inputs.OpenSession.Decode(raw)
+		args, err := inputs.CreateSession.Decode(raw)
 		if err == nil && (args.SetupScript != nil || args.Spec.ReasoningEffort != "" || args.Spec.Instructions != "") {
 			t.Errorf("absent optional fields decoded as %+v", args)
 		}
@@ -97,7 +97,7 @@ func TestCentralSamplerEndpointIsNotAnInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := `{"sandbox":{"name":"test-worker","uid":"00000000-0000-0000-0000-000000000000"},"session_id":"00000000-0000-0000-0000-000000000000","spec":{"harness":"HARNESS_CENTRAL_SAMPLER","model":"test-model","cwd":"/test"`
-	input := inputFor(inputs.OpenSession)
+	input := inputFor(inputs.CreateSession)
 	checkInputBoundary(t, input, base+`}}`, true)
 	checkInputBoundary(t, input, base+`,"central_sampler":{"service":"central"}}}`, false)
 }

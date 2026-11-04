@@ -158,8 +158,8 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		default:
 			return nil, refuse("unknown_action", "this executor does not expose %q", request.Action.Name)
 		}
-	case contract.ActionOpenSession:
-		args, err := e.inputs.OpenSession.Decode(request.Arguments)
+	case contract.ActionCreateSession:
+		args, err := e.inputs.CreateSession.Decode(request.Arguments)
 		if err != nil {
 			return nil, err
 		}
@@ -173,19 +173,26 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 		if !strings.HasPrefix(args.Spec.Cwd, "/") {
 			return nil, refuse("invalid_arguments", "spec.cwd must be an absolute path")
 		}
-		response, err := e.dispatcher.OpenSession(ctx, &dispatcherpb.OpenSessionRequest{
-			SessionId: args.SessionID, Sandbox: args.Target.Name, SandboxUid: args.Target.UID,
+		request := &dispatcherpb.CreateSessionRequest{
+			SessionId:   args.SessionID,
 			SetupScript: args.SetupScript,
 			Spec: &sessionpb.SessionSpec{
-				Harness: harness, Model: args.Spec.Model,
+				Model:           args.Spec.Model,
 				Cwd:             strings.ReplaceAll(args.Spec.Cwd, "{session_id}", args.SessionID),
 				ReasoningEffort: args.Spec.ReasoningEffort, Instructions: args.AdditionalInstructions,
 			},
-		})
+		}
+		target := &sessionpb.ExactEnvironment{Name: args.Target.Name, Uid: args.Target.UID}
+		if harness == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
+			request.Spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: target}}}
+		} else {
+			request.Spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: target, Harness: harness}}}
+		}
+		response, err := e.dispatcher.CreateSession(ctx, request)
 		if err != nil {
 			return nil, writeFailure("Session Dispatcher", err)
 		}
-		return protoEnvelope("opening", response.GetOpening())
+		return protoEnvelope("session", response.GetSession())
 	case contract.ActionSubmitInput:
 		args, err := e.inputs.SubmitInput.Decode(request.Arguments)
 		if err != nil {

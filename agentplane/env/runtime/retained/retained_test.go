@@ -27,7 +27,7 @@ func TestSessionRecordsUseCOSIState(t *testing.T) {
 	budget := int64(32768)
 	native := "native-session"
 	wantScript := []byte("printf 'exact \\t'\n")
-	record := &Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", InitialModel: "route/model", TotalContextBudgetTokens: &budget, SetupScript: bytes.Clone(wantScript), EventSourceId: "source", NativeSessionId: &native, ExecutionPrincipal: &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "ns", Name: "account"}, Uid: "uid"}}
+	record := &Record{Placement: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}, Cwd: "/workspace", InitialModel: "route/model", TotalContextBudgetTokens: &budget, SetupScript: bytes.Clone(wantScript), EventSourceId: "source", NativeSessionId: &native, ExecutionPrincipal: &identitypb.ServiceAccountIdentity{Account: &identitypb.ServiceAccount{Namespace: "ns", Name: "account"}, Uid: "uid"}}
 	if err := store.Write("session-1", record); err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestNativeIdentityUpdatePreservesReservationThroughRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	record := &Record{Harness: sessionpb.Harness_HARNESS_CLAUDE, Cwd: "/workspace", InitialModel: "old-model", InitialReasoningEffort: "old-effort", EventSourceId: "source"}
+	record := &Record{Placement: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}, Cwd: "/workspace", InitialModel: "old-model", InitialReasoningEffort: "old-effort", EventSourceId: "source"}
 	unknown := []byte{0xa0, 0x06, 0x07} // Field 100, varint 7.
 	record.ProtoReflect().SetUnknown(unknown)
 	if err := store.Write("session", record); err != nil {

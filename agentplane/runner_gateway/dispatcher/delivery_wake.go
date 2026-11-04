@@ -16,7 +16,7 @@ import (
 
 type queuedWork struct {
 	id, key         string
-	opening         bool
+	session         bool
 	attribution     *AdmissionAttribution
 	wakeFrom        *string
 	wakeRequestedAt *time.Time
@@ -26,13 +26,13 @@ type queuedWork struct {
 
 type wakeBarrier struct {
 	id         string
-	opening    bool
+	session    bool
 	assessment *environmentpb.WakeAssessment
 }
 
-func pendingWake(opening *Opening, commands []*Dispatch, generation int64) *wakeBarrier {
-	if opening != nil && opening.State == QueueState && wakeBlocksOther(opening.WakeAssessment, generation) {
-		return &wakeBarrier{id: opening.SessionID, opening: true, assessment: opening.WakeAssessment}
+func pendingWake(session *Session, commands []*Dispatch, generation int64) *wakeBarrier {
+	if session != nil && session.State == SessionWaitingState && wakeBlocksOther(session.WakeAssessment, generation) {
+		return &wakeBarrier{id: session.SessionID, session: true, assessment: session.WakeAssessment}
 	}
 	for _, command := range commands {
 		if wakeBlocksOther(command.WakeAssessment, generation) {
@@ -42,48 +42,48 @@ func pendingWake(opening *Opening, commands []*Dispatch, generation int64) *wake
 	return nil
 }
 
-func (barrier *wakeBarrier) other(id string, opening bool) *environmentpb.WakeAssessment {
-	if barrier == nil || (barrier.id == id && barrier.opening == opening) {
+func (barrier *wakeBarrier) other(id string, session bool) *environmentpb.WakeAssessment {
+	if barrier == nil || (barrier.id == id && barrier.session == session) {
 		return nil
 	}
 	return barrier.assessment
 }
 
 func (w *DeliveryWorker) prepareDispatch(ctx context.Context, row *Dispatch, sandbox SandboxSnapshot, owner Owner) (bool, error) {
-	opening, err := w.Store.GetOpening(ctx, row.SessionID)
+	session, err := w.Store.GetSession(ctx, row.SessionID)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return false, err
 	}
 	var commands []*Dispatch
-	if opening != nil && opening.State == QueueState && sessionRequiresReadyExecutor(opening.Spec) &&
+	if session != nil && session.State == SessionWaitingState && session.Placement.requiresReadyExecutor() &&
 		sandbox.Blocker == "sandbox_suspended" && sandbox.WakeOnSend && !sandbox.ManualStop {
 		commands, err = w.Store.WakeCommands(ctx, row.SessionID, sandbox.Name, sandbox.UID)
 		if err != nil {
 			return false, err
 		}
 	}
-	return w.prepareCommand(ctx, row, opening, sandbox, owner, pendingWake(opening, commands, sandbox.WakeGeneration))
+	return w.prepareCommand(ctx, row, session, sandbox, owner, pendingWake(session, commands, sandbox.WakeGeneration))
 }
 
-func (w *DeliveryWorker) prepareCommand(ctx context.Context, row *Dispatch, opening *Opening, sandbox SandboxSnapshot, owner Owner, barrier *wakeBarrier) (bool, error) {
+func (w *DeliveryWorker) prepareCommand(ctx context.Context, row *Dispatch, session *Session, sandbox SandboxSnapshot, owner Owner, barrier *wakeBarrier) (bool, error) {
 	work := queuedWork{
 		id: row.CommandID, key: row.SessionID, attribution: row.Attribution,
 		wakeFrom: row.WakeFromIncarnation, wakeRequestedAt: row.WakeRequestedAt, wakeAssessment: row.WakeAssessment,
 		otherWake: barrier.other(row.CommandID, false),
 	}
-	if opening != nil && !sessionRequiresReadyExecutor(opening.Spec) {
+	if session != nil && !session.Placement.requiresReadyExecutor() {
 		return w.prepareCentral(ctx, work, sandbox, owner)
 	}
 	return w.prepare(ctx, work, sandbox, owner)
 }
 
-func (w *DeliveryWorker) prepareOpening(ctx context.Context, row *Opening, sandbox SandboxSnapshot, owner Owner) (bool, error) {
+func (w *DeliveryWorker) prepareSession(ctx context.Context, row *Session, sandbox SandboxSnapshot, owner Owner) (bool, error) {
 	work := queuedWork{
-		id: row.SessionID, key: row.SessionID, opening: true,
+		id: row.SessionID, key: row.SessionID, session: true,
 		attribution: row.Attribution,
 		wakeFrom:    row.WakeFromIncarnation, wakeRequestedAt: row.WakeRequestedAt, wakeAssessment: row.WakeAssessment,
 	}
-	if !sessionRequiresReadyExecutor(row.Spec) {
+	if !row.Placement.requiresReadyExecutor() {
 		return w.prepareCentral(ctx, work, sandbox, owner)
 	}
 	assessDownstream := sandbox.Blocker == "sandbox_suspended" && sandbox.WakeOnSend && !sandbox.ManualStop
@@ -101,14 +101,14 @@ func (w *DeliveryWorker) prepareOpening(ctx context.Context, row *Opening, sandb
 	if err != nil || ready || !assessDownstream {
 		return ready, err
 	}
-	current, err := w.Store.GetOpening(ctx, row.SessionID)
-	if err != nil || current.State != QueueState || !callerWakeDenied(current.WakeAssessment) {
+	current, err := w.Store.GetSession(ctx, row.SessionID)
+	if err != nil || current.State != SessionWaitingState || !callerWakeDenied(current.WakeAssessment) {
 		return false, err
 	}
 	if barrier != nil {
 		// Cancellation does not relinquish a possibly in-flight wake.
 		for _, command := range commands {
-			if !barrier.opening && command.CommandID == barrier.id && command.State == QueueState {
+			if !barrier.session && command.CommandID == barrier.id && command.State == QueueState {
 				_, err := w.prepareCommand(ctx, command, current, sandbox, owner, barrier)
 				return false, err
 			}
@@ -161,7 +161,7 @@ func (w *DeliveryWorker) prepareCentral(ctx context.Context, work queuedWork, sa
 	if err := w.recordAssessment(ctx, work, owner, nil, assessment); err != nil {
 		return false, err
 	}
-	if err := w.Store.ClearWakeState(ctx, work.id, owner, work.opening); err != nil {
+	if err := w.Store.ClearWakeState(ctx, work.id, owner, work.session); err != nil {
 		return false, err
 	}
 	retry := w.retryFor(work.key)
@@ -173,15 +173,15 @@ func (w *DeliveryWorker) prepareCentral(ctx context.Context, work queuedWork, sa
 }
 
 func (work queuedWork) workID() string {
-	if work.opening {
-		return "opening:" + work.id
+	if work.session {
+		return "session:" + work.id
 	}
 	return work.id
 }
 
 func (w *DeliveryWorker) noteWaiting(ctx context.Context, work queuedWork, owner Owner, reason string) error {
-	if work.opening {
-		return w.Store.NoteOpeningWaiting(ctx, work.id, owner, reason)
+	if work.session {
+		return w.Store.NoteSessionWaiting(ctx, work.id, owner, reason)
 	}
 	return w.Store.NoteWaiting(ctx, work.id, owner, reason)
 }
@@ -198,7 +198,7 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 		if err := w.recordAssessment(ctx, work, owner, blocker, assessment); err != nil {
 			return false, err
 		}
-		if err := w.Store.ClearWakeState(ctx, work.id, owner, work.opening); err != nil {
+		if err := w.Store.ClearWakeState(ctx, work.id, owner, work.session); err != nil {
 			return false, err
 		}
 		return false, w.noteWaiting(ctx, work, owner, "sandbox_operator_requested_stop")
@@ -208,7 +208,7 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 		if err := w.recordAssessment(ctx, work, owner, nil, assessment); err != nil {
 			return false, err
 		}
-		if err := w.Store.ClearWakeState(ctx, work.id, owner, work.opening); err != nil {
+		if err := w.Store.ClearWakeState(ctx, work.id, owner, work.session); err != nil {
 			return false, err
 		}
 		if w.refusedHere(sandbox.UID, sandbox.Incarnation) {
@@ -286,7 +286,7 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 	}
 	uncertain := assessmentFor(sandbox, nil, environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN,
 		environmentpb.WakeReason_WAKE_REASON_OUTCOME_UNKNOWN, nil)
-	stillQueued, err := w.Store.NoteWaking(ctx, work.id, owner, optionalIncarnation(sandbox.Incarnation), work.opening, uncertain)
+	stillQueued, err := w.Store.NoteWaking(ctx, work.id, owner, optionalIncarnation(sandbox.Incarnation), work.session, uncertain)
 	if err != nil || !stillQueued {
 		return false, err
 	}
@@ -312,7 +312,7 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 
 	if assessment.GetState() == environmentpb.WakeState_WAKE_STATE_REQUESTED {
 		requestedAt := assessment.GetObservedAt().AsTime()
-		storedAt, err := w.Store.NoteWakeRequestedAt(ctx, work.id, owner, work.opening, requestedAt)
+		storedAt, err := w.Store.NoteWakeRequestedAt(ctx, work.id, owner, work.session, requestedAt)
 		if err != nil {
 			return false, err
 		}
@@ -373,7 +373,7 @@ func (w *DeliveryWorker) waitForRequestedWake(
 		if observedAt == nil {
 			return false, w.noteWaiting(ctx, work, owner, "sandbox_resuming")
 		}
-		storedAt, err := w.Store.NoteWakeRequestedAt(ctx, work.id, owner, work.opening, observedAt.AsTime())
+		storedAt, err := w.Store.NoteWakeRequestedAt(ctx, work.id, owner, work.session, observedAt.AsTime())
 		if err != nil || storedAt == nil {
 			return false, err
 		}
@@ -383,7 +383,7 @@ func (w *DeliveryWorker) waitForRequestedWake(
 		environmentpb.WakeState_WAKE_STATE_FAILED,
 		environmentpb.WakeReason_WAKE_REASON_BACKEND_STATE_UNAVAILABLE,
 		status.New(codes.DeadlineExceeded, "Sandbox did not become Ready before the wake deadline").Proto()))
-	_, _, remaining, err := w.Store.FailExpiredWake(ctx, work.id, owner, work.opening,
+	_, _, remaining, err := w.Store.FailExpiredWake(ctx, work.id, owner, work.session,
 		"wake_deadline_expired: "+sandbox.ReadyDetail, nil, failed)
 	if err != nil {
 		return false, err
@@ -462,7 +462,7 @@ func (w *DeliveryWorker) recordAssessment(
 		assessment = &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_NOT_EVALUATED}
 	}
 	assessment = preserveObservationTime(work.wakeAssessment, assessment)
-	return w.Store.SetDeliveryAssessment(ctx, work.id, owner, work.opening, blocker, assessment)
+	return w.Store.SetDeliveryAssessment(ctx, work.id, owner, work.session, blocker, assessment)
 }
 
 func (w *DeliveryWorker) scheduleWakeDeadline(key string, requestedAt time.Time) {

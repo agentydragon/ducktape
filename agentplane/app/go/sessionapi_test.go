@@ -50,12 +50,12 @@ func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
 			},
 		},
 	}
-	sandbox := &environmentpb.EnvironmentDescriptor{Configuration: &environmentpb.EnvironmentConfiguration{Preset: proto.String("work")}}
+	sandbox := &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: "sandbox", Uid: "sandbox-uid"}, Configuration: &environmentpb.EnvironmentConfiguration{Preset: proto.String("work")}}
 	defaults, setup, err := sessionDefaults(config, sandbox, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if defaults.GetHarness() != sessionpb.Harness_HARNESS_CODEX || defaults.GetModel() != "model-a" || defaults.GetReasoningEffort() != "high" || setup == nil || *setup != "setup" {
+	if defaults.GetPlacement().GetEnvironmentHosted().GetHarness() != sessionpb.Harness_HARNESS_CODEX || defaults.GetModel() != "model-a" || defaults.GetReasoningEffort() != "high" || setup == nil || *setup != "setup" {
 		t.Fatalf("unexpected preset defaults: spec=%v setup=%v", defaults, setup)
 	}
 	merged, err := bridge.ParseSessionSpec(defaults, map[string]any{"model": "", "instructions": "request"})
@@ -139,7 +139,7 @@ func (p *sessionTestPeer) OpenThread(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (p *sessionTestPeer) OpenSession(ctx context.Context, name, uid string, id uuid.UUID, spec *sessionpb.SessionSpec, setup *string) (*dispatcherpb.SessionOpening, error) {
+func (p *sessionTestPeer) CreateSession(ctx context.Context, name, uid string, id uuid.UUID, spec *sessionpb.SessionSpec, setup *string) (*dispatcherpb.Session, error) {
 	p.calls = append(p.calls, "dispatch")
 	p.dispatchSpan = trace.SpanContextFromContext(ctx)
 	p.spec, p.setup = spec, setup
@@ -149,7 +149,7 @@ func (p *sessionTestPeer) OpenSession(ctx context.Context, name, uid string, id 
 	if p.failOpen != nil {
 		return nil, p.failOpen
 	}
-	return &dispatcherpb.SessionOpening{SessionId: id.String(), Sandbox: name, SandboxUid: uid, State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER}, nil
+	return &dispatcherpb.Session{SessionId: id.String(), Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: name, Uid: uid}}}}, Status: &dispatcherpb.SessionStatus{Materialization: dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_WAITING}}, nil
 }
 
 type sessionTokenReviewer struct{}
@@ -189,7 +189,7 @@ func sessionTestRequest(handler http.Handler, method, path, body string) *httpte
 	return response
 }
 
-func TestSessionOpeningPreservesHTTPTraceToDispatcher(t *testing.T) {
+func TestSessionPreservesHTTPTraceToDispatcher(t *testing.T) {
 	exporter := tracetest.NewInMemoryExporter()
 	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
 	previous := otel.GetTracerProvider()
@@ -227,7 +227,7 @@ func TestSessionOpeningPreservesHTTPTraceToDispatcher(t *testing.T) {
 	}
 }
 
-func TestSessionOpeningGatewayPreservesPresetPresenceAndWireContract(t *testing.T) {
+func TestSessionGatewayPreservesPresetPresenceAndWireContract(t *testing.T) {
 	id := "b351b316-fdc4-4f50-a642-758992ae3323"
 	for _, test := range []struct {
 		name, spec, setup                       string
@@ -237,8 +237,6 @@ func TestSessionOpeningGatewayPreservesPresetPresenceAndWireContract(t *testing.
 	}{
 		{"omitted", `{}`, "", sessionTestStringPtr("setup"), sessionpb.Harness_HARNESS_CODEX, "preset-model", "preset", "high"},
 		{"empty", `{"model":"","instructions":"","reasoning_effort":""}`, `,"setup_script":""`, sessionTestStringPtr(""), sessionpb.Harness_HARNESS_CODEX, "", "", ""},
-		{"null", `{"model":null,"instructions":null,"reasoningEffort":null,"harness":null}`, `,"setup_script":null`, nil, sessionpb.Harness_HARNESS_UNSPECIFIED, "", "", ""},
-		{"zero", `{"harness":0}`, `,"setup_script":"override"`, sessionTestStringPtr("override"), sessionpb.Harness_HARNESS_UNSPECIFIED, "preset-model", "preset", "high"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}, Configuration: &environmentpb.EnvironmentConfiguration{Preset: proto.String("work")}}}
@@ -248,14 +246,14 @@ func TestSessionOpeningGatewayPreservesPresetPresenceAndWireContract(t *testing.
 			if response.Code != http.StatusCreated {
 				t.Fatalf("POST status %d: %s", response.Code, response.Body.String())
 			}
-			opening := &dispatcherpb.SessionOpening{}
+			opening := &dispatcherpb.Session{}
 			if err := protojson.Unmarshal(response.Body.Bytes(), opening); err != nil {
 				t.Fatal(err)
 			}
-			if opening.GetSessionId() != id || opening.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER {
+			if opening.GetSessionId() != id || opening.GetStatus().GetMaterialization() != dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_WAITING {
 				t.Fatalf("unexpected response %v", opening)
 			}
-			if peer.spec.GetHarness() != test.wantHarness || peer.spec.GetModel() != test.wantModel || peer.spec.GetInstructions() != test.wantInstructions || peer.spec.GetReasoningEffort() != test.wantEffort || peer.spec.GetCwd() != "/work/"+id || !reflect.DeepEqual(peer.setup, test.wantSetup) {
+			if peer.spec.GetPlacement().GetEnvironmentHosted().GetHarness() != test.wantHarness || peer.spec.GetModel() != test.wantModel || peer.spec.GetInstructions() != test.wantInstructions || peer.spec.GetReasoningEffort() != test.wantEffort || peer.spec.GetCwd() != "/work/"+id || !reflect.DeepEqual(peer.setup, test.wantSetup) {
 				t.Fatalf("spec %v setup %v", peer.spec, peer.setup)
 			}
 			if !reflect.DeepEqual(peer.calls, []string{"thread", "dispatch"}) {
@@ -265,7 +263,7 @@ func TestSessionOpeningGatewayPreservesPresetPresenceAndWireContract(t *testing.
 	}
 }
 
-func TestSessionOpeningGatewayRejectsBeforeEffects(t *testing.T) {
+func TestSessionGatewayRejectsBeforeEffects(t *testing.T) {
 	for _, body := range []string{
 		`{"session_id":"invalid","sandbox_uid":"uid","spec":{}}`,
 		`{"session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid"}`,
@@ -283,7 +281,7 @@ func TestSessionOpeningGatewayRejectsBeforeEffects(t *testing.T) {
 	}
 }
 
-func TestSessionOpeningGatewayPreservesConflictAndUncertainOutcomes(t *testing.T) {
+func TestSessionGatewayPreservesConflictAndUncertainOutcomes(t *testing.T) {
 	for _, test := range []struct {
 		uid        string
 		failThread bool
@@ -295,7 +293,7 @@ func TestSessionOpeningGatewayPreservesConflictAndUncertainOutcomes(t *testing.T
 		{"old-uid", false, nil, 404, codes.NotFound, nil},
 		{"uid", true, nil, 503, codes.Unavailable, []string{"thread"}},
 		{"uid", false, &bridge.DispatcherRequestTimeoutError{SessionID: uuid.New()}, 504, codes.DeadlineExceeded, []string{"thread", "dispatch"}},
-		{"uid", false, &bridge.SessionOpeningNotFoundError{SessionID: uuid.New(), Sandbox: "demo"}, 500, codes.Unknown, []string{"thread", "dispatch"}},
+		{"uid", false, &bridge.SessionNotFoundError{SessionID: uuid.New(), Sandbox: "demo"}, 500, codes.Unknown, []string{"thread", "dispatch"}},
 		{"uid", false, &bridge.ServiceError{Code: codes.Unavailable, Details: "private-upstream-diagnostic"}, 503, codes.Unavailable, []string{"thread", "dispatch"}},
 		{"uid", false, &bridge.ServiceError{Code: codes.Internal, Details: "private-upstream-diagnostic"}, 500, codes.Internal, []string{"thread", "dispatch"}},
 		{"uid", false, &bridge.ServiceError{Code: codes.AlreadyExists, Details: "conflict"}, 409, codes.AlreadyExists, []string{"thread", "dispatch"}},
@@ -351,7 +349,7 @@ var _ apppb.AppServiceServer = (*appService)(nil)
 
 // Frozen pre-facade Huma boundary: exercise the request emitted by the generated browser codec
 // against the parser still serving in old app replicas during a rolling deployment.
-func TestGeneratedSessionOpeningRequestAcceptedByLegacyHuma(t *testing.T) {
+func TestGeneratedSessionRequestAcceptedByLegacyHuma(t *testing.T) {
 	type legacyBody struct {
 		SessionID   uuid.UUID      `json:"session_id" format:"uuid"`
 		SandboxUID  string         `json:"sandbox_uid" minLength:"1"`
@@ -369,7 +367,7 @@ func TestGeneratedSessionOpeningRequestAcceptedByLegacyHuma(t *testing.T) {
 		received = input
 		return &struct{}{}, nil
 	})
-	request := &apppb.OpenSessionRequest{}
+	request := &apppb.CreateSessionRequest{}
 	if err := protojson.Unmarshal([]byte(`{"session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid","spec":{"model":"test"},"setup_script":""}`), request); err != nil {
 		t.Fatal(err)
 	}
@@ -383,14 +381,14 @@ func TestGeneratedSessionOpeningRequestAcceptedByLegacyHuma(t *testing.T) {
 	}
 }
 
-func TestSessionOpeningCanonicalizesAcceptedUUIDSpelling(t *testing.T) {
+func TestSessionCanonicalizesAcceptedUUIDSpelling(t *testing.T) {
 	peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}}}
 	handler := sessionTestGateway(t, peer)
 	response := sessionTestRequest(handler, http.MethodPost, "/sandboxes/demo/sessions", `{"session_id":"B351B316-FDC4-4F50-A642-758992AE3323","sandbox_uid":"uid","spec":{}}`)
 	if response.Code != http.StatusCreated {
 		t.Fatalf("status %d: %s", response.Code, response.Body.String())
 	}
-	opening := &dispatcherpb.SessionOpening{}
+	opening := &dispatcherpb.Session{}
 	if err := protojson.Unmarshal(response.Body.Bytes(), opening); err != nil {
 		t.Fatal(err)
 	}

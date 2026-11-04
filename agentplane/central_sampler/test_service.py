@@ -19,7 +19,7 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.central_sampler import sampler_pb2, sampler_pb2_grpc
 from agentplane.central_sampler.settings import ModelConfig, ResponsesConfig
-from agentplane.central_sampler.testing import METADATA, Endpoint, open_request, service, settings
+from agentplane.central_sampler.testing import METADATA, Endpoint, create_request, service, settings
 from agentplane.central_sampler.testing_store import Store
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.native.codex.testing.responses_sse import (
@@ -70,17 +70,17 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
             exec_encoding="json",
         )
         async with service(config) as stub:
-            request = open_request(tmp_path)
+            request = create_request(tmp_path)
             request.spec.model = "unknown-model"
             with pytest.raises(grpc.aio.AioRpcError) as rejected:
-                await stub.OpenSession(request, metadata=METADATA, timeout=10)
+                await stub.CreateSession(request, metadata=METADATA, timeout=10)
             assert rejected.value.code() == grpc.StatusCode.INVALID_ARGUMENT
             request.spec.model = "restricted-model"
             with pytest.raises(grpc.aio.AioRpcError) as rejected:
-                await stub.OpenSession(request, metadata=METADATA, timeout=10)
+                await stub.CreateSession(request, metadata=METADATA, timeout=10)
             assert rejected.value.code() == grpc.StatusCode.INVALID_ARGUMENT
             request.spec.model = "test-model"
-            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.CreateSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="hold-turn", text="Wait for the response."
@@ -162,11 +162,11 @@ async def test_session_store_survives_idle_turns_and_is_separate_between_session
             database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
-            first = open_request(tmp_path)
-            second = open_request(tmp_path)
+            first = create_request(tmp_path)
+            second = create_request(tmp_path)
             second.session_id = "ad901ef2-5cf6-443a-b456-f15fa74c9b07"
             for request in (first, second):
-                await stub.OpenSession(request, metadata=METADATA, timeout=10)
+                await stub.CreateSession(request, metadata=METADATA, timeout=10)
 
             async def run_cell(session_id: str, command_id: str, source: str, expected: str) -> int:
                 await stub.SubmitInput(
@@ -212,7 +212,7 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
             database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
-            opened = await stub.OpenSession(open_request(tmp_path), metadata=METADATA, timeout=10)
+            opened = await stub.CreateSession(create_request(tmp_path), metadata=METADATA, timeout=10)
             assert opened.attached.session_id == "079bd706-77b3-4b71-8c7e-605a7e19324c"
             request = environment_runtime_pb2.SubmitInputRequest(
                 session_id="079bd706-77b3-4b71-8c7e-605a7e19324c", command_id="first", text="Exercise execution. " * 100
@@ -363,7 +363,7 @@ async def test_interrupt_streaming_evidence_and_uid_authorization(
             database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
-            await stub.OpenSession(open_request(tmp_path), metadata=METADATA, timeout=10)
+            await stub.CreateSession(create_request(tmp_path), metadata=METADATA, timeout=10)
             for metadata, expected in (
                 ((), grpc.StatusCode.UNAUTHENTICATED),
                 ((("authorization", "Bearer recreated-account-token"),), grpc.StatusCode.PERMISSION_DENIED),
@@ -434,8 +434,8 @@ async def test_nested_command_inherits_executor_environment(
             database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
-            request = open_request(tmp_path)
-            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            request = create_request(tmp_path)
+            await stub.CreateSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="env", text="Show the environment."
@@ -470,9 +470,9 @@ async def test_reasoning_summaries_are_requested_and_reach_history(
         config = settings(
             database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
-        request = open_request(tmp_path)
+        request = create_request(tmp_path)
         async with service(config) as stub:
-            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.CreateSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="think", text="Think, then answer."
@@ -518,8 +518,8 @@ async def test_restart_never_replays_unresolved_provider_intent(
         config.shutdown_budget_seconds = 16
         async with AsyncExitStack() as active:
             stub = await active.enter_async_context(service(config))
-            request = open_request(tmp_path)
-            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            request = create_request(tmp_path)
+            await stub.CreateSession(request, metadata=METADATA, timeout=10)
             command = environment_runtime_pb2.SubmitInputRequest(
                 session_id=request.session_id, command_id="lost", text="Provider outcome will be lost"
             )
@@ -566,8 +566,8 @@ async def test_interrupt_admission_survives_unavailable_executor(
             database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
-            request = open_request(tmp_path)
-            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            request = create_request(tmp_path)
+            await stub.CreateSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="remote", text="Start a supervised process"
@@ -617,9 +617,9 @@ async def test_restart_cannot_reconstruct_live_javascript(
         config = settings(
             database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
-        request = open_request(tmp_path)
+        request = create_request(tmp_path)
         async with service(config) as stub:
-            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.CreateSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="yielded", text="Retain a live JS cell"
@@ -680,12 +680,12 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
         )
         config.max_live_sessions = 1
         release = tmp_path / "release-process"
-        request = open_request(tmp_path)
-        second = open_request(tmp_path)
+        request = create_request(tmp_path)
+        second = create_request(tmp_path)
         second.session_id = "11111111-1111-4111-8111-111111111111"
         async with service(config) as stub:
             for session in (request, second):
-                await stub.OpenSession(session, metadata=METADATA, timeout=10)
+                await stub.CreateSession(session, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id,
@@ -788,11 +788,11 @@ async def test_unknown_custom_call_returns_failure_and_preserves_live_state(
         config = settings(
             database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
-        request = open_request(tmp_path)
+        request = create_request(tmp_path)
         release = tmp_path / "release-unknown-custom-process"
         process_id: int | None = None
         async with service(config) as stub:
-            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.CreateSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="unknown-custom", text="Continue after an unknown tool."
@@ -915,10 +915,10 @@ async def test_unknown_json_function_call_returns_function_output(
                 }
             }
         )
-        request = open_request(tmp_path)
+        request = create_request(tmp_path)
         request.spec.reasoning_effort = ""
         async with service(config) as stub:
-            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.CreateSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id,
@@ -992,10 +992,10 @@ async def test_json_exec_runs_shell_resumes_and_recovers(
             }
         )
         Image.new("RGB", (1, 1), (255, 0, 0)).save(tmp_path / "small.png")
-        request = open_request(tmp_path)
+        request = create_request(tmp_path)
         request.spec.reasoning_effort = ""
         async with service(config) as stub:
-            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.CreateSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="standard-json", text="Run a shell command."
@@ -1185,9 +1185,9 @@ async def test_notify_outputs_follow_the_step_that_emitted_them(
         config = settings(
             database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
-        request = open_request(tmp_path)
+        request = create_request(tmp_path)
         async with service(config) as stub:
-            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.CreateSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="notify", text="Notify from cells."
@@ -1246,9 +1246,9 @@ async def test_interrupt_discards_queued_notify_output(
         config = settings(
             database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
-        request = open_request(tmp_path)
+        request = create_request(tmp_path)
         async with service(config) as stub:
-            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.CreateSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="interrupted", text="Notify, then get interrupted."
@@ -1318,8 +1318,8 @@ async def test_view_image_reads_executor_file_and_prepares_cell_image(
             database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
         async with service(config) as stub:
-            request = open_request(tmp_path)
-            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            request = create_request(tmp_path)
+            await stub.CreateSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="view-image", text="Look at the image."
@@ -1359,9 +1359,9 @@ async def test_input_yields_a_running_cell_and_joins_the_turn(
         config = settings(
             database_url, endpoint.origin, execution_target, codex_binary, code_mode_host, undeclared_outputs_dir()
         )
-        request = open_request(tmp_path)
+        request = create_request(tmp_path)
         async with service(config) as stub:
-            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.CreateSession(request, metadata=METADATA, timeout=10)
             await stub.SubmitInput(
                 environment_runtime_pb2.SubmitInputRequest(
                     session_id=request.session_id, command_id="steered", text="Run a long cell."

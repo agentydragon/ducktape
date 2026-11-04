@@ -9,6 +9,7 @@ import pytest_bazel
 
 from agentplane.grpc.calls import ServiceError
 from agentplane.grpc.serving import serving
+from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 
@@ -45,17 +46,25 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
         )
 
     @override
-    async def GetSessionOpening(
+    async def GetSession(
         self,
-        request: session_dispatcher_pb2.GetSessionOpeningRequest,
+        request: session_dispatcher_pb2.GetSessionRequest,
         context: grpc.aio.ServicerContext[
-            session_dispatcher_pb2.GetSessionOpeningRequest, session_dispatcher_pb2.GetSessionOpeningResponse
+            session_dispatcher_pb2.GetSessionRequest, session_dispatcher_pb2.GetSessionResponse
         ],
-    ) -> session_dispatcher_pb2.GetSessionOpeningResponse:
+    ) -> session_dispatcher_pb2.GetSessionResponse:
         self.bearers.append(dict(context.invocation_metadata() or ()).get("authorization"))
-        return session_dispatcher_pb2.GetSessionOpeningResponse(
-            opening=session_dispatcher_pb2.SessionOpening(
-                session_id=request.session_id, sandbox="original", sandbox_uid="original-uid"
+        return session_dispatcher_pb2.GetSessionResponse(
+            session=session_dispatcher_pb2.Session(
+                session_id=request.session_id,
+                status=session_dispatcher_pb2.SessionStatus(
+                    materialization=session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_ACCEPTED
+                ),
+                placement=session_pb2.SessionPlacement(
+                    environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                        environment=session_pb2.ExactEnvironment(name="original", uid="original-uid")
+                    )
+                ),
             )
         )
 
@@ -70,8 +79,12 @@ async def test_native_submission_preserves_identity_and_rotates_service_credenti
         serving(server, "127.0.0.1:0", grace_s=0) as port,
         SessionDispatcherClient.connect(f"127.0.0.1:{port}", token_file=token_file, request_timeout_s=5) as client,
     ):
-        opening = await client.get_session_opening("session")
-        assert (opening.session_id, opening.sandbox, opening.sandbox_uid) == ("session", "original", "original-uid")
+        session = await client.get_session("session")
+        assert (
+            session.session_id,
+            session.placement.environment_hosted.environment.name,
+            session.placement.environment_hosted.environment.uid,
+        ) == ("session", "original", "original-uid")
         sandbox, uid = await client.session_target("session")
         first = await client.submit_input("session", "same-command", sandbox, uid, "original input")
         token_file.write_text("rotated-service-token")

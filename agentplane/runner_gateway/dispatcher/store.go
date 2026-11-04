@@ -17,33 +17,39 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
 )
 
 const (
-	QueueState      = "QUEUED_IN_DISPATCHER"
-	DeliveringState = "DELIVERING_TO_RUNNER"
-	AdmittedState   = "RUNNER_ADMITTED"
-	FailedState     = "FAILED"
-	CancelledState  = "CANCELLED_IN_DISPATCHER"
-	UnknownState    = "UNKNOWN"
-	WakeLimit       = 10
-	WakeWindow      = time.Minute
-	WakeDeadline    = 10 * time.Minute
-	NotifyChannel   = "agentplane_dispatcher_dispatch"
+	QueueState             = "QUEUED_IN_DISPATCHER"
+	DeliveringState        = "DELIVERING_TO_RUNNER"
+	AdmittedState          = "RUNNER_ADMITTED"
+	FailedState            = "FAILED"
+	CancelledState         = "CANCELLED_IN_DISPATCHER"
+	UnknownState           = "UNKNOWN"
+	SessionWaitingState    = "WAITING"
+	SessionInProgressState = "IN_PROGRESS"
+	SessionAcceptedState   = "ACCEPTED"
+	SessionFailedState     = "FAILED"
+	SessionUnknownState    = "UNKNOWN"
+	WakeLimit              = 10
+	WakeWindow             = time.Minute
+	WakeDeadline           = 10 * time.Minute
+	NotifyChannel          = "agentplane_dispatcher_dispatch"
 )
 
 var (
 	ErrCommandConflict    = errors.New("command_id was used for other work")
-	ErrOpeningConflict    = errors.New("session_id was opened with another request")
+	ErrSessionConflict    = errors.New("session_id was opened with another request")
 	ErrQueueFull          = errors.New("session queue is full")
 	ErrNotFound           = errors.New("dispatch not found")
 	ErrNotCancellable     = errors.New("delivery already began")
 	ErrNotAuthorized      = errors.New("caller does not own the Session")
 	ErrSandboxDeleted     = errors.New("sandbox was deleted")
-	ErrOpeningUnconfirmed = errors.New("Session opening is not confirmed")
+	ErrSessionUnconfirmed = errors.New("Session is not confirmed")
 )
 
 type Account = auth.Account
@@ -129,14 +135,15 @@ type Dispatch struct {
 	CreatedAt, UpdatedAt    time.Time
 }
 
-type Opening struct {
+type Session struct {
 	SessionID, SandboxName, SandboxUID string
+	Placement                          SessionPlacement
 	// ExecutionPrincipal is the immutable logical owner of the Session. A nil account means a
 	// legacy row with no trustworthy owner; an empty UID with a set account is a privileged open
 	// waiting to bind the controller-owned ServiceAccount.
 	ExecutionPrincipal *ServiceAccountIdentity
-	// Creator records the authenticated actor that brokered the opening, separately from its owner
-	// and effective caller. For a delegated opening this is the Actions ServiceAccount.
+	// Creator records the authenticated actor that brokered the session, separately from its owner
+	// and effective caller. For a delegated session this is the Actions ServiceAccount.
 	Creator              *ServiceAccountIdentity
 	Attribution          *AdmissionAttribution
 	WakeEligible         bool
@@ -476,19 +483,19 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		if err := sessionLock(ctx, tx, sessionID); err != nil {
 			return err
 		}
-		query := "SELECT " + openingColumns + " FROM session_opening WHERE session_id=$1"
+		query := "SELECT " + sessionColumns + " FROM session WHERE session_id=$1"
 		arguments := []any{sessionID}
 		if caller != nil {
-			query, arguments = openingForCallerQuery, openingCallerArguments(sessionID, *caller)
+			query, arguments = sessionForCallerQuery, sessionCallerArguments(sessionID, *caller)
 		}
-		opening, err := scanOpening(tx.QueryRowContext(ctx, query+" FOR SHARE", arguments...))
+		session, err := scanSession(tx.QueryRowContext(ctx, query+" FOR SHARE", arguments...))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
 		if err != nil {
 			return err
 		}
-		if opening.SandboxName != sandboxName || opening.SandboxUID != sandboxUID {
+		if session.SandboxName != sandboxName || session.SandboxUID != sandboxUID {
 			return ErrNotAuthorized
 		}
 		// A command ID is global, even when two senders race through different
@@ -511,8 +518,8 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if !centralSpec(opening.Spec) && (opening.State == FailedState || opening.State == UnknownState) {
-			return ErrOpeningUnconfirmed
+		if session.Placement.requiresReadyExecutor() && (session.State == SessionFailedState || session.State == SessionUnknownState) {
+			return ErrSessionUnconfirmed
 		}
 		var count int
 		err = tx.QueryRowContext(ctx, "SELECT count(*) FROM dispatch WHERE session_id=$1 AND state=$2", sessionID, QueueState).Scan(&count)
@@ -562,7 +569,7 @@ func (s *Store) GetDispatch(ctx context.Context, id string) (*Dispatch, error) {
 
 func (s *Store) GetDispatchForCaller(ctx context.Context, id string, caller CallerIdentity) (*Dispatch, error) {
 	query := `SELECT ` + qualifiedDispatchColumns + ` FROM dispatch d
-		LEFT JOIN session_opening o ON o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
+		LEFT JOIN session o ON o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
 		WHERE d.command_id=$1 AND ($2 OR (o.execution_account_namespace=$3 AND
 			o.execution_account_name=$4 AND o.execution_account_uid=$5))`
 	d, err := scanDispatch(s.DB.QueryRowContext(ctx, query, id, caller.Privileged,
@@ -596,7 +603,7 @@ func (s *Store) listDispatches(ctx context.Context, sessionID, sandboxName strin
 	query, arguments := "SELECT "+columns+" FROM dispatch d", []any{}
 	if caller != nil {
 		query = "SELECT " + qualifiedDispatchColumns + " FROM dispatch d"
-		query += " LEFT JOIN session_opening o ON o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name"
+		query += " LEFT JOIN session o ON o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name"
 	}
 	query += " WHERE d." + column + "=$1"
 	arguments = append(arguments, value)
@@ -644,7 +651,7 @@ func (s *Store) cancel(ctx context.Context, id string, caller *CallerIdentity) (
 		} else {
 			result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch d SET state=$1, reason='sender', updated_at=now()
 				WHERE d.command_id=$2 AND d.state=$3 AND NOT d.delivery_attempted AND ($4 OR EXISTS (
-					SELECT 1 FROM session_opening o WHERE o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
+					SELECT 1 FROM session o WHERE o.session_id=d.session_id AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
 					AND o.execution_account_namespace=$5 AND o.execution_account_name=$6 AND o.execution_account_uid=$7))
 				RETURNING `+qualifiedDispatchColumns,
 				CancelledState, id, QueueState, caller.Privileged,
@@ -677,7 +684,7 @@ func (s *Store) cancel(ctx context.Context, id string, caller *CallerIdentity) (
 	return nil, ErrNotCancellable
 }
 
-const openingColumns = `session_id, sandbox_name, sandbox_uid::text, execution_account_namespace,
+const sessionColumns = `session_id, sandbox_name, sandbox_uid::text, execution_account_namespace,
 	execution_account_name, execution_account_uid::text, creator_account_namespace,
 	creator_account_name, creator_account_uid::text, effective_caller_account_namespace,
 	effective_caller_account_name, effective_caller_account_uid, creator_pod_name, creator_pod_uid,
@@ -686,8 +693,8 @@ const openingColumns = `session_id, sandbox_name, sandbox_uid::text, execution_a
 	spec, setup_script, state, reason, traceparent, created_at, updated_at,
 	delivery_blocker, wake_assessment`
 
-func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
-	o := &Opening{}
+func scanSession(row interface{ Scan(...any) error }) (*Session, error) {
+	o := &Session{}
 	var ownerNS, ownerName, ownerUID, creatorNS, creatorName, creatorUID sql.NullString
 	var effectiveNS, effectiveName, effectiveUID, creatorPodName, creatorPodUID sql.NullString
 	var actionRequestID, actionExecutionID sql.NullString
@@ -750,16 +757,20 @@ func scanOpening(row interface{ Scan(...any) error }) (*Opening, error) {
 	if err := (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(spec, o.Spec); err != nil {
 		return nil, err
 	}
+	o.Placement = placementOf(o.Spec)
+	if o.Placement == "" {
+		return nil, errors.New("stored Session has no placement")
+	}
+	target := requestTarget(&dispatcherpb.CreateSessionRequest{Spec: o.Spec})
+	if target.GetName() != o.SandboxName || target.GetUid() != o.SandboxUID {
+		return nil, errors.New("stored Session placement disagrees with executor projection")
+	}
 	return o, nil
 }
 
-func (s *Store) OpenSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account) (*Opening, error) {
-	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller, nil, nil)
-}
-
-// OpenSessionForCaller stores the immutable execution account separately from the verified
-// caller attribution. Retrying a concurrently inserted opening requires retained read authority.
-func (s *Store) OpenSessionForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal *ServiceAccountIdentity, caller CallerIdentity) (*Opening, error) {
+// CreateSessionForCaller stores the immutable execution account separately from the verified
+// caller attribution. Retrying a concurrently inserted session requires retained read authority.
+func (s *Store) CreateSessionWithPlacementForCaller(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal *ServiceAccountIdentity, caller CallerIdentity) (*Session, error) {
 	if executionPrincipal == nil || executionPrincipal.GetAccount().GetNamespace() == "" ||
 		executionPrincipal.GetAccount().GetName() == "" || caller.Attribution == nil || caller.Attribution.Actor == nil ||
 		caller.Attribution.Actor.GetAccount().GetNamespace() == "" || caller.Attribution.Actor.GetAccount().GetName() == "" ||
@@ -769,11 +780,11 @@ func (s *Store) OpenSessionForCaller(ctx context.Context, sessionID, sandboxName
 	if err := validateAttribution(caller.Attribution, wakeCaller); err != nil {
 		return nil, err
 	}
-	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, spec, setupScript, wakeCaller, executionPrincipal, &caller)
+	return s.openSession(ctx, sessionID, sandboxName, sandboxUID, placement, spec, setupScript, wakeCaller, executionPrincipal, &caller)
 }
 
 // authorizeRetry uses retained read authority: a receipt retry performs no new execution.
-func (o *Opening) authorizeRetry(caller CallerIdentity) error {
+func (o *Session) authorizeRetry(caller CallerIdentity) error {
 	if !caller.Privileged && (o.ExecutionPrincipal == nil || o.ExecutionPrincipal.GetUid() == "" ||
 		!sameServiceAccountIdentity(o.ExecutionPrincipal, caller.ServiceAccountIdentity)) {
 		return ErrNotFound
@@ -781,9 +792,9 @@ func (o *Opening) authorizeRetry(caller CallerIdentity) error {
 	return nil
 }
 
-func (o *Opening) matchRequest(sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string) error {
+func (o *Session) matchRequest(sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string) error {
 	if spec == nil {
-		return ErrOpeningConflict
+		return ErrSessionConflict
 	}
 	oldBytes, err := wire(o.Spec)
 	if err != nil {
@@ -793,15 +804,22 @@ func (o *Opening) matchRequest(sandboxName, sandboxUID string, spec *sessionpb.S
 	if err != nil {
 		return err
 	}
-	if o.SandboxName != sandboxName || o.SandboxUID != sandboxUID || !bytes.Equal(oldBytes, data) || !equalOptional(o.SetupScript, setupScript) {
-		return ErrOpeningConflict
+	if o.SandboxName != sandboxName || o.SandboxUID != sandboxUID || o.Placement != placement || !bytes.Equal(oldBytes, data) || !equalOptional(o.SetupScript, setupScript) {
+		return ErrSessionConflict
 	}
 	return nil
 }
 
-func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal *ServiceAccountIdentity, caller *CallerIdentity) (*Opening, error) {
+func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandboxUID string, placement SessionPlacement, spec *sessionpb.SessionSpec, setupScript *string, wakeCaller *Account, executionPrincipal *ServiceAccountIdentity, caller *CallerIdentity) (*Session, error) {
 	if sessionID == "" || sandboxName == "" || spec == nil {
 		return nil, errors.New("session_id, sandbox and spec are required")
+	}
+	if !placement.matchesSpec(spec) {
+		return nil, errors.New("Session placement does not match spec")
+	}
+	target := requestTarget(&dispatcherpb.CreateSessionRequest{Spec: spec})
+	if target.GetName() != sandboxName || target.GetUid() != sandboxUID {
+		return nil, errors.New("Session placement does not match executor projection")
 	}
 	data, err := wire(spec)
 	if err != nil {
@@ -811,7 +829,7 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 	if err != nil {
 		return nil, err
 	}
-	var result *Opening
+	var result *Session
 	err = transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		if err := lockLiveSandbox(ctx, tx, sandboxUID); err != nil {
 			return err
@@ -819,14 +837,14 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 		if err := sessionLock(ctx, tx, sessionID); err != nil {
 			return err
 		}
-		existing, err := scanOpening(tx.QueryRowContext(ctx, "SELECT "+openingColumns+" FROM session_opening WHERE session_id=$1", sessionID))
+		existing, err := scanSession(tx.QueryRowContext(ctx, "SELECT "+sessionColumns+" FROM session WHERE session_id=$1", sessionID))
 		if err == nil {
 			if caller != nil {
 				if err := existing.authorizeRetry(*caller); err != nil {
 					return err
 				}
 			}
-			if err := existing.matchRequest(sandboxName, sandboxUID, spec, setupScript); err != nil {
+			if err := existing.matchRequest(sandboxName, sandboxUID, placement, spec, setupScript); err != nil {
 				return err
 			}
 			result = existing
@@ -853,15 +871,15 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 			creatorNS, creatorName, creatorUID = creator.GetAccount().GetNamespace(), creator.GetAccount().GetName(), creator.GetUid()
 		}
 		attributionArgs := attributionValues(attribution)
-		result, err = scanOpening(tx.QueryRowContext(ctx, `INSERT INTO session_opening
+		result, err = scanSession(tx.QueryRowContext(ctx, `INSERT INTO session
 			(session_id,sandbox_name,sandbox_uid,execution_account_namespace,execution_account_name,execution_account_uid,
 			 creator_account_namespace,creator_account_name,creator_account_uid,effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid,
 			 creator_pod_name,creator_pod_uid,action_request_id,action_execution_id,wake_eligible,wake_caller_namespace,wake_caller_name,
 			 spec,setup_script,state,traceparent,created_at,updated_at,delivery_blocker,wake_assessment)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,now(),now(),$24,$25) RETURNING `+openingColumns,
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,now(),now(),$24,$25) RETURNING `+sessionColumns,
 			sessionID, sandboxName, sandboxUID, ownerNS, ownerName, ownerUID, creatorNS, creatorName, creatorUID,
 			attributionArgs[5], attributionArgs[6], attributionArgs[7], attributionArgs[3], attributionArgs[4], attributionArgs[8], attributionArgs[9],
-			wakeCaller != nil, ns, name, data, setupScript, QueueState,
+			wakeCaller != nil, ns, name, data, setupScript, SessionWaitingState,
 			observability.Traceparent(ctx), nil, wakeAssessment))
 		if err != nil {
 			return err
@@ -878,32 +896,32 @@ func equalOptional(a, b *string) bool {
 	return *a == *b
 }
 
-func (s *Store) GetOpening(ctx context.Context, id string) (*Opening, error) {
-	o, err := scanOpening(s.DB.QueryRowContext(ctx, "SELECT "+openingColumns+" FROM session_opening WHERE session_id=$1", id))
+func (s *Store) GetSession(ctx context.Context, id string) (*Session, error) {
+	o, err := scanSession(s.DB.QueryRowContext(ctx, "SELECT "+sessionColumns+" FROM session WHERE session_id=$1", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	return o, err
 }
 
-const openingForCallerQuery = "SELECT " + openingColumns + ` FROM session_opening WHERE session_id=$1 AND ($2 OR
+const sessionForCallerQuery = "SELECT " + sessionColumns + ` FROM session WHERE session_id=$1 AND ($2 OR
 	(execution_account_namespace=$3 AND execution_account_name=$4 AND execution_account_uid=$5))`
 
-func openingCallerArguments(id string, caller CallerIdentity) []any {
+func sessionCallerArguments(id string, caller CallerIdentity) []any {
 	account := accountOfIdentity(caller.ServiceAccountIdentity)
 	return []any{id, caller.Privileged, account.Namespace, account.Name, uidOfIdentity(caller.ServiceAccountIdentity)}
 }
 
-func (s *Store) GetOpeningForCaller(ctx context.Context, id string, caller CallerIdentity) (*Opening, error) {
-	opening, err := scanOpening(s.DB.QueryRowContext(ctx, openingForCallerQuery, openingCallerArguments(id, caller)...))
+func (s *Store) GetSessionForCaller(ctx context.Context, id string, caller CallerIdentity) (*Session, error) {
+	session, err := scanSession(s.DB.QueryRowContext(ctx, sessionForCallerQuery, sessionCallerArguments(id, caller)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
-	return opening, err
+	return session, err
 }
 
-func (s *Store) ListOpeningsForCaller(ctx context.Context, after string, limit int, caller CallerIdentity) ([]*Opening, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT `+openingColumns+` FROM session_opening
+func (s *Store) ListSessionsForCaller(ctx context.Context, after string, limit int, caller CallerIdentity) ([]*Session, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT `+sessionColumns+` FROM session
 		WHERE session_id > $1 AND ($2 OR
 		(execution_account_namespace=$3 AND execution_account_name=$4 AND execution_account_uid=$5))
 		ORDER BY session_id LIMIT $6`, after, caller.Privileged,
@@ -913,9 +931,9 @@ func (s *Store) ListOpeningsForCaller(ctx context.Context, after string, limit i
 		return nil, err
 	}
 	defer rows.Close()
-	var result []*Opening
+	var result []*Session
 	for rows.Next() {
-		row, err := scanOpening(rows)
+		row, err := scanSession(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -927,19 +945,19 @@ func (s *Store) ListOpeningsForCaller(ctx context.Context, after string, limit i
 // BindExecutionPrincipal fixes the UID of a pending managed account exactly once. The expected
 // account name and Sandbox UID are part of the predicate, so reconciliation cannot adopt another
 // Sandbox's account or overwrite a prior binding.
-func (s *Store) BindExecutionPrincipal(ctx context.Context, sessionID, sandboxUID, accountNamespace, accountName, accountUID string) (*Opening, error) {
+func (s *Store) BindExecutionPrincipal(ctx context.Context, sessionID, sandboxUID, accountNamespace, accountName, accountUID string) (*Session, error) {
 	if sessionID == "" || sandboxUID == "" || accountNamespace == "" || accountName == "" || accountUID == "" {
 		return nil, errors.New("Session, Sandbox and ServiceAccount identities are required")
 	}
-	var result *Opening
+	var result *Session
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		var err error
-		result, err = scanOpening(tx.QueryRowContext(ctx, `UPDATE session_opening SET execution_account_uid=$5,updated_at=now()
+		result, err = scanSession(tx.QueryRowContext(ctx, `UPDATE session SET execution_account_uid=$5,updated_at=now()
 			WHERE session_id=$1 AND sandbox_uid=$2 AND execution_account_namespace=$3 AND execution_account_name=$4
-			AND execution_account_uid IS NULL RETURNING `+openingColumns,
+			AND execution_account_uid IS NULL RETURNING `+sessionColumns,
 			sessionID, sandboxUID, accountNamespace, accountName, accountUID))
 		if errors.Is(err, sql.ErrNoRows) {
-			result, err = scanOpening(tx.QueryRowContext(ctx, `SELECT `+openingColumns+` FROM session_opening
+			result, err = scanSession(tx.QueryRowContext(ctx, `SELECT `+sessionColumns+` FROM session
 				WHERE session_id=$1 AND sandbox_uid=$2 AND execution_account_namespace=$3 AND execution_account_name=$4
 				AND execution_account_uid=$5`, sessionID, sandboxUID, accountNamespace, accountName, accountUID))
 			if errors.Is(err, sql.ErrNoRows) {
@@ -955,15 +973,15 @@ func (s *Store) BindExecutionPrincipal(ctx context.Context, sessionID, sandboxUI
 	return result, err
 }
 
-func (s *Store) OpeningHeads(ctx context.Context) ([]*Opening, error) {
-	rows, err := s.DB.QueryContext(ctx, "SELECT "+openingColumns+" FROM session_opening WHERE state=$1 ORDER BY created_at", QueueState)
+func (s *Store) SessionHeads(ctx context.Context) ([]*Session, error) {
+	rows, err := s.DB.QueryContext(ctx, "SELECT "+sessionColumns+" FROM session WHERE state=$1 ORDER BY created_at", SessionWaitingState)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var result []*Opening
+	var result []*Session
 	for rows.Next() {
-		o, err := scanOpening(rows)
+		o, err := scanSession(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -973,12 +991,12 @@ func (s *Store) OpeningHeads(ctx context.Context) ([]*Opening, error) {
 }
 
 // SessionHead reads the durable head after a queue key becomes runnable. The
-// in-process queue never decides ordering or whether an opening is complete.
-func (s *Store) SessionHead(ctx context.Context, sessionID string) (*Opening, *Dispatch, error) {
-	opening, err := scanOpening(s.DB.QueryRowContext(ctx,
-		"SELECT "+openingColumns+" FROM session_opening WHERE session_id=$1 AND state=$2", sessionID, QueueState))
+// in-process queue never decides ordering or whether an session is complete.
+func (s *Store) SessionHead(ctx context.Context, sessionID string) (*Session, *Dispatch, error) {
+	session, err := scanSession(s.DB.QueryRowContext(ctx,
+		"SELECT "+sessionColumns+" FROM session WHERE session_id=$1 AND state=$2", sessionID, SessionWaitingState))
 	if err == nil {
-		return opening, nil, nil
+		return session, nil, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, err
@@ -986,8 +1004,8 @@ func (s *Store) SessionHead(ctx context.Context, sessionID string) (*Opening, *D
 	head, err := scanDispatch(s.DB.QueryRowContext(ctx, `SELECT `+dispatchColumns+` FROM dispatch d WHERE d.session_id=$1 AND d.state=$2
 		AND NOT EXISTS (SELECT 1 FROM dispatch earlier WHERE earlier.session_id=d.session_id
 			AND earlier.position<d.position AND earlier.state IN ($2,$3))
-		AND NOT EXISTS (SELECT 1 FROM session_opening o WHERE o.session_id=d.session_id
-			AND o.state IN ($2,$3)) ORDER BY d.position LIMIT 1`, sessionID, QueueState, DeliveringState))
+		AND NOT EXISTS (SELECT 1 FROM session o WHERE o.session_id=d.session_id
+			AND o.state IN ($4,$5)) ORDER BY d.position LIMIT 1`, sessionID, QueueState, DeliveringState, SessionWaitingState, SessionInProgressState))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, nil
 	}
@@ -1018,8 +1036,8 @@ func (s *Store) Heads(ctx context.Context) ([]*Dispatch, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT `+dispatchColumns+` FROM dispatch d WHERE d.state=$1
 		AND NOT EXISTS (SELECT 1 FROM dispatch earlier WHERE earlier.session_id=d.session_id
 			AND earlier.position<d.position AND earlier.state IN ($1,$2))
-		AND NOT EXISTS (SELECT 1 FROM session_opening o WHERE o.session_id=d.session_id
-			AND o.state IN ($1,$2)) ORDER BY d.position`, QueueState, DeliveringState)
+		AND NOT EXISTS (SELECT 1 FROM session o WHERE o.session_id=d.session_id
+			AND o.state IN ($3,$4)) ORDER BY d.position`, QueueState, DeliveringState, SessionWaitingState, SessionInProgressState)
 	if err != nil {
 		return nil, err
 	}
@@ -1036,13 +1054,13 @@ func (s *Store) Heads(ctx context.Context) ([]*Dispatch, error) {
 }
 
 // SandboxesWithPendingWork lists the Sandboxes owning a QUEUED or DELIVERING
-// dispatch or opening, the only rows an owner changes. Unlike Heads, it counts
+// dispatch or session, the only rows an owner changes. Unlike Heads, it counts
 // a DELIVERING row and the QUEUED rows blocked behind it, which a successor
 // must requeue after the previous owner dies.
 func (s *Store) SandboxesWithPendingWork(ctx context.Context) (map[string]struct{}, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT sandbox_uid::text FROM dispatch WHERE state = ANY($1)
-		UNION SELECT sandbox_uid::text FROM session_opening WHERE state = ANY($1)`,
-		pq.Array([]string{QueueState, DeliveringState}))
+		UNION SELECT sandbox_uid::text FROM session WHERE state = ANY($2)`,
+		pq.Array([]string{QueueState, DeliveringState}), pq.Array([]string{SessionWaitingState, SessionInProgressState}))
 	if err != nil {
 		return nil, err
 	}
@@ -1214,21 +1232,21 @@ func nullIfEmpty(s string) any {
 }
 func pqStringArray(values []string) any { return pq.Array(values) }
 
-func (s *Store) SettleOpening(ctx context.Context, id string, owner Owner, from []string, to, reason string) (*Opening, error) {
-	return s.settleOpening(ctx, id, owner, from, to, reason, false)
+func (s *Store) SettleSession(ctx context.Context, id string, owner Owner, from []string, to, reason string) (*Session, error) {
+	return s.settleSession(ctx, id, owner, from, to, reason, false)
 }
 
-// RejectOpening records a proven native rejection and fails only commands that have
+// RejectSession records a proven native rejection and fails only commands that have
 // not left the queue. An older FAILED row alone cannot supply this evidence.
-func (s *Store) RejectOpening(ctx context.Context, id string, owner Owner, from []string, reason string) (*Opening, error) {
-	return s.settleOpening(ctx, id, owner, from, FailedState, reason, true)
+func (s *Store) RejectSession(ctx context.Context, id string, owner Owner, from []string, reason string) (*Session, error) {
+	return s.settleSession(ctx, id, owner, from, SessionFailedState, reason, true)
 }
 
-func (s *Store) settleOpening(ctx context.Context, id string, owner Owner, from []string, to, reason string, rejectQueued bool) (*Opening, error) {
-	var result *Opening
+func (s *Store) settleSession(ctx context.Context, id string, owner Owner, from []string, to, reason string, rejectQueued bool) (*Session, error) {
+	var result *Session
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		// Enqueue holds the same Session lock, so it either precedes rejection and
-		// is failed below, or observes the terminal opening before storing work.
+		// is failed below, or observes the terminal session before storing work.
 		if err := sessionLock(ctx, tx, id); err != nil {
 			return err
 		}
@@ -1236,8 +1254,8 @@ func (s *Store) settleOpening(ctx context.Context, id string, owner Owner, from 
 		if err != nil || !current {
 			return err
 		}
-		result, err = scanOpening(tx.QueryRowContext(ctx, `UPDATE session_opening SET state=$3,reason=$4,updated_at=now()
-			WHERE session_id=$1 AND sandbox_uid=$2 AND state = ANY($5) RETURNING `+openingColumns,
+		result, err = scanSession(tx.QueryRowContext(ctx, `UPDATE session SET state=$3,reason=$4,updated_at=now()
+			WHERE session_id=$1 AND sandbox_uid=$2 AND state = ANY($5) RETURNING `+sessionColumns,
 			id, owner.SandboxUID, to, nullIfEmpty(reason), pqStringArray(from)))
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
@@ -1246,7 +1264,7 @@ func (s *Store) settleOpening(ctx context.Context, id string, owner Owner, from 
 			return err
 		}
 		if rejectQueued {
-			if _, err := tx.ExecContext(ctx, `UPDATE dispatch SET state=CASE WHEN delivery_attempted THEN 'UNKNOWN' ELSE $3 END,reason='session_opening_rejected',updated_at=now()
+			if _, err := tx.ExecContext(ctx, `UPDATE dispatch SET state=CASE WHEN delivery_attempted THEN 'UNKNOWN' ELSE $3 END,reason='session_rejected',updated_at=now()
 				WHERE session_id=$1 AND sandbox_uid=$2 AND state=$4`, id, owner.SandboxUID, FailedState, QueueState); err != nil {
 				return err
 			}
@@ -1271,8 +1289,8 @@ func (s *Store) RecoverSandbox(ctx context.Context, owner Owner) (bool, error) {
 		if err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE session_opening SET state=$2, reason='dispatcher_restarted', updated_at=now()
-			WHERE sandbox_uid=$1 AND state=$3`, owner.SandboxUID, QueueState, DeliveringState)
+		_, err = tx.ExecContext(ctx, `UPDATE session SET state=$2, reason='dispatcher_restarted', updated_at=now()
+			WHERE sandbox_uid=$1 AND state=$3`, owner.SandboxUID, SessionWaitingState, SessionInProgressState)
 		if err != nil {
 			return err
 		}
@@ -1305,15 +1323,15 @@ func (s *Store) NoteWaiting(ctx context.Context, id string, owner Owner, reason 
 	})
 }
 
-func (s *Store) NoteOpeningWaiting(ctx context.Context, id string, owner Owner, reason string) error {
+func (s *Store) NoteSessionWaiting(ctx context.Context, id string, owner Owner, reason string) error {
 	return transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		current, err := ownerMatch(ctx, tx, owner)
 		if err != nil || !current {
 			return err
 		}
-		result, err := tx.ExecContext(ctx, `UPDATE session_opening SET reason=$3,updated_at=now()
+		result, err := tx.ExecContext(ctx, `UPDATE session SET reason=$3,updated_at=now()
 			WHERE session_id=$1 AND sandbox_uid=$2 AND state=$4 AND reason IS DISTINCT FROM $3`,
-			id, owner.SandboxUID, reason, QueueState)
+			id, owner.SandboxUID, reason, SessionWaitingState)
 		if err != nil {
 			return err
 		}
@@ -1335,7 +1353,7 @@ func (s *Store) SetDeliveryAssessment(
 	ctx context.Context,
 	id string,
 	owner Owner,
-	opening bool,
+	session bool,
 	blocker *environmentpb.DeliveryBlocker,
 	assessment *environmentpb.WakeAssessment,
 ) error {
@@ -1350,7 +1368,8 @@ func (s *Store) SetDeliveryAssessment(
 	if err != nil {
 		return err
 	}
-	table, key := wakeTable(opening)
+	table, key := wakeTable(session)
+	waiting := waitingState(session)
 	return transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		current, err := ownerMatch(ctx, tx, owner)
 		if err != nil || !current {
@@ -1359,7 +1378,7 @@ func (s *Store) SetDeliveryAssessment(
 		result, err := tx.ExecContext(ctx, `UPDATE `+table+` SET delivery_blocker=$3,wake_assessment=$4,updated_at=now()
 			WHERE `+key+`=$1 AND sandbox_uid=$2 AND state=$5
 			AND (delivery_blocker IS DISTINCT FROM $3 OR wake_assessment IS DISTINCT FROM $4)`,
-			id, owner.SandboxUID, blockerBytes, assessmentBytes, QueueState)
+			id, owner.SandboxUID, blockerBytes, assessmentBytes, waiting)
 		if err != nil {
 			return err
 		}

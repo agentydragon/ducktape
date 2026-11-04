@@ -20,24 +20,32 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// openSession queues the Session's opening with the Session Dispatcher and answers with it. The app opens Sessions the
-// same way, and as it does, `{session_id}` in the working directory becomes the Session's ID.
-func (e *Executor) openSession(ctx context.Context, args contract.OpenSessionArgs) (json.RawMessage, error) {
+// createSession asks Dispatcher to create a Session and returns its current resource state.
+// As in App creation, `{session_id}` in the working directory becomes the Session's ID.
+func (e *Executor) createSession(ctx context.Context, args contract.CreateSessionArgs) (json.RawMessage, error) {
 	if _, err := e.requireSandbox(ctx, args.Sandbox); err != nil {
 		return nil, err
 	}
-	response, err := e.dispatcher.OpenSession(ctx, &dispatcherpb.OpenSessionRequest{
-		SessionId: args.SessionID, Sandbox: args.Sandbox.Name, SandboxUid: string(args.Sandbox.UID), SetupScript: args.SetupScript,
+	request := &dispatcherpb.CreateSessionRequest{
+		SessionId: args.SessionID, SetupScript: args.SetupScript,
 		Spec: &sessionpb.SessionSpec{
-			Harness: sessionpb.Harness(sessionpb.Harness_value[string(args.Spec.Harness)]), Model: args.Spec.Model,
+			Model:           args.Spec.Model,
 			Cwd:             strings.ReplaceAll(args.Spec.Cwd, "{session_id}", args.SessionID),
 			ReasoningEffort: args.Spec.ReasoningEffort, Instructions: args.Spec.Instructions,
 		},
-	})
+	}
+	target := &sessionpb.ExactEnvironment{Name: args.Sandbox.Name, Uid: string(args.Sandbox.UID)}
+	harness := sessionpb.Harness(sessionpb.Harness_value[string(args.Spec.Harness)])
+	if harness == sessionpb.Harness_HARNESS_CENTRAL_SAMPLER {
+		request.Spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: target}}}
+	} else {
+		request.Spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: target, Harness: harness}}}
+	}
+	response, err := e.dispatcher.CreateSession(ctx, request)
 	if err != nil {
 		return nil, dispatcherError(err)
 	}
-	return protoResult(response.GetOpening())
+	return protoResult(response.GetSession())
 }
 
 // submitInput queues user text for a Session and answers with its Dispatch.
@@ -97,7 +105,7 @@ func (e *Executor) changeReasoningEffort(ctx context.Context, args contract.Chan
 }
 
 // requireSandbox reads the named incarnation, refusing a Sandbox that is gone or is another incarnation. A grant is
-// pinned to one incarnation; commands and openings pass its UID to the Dispatcher, which checks the current UID too.
+// pinned to one incarnation; commands and sessions pass its UID to the Dispatcher, which checks the current UID too.
 func (e *Executor) requireSandbox(ctx context.Context, ref contract.SandboxRef) (*sandboxapi.Sandbox, error) {
 	var sandbox sandboxapi.Sandbox
 	err := e.kube.Get(ctx, client.ObjectKey{Namespace: e.binding.Namespace, Name: ref.Name}, &sandbox)

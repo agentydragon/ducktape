@@ -108,7 +108,7 @@ func TestToolResultsResolveArchiveProvenanceInCompactedContext(t *testing.T) {
 func TestReopeningSessionCannotChangeItsNativeAPI(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
-	request := &samplerpb.OpenSessionRequest{}
+	request := &samplerpb.CreateSessionRequest{}
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		t.Fatal(err)
 	}

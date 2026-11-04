@@ -29,7 +29,7 @@ from agentplane.system_tests.scenarios import mcp
 from agentplane.testing.scripted_model import ModelRequest, ScriptedModel, ShellCall, Text
 
 CLI = "/run/agentplane/environment/bin/agentplane"
-_SESSION_ACTIONS = {"open", "submit_input", "observe_input", "get", "read_turns", "cancel_input", "interrupt_turn"}
+_SESSION_ACTIONS = {"create", "submit_input", "observe_input", "get", "read_turns", "cancel_input", "interrupt_turn"}
 
 
 def _command(*args: str) -> str:
@@ -181,7 +181,7 @@ async def test_parent_session_delegates_through_the_action_cli(
     caller_namespace = parent_view.execution_account.account.namespace
     caller_name = parent_view.execution_account.account.name
 
-    parent = await Agent.open(
+    parent = await Agent.create(
         client,
         dispatcher,
         sandbox=parent_view.target.name,
@@ -264,7 +264,7 @@ async def test_parent_session_delegates_through_the_action_cli(
         parent,
         model,
         "sessions",
-        "open",
+        "create",
         {
             "target": target,
             "session_id": session_id,
@@ -282,7 +282,7 @@ async def test_parent_session_delegates_through_the_action_cli(
         caller_name=caller_name,
         caller_uid=caller_uid,
     )
-    assert opened["opening"]["session_id"] == session_id
+    assert opened["session"]["session_id"] == session_id
 
     before_input = await _submit(
         parent,
@@ -352,7 +352,7 @@ async def test_parent_session_delegates_through_the_action_cli(
             caller_uid=caller_uid,
         )
         assert snapshot["session_id"] == session_id
-        assert snapshot["opening"]["kind"] == "observed"
+        assert snapshot["session"]["kind"] == "observed"
         assert snapshot["history"]["kind"] == "observed"
 
         page = await _submit(

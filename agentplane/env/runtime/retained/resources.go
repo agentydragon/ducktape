@@ -122,8 +122,11 @@ func validateRecord(r *Record) error {
 	if r == nil {
 		return errors.New("missing persisted Session record")
 	}
-	if r.Harness != sessionpb.Harness_HARNESS_CLAUDE && r.Harness != sessionpb.Harness_HARNESS_CODEX {
-		return fmt.Errorf("invalid persisted harness value %d", r.Harness)
+	if r.GetPlacement().GetHarness() != sessionpb.Harness_HARNESS_CLAUDE && r.GetPlacement().GetHarness() != sessionpb.Harness_HARNESS_CODEX {
+		return fmt.Errorf("invalid persisted native harness value %d", r.GetPlacement().GetHarness())
+	}
+	if r.GetPlacement().GetEnvironment().GetName() == "" || r.GetPlacement().GetEnvironment().GetUid() == "" {
+		return errors.New("persisted native environment identity is incomplete")
 	}
 	if r.TotalContextBudgetTokens != nil {
 		budget := *r.TotalContextBudgetTokens

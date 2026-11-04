@@ -270,7 +270,7 @@ async function render(
     if (/^\/upstream\/history\/v1\/sessions\/[^/]+\/summary$/.test(path)) {
       return Promise.resolve(Response.json({ detail: "not found" }, { status: 404 }));
     }
-    if (/^\/upstream\/dispatcher\/v1\/sessions\/[^/]+\/opening$/.test(path)) return sessions(request);
+    if (/^\/upstream\/dispatcher\/v1\/sessions\/[^/]+$/.test(path)) return sessions(request);
     const threadPath = /^\/threads\/([^/]+)$/.exec(path);
     if (threadPath && request.method === "GET") {
       const threads = Array.isArray(live.snapshot.threads) ? live.snapshot.threads : [];
@@ -784,7 +784,7 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   expect(retainedRow()).toBeDefined();
 });
 
-it("shows creation progress, prevents duplicate clicks, and does not retry failed Opens", async () => {
+it("shows creation progress, prevents duplicate clicks, and does not retry failed Creates", async () => {
   let fail!: (response: Response) => void;
   const pending = new Promise<Response>((resolve) => {
     fail = resolve;
@@ -801,9 +801,9 @@ it("shows creation progress, prevents duplicate clicks, and does not retry faile
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   await act(async () => fail(Response.json({ detail: "session refused" }, { status: 422 })));
   expect(createThreadButton().disabled).toBe(true);
-  expect((await createThreadTooltip())?.textContent).toContain("Check opening status");
+  expect((await createThreadTooltip())?.textContent).toContain("Check its status");
   expect(container.textContent).toContain("session refused");
-  expect(container.textContent).toContain("Check opening status");
+  expect(container.textContent).toContain("Check this attempt before creating another thread.");
   expect(onOpenThread).not.toHaveBeenCalled();
 });
 
@@ -828,77 +828,79 @@ function button(label: string): HTMLButtonElement {
   return found;
 }
 
-function lostOpen(): Mock<(request: Request) => Promise<Response>> {
+function lostCreate(): Mock<(request: Request) => Promise<Response>> {
   return vi.fn((request: Request) =>
     Promise.resolve(
-      new URL(request.url).pathname.endsWith("/opening")
-        ? Response.json({ detail: "no opening" }, { status: 404 })
-        : request.method === "GET"
-          ? Response.json([])
-          : Response.json({ detail: "connection lost" }, { status: 503 })
+      request.method === "GET"
+        ? Response.json({ detail: "no Session" }, { status: 404 })
+        : Response.json({ detail: "connection lost" }, { status: 503 })
     )
   );
 }
 
-it("does not retry an Open the runner has not reported", async () => {
-  const sessions = lostOpen();
+it("does not retry a Create the placement owner has not reported", async () => {
+  const sessions = lostCreate();
   const onOpenThread = await render(sessions);
   await submitNewThread();
   const first = await postedBody(sessions);
-  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(first.session_id);
-  await act(async () => button("Check opening status").click());
+  expect(sessionStorage.getItem("agentplane:pending-create:startup-test")).toBe(first.session_id);
+  await act(async () => button("Check Session status").click());
   expect(onOpenThread).not.toHaveBeenCalled();
-  expect(container.textContent).toContain("No runner Thread or Dispatcher opening is visible yet");
+  expect(container.textContent).toContain("No runner Thread or Session is visible yet");
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   const paths = fetchMock.mock.calls.map(([input, init]) => new URL(requestFromFetchInput(input, init).url).pathname);
   expect(paths).toContain(`/upstream/app/v1/threads/${first.session_id}`);
   expect(paths).toContain(`/upstream/history/v1/sessions/${first.session_id}/summary`);
-  expect(paths).toContain(`/upstream/dispatcher/v1/sessions/${first.session_id}/opening`);
+  expect(paths).toContain(`/upstream/dispatcher/v1/sessions/${first.session_id}`);
 });
 
-it("recovers a lost Open from its Thread without sending a second Open", async () => {
-  const sessions = lostOpen();
+it("recovers a lost Create from its Thread without sending a second Create", async () => {
+  const sessions = lostCreate();
   const onOpenThread = await render(sessions);
   await submitNewThread();
   const first = await postedBody(sessions);
   live.snapshot.threads = [threadView({ metadata: { threadId: first.session_id } })];
-  await act(async () => button("Check opening status").click());
+  await act(async () => button("Check Session status").click());
   expect(onOpenThread).toHaveBeenCalledWith(first.session_id);
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
-  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
+  expect(sessionStorage.getItem("agentplane:pending-create:startup-test")).toBeNull();
 });
 
-it("resolves a queued Open from the live matching Thread projection exactly once", async () => {
+it("resolves an accepted Session from the live matching Thread projection exactly once", async () => {
   const sessions = vi.fn<(request: Request) => Promise<Response>>(async (request) => {
     if (request.method === "GET") return Response.json([]);
     const { session_id: sessionId } = await request.clone().json();
     return Response.json({
       sessionId,
-      sandbox: "startup-test",
-      state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-      reason: "waiting for runner",
+      placement: {
+        environmentHosted: {
+          environment: { name: "startup-test", uid: readySandbox.target!.uid },
+          harness: "HARNESS_CODEX",
+        },
+      },
+      status: { materialization: "SESSION_MATERIALIZATION_WAITING", reason: "waiting for owner" },
     });
   });
   const onOpenThread = await render(sessions);
   await submitNewThread();
   const sessionId = (await postedBody(sessions)).session_id as string;
-  expect(container.textContent).toContain("Queued in Dispatcher");
+  expect(container.textContent).toContain("Waiting for the placement owner");
   expect(onOpenThread).not.toHaveBeenCalled();
 
   live.snapshot.threads = [threadView({ metadata: { threadId: sessionId } })];
   await rerender();
   expect(onOpenThread).toHaveBeenCalledTimes(1);
   expect(onOpenThread).toHaveBeenCalledWith(sessionId);
-  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
+  expect(sessionStorage.getItem("agentplane:pending-create:startup-test")).toBeNull();
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
 
   await rerender();
   expect(onOpenThread).toHaveBeenCalledTimes(1);
 });
 
-it("resumes a persisted pending Open when its matching Thread is already projected after remount", async () => {
+it("resumes a persisted pending Session when its matching Thread is already projected after remount", async () => {
   const sessionId = "recovered-open-session";
-  sessionStorage.setItem("agentplane:pending-open:startup-test", sessionId);
+  sessionStorage.setItem("agentplane:pending-create:startup-test", sessionId);
   live.snapshot.threads = [threadView({ metadata: { threadId: sessionId } })];
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(
@@ -909,51 +911,52 @@ it("resumes a persisted pending Open when its matching Thread is already project
   const onOpenThread = await render(sessions);
   await vi.waitFor(() => expect(onOpenThread).toHaveBeenCalledWith(sessionId));
   expect(onOpenThread).toHaveBeenCalledTimes(1);
-  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
+  expect(sessionStorage.getItem("agentplane:pending-create:startup-test")).toBeNull();
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(0);
 });
 
-it("does not resolve a pending Open from an unrelated Thread or clear it on manual navigation", async () => {
+it("does not resolve a pending Session from an unrelated Thread or clear it on manual navigation", async () => {
   const sessionId = "pending-session";
   const otherSessionId = "other-session";
-  sessionStorage.setItem("agentplane:pending-open:startup-test", sessionId);
+  sessionStorage.setItem("agentplane:pending-create:startup-test", sessionId);
   live.snapshot.threads = [threadView({ metadata: { threadId: otherSessionId } })];
   const onOpenThread = await render(async (request) =>
     Response.json(request.method === "GET" ? [{ sessionId: otherSessionId }] : { detail: "unexpected POST" })
   );
 
   expect(onOpenThread).not.toHaveBeenCalled();
-  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(sessionId);
+  expect(sessionStorage.getItem("agentplane:pending-create:startup-test")).toBe(sessionId);
   await act(async () => {
     const row = [...container.querySelectorAll("button")].find((candidate) => candidate.textContent === otherSessionId);
     if (!(row instanceof HTMLButtonElement)) throw new Error("Missing unrelated Session row");
     row.click();
   });
   expect(onOpenThread).toHaveBeenCalledWith(otherSessionId);
-  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(sessionId);
+  expect(sessionStorage.getItem("agentplane:pending-create:startup-test")).toBe(sessionId);
 });
 
-it("reload retains only the Session ID, never the Open spec or bootstrap", async () => {
-  const sessions = lostOpen();
+it("reload retains only the Session ID, never the Create spec or bootstrap", async () => {
+  const sessions = lostCreate();
   await render(sessions);
   await submitNewThread();
   const original = await postedBody(sessions);
   expect(original.spec).toBeDefined();
   expect(sessionStorage.length).toBe(1);
-  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(original.session_id);
+  expect(sessionStorage.getItem("agentplane:pending-create:startup-test")).toBe(original.session_id);
   await act(async () => root.unmount());
   container.remove();
   await render(sessions);
   expect(container.textContent).toContain(original.session_id);
   expect(createThreadButton().disabled).toBe(true);
-  await act(async () => button("Check opening status").click());
+  expect(button("Forget attempt; Session creation may still complete")).toBeTruthy();
+  await act(async () => button("Check Session status").click());
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   await act(async () => button("Forget attempt").click());
-  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
+  expect(sessionStorage.getItem("agentplane:pending-create:startup-test")).toBeNull();
   expect(createThreadButton().disabled).toBe(false);
 });
 
-it("opens the client-minted Session ID returned by the opening", async () => {
+it("opens the client-minted Session ID returned by CreateSession", async () => {
   let publicId = "";
   const sessions = vi.fn<(request: Request) => Promise<Response>>(async (request) => {
     if (request.method === "GET") return Response.json([]);
@@ -961,15 +964,20 @@ it("opens the client-minted Session ID returned by the opening", async () => {
     live.snapshot.threads = [threadView({ metadata: { threadId: publicId } })];
     return Response.json({
       sessionId: publicId,
-      sandbox: "startup-test",
-      state: "DELIVERY_STATE_RUNNER_ADMITTED",
+      placement: {
+        environmentHosted: {
+          environment: { name: "startup-test", uid: readySandbox.target!.uid },
+          harness: "HARNESS_CODEX",
+        },
+      },
+      status: { materialization: "SESSION_MATERIALIZATION_ACCEPTED" },
     });
   });
   const onOpenThread = await render(sessions);
   await submitNewThread();
   expect(onOpenThread).toHaveBeenCalledWith(publicId);
   expect((await postedBody(sessions)).session_id).toBe(publicId);
-  expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
+  expect(sessionStorage.getItem("agentplane:pending-create:startup-test")).toBeNull();
 });
 
 it("hides an archived Thread by default, reveals it via Show archived, and unarchives it", async () => {
@@ -1052,7 +1060,19 @@ it("defaults new threads to an offered harness while retaining existing Claude t
   presetDefaults = { harness: "HARNESS_CODEX", model: "test-model" };
   const sessions = vi.fn<(request: Request) => Promise<Response>>(async (request) =>
     request.method === "GET"
-      ? Response.json([{ sessionId: "old-session", spec: { harness: "HARNESS_CLAUDE" } }])
+      ? Response.json([
+          {
+            sessionId: "old-session",
+            spec: {
+              placement: {
+                environmentHosted: {
+                  environment: { name: readySandbox.target!.name, uid: readySandbox.target!.uid },
+                  harness: "HARNESS_CLAUDE",
+                },
+              },
+            },
+          },
+        ])
       : Response.json({ detail: "Launch recorded" }, { status: 503 })
   );
   await render(sessions, undefined, true);
@@ -1068,7 +1088,11 @@ it("defaults new threads to an offered harness while retaining existing Claude t
   expect(harness.value).toBe("Codex");
   await act(async () => harness.click());
   await submitNewThread();
-  expect((await postedBody(sessions)).spec.harness).toBe("HARNESS_CODEX");
+  const body = await postedBody(sessions);
+  expect(body.spec.placement.environmentHosted).toEqual({
+    environment: { name: readySandbox.target!.name, uid: readySandbox.target!.uid },
+    harness: "HARNESS_CODEX",
+  });
 });
 
 it("keeps lifecycle controls when History Thread summaries are unavailable", async () => {
@@ -1250,8 +1274,8 @@ it("launches a configured central sampler while preserving the native offerings"
   );
   await submitNewThread();
   const body = await postedBody(sessions);
-  expect(body.spec.harness).toBe("HARNESS_CENTRAL_SAMPLER");
-  expect(body.spec).not.toHaveProperty("centralSampler");
-  expect(body.spec).not.toHaveProperty("central_sampler");
+  expect(body.spec.placement.centralSamplerV1).toEqual({
+    executorEnvironment: { name: readySandbox.target!.name, uid: readySandbox.target!.uid },
+  });
   expect(body.setup_script).toBe("echo executor-setup");
 });

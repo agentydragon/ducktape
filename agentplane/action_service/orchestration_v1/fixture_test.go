@@ -64,7 +64,7 @@ const (
 	testPresets       = `{"test-preset": {
 		"title": "Test preset",
 		"launch": {"template": "test-template", "policy_sets": ["test-extra-policy"]},
-		"open_session": {"spec": {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/test/{session_id}"}}
+		"create_session": {"spec": {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/test/{session_id}"}}
 	}}`
 )
 
@@ -119,7 +119,7 @@ func newFixture(t *testing.T) fixture {
 			t.Fatal(err)
 		}
 	}
-	dispatcher := &recordingDispatcher{openings: map[string]*dispatcherpb.SessionOpening{}}
+	dispatcher := &recordingDispatcher{openings: map[string]*dispatcherpb.Session{}}
 	history := &fakeHistory{summaries: map[string]*historypb.SessionSummary{}}
 	objects, err := client.NewWithWatch(server.Config, client.Options{Scheme: kube.Scheme()})
 	if err != nil {
@@ -240,7 +240,7 @@ type recordingDispatcher struct {
 	mu         sync.Mutex
 	requests   []proto.Message
 	refusal    error
-	openings   map[string]*dispatcherpb.SessionOpening
+	openings   map[string]*dispatcherpb.Session
 	dispatches []*dispatcherpb.Dispatch
 }
 
@@ -264,14 +264,15 @@ func (d *recordingDispatcher) received() []proto.Message {
 	return append([]proto.Message{}, d.requests...)
 }
 
-func (d *recordingDispatcher) OpenSession(_ context.Context, request *dispatcherpb.OpenSessionRequest) (*dispatcherpb.OpenSessionResponse, error) {
+func (d *recordingDispatcher) CreateSession(_ context.Context, request *dispatcherpb.CreateSessionRequest) (*dispatcherpb.CreateSessionResponse, error) {
 	if err := d.record(request); err != nil {
 		return nil, err
 	}
-	return &dispatcherpb.OpenSessionResponse{Opening: &dispatcherpb.SessionOpening{
-		SessionId: request.GetSessionId(), Sandbox: request.GetSandbox(),
-		State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
-	}}, nil
+	opening := &dispatcherpb.Session{
+		SessionId: request.GetSessionId(), Status: &dispatcherpb.SessionStatus{Materialization: dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_WAITING},
+	}
+	opening.Placement = request.GetSpec().GetPlacement()
+	return &dispatcherpb.CreateSessionResponse{Session: opening}, nil
 }
 
 func (d *recordingDispatcher) SubmitInput(_ context.Context, request *dispatcherpb.SubmitInputRequest) (*dispatcherpb.SubmitInputResponse, error) {
@@ -285,7 +286,7 @@ func (d *recordingDispatcher) SubmitInput(_ context.Context, request *dispatcher
 }
 
 // hold has the Dispatcher hold opening, and dispatches after those it holds.
-func (d *recordingDispatcher) hold(opening *dispatcherpb.SessionOpening, dispatches ...*dispatcherpb.Dispatch) {
+func (d *recordingDispatcher) hold(opening *dispatcherpb.Session, dispatches ...*dispatcherpb.Dispatch) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if opening != nil {
@@ -294,14 +295,14 @@ func (d *recordingDispatcher) hold(opening *dispatcherpb.SessionOpening, dispatc
 	d.dispatches = append(d.dispatches, dispatches...)
 }
 
-func (d *recordingDispatcher) GetSessionOpening(_ context.Context, request *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error) {
+func (d *recordingDispatcher) GetSession(_ context.Context, request *dispatcherpb.GetSessionRequest) (*dispatcherpb.GetSessionResponse, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	opening, held := d.openings[request.GetSessionId()]
 	if !held {
 		return nil, status.Error(codes.NotFound, "dispatch not found")
 	}
-	return &dispatcherpb.GetSessionOpeningResponse{Opening: opening}, nil
+	return &dispatcherpb.GetSessionResponse{Session: opening}, nil
 }
 
 // ListDispatches answers a Session's Dispatches, oldest first.

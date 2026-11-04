@@ -110,7 +110,7 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEv
 		if len(positions) > 0 {
 			rows, err := tx.QueryContext(ctx, `SELECT `+qualifiedDispatchColumns+`,
 				o.execution_account_namespace,o.execution_account_name,o.execution_account_uid
-				FROM dispatch d LEFT JOIN session_opening o ON o.session_id=d.session_id
+				FROM dispatch d LEFT JOIN session o ON o.session_id=d.session_id
 				AND o.sandbox_uid=d.sandbox_uid AND o.sandbox_name=d.sandbox_name
 				WHERE d.position=ANY($1) ORDER BY d.position`, pq.Array(positions))
 			if err != nil {
@@ -150,7 +150,7 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]TerminalEv
 		if err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, "DELETE FROM session_opening WHERE sandbox_uid=$1", sandboxUID); err != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM session WHERE sandbox_uid=$1", sandboxUID); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, "DELETE FROM sandbox_ownership WHERE sandbox_uid=$1", sandboxUID); err != nil {
@@ -186,7 +186,7 @@ func executionAccountField(owner *ServiceAccountIdentity, field string) string {
 
 func (s *Store) ListSandboxUIDs(ctx context.Context) (map[string]struct{}, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT sandbox_uid::text FROM dispatch
-		UNION SELECT sandbox_uid::text FROM session_opening
+		UNION SELECT sandbox_uid::text FROM session
 		UNION SELECT sandbox_uid::text FROM sandbox_ownership`)
 	if err != nil {
 		return nil, err

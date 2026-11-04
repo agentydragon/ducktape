@@ -11,6 +11,7 @@ go_library(
         "requests.go",
         "runner.go",
         "service.go",
+        "session_target.go",
         "session_watch.go",
         "subscribe.go",
         "views.go",

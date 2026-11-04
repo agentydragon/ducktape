@@ -205,15 +205,18 @@ func newSamplerExportFixture(t *testing.T, plans ...*samplerExportPlan) samplerE
 func (f samplerExportFixture) openSession(t *testing.T) *centralsampler.Session {
 	t.Helper()
 	platformInstructions := "Fixture Agentplane platform guidance."
-	session, err := f.sampler.OpenSession(t.Context(), &samplerpb.OpenSessionRequest{
+	executorUID := uuid.NewString()
+	session, err := f.sampler.CreateSession(t.Context(), &samplerpb.CreateSessionRequest{
 		SessionId: uuid.NewString(),
 		Spec: &sessionpb.SessionSpec{
-			Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER,
-			Model:   "test-model-initial",
-			Cwd:     "/test-workspace",
+			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
+				ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "test-execution-sandbox", Uid: executorUID},
+			}}},
+			Model: "test-model-initial",
+			Cwd:   "/test-workspace",
 		},
 		Executor: &identitypb.SandboxDestination{
-			Target: &identitypb.EnvironmentTarget{Namespace: testNamespace, Name: "test-execution-sandbox", Uid: uuid.NewString()}, Owner: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "test-execution-sandbox"},
+			Target: &identitypb.EnvironmentTarget{Namespace: testNamespace, Name: "test-execution-sandbox", Uid: executorUID}, Owner: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "test-execution-sandbox"},
 		},
 		ExpectedIncarnationUid: uuid.NewString(),
 	}, samplerOwnerUID, protocol.APIStyleResponses, &platformInstructions)

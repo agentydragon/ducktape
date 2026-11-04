@@ -134,7 +134,7 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 		releaseFence.Do(func() { close(successor.release) })
 	})
 	client := startDirectExecutionTestClient(t, r, "test-incarnation")
-	if _, err := client.runner.OpenSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
+	if _, err := client.runner.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
 	store.armed.Store(true)

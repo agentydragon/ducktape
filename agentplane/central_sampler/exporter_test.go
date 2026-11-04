@@ -138,8 +138,8 @@ func startFixtureHistory(t *testing.T, h *fixtureHistory) (string, string) {
 
 func exportFixtureSession(t *testing.T, store *Store) *Session {
 	t.Helper()
-	session, err := openStoreSession(t, store, &samplerpb.OpenSessionRequest{
-		SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CENTRAL_SAMPLER, Cwd: "/fixture", Model: "test-model"},
+	session, err := openStoreSession(t, store, &samplerpb.CreateSessionRequest{
+		SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "test-model"},
 		Executor: &identitypb.SandboxDestination{Owner: &identitypb.ServiceAccount{Namespace: "test", Name: "executor"}, Target: &identitypb.EnvironmentTarget{Namespace: "test", Name: "test-executor", Uid: uuid.NewString()}}, ExpectedIncarnationUid: uuid.NewString(),
 	}, "test-account-uid", protocol.APIStyleResponses)
 	if err != nil {

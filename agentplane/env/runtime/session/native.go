@@ -31,7 +31,7 @@ func (s *Session) startHarness(ctx context.Context) (resultErr error) {
 	s.mu.Lock()
 	s.processState = sessionpb.ProcessState_PROCESS_STATE_STARTING
 	s.nativeStop = stopNone
-	harnessKind := s.record.Harness
+	harnessKind := s.record.GetPlacement().GetHarness()
 	s.mu.Unlock()
 	ctx, span := observability.Start(ctx, "agentplane.env.runtime.harness.start", trace.WithAttributes(
 		attribute.String("session.id", s.id), attribute.String("harness", harnessKind.String()),
@@ -301,7 +301,7 @@ func (s *Session) dispatch(ctx context.Context, c *commandpb.Command) error {
 		if model.Model == snapshot.Model {
 			return s.NoopCommand(ctx, c.CommandId, "the requested model is already active", nil)
 		}
-		budget, e := s.deps.resolveModelConfig(ctx, s.record.Harness, model.Model)
+		budget, e := s.deps.resolveModelConfig(ctx, s.record.GetPlacement().GetHarness(), model.Model)
 		if e != nil {
 			return s.FailCommand(ctx, c.CommandId, e.Error(), nil)
 		}

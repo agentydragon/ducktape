@@ -17,7 +17,7 @@ const (
 	ActionGetEnvironment    = "get"
 	ActionResumeEnvironment = "resume"
 
-	ActionOpenSession   = "open"
+	ActionCreateSession = "create"
 	ActionSubmitInput   = "submit_input"
 	ActionObserveInput  = "observe_input"
 	ActionGetSession    = "get"
@@ -75,11 +75,11 @@ type SessionSpec struct {
 	ReasoningEffort string  `json:"reasoning_effort,omitempty" jsonschema:"minLength=1"`
 }
 
-type OpenSessionArgs struct {
+type CreateSessionArgs struct {
 	Target                 TargetRef   `json:"target"`
-	SessionID              string      `json:"session_id" jsonschema_description:"Caller-minted UUID. Repeating this exact request recovers the original opening; conflicting reuse fails." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
+	SessionID              string      `json:"session_id" jsonschema_description:"Caller-minted UUID. Repeating this exact request recovers the original Session; conflicting reuse fails." jsonschema:"pattern=^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"`
 	Spec                   SessionSpec `json:"spec"`
-	AdditionalInstructions string      `json:"additional_instructions,omitempty" jsonschema_description:"Standing instructions added to the Session. This field does not submit input or start a model turn. After opening, call sessions__submit_input with the task to start work."`
+	AdditionalInstructions string      `json:"additional_instructions,omitempty" jsonschema_description:"Standing instructions added to the Session. This field does not submit input or start a model turn. After creation, call sessions__submit_input with the task to start work."`
 	SetupScript            *string     `json:"setup_script,omitempty" jsonschema:"maxLength=65536"`
 }
 
@@ -123,7 +123,7 @@ type Inputs struct {
 	ListEnvironments  catalog.Input[ListEnvironmentsArgs]
 	GetEnvironment    catalog.Input[GetEnvironmentArgs]
 	ResumeEnvironment catalog.Input[ResumeEnvironmentArgs]
-	OpenSession       catalog.Input[OpenSessionArgs]
+	CreateSession     catalog.Input[CreateSessionArgs]
 	SubmitInput       catalog.Input[SubmitInputArgs]
 	ObserveInput      catalog.Input[ObserveInputArgs]
 	GetSession        catalog.Input[GetSessionArgs]
@@ -150,9 +150,9 @@ func NewInputs() (Inputs, error) {
 		"Resume environment", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)}); err != nil {
 		return Inputs{}, err
 	}
-	if inputs.OpenSession, err = newInput[OpenSessionArgs](ActionOpenSession,
-		"Durably open a Session in an exact existing environment whose execution account matches your authenticated account. Supply a caller-minted `session_id`, offered runtime settings, and the target's full UID; `additional_instructions` only adds standing guidance and never starts a turn. Opening does not submit task input, so call `sessions__submit_input` separately to start work. The result is the typed Dispatcher opening receipt; after an uncertain reply, look it up by the same Session ID rather than minting another ID.",
-		"Open session", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)}); err != nil {
+	if inputs.CreateSession, err = newInput[CreateSessionArgs](ActionCreateSession,
+		"Durably create a Session in an exact existing environment whose execution account matches your authenticated account. Supply a caller-minted `session_id`, offered runtime settings, and the target's full UID; `additional_instructions` only adds standing guidance and never starts a turn. Creation does not submit task input, so call `sessions__submit_input` separately to start work. The result is the typed Dispatcher Session resource; after an uncertain reply, look it up by the same Session ID rather than minting another ID.",
+		"Create session", &catalog.ToolAnnotations{ReadOnlyHint: new(false), DestructiveHint: new(false), IdempotentHint: new(true)}); err != nil {
 		return Inputs{}, err
 	}
 	if inputs.SubmitInput, err = newInput[SubmitInputArgs](ActionSubmitInput,
@@ -166,7 +166,7 @@ func NewInputs() (Inputs, error) {
 		return Inputs{}, err
 	}
 	if inputs.GetSession, err = newInput[GetSessionArgs](ActionGetSession,
-		"Read the retained opening and History snapshot for a Session you are authorized to inspect. Supply its Session UUID; no live environment is required. The structured response distinguishes observed, not-observed, unavailable, and partial source facts instead of collapsing a failed read into an empty result. Use `sessions__read_turns` for paginated compact turns.",
+		"Read the retained Session and History snapshot for a Session you are authorized to inspect. Supply its Session UUID; no live environment is required. The structured response distinguishes observed, not-observed, unavailable, and partial source facts instead of collapsing a failed read into an empty result. Use `sessions__read_turns` for paginated compact turns.",
 		"Get session", &catalog.ToolAnnotations{ReadOnlyHint: new(true), OpenWorldHint: new(false)}); err != nil {
 		return Inputs{}, err
 	}
@@ -208,7 +208,7 @@ func (inputs Inputs) EnvironmentActions() map[string]catalog.ActionDefinition {
 
 func (inputs Inputs) SessionActions() map[string]catalog.ActionDefinition {
 	return map[string]catalog.ActionDefinition{
-		inputs.OpenSession.Name():   inputs.OpenSession.Definition(),
+		inputs.CreateSession.Name(): inputs.CreateSession.Definition(),
 		inputs.SubmitInput.Name():   inputs.SubmitInput.Definition(),
 		inputs.ObserveInput.Name():  inputs.ObserveInput.Definition(),
 		inputs.GetSession.Name():    inputs.GetSession.Definition(),

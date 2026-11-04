@@ -91,10 +91,10 @@ def test_basic_policy_auto_approves_only_same_principal_session_actions(
                 "environments": ["get", "list", "resume"],
                 "sessions": [
                     "cancel_input",
+                    "create",
                     "get",
                     "interrupt_turn",
                     "observe_input",
-                    "open",
                     "read_turns",
                     "submit_input",
                 ],
@@ -213,10 +213,10 @@ def test_session_dispatcher_egress_is_limited_to_the_delegation_rpc_surfaces(
     audience = "session-dispatcher"
     credential_placeholder = f"agentplane-credential-{credential_name}"
     session_paths = [
-        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/OpenSession",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CreateSession",
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
-        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSessionOpening",
-        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListSessionOpenings",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSession",
+        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListSessions",
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch",
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
         "/agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn",
@@ -377,7 +377,7 @@ def test_haku_launches_on_central_sampler_with_the_wider_qwen_context_window(
     assert preset["reasoning_effort"] in option["reasoning_efforts"]
     assert config["sandbox_presets"]["haku"]["thread_preset"] == "haku-codex"
     actions = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
-    action_spec = actions["action_groups"]["orchestration_v1"]["executor"]["presets"]["haku"]["open_session"]["spec"]
+    action_spec = actions["action_groups"]["orchestration_v1"]["executor"]["presets"]["haku"]["create_session"]["spec"]
     assert action_spec["harness"] == preset["harness"]
     assert action_spec["model"] == preset["model"]
     assert "central_sampler" not in action_spec

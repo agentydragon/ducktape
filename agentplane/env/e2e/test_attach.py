@@ -186,19 +186,22 @@ async def test_resume_sends_the_model_the_reasoning_of_the_previous_harness(
 async def test_open_rejects_a_mismatched_spec(driver: RunnerDriver, spec: session_pb2.SessionSpec) -> None:
     await driver.attach("spec-1", spec=spec)
     other = session_pb2.SessionSpec(
-        harness=spec.harness, cwd=spec.cwd, model="agentplane-test/other-model", reasoning_effort=spec.reasoning_effort
+        placement=spec.placement,
+        cwd=spec.cwd,
+        model="agentplane-test/other-model",
+        reasoning_effort=spec.reasoning_effort,
     )
     assert await refusal(driver.attach("spec-1", spec=other)) == grpc.StatusCode.ALREADY_EXISTS
     assert await refusal(driver.attach("spec-2")) == grpc.StatusCode.NOT_FOUND
     instructed = session_pb2.SessionSpec(
-        harness=spec.harness,
+        placement=spec.placement,
         cwd=spec.cwd,
         model=spec.model,
         reasoning_effort=spec.reasoning_effort,
         instructions="Standing order the session was not created with.",
     )
     assert await refusal(driver.attach("spec-1", spec=instructed)) == grpc.StatusCode.ALREADY_EXISTS
-    relative = session_pb2.SessionSpec(harness=spec.harness, cwd="work/../elsewhere", model=spec.model)
+    relative = session_pb2.SessionSpec(placement=spec.placement, cwd="work/../elsewhere", model=spec.model)
     assert await refusal(driver.attach("spec-3", spec=relative)) == grpc.StatusCode.INVALID_ARGUMENT
 
 

@@ -15,6 +15,7 @@ import {
 import { displayableError } from "../client";
 import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
 import { SessionSpecSchema, type SessionSpec } from "../../../proto/session_pb";
+import type { EnvironmentTarget } from "../../../proto/identity_pb";
 
 type LoadedPresetDefaults = { preset: string | null; defaults: Partial<SessionDefaultsView> | null };
 
@@ -27,6 +28,7 @@ function isHarness(value: string): value is Harness {
  * for this one Thread, so its state outlives the panel it is shown in being closed.
  */
 export function NewThreadForm({
+  target,
   presetName,
   unavailableReason,
   creating,
@@ -34,6 +36,7 @@ export function NewThreadForm({
   onClose,
   onError,
 }: {
+  target: EnvironmentTarget | null;
   presetName: string | null;
   unavailableReason: string | null;
   creating: boolean;
@@ -215,10 +218,14 @@ export function NewThreadForm({
                 disabled={disabledReason !== null}
                 onClick={() =>
                   model &&
+                  target &&
                   onCreate(
                     fromJson(SessionSpecSchema, {
-                      harness,
-                      cwd: cwdTemplate, // The app resolves {session_id} before it opens the Session.
+                      placement:
+                        harness === "HARNESS_CENTRAL_SAMPLER"
+                          ? { centralSamplerV1: { executorEnvironment: { name: target.name, uid: target.uid } } }
+                          : { environmentHosted: { environment: { name: target.name, uid: target.uid }, harness } },
+                      cwd: cwdTemplate, // The app resolves {session_id} before it creates the Session.
                       model,
                       reasoningEffort: effort,
                       instructions,

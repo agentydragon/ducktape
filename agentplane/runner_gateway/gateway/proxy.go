@@ -83,12 +83,12 @@ func (p *environmentRuntimeProxy) GetStatus(ctx context.Context, request *sessio
 	return connection.runner.GetStatus(ctx, request)
 }
 
-func (p *environmentRuntimeProxy) OpenSession(ctx context.Context, request *environmentruntimepb.OpenSessionRequest) (*environmentruntimepb.OpenSessionResponse, error) {
+func (p *environmentRuntimeProxy) CreateSession(ctx context.Context, request *environmentruntimepb.CreateSessionRequest) (*environmentruntimepb.CreateSessionResponse, error) {
 	connection, err := p.connection(ctx, true, false)
 	if err != nil {
 		return nil, err
 	}
-	return connection.runner.OpenSession(ctx, request)
+	return connection.runner.CreateSession(ctx, request)
 }
 
 func (p *environmentRuntimeProxy) Quiesce(ctx context.Context, request *sessionpb.QuiesceRequest) (*sessionpb.QuiesceResponse, error) {

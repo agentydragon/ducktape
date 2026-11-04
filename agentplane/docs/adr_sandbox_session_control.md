@@ -2,6 +2,12 @@
 
 Status: **decided; see [Decisions](#decisions) for when each was settled.**
 
+**Logical Session RPC names were superseded on 2026-11-04:** Dispatcher, App, Environment Runtime
+and central Sampler use `CreateSession`; Dispatcher reads use `GetSession` and `ListSessions`.
+Former logical `OpenSession`/opening APIs have no compatibility path. The distinct streaming
+`Executor.OpenSession` remains an execution-connection handshake. References to the old logical
+name below preserve this ADR's historical decisions and examples.
+
 Scope: the responsibilities split across the services and custom resources that run a Sandbox (Pod
 or VM) and deliver work to the Sessions in it. This covers the control Service, readiness and
 runner health, quiesce, suspension, the Session message queue, and where each fact lives. It does
@@ -33,7 +39,7 @@ not redesign storage, the History Service, or policy.
   gateway's runner proxy and records `status.quiescedIncarnation` on any quiesce and sets `Quiesced` on a deleting Sandbox only (`finalize`), beside the older sealed names. It
   reads the connection Lease's facts. `Ready` is `WorkloadReady` AND `EnvironmentRuntimeConnected`. `QuiesceResponse.stage` has
   one reader, the controller.
-- **Runner Gateway** (`runner_gateway/`): state observation and proxy of the runner's private `Runner` service. It writes per-Sandbox Leases and EndpointSlices; it does not create the `<sandbox>-control` Service (its `services` RBAC rule stays until the controller's image is pinned). Session openings and durable commands belong to the Dispatcher; the Gateway owns no Session registry or database.
+- **Runner Gateway** (`runner_gateway/`): state observation and proxy of the runner's private `Runner` service. It writes per-Sandbox Leases and EndpointSlices; it does not create the `<sandbox>-control` Service (its `services` RBAC rule stays until the controller's image is pinned). logical Session records and durable commands belong to the Dispatcher; the Gateway owns no Session registry or database.
 - **Integration app** (`app/`): submits Sandbox desired state and operator-owned grants through the
   Kubernetes API, reads Sandbox views, and attaches the output-only VM console. It acts as the
   requesting operator; the Sandbox Controller owns status and reconciled resources.

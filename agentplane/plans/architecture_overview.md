@@ -406,12 +406,13 @@ Held until one is chosen:
   no Sandbox column. The app carries the recorded History UID in Thread views, filters Sandbox pages by
   UID, and sends Session commands to Dispatcher by Session ID; Dispatcher resolves and fences the
   recorded placement.
-- **Commands and Session openings.** The `session_dispatcher` database, served by the Runner
-  Gateway (`dispatch`, `session_opening`, `wake_attempt`, `sandbox_ownership`). Opening records are
-  addressed by Session ID and currently retain an exact Sandbox placement; the Dispatcher removes
-  them when that Sandbox is gone. Remaining native directory and independent Session-lifetime work
-  are in the [Session/environment plan](session_environment_model.md) and
-  [opening and recovery inventory](session_opening_recovery.md).
+- **Commands and Sessions.** The `session_dispatcher` database, served by the Runner
+  Gateway (`dispatch`, `session`, `wake_attempt`, `sandbox_ownership`). The coordinated resource
+  cutover renames the former `session_opening` relation to `session`; Session records are addressed
+  by Session ID and retain their exact required Sandbox placement. Current cleanup still removes
+  these records when that Sandbox is gone. Remaining native directory and independent
+  Session-lifetime work are in the [Session/environment plan](session_environment_model.md) and
+  the revision-scoped [opening and recovery inventory](session_opening_recovery.md).
 - **Inbox entries, peer messages, notices, subscriptions.** The Notification database; entries
   survive their inbox's retirement when the Sandbox is gone. The service split stays unscheduled;
   the operator may revisit the service with later "refactors/splits/reshuffles" (2026-10-17 04:18).

@@ -18,7 +18,7 @@ from agentplane.central_sampler.settings import (
     ConnectionConfig,
     ModelConfig,
 )
-from agentplane.central_sampler.testing import METADATA, Endpoint, open_request, service, settings
+from agentplane.central_sampler.testing import METADATA, Endpoint, create_request, service, settings
 from agentplane.central_sampler.testing_store import Store
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.native.testing.model_endpoint import SseEvent
@@ -122,11 +122,11 @@ async def test_anthropic_missing_terminal_is_unknown_and_does_not_commit(
         )
         config = native_config(base)
         async with service(config) as stub:
-            request = open_request(tmp_path)
+            request = create_request(tmp_path)
             request.session_id = SESSION_ID
             request.spec.model = ROUTE
             request.spec.reasoning_effort = "low"
-            await stub.OpenSession(request, metadata=METADATA, timeout=10)
+            await stub.CreateSession(request, metadata=METADATA, timeout=10)
 
             if operation == "failed_compaction":
                 await stub.SubmitInput(

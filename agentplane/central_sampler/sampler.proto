@@ -8,7 +8,7 @@ import "agentplane/env/runtime/control/environment_runtime.proto";
 import "agentplane/proto/identity.proto";
 
 service Sampler {
-  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
   rpc SubmitInput(agentplane.env.runtime.control.SubmitInputRequest) returns (agentplane.env.runtime.control.SubmitInputResponse);
   rpc ChangeModel(agentplane.env.runtime.control.ChangeModelRequest) returns (agentplane.env.runtime.control.ChangeModelResponse);
   rpc ChangeReasoningEffort(agentplane.env.runtime.control.ChangeReasoningEffortRequest) returns (agentplane.env.runtime.control.ChangeReasoningEffortResponse);
@@ -21,7 +21,7 @@ service Sampler {
   rpc FollowEvents(FollowEventsRequest) returns (stream FollowEventsResponse);
   rpc Compact(CompactRequest) returns (CompactResponse);
 }
-message OpenSessionRequest {
+message CreateSessionRequest {
   string session_id = 1;
   agentplane.proto.SessionSpec spec = 2;
   agentplane.proto.SandboxDestination executor = 3;
@@ -31,7 +31,7 @@ message OpenSessionRequest {
   // Supplied by the Dispatcher and retained separately from the authenticated sampler writer.
   agentplane.proto.ServiceAccountIdentity execution_principal = 6;
 }
-message OpenSessionResponse { agentplane.proto.Attached attached = 1; }
+message CreateSessionResponse { agentplane.proto.Attached attached = 1; }
 message GetSessionRequest { string session_id = 1; }
 message GetSessionResponse {
   agentplane.proto.Attached attached = 1;

@@ -1119,8 +1119,8 @@ class ThreadEpochs extends Listeners {
           case "reconnectRequired":
             this.#scopeChanged();
             break;
-          case "sessionOpened":
-            throw new Error("History emitted a SessionOpened frame without an opened_after request.");
+          case "sessionRecorded":
+            throw new Error("History emitted a SessionRecorded frame without a recorded_after request.");
           case undefined:
             throw new Error("History returned an empty Session summary watch frame.");
         }

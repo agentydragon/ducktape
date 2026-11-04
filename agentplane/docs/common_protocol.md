@@ -21,7 +21,9 @@ separate facts; the app does not own a server-side command queue.
 - Native harness frames delivered verbatim as Native Events, with derived Events citing
   their source sequences.
 - Only common behavior proved by the scripted Claude/Codex harness tests. A caller
-  selects a harness through SessionSpec.harness, not with adapter-specific operations.
+  selects a native harness in `SessionSpec.placement.environment_hosted.harness`; the same placement
+  carries the exact required environment. Central sampler V1 uses the separate
+  `central_sampler_v1` placement and fixed executor environment, not a native harness operation.
 
 The commands are `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` and `InterruptTurn`. `SubmitInput` joins a running turn; it is not a common steer or
 queue abstraction. The runner reconciles uncompleted commands after restart. Native

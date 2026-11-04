@@ -3,7 +3,9 @@ package dispatcher
 import (
 	"fmt"
 
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -68,18 +70,33 @@ func DescribeDispatch(row *Dispatch) (*dispatcherpb.Dispatch, error) {
 	return result, nil
 }
 
-func DescribeOpening(row *Opening) (*dispatcherpb.SessionOpening, error) {
-	state, err := dispatchState(row.State)
-	if err != nil {
-		return nil, err
+func DescribeSession(row *Session) (*dispatcherpb.Session, error) {
+	var materialization dispatcherpb.SessionStatus_Materialization
+	switch row.State {
+	case SessionWaitingState:
+		materialization = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_WAITING
+	case SessionInProgressState:
+		materialization = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_IN_PROGRESS
+	case SessionAcceptedState:
+		materialization = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_ACCEPTED
+	case SessionFailedState:
+		materialization = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_FAILED
+	case SessionUnknownState:
+		materialization = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_UNKNOWN
+	default:
+		return nil, fmt.Errorf("unknown Session materialization %q", row.State)
 	}
-	result := &dispatcherpb.SessionOpening{
-		SessionId: row.SessionID, Sandbox: row.SandboxName, SandboxUid: row.SandboxUID,
-		State: state, CreatedAt: timestamppb.New(row.CreatedAt), UpdatedAt: timestamppb.New(row.UpdatedAt),
-		DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment, Harness: row.Spec.GetHarness(),
+	result := &dispatcherpb.Session{
+		SessionId: row.SessionID,
+		Status:    &dispatcherpb.SessionStatus{Materialization: materialization, DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment},
+		CreatedAt: timestamppb.New(row.CreatedAt), UpdatedAt: timestamppb.New(row.UpdatedAt),
 	}
+	if !row.Placement.matchesSpec(row.Spec) {
+		return nil, fmt.Errorf("stored Session placement disagrees with its spec")
+	}
+	result.Placement = proto.Clone(row.Spec.GetPlacement()).(*sessionpb.SessionPlacement)
 	if row.Reason != "" {
-		result.Reason = &row.Reason
+		result.Status.Reason = &row.Reason
 	}
 	return result, nil
 }

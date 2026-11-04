@@ -19,14 +19,13 @@ callers use native gRPC at the owning backend.
 
 - **Remaining app contracts.** `APP_API_GRPC_FACADE` in the
   [task DAG](task_dag.md#app_api_grpc_facade--uniform-app-grpc-apis-with-generated-http-facades)
-  covers the remaining app views, mutations and streams. Session opening uses the app-owned
-  generated `AppService` facade, retaining preset composition and Thread metadata
-  creation before native Dispatcher admission. Decide which checks each remaining wrapper needs,
+  covers the remaining app views, mutations and streams. Logical Session creation uses the app-owned
+  generated `AppService` facade, retaining preset composition and Thread metadata creation before
+  Dispatcher `CreateSession` admission. Decide which checks each remaining wrapper needs,
   at its owning boundary, rather than preserve them as transport requirements.
 - **Error codes in the browser.** `connections/management.tsx` still branches on HTTP status
-  (three times); move it to the body's gRPC `code`, which `HttpError` carries. Session-opening
-  recovery uses gRPC codes with an HTTP-status fallback for overlapping app replicas.
-- **Typed Session overrides.** Replace `AppService.OpenSession`'s `Struct` spec and
+  (three times); move it to the body's gRPC `code`, which `HttpError` carries. Session-creation recovery uses gRPC codes with an HTTP-status fallback for overlapping app replicas.
+- **Typed Session overrides.** Replace `AppService.CreateSession`'s `Struct` spec and
   `Value` setup script with a typed contract, such as an override message or field mask with an
   explicit setup-clear operation. Preserve preset inheritance, explicit zero/empty/null behavior,
   strict validation and the caller-minted ID; plan the HTTP, cached-client and rollback migration.

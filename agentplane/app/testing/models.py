@@ -59,6 +59,18 @@ def thread_view_from_proto_json(metadata: dict[str, object], summary: dict[str, 
     spec = spec_value if isinstance(spec_value, dict) else {}
     sandbox_value = summary.get("sandbox")
     sandbox = sandbox_value if isinstance(sandbox_value, dict) else {}
+    placement_value = spec.get("placement")
+    placement = placement_value if isinstance(placement_value, dict) else {}
+    native_value = placement.get("environmentHosted")
+    native = native_value if isinstance(native_value, dict) else None
+    if native is not None:
+        harness = native.get("harness")
+    elif isinstance(placement.get("centralSamplerV1"), dict):
+        harness = Harness.CENTRAL_SAMPLER
+    else:
+        harness = attachment.get("historicalHarness")
+        if harness == "HARNESS_UNSPECIFIED":
+            harness = None
     feed_statuses = {"FEED_STATUS_ACTIVE": "active", "FEED_STATUS_ENDED": "ended", "FEED_STATUS_FAILED": "failed"}
     feed_status = feed_statuses.get(str(summary.get("feedStatus"))) if attached is not None else None
     return ThreadView.model_validate(
@@ -66,7 +78,7 @@ def thread_view_from_proto_json(metadata: dict[str, object], summary: dict[str, 
             "id": metadata["threadId"],
             "sandbox": sandbox.get("name", ""),
             "sandbox_uid": sandbox.get("uid"),
-            "harness": spec.get("harness"),
+            "harness": harness,
             "model": spec.get("model"),
             "cwd": spec.get("cwd"),
             "created_at": metadata["createdAt"],

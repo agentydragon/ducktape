@@ -51,11 +51,11 @@ func TestResolveFindsOnlyTheActionsOfAvailableGroups(t *testing.T) {
 func TestSessionDelegationBindingIsStrictAndTyped(t *testing.T) {
 	c, err := parse(`{"sessions": {"title": "Sessions", "description": "delegated Sessions",
 		"executor": {"kind": "session_delegation", "description": "forward caller identity"},
-		"actions": {"open": {"description": "open a Session"}}}}`)
+		"actions": {"create": {"description": "create a Session"}}}}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	group, _, err := c.Resolve("sessions", "open")
+	group, _, err := c.Resolve("sessions", "create")
 	if err != nil {
 		t.Fatal(err)
 	}

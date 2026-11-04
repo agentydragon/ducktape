@@ -177,7 +177,7 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
         switch (frame.observation.case) {
           case "changed":
           case "reconnectRequired":
-          case "sessionOpened":
+          case "sessionRecorded":
             historyReady = true;
             if (metadataReady) refresh();
             break;

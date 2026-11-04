@@ -12,6 +12,16 @@ The Runner's sandbox-local adapter connects it to the loopback exec-server. Exis
 retain their current paths. The optional Agentplane cdk8s construct deploys the service when an
 environment configures it; existing native Sessions are not migrated.
 
+Central sampler V1 is selected by `SessionSpec.placement=central_sampler_v1` and requires one exact,
+fixed executor environment. It retains the existing Sandbox-backed identity, admission, notification,
+wake and deletion behavior. This placement does not add optional attachments or allow opening a
+central Session without an environment. Native harness store selection and harness-native IDs remain
+separate future work; environment-independent central Sessions are tracked in the
+[Session/environment plan](../plans/session_environment_model.md#central-session-environment-independence).
+The placement-owner RPC is `Sampler.CreateSession`; it receives the committed placement and retains
+these V1 admission semantics. `Executor.OpenSession` is separate: its stream owns one execution
+connection to the Runner and does not create the logical Session.
+
 The service, sampling loop, persistence and exporter are implemented in Go. The JavaScript host is
 the pinned upstream Codex binary. Python is used only by the acceptance fixtures.
 
@@ -41,6 +51,10 @@ rebuildable export markers: the older exporter could mark entries delivered befo
 finished committing. The next export reconciles History's retained cursor and completes that
 snapshot. Replace the old singleton exporter before enabling multiple rolling replicas, so an old
 exporter cannot repopulate markers using the former semantics.
+The placement cutover's migration 10 converts retained central creation requests to the
+`central_sampler_v1` placement using their stored executor target. It changes no conversation,
+command, cursor or effect record, and is not a compatibility mode for old callers or Sandbox/runtime
+binaries.
 For an explicit migration-only run, set `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL` and pass
 `--migrate-only` as the sole argument. Normal service startup performs the same migration before
 it serves.
@@ -117,8 +131,9 @@ container limits stop meeting the production resource contract.
   empty settings preserve native operation and do not enable the new transport.
 - The sampler allows the Dispatcher account for admission. History explicitly allows the sampler
   account in `ingress.sampler_accounts`; it retains the distinct executor Sandbox identity.
-- The app's `HARNESS_CENTRAL_SAMPLER` model list offers **Central sampler** alongside Codex and Claude.
-  App and Actions callers do not supply service names or endpoints. A non-empty setup script runs once on the bound executor, in the resolved working directory,
+- The app's `HARNESS_CENTRAL_SAMPLER` offer maps to the `central_sampler_v1` placement and offers
+  **Central sampler** alongside Codex and Claude. App and Actions callers do not supply service names
+  or endpoints. A non-empty setup script runs once on the bound executor, in the resolved working directory,
   before sampling starts. Opening only reserves the Session and may run setup; the first model turn
   requires an explicit `SubmitInput`. Caller `additional_instructions` are an additive briefing
   mapped into `SessionSpec.instructions`, after server-owned platform guidance and the child

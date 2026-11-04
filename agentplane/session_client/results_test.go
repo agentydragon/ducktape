@@ -29,12 +29,12 @@ var resultSessionID = uuid.MustParse(testSessionID)
 
 type resultDispatcherStub struct {
 	dispatcherpb.SessionDispatcherClient
-	opening    *dispatcherpb.GetSessionOpeningResponse
+	opening    *dispatcherpb.GetSessionResponse
 	openingErr error
 	calls      int
 }
 
-func (s *resultDispatcherStub) GetSessionOpening(_ context.Context, _ *dispatcherpb.GetSessionOpeningRequest, _ ...grpc.CallOption) (*dispatcherpb.GetSessionOpeningResponse, error) {
+func (s *resultDispatcherStub) GetSession(_ context.Context, _ *dispatcherpb.GetSessionRequest, _ ...grpc.CallOption) (*dispatcherpb.GetSessionResponse, error) {
 	s.calls++
 	return s.opening, s.openingErr
 }
@@ -61,8 +61,8 @@ func (s *resultHistoryStub) ReadSessionEvents(_ context.Context, request *histor
 }
 
 func TestGetSessionComposesProtoJSONWithoutLosingEnumOrUint64Shapes(t *testing.T) {
-	dispatcher := &resultDispatcherStub{opening: &dispatcherpb.GetSessionOpeningResponse{Opening: &dispatcherpb.SessionOpening{
-		SessionId: testSessionID, State: dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED,
+	dispatcher := &resultDispatcherStub{opening: &dispatcherpb.GetSessionResponse{Session: &dispatcherpb.Session{
+		SessionId: testSessionID, Status: &dispatcherpb.SessionStatus{Materialization: dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_ACCEPTED},
 	}}}
 	history := &resultHistoryStub{summary: &historypb.SessionSummary{
 		SessionId: testSessionID, CommittedCursor: math.MaxUint64,
@@ -73,18 +73,18 @@ func TestGetSessionComposesProtoJSONWithoutLosingEnumOrUint64Shapes(t *testing.T
 	if err != nil {
 		t.Fatalf("GetSession() error = %v", err)
 	}
-	if dispatcher.calls != 1 || got.Opening.Kind != SourceObserved || got.History.Kind != SourceObserved {
+	if dispatcher.calls != 1 || got.Session.Kind != SourceObserved || got.History.Kind != SourceObserved {
 		t.Fatalf("snapshot/source calls = %#v, dispatcher calls %d", got, dispatcher.calls)
 	}
-	if got.SessionID.String() != testSessionID || got.Opening.Source != SourceDispatcher || got.History.Source != SourceHistory {
+	if got.SessionID.String() != testSessionID || got.Session.Source != SourceDispatcher || got.History.Source != SourceHistory {
 		t.Fatalf("snapshot identities = %#v", got)
 	}
 	var opening, summary map[string]json.RawMessage
-	if err := json.Unmarshal(got.Opening.Value, &opening); err != nil {
+	if err := json.Unmarshal(got.Session.Value, &opening); err != nil {
 		t.Fatal(err)
 	}
-	if string(opening["state"]) != `"DELIVERY_STATE_RUNNER_ADMITTED"` {
-		t.Fatalf("opening ProtoJSON state = %s", opening["state"])
+	if string(opening["status"]) != `{"materialization":"SESSION_MATERIALIZATION_ACCEPTED"}` {
+		t.Fatalf("Session ProtoJSON status = %s", opening["status"])
 	}
 	if err := json.Unmarshal(got.History.Value, &summary); err != nil {
 		t.Fatal(err)
@@ -101,9 +101,9 @@ func TestGetSessionPreservesMissingAndUnavailableSourcesIndependently(t *testing
 	if err != nil {
 		t.Fatalf("GetSession() error = %v", err)
 	}
-	if got.Opening.Kind != SourceUnavailable || got.Opening.Error == nil || got.Opening.Error.Code != codes.Unavailable.String() ||
-		strings.Contains(got.Opening.Error.Message, "secret") {
-		t.Fatalf("Dispatcher failure was not sanitized: %#v", got.Opening)
+	if got.Session.Kind != SourceUnavailable || got.Session.Error == nil || got.Session.Error.Code != codes.Unavailable.String() ||
+		strings.Contains(got.Session.Error.Message, "secret") {
+		t.Fatalf("Dispatcher failure was not sanitized: %#v", got.Session)
 	}
 	if got.History.Kind != SourceNotObserved || got.History.Error != nil {
 		t.Fatalf("missing History was not distinct from an unavailable source: %#v", got.History)

@@ -29,10 +29,10 @@ async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
 
 
 @pytest.mark.real_model
-async def test_the_model_obeys_the_standing_instruction_its_session_was_opened_with(
+async def test_the_model_obeys_the_standing_instruction_its_session_was_created_with(
     client: Client, dispatcher: SessionDispatcherClient, sandbox: Sandboxes, harness: session_pb2.Harness, model: str
 ) -> None:
-    await session_instructions.the_model_obeys_the_standing_instruction_its_session_was_opened_with(
+    await session_instructions.the_model_obeys_the_standing_instruction_its_session_was_created_with(
         client, dispatcher, sandbox, harness, model
     )
 

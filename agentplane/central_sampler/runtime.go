@@ -626,7 +626,7 @@ func (r *Runtime) setup(ctx context.Context, sessionID string, owner Owner) (boo
 	if err != nil || !started {
 		return false, err
 	}
-	configuration := &samplerpb.OpenSessionRequest{}
+	configuration := &samplerpb.CreateSessionRequest{}
 	if err := proto.Unmarshal(session.Configuration, configuration); err != nil {
 		return false, err
 	}

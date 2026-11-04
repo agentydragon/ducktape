@@ -31,7 +31,7 @@ type SandboxGetter interface {
 
 // Dispatcher is the narrow unary surface used by the RunnerBridge.
 type Dispatcher interface {
-	OpenSession(context.Context, *dispatcherpb.OpenSessionRequest) (*dispatcherpb.OpenSessionResponse, error)
+	CreateSession(context.Context, *dispatcherpb.CreateSessionRequest) (*dispatcherpb.CreateSessionResponse, error)
 }
 
 // RunnerProxy performs informational calls through the Sandbox's control
@@ -50,7 +50,7 @@ type RunnerBridge struct {
 	dispatcher Dispatcher
 }
 
-// New constructs the bridge. Runner may be nil for callers using only Session openings.
+// New constructs the bridge. Runner may be nil for callers using only Sessions.
 func New(namespace string, sandboxes SandboxGetter, runner RunnerProxy, dispatcher Dispatcher) (*RunnerBridge, error) {
 	if namespace == "" || sandboxes == nil || dispatcher == nil {
 		return nil, errors.New("Sandbox getter and Session Dispatcher are required")
@@ -58,27 +58,34 @@ func New(namespace string, sandboxes SandboxGetter, runner RunnerProxy, dispatch
 	return &RunnerBridge{namespace: namespace, sandboxes: sandboxes, runner: runner, dispatcher: dispatcher}, nil
 }
 
-// OpenSession queues one immutable Session specification. The caller-minted
+// CreateSession queues one immutable Session specification. The caller-minted
 // UUID is the dispatcher's idempotency key, so a timeout is returned with that
 // same ID for reconciliation or retry.
-func (b *RunnerBridge) OpenSession(
+func (b *RunnerBridge) CreateSession(
 	ctx context.Context, sandbox, sandboxUID string, sessionID uuid.UUID, spec *sessionpb.SessionSpec, setupScript *string,
-) (*dispatcherpb.SessionOpening, error) {
+) (*dispatcherpb.Session, error) {
 	if sandbox == "" || sandboxUID == "" || spec == nil {
 		return nil, errors.New("Sandbox name, UID and Session spec are required")
 	}
 	if setupScript != nil && utf8.RuneCountInString(*setupScript) > MaxSetupScriptCharacters {
 		return nil, fmt.Errorf("setup script exceeds %d characters", MaxSetupScriptCharacters)
 	}
-	request := &dispatcherpb.OpenSessionRequest{
-		Sandbox: sandbox, SandboxUid: sandboxUID, SessionId: sessionID.String(), Spec: proto.Clone(spec).(*sessionpb.SessionSpec),
+	request := &dispatcherpb.CreateSessionRequest{
+		SessionId: sessionID.String(), Spec: proto.Clone(spec).(*sessionpb.SessionSpec),
+	}
+	target := spec.GetPlacement().GetEnvironmentHosted().GetEnvironment()
+	if spec.GetPlacement().GetCentralSamplerV1() != nil {
+		target = spec.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
+	}
+	if target.GetName() != sandbox || target.GetUid() != sandboxUID {
+		return nil, errors.New("Session placement does not match requested Sandbox")
 	}
 	if setupScript != nil {
 		value := *setupScript
 		request.SetupScript = &value
 	}
-	ctx, span := observability.Start(ctx, "agentplane.dispatcher.open_session")
-	response, err := b.dispatcher.OpenSession(ctx, request)
+	ctx, span := observability.Start(ctx, "agentplane.dispatcher.create_session")
+	response, err := b.dispatcher.CreateSession(ctx, request)
 	observability.End(span, err)
 	if err != nil {
 		var timeout *RequestTimeoutError
@@ -87,12 +94,19 @@ func (b *RunnerBridge) OpenSession(
 		}
 		return nil, err
 	}
-	opening := response.GetOpening()
-	if opening == nil || opening.GetSessionId() != sessionID.String() || opening.GetSandbox() != sandbox ||
-		opening.GetSandboxUid() != sandboxUID {
-		return nil, &SessionOpeningNotFoundError{SessionID: sessionID, Sandbox: sandbox}
+	session := response.GetSession()
+	var returnedTarget *sessionpb.ExactEnvironment
+	if session != nil {
+		returnedTarget = session.GetPlacement().GetEnvironmentHosted().GetEnvironment()
+		if session.GetPlacement().GetCentralSamplerV1() != nil {
+			returnedTarget = session.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
+		}
 	}
-	return opening, nil
+	if session == nil || session.GetSessionId() != sessionID.String() || returnedTarget.GetName() != sandbox ||
+		returnedTarget.GetUid() != sandboxUID {
+		return nil, &SessionNotFoundError{SessionID: sessionID, Sandbox: sandbox}
+	}
+	return session, nil
 }
 
 // ListSessions proxies the live runner's durable Session inventory through the requested Sandbox incarnation.

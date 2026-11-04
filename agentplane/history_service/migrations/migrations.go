@@ -41,5 +41,5 @@ func newProvider(db *sql.DB) (*goose.Provider, error) {
 	entities := goose.NewGoMigration(7, &goose.GoFunc{RunTx: migrateThreadEntities}, &goose.GoFunc{RunTx: rollbackThreadEntities})
 	return goose.NewProvider(goose.DialectPostgres, db, files,
 		goose.WithTableName("history_service_goose_version"), goose.WithSessionLocker(locker),
-		goose.WithDisableGlobalRegistry(true), goose.WithGoMigrations(backfill, entities))
+		goose.WithDisableGlobalRegistry(true), goose.WithGoMigrations(backfill, entities, sessionPlacement))
 }

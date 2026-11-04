@@ -21,7 +21,7 @@ service EnvironmentRuntime {
   // Durably reserve or confirm a Session and immutable creation configuration.
   // An existing Session with another spec/setup returns ALREADY_EXISTS.
   // This acknowledgement does not assert native creation or process readiness.
-  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
   // Informational live snapshot; never starts a process or wakes a Sandbox.
   rpc GetStatus(agentplane.proto.GetStatusRequest)
       returns (agentplane.proto.EnvironmentRuntimeStatus);
@@ -54,7 +54,7 @@ message WatchStateResponse {
   agentplane.proto.EnvironmentRuntimeFacts facts = 5;
 }
 
-message OpenSessionRequest {
+message CreateSessionRequest {
   string session_id = 1;
   agentplane.proto.SessionSpec spec = 2;
   optional string setup_script = 3;  // selected only at creation
@@ -62,7 +62,7 @@ message OpenSessionRequest {
   agentplane.proto.ServiceAccountIdentity execution_principal = 4;
 }
 
-message OpenSessionResponse {
+message CreateSessionResponse {
   agentplane.proto.Attached attached = 1;
 }
 

@@ -481,11 +481,11 @@ message ReadNativeFramesRequest {
 }
 
 message WatchSessionSummariesRequest {
-  // Present: the stream also sends `session_opened` for every Session recorded at a position after
+  // Present: the stream also sends `session_recorded` for every Session recorded at a position after
   // this one, those already recorded first. For a normal caller, positions count only Sessions
   // visible to its execution principal. Explicit backend-wide readers use the service-wide cursor.
   // 0 names every visible Session. Absent: it names none.
-  optional uint64 opened_after = 1;
+  optional uint64 recorded_after = 1;
 }
 
 message WatchSessionSummariesResponse {
@@ -495,14 +495,14 @@ message WatchSessionSummariesResponse {
     google.protobuf.Empty changed = 1;
     // Planned renewal: reconnect with fresh authorization.
     google.protobuf.Empty reconnect_required = 2;
-    // Only for a request with `opened_after`.
-    SessionOpened session_opened = 3;
+    // Only for a request with `recorded_after`.
+    SessionRecorded session_recorded = 3;
   }
   // A successful stream ends with reconnect_required; bare EOF is a failure.
 }
 
 // A Session the History Service recorded, on the runner's first push of it.
-message SessionOpened {
+message SessionRecorded {
   string session_id = 1;
   // Ascending in recording order within the caller's read scope, and a position becomes visible only
   // after every lower one in that scope, so a caller reconnecting with the last handled position misses

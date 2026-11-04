@@ -22,7 +22,7 @@ func (m *Manager) publishSessionState(s *Session, demand bool) error {
 	defer m.publishMu.Unlock()
 	var input ReconcileSnapshot
 	s.mu.Lock()
-	input.Harness = s.record.Harness
+	input.Harness = s.record.GetPlacement().GetHarness()
 	input.SetupRequested = retained.HasSetupScript(s.record)
 	input.Setup, input.Pending, input.ProcessID = s.setup, len(s.pending), s.processID
 	input.ProcessRunning = s.process != nil && s.process.Running()

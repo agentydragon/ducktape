@@ -215,7 +215,7 @@ flowchart LR
     central[Experimental central sampler]
     sandboxctl[Sandbox Controller]
     k8s[Kubernetes API]
-    app -->|session opens + commands| dispatcher
+    app -->|Session creation + commands| dispatcher
     app -->|Dispatch watch for the browser: gRPC| dispatcher
     app -->|Pod-bound operator resume broker: gRPC| environments
     actions -->|caller-delegated EnvironmentService list/get; resume when enabled: gRPC| environments

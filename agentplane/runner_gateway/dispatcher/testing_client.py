@@ -48,32 +48,41 @@ class SessionDispatcherClient:
         )
         return response.dispatch
 
-    async def get_session_opening(self, session_id: str) -> session_dispatcher_pb2.SessionOpening:
-        """Read one durable opening by its globally unique Session ID."""
+    async def get_session(self, session_id: str) -> session_dispatcher_pb2.Session:
+        """Read one current Session by its globally unique ID."""
         response = await self.unary(
-            self.stub.GetSessionOpening, session_dispatcher_pb2.GetSessionOpeningRequest(session_id=session_id)
+            self.stub.GetSession, session_dispatcher_pb2.GetSessionRequest(session_id=session_id)
         )
-        return response.opening
+        return response.session
 
     async def session_target(self, session_id: str) -> tuple[str, str]:
-        """Read the opening's immutable destination, never the current Sandbox by name."""
-        opening = await self.get_session_opening(session_id)
-        if not opening.sandbox or not opening.sandbox_uid:
+        """Read the Session's immutable destination, never the current Sandbox by name."""
+        session = await self.get_session(session_id)
+        match session.placement.WhichOneof("kind"):
+            case "environment_hosted":
+                target = session.placement.environment_hosted.environment
+            case "central_sampler_v1":
+                target = session.placement.central_sampler_v1.executor_environment
+            case _:
+                raise ValueError(f"Session {session_id} has no recorded placement")
+        if not target.name or not target.uid:
             raise ValueError(f"Session {session_id} has no recorded Sandbox destination")
-        return opening.sandbox, opening.sandbox_uid
+        return target.name, target.uid
 
 
-async def delivered_opening(dispatcher: SessionDispatcherClient, session_id: UUID) -> None:
-    """Return once the Dispatcher has delivered the Session's opening to its runner."""
+async def accepted_session(dispatcher: SessionDispatcherClient, session_id: UUID) -> None:
+    """Return once the placement owner has accepted the Session."""
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(30), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
     ):
         with attempt:
             response = await dispatcher.unary(
-                dispatcher.stub.GetSessionOpening,
-                session_dispatcher_pb2.GetSessionOpeningRequest(session_id=str(session_id)),
+                dispatcher.stub.GetSession, session_dispatcher_pb2.GetSessionRequest(session_id=str(session_id))
             )
-            assert response.opening.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED, response.opening
+            assert (
+                response.session.status.materialization
+                == session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_ACCEPTED
+            ), response.session
 
 
 async def admitted(

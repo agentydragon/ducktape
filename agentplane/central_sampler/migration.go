@@ -26,7 +26,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	}
 	provider, err := goose.NewProvider(goose.DialectPostgres, db, files,
 		goose.WithTableName("central_sampler_goose_version"), goose.WithSessionLocker(locker),
-		goose.WithDisableGlobalRegistry(true))
+		goose.WithDisableGlobalRegistry(true), goose.WithGoMigrations(sessionPlacementMigration))
 	if err != nil {
 		return fmt.Errorf("configure central sampler migrations: %w", err)
 	}

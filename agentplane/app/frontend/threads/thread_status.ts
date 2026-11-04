@@ -6,7 +6,7 @@ import { HarnessState, SetupState } from "../../../proto/session_pb";
 import type { Live } from "../live";
 import type { ThreadTabStatus } from "../tab_metadata";
 import { sandboxReady, sandboxSummary, suspensionReason } from "../sandbox_status";
-import { harnessBehavior } from "../harness_behavior";
+import { attachedHarness, harnessBehavior } from "../harness_behavior";
 import { turnErrorLabel } from "./history_rows";
 
 /** Whether the stream is current and its Thread updates are being heard, so a snapshot's Thread states are live. */
@@ -29,7 +29,7 @@ export function threadStatusFromSnapshot(
 ): ThreadTabStatus {
   if (!thread || !fresh) return { kind: "inactive", label: "No live harness confirmed", tabLabel: "Unknown" };
   if (thread.metadata.archived) return { kind: "archived", label: "Thread archived", tabLabel: "Archived" };
-  const { commandsRequireReadySandbox } = harnessBehavior(thread.summary.attached?.spec?.harness);
+  const { commandsRequireReadySandbox } = harnessBehavior(attachedHarness(thread.summary.attached));
   if (commandsRequireReadySandbox && sandbox && sandboxSummary(sandbox).kind === "suspended") {
     const reason = suspensionReason(sandbox);
     return {

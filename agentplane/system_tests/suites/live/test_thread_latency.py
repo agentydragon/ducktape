@@ -1,7 +1,7 @@
 """How fast the deployment answers a one-word turn, and how fast a browser can open that thread.
 
 **The turn.** A session at low reasoning effort, on the model the deployment offers its harness, is
-asked to say PING. Opening a session starts the harness and completes its handshake before the app
+asked to say PING. Session creation starts the harness and completes its handshake before the app
 answers, so the turn runs on a started harness. Timed on the test's clock: from the app answering
 the input as accepted (the Dispatcher's receipt, `Turn.accepted`) to the turn's
 `TurnCompleted` arriving on the thread's event stream. The harness reports the same turn on its own
@@ -240,7 +240,7 @@ async def test_a_one_word_turn_answers_and_its_thread_opens_in_time(
     model: str,
 ) -> None:
     view = await sandbox(f"systest-latency-{harness}")
-    agent = await Agent.open(
+    agent = await Agent.create(
         client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=model
     )
     turn = await agent.run(PING)

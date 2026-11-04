@@ -2,25 +2,32 @@
 
 ## Identity and admission
 
-`Sampler` is a separate authenticated gRPC API. `OpenSession` binds a canonical public Session UUID
-to a central `SessionSpec`, caller ServiceAccount UID and fixed `SandboxDestination` plus expected
-incarnation UID. The Dispatcher also supplies an optional immutable execution principal containing
+`Sampler` is a separate authenticated gRPC API. `CreateSession` binds a canonical public Session UUID
+to a `SessionSpec` whose placement is `central_sampler_v1` with one exact `executor_environment`,
+caller ServiceAccount UID and fixed `SandboxDestination` plus expected incarnation UID. The
+Dispatcher and sampler require the spec environment and executor destination to match. The
+Dispatcher also supplies an optional immutable execution principal containing
 the account namespace/name and ServiceAccount UID; when present, its account must match the executor
 owner and the configuration retains it across retries and restarts. A legacy configuration without
 that principal cannot acquire one on a retry. The authenticated sampler ServiceAccount remains the
 journal producer identity and is retained separately by History. The Dispatcher uses its one
-configured central sampler target. Session specs,
-including browser, Actions, and Dispatcher opening inputs, contain no service selection. Model and effort must be server-configured. Every RPC
-uses TokenReview and the allowed-account policy; Session UUID knowledge grants no authority.
+configured central sampler target; callers select the V1 placement, not a service endpoint. Model and
+effort must be server-configured. Every RPC uses TokenReview and the allowed-account policy; Session
+UUID knowledge grants no authority.
 Reusing an identifier with a different payload conflicts. The integration app owns neither this
 admission nor the continuation database.
 
+This V1 placement retains the existing Sandbox-backed identity, admission, notification, wake and
+deletion behavior. Its exact executor environment is required and fixed for the Session. It does not
+add optional attachments or allow an environment-free central Session; those changes require the
+separate [Session/environment task](../plans/task_dag.md#central-session-environment-independence).
+
 `spec.instructions` is the caller's briefing. Callers that expose an additive
 `additional_instructions` parameter map it to this field; it never replaces Agentplane guidance.
-At the first durable open, the Store composes the configured `platform_instructions`, the child
+At first durable creation, the Store composes the configured `platform_instructions`, the child
 Session ID, then the caller briefing. It persists
-that effective prompt separately from the raw opening request, which remains the idempotency key.
-An exact duplicate open reuses the stored prompt even if the configured guide has changed; a new
+that effective prompt separately from the raw creation request, which remains the idempotency key.
+An exact duplicate create reuses the stored prompt even if the configured guide has changed; a new
 Session receives the current guide. Provider and harness base instructions remain separate.
 
 If `platform_instructions` is omitted, startup logs a warning and new Sessions retain the previous
@@ -28,7 +35,7 @@ caller-only prompt. An explicitly configured guide must be nonempty. This allows
 deploy before managed configuration enables the guide; the omission is controlled by the operator,
 never by a Session's opening request. Enabling or changing the guide affects only new Sessions.
 
-Opening or briefing a Session does not start a provider turn. Optional setup may execute first, but
+Creating or briefing a Session does not start a provider turn. Optional setup may execute first, but
 the first model turn starts only after an explicit `SubmitInput`.
 
 `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn` and `Compact` admit durable,
@@ -55,8 +62,9 @@ lets the sampling request finish, because a cut stream leaves its intent uncerta
 `notify()` outputs and user input in one arrival-ordered queue; the sampler records a step's
 `notify()` outputs before its steering input.
 
-Dispatcher routes `HARNESS_CENTRAL_SAMPLER` directly to a configured sampler. Its native ProxyRunner
-continues to serve wrapped Codex/Claude. There is no central-to-native fallback. Initial open
+Dispatcher routes `SessionSpec.placement=central_sampler_v1` directly to a configured sampler. Its
+native ProxyRunner continues to serve wrapped Codex/Claude selected by
+`environment_hosted.harness`. There is no central-to-native fallback. Initial open
 requires a ready incarnation; later central commands do not wake or wait for executor readiness.
 The Sandbox UID stays fixed. A verified new incarnation of that same Sandbox can be adopted at
 execution-session initialization, including after suspend and resume.
@@ -362,7 +370,7 @@ advances the durable JavaScript epoch and appends a model-visible notice that pr
 `load()` values and live handles were lost. Pending model tool calls proven undispatched receive
 failed outputs paired to their exact call IDs before the notice; unrelated calls follow their
 ordinary dispatcher path. The transaction clears the old host marker, so a retry cannot duplicate
-the notice. The marker is set again only after a logical Session opens on a real host. With an
+the notice. The marker is set again only after a logical Session is created on a real host. With an
 unresolved cell, tool, executor or live handle, host loss remains an unknown outcome requiring
 explicit recovery; it is never interpreted as a known no-dispatch call. A first use with no marker
 and an ordinary same-host reacquisition do not add a notice.

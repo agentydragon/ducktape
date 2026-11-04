@@ -307,28 +307,28 @@ func TestAReconnectedWriterFillsAnUnknownSandboxUIDOnce(t *testing.T) {
 	}
 }
 
-func TestOpenedSessionsListInRecordingOrder(t *testing.T) {
+func TestRecordedSessionsListInRecordingOrder(t *testing.T) {
 	store := testStore(t)
 	first, second := opened(t, store), opened(t, store)
-	all, err := store.OpenedSessions(t.Context(), 0, 1000)
+	all, err := store.RecordedSessions(t.Context(), 0, 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
 	index := func(sessionID uuid.UUID) int {
-		return slices.IndexFunc(all, func(session OpenedSession) bool { return session.SessionID == sessionID })
+		return slices.IndexFunc(all, func(session RecordedSession) bool { return session.SessionID == sessionID })
 	}
 	i, j := index(first), index(second)
 	if i < 0 || j < 0 || all[i].Position >= all[j].Position {
 		t.Fatalf("sessions %v do not list %s before %s", all, first, second)
 	}
-	rest, err := store.OpenedSessions(t.Context(), all[i].Position, 1000)
+	rest, err := store.RecordedSessions(t.Context(), all[i].Position, 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if slices.ContainsFunc(rest, func(session OpenedSession) bool { return session.SessionID == first }) || !slices.ContainsFunc(rest, func(session OpenedSession) bool { return session.SessionID == second }) {
+	if slices.ContainsFunc(rest, func(session RecordedSession) bool { return session.SessionID == first }) || !slices.ContainsFunc(rest, func(session RecordedSession) bool { return session.SessionID == second }) {
 		t.Fatalf("sessions after the first: %v", rest)
 	}
-	_, err = store.OpenedSessions(t.Context(), 0, 0)
+	_, err = store.RecordedSessions(t.Context(), 0, 0)
 	assertError(t, err, ErrInvalidArgument)
 }
 

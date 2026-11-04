@@ -186,17 +186,17 @@ func TestCreateSubscriptionAnswersAFaultOfACollaboratorWithoutItsText(t *testing
 	}
 }
 
-func TestSubscriptionCreationResolvesAndFencesTheOpening(t *testing.T) {
+func TestSubscriptionCreationResolvesAndFencesTheSession(t *testing.T) {
 	for _, test := range []struct {
 		name    string
-		opening *dispatcherpb.SessionOpening
+		opening *dispatcherpb.Session
 		want    codes.Code
 	}{
 		{name: "no Dispatcher opening", want: codes.NotFound},
-		{name: "different Session", opening: &dispatcherpb.SessionOpening{SessionId: "another-session", Sandbox: sandboxName, SandboxUid: sandboxUID}, want: codes.Unavailable},
-		{name: "no UID", opening: &dispatcherpb.SessionOpening{SessionId: testSession, Sandbox: sandboxName}, want: codes.Unavailable},
-		{name: "deleted Sandbox", opening: &dispatcherpb.SessionOpening{SessionId: testSession, Sandbox: "deleted-sandbox", SandboxUid: sandboxUID}, want: codes.NotFound},
-		{name: "same-name replacement", opening: &dispatcherpb.SessionOpening{SessionId: testSession, Sandbox: sandboxName, SandboxUid: "previous-uid"}, want: codes.NotFound},
+		{name: "different Session", opening: nativeSession("another-session", sandboxName, sandboxUID), want: codes.Unavailable},
+		{name: "no UID", opening: nativeSession(testSession, sandboxName, ""), want: codes.Unavailable},
+		{name: "deleted Sandbox", opening: nativeSession(testSession, "deleted-sandbox", sandboxUID), want: codes.NotFound},
+		{name: "same-name replacement", opening: nativeSession(testSession, sandboxName, "previous-uid"), want: codes.NotFound},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			s := newServer(t)
@@ -480,7 +480,7 @@ func TestASandboxRecreatedUnderTheNameSeesNoneOfItsPredecessorsInboxes(t *testin
 	request := createRequest("successor")
 	_, err = server.client.CreateSubscription(bearing(t, sandboxToken), request)
 	requireCode(t, err, codes.NotFound)
-	// A different Session opened by the successor has its own inbox.
+	// A different Session created by the successor has its own inbox.
 	request.SessionId = "another-session"
 	created, err := server.client.CreateSubscription(bearing(t, sandboxToken), request)
 	if err != nil {

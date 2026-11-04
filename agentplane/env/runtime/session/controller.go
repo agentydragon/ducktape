@@ -259,7 +259,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		}
 		if current.Phase == Halted && outer.Stage >= lifecycle.Stopping && !current.ProcessStopped {
 			s.mu.Lock()
-			shared := s.deps.codexAppServer != nil && s.record.Harness == sessionpb.Harness_HARNESS_CODEX
+			shared := s.deps.codexAppServer != nil && s.record.GetPlacement().GetHarness() == sessionpb.Harness_HARNESS_CODEX
 			s.mu.Unlock()
 			if shared {
 				status, found, err := codexappserver.ReadStatus(ctx, r)

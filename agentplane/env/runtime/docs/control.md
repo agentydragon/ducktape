@@ -71,7 +71,7 @@ budget remains authoritative across all of its native services.
 - The Sandbox's launch file (`--launch-file`, written by the Sandbox controller) carries the
   Sandbox's identity and the bootstrap shell source. Environment Runtime starts the bootstrap with
   `/bin/sh -eu` from the configured `initialization_cwd` when Runtime starts; a Sandbox without a bootstrap runs
-  nothing. `OpenSession` durably reserves a Session without waiting for the bootstrap. Session setup waits on the Runtime-owned bootstrap component and does not run session setup or start a native harness until the bootstrap succeeds. If it fails
+  nothing. `CreateSession` durably reserves a Session without waiting for the bootstrap. Session setup waits on the Runtime-owned bootstrap component and does not run session setup or start a native harness until the bootstrap succeeds. If it fails
   or is interrupted, admitted commands receive durable failure outcomes.
 - The first request durably selects the exact script bytes in the `BootstrapSelections` COSI
   resource at `<state_dir>/runtime-resources.db`, before the script starts. Environment Runtime thereafter refuses
@@ -85,7 +85,7 @@ budget remains authoritative across all of its native services.
 - Stdout, stderr, and the attempt's result or interruption are appended as persistent protobuf
   `BootstrapEvents` COSI resources with dense Sandbox-scoped sequence numbers. Each output chunk is
   retained in full; the final result or interruption event is the durable outcome authority. An
-  abandoned `OpenSession` does not stop the script or recording.
+  abandoned `CreateSession` does not stop the script or recording.
 - Environment Runtime takes the bootstrap only from its launch file, never over the control protocol.
 
 ## Environment Runtime control
@@ -121,7 +121,7 @@ budget remains authoritative across all of its native services.
   releases its connection and detaches its native session. Codex 0.162.1 allows resume for
   30 seconds before expiring that session and terminating its remaining processes. Other
   sessions are unaffected. See the sandbox-owned [Executor API](../execution/SPEC.md).
-- `OpenSession` answers with the session's `Attached` snapshot: the spec, setup and harness states,
+- `CreateSession` answers with the session's `Attached` snapshot: the spec, setup and harness states,
   `last_cursor`, and the active turn id as of that position. `GetStatus` returns one snapshot with a
   Environment Runtime boot UUID, each harness process (its per-spawn UUID and the Sessions it hosts), session
   execution and busy state, and the Environment Runtime desired lifecycle and aggregate progress. Lifecycle
@@ -150,7 +150,7 @@ budget remains authoritative across all of its native services.
   end at that exit without losing the turn's final evidence. Completed idle sessions remain dormant. Interrupts neither start a harness nor prevent
   recovery required by other work; an admitted interrupt whose target ended is settled as a no-op.
 - Each `Environment Runtime` call is answered once, with its result or a gRPC status naming the cause.
-  `ListSessions` and `Quiesce` answer as the RPCs of the same name do. `OpenSession` durably reserves
+  `ListSessions` and `Quiesce` answer as the RPCs of the same name do. `CreateSession` durably reserves
   a session from its spec; for an existing session with the same spec and setup script when given,
   it confirms the reservation, and any other spec is refused. A `Quiesce` takes effect after every
   command delivered before it is answered; a call after it that starts or resumes work is refused
@@ -162,7 +162,7 @@ budget remains authoritative across all of its native services.
 - `Quiesce` is for Sandbox teardown only. The Environment Runtime first records, durably, that the Sandbox is in
   lameduck in this incarnation, naming the incarnation UID from its latest authenticated
   `WatchState`; from then on,
-  including after a restart in the same incarnation, it is in lameduck: `OpenSession` and every
+  including after a restart in the same incarnation, it is in lameduck: `CreateSession` and every
   delivered command except an interrupt are refused with `ABORTED`, which a sender reads as "retry
   after the Sandbox resumes". An admitted command whose dispatch marker was not committed is
   terminally failed before the journal is sealed; a command with a dispatch marker stays pending

@@ -87,10 +87,14 @@ import { CommandSchema } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
 import {
   AttachedSchema,
+  CentralSamplerV1PlacementSchema,
+  EnvironmentHostedPlacementSchema,
   Harness,
   HarnessState,
   LaunchOutcome,
   ProcessState,
+  SessionPlacementSchema,
+  SessionSpecSchema,
   SessionExecutionState,
   SetupState,
 } from "../../../proto/session_pb";
@@ -696,6 +700,21 @@ function notificationFrames(session: string, kind: string, delta: boolean): unkn
   ];
 }
 
+function visualNativeSpec(harness: Harness, sandboxName: string) {
+  const target = SANDBOXES.find((candidate) => candidate.target?.name === sandboxName)?.target;
+  if (!target) throw new Error(`Missing Sandbox fixture ${sandboxName}`);
+  return create(SessionSpecSchema, {
+    placement: {
+      kind: {
+        case: "environmentHosted",
+        value: { environment: { name: target.name, uid: target.uid }, harness },
+      },
+    },
+    model: harness === Harness.CODEX ? "harness-codex-model" : "harness-claude-model",
+    cwd: "/state/work",
+  });
+}
+
 /** The store's copy of the sessions: the idle one named, the stopped one not, so both renderings are on the page. */
 const THREADS: ThreadView[] = [
   threadView(
@@ -713,7 +732,7 @@ const THREADS: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
       attached: {
         sessionId: IDLE_THREAD,
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
         lastCursor: 14n,
         harnessState: HarnessState.RUNNING,
       },
@@ -733,7 +752,7 @@ const THREADS: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
       attached: {
         sessionId: UNNAMED_STOPPED_THREAD,
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
         lastCursor: 31n,
         harnessState: HarnessState.STOPPED,
       },
@@ -754,7 +773,7 @@ const THREADS: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
       attached: {
         sessionId: RUNNING_THREAD,
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
         lastCursor: 23n,
         harnessState: HarnessState.RUNNING,
         activeTurnId: "t2",
@@ -785,7 +804,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
       attached: {
         sessionId: THREE_UNPROCESSED_THREAD,
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
         lastCursor: 7n,
         harnessState: HarnessState.RUNNING,
       },
@@ -806,7 +825,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
       attached: {
         sessionId: ONE_UNPROCESSED_THREAD,
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
         lastCursor: 7n,
         harnessState: HarnessState.RUNNING,
       },
@@ -827,7 +846,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
       attached: {
         sessionId: DELIVERY_FAILED_THREAD,
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
         lastCursor: 7n,
         harnessState: HarnessState.STOPPED,
       },
@@ -845,7 +864,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "pending-sandbox" },
       attached: {
         sessionId: "5f1c4a2e-0000-4000-8000-000000000003",
-        spec: { harness: Harness.CODEX, model: "harness-codex-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CODEX, "pending-sandbox"),
         lastCursor: 2n,
         harnessState: HarnessState.STOPPED,
       },
@@ -866,7 +885,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "suspended-sandbox" },
       attached: {
         sessionId: SUSPENDED_THREAD,
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CLAUDE, "suspended-sandbox"),
         lastCursor: 9n,
         harnessState: HarnessState.STOPPED,
         setupState: SetupState.SUCCEEDED,
@@ -889,7 +908,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "deleted-sandbox" },
       attached: {
         sessionId: "5f1c4a2e-0000-4000-8000-000000000005",
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        historicalHarness: Harness.CLAUDE,
         lastCursor: 18n,
         harnessState: HarnessState.STOPPED,
       },
@@ -910,7 +929,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
       sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
       attached: {
         sessionId: "5f1c4a2e-0000-4000-8000-000000000006",
-        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        spec: visualNativeSpec(Harness.CLAUDE, "ready-sandbox"),
         lastCursor: 3n,
         harnessState: HarnessState.STOPPED,
       },
@@ -2904,16 +2923,22 @@ routes.push(
   [
     "POST",
     /^\/sandboxes\/([^/]+)\/sessions$/,
-    (match, _query, _signal, body) => {
-      if (!queueOpenResponses || body === undefined) throw new Error("No queued Session Open fixture is configured");
-      const request = JSON.parse(body) as { session_id?: string };
-      if (!request.session_id) throw new Error("Open request has no Session ID");
-      queuedOpenSessionId = request.session_id;
+    (_match, _query, _signal, body) => {
+      if (!queueCreateResponses || body === undefined)
+        throw new Error("No queued Session Create fixture is configured");
+      const request = JSON.parse(body) as { session_id?: string; spec?: JsonValue };
+      if (!request.session_id || !request.spec) throw new Error("Create request has no Session ID or spec");
+      const spec = fromJson(SessionSpecSchema, request.spec);
+      if (spec.placement?.kind.case !== "environmentHosted") {
+        throw new Error("Queued fixture requires native placement");
+      }
+      queuedSessionId = request.session_id;
       return {
         sessionId: request.session_id,
-        sandbox: match[1],
-        state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-        reason: "waiting for runner admission",
+        status: { materialization: "SESSION_MATERIALIZATION_WAITING", reason: "waiting for owner" },
+        placement: {
+          environmentHosted: toJson(EnvironmentHostedPlacementSchema, spec.placement.kind.value),
+        },
       };
     },
   ],
@@ -3605,12 +3630,12 @@ routes.unshift(
 
 // Mutable mock service state; Python fixture methods change it before mounting React.
 let previewAction: ActionRequestView | null = null;
-let queueOpenResponses = false;
-let queuedOpenSessionId: string | null = null;
+let queueCreateResponses = false;
+let queuedSessionId: string | null = null;
 
 function projectQueuedSession(): void {
-  if (!queuedOpenSessionId) throw new Error("No queued Session Open to project");
-  const sessionId = queuedOpenSessionId;
+  if (!queuedSessionId) throw new Error("No queued Session Create to project");
+  const sessionId = queuedSessionId;
   const source = THREADS[0];
   if (!source) throw new Error("No Session fixture to copy");
   const sourceAttached = source.summary.attached;
@@ -3619,7 +3644,7 @@ function projectQueuedSession(): void {
     {
       ...source.metadata,
       threadId: sessionId,
-      name: "Queued opening thread",
+      name: "Waiting Session thread",
       createdAt: timestampFromDate(new Date(ago(0))),
     },
     {
@@ -3685,7 +3710,14 @@ const visualHarness = {
       name: target.name,
       uid: target.uid,
     });
-    spec.harness = Harness.CENTRAL_SAMPLER;
+    spec.placement = create(SessionPlacementSchema, {
+      kind: {
+        case: "centralSamplerV1",
+        value: create(CentralSamplerV1PlacementSchema, {
+          executorEnvironment: { name: target.name, uid: target.uid },
+        }),
+      },
+    });
     spec.model = "harness-codex-model";
   },
   mountDisclosure(props: Parameters<typeof DisclosureVisual>[0]): void {
@@ -3699,8 +3731,8 @@ const visualHarness = {
   autosuspendStarting,
   addProvisioningSandbox,
   addSuspendedSandboxes,
-  queueOpenResponse(): void {
-    queueOpenResponses = true;
+  queueCreateResponse(): void {
+    queueCreateResponses = true;
   },
   projectQueuedSession,
   set(flag: Flag, on = true): void {
@@ -3890,7 +3922,7 @@ const visualHarness = {
               lastTurnStatus: TurnStatus.COMPLETED,
               attached: {
                 ...thread.summary.attached!,
-                spec: { ...thread.summary.attached!.spec!, harness: Harness.CODEX },
+                spec: visualNativeSpec(Harness.CODEX, "ready-sandbox"),
                 activeTurnId: "",
               },
             },
@@ -3909,7 +3941,7 @@ const visualHarness = {
               lastTurnStatus: TurnStatus.COMPLETED,
               attached: {
                 ...thread.summary.attached!,
-                spec: { ...thread.summary.attached!.spec!, harness: Harness.CODEX },
+                spec: visualNativeSpec(Harness.CODEX, "ready-sandbox"),
                 activeTurnId: "",
               },
             },

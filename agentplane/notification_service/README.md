@@ -10,11 +10,15 @@ connect directly to runners.
 Agents subscribe with a Session ID and an idempotence key, then retrieve stored
 payloads when notified. Reads are non-destructive; acknowledgement explicitly advances the handled
 contiguous prefix. Unacknowledged entries do not cause repeated reminders.
-Creating a subscription resolves the existing Dispatcher opening and retains current Sandbox ownership,
-exact UID and live Runtime membership checks. Sessions opened only through Runtime have no Dispatcher
-opening and cannot create subscriptions or receive new messages. Message sends also resolve the opening,
-then evaluate the sender's current scoped grant against its exact Sandbox. Persisted subscriptions,
-inbox cursors and notices remain intact.
+Creating a subscription resolves the existing Dispatcher Session and retains its exact Sandbox target,
+UID and live Runtime membership checks. `environment_hosted` supplies the native Session's required
+environment; `central_sampler_v1` supplies its fixed `executor_environment`. Both currently resolve to
+the existing Sandbox-backed destination. Central sampler V1 has no optional attachment API and
+cannot open without an environment; its existing admission, wake and deletion behavior remains.
+Sessions created only through Runtime have no Dispatcher Session and cannot create subscriptions or
+receive new messages. Message sends also resolve the Session, then evaluate the sender's current
+scoped grant against its exact Sandbox. Persisted subscriptions, inbox cursors and notices remain
+intact through the placement migration.
 For UID-pinned destinations, workers retire an inbox only after two Sandbox lookups
 confirm that its managed Sandbox is missing or has a different UID, separated by the
 configured `stale_inbox_confirmation_s` grace period. Matching UIDs (including
@@ -49,11 +53,15 @@ service-account tokens, Kubernetes read access to Sandboxes, PolicySets and Poli
 PolicyBinding status. Preserve existing staging data. Verify an Action
 subscription through a newly opened harness after rollout. Existing sessions retain their original prompt.
 
-Subscription creation uses a Session-only request and requires a Dispatcher opening. Deploy the
+Subscription creation uses a Session-only request and requires a Dispatcher Session record. Deploy the
 Notification API and CLI images together; creations can fail while old and new versions overlap.
 Message sends also use a Session-only request; old CLI binaries cannot send to the new API during
 the rolling overlap. Once serving replicas and client binaries agree, retry uncertain creations and
 sends with their original idempotency keys.
+The SessionSpec placement cutover also changes the Dispatcher Session projection consumed here;
+roll the Notification service with the matching Dispatcher and sampler contract. Pre-cutover
+Sandbox/service binaries are not a supported compatibility tier, while existing inbox and History
+data are migrated or retained in place.
 New Sessions receive their public ID as `AGENTPLANE_SESSION_ID`; the CLI reads that value directly and
 does not accept the former `AGENTPLANE_DESTINATION` JSON envelope. Existing central Sessions keep the
 prompt frozen when they were opened, which may still show a Sandbox reference and name the old

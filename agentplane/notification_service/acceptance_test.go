@@ -21,6 +21,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -105,12 +106,12 @@ type openingDispatcher struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
 }
 
-func (openingDispatcher) GetSessionOpening(_ context.Context, request *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error) {
+func (openingDispatcher) GetSession(_ context.Context, request *dispatcherpb.GetSessionRequest) (*dispatcherpb.GetSessionResponse, error) {
 	if request.GetSessionId() != testSession {
 		return nil, status.Error(codes.NotFound, "opening not found")
 	}
-	return &dispatcherpb.GetSessionOpeningResponse{Opening: &dispatcherpb.SessionOpening{
-		SessionId: testSession, Sandbox: sandboxName, SandboxUid: sandboxUID,
+	return &dispatcherpb.GetSessionResponse{Session: &dispatcherpb.Session{
+		SessionId: testSession, Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandboxName, Uid: sandboxUID}}}},
 	}}, nil
 }
 

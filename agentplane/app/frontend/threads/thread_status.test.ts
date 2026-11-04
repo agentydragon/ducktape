@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FeedStatus } from "../../../history_service/history_service_pb";
 import { TurnStatus } from "../../../proto/event_pb";
-import { Harness, HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
+import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
 import { threadView, type ThreadViewInit } from "./testing/state";
 import { readySandbox, suspendedSandbox } from "../testing/sandbox";
 import { threadStatusFromSnapshot } from "./thread_status";
@@ -133,7 +133,19 @@ describe("a failed last turn colors only an otherwise idle thread", () => {
 
 it("keeps a central sampler turn visible when the execution Sandbox is unavailable", () => {
   const central = thread({
-    summary: { attached: { spec: { harness: Harness.CENTRAL_SAMPLER }, activeTurnId: "turn-central" } },
+    summary: {
+      attached: {
+        spec: {
+          placement: {
+            kind: {
+              case: "centralSamplerV1",
+              value: { executorEnvironment: { name: READY_SANDBOX.target!.name, uid: SANDBOX_UID } },
+            },
+          },
+        },
+        activeTurnId: "turn-central",
+      },
+    },
   });
   expect(threadStatusFromSnapshot(central, SUSPENDED_SANDBOX, true).kind).toBe("running");
   expect(threadStatusFromSnapshot(central, undefined, true).kind).toBe("running");

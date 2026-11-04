@@ -35,7 +35,7 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 _REQUIRED_TOOLS = {
     "environments__list",
     "environments__get",
-    "sessions__open",
+    "sessions__create",
     "sessions__submit_input",
     "sessions__observe_input",
     "sessions__get",
@@ -369,9 +369,9 @@ async def test_external_connection_delegates_without_the_integration_app(
                 cwd = f"{workspace['root'].rstrip('/')}/external-delegation-{uuid4()}"
                 session_id = str(uuid4())
                 guidance_marker = f"EXTERNAL-SESSION-GUIDANCE-{uuid4()}"
-                opening = await _tool(
+                session_created = await _tool(
                     session,
-                    "sessions__open",
+                    "sessions__create",
                     {
                         "target": target,
                         "session_id": session_id,
@@ -384,7 +384,7 @@ async def test_external_connection_delegates_without_the_integration_app(
                         "additional_instructions": guidance_marker,
                     },
                 )
-                assert isinstance(opening.get("opening"), dict)
+                assert isinstance(session_created.get("session"), dict)
 
                 model = scripted.model(view.kubernetes_diagnostics.pod.name, session_pb2.HARNESS_CODEX)
                 first_command = str(uuid4())
@@ -476,8 +476,8 @@ async def test_external_connection_delegates_without_the_integration_app(
 
                 snapshot = await _tool(session, "sessions__get", {"session_id": session_id})
                 assert snapshot["session_id"] == session_id
-                assert snapshot["opening"]["kind"] == "observed"
-                assert snapshot["opening"]["value"]["sessionId"] == session_id
+                assert snapshot["session"]["kind"] == "observed"
+                assert snapshot["session"]["value"]["sessionId"] == session_id
                 assert snapshot["history"]["kind"] == "observed"
                 assert snapshot["history"]["value"]["sessionId"] == session_id
 

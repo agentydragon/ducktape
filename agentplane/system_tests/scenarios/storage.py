@@ -222,13 +222,15 @@ async def _probe(
         source += f"findmnt -n -o FSTYPE,SOURCE,TARGET -T {workspace_dir}\n"
     source += "printf 'STORAGE_PROBE_OK\\n'\n"
     session = uuid4()
-    await client.create_session(
+    await client.create_session_and_wait(
         name,
         session,
         dispatcher=dispatcher,
         sandbox_uid=sandbox_uid,
         overrides={
-            "harness": "HARNESS_CODEX",
+            "placement": {
+                "environmentHosted": {"environment": {"name": name, "uid": sandbox_uid}, "harness": "HARNESS_CODEX"}
+            },
             "model": "chatgpt-sub/oai-responses/gpt-6-luna",
             "cwd": cwd,
             "reasoningEffort": "low",

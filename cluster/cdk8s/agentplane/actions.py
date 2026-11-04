@@ -75,7 +75,7 @@ _PEER_TOKEN_DIR = "/var/run/secrets/actions"
 # The orchestration_v1 executor and its admission policy both name launcher grants `<sandbox>.launcher`.
 _LAUNCHER_SUFFIX = ".launcher"
 _LAUNCHER_ACTIONS = (
-    "open_session",
+    "create_session",
     "submit_input",
     "interrupt_turn",
     "change_model",
@@ -128,7 +128,7 @@ def _session_delegation_groups(props: SessionDelegationProps) -> dict[str, Actio
         SESSIONS_GROUP: ActionGroup(
             title="Sessions",
             description=(
-                "Open and control Sessions in an existing same-principal environment. Opening does not start a turn; "
+                "Create and control Sessions in an existing same-principal environment. Creating does not start a turn; "
                 "submit input separately."
             ),
             executor=executor,
@@ -158,12 +158,12 @@ def _orchestration_group(env: Environment, props: OrchestrationProps) -> ActionG
                 inbox_tags=sandbox.inbox_tags,
                 bootstrap=sandbox.bootstrap,
             ),
-            open_session=PresetSession(spec=spec, setup_script=thread.setup_script),
+            create_session=PresetSession(spec=spec, setup_script=thread.setup_script),
         )
     return ActionGroup(
         title="Orchestration",
         description=(
-            "Launch Session Sandboxes and drive their Sessions: open them, send input, interrupt, change "
+            "Launch Session Sandboxes and drive their Sessions: create them, send input, interrupt, change "
             "model or effort, and read their state. A launch waits for the operator and grants its caller "
             "what it names on the new Sandbox."
         ),

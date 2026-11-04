@@ -23,7 +23,7 @@ INSTRUCTIONS = "Standing order for this session: the operator's name is Wren."
 
 def with_instructions(spec: session_pb2.SessionSpec, instructions: str) -> session_pb2.SessionSpec:
     return session_pb2.SessionSpec(
-        harness=spec.harness,
+        placement=spec.placement,
         cwd=spec.cwd,
         model=spec.model,
         reasoning_effort=spec.reasoning_effort,

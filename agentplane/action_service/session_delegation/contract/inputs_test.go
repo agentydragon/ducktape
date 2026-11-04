@@ -19,14 +19,14 @@ func TestInputsUseApprovedActionNamesAndSchemas(t *testing.T) {
 	if got, want := sortedKeys(environments), []string{"get", "list", "resume"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("environment actions = %v, want %v", got, want)
 	}
-	if got, want := sortedKeys(sessions), []string{"cancel_input", "get", "interrupt_turn", "observe_input", "open", "read_turns", "submit_input"}; !reflect.DeepEqual(got, want) {
+	if got, want := sortedKeys(sessions), []string{"cancel_input", "create", "get", "interrupt_turn", "observe_input", "read_turns", "submit_input"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("session actions = %v, want %v", got, want)
 	}
 	assertProperties(t, inputs.ListEnvironments.Definition().InputSchema, []string{"after", "limit"}, []string{"limit"})
 	assertProperties(t, inputs.GetEnvironment.Definition().InputSchema,
 		[]string{"target"}, []string{"target"})
 	assertProperties(t, inputs.ResumeEnvironment.Definition().InputSchema, []string{"resume_token", "target"}, []string{"resume_token", "target"})
-	assertProperties(t, inputs.OpenSession.Definition().InputSchema,
+	assertProperties(t, inputs.CreateSession.Definition().InputSchema,
 		[]string{"additional_instructions", "session_id", "setup_script", "spec", "target"},
 		[]string{"session_id", "spec", "target"})
 	assertProperties(t, inputs.SubmitInput.Definition().InputSchema,
@@ -42,17 +42,17 @@ func TestInputsUseApprovedActionNamesAndSchemas(t *testing.T) {
 		[]string{"command_id", "session_id", "target", "turn_id"}, []string{"command_id", "session_id", "target", "turn_id"})
 }
 
-func TestOpenSessionInstructionDescriptionKeepsOpeningSeparateFromInput(t *testing.T) {
+func TestCreateSessionInstructionDescriptionKeepsSessionSeparateFromInput(t *testing.T) {
 	inputs, err := NewInputs()
 	if err != nil {
 		t.Fatal(err)
 	}
 	var open map[string]any
-	if err := json.Unmarshal(inputs.OpenSession.Definition().InputSchema, &open); err != nil {
+	if err := json.Unmarshal(inputs.CreateSession.Definition().InputSchema, &open); err != nil {
 		t.Fatal(err)
 	}
 	description := open["properties"].(map[string]any)["additional_instructions"].(map[string]any)["description"].(string)
-	if description != "Standing instructions added to the Session. This field does not submit input or start a model turn. After opening, call sessions__submit_input with the task to start work." {
+	if description != "Standing instructions added to the Session. This field does not submit input or start a model turn. After creation, call sessions__submit_input with the task to start work." {
 		t.Fatalf("additional_instructions description = %q", description)
 	}
 }
@@ -93,13 +93,13 @@ func TestInputDecoderRejectsUnknownFieldsAndInvalidEnums(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := inputs.OpenSession.Decode(arguments); err != nil {
-			t.Errorf("OpenSession.Decode rejected offered harness %s: %v", harness, err)
+		if _, err := inputs.CreateSession.Decode(arguments); err != nil {
+			t.Errorf("CreateSession.Decode rejected offered harness %s: %v", harness, err)
 		}
 	}
 	const invalidHarness = `{"target":{"namespace":"agentplane-staging","name":"sandbox-one","uid":"uid-1"},"session_id":"11111111-1111-4111-8111-111111111111","spec":{"harness":"HARNESS_UNSPECIFIED","model":"model","cwd":"/workspace"}}`
-	if _, err := inputs.OpenSession.Decode(json.RawMessage(invalidHarness)); err == nil {
-		t.Fatal("OpenSession.Decode accepted the unspecified harness")
+	if _, err := inputs.CreateSession.Decode(json.RawMessage(invalidHarness)); err == nil {
+		t.Fatal("CreateSession.Decode accepted the unspecified harness")
 	}
 }
 

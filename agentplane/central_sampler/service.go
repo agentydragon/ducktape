@@ -79,7 +79,7 @@ func samplerError(ctx context.Context, err error) error {
 	}
 }
 
-func (s *Sampler) OpenSession(ctx context.Context, request *samplerpb.OpenSessionRequest) (*samplerpb.OpenSessionResponse, error) {
+func (s *Sampler) CreateSession(ctx context.Context, request *samplerpb.CreateSessionRequest) (*samplerpb.CreateSessionResponse, error) {
 	ctx, cancel, principal, err := s.admitted(ctx)
 	defer cancel()
 	if err != nil {
@@ -88,7 +88,7 @@ func (s *Sampler) OpenSession(ctx context.Context, request *samplerpb.OpenSessio
 	spec := request.GetSpec()
 	executor := request.GetExecutor()
 	id, parseErr := uuid.Parse(request.GetSessionId())
-	invalid := func() (*samplerpb.OpenSessionResponse, error) {
+	invalid := func() (*samplerpb.CreateSessionResponse, error) {
 		return nil, status.Error(codes.InvalidArgument, "invalid sampler request")
 	}
 	if parseErr != nil || id.String() != request.GetSessionId() || request.GetExpectedIncarnationUid() == "" || executor == nil ||
@@ -101,14 +101,17 @@ func (s *Sampler) OpenSession(ctx context.Context, request *samplerpb.OpenSessio
 			return invalid()
 		}
 	}
-	if len(spec.GetInstructions()) > 1024*1024 || len(spec.GetCwd()) > 4096 || len(request.GetSetupScript()) > 65536 || spec.GetHarness() != sessionpb.Harness_HARNESS_CENTRAL_SAMPLER || !strings.HasPrefix(spec.GetCwd(), "/") {
+	if len(spec.GetInstructions()) > 1024*1024 || len(spec.GetCwd()) > 4096 || len(request.GetSetupScript()) > 65536 || spec.GetPlacement().GetCentralSamplerV1() == nil ||
+		spec.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment().GetName() != executor.GetTarget().GetName() ||
+		spec.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment().GetUid() != executor.GetTarget().GetUid() ||
+		!strings.HasPrefix(spec.GetCwd(), "/") {
 		return invalid()
 	}
 	modelConfig, modelConfigured := s.Settings.Models[spec.GetModel()]
 	if !modelConfigured || !slices.Contains(modelConfig.ReasoningEfforts, spec.GetReasoningEffort()) {
 		return invalid()
 	}
-	session, err := s.Store.OpenSession(ctx, request, principal.ServiceAccountUID, modelConfig.API, s.Settings.PlatformInstructions)
+	session, err := s.Store.CreateSession(ctx, request, principal.ServiceAccountUID, modelConfig.API, s.Settings.PlatformInstructions)
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}
@@ -119,7 +122,7 @@ func (s *Sampler) OpenSession(ctx context.Context, request *samplerpb.OpenSessio
 	if err != nil {
 		return nil, samplerError(ctx, err)
 	}
-	return &samplerpb.OpenSessionResponse{Attached: description.GetAttached()}, nil
+	return &samplerpb.CreateSessionResponse{Attached: description.GetAttached()}, nil
 }
 
 func (s *Sampler) command(ctx context.Context, sessionID string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {

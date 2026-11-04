@@ -1,7 +1,7 @@
 # Agentplane system tests
 
 The system test scenarios are **vertical tests of a running deployment**: they create real
-sandboxes through the app's HTTP API, open sessions on the real harnesses, and assert on
+Sandboxes through the app's HTTP API, create Sessions, run them on the real harnesses and assert on
 cross-component behavior and durable system evidence. They are not unit tests with a live backend —
 they are the checks that the deployed system does what <../egress/SPEC.md> says it does and that a
 session's standing instructions reach the model that serves it.
@@ -75,7 +75,7 @@ Each harness still creates its own Sandboxes and runs every scenario assertion. 
 and four MCP pairs overlap; the messaging and launcher pairs each peak at four Sandbox Pods.
 The Pod suite also runs two independent cases concurrently on that same stack. Model proxy,
 standing-instruction isolation, tab/reconnect and unwatched-turn cases lease at most two reusable
-Claude/Codex Pod pairs. Each call opens fresh Sessions, clients, HTTP streams and model queues;
+Claude/Codex Pod pairs. Each call creates fresh Sessions, clients, HTTP streams and model queues;
 the lease outlives model-response settlement. Runner reuse verifies that the Sandbox and Pod UIDs
 have not changed. A failed or cancelled lease deletes its pair instead of returning it to the pool.
 The suite owns successful pairs until all selected cases finish, then deletes them before stopping
@@ -155,7 +155,7 @@ same for Claude and Codex, so the same scenario function covers both. Both `offe
 `run_harness_pair` ask the deployment which models it offers for each harness. The presets scenario instead exercises a Codex launch preset's
 defaults, Sandbox binding, bootstrap marker, inherited fields, and local override, with the scripted
 model only. The k3s fixture configures that preset (`launch_preset.py`) in place of the deployment's.
-Initial session Open uses a 120-second retry budget for HTTP 503, retaining the same session id;
+Initial `CreateSession` uses a 120-second retry budget for HTTP 503, retaining the same Session ID;
 refusals and other server failures are not startup readiness signals.
 
 ## Thread stream
@@ -177,8 +177,8 @@ interval. Each run writes its timings to
 
 All k3s suites use the shared [`tracing.py`](driver/tracing.py) tracer and the test OTel provider.
 `test.outputs/test-spans.jsonl` flushes each completed driver span immediately, including setup,
-per-image imports, PKI, manifest application, Deployment readiness, scenarios, session opening, turn
-collection, diagnostics, Sandbox cleanup and k3s teardown. Import worker threads inherit the setup
+per-image imports, PKI, manifest application, Deployment readiness, scenarios, Session creation and
+materialization, turn collection, diagnostics, Sandbox cleanup and k3s teardown. Import worker threads inherit the setup
 trace context. The pytest log prints the longest stages from these same spans; totals are inclusive
 and concurrent spans overlap. A killed test retains completed spans, but its unfinished spans cannot
 be exported. No separate stopwatch/timeline recorder is needed.
@@ -225,7 +225,7 @@ exported identities, request parentage and native harness stages in `process-spa
 ## VM workspace ownership
 
 The `vm_workspace_ownership` scenario creates one uniquely named VM Sandbox and
-opens two Codex Sessions without sending a model turn. The first setup checks that the
+creates two Codex Sessions without sending a model turn. The first setup checks that the
 second Session's workspace path is absent; the second exercises normal runner setup, checks UID/GID
 107 ownership, then runs `git init` and `git rev-parse` with global and system Git config disabled.
 Fixture teardown suspends and deletes only the Sandbox created by that invocation.
@@ -327,9 +327,9 @@ scale, preserving concurrent GitOps/operator changes. Evidence is written to
 `test.outputs/dispatcher-deployed.json`; `passed` and `cleanup_complete` are distinct. The `queue`
 case retains the original single-replica delivery check.
 
-The `opted_in` case covers send-triggered wake for both app `OpenSession` and notification
+The `opted_in` case covers send-triggered wake for both app `CreateSession` and notification
 `SubmitInput`. It creates one stopped Sandbox with `wakeOnSend: true`, then concurrently submits an app
-`OpenSession` and a notification `SubmitInput` using short-lived tokens bound to existing Pods. Both
+`CreateSession` and a notification `SubmitInput` using short-lived tokens bound to existing Pods. Both
 senders must share one `wakeGeneration`; the Dispatcher waits for a new Ready incarnation before
 admitting the Session and input. The `queue` case covers the default `wakeOnSend: false`, which
 leaves a send queued without changing Sandbox state. New Sandboxes default to false; the app's
@@ -395,7 +395,7 @@ receipt back from what the harness sent the model.
   protected tool.
 - `test_launcher_drives_only_the_sandbox_it_launched` has an agent launch a Sandbox through the
   `orchestration_v1` group with grants on it, which the operator approves through the BFF. Its
-  `open_session`, `submit_input`, `read_turns`, `wait_for_turn` and `get_session` on that incarnation
+  `create_session`, `submit_input`, `read_turns`, `wait_for_turn` and `get_session` on that incarnation
   then come back approved by the `<sandbox>.launcher` PolicySet. The test reads a token before the turn,
   checks a short wait returns without completion, then uses its updated token to wait for completion
   and reads the recorded input, tool calls and final assistant message. The launched Sandbox's
@@ -464,8 +464,8 @@ bazelisk test //agentplane/system_tests/suites/live:test_thread_latency --test_o
 `//agentplane/system_tests/suites/live:test_ollama_routes` exercises every configured Ollama chat
 route offered by the committed staging app ConfigMap, on each harness that offers it (Codex alone today),
 with the 128k cases first. Collection reads the generated manifest, not cdk8s Python;
-each case still checks that the live app offers the route before opening a session. Each cell creates a Sandbox,
-opens a real session, and requires recorded shell-tool output. It has an absolute
+each case still checks that the live app offers the route before creating a Session. Each cell creates a Sandbox,
+creates a Session, runs a real turn and requires recorded shell-tool output. It has an absolute
 300-second turn limit; a backend that never completes still leaves an interrupted
 turn rather than a model verdict. To run just one cell, set `OLLAMA_SMOKE_CASE` to
 its pytest id, for example

@@ -44,7 +44,7 @@ Each lasts until the backend rule for its operation lands.
   Decision.
 - History gains a reader. A listed reader reads every Session; the executor reads only on a Decision, scoped by
   launcher grants.
-- Two paths open Sessions: the app for the operator and the executor for an approved caller. Both reach the one
+- Two paths create Sessions: the app for the operator and the executor for an approved caller. Both reach the one
   Dispatcher queue.
 - OAuth callers, who otherwise send from an Action box as ordinary workloads, gain Actions for what no box can do.
 

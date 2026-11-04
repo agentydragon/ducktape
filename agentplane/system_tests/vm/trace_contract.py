@@ -66,13 +66,13 @@ def _sandbox_identities(spans: list[dict[str, object]], span_name: str) -> dict[
 def _codex_session_uids(test_spans: list[dict[str, object]], scenario_ready: dict[str, str]) -> set[str]:
     uids: set[str] = set()
     for span in test_spans:
-        if span.get("name") != "system_test.session.open":
+        if span.get("name") != "system_test.session.create":
             continue
         attributes = _attributes(span)
         name = attributes.get("sandbox.name")
-        assert isinstance(name, str), "driver session.open has no sandbox.name"
-        assert name, "driver session.open has no sandbox.name"
-        assert name in scenario_ready, f"driver session.open Sandbox {name} has no ready identity"
+        assert isinstance(name, str), "driver session.create has no sandbox.name"
+        assert name, "driver session.create has no sandbox.name"
+        assert name in scenario_ready, f"driver session.create Sandbox {name} has no ready identity"
         if attributes.get("harness") == "HARNESS_CODEX":
             uids.add(scenario_ready[name])
     return uids
@@ -107,15 +107,15 @@ def assert_vm_process_trace_contract(output_dir: Path) -> None:
         stages_by_uid,
         scenario_ready,
         {
-            "agentplane.env.runtime.control.EnvironmentRuntime/OpenSession",
-            "Environment Runtime OpenSession",
+            "agentplane.env.runtime.control.EnvironmentRuntime/CreateSession",
+            "Environment Runtime CreateSession",
             "agentplane.env.runtime.harness.start",
             "agentplane.env.runtime.harness.handshake",
         },
         "VM",
     )
     codex_uids = _codex_session_uids(test_spans, scenario_ready)
-    assert codex_uids, "no ready Codex VM has a driver session.open span"
+    assert codex_uids, "no ready Codex VM has a driver session.create span"
     codex_identities = {name: uid for name, uid in scenario_ready.items() if uid in codex_uids}
     _assert_stages(
         stages_by_uid,
@@ -129,33 +129,33 @@ def assert_vm_process_trace_contract(output_dir: Path) -> None:
         },
         "Codex VM",
     )
-    environment_runtime_open = [
-        span for span in environment_runtime_spans if span.get("name") == "Environment Runtime OpenSession"
+    environment_runtime_creates = [
+        span for span in environment_runtime_spans if span.get("name") == "Environment Runtime CreateSession"
     ]
-    rpc_open_ids = {
+    rpc_create_ids = {
         (_trace_id(span), span.get("span_id"))
         for span in environment_runtime_spans
-        if span.get("name") == "agentplane.env.runtime.control.EnvironmentRuntime/OpenSession"
+        if span.get("name") == "agentplane.env.runtime.control.EnvironmentRuntime/CreateSession"
     }
-    for span in environment_runtime_open:
-        assert (_trace_id(span), span.get("parent_span_id")) in rpc_open_ids, (
-            "Environment Runtime OpenSession did not retain its gRPC parent span"
+    for span in environment_runtime_creates:
+        assert (_trace_id(span), span.get("parent_span_id")) in rpc_create_ids, (
+            "Environment Runtime CreateSession did not retain its gRPC parent span"
         )
         name = _attributes(span).get("sandbox.name")
         if isinstance(name, str) and name in scenario_ready:
             assert _resource_uid(span) == scenario_ready[name], (
-                f"Environment Runtime OpenSession for {name} has wrong UID"
+                f"Environment Runtime CreateSession for {name} has wrong UID"
             )
 
     for span in test_spans:
-        if span.get("name") != "system_test.session.open":
+        if span.get("name") != "system_test.session.create":
             continue
         name = _attributes(span).get("sandbox.name")
-        assert isinstance(name, str), "driver session.open has no sandbox.name"
-        assert name in scenario_ready, f"driver session.open Sandbox {name} has no ready identity"
+        assert isinstance(name, str), "driver session.create has no sandbox.name"
+        assert name in scenario_ready, f"driver session.create Sandbox {name} has no ready identity"
         assert any(
             _resource_uid(operation) == scenario_ready[name]
             and _attributes(operation).get("sandbox.name") == name
             and _trace_id(operation) == _trace_id(span)
-            for operation in environment_runtime_open
-        ), f"session.open trace for {name} did not reach its Environment Runtime operation span"
+            for operation in environment_runtime_creates
+        ), f"session.create trace for {name} did not reach its Environment Runtime operation span"

@@ -48,9 +48,9 @@ func (r *ProxyRunner) withClient(ctx context.Context, sandbox SandboxSnapshot, c
 	}, call)
 }
 
-func (r *ProxyRunner) OpenSession(ctx context.Context, sandbox SandboxSnapshot, sessionID string, spec *sessionpb.SessionSpec, setupScript *string, executionPrincipal *identitypb.ServiceAccountIdentity) error {
+func (r *ProxyRunner) CreateSession(ctx context.Context, sandbox SandboxSnapshot, sessionID string, spec *sessionpb.SessionSpec, setupScript *string, executionPrincipal *identitypb.ServiceAccountIdentity) error {
 	return r.withClient(ctx, sandbox, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
-		_, err := client.OpenSession(ctx, &environmentruntimepb.OpenSessionRequest{
+		_, err := client.CreateSession(ctx, &environmentruntimepb.CreateSessionRequest{
 			SessionId: sessionID, Spec: spec, SetupScript: setupScript, ExecutionPrincipal: executionPrincipal,
 		})
 		return err

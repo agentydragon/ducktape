@@ -49,7 +49,7 @@ type WakeRequester interface {
 
 type DeliveryRunner interface {
 	RunnerCommands
-	OpenSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *identitypb.ServiceAccountIdentity) error
+	CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, *identitypb.ServiceAccountIdentity) error
 }
 
 type LeaseOwner interface {
@@ -121,7 +121,7 @@ func (w *DeliveryWorker) Run(ctx context.Context) error {
 		}
 	}
 	defer unsubscribe()
-	// A queue key is a Session ID, so even with multiple workers an opening
+	// A queue key is a Session ID, so even with multiple workers a Session
 	// and its commands cannot be delivered concurrently in this process.
 	for range deliveryWorkerCount {
 		go w.runQueue(ctx)
@@ -195,7 +195,7 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 		}
 	}
 	if len(candidates) > 0 {
-		// A new environment can appear after the cached scan but before its opening
+		// A new environment can appear after the cached scan but before its session
 		// reaches PostgreSQL. Confirm absence only after freezing that candidate set.
 		currentUIDs, err := w.Catalog.CurrentSandboxUIDs(ctx)
 		if err != nil {
@@ -263,8 +263,8 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 		}
 	}
 	w.mu.Unlock()
-	listCtx, listSpan = observability.Start(ctx, "Dispatcher Reconcile Opening Heads")
-	openings, err := w.Store.OpeningHeads(listCtx)
+	listCtx, listSpan = observability.Start(ctx, "Dispatcher Reconcile Session Heads")
+	sessions, err := w.Store.SessionHeads(listCtx)
 	observability.End(listSpan, err)
 	if err != nil {
 		return err
@@ -275,10 +275,10 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 	if err != nil {
 		return err
 	}
-	for _, opening := range openings {
-		sandbox, live := byName[opening.SandboxName]
-		if live && sandbox.UID == opening.SandboxUID {
-			w.enqueue(opening.SessionID)
+	for _, session := range sessions {
+		sandbox, live := byName[session.SandboxName]
+		if live && sandbox.UID == session.SandboxUID {
+			w.enqueue(session.SessionID)
 		}
 	}
 	for _, head := range heads {
@@ -346,17 +346,17 @@ func (w *DeliveryWorker) workFor(sessionID string) string {
 func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (result error) {
 	ctx, span := observability.Start(ctx, "Dispatcher Process Session", trace.WithAttributes(attribute.String("session.id", sessionID)))
 	defer func() { observability.End(span, result) }()
-	opening, head, err := w.Store.SessionHead(ctx, sessionID)
+	session, head, err := w.Store.SessionHead(ctx, sessionID)
 	if err != nil {
 		return err
 	}
-	if opening == nil && head == nil {
+	if session == nil && head == nil {
 		w.clearRetry(sessionID)
 		return nil
 	}
 	name, uid, workID := "", "", ""
-	if opening != nil {
-		name, uid, workID = opening.SandboxName, opening.SandboxUID, "opening:"+opening.SessionID
+	if session != nil {
+		name, uid, workID = session.SandboxName, session.SandboxUID, "session:"+session.SessionID
 	} else {
 		name, uid, workID = head.SandboxName, head.SandboxUID, head.CommandID
 	}
@@ -382,52 +382,52 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 		w.forgetOwner(uid, owner)
 		return err
 	}
-	queuedOpening := opening
-	principalOpening := opening
-	if principalOpening == nil {
-		principalOpening, err = w.Store.GetOpening(ctx, sessionID)
+	queuedSession := session
+	principalSession := session
+	if principalSession == nil {
+		principalSession, err = w.Store.GetSession(ctx, sessionID)
 		if errors.Is(err, ErrNotFound) {
-			principalOpening = nil
+			principalSession = nil
 		} else if err != nil {
 			return err
 		}
 	}
-	if head != nil && principalOpening != nil && !centralSpec(principalOpening.Spec) &&
-		(principalOpening.State == FailedState || principalOpening.State == UnknownState) {
-		return w.Store.NoteWaiting(ctx, head.CommandID, owner, "session_opening_unconfirmed")
+	if head != nil && principalSession != nil && principalSession.Placement.requiresReadyExecutor() &&
+		(principalSession.State == SessionFailedState || principalSession.State == SessionUnknownState) {
+		return w.Store.NoteWaiting(ctx, head.CommandID, owner, "session_unconfirmed")
 	}
-	if principalOpening != nil && principalOpening.ExecutionPrincipal != nil {
+	if principalSession != nil && principalSession.ExecutionPrincipal != nil {
 		account, found, err := w.executionAccount(ctx, sandbox)
 		if err != nil {
 			return err
 		}
-		expected := principalOpening.ExecutionPrincipal
+		expected := principalSession.ExecutionPrincipal
 		if !found && expected.GetUid() == "" && head == nil {
-			return w.Store.NoteOpeningWaiting(ctx, principalOpening.SessionID, owner, "execution_identity_pending")
+			return w.Store.NoteSessionWaiting(ctx, principalSession.SessionID, owner, "execution_identity_pending")
 		}
 		if !found || account == nil || accountOfIdentity(account) != accountOfIdentity(expected) ||
 			accountOfIdentity(expected) != (Account{Namespace: sandbox.Namespace, Name: sandbox.Name}) {
-			return w.failExecutionIdentity(ctx, principalOpening, head, owner)
+			return w.failExecutionIdentity(ctx, principalSession, head, owner)
 		}
 		if expected.GetUid() == "" && head == nil {
-			principalOpening, err = w.Store.BindExecutionPrincipal(ctx, principalOpening.SessionID, principalOpening.SandboxUID,
+			principalSession, err = w.Store.BindExecutionPrincipal(ctx, principalSession.SessionID, principalSession.SandboxUID,
 				accountOfIdentity(expected).Namespace, accountOfIdentity(expected).Name, account.GetUid())
 			if err != nil {
 				return err
 			}
-			expected = principalOpening.ExecutionPrincipal
-			queuedOpening = principalOpening
+			expected = principalSession.ExecutionPrincipal
+			queuedSession = principalSession
 		}
 		if account.GetUid() != expected.GetUid() || expected.GetUid() == "" {
-			return w.failExecutionIdentity(ctx, principalOpening, head, owner)
+			return w.failExecutionIdentity(ctx, principalSession, head, owner)
 		}
 	}
-	if queuedOpening != nil {
-		ready, err := w.prepareOpening(ctx, queuedOpening, sandbox, owner)
+	if queuedSession != nil {
+		ready, err := w.prepareSession(ctx, queuedSession, sandbox, owner)
 		if err != nil || !ready {
 			return err
 		}
-		if w.deliverOpening(ctx, queuedOpening, sandbox, owner) {
+		if w.deliverSession(ctx, queuedSession, sandbox, owner) {
 			w.enqueue(sessionID)
 		}
 	} else {
@@ -435,7 +435,7 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 		if err != nil || !ready {
 			return err
 		}
-		if w.deliverCommand(ctx, head, sandbox, owner, principalOpening) {
+		if w.deliverCommand(ctx, head, sandbox, owner, principalSession) {
 			w.enqueue(sessionID)
 		}
 	}
@@ -450,11 +450,11 @@ func (w *DeliveryWorker) executionAccount(ctx context.Context, sandbox SandboxSn
 	return reader.GetExecutionAccount(ctx, sandbox)
 }
 
-func (w *DeliveryWorker) failExecutionIdentity(ctx context.Context, opening *Opening, head *Dispatch, owner Owner) error {
+func (w *DeliveryWorker) failExecutionIdentity(ctx context.Context, session *Session, head *Dispatch, owner Owner) error {
 	if head == nil {
-		_, err := w.Store.SettleOpening(ctx, opening.SessionID, owner, []string{QueueState}, FailedState, "execution_identity_changed")
+		_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionWaitingState}, SessionFailedState, "execution_identity_changed")
 		if err == nil {
-			w.clearRetry(opening.SessionID)
+			w.clearRetry(session.SessionID)
 		}
 		return err
 	}
@@ -523,22 +523,33 @@ func (w *DeliveryWorker) deliveryFailure(sessionID, workID, uid, incarnation str
 
 // Runtime validates arguments before reservation and reports AlreadyExists for a
 // conflicting retained request. Other terminal codes do not prove native rejection.
-func (w *DeliveryWorker) openingFailure(opening *Opening, sandbox SandboxSnapshot, err error) (string, string, *status.Status) {
-	key := "opening:" + opening.SessionID
-	if centralSpec(opening.Spec) {
-		state, reason := w.deliveryFailure(opening.SessionID, key, opening.SandboxUID, sandbox.Incarnation, err)
-		return state, reason, nil
+func (w *DeliveryWorker) sessionFailure(session *Session, sandbox SandboxSnapshot, err error) (string, string, *status.Status) {
+	key := "session:" + session.SessionID
+	if session.Placement == CentralSampler {
+		state, reason := w.deliveryFailure(session.SessionID, key, session.SandboxUID, sandbox.Incarnation, err)
+		return sessionMaterializationFromDelivery(state), reason, nil
 	}
 	switch status.Code(err) {
 	case codes.InvalidArgument, codes.AlreadyExists:
 		rejection := status.Convert(err)
-		return FailedState, fmt.Sprintf("runner %s: %s", rejection.Code(), rejection.Message()), rejection
+		return SessionFailedState, fmt.Sprintf("runner %s: %s", rejection.Code(), rejection.Message()), rejection
 	case codes.Aborted, codes.Unavailable, codes.DeadlineExceeded:
 		// Reconcile the same Runtime reservation; native preparation waits for work.
-		state, reason := w.deliveryFailure(opening.SessionID, key, opening.SandboxUID, sandbox.Incarnation, err)
-		return state, reason, nil
+		state, reason := w.deliveryFailure(session.SessionID, key, session.SandboxUID, sandbox.Incarnation, err)
+		return sessionMaterializationFromDelivery(state), reason, nil
 	default:
-		return UnknownState, "runner_opening_unconfirmed: " + err.Error(), nil
+		return SessionUnknownState, "session_materialization_unconfirmed: " + err.Error(), nil
+	}
+}
+
+func sessionMaterializationFromDelivery(state string) string {
+	switch state {
+	case QueueState:
+		return SessionWaitingState
+	case FailedState:
+		return SessionFailedState
+	default:
+		panic("unexpected Session delivery failure state: " + state)
 	}
 }
 
@@ -564,7 +575,7 @@ func (w *DeliveryWorker) retryStorage(ctx context.Context, fn func() error) {
 	}
 }
 
-func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, sandbox SandboxSnapshot, owner Owner, opening *Opening) bool {
+func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, sandbox SandboxSnapshot, owner Owner, session *Session) bool {
 	ctx = observability.WithTraceparent(ctx, head.Traceparent)
 	ctx, span := observability.Start(
 		ctx, "Dispatcher Deliver Command",
@@ -583,7 +594,7 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 	if claimed == nil {
 		return false
 	}
-	if opening != nil && opening.ExecutionPrincipal != nil {
+	if session != nil && session.ExecutionPrincipal != nil {
 		account, found, identityErr := w.executionAccount(ctx, sandbox)
 		if identityErr != nil {
 			w.retryStorage(ctx, func() error {
@@ -593,8 +604,8 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 			w.backoff(head.SessionID, head.CommandID)
 			return true
 		}
-		if !found || account == nil || accountOfIdentity(account) != accountOfIdentity(opening.ExecutionPrincipal) ||
-			account.GetUid() != opening.ExecutionPrincipal.GetUid() {
+		if !found || account == nil || accountOfIdentity(account) != accountOfIdentity(session.ExecutionPrincipal) ||
+			account.GetUid() != session.ExecutionPrincipal.GetUid() {
 			w.retryStorage(ctx, func() error {
 				state := FailedState
 				if head.DeliveryAttempted {
@@ -638,66 +649,66 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 	return true
 }
 
-func (w *DeliveryWorker) deliverOpening(ctx context.Context, opening *Opening, sandbox SandboxSnapshot, owner Owner) bool {
-	ctx = observability.WithTraceparent(ctx, opening.Traceparent)
+func (w *DeliveryWorker) deliverSession(ctx context.Context, session *Session, sandbox SandboxSnapshot, owner Owner) bool {
+	ctx = observability.WithTraceparent(ctx, session.Traceparent)
 	ctx, span := observability.Start(
-		ctx, "Dispatcher Deliver Session Opening",
+		ctx, "Dispatcher Deliver Session",
 		trace.WithAttributes(
-			attribute.String("session.id", opening.SessionID),
-			attribute.String("sandbox.name", opening.SandboxName),
+			attribute.String("session.id", session.SessionID),
+			attribute.String("sandbox.name", session.SandboxName),
 		),
 	)
 	defer span.End()
-	key := "opening:" + opening.SessionID
-	claimed, err := w.Store.SettleOpening(ctx, opening.SessionID, owner, []string{QueueState}, DeliveringState, "")
+	key := "session:" + session.SessionID
+	claimed, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionWaitingState}, SessionInProgressState, "")
 	if err != nil {
-		span.SetStatus(otelcodes.Error, "session opening claim failed")
-		w.Logger.Error("cannot claim queued opening", "session_id", opening.SessionID, "error", err)
+		span.SetStatus(otelcodes.Error, "Session claim failed")
+		w.Logger.Error("cannot claim queued session", "session_id", session.SessionID, "error", err)
 		return false
 	}
 	if claimed == nil {
 		return false
 	}
-	if opening.ExecutionPrincipal != nil {
+	if session.ExecutionPrincipal != nil {
 		account, found, identityErr := w.executionAccount(ctx, sandbox)
 		if identityErr != nil {
 			w.retryStorage(ctx, func() error {
-				_, err := w.Store.SettleOpening(ctx, opening.SessionID, owner, []string{DeliveringState}, QueueState, "execution_identity_unavailable")
+				_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionInProgressState}, SessionWaitingState, "execution_identity_unavailable")
 				return err
 			})
-			w.backoff(opening.SessionID, key)
+			w.backoff(session.SessionID, key)
 			return true
 		}
-		if !found || account == nil || accountOfIdentity(account) != accountOfIdentity(opening.ExecutionPrincipal) ||
-			opening.ExecutionPrincipal.GetUid() == "" || account.GetUid() != opening.ExecutionPrincipal.GetUid() {
+		if !found || account == nil || accountOfIdentity(account) != accountOfIdentity(session.ExecutionPrincipal) ||
+			session.ExecutionPrincipal.GetUid() == "" || account.GetUid() != session.ExecutionPrincipal.GetUid() {
 			w.retryStorage(ctx, func() error {
-				_, err := w.Store.SettleOpening(ctx, opening.SessionID, owner, []string{DeliveringState}, FailedState, "execution_identity_changed")
+				_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionInProgressState}, SessionFailedState, "execution_identity_changed")
 				return err
 			})
-			w.clearRetry(opening.SessionID)
+			w.clearRetry(session.SessionID)
 			return true
 		}
 	}
-	callErr := w.Runner.OpenSession(ctx, sandbox, opening.SessionID, opening.Spec, opening.SetupScript,
-		openingExecutionPrincipal(opening.ExecutionPrincipal))
+	callErr := w.Runner.CreateSession(ctx, sandbox, session.SessionID, session.Spec, session.SetupScript,
+		sessionExecutionPrincipal(session.ExecutionPrincipal))
 	if callErr != nil {
-		span.SetStatus(otelcodes.Error, "runner session opening failed")
+		span.SetStatus(otelcodes.Error, "runner Session failed")
 	}
-	state, reason := AdmittedState, ""
+	state, reason := SessionAcceptedState, ""
 	var rejection *status.Status
 	if callErr != nil {
-		state, reason, rejection = w.openingFailure(opening, sandbox, callErr)
+		state, reason, rejection = w.sessionFailure(session, sandbox, callErr)
 	}
 	w.retryStorage(ctx, func() error {
 		if rejection != nil {
-			_, err := w.Store.RejectOpening(ctx, opening.SessionID, owner, []string{DeliveringState}, reason)
+			_, err := w.Store.RejectSession(ctx, session.SessionID, owner, []string{SessionInProgressState}, reason)
 			return err
 		}
-		_, err := w.Store.SettleOpening(ctx, opening.SessionID, owner, []string{DeliveringState}, state, reason)
+		_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionInProgressState}, state, reason)
 		return err
 	})
-	if state != QueueState {
-		w.clearRetry(opening.SessionID)
+	if state != SessionWaitingState {
+		w.clearRetry(session.SessionID)
 	}
 	return true
 }

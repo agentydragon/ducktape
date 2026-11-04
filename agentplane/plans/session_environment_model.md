@@ -27,14 +27,15 @@ implement all of this.
 admission; the [opening/recovery inventory](session_opening_recovery.md) maps existing ownership;
 [#14026](https://github.com/agentydragon/ducktape/pull/14026) fences uncertain Runtime reservation
 writes; [#14030](https://github.com/agentydragon/ducktape/pull/14030) requires canonical UUIDs for
-new Dispatcher openings; and [#14031](https://github.com/agentydragon/ducktape/pull/14031) checks
+new Dispatcher Sessions; and [#14031](https://github.com/agentydragon/ducktape/pull/14031) checks
 the exact Sandbox UID for new message inboxes. These do not implement the general directory.
 
-**Implemented:** opening reads use the globally unique Session ID through Dispatcher
-[`GetSessionOpening`](../runner_gateway/dispatcher/session_dispatcher.proto), exposed to the browser
-through the operator-authenticated app facade and used by test callers through
-[`SessionDispatcherClient.get_session_opening`](../runner_gateway/dispatcher/testing_client.py).
-The [address inventory](#session-address-inventory) records this completed migration. The
+**Implemented before this cutover:** Dispatcher reads address a reservation by its globally unique
+Session ID through the opening-specific `GetSessionOpening` API, exposed to the browser through the
+operator-authenticated app facade. That API is removed by the in-progress hard cutover below; the
+current contract is `GetSession` returning a minimal `Session` resource, with `ListSessions` for
+bounded discovery. The [address inventory](#session-address-inventory) preserves the old wire shape
+as a pinned pre-cutover snapshot. The
 [Dispatcher outcome contract](../runner_gateway/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands)
 defines native rejection, unconfirmed owner outcomes and dependent-command fencing. Cleanup forgets
 the Session in Dispatcher; UUID uniqueness across a deleted record is a caller obligation, not a
@@ -45,15 +46,50 @@ Gateway/Dispatcher workload; its read-only diagnostics and separate Executor ser
 These checks do not by themselves prove the remaining deletion-outcome fence. Public commands now
 address the Session by ID; Dispatcher resolves and fences its placement.
 
+**In-progress placement and Session-resource cutover (reported 2026-11-04 PDT; not a deployment
+claim):** backend selection and placement live in the shared `SessionPlacement` message at
+`SessionSpec.placement`. Its oneof selects `environment_hosted`, with the exact environment name and
+UID plus native harness selection, or `central_sampler_v1`, with one exact, fixed required
+`executor_environment`. Dispatcher `Session.placement` projects the stored value without exposing the
+spec or instructions. `Session` also contains `session_id`, timestamps and `SessionStatus`; its
+materialization is `WAITING`, `IN_PROGRESS`, `ACCEPTED`, `FAILED` or `UNKNOWN`, with reason, delivery
+blocker and wake assessment where available. Status reports progress at the placement owner, not
+harness readiness. `ACCEPTED` means durable owner admission, not a running harness or completed
+History projection.
+
+Logical creation is named `CreateSession` in Dispatcher, App, Environment Runtime control and
+central Sampler. Dispatcher reads use `GetSession` and `ListSessions`. The CLI uses `sessions create`,
+`sessions get` and `sessions list`; old `open` and `get-opening` command aliases and the former
+`OpenSession`, `GetSessionOpening`, `ListSessionOpenings` and `SessionOpening` contracts have no
+compatibility path. The distinct streaming `Executor.OpenSession` remains an execution-connection
+handshake. Central sampler V1 retains the existing Sandbox-backed identity, admission, notification,
+wake and deletion behavior. It still requires one fixed executor environment; it does not add
+attachments or permit environment-free central Sessions. Native harness store selection and
+harness-native ID mapping remain future work, and the central principal remains unresolved.
+
+The hard cutover coordinates Dispatcher, sampler, app/CLI, Notification, History and matching
+environment/runtime callers. Old Sandbox callers and binaries do not overlap the new contract.
+Dispatcher migration 11 converts retained placement and migration 12 renames `session_opening` to
+`session`; central sampler migration 10 converts its retained requests. History migration 8 keeps
+legacy harness facts as `historical_harness` when exact placement cannot be reconstructed, and
+migration 9 renames `opened_position` to `recorded_position` while preserving values, ordering,
+sequence ownership and indexes. The History watch cursor is `recorded_after` and its frame is
+`SessionRecorded/session_recorded`; old wire names have no compatibility path. These migrations
+preserve Session, central continuation, command, notification and History data, identity, cursors and
+effect evidence; they do not requeue work or replay effects. This does not implement the future
+environment-independent model or resolve identity/retention questions.
+
 **Ready next:** a [native-first Dispatcher Session authority](task_dag.md#session_directory_native--dispatcher-authority-for-environment-hosted-sessions)
 using existing authorization. Specify deletion and uncertain-outcome fencing as part of that slice;
-do not add a second competing writable directory. The current opening table is not a general
+do not add a second competing writable directory. The current Session table is not a general
 Session directory.
 
-**Still require design:** central Sessions with no environment or multiple attachments, the central
-principal and its authority, moving or changing wake orchestration, and cross-store deletion and
-History semantics. The current opening table is not a general Session directory, and the central
-sampler currently requires an executor.
+**Still require design:** central Sessions with no required environment, optional attachment
+semantics and authorization, the central principal and its authority, notification/wake behavior,
+lifetime and retention after environment loss, and cross-store deletion and History semantics. The
+current Session table is not a general Session directory, and central sampler V1 still requires one
+fixed executor environment. The explicit [central Session environment-independence task](task_dag.md#central-session-environment-independence)
+tracks these prerequisites and the later data-preserving migration.
 
 Decisions still needed include the Session/environment principal and privilege relationship; the
 exact Dispatcher/backend creation, ownership and idempotency protocol; attachment authorization,
@@ -63,6 +99,40 @@ provisioning are directions to evaluate, not a decision to use any particular id
 share a Kubernetes ServiceAccount. The related
 [Agentplane principal decision](task_dag.md#agent_principal_model_design--agentplane-principals-and-external-identities)
 covers identity provisioning and trust boundaries.
+
+<a id="central-session-environment-independence"></a>
+
+## Central Session without a required executor environment
+
+**Later work; not part of Central sampler V1.** V1 stores the sampler conversation centrally but
+requires one exact executor environment in `SessionSpec.placement.central_sampler_v1`. That
+environment remains Sandbox-backed for identity, admission, notifications, authorized wake and
+deletion. It is not an optional attachment. The later task is linked from the
+[task DAG](task_dag.md#central-session-environment-independence).
+
+Before removing this requirement, settle the central Session's principal and create/read/send
+authority independently of an attached environment; define Dispatcher and sampler admission when
+there is no executor target; and decide whether the selected 0..N attachment direction will ship now
+or in a separate step. Attachment names, per-operation authorization, exact UID fences and
+attach/detach history must be explicit. Define what inbox subscriptions, pending messages and
+unattended notifications do with no attachment and how an authorized wake targets a later exact
+environment. Resolve Session and inbox lifetime/retention after an environment is removed. History
+reads must remain available without a live environment or directory lookup.
+
+This is a coordinated wire and storage cutover across Dispatcher, sampler, app/CLI, Notification,
+History and environment callers. Old `SessionSpec` encodings and old Sandbox/runtime binaries are
+not a supported compatibility tier. Migrations must preserve central Session IDs, provider
+conversation, commands, cursors, effect evidence, inbox data and retained History; preserve legacy
+harness provenance when exact placement is absent instead of fabricating an environment. Do not
+requeue accepted work, replay an uncertain provider/executor effect, or turn missing History into a
+success claim. Keep placement and data migration separate from any later authorization change.
+
+**Exit:** a reviewed contract and migration plan for opening and addressing a central Session with
+zero environments, optional attachment semantics and authorization, inbox/wake behavior, lifetime
+and retention, and History access. Automated acceptance proves migrated central and History records
+remain readable, an environment-free Session admits and continues only allowed work, exact attached
+environment fences reject replacements, and uncertain effects are never replayed. No implementation
+starts before the principal/auth and lifetime decisions are resolved.
 
 A Session has one globally unique public ID. A resolver finds its responsible owner; that owner locates the harness continuation. Environment bindings describe where work can run.
 
@@ -183,11 +253,12 @@ work, fail commands proven not to have left Dispatcher, report unresolved in-fli
 unknown, and never redirect work to a replacement environment. The deletion fence and the location
 and lifetime of outcome evidence still need design; Dispatcher does not retain a deleted Session UUID.
 
-Opening reads now target the Session ID through Dispatcher
-[`GET /v1/sessions/{session_id}/opening`](../runner_gateway/dispatcher/session_dispatcher.proto).
+Dispatcher reads now target the Session ID through
+[`GetSession`, `GET /v1/sessions/{session_id}`](../runner_gateway/dispatcher/session_dispatcher.proto)
+and return the minimal `Session` projection.
 The [browser adapter](../app/frontend/sandboxes/client.ts) calls that endpoint through the
 operator-authenticated app facade; test callers use
-[`SessionDispatcherClient.get_session_opening`](../runner_gateway/dispatcher/testing_client.py).
+[`SessionDispatcherClient.get_session`](../runner_gateway/dispatcher/testing_client.py).
 This lookup does not by itself implement the proposed Session directory.
 
 ```text
@@ -215,8 +286,8 @@ For a native Session, resolve `S` to the Environment Runtime in environment `E`.
 **Symmetry:** environment UID and native store reference are both placement/continuation facts. Neither is part of the public Session identity. The environment identifies the owner scope to reach; the store reference and native ID tell that owner which harness continuation to resume. Process identity and a connection endpoint are more transient still.
 
 **Change from the earlier decision:** Dispatcher command requests now address a Session ID, and
-Dispatcher resolves and fences their placement. Session opening still requires an exact Sandbox,
-including for a central Session; the complete directory and environment-independent central Session
+Dispatcher resolves and fences their placement. The coordinated `CreateSession` contract still
+requires an exact environment, including for a central Session; the complete directory and environment-independent central Session
 model remain unfinished. Existing native Runtime IDs also allow non-UUID strings, so preserving
 existing identities needs a deliberate transition or alias policy. See the
 [address inventory](#session-address-inventory) and
@@ -619,7 +690,7 @@ The app stores each Thread’s name and archive flag in its own database. Its ar
 
 ### Environment deletion
 
-Today Dispatcher cleanup removes native and central Session opening records associated with the deleted Sandbox UID. Earlier discussion favored removing native live records when their exact hosting environment is gone; the timing and relationship to Notification inbox retirement are now explicitly open for review. Gateway also hosts Environment Service, but Kubernetes deletion and a database transaction are separate; reconcile deletion observed through a watch or relist, including deletion outside the service, and fence races with create and submit. Preserve any evidence or deduplication facts required by their own contracts.
+Today Dispatcher cleanup removes native and central Session records associated with the deleted Sandbox UID. Earlier discussion favored removing native live records when their exact hosting environment is gone; the timing and relationship to Notification inbox retirement are now explicitly open for review. Gateway also hosts Environment Service, but Kubernetes deletion and a database transaction are separate; reconcile deletion observed through a watch or relist, including deletion outside the service, and fence races with create and submit. Preserve any evidence or deduplication facts required by their own contracts.
 
 Existing managed Sandbox teardown quiesces the runtime, waits for History ingress to acknowledge the Session seals, and only then releases its finalizer and state PVC. Dispatcher cleanup should use that established lifecycle rather than inventing an app-archive handoff. The Environment Service issues the UID-fenced deletion; the Sandbox controller manages the actual finalizer. Forced deletion or bypassed finalization can lose unexported data and needs an honest outcome, not a claim that History is complete.
 
@@ -627,7 +698,7 @@ Environment loss affects native and central Sessions differently: native Session
 
 ### Decision: Session and inbox lifetimes after environment deletion
 
-The operator asked to resolve Dispatcher Session-record lifetime and Notification inbox lifetime together. Today the Notification worker [checks the stored Sandbox name and UID and its owner](../notification_service/worker/destination.go), then [retires an inbox and cancels its subscriptions](../notification_service/store/claims.go) after confirming a missing or replaced destination. Dispatcher independently [deletes opening records by Sandbox UID](../runner_gateway/dispatcher/terminal.go). These separate asynchronous decisions can end an inbox because an environment disappeared even when its central Session should survive.
+The operator asked to resolve Dispatcher Session-record lifetime and Notification inbox lifetime together. Today the Notification worker [checks the stored Sandbox name and UID and its owner](../notification_service/worker/destination.go), then [retires an inbox and cancels its subscriptions](../notification_service/store/claims.go) after confirming a missing or replaced destination. Dispatcher independently [deletes Session records by Sandbox UID](../runner_gateway/dispatcher/terminal.go). These separate asynchronous decisions can end an inbox because an environment disappeared even when its central Session should survive.
 
 For an environment-hosted Session, compare removing its live Dispatcher record and retiring its inbox when its required environment is deleted with retaining an unavailable Session and its inbox for an explicitly chosen lifetime or until an explicit end. The operator's 2026-11-04 candidate is to give Sessions their own create/delete lifecycle: deleting a required environment leaves the Session, inbox and History present, while the native harness cannot be reached or continued without its actual state and a supported recovery path. An explicit Session delete could instead coordinate cleanup of its associated inbox, History and other data. This is a candidate to review, including which data is retained or deleted, not a selected deletion policy. For a central Session, preserve the selected indefinite Session lifetime: deleting, detaching or replacing an environment alone must not end the Session. Decide whether its inbox should remain active independently as well; the initial recommendation is not to retire it solely because an environment disappeared. Specify whether subscriptions continue collecting while delivery is unavailable, what happens to pending messages and notices, and whether and when any inbox is retired or purged. Suspension, an unavailable Runtime, and a deleted or replaced Sandbox are distinct observations; none proves an in-flight effect failed.
 
@@ -641,11 +712,16 @@ Current sources: [History Service](https://github.com/agentydragon/ducktape/blob
 
 <a id="opening"></a>
 
-## One OpenSession contract
+## One CreateSession contract
 
 Give callers the same operation for creating a logical Session on either backend. Choose placement explicitly; let the selected owner prepare, reuse or start its harness as needed.
 
-### What opening means today
+### Opening behavior in the pre-cutover source snapshot
+
+This table describes the pinned pre-cutover source revision used for the address inventory. Its
+wire-field descriptions are historical; the in-progress [SessionSpec placement cutover](task_dag.md#session-spec-placement-cutover)
+defines the contract for this change. Central sampler V1 still requires one exact Sandbox-backed
+executor environment, while native store identity and harness-native Session IDs remain future work.
 
 | Layer               | Current behavior                                                                                                                                                                                                                                   | What success proves                                                                                                                                   |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -653,11 +729,11 @@ Give callers the same operation for creating a logical Session on either backend
 | Environment Runtime | Validates the Session, persists its reservation and waits for its local Session owner. Native preparation waits for work; a running harness is not required by this response.                                                                      | The local logical Session was reserved, not that a Claude process, Codex thread or setup completed.                                                   |
 | Central sampler     | Currently requires an executor Sandbox and its incarnation, creates durable sampler Session and conversation records, and schedules setup when requested. It may skip executor readiness at Dispatcher delivery but still requires an incarnation. | Sampler state was created or matched; any scheduled setup can still be pending. This is not provider sampling success.                                |
 
-Current implementation: [Dispatcher opening contract](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/runner_gateway/dispatcher/README.md) · [Environment Runtime admission](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/env/runtime/session_admission.go) · [central sampler admission](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/central_sampler/service.go) · [central delivery routing](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/runner_gateway/dispatcher/central_runner.go).
+Implementation at the pinned pre-cutover revision: [Dispatcher contract](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/runner_gateway/dispatcher/README.md) · [Environment Runtime admission](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/env/runtime/session_admission.go) · [central sampler admission](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/central_sampler/service.go) · [central delivery routing](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/runner_gateway/dispatcher/central_runner.go).
 
 ### What queued and admitted mean
 
-These describe _delivery of the opening request_, not the Session’s active or archived status and not whether its harness is running. Today `QUEUED_IN_DISPATCHER` means the Dispatcher retains the opening awaiting delivery or same-ID reconciliation after an uncertain reply; `DELIVERING_TO_RUNNER` means an owner call is in flight; `RUNNER_ADMITTED` means the selected backend accepted the opening (the name is historical and is also used for the central sampler). A failed or unknown outcome is reported separately. The shared enum also describes command delivery; for an opening, admission means a reservation, not a journaled command or model seeing input.
+These describe placement-owner materialization, not the Session's active or archived status and not whether its harness is running. `SESSION_MATERIALIZATION_WAITING` means the Dispatcher has committed the Session and owner delivery is pending; `SESSION_MATERIALIZATION_IN_PROGRESS` means owner delivery is in progress; `SESSION_MATERIALIZATION_ACCEPTED` means the owner durably admitted it; `SESSION_MATERIALIZATION_FAILED` records a proven rejection; and `SESSION_MATERIALIZATION_UNKNOWN` preserves an unconfirmed outcome. `reason`, `delivery_blocker` and `wake_assessment` carry related evidence. None of these values claims harness readiness, a model turn, or History projection.
 
 Auto-wake is one possible way to unblock a queued environment-hosted opening: when the Sandbox is suspended, enabled and authorized wake can request startup; a denied or disabled wake leaves the opening queued. Queueing can also reflect delivery scheduling, an unready or unavailable owner, retries, or an identity check. The actual current blocker and latest wake assessment are separate from delivery state. If the owner is already available, delivery can proceed without wake. The current central path bypasses execution-Sandbox readiness and wake, but still requires a Sandbox and incarnation at opening; the proposed central placement removes that prerequisite.
 
@@ -668,26 +744,29 @@ Keep delivery and error evidence without multiplying user-facing states or requi
 ### Proposed common contract
 
 ```text
-OpenSession {
-  session_id: caller_chosen_uuid
-  spec: { harness, model, instructions, ... }
-  placement: oneof {
-    environment_hosted { environment_uid, harness_store }
-    central_sampler    { sampler_scope, initial_attachments? }
+Dispatcher.CreateSession(session_id, spec, setup_script?)
+  // SessionSpec.placement is environment_hosted or central_sampler_v1.
+→ Session {
+    session_id, placement, created_at, updated_at,
+    status: { materialization, reason?, delivery_blocker?, wake_assessment? }
   }
-  // Optional setup must identify an appropriate environment when it needs one.
-}
-→ { session_id, opening_state }  // durable Dispatcher reservation; owner may be unavailable
+Dispatcher.GetSession(session_id) → { session: Session }
+Dispatcher.ListSessions(page)     → { sessions: [Session], next_page_token? }
 ```
 
-1. **Reserve and route.** The Dispatcher validates identity, authorization, immutable creation request and placement and commits the logical Session. Delivery or materialization at the appropriate owner may be eager or deferred. Exact retries with the same public ID and creation contract return the same opening; conflicting reuse fails. Caller-created UUID is not the harness-native ID.
+The App, Environment Runtime control service and central Sampler name logical creation
+`CreateSession` too. App returns the `Session` in its `response_body`; Runtime and Sampler keep
+their own owner-side snapshots. The Dispatcher projection intentionally omits immutable creation
+instructions and the full spec.
+
+1. **Reserve and route.** The Dispatcher validates identity, authorization, immutable creation request and placement and commits the logical Session. Delivery or materialization at the appropriate owner may be eager or deferred. Exact retries with the same public ID and creation contract return the same Session; conflicting reuse fails. If the response is uncertain, read that exact ID; do not issue a new ID or replay an uncertain native/external effect. Caller-created UUID is not the harness-native ID.
 1. **Materialize at the owner.** The environment Runtime or central sampler accepts the logical Session through its own implementation. The Dispatcher row establishes logical existence; no eager owner reservation is required merely to create it. Current delivery is asynchronous and can be queued while an owner is unavailable; never present Dispatcher acceptance as proof the owner has accepted.
-1. **Prepare when needed.** Reuse or start a shared Codex app-server, launch a per-Session Claude process, or create central sampler state as appropriate. The caller need not manage those processes. Report relevant progress and failure separately; opening does not promise native identity, setup, a ready process or provider output. The owner may perform safe work eagerly, but must preserve the same externally visible acknowledgement and idempotency semantics.
+1. **Prepare when needed.** Reuse or start a shared Codex app-server, launch a per-Session Claude process, or create central sampler state as appropriate. The caller need not manage those processes. Report relevant progress and failure separately; `CreateSession` does not promise native identity, setup, a ready process or provider output. The owner may perform safe work eagerly, but must preserve the same externally visible acknowledgement and idempotency semantics.
 1. **Send a command.** Submitting input is a separate durable operation. Reconcile its admission, execution and any uncertain effects using their own evidence. Do not automatically replay a native create or external action after an unknown result.
 
 ### Agreed behavior when the owner is unavailable
 
-Here the owner is the environment Runtime for an environment-hosted Session or the central sampler for a central Session; it is not the individual harness process. After request shape, placement and the applicable authorization have been validated, the Dispatcher database commit establishes logical existence. A successful opening does not wait for the owner to be reachable, an environment to wake, History to receive its projection, or a harness-native Session to be created. The Dispatcher must let callers find the accepted Session and observe its progress independently of History.
+Here the owner is the environment Runtime for an environment-hosted Session or the central sampler for a central Session; it is not the individual harness process. After request shape, placement and the applicable authorization have been validated, the Dispatcher database commit establishes logical existence. A successful `CreateSession` does not wait for the owner to be reachable, an environment to wake, History to receive its projection, or a harness-native Session to be created. `SESSION_MATERIALIZATION_ACCEPTED` is later owner admission, not Dispatcher logical commit. The Dispatcher must let callers find the Session and observe its progress independently of History.
 
 Unavailable owners and suspended environments are wait and retry conditions. Materialize the Session
 at the correct owner before its work requires it, or earlier if useful; wake an environment only
@@ -843,7 +922,10 @@ attachment History delivery does not gate the initial attachment UI.
 
 **1. Decide and document the object contract.**
 
-Review global UUIDs, a common OpenSession reservation contract, authoritative Session-to-owner resolution, required versus optional bindings, central authorization scope, and deletion semantics. Map existing native and central opens to the same concepts without claiming they already implement them.
+Review global UUIDs, the agreed `CreateSession` reservation contract, authoritative Session-to-owner
+resolution, required versus optional bindings, central authorization scope, and deletion semantics.
+Map existing native and central implementations to the same concepts without implying that the
+future zero-Environment path has shipped.
 
 **2. Resolve Session UUIDs to an authoritative placement.**
 
@@ -865,9 +947,9 @@ Teach agents, CLI and UI to inspect/select bindings and observe changes. Keep na
 
 Only after the contracts work, assess whether to regroup services, expose a separate binding resource, migrate native stores, or retire redundant names/fields. Those are consequences to evaluate, not prerequisites.
 
-**Data and rollout.** Preserve existing Session IDs, native stores, history, effective principals and idempotency across any selected transition. The user has said existing Sandboxes can be deleted for earlier Runtime cutovers; do not assume that automatically authorizes deleting retained Session or history data for a future design. A fresh-state cutover is possible only after its scope is established.
+**Data and rollout.** Preserve existing Session IDs, native stores, history, effective principals and idempotency across any selected transition. The current SessionSpec placement cutover is a coordinated hard cutover with no old Sandbox/runtime compatibility; its migrations preserve Dispatcher Session records, sampler continuation and History evidence in place. Do not use a fresh-state cutover or delete retained Session/history data. The later environment-independent central change also requires migrations preserving central and History data, and must not replay uncertain effects.
 
-**Acceptance examples:** two Sessions in the same environment can reference the same Codex store with distinct native IDs; an unknown native-create result is not replayed; native Session survives ordinary Runtime restart; a shared Codex host can stop without losing Session identities; a central Session opens and accepts provider-only work with zero environments; adding two exact bindings routes each call correctly; deleting one environment does not delete the central Session; an in-flight unknown effect is not replayed; same-name replacement is not adopted; unauthorized attach/wake/execute is refused; native placement cannot be detached or changed through attachment or generic edit APIs.
+**Acceptance examples:** two Sessions in the same environment can reference the same Codex store with distinct native IDs; an unknown native-create result is not replayed; native Session survives ordinary Runtime restart; a shared Codex host can stop without losing Session identities; a central Session can be created and accept provider-only work with zero environments; adding two exact bindings routes each call correctly; deleting one environment does not delete the central Session; an in-flight unknown effect is not replayed; same-name replacement is not adopted; unauthorized attach/wake/execute is refused; native placement cannot be detached or changed through attachment or generic edit APIs.
 
 <a id="decisions"></a>
 
@@ -889,7 +971,11 @@ Only after the contracts work, assess whether to regroup services, expose a sepa
 
 **Wake policy · Where should automatic wake live?** Required capability: unattended inbox notices can wake an eligible environment. Compare keeping the existing Dispatcher wake path with Notification-owned explicit wake orchestration; also decide ordinary human-send behavior, accepted-work races and queueing for starting/disconnected targets. Preserve policy and authority in either design.
 
-**OpenSession · What does opening promise?** Agreed: the Dispatcher row creates the logical Session for both placements without waiting for owner availability; harness startup and native creation may happen later with the owner. Decide setup timing, optional wake, failure classification and any readiness/warmup API without requiring an executor for a central Session that does not use one.
+**CreateSession · What does creation promise?** Agreed: the Dispatcher row creates the logical
+Session for both placements without waiting for owner availability; harness startup and native
+creation may happen later with the owner. Decide setup timing, optional wake, failure classification
+and any readiness/warmup API without requiring an executor for a central Session that does not use
+one.
 
 **2 · Are central attachments durable by default?** I recommend durable desired attachments when explicitly added; reachability and active streams stay ephemeral. Ad hoc one-call environment access could remain a separate explicit capability rather than silently creating a lasting attachment. Native placement is a separate required relationship.
 
@@ -905,7 +991,9 @@ Only after the contracts work, assess whether to regroup services, expose a sepa
 
 ## Session address inventory and follow-up work
 
-The inventory records the implemented opening lookup and Session inbox diagnostics. Subscription
+The inventory records the implemented opening lookup and Session inbox diagnostics at its pinned
+pre-cutover source revision. It is not the current wire-field contract; see the [SessionSpec
+placement cutover](task_dag.md#session-spec-placement-cutover). Subscription
 creation now uses a Session-only request, as merged in [#14103](https://github.com/agentydragon/ducktape/pull/14103).
 A Session ID is the public address; an exact environment UID remains meaningful
 for native placement, queued-work and execution fencing, authorization, and historical provenance.

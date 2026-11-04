@@ -9,4 +9,4 @@ class Channel(StrEnum):
     # The fold committed Session summaries.
     SUMMARIES = "agentplane_history_summary_changes"
     # A Session was recorded.
-    SESSIONS = "agentplane_history_session_openings"
+    SESSIONS = "agentplane_history_sessions"

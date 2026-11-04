@@ -83,7 +83,7 @@ async def _open_agent(
     *,
     cwd: str = WORKING_DIRECTORY,
 ) -> Agent:
-    agent = await Agent.open(
+    agent = await Agent.create(
         client,
         dispatcher,
         sandbox=view.target.name,

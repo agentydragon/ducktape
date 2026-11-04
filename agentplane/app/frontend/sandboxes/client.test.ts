@@ -8,15 +8,15 @@ import {
   Harness,
   SessionSpecSchema,
 } from "../../../proto/session_pb";
-import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
+import { SessionStatus_Materialization } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 import { EnvironmentTargetSchema } from "../../../proto/identity_pb";
 
 import {
   getEnvironmentRuntimeStatus,
-  openSession,
-  getSessionOpening,
-  sessionOpeningRejected,
-  sessionOpeningNotVisible,
+  createSession,
+  getSession,
+  sessionCreateRejected,
+  sessionNotVisible,
   resumeSandbox,
   suspendEnvironment,
   deleteEnvironment,
@@ -61,21 +61,36 @@ it("sends the generated exact target through the EnvironmentService facade", asy
 });
 
 it.each([undefined, null, "", "setup"])(
-  "keeps the existing HTTP request and projected response for setup %s",
+  "sends the typed CreateSession request and projected Session for setup %s",
   async (setup) => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        Response.json(
-          { sessionId: id, sandbox: "test", sandboxUid: "uid", state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER" },
-          { status: 201 }
-        )
-      );
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json(
+        {
+          sessionId: id,
+          status: { materialization: "SESSION_MATERIALIZATION_WAITING" },
+          placement: {
+            environmentHosted: {
+              environment: { name: "test", uid: "uid" },
+              harness: "HARNESS_CODEX",
+            },
+          },
+        },
+        { status: 201 }
+      )
+    );
     vi.stubGlobal("fetch", fetchMock);
-    const opening = await openSession(
+    const session = await createSession(
       target,
       id,
-      create(SessionSpecSchema, { harness: Harness.CODEX, model: "test-model" }),
+      create(SessionSpecSchema, {
+        placement: {
+          kind: {
+            case: "environmentHosted",
+            value: { environment: { name: target.name, uid: target.uid }, harness: Harness.CODEX },
+          },
+        },
+        model: "test-model",
+      }),
       setup
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -84,44 +99,65 @@ it.each([undefined, null, "", "setup"])(
     expect(JSON.parse(init.body)).toEqual({
       session_id: id,
       sandbox_uid: "uid",
-      spec: { harness: "HARNESS_CODEX", model: "test-model" },
+      spec: {
+        placement: {
+          environmentHosted: {
+            environment: { name: "test", uid: "uid" },
+            harness: "HARNESS_CODEX",
+          },
+        },
+        model: "test-model",
+      },
       ...(setup === undefined ? {} : { setup_script: setup }),
     });
-    expect(opening.sessionId).toBe(id);
-    expect(opening.state).toBe(DeliveryState.QUEUED_IN_DISPATCHER);
+    expect(session.sessionId).toBe(id);
+    expect(session.status?.materialization).toBe(SessionStatus_Materialization.SESSION_MATERIALIZATION_WAITING);
   }
 );
 
-it("looks up the same Session identity without repeating an uncertain Open", async () => {
+it("looks up the same Session identity without repeating an uncertain Create", async () => {
   const fetchMock = vi
     .fn()
     .mockResolvedValueOnce(Response.json({ code: 4, message: "uncertain", detail: "uncertain" }, { status: 504 }))
     .mockResolvedValueOnce(
       Response.json({
-        opening: { sessionId: id, sandbox: "test", state: "DELIVERY_STATE_RUNNER_ADMITTED" },
+        session: {
+          sessionId: id,
+          status: { materialization: "SESSION_MATERIALIZATION_ACCEPTED" },
+          placement: {
+            environmentHosted: { environment: { name: "test", uid: "uid" }, harness: "HARNESS_CODEX" },
+          },
+        },
       })
     );
   vi.stubGlobal("fetch", fetchMock);
-  await expect(openSession(target, id, create(SessionSpecSchema))).rejects.toMatchObject({ code: 4 });
-  const opening = await getSessionOpening(id);
-  expect(opening.state).toBe(DeliveryState.RUNNER_ADMITTED);
+  await expect(createSession(target, id, create(SessionSpecSchema))).rejects.toMatchObject({ code: 4 });
+  const session = await getSession(id);
+  expect(session.status?.materialization).toBe(SessionStatus_Materialization.SESSION_MATERIALIZATION_ACCEPTED);
   expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
     "/sandboxes/test/sessions",
-    `/upstream/dispatcher/v1/sessions/${id}/opening`,
+    `/upstream/dispatcher/v1/sessions/${id}`,
   ]);
 });
 
-it("rejects an opening for a different Session ID", async () => {
-  const fetchMock = vi
-    .fn()
-    .mockResolvedValue(Response.json({ opening: { sessionId: "different-session", sandbox: "test" } }));
+it("rejects a different Session ID in the Dispatcher response", async () => {
+  const fetchMock = vi.fn().mockResolvedValue(
+    Response.json({
+      session: {
+        sessionId: "different-session",
+        placement: {
+          environmentHosted: { environment: { name: "test", uid: "uid" }, harness: "HARNESS_CODEX" },
+        },
+      },
+    })
+  );
   vi.stubGlobal("fetch", fetchMock);
 
-  await expect(getSessionOpening(id)).rejects.toThrow(
+  await expect(getSession(id)).rejects.toThrow(
     `Dispatcher returned Session different-session for requested Session ${id}`
   );
   expect(fetchMock).toHaveBeenCalledTimes(1);
-  expect(fetchMock.mock.calls[0]![0]).toBe(`/upstream/dispatcher/v1/sessions/${id}/opening`);
+  expect(fetchMock.mock.calls[0]![0]).toBe(`/upstream/dispatcher/v1/sessions/${id}`);
 });
 
 it("reads the AppService runner status as the existing generated EnvironmentRuntimeStatus", async () => {
@@ -173,15 +209,15 @@ it("keeps runner status errors readable across old and generated AppService resp
 });
 
 it.each([1, 2, 4, 8, 13, 14, 15])("keeps gRPC outcome %s uncertain", (code) => {
-  expect(sessionOpeningRejected(new HttpError(new Response(null, { status: 400 }), { code }))).toBe(false);
+  expect(sessionCreateRejected(new HttpError(new Response(null, { status: 400 }), { code }))).toBe(false);
 });
 
 it.each([
   [5, 404],
   [14, 503],
-])("recognizes unobserved gRPC %s and legacy HTTP %s openings", (code, httpStatus) => {
-  expect(sessionOpeningNotVisible(new HttpError(new Response(null, { status: httpStatus }), { code }))).toBe(true);
-  expect(
-    sessionOpeningNotVisible(new HttpError(new Response(null, { status: httpStatus }), { detail: "unobserved" }))
-  ).toBe(true);
+])("recognizes an unobserved Session from gRPC %s or HTTP %s", (code, httpStatus) => {
+  expect(sessionNotVisible(new HttpError(new Response(null, { status: httpStatus }), { code }))).toBe(true);
+  expect(sessionNotVisible(new HttpError(new Response(null, { status: httpStatus }), { detail: "unobserved" }))).toBe(
+    true
+  );
 });

@@ -35,7 +35,7 @@ func newProvider(db *sql.DB) (*goose.Provider, error) {
 	}
 	provider, err := goose.NewProvider(goose.DialectPostgres, db, files,
 		goose.WithTableName("runner_gateway_dispatcher_goose_version"), goose.WithSessionLocker(locker),
-		goose.WithDisableGlobalRegistry(true))
+		goose.WithDisableGlobalRegistry(true), goose.WithGoMigrations(sessionPlacementMigration))
 	if err != nil {
 		return nil, err
 	}

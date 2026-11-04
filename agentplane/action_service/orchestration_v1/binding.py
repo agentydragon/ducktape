@@ -25,7 +25,7 @@ class PresetLaunch(BaseModel):
 
 
 class PresetSessionSpec(BaseModel):
-    """The `open_session` spec a preset stands for."""
+    """The `create_session` spec a preset stands for."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -50,7 +50,7 @@ class LaunchPreset(BaseModel):
 
     title: str = Field(min_length=1)
     launch: PresetLaunch
-    open_session: PresetSession
+    create_session: PresetSession
 
 
 class OrchestrationExecutorBinding(BaseModel):

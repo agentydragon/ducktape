@@ -16,18 +16,18 @@ import (
 // subscribe creates the owner's subscription once the Session and the source are known to be the owner's to
 // follow. The source is authorized before anything is persisted, even when replay starts after the last event.
 func (s *Notifications) subscribe(ctx context.Context, owner model.ServiceAccount, body model.Subscribe) (store.Subscription, error) {
-	opening, err := s.openings.GetSessionOpening(ctx, &dispatcherpb.GetSessionOpeningRequest{SessionId: body.SessionID})
+	session, err := s.sessions.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: body.SessionID})
 	if status.Code(err) == codes.NotFound {
 		return store.Subscription{}, errNoSession
 	}
 	if err != nil {
-		return store.Subscription{}, unavailable("session opening", err)
+		return store.Subscription{}, unavailable("Session", err)
 	}
-	ref := opening.GetOpening()
-	if ref.GetSessionId() != body.SessionID || ref.GetSandbox() == "" || ref.GetSandboxUid() == "" {
-		return store.Subscription{}, unavailable("session opening", errors.New("incomplete Session placement"))
+	target := sessionTarget(session.GetSession(), body.SessionID)
+	if target == nil {
+		return store.Subscription{}, unavailable("Session", errors.New("incomplete Session placement"))
 	}
-	body.DestinationRef = model.DestinationRef{Namespace: s.namespace, Name: ref.GetSandbox(), UID: ref.GetSandboxUid()}
+	body.DestinationRef = model.DestinationRef{Namespace: s.namespace, Name: target.GetName(), UID: target.GetUid()}
 	if err := body.Validate(); err != nil {
 		return store.Subscription{}, err
 	}

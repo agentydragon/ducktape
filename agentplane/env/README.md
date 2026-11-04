@@ -7,7 +7,7 @@ filesystem operations and the native exec-server. The Runner Gateway remains out
 `//agentplane/env/runtime/cmd:agentplane-environment-runtime` constructs those components in one
 process and one COSI engine. Session records and acknowledgements have Runtime-owned persistent
 COSI backing; Session journals retain SQLite storage under `<state_dir>/sessions`, and the shared
-Codex home stays under `<state_dir>/codex`. `OpenSession` acknowledges a durable reservation;
+Codex home stays under `<state_dir>/codex`. `CreateSession` acknowledges a durable reservation;
 harness startup follows admitted execution work.
 
 `//agentplane/env/runtime/execution/cmd:agentplane-execution-service` provides the Pod execution

@@ -18,15 +18,15 @@ func (e *MalformedMessageError) Error() string {
 
 func (e *MalformedMessageError) Unwrap() error { return e.Cause }
 
-// SessionOpeningNotFoundError hides an opening that belongs to another
+// SessionNotFoundError hides an session that belongs to another
 // Sandbox, or whose returned identity does not match the requested Session.
-type SessionOpeningNotFoundError struct {
+type SessionNotFoundError struct {
 	SessionID uuid.UUID
 	Sandbox   string
 }
 
-func (e *SessionOpeningNotFoundError) Error() string {
-	return fmt.Sprintf("session opening %s was not found in Sandbox %q", e.SessionID, e.Sandbox)
+func (e *SessionNotFoundError) Error() string {
+	return fmt.Sprintf("Session %s was not found in Sandbox %q", e.SessionID, e.Sandbox)
 }
 
 // ThreadNotFoundError means the app has no Thread row for this History Session.

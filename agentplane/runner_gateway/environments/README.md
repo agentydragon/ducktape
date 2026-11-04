@@ -47,7 +47,7 @@ Workspace paths and harness/model/effort choices are deployment-configured facts
 only when the target's exact SandboxTemplate has a published mapping; custom templates preserve
 these fields as unavailable. The workspace descriptor says whether the configured root is enforced
 by that template's Runner; it does not add a cwd restriction. The current Runner creates missing
-requested cwd directories when it opens a Session.
+requested cwd directories while materializing a Session.
 Per-target instructions are absent because the Sandbox API has no such field; bootstrap scripts are
 not treated as instructions. Platform guidance is a separate source.
 
@@ -70,7 +70,7 @@ The resume response reports acceptance, not readiness. Reconcile an uncertain re
 another action; wait adapters for the CLI and Action/MCP surfaces remain separate work.
 
 For a child Session, choose a separate path under the configured root, such as
-`/state/workspaces/ci-latency-2026-10-31`. The Runner creates missing cwd directories when opening
+`/state/workspaces/ci-latency-2026-10-31`. The Runner creates missing cwd directories while materializing
 the Session, so a prior `mkdir` is unnecessary. On templates that omit a configured workspace
 boundary, this path is guidance on the mounted workspace volume; the Runner's existing path checks
 remain authoritative. The target's workspace volume is shared by its Sessions; a distinct cwd is

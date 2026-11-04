@@ -52,7 +52,7 @@ type delegatedBackend struct {
 	dispatcherpb.UnimplementedSessionDispatcherServer
 	historypb.UnimplementedHistoryServiceServer
 	testing        *testing.T
-	gotOpen        *dispatcherpb.OpenSessionRequest
+	gotOpen        *dispatcherpb.CreateSessionRequest
 	openErr        error
 	openCalls      int
 	gotSubmit      *dispatcherpb.SubmitInputRequest
@@ -67,7 +67,7 @@ type delegatedBackend struct {
 	lookup         *dispatcherpb.Dispatch
 	lookupErr      error
 	cancels        int
-	opening        *dispatcherpb.SessionOpening
+	opening        *dispatcherpb.Session
 	summary        *historypb.SessionSummary
 	summaryErr     error
 	readEvents     func(*historypb.ReadSessionEventsRequest) (*historypb.ReadSessionEventsResponse, error)
@@ -101,12 +101,12 @@ func (b *delegatedBackend) ResumeEnvironment(ctx context.Context, request *envir
 	}, nil
 }
 
-func (b *delegatedBackend) GetSessionOpening(ctx context.Context, request *dispatcherpb.GetSessionOpeningRequest) (*dispatcherpb.GetSessionOpeningResponse, error) {
+func (b *delegatedBackend) GetSession(ctx context.Context, request *dispatcherpb.GetSessionRequest) (*dispatcherpb.GetSessionResponse, error) {
 	b.assertCaller(ctx, testRequestID, testExecutionID)
 	if b.opening == nil {
 		return nil, status.Error(codes.NotFound, "opening not found")
 	}
-	return &dispatcherpb.GetSessionOpeningResponse{Opening: proto.Clone(b.opening).(*dispatcherpb.SessionOpening)}, nil
+	return &dispatcherpb.GetSessionResponse{Session: proto.Clone(b.opening).(*dispatcherpb.Session)}, nil
 }
 
 func (b *delegatedBackend) GetSessionSummary(ctx context.Context, request *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error) {
@@ -148,16 +148,16 @@ func (b *delegatedBackend) assertCaller(ctx context.Context, wantRequest, wantEx
 	}
 }
 
-func (b *delegatedBackend) OpenSession(ctx context.Context, request *dispatcherpb.OpenSessionRequest) (*dispatcherpb.OpenSessionResponse, error) {
+func (b *delegatedBackend) CreateSession(ctx context.Context, request *dispatcherpb.CreateSessionRequest) (*dispatcherpb.CreateSessionResponse, error) {
 	b.assertCaller(ctx, testRequestID, testExecutionID)
 	b.openCalls++
 	if b.openErr != nil {
 		return nil, b.openErr
 	}
-	b.gotOpen = proto.Clone(request).(*dispatcherpb.OpenSessionRequest)
-	return &dispatcherpb.OpenSessionResponse{Opening: &dispatcherpb.SessionOpening{
-		SessionId: request.GetSessionId(), Sandbox: request.GetSandbox(), SandboxUid: request.GetSandboxUid(),
-		State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+	b.gotOpen = proto.Clone(request).(*dispatcherpb.CreateSessionRequest)
+	return &dispatcherpb.CreateSessionResponse{Session: &dispatcherpb.Session{
+		SessionId: request.GetSessionId(), Placement: request.GetSpec().GetPlacement(),
+		Status: &dispatcherpb.SessionStatus{Materialization: dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_WAITING},
 	}}, nil
 }
 
@@ -435,7 +435,7 @@ func TestEachExecutorOffersOnlyItsOwnActionGroup(t *testing.T) {
 		want  []string
 	}{
 		{group: "environments", want: []string{"get", "list", "resume"}},
-		{group: "sessions", want: []string{"cancel_input", "get", "interrupt_turn", "observe_input", "open", "read_turns", "submit_input"}},
+		{group: "sessions", want: []string{"cancel_input", "create", "get", "interrupt_turn", "observe_input", "read_turns", "submit_input"}},
 	} {
 		t.Run(test.group, func(t *testing.T) {
 			executor, err := NewExecutor(test.group, catalog.SessionDelegationBinding{Description: "forwards caller"}, nil, nil, nil)
@@ -458,11 +458,11 @@ func TestEachExecutorOffersOnlyItsOwnActionGroup(t *testing.T) {
 	}
 }
 
-func TestGetSessionRetainsObservedOpeningAndSanitizedHistoryError(t *testing.T) {
+func TestGetSessionRetainsObservedSessionAndSanitizedHistoryError(t *testing.T) {
 	backend := &delegatedBackend{
 		testing: t,
-		opening: &dispatcherpb.SessionOpening{
-			SessionId: testSessionID, State: dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED,
+		opening: &dispatcherpb.Session{
+			SessionId: testSessionID, Status: &dispatcherpb.SessionStatus{Materialization: dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_ACCEPTED},
 		},
 		summaryErr: status.Error(codes.Unavailable, "private history detail"),
 	}
@@ -474,10 +474,10 @@ func TestGetSessionRetainsObservedOpeningAndSanitizedHistoryError(t *testing.T) 
 	}
 	var result struct {
 		SessionID string `json:"session_id"`
-		Opening   struct {
+		Session   struct {
 			Kind  string          `json:"kind"`
 			Value json.RawMessage `json:"value"`
-		} `json:"opening"`
+		} `json:"session"`
 		History struct {
 			Kind  string `json:"kind"`
 			Error struct {
@@ -489,16 +489,18 @@ func TestGetSessionRetainsObservedOpeningAndSanitizedHistoryError(t *testing.T) 
 	if err := json.Unmarshal(outcome.Result, &result); err != nil {
 		t.Fatal(err)
 	}
-	var opening struct {
+	var session struct {
 		SessionID string `json:"sessionId"`
-		State     string `json:"state"`
+		Status    struct {
+			Materialization string `json:"materialization"`
+		} `json:"status"`
 	}
-	if err := json.Unmarshal(result.Opening.Value, &opening); err != nil {
+	if err := json.Unmarshal(result.Session.Value, &session); err != nil {
 		t.Fatal(err)
 	}
-	if result.SessionID != testSessionID || result.Opening.Kind != "observed" || opening.SessionID != testSessionID ||
-		opening.State != dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED.String() {
-		t.Fatalf("Dispatcher opening was not preserved: %+v opening=%+v", result, opening)
+	if result.SessionID != testSessionID || result.Session.Kind != "observed" || session.SessionID != testSessionID ||
+		session.Status.Materialization != dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_ACCEPTED.String() {
+		t.Fatalf("Dispatcher Session was not preserved: %+v session=%+v", result, session)
 	}
 	if result.History.Kind != "unavailable" || result.History.Error.Code != codes.Unavailable.String() ||
 		result.History.Error.Message != "service unavailable" {
@@ -589,11 +591,11 @@ func requestFor(action string, args any, callerUID *string) store.ExecutionReque
 	}
 }
 
-func TestOpenForwardsRecordedCallerAndReturnsTypedOpening(t *testing.T) {
+func TestOpenForwardsRecordedCallerAndReturnsTypedSession(t *testing.T) {
 	backend := &delegatedBackend{testing: t}
 	executor := newDelegatedExecutor(t, backend)
 	uid := testCallerUID
-	request := requestFor("open", map[string]any{
+	request := requestFor("create", map[string]any{
 		"target":                  map[string]string{"namespace": testCallerNamespace, "name": testCallerName, "uid": "sandbox-uid-1"},
 		"session_id":              testSessionID,
 		"spec":                    map[string]any{"harness": "HARNESS_CLAUDE", "model": "claude-sonnet", "cwd": "/workspace/{session_id}"},
@@ -606,22 +608,30 @@ func TestOpenForwardsRecordedCallerAndReturnsTypedOpening(t *testing.T) {
 	if outcome.State != store.ExecutionSucceeded {
 		t.Fatalf("outcome state = %s, want succeeded (%s)", outcome.State, outcome.Error)
 	}
-	if backend.gotOpen == nil || backend.gotOpen.GetSessionId() != testSessionID || backend.gotOpen.GetSandboxUid() != "sandbox-uid-1" ||
+	if backend.gotOpen == nil || backend.gotOpen.GetSessionId() != testSessionID || backend.gotOpen.GetSpec().GetPlacement().GetEnvironmentHosted().GetEnvironment().GetUid() != "sandbox-uid-1" ||
 		backend.gotOpen.GetSpec().GetInstructions() != "Investigate the child task." || backend.gotOpen.GetSpec().GetCwd() != "/workspace/"+testSessionID {
-		t.Fatalf("OpenSession request = %v", backend.gotOpen)
+		t.Fatalf("CreateSession request = %v", backend.gotOpen)
 	}
 	var result struct {
-		Opening struct {
-			SessionID  string `json:"session_id"`
-			SandboxUID string `json:"sandbox_uid"`
-			State      string `json:"state"`
-		} `json:"opening"`
+		Session struct {
+			SessionID string `json:"session_id"`
+			Placement struct {
+				EnvironmentHosted struct {
+					Environment struct {
+						UID string `json:"uid"`
+					} `json:"environment"`
+				} `json:"environment_hosted"`
+			} `json:"placement"`
+			Status struct {
+				Materialization string `json:"materialization"`
+			} `json:"status"`
+		} `json:"session"`
 	}
 	if err := json.Unmarshal(outcome.Result, &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Opening.SessionID != testSessionID || result.Opening.SandboxUID != "sandbox-uid-1" || result.Opening.State != "DELIVERY_STATE_QUEUED_IN_DISPATCHER" {
-		t.Fatalf("opening result = %+v", result.Opening)
+	if result.Session.SessionID != testSessionID || result.Session.Placement.EnvironmentHosted.Environment.UID != "sandbox-uid-1" || result.Session.Status.Materialization != "SESSION_MATERIALIZATION_WAITING" {
+		t.Fatalf("opening result = %+v", result.Session)
 	}
 }
 
@@ -629,7 +639,7 @@ func TestOpenUnknownOutcomeIsNotRetried(t *testing.T) {
 	backend := &delegatedBackend{testing: t, openErr: status.Error(codes.Unavailable, "private backend detail")}
 	executor := newDelegatedExecutor(t, backend)
 	uid := testCallerUID
-	_, err := executor.attempt(t.Context(), requestFor("open", map[string]any{
+	_, err := executor.attempt(t.Context(), requestFor("create", map[string]any{
 		"target":     map[string]string{"namespace": testCallerNamespace, "name": "sandbox-one", "uid": "sandbox-uid-1"},
 		"session_id": testSessionID,
 		"spec":       map[string]any{"harness": "HARNESS_CLAUDE", "model": "model", "cwd": "/workspace"},
@@ -645,7 +655,7 @@ func TestSessionWritesRejectTargetOutsideAuthenticatedCallerNamespace(t *testing
 		args map[string]any
 	}{
 		{
-			name: "open",
+			name: "create",
 			args: map[string]any{
 				"target":     map[string]string{"namespace": "other-namespace", "name": "sandbox-one", "uid": "sandbox-uid-1"},
 				"session_id": testSessionID,
@@ -818,7 +828,7 @@ func TestObserveKeepsHistoryFailureInObservationSource(t *testing.T) {
 func TestMissingCallerUIDFailsClosedBeforeBackendCall(t *testing.T) {
 	backend := &delegatedBackend{testing: t}
 	executor := newDelegatedExecutor(t, backend)
-	outcome, err := executor.attempt(t.Context(), requestFor("open", map[string]any{
+	outcome, err := executor.attempt(t.Context(), requestFor("create", map[string]any{
 		"target":     map[string]string{"namespace": testCallerNamespace, "name": testCallerName, "uid": "sandbox-uid-1"},
 		"session_id": testSessionID,
 		"spec":       map[string]any{"harness": "HARNESS_CLAUDE", "model": "claude-sonnet", "cwd": "/workspace"},

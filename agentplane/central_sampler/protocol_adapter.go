@@ -69,7 +69,7 @@ func (a responsesAdapter) Prepare(c *Conversation, s *Session, state *ExecutionS
 func (a anthropicAdapter) params(c *Conversation, s *Session) (anthropic.RequestParams, error) {
 	effort := s.Effort
 	if a.config.AnthropicMessages.PerMessageEffort {
-		launch := &samplerpb.OpenSessionRequest{}
+		launch := &samplerpb.CreateSessionRequest{}
 		if err := proto.Unmarshal(s.Configuration, launch); err != nil {
 			return anthropic.RequestParams{}, err
 		}

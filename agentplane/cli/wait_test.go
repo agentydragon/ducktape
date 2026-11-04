@@ -112,7 +112,7 @@ func TestWaitWithTimeoutZeroReadsOnce(t *testing.T) {
 	}
 }
 
-func TestWaitByKeyResolvesTheIDBeforeOpeningAWatch(t *testing.T) {
+func TestWaitByKeyResolvesTheIDBeforeSessionAWatch(t *testing.T) {
 	fake, endpoint := newActionFake(t)
 	fake.listRequests = func(_ context.Context, request *action_servicepb.ListActionRequestsRequest) (*action_servicepb.ListActionRequestsResponse, error) {
 		if request.GetIdempotencyKey() != "test-key" {

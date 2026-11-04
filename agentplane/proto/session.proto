@@ -51,7 +51,8 @@ enum Harness {
 }
 
 message SessionSpec {
-  Harness harness = 1;
+  reserved 1;
+  reserved "harness";
   string cwd = 2;
   string model = 3;
   string reasoning_effort = 4;
@@ -60,6 +61,37 @@ message SessionSpec {
   string instructions = 5;
   reserved 6;
   reserved "central_sampler";
+  // This is the sole live Session placement and backend selection.
+  SessionPlacement placement = 7;
+  reserved 8;
+  reserved "environment_hosted", "central_sampler_v1";
+}
+
+// A native Session belongs to exactly one environment. Central sampler V1 owns its Session but
+// currently requires one fixed executor environment. Attachment/detachment is not supported here.
+// The same message is projected into the Session resource without exposing other SessionSpec fields.
+message SessionPlacement {
+  oneof kind {
+    EnvironmentHostedPlacement environment_hosted = 1;
+    CentralSamplerV1Placement central_sampler_v1 = 2;
+  }
+}
+
+// Exact environment identity within the configured Agentplane environment namespace. The UID
+// distinguishes a recreated Sandbox; a Runtime incarnation within that Sandbox is separate.
+message ExactEnvironment {
+  string name = 1;
+  string uid = 2;
+}
+
+message EnvironmentHostedPlacement {
+  ExactEnvironment environment = 1;
+  // Only CLAUDE or CODEX is valid. Native harness storage selection is a separate contract.
+  Harness harness = 2;
+}
+
+message CentralSamplerV1Placement {
+  ExactEnvironment executor_environment = 1;
 }
 
 enum HarnessState {
@@ -102,6 +134,9 @@ message Attached {
   // Immutable logical principal under which this Session executes, independent of the journal writer.
   // Absent on legacy retained Sessions without a trustworthy association.
   ServiceAccountIdentity execution_principal = 9;
+  // Preserves an archived pre-placement harness when exact historical placement cannot be
+  // reconstructed. New Sessions leave this unset and use spec.placement.
+  Harness historical_harness = 10;
 }
 
 // Every session in the runner's state directory. Session ids are client-chosen, so this is how a

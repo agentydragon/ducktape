@@ -254,11 +254,16 @@ async def test_production_pid1_embedded_host_reaps_setup(
         wrapped = container.get_wrapped_container()
         await gateway.control.connect(control, "pid1-host-uid")
         stub = await gateway.control.runner()
-        await stub.OpenSession(
-            environment_runtime_pb2.OpenSessionRequest(
+        await stub.CreateSession(
+            environment_runtime_pb2.CreateSessionRequest(
                 session_id=str(uuid.uuid4()),
                 spec=session_pb2.SessionSpec(
-                    harness=session_pb2.HARNESS_CODEX,
+                    placement=session_pb2.SessionPlacement(
+                        environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                            environment=session_pb2.ExactEnvironment(name="pid1-host", uid="pid1-host-uid"),
+                            harness=session_pb2.HARNESS_CODEX,
+                        )
+                    ),
                     cwd="/proof/state/workspaces/project",
                     model="pid1-proof-model",
                     reasoning_effort="low",

@@ -4,7 +4,7 @@ import { type JSX, useEffect, useState } from "react";
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { displayableError } from "../client";
 import { type ThreadView, getThread } from "./client";
-import { harnessBehavior } from "../harness_behavior";
+import { attachedHarness, harnessBehavior } from "../harness_behavior";
 import { harnessLabel } from "../model_catalog";
 import { resumeSandbox } from "../sandboxes/client";
 import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
@@ -83,7 +83,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
   const frontendConfig = useFrontendConfig();
   const traceSearch = frontendConfig?.trace_search ?? null;
   const langfuseSearch = frontendConfig?.langfuse_search ?? null;
-  const { commandsRequireReadySandbox } = harnessBehavior(thread?.summary.attached?.spec?.harness);
+  const { commandsRequireReadySandbox } = harnessBehavior(attachedHarness(thread?.summary.attached));
   const notice =
     !commandsRequireReadySandbox && sandbox && inventoryFresh && !sandboxReady(sandbox)
       ? "Execution Sandbox is unavailable. Central sampling controls remain available."
@@ -153,7 +153,7 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
             />
             {thread && (
               <Text size="xs" c="dimmed" className="agentplane-thread-heading-sandbox">
-                {thread.summary.sandbox?.name ?? ""} · {harnessLabel(thread.summary.attached?.spec?.harness)}
+                {thread.summary.sandbox?.name ?? ""} · {harnessLabel(attachedHarness(thread.summary.attached))}
               </Text>
             )}
           </Box>

@@ -110,11 +110,11 @@ The ingress is its own service, `agentplane.history_service.SessionJournalIngres
 it, under its own token audience, and a historyless client needs only it.
 
 1. **One call per Session.** The runner opens a `Push` call for every Session in its state
-   directory whose seal the ingress has not acknowledged: at startup, when `OpenSession` creates a
+   directory whose seal the ingress has not acknowledged: at startup, when `CreateSession` creates a
    Session, and after a call is lost. Its calls share one HTTP/2 connection to the ingress, separate from control RPCs, and each is its own HTTP/2 stream, so one Session's catch-up
    stalls neither another Session's live entries nor any command.
 2. **Announcement.** The first frame, `announce`, is the Session's `Attached` snapshot: its Session
-   ID, the UUID the client minted and passed in `OpenSession`, with spec, harness and setup state
+   ID, the UUID the client minted and passed in `CreateSession`, with spec, harness and setup state
    and the journal's last cursor. `Attached.execution_principal`, when present, is the immutable
    ServiceAccount namespace/name/UID admitted by the Dispatcher for this Session; it is retained with
    the Runner record and announced independently of the journal writer, Sandbox, or creator. Native
@@ -242,7 +242,7 @@ reach the holder through the control Service (`control_target`, a required setti
 - `ListSessions` reads retained Session inventory.
 - `GetStatus` reads a coherent live snapshot of process incarnations, Session assignments and
   execution status. It never wakes the Sandbox or starts a harness.
-- `OpenSession` durably reserves or confirms the immutable Session configuration. Its response
+- `CreateSession` durably reserves or confirms the immutable Session configuration. Its response
   does not assert native conversation creation or process readiness.
 - `SubmitInput` durably admits work before the runner starts/resumes its harness and reconciles
   native evidence. Startup/delivery failures are later journaled outcomes. Caller disconnect does
@@ -265,7 +265,7 @@ becomes ready after its native conversation preparation/reconciliation, without 
 | ------------------------------ | --------------------------------------------------- |
 | App and Notification inventory | `ListSessions`                                      |
 | App Sandbox diagnostics        | `GetStatus`                                         |
-| Session Dispatcher opening     | `OpenSession` with the admitted Session ID          |
+| Session Dispatcher creation    | `CreateSession` with the admitted Session ID        |
 | Teardown sealing               | `Quiesce`, repeated until journals are acknowledged |
 | Dispatcher command delivery    | Matching per-operation Runner RPC                   |
 

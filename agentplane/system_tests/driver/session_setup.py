@@ -25,14 +25,23 @@ async def run_setup(
     cwd: str,
     setup_script: str,
 ) -> tuple[str, str]:
-    spec = session_pb2.SessionSpec(harness=harness, cwd=cwd, model=model, reasoning_effort="low")
+    spec = session_pb2.SessionSpec(
+        placement=session_pb2.SessionPlacement(
+            environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                environment=session_pb2.ExactEnvironment(name=sandbox_name, uid=sandbox_uid), harness=harness
+            )
+        ),
+        cwd=cwd,
+        model=model,
+        reasoning_effort="low",
+    )
     with tracer.start_as_current_span(
         "system_test.session_setup.admission",
         attributes={"session.id": str(session_id)},
         record_exception=False,
         set_status_on_exception=False,
     ):
-        await client.create_session(
+        await client.create_session_and_wait(
             sandbox_name,
             session_id,
             dispatcher=dispatcher,

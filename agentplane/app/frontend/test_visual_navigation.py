@@ -98,34 +98,34 @@ async def test_pod_sandbox_hides_vm_console(view: VisualPage, app: AgentplaneFix
     await view.capture(target=page.locator("#app"))
 
 
-async def test_queued_session_open_follows_live_projection_and_survives_return(
+async def test_waiting_session_follows_live_projection_and_survives_return(
     view: VisualPage, app: AgentplaneFixture
 ) -> None:
-    """A queued Open follows its History projection; the Sandbox table lists it on return."""
-    await app.queue_open_response()
+    """A waiting Session follows its History projection; the Sandbox table lists it on return."""
+    await app.queue_create_response()
     await app.mount_app("/sandboxes/ready-sandbox?tab=threads")
     page = view.page
     await page.get_by_role("button", name="New thread", exact=True).click()
     await page.get_by_role("button", name="Create thread").click()
-    pending = page.get_by_role("status").filter(has_text="Open attempt")
-    await expect(pending).to_contain_text("Queued in Dispatcher")
-    match = re.search(r"Open attempt ([0-9a-f-]{36})", await pending.inner_text())
+    pending = page.get_by_role("status").filter(has_text="Session creation")
+    await expect(pending).to_contain_text("Waiting for the placement owner")
+    match = re.search(r"Session ([0-9a-f-]{36})", await pending.inner_text())
     assert match is not None
     session_id = match.group(1)
 
     await app.project_queued_session()
     await expect(page).to_have_url(re.compile(re.escape(session_id)))
-    sidebar_thread = page.locator(".agentplane-thread-list-row-name").filter(has_text="Queued opening thread")
+    sidebar_thread = page.locator(".agentplane-thread-list-row-name").filter(has_text="Waiting Session thread")
     await expect(sidebar_thread).to_be_visible()
 
     await page.locator("a.agentplane-thread-list-group-link").filter(has_text="ready-sandbox").click()
     await page.get_by_role("tab", name="Threads").click()
-    row = page.get_by_role("row", name=re.compile("Queued opening thread"))
+    row = page.get_by_role("row", name=re.compile("Waiting Session thread"))
     await expect(row).to_be_visible()
     await expect(
-        page.locator(".agentplane-thread-list-row-name").filter(has_text="Queued opening thread")
+        page.locator(".agentplane-thread-list-row-name").filter(has_text="Waiting Session thread")
     ).to_be_visible()
-    await view.check(context="queued Thread projected and listed after returning to its Sandbox")
+    await view.check(context="accepted Session projected and listed after returning to its Sandbox")
     await view.capture(target=page.locator("#app"))
 
 

@@ -139,7 +139,7 @@ fill an older record; a different UID is refused. `FindSessions` supports both n
 exact UID lookup, including deleted Sandboxes. Legacy rows and ServiceAccounts without a Sandbox
 controller owner remain without a UID.
 
-A Session belongs to one Sandbox for its whole life and never moves to another; its history outlives the Sandbox. Separately, a nullable retained execution principal records the exact ServiceAccount incarnation under which the Session runs. New Dispatcher openings carry that identity through runner and central-sampler admission into History. It is independent of the authenticated journal writer, creator, and Sandbox identity. The first trusted association is immutable: conflicting owners fail, and an absent legacy owner is never inferred from the Sandbox name or current ServiceAccount. Old announcements without the identity cannot erase a pinned owner; old rows and announcements without trustworthy identity remain unavailable to normal same-principal reads. Rolling back the service leaves these additive owner columns in place because the association cannot be reconstructed. Replacing a Pod or VM keeps the Sandbox and its Sessions, and a teardown seal ends that incarnation, not the Session.
+A Session belongs to one Sandbox for its whole life and never moves to another; its history outlives the Sandbox. Separately, a nullable retained execution principal records the exact ServiceAccount incarnation under which the Session runs. New Dispatcher Session records carry that identity through runner and central-sampler admission into History. It is independent of the authenticated journal writer, creator, and Sandbox identity. The first trusted association is immutable: conflicting owners fail, and an absent legacy owner is never inferred from the Sandbox name or current ServiceAccount. Old announcements without the identity cannot erase a pinned owner; old rows and announcements without trustworthy identity remain unavailable to normal same-principal reads. Rolling back the service leaves these additive owner columns in place because the association cannot be reconstructed. Replacing a Pod or VM keeps the Sandbox and its Sessions, and a teardown seal ends that incarnation, not the Session.
 
 ## Delta settlement
 
@@ -204,11 +204,12 @@ the folded one.
 database, and every replica forwards that to its watchers as a payload-free `changed`. A stream opens
 with one `changed` to cover whatever the caller missed, and an idle stream ends with
 `reconnect_required` after `watch_lease_s` or a replica drain. A lease/drain during a write ends the
-stream without another frame. A request with `opened_after` also gets `session_opened` for each Session recorded at
-a later position, the backlog first and then each as its first push binds it, so the app opens a
-Thread for Sessions it did not start. The binding draws the Session's `opened_position` under a
-transaction advisory lock held to commit, so positions become visible in ascending order and a caller
-that reconnects after the last position it handled misses none.
+stream without another frame. A request with `recorded_after` also gets `session_recorded` for each
+Session History records at a later position, the backlog first and then each as its first push binds
+it, so the app can create a Thread view for Sessions it did not start. The binding draws the Session's
+`recorded_position` under a transaction advisory lock held to commit, so positions become visible in
+ascending order and a caller that reconnects after the last position it handled misses none. Migration
+9 renames the persisted ordinal without changing its values, sequence ownership, ordering or indexes.
 
 `ReadThreadEntities` serves a window of a Session's fold rows, by entity index or by key, as typed
 `ThreadEntity` values. Common identity and cursor metadata sits on the entity; its oneof identifies
@@ -245,3 +246,9 @@ writer fencing and commit-before-ack rules apply. Central outboxes retain eviden
 PostgreSQL while History is unavailable. Raw boundary and execution-progress observations remain
 retained evidence; source-linked normalized Events drive the ordinary Thread fold. History does
 not own the provider continuation. See the [sampler contract](../central_sampler/SPEC.md).
+
+The SessionSpec placement cutover's History migration 8 moves a legacy archived
+`SessionSpec.harness` value into `historical_harness` on retained feed and summary snapshots when
+the old record has no exact placement to report. It does not invent an environment identity or
+change raw events, cursors or event ordering. New live openings use the typed placement in
+`SessionSpec`; historical evidence remains available through the migration.
