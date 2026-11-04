@@ -74,7 +74,9 @@ backend preserves. Both explicit and idle suspension retain the launcher Pod, Sa
 Pod-bound credentials and Runtime boot identity. The VMM process exits; the small supervisor and
 relay remain resident. Kubernetes retains the Pod resource requests while suspended; this backend
 does not return its scheduling reservation to the cluster. The controller declares stopped only after the supervisor acknowledges the
-checkpoint. Final deletion first resumes the Runtime, then uses the ordinary quiesce/delete path.
+checkpoint. Final deletion first resumes the Runtime and waits for a verified, live Gateway
+connection with an epoch newer than the suspended connection before attempting the ordinary
+quiesce/delete path. A pending reconnect does not consume the persisted quiesce attempt.
 
 The supervisor holds an exclusive host-side state-PVC `flock` for its lifetime. A checkpoint
 manifest binds the Sandbox UID, Pod UID, launcher configuration, VMM binary and complete disk set.

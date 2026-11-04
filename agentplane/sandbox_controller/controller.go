@@ -291,6 +291,9 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 			if err != nil || ready != nil {
 				return w, ready, err
 			}
+			if ready, err := r.firecrackerQuiesceReady(ctx, sandbox, w.pod); err != nil || ready != nil {
+				return w, ready, err
+			}
 		}
 		w, blocked, err := r.converge(ctx, sandbox, w, true, credentialGate)
 		if err != nil || blocked != nil {

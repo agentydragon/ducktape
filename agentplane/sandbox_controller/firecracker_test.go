@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"testing"
+	"time"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
@@ -182,6 +183,71 @@ func TestFirecrackerReconcileSuspendsWithoutQuiescingOrDeletingPod(t *testing.T)
 	stopped := getSandbox(t, c)
 	if stopped.Status.RunnerCredential.ID != credential || runningReason(t, c) != "FirecrackerLauncherLost" {
 		t.Fatalf("lost launcher changed credential or escaped recovery hold: %s", runningReason(t, c))
+	}
+}
+
+func TestFirecrackerDeletionWaitsForVerifiedPostResumeConnection(t *testing.T) {
+	r, c, now := idleRunner(t, nil)
+	pod := getPod(t, c)
+	pod.Labels[EnvironmentBackendLabel] = "firecracker"
+	pod.Annotations[FirecrackerRunningAnnotation] = "true"
+	pod.Annotations[FirecrackerSuspendEpochAnnotation] = "0"
+	if err := c.Update(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
+	r.FirecrackerStatus = &testFirecrackerStatus{state: FirecrackerState{PodUID: string(pod.UID), Phase: "running"}}
+	deleteSandbox(t, c)
+	var lease coordinationv1.Lease
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix}, &lease); err != nil {
+		t.Fatal(err)
+	}
+	assertWaiting := func() {
+		t.Helper()
+		reconcileOnce(t, r)
+		if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 0 {
+			t.Fatalf("attempted Quiesce before verified reconnect: %d calls", calls)
+		}
+		if getSandbox(t, c).Status.QuiesceAttempt != nil {
+			t.Fatal("pending connection consumed the persisted Quiesce attempt")
+		}
+		if current := getPod(t, c); current == nil || current.UID != pod.UID {
+			t.Fatal("pending connection lost the retained launcher")
+		}
+	}
+	assertWaiting() // A live, verified Lease from before suspension is stale.
+	epoch := int32(1)
+	lease.Spec.LeaseTransitions = &epoch
+	lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] = ""
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+	assertWaiting() // Claiming the new epoch alone does not verify a Runtime.
+	lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] = "test-runner-boot"
+	lease.Annotations[sandboxlease.PodUIDAnnotation] = "another-pod"
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+	assertWaiting()
+	lease.Annotations[sandboxlease.PodUIDAnnotation] = string(pod.UID)
+	duration := int32(30)
+	lease.Spec.LeaseDurationSeconds = &duration
+	expired := metav1.NewMicroTime(now.Add(-time.Hour))
+	lease.Spec.RenewTime = &expired
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+	assertWaiting()
+	renewed := metav1.NewMicroTime(*now)
+	lease.Spec.RenewTime = &renewed
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 1 {
+		t.Fatalf("verified new connection made %d Quiesce calls, want 1", calls)
+	}
+	if getPod(t, c) == nil {
+		t.Fatal("launcher deleted before recording the seal")
 	}
 }
 

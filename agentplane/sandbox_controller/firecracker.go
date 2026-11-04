@@ -9,6 +9,7 @@ import (
 	"time"
 
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	sandboxlease "github.com/agentydragon/ducktape/agentplane/sandboxes/lease"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -58,6 +59,27 @@ func (r PodProxyFirecrackerStatusReader) Read(ctx context.Context, pod *corev1.P
 
 func isFirecrackerPod(pod *corev1.Pod) bool {
 	return pod != nil && pod.Labels[EnvironmentBackendLabel] == "firecracker"
+}
+
+// A restored VMM can run before the Gateway has accepted its new WatchState connection.
+// Do not spend the persisted Quiesce attempt on the pre-checkpoint connection or a pending claim.
+func (r *Reconciler) firecrackerQuiesceReady(ctx context.Context, sandbox *sandboxapi.Sandbox, pod *corev1.Pod) (*unready, error) {
+	lease, err := r.runnerLease(ctx, sandbox)
+	if err != nil {
+		return nil, err
+	}
+	pending := &unready{reason: "Quiescing", stage: sandboxapi.StopStageQuiescing, message: "waiting for the restored Runtime's verified Gateway connection", retryAfter: 2 * time.Second}
+	if value := pod.Annotations[FirecrackerSuspendEpochAnnotation]; value != "" {
+		before, err := strconv.ParseInt(value, 10, 32)
+		if err != nil || before < 0 || leaseTransitions(&lease) <= int32(before) {
+			return pending, nil
+		}
+	}
+	if lease.Annotations[sandboxlease.PodUIDAnnotation] != string(pod.UID) ||
+		lease.Annotations[sandboxlease.EnvironmentRuntimeBootIDAnnotation] == "" || !connectionLive(&lease, r.Now()) {
+		return pending, nil
+	}
+	return nil, nil
 }
 
 func withFirecracker(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTemplate, spec *corev1.PodSpec) *unready {
