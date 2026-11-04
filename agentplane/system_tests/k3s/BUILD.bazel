@@ -58,6 +58,7 @@ py_test(
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//devinfra/bazel:runfiles",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

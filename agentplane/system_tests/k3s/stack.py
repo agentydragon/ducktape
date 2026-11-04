@@ -187,6 +187,25 @@ class K3s:
         self.kubeconfig = work / "kubeconfig"
         self.data_dir = Path("/var/lib/k3s-env")
         self.node_ip = node_ip()
+        # CRI publishes an imported image's config-ID alias before its pinned tag.
+        self._fixture_image_ids: set[str] = set()
+
+    def protect_image_layouts(self, images: dict[str, Path]) -> None:
+        """Protect current fixture images even before CRI publishes their named references."""
+
+        def add_descriptor(layout: Path, descriptor: dict[str, Any]) -> None:
+            algorithm, digest = descriptor["digest"].split(":", 1)
+            manifest = json.loads((layout / "blobs" / algorithm / digest).read_text())
+            if "config" in manifest:
+                self._fixture_image_ids.add(manifest["config"]["digest"])
+            else:
+                for child in manifest["manifests"]:
+                    add_descriptor(layout, child)
+
+        for layout in images.values():
+            index = json.loads((layout / "index.json").read_text())
+            for descriptor in index["manifests"]:
+                add_descriptor(layout, descriptor)
 
     def kubectl(
         self,
@@ -315,6 +334,7 @@ class K3s:
                 and not image.get("repoDigests")
                 and not image.get("pinned")
                 and image["id"] not in in_use
+                and image["id"] not in self._fixture_image_ids
             }
 
         obsolete = sorted(obsolete_images())
@@ -456,6 +476,7 @@ class K3s:
         """Import Bazel OCI layouts, keyed by the image reference each loads as, into
         containerd one image at a time. Blob digests are preserved, and a blob containerd
         already holds (an earlier image's, or on a recycled runner the last stack's) is not streamed again."""
+        self.protect_image_layouts(images)
         self.prune_unused_images()
         layers = self.data_dir / "agent/containerd/io.containerd.snapshotter.v1.overlayfs"
         filesystem = os.statvfs(layers)
@@ -1211,6 +1232,9 @@ def running_stack(
             if missing := deployment_images - fixture_images.keys():
                 raise ValueError(f"Fixture workloads lack OCI layouts for: {sorted(missing)}")
             install_baseline = not baseline_warm
+            # A later group may already have an ID alias while CRI is still publishing its tag.
+            # Register every current runfile image before any of the import-group sweeps.
+            k3s.protect_image_layouts(pki_images | infrastructure_images | fixture_images | guest_images)
             if fixture.vm_sandboxes and install_baseline:
                 k3s.import_images(infrastructure_images)
             cleanup.callback(certificates.report, k3s.kubectl, cert_manager + trust_manager)

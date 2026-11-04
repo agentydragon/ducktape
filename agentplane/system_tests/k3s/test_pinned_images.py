@@ -4,13 +4,16 @@ import json
 import os
 import uuid
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from agentplane.system_tests.k3s import stack
 from agentplane.system_tests.k3s.stack import K3s
 from devinfra.bazel.runfiles import get_required_path
 
 
-def _assert_cri_pinned(k3s: K3s, reference: str, work: Path) -> None:
+def _assert_cri_pinned(k3s: K3s, reference: str, work: Path) -> str:
     config = work / "crictl.yaml"
     config.write_text(f"runtime-endpoint: unix://{stack.CONTAINERD_SOCKET}\n")
     images = json.loads(
@@ -19,9 +22,10 @@ def _assert_cri_pinned(k3s: K3s, reference: str, work: Path) -> None:
     matches = [image for image in images if reference in image.get("repoTags", [])]
     assert len(matches) == 1, f"CRI image {reference}: {matches}"
     assert matches[0]["pinned"] is True, matches[0]
+    return str(matches[0]["id"])
 
 
-def test_imported_image_is_pinned_after_clean_attach(tmp_path: Path) -> None:
+def test_imported_image_is_pinned_after_clean_attach(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     binary = get_required_path(os.environ["K3S_BINARY_RLOCATION"])
     layout = get_required_path(os.environ["K3S_TEST_IMAGE_RLOCATION"])
     reference = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset"
@@ -31,6 +35,20 @@ def test_imported_image_is_pinned_after_clean_attach(tmp_path: Path) -> None:
         assert not warm
         identity = marker["identity"].copy()
         k3s.import_images({reference: layout})
+        image_id = _assert_cri_pinned(k3s, reference, tmp_path)
+
+        # Model the transient CRI inventory between creating the ID alias and publishing
+        # the pinned tag. A real CRI RemoveImage on that ID would remove the tag too.
+        crictl = k3s.crictl
+
+        def stale_inventory(*args: str, **kwargs: Any) -> str:
+            if args == ("images", "-o", "json"):
+                return json.dumps({"images": [{"id": image_id}]})
+            return crictl(*args, **kwargs)
+
+        with monkeypatch.context() as context:
+            context.setattr(k3s, "crictl", stale_inventory)
+            k3s.prune_unused_images()
         _assert_cri_pinned(k3s, reference, tmp_path)
 
         # A successful suite leaves a clean marker. The next action must attach to the
