@@ -22,8 +22,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
-	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -31,38 +29,6 @@ import (
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
-
-func TestListThreadMetadataScopesPagesToExactEnvironmentUID(t *testing.T) {
-	first, replacement, last := uuid.New(), uuid.New(), uuid.New()
-	now := time.Now()
-	store := &threadReadStoreFake{rows: []threads.Thread{
-		{ID: first, CreatedAt: now},
-		{ID: replacement, CreatedAt: now.Add(-time.Second)},
-		{ID: last, CreatedAt: now.Add(-2 * time.Second), Archived: true},
-	}}
-	history := &threadReadHistoryFake{
-		summaries: map[uuid.UUID]historydata.FoldSummary{
-			first:       {Present: true, Sandbox: "worker", SandboxUID: "old"},
-			replacement: {Present: true, Sandbox: "worker", SandboxUID: "new"},
-			last:        {Present: true, Sandbox: "worker", SandboxUID: "old"},
-		},
-		sandboxUIDs: map[uuid.UUID]string{first: "old", replacement: "new", last: "old"},
-		sandboxes:   map[uuid.UUID]string{first: "worker", replacement: "worker", last: "worker"},
-	}
-	service := &appService{threadReader: store, threadHistory: history}
-	page, err := service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: "old", Limit: 1, IncludeArchived: true})
-	if err != nil || len(page.GetThreads()) != 1 || page.GetThreads()[0].GetThreadId() != first.String() || page.GetNextPageToken() == "" || page.GetArchivedCount() != 1 {
-		t.Fatalf("first page = %v, %v", page, err)
-	}
-	next, err := service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: "old", Limit: 1, IncludeArchived: true, PageToken: page.GetNextPageToken()})
-	if err != nil || len(next.GetThreads()) != 1 || next.GetThreads()[0].GetThreadId() != last.String() || next.GetNextPageToken() != "" {
-		t.Fatalf("next page = %v, %v", next, err)
-	}
-	_, err = service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: "new", Limit: 1, IncludeArchived: true, PageToken: page.GetNextPageToken()})
-	if status.Code(err) != codes.InvalidArgument {
-		t.Fatalf("continuation for another UID = %v, want InvalidArgument", err)
-	}
-}
 
 type threadReadStoreFake struct {
 	rows []threads.Thread
@@ -153,24 +119,28 @@ func TestListThreadMetadataScopesPagesAndArchiveCountToSandboxUID(t *testing.T) 
 		uuid.MustParse("00000000-0000-4000-8000-000000000003"),
 		uuid.MustParse("00000000-0000-4000-8000-000000000004"),
 		uuid.MustParse("00000000-0000-4000-8000-000000000005"),
+		uuid.MustParse("00000000-0000-4000-8000-000000000006"),
 	}
+	unknownTurnStatus := int32(999)
 	store := &threadReadStoreFake{rows: []threads.Thread{
 		{ID: ids[0], CreatedAt: time.Unix(4, 0), Archived: true},
 		{ID: ids[1], CreatedAt: time.Unix(3, 0)},
 		{ID: ids[2], CreatedAt: time.Unix(2, 0)},
+		{ID: ids[5], CreatedAt: time.Unix(1, 500_000_000), Archived: true},
 		{ID: ids[3], CreatedAt: time.Unix(1, 0), Archived: true},
 		{ID: ids[4], CreatedAt: time.Unix(0, 0), Archived: true},
 	}}
 	history := &threadReadHistoryFake{
 		summaries: map[uuid.UUID]historydata.FoldSummary{
 			ids[0]: {Present: true, Sandbox: "reused", SandboxUID: oldUID},
-			ids[1]: {Present: true, Sandbox: "reused", SandboxUID: currentUID},
+			ids[1]: {Present: true, Sandbox: "reused", SandboxUID: currentUID, LastTurnStatus: &unknownTurnStatus},
 			ids[2]: {Present: true, Sandbox: "reused", SandboxUID: currentUID},
 			ids[3]: {Present: true, Sandbox: "reused", SandboxUID: currentUID},
 			ids[4]: {Present: false, Sandbox: "reused", SandboxUID: currentUID},
+			ids[5]: {Present: true, Sandbox: "reused", SandboxUID: oldUID},
 		},
-		sandboxes:   map[uuid.UUID]string{ids[0]: "reused", ids[1]: "reused", ids[2]: "reused", ids[3]: "reused", ids[4]: "reused"},
-		sandboxUIDs: map[uuid.UUID]string{ids[0]: oldUID, ids[1]: currentUID, ids[2]: currentUID, ids[3]: currentUID, ids[4]: currentUID},
+		sandboxes:   map[uuid.UUID]string{ids[0]: "reused", ids[1]: "reused", ids[2]: "reused", ids[3]: "reused", ids[4]: "reused", ids[5]: "reused"},
+		sandboxUIDs: map[uuid.UUID]string{ids[0]: oldUID, ids[1]: currentUID, ids[2]: currentUID, ids[3]: currentUID, ids[4]: currentUID, ids[5]: currentUID},
 	}
 	service := &appService{threadReader: store, threadHistory: history}
 	first, err := service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1, IncludeArchived: true})
@@ -186,6 +156,13 @@ func TestListThreadMetadataScopesPagesAndArchiveCountToSandboxUID(t *testing.T) 
 	}
 	if len(second.Threads) != 1 || second.Threads[0].ThreadId != ids[2].String() || second.ArchivedCount != 1 {
 		t.Fatalf("second current-incarnation page = %+v", second)
+	}
+	third, err := service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1, IncludeArchived: true, PageToken: second.NextPageToken})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(third.Threads) != 1 || third.Threads[0].ThreadId != ids[3].String() || third.NextPageToken != "" || third.ArchivedCount != 1 {
+		t.Fatalf("third current-incarnation page = %+v, want the matching archived Thread only", third)
 	}
 	_, err = service.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: oldUID, Limit: 1, IncludeArchived: true, PageToken: first.NextPageToken})
 	if status.Code(err) != codes.InvalidArgument {
@@ -348,178 +325,19 @@ func (f *threadReadHistoryFake) BatchGetSummaries(_ context.Context, ids []uuid.
 	return result, nil
 }
 
-func (f *threadReadHistoryFake) FindSessions(_ context.Context, sandboxName, sandboxNameContains, sandboxUID *string) (map[uuid.UUID]string, error) {
+func (f *threadReadHistoryFake) FindSessions(_ context.Context, _, _, sandboxUID *string) (map[uuid.UUID]string, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	result := make(map[uuid.UUID]string)
-	for id, sandbox := range f.sandboxes {
-		if sandboxName != nil && sandbox == *sandboxName {
-			result[id] = sandbox
-		}
-		if sandboxNameContains != nil && strings.Contains(strings.ToLower(sandbox), strings.ToLower(*sandboxNameContains)) {
-			result[id] = sandbox
-		}
-		if sandboxUID != nil && f.sandboxUIDs[id] == *sandboxUID {
-			result[id] = sandbox
+	if sandboxUID != nil {
+		for id, uid := range f.sandboxUIDs {
+			if uid == *sandboxUID {
+				result[id] = f.sandboxes[id]
+			}
 		}
 	}
 	return result, nil
-}
-
-func TestListThreadViewsFiltersHistoryAndContinuesFromLastReturnedThread(t *testing.T) {
-	ids := []uuid.UUID{
-		uuid.MustParse("00000000-0000-0000-0000-000000000004"),
-		uuid.MustParse("00000000-0000-0000-0000-000000000003"),
-		uuid.MustParse("00000000-0000-0000-0000-000000000002"),
-		uuid.MustParse("00000000-0000-0000-0000-000000000001"),
-	}
-	base := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
-	name := "Router and auth"
-	rows := []threads.Thread{
-		{ID: ids[0], CreatedAt: base, Name: &name},
-		{ID: ids[1], CreatedAt: base.Add(-time.Minute)},
-		{ID: ids[2], CreatedAt: base.Add(-2 * time.Minute), Name: &name}, // History summary absent.
-		{ID: ids[3], CreatedAt: base.Add(-3 * time.Minute), Name: &name},
-	}
-	summaries := map[uuid.UUID]historydata.FoldSummary{
-		ids[0]: {Present: true, Sandbox: "team-alpha"},
-		ids[1]: {Present: true, Sandbox: "team-beta"},
-		ids[3]: {Present: true, Sandbox: "team-alpha"},
-	}
-	store := &threadReadStoreFake{rows: rows}
-	history := &threadReadHistoryFake{
-		summaries: summaries,
-		sandboxes: map[uuid.UUID]string{ids[0]: "team-alpha", ids[1]: "team-beta", ids[3]: "team-alpha"},
-	}
-	listing := threadListing{Search: stringPointer("alpha"), IncludeArchived: false}
-	first, err := listThreadViews(context.Background(), store, history, listing, 1, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(first.Threads) != 1 || first.Threads[0].ID != ids[0] || first.NextPageToken == nil {
-		t.Fatalf("first page = %+v, want newest matching Thread and a continuation", first)
-	}
-	second, err := listThreadViews(context.Background(), store, history, listing, 1, first.NextPageToken)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(second.Threads) != 1 || second.Threads[0].ID != ids[3] || second.NextPageToken != nil {
-		t.Fatalf("second page = %+v, want older matching Thread and no continuation", second)
-	}
-	if _, err := decodeThreadPageToken(first.NextPageToken, threadListing{Search: stringPointer("beta")}); !errors.Is(err, errMismatchedThreadListing) {
-		t.Fatalf("page token filter mismatch = %v, want errMismatchedThreadListing", err)
-	}
-
-	exact := threadListing{Sandbox: stringPointer("team-beta"), IncludeArchived: false}
-	filtered, err := listThreadViews(context.Background(), store, history, exact, 10, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(filtered.Threads) != 1 || filtered.Threads[0].ID != ids[1] {
-		t.Fatalf("exact Sandbox filter = %+v, want only %s", filtered.Threads, ids[1])
-	}
-}
-
-func TestListThreadViewsFiltersBySandboxIncarnationAndBindsPageToken(t *testing.T) {
-	ids := []uuid.UUID{
-		uuid.MustParse("00000000-0000-0000-0000-000000000014"),
-		uuid.MustParse("00000000-0000-0000-0000-000000000013"),
-		uuid.MustParse("00000000-0000-0000-0000-000000000012"),
-	}
-	uid := "11111111-1111-4111-8111-111111111111"
-	replacementUID := "22222222-2222-4222-8222-222222222222"
-	base := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
-	store := &threadReadStoreFake{rows: []threads.Thread{
-		{ID: ids[0], CreatedAt: base, Archived: true},
-		{ID: ids[1], CreatedAt: base.Add(-time.Minute), Archived: true},
-		{ID: ids[2], CreatedAt: base.Add(-2 * time.Minute), Archived: true},
-	}}
-	history := &threadReadHistoryFake{
-		summaries: map[uuid.UUID]historydata.FoldSummary{
-			ids[0]: {Present: true, Sandbox: "reused-name", SandboxUID: uid},
-			ids[1]: {Present: true, Sandbox: "reused-name", SandboxUID: replacementUID},
-			ids[2]: {Present: true, Sandbox: "other-name", SandboxUID: uid},
-		},
-		sandboxes:   map[uuid.UUID]string{ids[0]: "reused-name", ids[1]: "reused-name", ids[2]: "other-name"},
-		sandboxUIDs: map[uuid.UUID]string{ids[0]: uid, ids[1]: replacementUID, ids[2]: uid},
-	}
-	listing := threadListing{SandboxUID: stringPointer(uid), IncludeArchived: true}
-	first, err := listThreadViews(context.Background(), store, history, listing, 1, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(first.Threads) != 1 || first.Threads[0].ID != ids[0] || first.Threads[0].SandboxUID == nil || *first.Threads[0].SandboxUID != uid || first.NextPageToken == nil {
-		t.Fatalf("first page = %+v, want archived Thread %s with UID %s and a continuation", first, ids[0], uid)
-	}
-	second, err := listThreadViews(context.Background(), store, history, listing, 1, first.NextPageToken)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(second.Threads) != 1 || second.Threads[0].ID != ids[2] || second.Threads[0].SandboxUID == nil || *second.Threads[0].SandboxUID != uid || second.NextPageToken != nil {
-		t.Fatalf("second page = %+v, want older Thread %s with UID %s and no continuation", second, ids[2], uid)
-	}
-	otherListing := threadListing{SandboxUID: stringPointer(replacementUID), IncludeArchived: true}
-	if _, err := decodeThreadPageToken(first.NextPageToken, otherListing); !errors.Is(err, errMismatchedThreadListing) {
-		t.Fatalf("page token UID mismatch = %v, want errMismatchedThreadListing", err)
-	}
-}
-
-func TestMakeThreadViewPreservesFeedStatusEnum(t *testing.T) {
-	thread := threads.Thread{ID: uuid.New(), CreatedAt: time.Now().UTC()}
-	attachment := &sessionpb.Attached{HarnessState: sessionpb.HarnessState_HARNESS_STATE_STOPPED}
-	for _, test := range []struct {
-		status historypb.FeedStatus
-		want   string
-	}{
-		{historypb.FeedStatus_FEED_STATUS_ACTIVE, "active"},
-		{historypb.FeedStatus_FEED_STATUS_ENDED, "ended"},
-		{historypb.FeedStatus_FEED_STATUS_FAILED, "failed"},
-	} {
-		t.Run(test.want, func(t *testing.T) {
-			view, err := makeThreadView(thread, historydata.FoldSummary{
-				Present: true, Sandbox: "sandbox",
-				Feed: &historydata.FeedSnapshot{Status: test.status, Attached: attachment},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if view.FeedStatus == nil || *view.FeedStatus != test.want {
-				t.Fatalf("feed_status = %v, want %q", view.FeedStatus, test.want)
-			}
-		})
-	}
-	view, err := makeThreadView(thread, historydata.FoldSummary{Present: true, Sandbox: "sandbox"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if view.FeedStatus != nil || view.HarnessState != sessionpb.HarnessState_HARNESS_STATE_UNSPECIFIED.String() {
-		t.Fatalf("unattached view = %+v, want nil feed and unspecified harness", view)
-	}
-}
-
-func TestMakeThreadViewReturnsSandboxUID(t *testing.T) {
-	uid := "opaque-sandbox-uid"
-	view, err := makeThreadView(threads.Thread{ID: uuid.New()}, historydata.FoldSummary{
-		Present: true, Sandbox: "sandbox", SandboxUID: uid,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if view.SandboxUID == nil || *view.SandboxUID != uid {
-		t.Fatalf("sandbox_uid = %v, want %s", view.SandboxUID, uid)
-	}
-	body, err := json.Marshal(view)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var decoded map[string]any
-	if err := json.Unmarshal(body, &decoded); err != nil {
-		t.Fatal(err)
-	}
-	if got, ok := decoded["sandbox_uid"].(string); !ok || got != uid {
-		t.Fatalf("JSON sandbox_uid = %v, want %q", decoded["sandbox_uid"], uid)
-	}
 }
 
 func TestThreadSandboxReadinessRequiresRunningReadyPod(t *testing.T) {
@@ -577,47 +395,18 @@ func TestEnsureThreadArchivableRejectsBusyEnvironmentRuntime(t *testing.T) {
 	}
 }
 
-func TestThreadViewReadsHistoryIdentityActivityAndAttachedSpecification(t *testing.T) {
-	id := uuid.New()
-	name := "operator name"
-	at := time.Date(2026, 10, 29, 1, 2, 3, 0, time.UTC)
-	row := threads.Thread{ID: id, Name: &name, Archived: true, CreatedAt: at.Add(-time.Hour)}
-	for _, turn := range []eventpb.TurnStatus{
-		eventpb.TurnStatus_TURN_STATUS_COMPLETED,
-		eventpb.TurnStatus_TURN_STATUS_FAILED,
-		eventpb.TurnStatus_TURN_STATUS_INTERRUPTED,
+func TestEnsureThreadArchivableRequiresSandboxIdentity(t *testing.T) {
+	thread := threads.Thread{ID: uuid.New()}
+	for _, summary := range []historydata.FoldSummary{
+		{SandboxUID: "uid"},
+		{Sandbox: "sandbox"},
 	} {
-		t.Run(turn.String(), func(t *testing.T) {
-			status := int32(turn)
-			view, err := makeThreadView(row, historydata.FoldSummary{
-				Present: true, Sandbox: "history-owned", FoldedThrough: 7, CommittedCursor: 9,
-				LastEventAt: &at, LastModelActivityAt: &at, IdleSince: &at, LastTurnStatus: &status,
-				Feed: &historydata.FeedSnapshot{
-					Status: historypb.FeedStatus_FEED_STATUS_ENDED,
-					Attached: &sessionpb.Attached{
-						HarnessState: sessionpb.HarnessState_HARNESS_STATE_STOPPED,
-						Spec:         &sessionpb.SessionSpec{Harness: sessionpb.Harness_HARNESS_CODEX, Model: "model", Cwd: "/workspace", ReasoningEffort: "high"},
-					},
-				},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if view.ID != id || view.Sandbox != "history-owned" || view.Name != &name || !view.Archived || view.CreatedAt != row.CreatedAt ||
-				view.LastCursor != 7 || view.LastEventAt != &at || view.LastModelActivityAt != &at || view.IdleSince != &at ||
-				view.LastTurnStatus == nil || *view.LastTurnStatus != turn.String() || view.FeedStatus == nil || *view.FeedStatus != "ended" ||
-				view.Harness == nil || *view.Harness != "HARNESS_CODEX" || view.Model == nil || *view.Model != "model" ||
-				view.CWD == nil || *view.CWD != "/workspace" || view.ReasoningEffort == nil || *view.ReasoningEffort != "high" {
-				t.Fatalf("Thread view lost History or operator fields: %+v", view)
-			}
-		})
-	}
-	view, err := makeThreadView(row, historydata.FoldSummary{Present: true, Sandbox: "unfolded"})
-	if err != nil || view.LastCursor != 0 || view.FeedStatus != nil || view.Harness != nil || view.Model != nil || view.CWD != nil || view.LastTurnStatus != nil {
-		t.Fatalf("unfolded Thread view = %+v, %v", view, err)
-	}
-	if _, err := makeThreadView(row, historydata.FoldSummary{Present: true}); err == nil {
-		t.Fatal("committed History without Sandbox identity was accepted")
+		inventory := &threadReadInventoryFake{sandbox: &environmentpb.EnvironmentDescriptor{
+			Target: &identitypb.EnvironmentTarget{Name: "sandbox", Uid: "uid"},
+		}}
+		if err := ensureThreadArchivable(context.Background(), "tools", thread, summary, inventory, nil); err == nil || inventory.exactName != "" {
+			t.Fatalf("archive validation for identity %+v = %v, lookup name %q; want rejection before lookup", summary, err, inventory.exactName)
+		}
 	}
 }
 
@@ -635,10 +424,26 @@ func TestRenameThreadReturnsNotFoundWhenHistorySessionIsMissing(t *testing.T) {
 	}
 }
 
+func TestRenameThreadRequiresHistorySessionButNotSandboxIdentity(t *testing.T) {
+	id := uuid.New()
+	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id}}}
+	service := &appService{threadReader: store, threadHistory: &threadReadHistoryFake{
+		summaries: map[uuid.UUID]historydata.FoldSummary{id: {Present: true}},
+	}}
+	name := "renamed"
+	metadata, err := service.RenameThread(context.Background(), &apppb.RenameThreadRequest{ThreadId: id.String(), Name: &name})
+	if err != nil || metadata.GetName() != name {
+		t.Fatalf("RenameThread with a present History Session and no Sandbox identity = %v, %v", metadata, err)
+	}
+}
+
 func TestThreadMutationGateway(t *testing.T) {
 	id := uuid.New()
 	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id, CreatedAt: time.Now()}}}
-	history := &threadReadHistoryFake{summaries: map[uuid.UUID]historydata.FoldSummary{id: {Present: true, Sandbox: "sandbox", SandboxUID: "uid"}}}
+	unknownTurnStatus := int32(999)
+	history := &threadReadHistoryFake{summaries: map[uuid.UUID]historydata.FoldSummary{id: {
+		Present: true, Sandbox: "sandbox", SandboxUID: "uid", LastTurnStatus: &unknownTurnStatus,
+	}}}
 	inventory := &threadReadInventoryFake{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: "sandbox", Uid: "uid"}}}
 	authentication, err := auth.New(auth.Config{TokenReviews: threadReadAcceptedTokenReviewer{}, TokenAudience: "agentplane", TokenSubjects: []string{"system:serviceaccount:tools:runner"}})
 	if err != nil {

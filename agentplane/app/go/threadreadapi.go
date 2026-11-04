@@ -20,8 +20,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
-	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -55,39 +53,8 @@ type threadEnvironmentRuntimeStatusReader interface {
 	EnvironmentRuntimeStatus(context.Context, *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error)
 }
 
-// threadView combines History Session fields with app-owned operator metadata for listing.
-type threadView struct {
-	ID                  uuid.UUID  `json:"id" format:"uuid"`
-	Sandbox             string     `json:"sandbox"`
-	SandboxUID          *string    `json:"sandbox_uid" nullable:"true"`
-	Harness             *string    `json:"harness" enum:"HARNESS_CLAUDE,HARNESS_CODEX,HARNESS_CENTRAL_SAMPLER"`
-	Model               *string    `json:"model"`
-	CWD                 *string    `json:"cwd"`
-	CreatedAt           time.Time  `json:"created_at"`
-	Name                *string    `json:"name"`
-	Archived            bool       `json:"archived"`
-	LastCursor          uint64     `json:"last_cursor"`
-	LastEventAt         *time.Time `json:"last_event_at"`
-	LastModelActivityAt *time.Time `json:"last_model_activity_at"`
-	IdleSince           *time.Time `json:"idle_since"`
-	HarnessState        string     `json:"harness_state"`
-	SetupState          *string    `json:"setup_state"`
-	LaunchOutcome       *string    `json:"launch_outcome"`
-	ActiveTurnID        *string    `json:"active_turn_id"`
-	ReasoningEffort     *string    `json:"reasoning_effort"`
-	FeedStatus          *string    `json:"feed_status" enum:"active,ended,failed"`
-	LastTurnStatus      *string    `json:"last_turn_status"`
-}
-
-type threadPage struct {
-	Threads       []threadView `json:"threads"`
-	NextPageToken *string      `json:"next_page_token"`
-}
-
 type threadListing struct {
-	Sandbox         *string `json:"sandbox"`
 	SandboxUID      *string `json:"sandbox_uid"`
-	Search          *string `json:"search"`
 	IncludeArchived bool    `json:"include_archived"`
 }
 
@@ -159,9 +126,6 @@ func (s *appService) RenameThread(ctx context.Context, request *apppb.RenameThre
 	if !summary.Present {
 		return nil, status.Errorf(codes.NotFound, "no thread %s", id)
 	}
-	if _, err := makeThreadView(threads.Thread{ID: id}, summary); err != nil {
-		return nil, threadMutationRPCError(err)
-	}
 	thread, err := s.threadReader.Rename(ctx, id, name)
 	if err != nil {
 		return nil, threadMutationRPCError(err)
@@ -187,9 +151,6 @@ func (s *appService) ArchiveThread(ctx context.Context, request *apppb.ThreadMet
 	}
 	if !summary.Present {
 		return nil, status.Errorf(codes.NotFound, "no thread %s", id)
-	}
-	if _, err := makeThreadView(*thread, summary); err != nil {
-		return nil, threadMutationRPCError(err)
 	}
 	if err := ensureThreadArchivable(ctx, s.config.SandboxNamespace, *thread, summary, s.environments, s.threadRuntime); err != nil {
 		return nil, threadMutationRPCError(err)
@@ -247,7 +208,7 @@ func (s *appService) ListThreadMetadata(ctx context.Context, request *apppb.List
 		if s.threadHistory == nil {
 			return nil, status.Error(codes.Unavailable, "Thread history is unavailable")
 		}
-		page, err := listThreadViews(ctx, s.threadReader, s.threadHistory, listing, limit, token)
+		page, err := listEnvironmentThreads(ctx, s.threadReader, s.threadHistory, listing, limit, token)
 		if err != nil {
 			if errors.Is(err, errMalformedThreadPageToken) || errors.Is(err, errMismatchedThreadListing) {
 				return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -256,12 +217,13 @@ func (s *appService) ListThreadMetadata(ctx context.Context, request *apppb.List
 		}
 		response := &apppb.ListThreadMetadataResponse{Threads: make([]*apppb.ThreadMetadata, 0, len(page.Threads))}
 		for _, thread := range page.Threads {
-			response.Threads = append(response.Threads, &apppb.ThreadMetadata{
-				ThreadId: thread.ID.String(), CreatedAt: timestamppb.New(thread.CreatedAt), Name: thread.Name, Archived: thread.Archived,
-			})
+			response.Threads = append(response.Threads, threadMetadataProto(thread))
 		}
-		if page.NextPageToken != nil {
-			response.NextPageToken = *page.NextPageToken
+		if page.Next != nil {
+			response.NextPageToken, err = encodeThreadPageToken(listing, page.Next.CreatedAt, page.Next.ID)
+			if err != nil {
+				return nil, status.Error(codes.Unavailable, "list Environment Threads")
+			}
 		}
 		// ArchivedCount follows the same Sandbox UID filter, independent of whether this page
 		// includes archived Threads. Do not report the unrelated namespace-wide count.
@@ -369,40 +331,26 @@ func threadMetadataProto(thread threads.Thread) *apppb.ThreadMetadata {
 	}
 }
 
-func listThreadViews(ctx context.Context, store threadReadStore, history threadReadHistory, listing threadListing, limit int, token *string) (threadPage, error) {
+func listEnvironmentThreads(ctx context.Context, store threadReadStore, history threadReadHistory, listing threadListing, limit int, token *string) (threads.Page, error) {
 	if limit < 1 || limit > threadMaxPageSize {
-		return threadPage{}, fmt.Errorf("page size must be between 1 and %d", threadMaxPageSize)
+		return threads.Page{}, fmt.Errorf("page size must be between 1 and %d", threadMaxPageSize)
 	}
 	after, err := decodeThreadPageToken(token, listing)
 	if err != nil {
-		return threadPage{}, err
+		return threads.Page{}, err
 	}
-	page := threadPage{Threads: make([]threadView, 0, limit)}
-	var sandboxMatches map[uuid.UUID]string
-	if listing.Sandbox != nil {
-		sandboxMatches, err = history.FindSessions(ctx, listing.Sandbox, nil, nil)
-		if err != nil {
-			return threadPage{}, err
-		}
+	if listing.SandboxUID == nil {
+		return threads.Page{}, errors.New("Environment Thread listing requires a Sandbox UID")
 	}
-	var sandboxUIDMatches map[uuid.UUID]string
-	if listing.SandboxUID != nil {
-		sandboxUIDMatches, err = history.FindSessions(ctx, nil, nil, listing.SandboxUID)
-		if err != nil {
-			return threadPage{}, err
-		}
+	sandboxUIDMatches, err := history.FindSessions(ctx, nil, nil, listing.SandboxUID)
+	if err != nil {
+		return threads.Page{}, err
 	}
-	var searchSandboxMatches map[uuid.UUID]string
-	if listing.Search != nil {
-		searchSandboxMatches, err = history.FindSessions(ctx, nil, listing.Search, nil)
-		if err != nil {
-			return threadPage{}, err
-		}
-	}
+	page := threads.Page{Threads: make([]threads.Thread, 0, limit)}
 	for {
 		stored, err := store.ListPage(ctx, threads.MaxPage, after, listing.IncludeArchived)
 		if err != nil {
-			return threadPage{}, err
+			return threads.Page{}, err
 		}
 		ids := make([]uuid.UUID, 0, len(stored.Threads))
 		for _, thread := range stored.Threads {
@@ -410,67 +358,29 @@ func listThreadViews(ctx context.Context, store threadReadStore, history threadR
 		}
 		summaries, err := history.BatchGetSummaries(ctx, ids)
 		if err != nil {
-			return threadPage{}, err
+			return threads.Page{}, err
 		}
 		for _, thread := range stored.Threads {
 			summary, ok := summaries[thread.ID]
-			if !ok || !summary.Present ||
-				(listing.SandboxUID != nil && summary.SandboxUID != *listing.SandboxUID) ||
-				!threadMatches(thread, listing, sandboxMatches, sandboxUIDMatches, searchSandboxMatches) {
+			_, matchesSandboxUID := sandboxUIDMatches[thread.ID]
+			if !ok || !summary.Present || !matchesSandboxUID || summary.SandboxUID != *listing.SandboxUID {
 				continue
-			}
-			view, err := makeThreadView(thread, summary)
-			if err != nil {
-				return threadPage{}, err
 			}
 			if len(page.Threads) == limit {
 				last := page.Threads[len(page.Threads)-1]
-				value, err := encodeThreadPageToken(listing, last.CreatedAt, last.ID)
-				if err != nil {
-					return threadPage{}, err
-				}
-				page.NextPageToken = &value
+				page.Next = &threads.PageCursor{CreatedAt: last.CreatedAt, ID: last.ID}
 				return page, nil
 			}
-			page.Threads = append(page.Threads, view)
+			page.Threads = append(page.Threads, thread)
 		}
 		if stored.Next == nil {
 			return page, nil
 		}
 		if after != nil && !cursorBefore(after, stored.Next) {
-			return threadPage{}, errors.New("Thread metadata page cursor did not advance")
+			return threads.Page{}, errors.New("Thread metadata page cursor did not advance")
 		}
 		after = stored.Next
 	}
-}
-
-func threadMatches(
-	thread threads.Thread,
-	listing threadListing,
-	exactSandbox, exactSandboxUID, searchSandbox map[uuid.UUID]string,
-) bool {
-	if listing.Sandbox != nil {
-		if _, ok := exactSandbox[thread.ID]; !ok {
-			return false
-		}
-	}
-	if listing.SandboxUID != nil {
-		if _, ok := exactSandboxUID[thread.ID]; !ok {
-			return false
-		}
-	}
-	if listing.Search == nil {
-		return true
-	}
-	search := strings.ToLower(*listing.Search)
-	if thread.Name != nil && strings.Contains(strings.ToLower(*thread.Name), search) {
-		return true
-	}
-	if strings.HasPrefix(strings.ToLower(thread.ID.String()), search) {
-		return true
-	}
-	_, ok := searchSandbox[thread.ID]
-	return ok
 }
 
 func cursorBefore(left, right *threads.PageCursor) bool {
@@ -526,9 +436,7 @@ func encodeThreadPageToken(listing threadListing, created time.Time, id uuid.UUI
 }
 
 func sameThreadListing(left, right threadListing) bool {
-	return equalOptionalString(left.Sandbox, right.Sandbox) &&
-		equalOptionalString(left.SandboxUID, right.SandboxUID) &&
-		equalOptionalString(left.Search, right.Search) && left.IncludeArchived == right.IncludeArchived
+	return equalOptionalString(left.SandboxUID, right.SandboxUID) && left.IncludeArchived == right.IncludeArchived
 }
 
 func equalOptionalString(left, right *string) bool {
@@ -542,65 +450,12 @@ func readThreadSummary(ctx context.Context, history threadReadHistory, id uuid.U
 	return history.GetSummary(ctx, id)
 }
 
-func makeThreadView(thread threads.Thread, summary historydata.FoldSummary) (threadView, error) {
-	if summary.Sandbox == "" {
-		return threadView{}, errors.New("History Session has no Sandbox identity")
-	}
-	view := threadView{
-		ID: thread.ID, Sandbox: summary.Sandbox, CreatedAt: thread.CreatedAt, Name: thread.Name, Archived: thread.Archived,
-		LastCursor: summary.FoldedThrough, LastEventAt: summary.LastEventAt,
-		LastModelActivityAt: summary.LastModelActivityAt, IdleSince: summary.IdleSince,
-		HarnessState: sessionpb.HarnessState_HARNESS_STATE_UNSPECIFIED.String(),
-	}
-	if summary.SandboxUID != "" {
-		view.SandboxUID = stringPointer(summary.SandboxUID)
-	}
-	if summary.LastTurnStatus != nil {
-		value := eventpb.TurnStatus_name[*summary.LastTurnStatus]
-		if value == "" {
-			return threadView{}, errors.New("History Service returned an unknown TurnStatus")
-		}
-		view.LastTurnStatus = &value
-	}
-	if summary.Feed == nil || summary.Feed.Attached == nil {
-		return view, nil
-	}
-	attachment := summary.Feed.Attached
-	state := sessionpb.HarnessState_name[int32(attachment.GetHarnessState())]
-	setup := sessionpb.SetupState_name[int32(attachment.GetSetupState())]
-	outcome := sessionpb.LaunchOutcome_name[int32(attachment.GetLaunchOutcome())]
-	if state == "" || setup == "" || outcome == "" {
-		return threadView{}, errors.New("History Service returned an unknown Session lifecycle state")
-	}
-	view.HarnessState = state
-	view.SetupState, view.LaunchOutcome = &setup, &outcome
-	if attachment.GetActiveTurnId() != "" {
-		view.ActiveTurnID = stringPointer(attachment.GetActiveTurnId())
-	}
-	if spec := attachment.GetSpec(); spec != nil {
-		harness := sessionpb.Harness_name[int32(spec.GetHarness())]
-		if harness == "" || harness == "HARNESS_UNSPECIFIED" {
-			return threadView{}, errors.New("History Service returned an unknown Harness")
-		}
-		view.Harness, view.Model, view.CWD = &harness, stringPointer(spec.GetModel()), stringPointer(spec.GetCwd())
-		view.ReasoningEffort = stringPointer(spec.GetReasoningEffort())
-	}
-	switch summary.Feed.Status {
-	case historypb.FeedStatus_FEED_STATUS_ACTIVE:
-		view.FeedStatus = stringPointer("active")
-	case historypb.FeedStatus_FEED_STATUS_ENDED:
-		view.FeedStatus = stringPointer("ended")
-	case historypb.FeedStatus_FEED_STATUS_FAILED:
-		view.FeedStatus = stringPointer("failed")
-	default:
-		return threadView{}, errors.New("History Service returned an unknown feed status")
-	}
-	return view, nil
-}
-
 func stringPointer(value string) *string { return &value }
 
 func ensureThreadArchivable(ctx context.Context, namespace string, thread threads.Thread, summary historydata.FoldSummary, inventory sessionEnvironmentReader, environmentRuntime threadEnvironmentRuntimeStatusReader) error {
+	if summary.Sandbox == "" {
+		return errors.New("Thread has no Sandbox identity; its Environment cannot be identified")
+	}
 	if inventory == nil {
 		return errors.New("Sandbox inventory is unavailable")
 	}
