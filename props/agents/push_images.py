@@ -11,8 +11,8 @@ import logging
 import subprocess
 
 from devinfra.bazel.runfiles import get_required_path
+from devinfra.oci.oci import bazel_crane, read_oci_layout_digest
 from props.agents.env import get_required_env
-from util.oci import bazel_crane, read_oci_layout_digest
 
 logger = logging.getLogger(__name__)
 

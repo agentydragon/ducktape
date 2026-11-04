@@ -59,7 +59,7 @@ py_test(
         "//:conftest",
         "//devinfra/github_proxy/central:github_api_proxy_image",
         "//devinfra/github_proxy/central/testing:certificates",
-        "//util:oci",
+        "//devinfra/oci",
         "//util/testing:container_logs",
         "@pypi//aiohttp",
         "@pypi//pytest_bazel",

@@ -17,9 +17,9 @@ from testcontainers.core.network import Network
 # gazelle:include_dep @pypi//psycopg
 from agentplane.history_service.testing.go_service import migrate_history_database, migrated_history_template
 from agentplane.testing.electric_role import ensure_electric_role
+from devinfra.oci.oci import load_oci_image
 from third_party.containers import electric_1_8_1, postgres_18, ryuk
 from util.db_url import render_postgresql_url
-from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 from util.testing.postgres import PostgresDatabaseTemplate
 

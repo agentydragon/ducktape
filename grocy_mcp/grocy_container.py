@@ -14,8 +14,8 @@ from opentelemetry import trace
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 from testcontainers.core.container import DockerContainer
 
+from devinfra.oci.oci import load_oci_image
 from third_party.containers import grocy
-from util.oci import load_oci_image
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)

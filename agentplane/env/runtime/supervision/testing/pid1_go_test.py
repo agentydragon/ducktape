@@ -8,8 +8,8 @@ import pytest_bazel
 from testcontainers.core import testcontainers_config
 
 from devinfra.bazel.runfiles import get_required_path
+from devinfra.oci.oci import load_oci_image
 from third_party.containers import ryuk
-from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 
 

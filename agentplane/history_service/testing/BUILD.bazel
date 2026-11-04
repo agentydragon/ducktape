@@ -11,11 +11,11 @@ py_library(
     deps = [
         ":go_service",
         "//agentplane/testing:electric_role",
+        "//devinfra/oci",
         "//third_party/containers:electric_1_8_1",
         "//third_party/containers:postgres_18",
         "//third_party/containers:ryuk",
         "//util:db_url",
-        "//util:oci",
         "//util/testing:container_logs",
         "//util/testing:postgres",
         "@pypi//httpx",

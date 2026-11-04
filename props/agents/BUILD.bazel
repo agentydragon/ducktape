@@ -36,7 +36,7 @@ py_library(
     deps = [
         ":env",
         "//devinfra/bazel:runfiles",
-        "//util:oci",
+        "//devinfra/oci",
     ],
 )
 

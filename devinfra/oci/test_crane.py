@@ -1,4 +1,4 @@
-"""Tests for util.crane.
+"""Tests for devinfra.oci.crane.
 
 Focused on the `Crane._run` / `_arun` failure paths, since those are the bits
 that determine how a failed crane subprocess shows up in tracebacks. The
@@ -19,7 +19,7 @@ from unittest.mock import patch
 import pytest
 import pytest_bazel
 
-from util.crane import Crane, CraneError, find_crane
+from devinfra.oci.crane import Crane, CraneError, find_crane
 
 
 def test_run_wraps_called_process_error_with_full_context() -> None:

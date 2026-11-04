@@ -5,7 +5,7 @@ import sys
 
 from devinfra.bazel import runfiles
 from third_party.containers import postgres_18
-from util.oci import (
+from devinfra.oci.oci import (
     _already_loaded,
     _loaded_marker,
     _one_loader_at_a_time,

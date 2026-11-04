@@ -17,11 +17,11 @@ from pathlib import Path
 from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, SystemMessage, UserMessage, query
 
 from devinfra.bazel.runfiles import get_required_path
+from devinfra.oci.oci import load_oci_image
 from mcp_infra.exec.docker.types import AlwaysSetTo, BindMount, ContainerExecServerConfig
 from skills.eval_infra.skill_staging import stage_skill
 from skills.freecad.eval import freecad_test_image
 from skills.freecad.freecad_skill_spec import SPEC as FREECAD_SKILL_SPEC
-from util.oci import load_oci_image
 
 logger = logging.getLogger(__name__)
 

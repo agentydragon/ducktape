@@ -16,9 +16,9 @@ py_library(
         "//skills/eval_infra:skill_staging",
         "//skills/freecad:freecad_skill_spec",
         "//skills/freecad/eval:freecad_test_image",
-        "//util:oci",
         "//devinfra/bazel:runfiles",
         "@pypi//claude_agent_sdk",
+        "//devinfra/oci",
     ],
 )
 

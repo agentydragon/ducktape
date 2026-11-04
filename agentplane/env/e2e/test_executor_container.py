@@ -33,8 +33,8 @@ from agentplane.env.runtime.execution.testing.codex_exec_server_container import
 from agentplane.proto import event_pb2, identity_pb2, session_pb2
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 from devinfra.bazel.runfiles import get_required_path
+from devinfra.oci.oci import load_oci_image
 from third_party.containers import debian_slim
-from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps.

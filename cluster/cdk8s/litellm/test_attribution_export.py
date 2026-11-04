@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest_bazel
 
 from cluster.cdk8s.litellm import upstream_test_image
-from util.oci import load_oci_image
+from devinfra.oci.oci import load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
@@ -16,7 +16,7 @@ def test_verified_baggage_reaches_exported_litellm_span() -> None:
     with output.open("w") as log:
         handler = logging.StreamHandler(log)
         handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(message)s"))
-        image_logger = logging.getLogger("util.oci")
+        image_logger = logging.getLogger("devinfra.oci.oci")
         previous_level = image_logger.level
         image_logger.addHandler(handler)
         image_logger.setLevel(logging.INFO)

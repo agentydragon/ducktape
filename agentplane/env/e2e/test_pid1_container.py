@@ -25,8 +25,8 @@ from agentplane.environment_runtime_transport.config import Insecure
 from agentplane.history_service import session_ingress_pb2, session_ingress_pb2_grpc
 from agentplane.proto import session_pb2
 from devinfra.bazel.runfiles import get_required_path
+from devinfra.oci.oci import load_oci_image
 from third_party.containers import debian_slim, ryuk
-from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 

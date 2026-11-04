@@ -160,7 +160,7 @@ py_library(
         ":image_registry",
         ":publication_evidence",
         "//devinfra/buildbuddy/ci:bes",
-        "//util:crane",
+        "//devinfra/oci:crane",
     ],
 )
 
@@ -168,7 +168,7 @@ py_library(
     name = "image_registry",
     srcs = ["image_registry.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["//util:crane"],
+    deps = ["//devinfra/oci:crane"],
 )
 
 py_library(
@@ -177,7 +177,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":image_registry",
-        "//util:crane",
+        "//devinfra/oci:crane",
     ],
 )
 
@@ -304,7 +304,7 @@ py_test(
         ":image_registry",
         ":plan_image_pushes",
         "//devinfra/buildbuddy/ci:bes",
-        "//util:crane",
+        "//devinfra/oci:crane",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -339,7 +339,7 @@ py_test(
     deps = [
         ":image_registry",
         ":push_image",
-        "//util:crane",
+        "//devinfra/oci:crane",
         "@pypi//pytest_bazel",
     ],
 )

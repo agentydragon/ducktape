@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from devinfra.oci.oci import load_oci_image
 from third_party.containers import debian_slim
-from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 

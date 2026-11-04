@@ -5,7 +5,7 @@ passed via a temporary DOCKER_CONFIG directory, never written to ~/.docker.
 
 Standard library only, and it takes the binary rather than finding one: the
 callers do not agree on where crane comes from. Under Bazel it is a runfile
-(`util/oci.py` resolves that one); on a GitHub Actions runner the publish
+(`devinfra/oci/oci.py` resolves that one); on a GitHub Actions runner the publish
 planners import this module as bare `python3 -m`, with crane on PATH from the
 workflow's setup-crane step and no Bazel, no pypi and no runfiles in sight.
 """

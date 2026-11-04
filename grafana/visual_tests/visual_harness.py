@@ -14,8 +14,8 @@ import httpx
 from testcontainers.core import testcontainers_config
 from testcontainers.core.network import Network
 
+from devinfra.oci.oci import load_oci_image
 from third_party.containers import grafana_visual, prometheus_visual, ryuk
-from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 

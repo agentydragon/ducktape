@@ -46,7 +46,7 @@ from pathlib import Path
 from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, fetch_blob
 from devinfra.ci import publication_evidence
 from devinfra.ci.image_registry import DIGEST_SUFFIX, Registry, registry_digest, repo_for
-from util.crane import Crane
+from devinfra.oci.crane import Crane
 
 
 @dataclasses.dataclass(frozen=True)

@@ -40,6 +40,7 @@ py_library(
     srcs = ["e2e_container.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
+        "//devinfra/oci",
         "//openai_utils:model",
         "//openai_utils:model_metadata",
         "//props:config",
@@ -57,7 +58,6 @@ py_library(
         "//props/registry_proxy:app",
         "//props/testing:constants",
         "//props/testing:fake_openai_server",
-        "//util:oci",
         "//util/testing:asgi",
         "@pypi//aiodocker",
         "@pypi//pytest",
@@ -70,10 +70,10 @@ py_library(
     srcs = ["e2e_infra.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
+        "//devinfra/oci",
         "//props/db:models",
         "//third_party/containers:registry_3",
         "//third_party/containers:ryuk",
-        "//util:oci",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",

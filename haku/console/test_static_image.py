@@ -7,8 +7,8 @@ import httpx
 import pytest_bazel
 from testcontainers.core.container import DockerContainer
 
+from devinfra.oci.oci import load_oci_image
 from haku.console import static_test_image
-from util.oci import load_oci_image
 
 
 def _wait_for_nginx(base_url: str) -> httpx.Response:

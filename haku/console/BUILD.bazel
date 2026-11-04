@@ -222,6 +222,7 @@ py_library(
         "@pypi//httpx",
         ":settings",
         "//util/testing:sqlalchemy_engines",
+        "//devinfra/oci",
     ],
 )
 
@@ -352,8 +353,8 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
+        "//devinfra/oci",
         "//haku/console:static_test_image",
-        "//util:oci",
         "@pypi//httpx",
         "@pypi//pytest_bazel",
         "@pypi//testcontainers",

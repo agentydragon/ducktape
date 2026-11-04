@@ -103,8 +103,8 @@ py_library(
     deps = [
         "//agentplane/app/frontend/serving/testing:image",
         "//devinfra/bazel:runfiles",
+        "//devinfra/oci",
         "//third_party/containers:nginx_unprivileged",
-        "//util:oci",
         "//util/testing:container_logs",
         "@pypi//cryptography",
         "@pypi//h2",
