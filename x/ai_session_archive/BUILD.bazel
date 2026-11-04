@@ -516,12 +516,16 @@ py_test(
     name = "test_browser",
     srcs = ["test_browser.py"],
     data = ["//x/ai_session_archive/frontend:bundle"],
+    env = {
+        "AI_SESSION_ARCHIVE_FRONTEND_RLOCATION": "$(rlocationpath //x/ai_session_archive/frontend:bundle)",
+    },
     tags = ["visual"],
     deps = [
         ":database",
         ":web",
         ":web_settings",
         "//:conftest",
+        "//devinfra/bazel:runfiles",
         "//util/testing:asgi",
         "//util/testing:output_writer",
         "//util/testing:undeclared_outputs",
