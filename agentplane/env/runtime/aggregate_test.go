@@ -68,8 +68,8 @@ func TestRuntimeCloseUncertainExecutionFenceRetainsOwner(t *testing.T) {
 	if got := execution.fences.Load(); got != 1 {
 		t.Fatalf("Execution fence attempts = %d, want one", got)
 	}
-	progress := r.lifecycleCoordinator.closeProgress()
-	if progress.stage != runtimeCloseFailed {
+	progress := mustRuntimeCloseStatus(t, r)
+	if progress.Stage != runtimeCloseFailed {
 		t.Fatalf("Close progress = %+v", progress)
 	}
 	if owner, err := openTestRuntimeStore(config.StateDir); err == nil {
@@ -253,8 +253,8 @@ func TestRuntimeCloseFailureRetainsOwnerAndDoesNotRetrySessionStop(t *testing.T)
 	if got := stops.Load(); got != 1 {
 		t.Fatalf("Session stop calls = %d, want one", got)
 	}
-	progress := r.lifecycleCoordinator.closeProgress()
-	if progress.stage != runtimeCloseFailed || !strings.Contains(progress.err.Error(), "injected Session join failure") {
+	progress := mustRuntimeCloseStatus(t, r)
+	if progress.Stage != runtimeCloseFailed || !strings.Contains(progress.Failure.Error(), "injected Session join failure") {
 		t.Fatalf("Close progress = %+v", progress)
 	}
 	if owner, err := openTestRuntimeStore(config.StateDir); err == nil {
