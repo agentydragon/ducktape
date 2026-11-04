@@ -201,6 +201,11 @@ func TestFirecrackerDeletionWaitsForVerifiedPostResumeConnection(t *testing.T) {
 	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + sandboxlease.EnvironmentRuntimeLeaseSuffix}, &lease); err != nil {
 		t.Fatal(err)
 	}
+	// Claiming a new epoch preserves the verified history independently of the pending claim.
+	lease.Annotations[sandboxlease.LastConnectedPodUIDAnnotation] = string(pod.UID)
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
 	assertWaiting := func() {
 		t.Helper()
 		reconcileOnce(t, r)
