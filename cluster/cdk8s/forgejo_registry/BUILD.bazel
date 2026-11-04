@@ -53,6 +53,7 @@ py_library(
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/flux_image_automation_ghcr:image_automation",
         "//cluster/cdk8s/flux_webhook:chart",
+        "//cluster/cdk8s/platform_sessions:app",
         "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
         "//cluster/cdk8s/providers/flux:notification",
         "//cluster/cdk8s/providers/flux:receiver",

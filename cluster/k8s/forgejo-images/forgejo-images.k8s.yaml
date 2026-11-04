@@ -378,6 +378,11 @@ spec:
       name: website
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'platform-sessions'
+      kind: ImageRepository
+      name: platform-sessions
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
       kind: ImageUpdateAutomation
       name: all-images
       namespace: flux-system

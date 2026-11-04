@@ -1822,6 +1822,7 @@ py_library(
         "//cluster/cdk8s/plaid_mcp:db",
         "//cluster/cdk8s/plaid_mcp:pgweb",
         "//cluster/cdk8s/plaid_mcp:spend",
+        "//cluster/cdk8s/platform_sessions:app",
         "//cluster/cdk8s/public_coder:app",
         "//cluster/cdk8s/public_coder:backup",
         "//cluster/cdk8s/seaweedfs:cluster",
