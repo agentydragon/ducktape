@@ -22,7 +22,6 @@ from util.oci import load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _RUST_BINARY_RLOC = "_main/devinfra/claude/claude_hook/claude_hook"
-E2E_IMAGE = e2e_container_descriptor.IMAGE
 
 
 @dataclass
@@ -135,12 +134,14 @@ def _save_output(prefix: str, name: str, content: str) -> None:
 
 def load_e2e_image() -> str:
     started = time.monotonic()
-    image = load_oci_image(E2E_IMAGE)
+    image = load_oci_image(e2e_container_descriptor.IMAGE)
     _save_output(
         "container-e2e-image",
         "load-timing.json",
         json.dumps(
-            {"duration_s": round(time.monotonic() - started, 3), "image": E2E_IMAGE.tag}, indent=2, sort_keys=True
+            {"duration_s": round(time.monotonic() - started, 3), "image": e2e_container_descriptor.IMAGE.tag},
+            indent=2,
+            sort_keys=True,
         ),
     )
     return image
