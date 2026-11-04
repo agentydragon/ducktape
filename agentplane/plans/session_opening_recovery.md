@@ -1,7 +1,7 @@
 # Session opening and recovery: current boundaries
 
-Source inventory checked against `devel` `b7e59c22e9` on 2026-11-02. This describes the
-implementation at that revision, not the proposed future contract. The desired model and unresolved
+Source inventory originally checked against `devel` `b7e59c22e9` on 2026-11-02, with key outcome
+claims refreshed on 2026-11-04. It describes implementation boundaries, not the proposed future contract. The desired model and unresolved
 decisions are in [Sessions and environments](session_environment_model.md); the corresponding
 [task DAG decision](task_dag.md#session_runtime_model_design--sessions-harness-placement-and-execution-attachments)
 tracks the work. The uncertain native reservation write identified below is addressed by a separate fix linked below. Recheck the linked code when using this inventory after changes land.
@@ -41,12 +41,14 @@ sampler commit; none alone proves a native harness started or History received a
   fence, verifies or binds the recorded execution identity, changes a queued opening to delivering,
   calls the selected backend and settles the row. The result `RUNNER_ADMITTED` means the backend
   accepted this opening; it does not mean setup, a native thread, or a first turn finished. Aborted,
-  unavailable and deadline failures can return it to the queue with a reason/backoff; other gRPC
-  failures become failed. A lost worker can leave an in-flight outcome uncertain.
-- A successor [recovers under its ownership fence](../runner_gateway/dispatcher/store.go) by
-  returning delivering openings and commands to queued. It retries with the same IDs, relying on
-  backend admission idempotency. That is a retry of the admission RPC, not permission to repeat a
-  native effect whose outcome is unknown. Settlement itself is retried on storage errors.
+  unavailable and deadline failures can return it to the queue with a reason/backoff. For native
+  openings, proven validation/conflict rejection becomes failed; other unproven errors become unknown
+  and hold dependent work. See the [current outcome contract](../runner_gateway/dispatcher/SPEC.md#native-opening-outcomes-and-dependent-commands).
+  A lost worker can leave an in-flight outcome uncertain.
+- A successor [recovers under its ownership fence](../runner_gateway/dispatcher/store.go). Retryable
+  admissions retain the same IDs and depend on backend admission idempotency; an unconfirmed native
+  opening remains held under the outcome contract above. Retrying admission is not permission to repeat
+  a native effect whose outcome is unknown. Settlement itself is retried on storage errors.
 - [Sandbox deletion cleanup](../runner_gateway/dispatcher/terminal.go) deletes the associated
   opening rows and dispatch rows after emitting applicable terminal dispatch evidence. A Session
   opening is therefore not an indefinitely retained global name registry. The central sampler's
@@ -73,8 +75,8 @@ starting the harness: demand drives preparation in the [Session controller](../e
 and emits the harness-started observation. A public Session ID is not that native ID.
 
 **Gap at the inventoried revision:** an underlying COSI store write can commit and then report an error before the in-memory
-collection reflects it. Today's admission may consequently see an absent Session on retry and create
-a different event-source ID. The [separate Runtime fix](https://github.com/agentydragon/ducktape/pull/14026)
+collection reflects it. Admission at that revision could consequently see an absent Session on retry
+and create a different event-source ID. The [separate Runtime fix](https://github.com/agentydragon/ducktape/pull/14026)
 addresses the injected failure model with fail-closed recovery. The Dispatcher retry protocol
 alone cannot fix it. Separately, a successful native creation whose native ID is lost before its
 mapping is durable needs evidence-based reconciliation; do not infer that retrying native creation

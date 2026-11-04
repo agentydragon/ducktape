@@ -50,7 +50,7 @@ presenting through the Kubernetes API.
 ## What it costs
 
 - **A Go apiserver in each hosting service.** `k8s.io/apiserver` is Go. `third_party/go.mod` carries
-  it, but the repo uses only its `RequestInfo` parser (`haku/kube_api_proxy`). A resource needs
+  it; existing uses include `RequestInfo` parsing and workload authentication. A resource needs
   hand-written typed objects, generated deepcopy and OpenAPI, serving certificates, an `APIService`
   with its CA bundle, and bindings to `system:auth-delegator` and the
   `extension-apiserver-authentication-reader` Role. The scaffolds (`apiserver-builder-alpha`,

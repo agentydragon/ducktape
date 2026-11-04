@@ -23,7 +23,9 @@ are a separate transport boundary, owned by the existing platform-routing decisi
 Audited the committed testing/staging PolicySets, including delivery and public-coder grants, and
 their cdk8s authors at `b3ec6c38b6`. This is desired configuration, not a live traffic inventory.
 The table's schemes and ports are the proposed permitted origins; current rules do not restrict
-either. Retain existing host, method, path, and identity restrictions.
+either. This historical inventory omits later grants including `quest-read` and projected workload
+credentials for Session Dispatcher and EnvironmentService; refresh it before choosing transport
+constraints. Retain existing host, method, path, and identity restrictions.
 
 | Credentials and destinations                                                                          | Proposed origins                 | Authoritative source                                                                       |
 | ----------------------------------------------------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------ |

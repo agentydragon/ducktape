@@ -11,11 +11,11 @@
 > [current Session/environment model](session_environment_model.md) and
 > [delivery decision](task_dag.md#dispatcher_persistence_model_design--choose-delivery-ownership-and-service-topology).
 
-Status: **proposed; ownership chosen, the rest not reviewed.** The operator asked for this write-up (2026-10-20
-07:14 UTC) and chose holder-owned delivery (07:34 UTC). Nothing here starts before they approve the whole design. It answers the open decision `DISPATCHER_PERSISTENCE_MODEL_DESIGN` in the
-[task DAG](task_dag.md). Read at `devel` dd032c46. The plan burns down: a step leaves when it lands, and the file
-goes with the last one, after its durable content moves to the Gateway and Dispatcher READMEs and the
-[session-control ADR](../docs/adr_sandbox_session_control.md).
+Historical status at `devel` dd032c46: the operator requested this proposal and favored holder-owned
+delivery for its combined-service shape on 2026-10-20. That preference does not settle the later
+service-topology or delivery-ownership review. Current decisions and independent work are tracked in
+`DISPATCHER_PERSISTENCE_MODEL_DESIGN` in the [task DAG](task_dag.md); the superseded queue-off
+steps below are not an implementation queue.
 
 ## Later topology decision
 

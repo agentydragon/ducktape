@@ -173,17 +173,15 @@ If adopting automatic recovery for the native-effect-before-durable-receipt wind
 
 Same narrow evidence-first rule for Codex; no dependency on completing Claude research.
 
-### `CODEX_RECOVERY_PROTOCOL` — reconcile through documented app-server history APIs
-
-When the supported public history API can replace private rollout parsing. Refresh the selected CLI pin and prove retained/absent/revised/unknown semantics; see [investigation](../debug/codex_app_server_history_apis.md).
-
 ### `LLM_INGRESS_REQUEST_RECENCY` — direct outbound request timing
 
 If event-derived Thread recency proves too approximate, consider recording a metadata-only
-request timestamp at the authenticated LLM ingress when forwarding toward LiteLLM. Today ingress
-verifies Sandbox/Pod identity, **not Session identity**: multiple Threads in the same Sandbox can
-make only a Sandbox-level timestamp trustworthy. Per-Thread measurement would first need a trusted
-Session attribution path; do not use caller-supplied Thread headers or label shared-Sandbox traffic
+request timestamp at the authenticated LLM ingress when forwarding toward LiteLLM. The ingress
+accepts a canonical Session ID from an explicitly trusted central sampler for attribution, but it
+does not independently verify Session ownership. Ordinary Sandbox callers cannot supply that
+header; for them only the verified Sandbox/Pod identity is available. Multiple Threads can share a
+Sandbox, so a trustworthy per-Thread timestamp for native harnesses still needs a trusted attribution
+path. Do not treat an arbitrary caller-supplied Thread header as proof or label shared-Sandbox traffic
 as one Thread's requests. A forwarded request is still not proof the provider accepted it or that
 its cache was hit. Review retention and read authorization before persisting timestamps; do not log
 prompts or credentials for this indicator. This does not block the event-derived UI candidate.
@@ -402,8 +400,8 @@ Session UUID as their key and record the Sandbox UID beside it (operator, 2026-1
 ### `API_AGGREGATION` — serve agent-facing records as a Kubernetes aggregated API
 
 Held by the operator, 2026-10-17. [The exploration](api_aggregation_exploration.md) has the candidates and costs.
-`ActionRequest`'s workload half is the only record worth it, once the Action Service is Go and a
-`kubectl`-style client surface for it is wanted. RBAC as sender authorization does not need it: a
+`ActionRequest`'s workload half is the only identified candidate if a `kubectl`-style client
+surface is wanted. The Action Service already runs in Go. RBAC as sender authorization does not need it: a
 service asks `SubjectAccessReview`, which belongs to the sender-grant and agent-authority choices.
 
 ## Broader verification inventory

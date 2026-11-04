@@ -4,8 +4,8 @@ Status: **existing-environment tools and scripted acceptance implemented; stagin
 natural-agent usability is an operator follow-up; fresh provisioning deferred.** The remaining
 workflow capstone is tracked under
 [`THREAD_CREATE_AUTHORIZATION`](task_dag.md#thread_create_authorization--caller-privilege-delegation-capstone).
-The direct MCP names are `environments__list`, `environments__get`, and seven `sessions__*`
-operations (nine direct tools total) in the Action/MCP contract. The [Session CLI](../docs/agent_cli.md), [Dispatcher
+The direct MCP names are `environments__list`, `environments__get`, `environments__resume`, and
+seven `sessions__*` operations (ten direct tools total) in the Action/MCP contract. The [Session CLI](../docs/agent_cli.md), [Dispatcher
 authorization](../runner_gateway/dispatcher/README.md) and [retained History access](../history_service/README.md)
 supply the implemented foundations. Shared delegated authentication, persisted Action caller UIDs
 and Dispatcher/History receiver enforcement are implemented under the
@@ -14,15 +14,17 @@ is `//agentplane/system_tests/suites/mcp:test_delegation`; it performs real Conn
 proves discovery, explicit input, observation and retained reads with the integration app scaled to
 zero. Parent CLI acceptance is `//agentplane/system_tests/suites/mcp:test_parent_delegation`.
 Both suites prescribe model calls while exercising real interfaces; they do not establish unaided
-natural-agent usability. Their generated Sandboxes opt into the direct tools; staging exposes the
-same nine-tool catalogue through [#13514](https://github.com/agentydragon/ducktape/pull/13514).
+natural-agent usability. Their generated Sandboxes opt into the direct tools. Staging source configures
+the original nine-tool catalogue from [#13514](https://github.com/agentydragon/ducktape/pull/13514)
+plus explicit resume from [#13918](https://github.com/agentydragon/ducktape/pull/13918).
 
 **Status checked, 2026-11-02 UTC:** guidance, Discovery, caller-delegating Action/MCP adapters,
 retained-result projections and both scripted workflow suites have merged. The
 [managed guidance rollout](../central_sampler/docs/rollout_acceptance.md#managed-platform-guidance-rollout-2026-11-02-utc)
 is verified. The remaining work is natural-agent usability, not another backend or adapter
-implementation. On 2026-11-02 UTC, staging had all nine tools and both delegation peers in the
-Actions ConfigMap, with the Actions deployment 2/2 ready and up to date.
+implementation. On 2026-11-02 UTC, the original nine tools and both delegation peers were observed
+in staging's Actions ConfigMap, with the Actions deployment 2/2 ready and up to date. That observation
+predates the resume addition and does not establish its rollout.
 
 ## Recommendation and decisions
 
@@ -227,6 +229,11 @@ code mode can reach a CLI through `exec`, but has no `sessions` JavaScript globa
 client verifies protocol behavior; it does not establish that a natural model can discover or use
 these tools unaided.
 
+The current Session `setup_script` in these workflows is an implemented capability, not a settled
+future ownership boundary. [`SESSION_ENVIRONMENT_SETUP_DESIGN`](task_dag.md#session_environment_setup_design--choose-where-setup-belongs)
+will decide whether Environment or attachment/workspace setup should replace it, including how a
+caller without direct execution access prepares a child workspace.
+
 1. Discover tool schemas through MCP `tools/list`, or inspect the Action schema with
    `agentplane --json actions show environments/list`. Read `environments__list` and call:
 
@@ -234,7 +241,8 @@ these tools unaided.
    { "limit": 20 }
    ```
 
-   The response contains only targets the authenticated account may use. One illustrative entry:
+   The response contains only targets the authenticated account may use. One illustrative entry
+   from the generated [`EnvironmentDescriptor`](../environments/v1/environment_service.proto):
 
    ```json
    {
@@ -244,29 +252,25 @@ these tools unaided.
        "uid": "51b74ff8-9a36-4b55-a9f5-54806077782a"
      },
      "execution_account": {
-       "namespace": "agentplane",
-       "name": "ci-worker",
+       "account": { "namespace": "agentplane", "name": "ci-worker" },
        "uid": "569f9631-0068-4122-8005-0ae9cf2c7056"
      },
-     "readiness": { "state": "ready" },
-     "workspace": { "root": "/workspace" },
-     "instructions": "Shared CI workspace; give each Session its own directory.",
-     "configurations": [
-       {
-         "harness": "HARNESS_CODEX",
-         "model": "offered-model",
-         "reasoning_efforts": ["low", "high"]
-       }
-     ],
-     "observed_at": "2026-10-31T18:00:00Z"
+     "observed_state": { "readiness": { "state": "READINESS_STATE_READY" } },
+     "configuration": {
+       "workspace": { "availability": "AVAILABILITY_CONFIGURED", "root": "/workspace" },
+       "instructions": { "availability": "AVAILABILITY_CONFIGURED", "value": "Use a separate directory." },
+       "configurations": [
+         { "harness": "HARNESS_CODEX", "model": "offered-model", "reasoning_efforts": ["low", "high"] }
+       ]
+     }
    }
    ```
 
    `offered-model` denotes the actual model ID returned by discovery, not a literal to send or a
-   model guessed from these docs. This whole descriptor is proposed. Configuration must come from
-   the owning runtime or a shared deployment catalog checked against that runtime. Launch presets
-   alone cannot establish what an existing target supports. Discovery includes freshness and
-   pagination; readiness/configuration may change before admission. `cwd` is an absolute path.
+   model guessed from these docs. Discovery's generated descriptor groups configuration, observed
+   state and action preconditions; unavailable fields must not be assumed present. Launch presets
+   alone cannot establish what an existing target supports. Discovery is paginated, and
+   readiness/configuration may change before admission. `cwd` is an absolute path.
    Native Runner also rejects paths outside or equal to its workspace root when one is configured;
    the current central sampler does not apply that root restriction. These are existing backend
    checks, not a new selectable `cwd_policy`. Returned workspace information and environment
@@ -473,9 +477,11 @@ SA and remains a separate legacy capability. Its system scenario
 
 ## Tool contract derived from the workflows
 
-The first nine rows are the accepted direct MCP tools and typed Action contracts; the CLI exposes
+The unmarked tool rows describe the accepted direct MCP tools and typed Action contracts; the CLI exposes
 the same Action schemas through `agentplane --json actions show GROUP/ACTION` and
-`agentplane --json actions submit GROUP/ACTION`. The remaining provisioning rows are deferred
+`agentplane --json actions submit GROUP/ACTION`. In addition, `environments__resume` accepts an exact
+target and fresh `resume_token`; it reports a requested lifecycle change, not readiness. See its
+[implemented contract](../action_service/session_delegation/README.md#reviewed-operations). The remaining provisioning rows are deferred
 sketches. Direct tool names are `<group>__<action>`; Action names use `group/action`. Results use MCP
 `structuredContent` plus a matching JSON text fallback. Callers do not parse prose for state,
 authority failures, IDs or recovery. The CLI exposes equivalent machine-readable output.
@@ -725,7 +731,7 @@ Session/command and confer no permission. Lookups after a lost reply enforce the
 
 Dispatcher delivery states are returned unchanged, including failure, cancellation and unknown.
 Queued cancellation takes the original input command UUID. Interruption takes a fresh command UUID
-and the exact observed turn ID; its immediate response is not a new durable Dispatcher queue.
+and the exact observed turn ID; Dispatcher durably queues it through the same command path.
 Setup is part of the opening contract, with completion observed separately through `sessions__get`.
 
 The implementation must still prove that native and central History retain the necessary
@@ -734,16 +740,16 @@ acceptance includes reading these descriptions/schemas and recovering without pr
 
 ## Failure, communication and lifecycle checks
 
-| Situation                                | Agent-facing behavior and backend obligation                                                                                                                                                                                           |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Lost open/input reply                    | Recover by retained Session/command ID, or exact same request under Dispatcher's deduplication contract; never mint a new ID to conceal uncertainty. Authenticate lookup as strictly as mutation.                                      |
-| Target deleted/recreated                 | Admission checks expected Sandbox UID at Dispatcher, atomically with choosing the stored target. Never redirect to the same name's replacement. Current `OpenSession` lacks an expected UID field; a facade pre-check is insufficient. |
-| Follow-up races another input            | Correlate by command ID; show shared turn IDs and all contributing inputs. Do not invent one-task-per-turn semantics.                                                                                                                  |
-| Observation expires / client disconnects | Return retained facts/cursor; work continues. A disconnected follower says nothing about the child process or task outcome.                                                                                                            |
-| Coordinator or JS host restarts          | Reattach through durable Session/command IDs. Serialize references in retained client state; do not rely on live JS bindings or claim `store()` survives host loss.                                                                    |
-| Cancel races delivery                    | Report actual queued cancellation or too-late/current dispatch state. Interrupt a known running turn separately; interruption is not rollback of external effects.                                                                     |
-| Child says it is blocked                 | That is model-authored output. The first slice does not manufacture a backend blocked-task state. Select a typed report tool separately if this proves insufficient.                                                                   |
-| Target removed after completion          | Read authorized retained evidence via the recorded Session association; a live Sandbox must not be required merely to read a retained result. Do not infer a replacement SA's authority from its name.                                 |
+| Situation                                | Agent-facing behavior and backend obligation                                                                                                                                                                                                            |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Lost open/input reply                    | Recover by retained Session/command ID, or exact same request under Dispatcher's deduplication contract; never mint a new ID to conceal uncertainty. Authenticate lookup as strictly as mutation.                                                       |
+| Target deleted/recreated                 | Admission checks expected Sandbox UID at Dispatcher, atomically with choosing the stored target. Never redirect to the same name's replacement. `OpenSession` requires and checks the exact Sandbox UID; a facade-only pre-check would be insufficient. |
+| Follow-up races another input            | Correlate by command ID; show shared turn IDs and all contributing inputs. Do not invent one-task-per-turn semantics.                                                                                                                                   |
+| Observation expires / client disconnects | Return retained facts/cursor; work continues. A disconnected follower says nothing about the child process or task outcome.                                                                                                                             |
+| Coordinator or JS host restarts          | Reattach through durable Session/command IDs. Serialize references in retained client state; do not rely on live JS bindings or claim `store()` survives host loss.                                                                                     |
+| Cancel races delivery                    | Report actual queued cancellation or too-late/current dispatch state. Interrupt a known running turn separately; interruption is not rollback of external effects.                                                                                      |
+| Child says it is blocked                 | That is model-authored output. The first slice does not manufacture a backend blocked-task state. Select a typed report tool separately if this proves insufficient.                                                                                    |
+| Target removed after completion          | Read authorized retained evidence via the recorded Session association; a live Sandbox must not be required merely to read a retained result. Do not infer a replacement SA's authority from its name.                                                  |
 
 Existing peer correspondence can supplement input/result reads. `SendMessage` carries a body,
 caller key and destination; it authenticates the sender SA, while `from_session` is an unverified

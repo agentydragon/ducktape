@@ -14,6 +14,10 @@ direction and remain revisable. Implementation or prior selection does not make 
 an intrinsic domain requirement. Evaluate it against concrete end-to-end workflows; a change may
 require backend features, refactoring and replanning. Existing enforcement remains authoritative
 until a replacement contract is selected and implemented; this clarification selects no alternative.
+The later Session–Environment separation discussion also reopens the Sandbox as the scope and owner
+of inbox and proposed history grouping; see
+[`SESSION_ACCESS_GROUPING_DESIGN`](task_dag.md#session_access_grouping_design--access-groups-across-independent-sessions-and-environments).
+The historical Sandbox-scoped examples below do not decide the independent-Session contract.
 
 ## Selected first workflow, 2026-10-30 PDT
 

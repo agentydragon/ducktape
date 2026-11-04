@@ -54,6 +54,13 @@ The common case is a mix, split by operation class rather than by system:
   (removed in #8877); the Action Service has no equivalent yet
   ([TODO](../action_service/TODO.md#refuse-an-action-the-callers-own-permissions-already-cover)).
 
+The Sandbox SA arrangement below describes current access, not a decision that future Session
+identities must be Kubernetes SAs. Compare SA-backed identity and independent Agentplane principals
+with verified workload-account mappings in
+[`SESSION_IDENTITY_CONTRACT`](task_dag.md#session_identity_contract--session-identity-and-shared-environment-admission)
+and [`AGENT_PRINCIPAL_MODEL_DESIGN`](task_dag.md#agent_principal_model_design--agentplane-principals-and-external-identities).
+The initial Sandbox still keeps one fixed SA throughout its lifetime.
+
 ## Kubernetes Sandbox access decisions
 
 [#8596](https://github.com/agentydragon/ducktape/issues/8596) selected one ServiceAccount

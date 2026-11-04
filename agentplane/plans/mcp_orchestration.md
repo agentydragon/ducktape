@@ -13,6 +13,15 @@ launch bounds below remain later work. Reuse the canonical operation authorities
 interface naturally discoverable to agents; a new authorization bypass is not an acceptable
 shortcut. The historical P0/P1/P3 phase labels below are not the current dispatch priority order.
 
+**Session–Environment separation, 2026-11-04:** the Sandbox-only authorization target and
+SA-only subject in the historical sketch below are not settled for independent Sessions. Reconcile
+Session commands, interrupts and reads with
+[`SESSION_ACCESS_GROUPING_DESIGN`](task_dag.md#session_access_grouping_design--access-groups-across-independent-sessions-and-environments),
+[`DELIVERY_DESTINATION_AUTHORITY_DESIGN`](task_dag.md#delivery_destination_authority_design--assign-session-send-authority-and-internal-fences)
+and [`SESSION_IDENTITY_CONTRACT`](task_dag.md#session_identity_contract--session-identity-and-shared-environment-admission)
+before extending backend grants. The actual future target and identity representation remain open;
+existing backend enforcement continues until replaced.
+
 Claude.ai is the first client, but nothing here is specific to it: the same Actions serve any MCP Connection, and an
 orchestrator in a Session Sandbox reaches them through the [`agentplane` CLI](../docs/agent_cli.md)
 ([user stories 2 and 3](user_stories.md#2-trusted-orchestrator-untrusted-fleet)).
@@ -52,8 +61,8 @@ the backends share, not one bespoke rule each.
 
 Where the check runs (operator, 00:18 UTC: "send message, interrupt, open session might end up looking like rbac
 checked on the runner gateway side"): Session commands in the Runner Gateway, whose Dispatcher already authorizes
-the caller of every command; history reads in History; inbox messages in Notifications. The subject is the caller's
-ServiceAccount and the object is the Sandbox, never a Session (operator, 00:37 UTC: "the thing that's the
+the caller of every command; history reads in History; inbox messages in Notifications. In the original sketch, the subject was the caller's
+ServiceAccount and the object the Sandbox, never a Session (operator, 00:37 UTC: "the thing that's the
 object/subject is a SA / sandbox level"). It could be Kubernetes RBAC, with custom verbs such as `open-session`,
 `submit-input` and `interrupt` on `sandboxes`, checked with a `SubjectAccessReview` and granted by a Role naming the
 worker through a `kubernetes_role_binding` rule: Kubernetes' own check on who may bind what comes with it, but a Role

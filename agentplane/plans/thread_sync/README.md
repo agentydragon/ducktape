@@ -20,9 +20,9 @@ would be for.
 2. **Electric's server memory** under history growth, a restart and a stalled reader is still an
    adoption gate (<../../docs/thread_view_sync.md> § Server memory ownership).
    `agentplane/app/test_electric_window_traffic.py` records Electric's cgroup and RSS counters over
-   one finite workload; it cannot show a long-running bound. Restart and stalled-reader probes
-   (sketched on the closed spike PR #7490 as `shape_stalled_reader_test` and `shape_capacity_test`)
-   are not written.
+   one finite workload; it cannot show a long-running bound. `test_electric_wal_recovery.py`
+   covers restart, lost WAL and resnapshot. Memory under sustained growth and a stalled reader
+   still needs measurement (probes were sketched on closed spike PR #7490).
 3. **Compacting completed bodies (D5).** A body completed with the text that streamed keeps the
    generation it streamed in: one chunk per appending batch and one manifest per revision.
    Electric's behaviour is pinned (`test_electric_chunk_compaction.py`). Rewriting chunk 0 to the

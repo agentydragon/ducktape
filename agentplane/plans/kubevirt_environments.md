@@ -28,3 +28,7 @@ arbitrary user-supplied VM specifications are out of scope.
   recovery against KubeVirt's launcher monitoring. Never patch a live launcher.
 - **Resource budgets.** Check quotas and capacity for guest RAM plus QEMU overhead, disk helpers and
   the relay, and that a guest is not scheduled on a node without KVM.
+
+Future memory-preserving suspend is a different operation from today's cold-stop lifecycle.
+[`ENVIRONMENT_SUSPEND_MODES_DESIGN`](task_dag.md#environment_suspend_modes_design--distinguish-environment-suspend-operations)
+tracks API, state-survival, sealing, authorization and recovery decisions before `VM_RAM_SUSPEND`.
