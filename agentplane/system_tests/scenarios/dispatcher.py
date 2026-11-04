@@ -372,7 +372,7 @@ async def _dispatch_until(
         raise AssertionError("Dispatch watch ended before the expected state")
 
 
-async def _opening_until(
+async def opening_until(
     stub: Dispatcher, caller: Caller, session: str, predicate: Callable[[pb.SessionOpening], bool]
 ) -> pb.SessionOpening:
     async for attempt in AsyncRetrying(
@@ -572,7 +572,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             timeout=15,
         )
         assert queued.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-        waiting = await _opening_until(
+        waiting = await opening_until(
             stub, authentication, session, lambda row: row.reason == "sandbox_operator_requested_stop"
         )
         assert waiting.sandbox_uid == uid

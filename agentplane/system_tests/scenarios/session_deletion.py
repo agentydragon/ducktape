@@ -25,7 +25,7 @@ from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.cluster import Cluster
 from agentplane.system_tests.dispatcher_transport import Caller, bound_caller, forward
 from agentplane.system_tests.sandbox import ENVIRONMENT_RUNTIME_LEASE_SUFFIX, POD_TEMPLATE
-from agentplane.system_tests.scenarios.dispatcher import container_mount_sources
+from agentplane.system_tests.scenarios.dispatcher import container_mount_sources, opening_until
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
@@ -216,24 +216,24 @@ async def deployed_session_command_cannot_cross_deletion(crictl_command: tuple[s
         history: history_service_pb2_grpc.HistoryServiceAsyncStub = history_service_pb2_grpc.HistoryServiceStub(
             history_channel
         )
-        dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
-        runner = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)
+        dispatcher: session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub = (
+            session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
+        )
+        runner: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub = (
+            environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)
+        )
         metadata = _metadata(gateway, cluster, name, uid)
         await dispatcher.OpenSession(
             session_dispatcher_pb2.OpenSessionRequest(sandbox=name, sandbox_uid=uid, session_id=session, spec=spec),
             metadata=app.metadata,
             timeout=15,
         )
-        async for attempt in AsyncRetrying(
-            stop=stop_after_delay(120), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
-        ):
-            with attempt:
-                opening = await dispatcher.GetSessionOpening(
-                    session_dispatcher_pb2.GetSessionOpeningRequest(session_id=session),
-                    metadata=app.metadata,
-                    timeout=15,
-                )
-                assert opening.opening.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED, opening
+        await opening_until(
+            dispatcher,
+            app,
+            session,
+            lambda opening: opening.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED,
+        )
         admitted = await runner.ChangeReasoningEffort(
             environment_runtime_pb2.ChangeReasoningEffortRequest(session_id=session, command_id=positive, effort="low"),
             metadata=metadata,
