@@ -37,17 +37,18 @@ var (
 )
 
 type ingressHandler struct {
-	resolver     *auth.Resolver
-	transport    *http.Transport
-	roundTripper http.RoundTripper
-	baseURL      *url.URL
-	key          string
-	models       map[string]modelConfig
-	attribution  attributionConfig
-	codex        *codexCatalog
-	logBody      bool
-	logger       *slog.Logger
-	pool         chan struct{}
+	resolver        *auth.Resolver
+	transport       *http.Transport
+	roundTripper    http.RoundTripper
+	baseURL         *url.URL
+	key             string
+	models          map[string]modelConfig
+	attribution     attributionConfig
+	codex           *codexCatalog
+	logBody         bool
+	logger          *slog.Logger
+	pool            chan struct{}
+	poolWaitTimeout time.Duration
 
 	centralSamplerAccounts []string
 }
@@ -86,17 +87,18 @@ func newIngressHandler(c config, resolver *auth.Resolver, logger *slog.Logger) (
 		}
 	}
 	return &ingressHandler{
-		resolver:     resolver,
-		transport:    transport,
-		roundTripper: observability.HTTPTransport(transport),
-		baseURL:      baseURL,
-		key:          c.LiteLLMKey,
-		models:       models,
-		attribution:  c.Attribution,
-		codex:        codex,
-		logBody:      c.LogLLMRequests,
-		logger:       logger,
-		pool:         make(chan struct{}, 100),
+		resolver:        resolver,
+		transport:       transport,
+		roundTripper:    observability.HTTPTransport(transport),
+		baseURL:         baseURL,
+		key:             c.LiteLLMKey,
+		models:          models,
+		attribution:     c.Attribution,
+		codex:           codex,
+		logBody:         c.LogLLMRequests,
+		logger:          logger,
+		pool:            make(chan struct{}, 100),
+		poolWaitTimeout: 5 * time.Second,
 
 		centralSamplerAccounts: c.CentralSamplerAccounts,
 	}, nil
@@ -198,12 +200,16 @@ func (h *ingressHandler) authenticate(writer http.ResponseWriter, request *http.
 }
 
 func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Request, principal auth.Principal) {
+	requestID := rand.Text()
 	select {
 	case h.pool <- struct{}{}:
 		defer func() { <-h.pool }()
 	case <-incoming.Context().Done():
 		return
-	case <-time.After(5 * time.Second):
+	case <-time.After(h.poolWaitTimeout):
+		attrs := requestLogAttrs(requestID, incoming, principal)
+		attrs = append(attrs, "timeout", h.poolWaitTimeout.String())
+		h.logger.Warn("llm forwarding slot acquisition timed out", attrs...)
 		writeJSONError(writer, http.StatusBadGateway, "LiteLLM backend unavailable", "")
 		return
 	}
@@ -230,7 +236,6 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 	// ReverseProxy forwards no protocol switch to LiteLLM.
 	incoming.Header.Del("Upgrade")
 
-	requestID := rand.Text()
 	var requestBody *boundedCapture
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(out *httputil.ProxyRequest) {
@@ -261,8 +266,15 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 			return nil
 		},
 		ErrorLog: slog.NewLogLogger(h.logger.Handler(), slog.LevelWarn),
-		ErrorHandler: func(writer http.ResponseWriter, request *http.Request, _ error) {
+		ErrorHandler: func(writer http.ResponseWriter, request *http.Request, err error) {
 			if request.Context().Err() == nil {
+				attrs := requestLogAttrs(requestID, incoming, principal)
+				var urlErr *url.Error
+				if errors.As(err, &urlErr) {
+					err = urlErr.Err
+				}
+				attrs = append(attrs, "error", err)
+				h.logger.Warn("llm backend forwarding failed", attrs...)
 				writeJSONError(writer, http.StatusBadGateway, "LiteLLM backend unavailable", "")
 			}
 		},
@@ -279,6 +291,17 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 		}()
 	}
 	proxy.ServeHTTP(writer, incoming)
+}
+
+func requestLogAttrs(requestID string, incoming *http.Request, principal auth.Principal) []any {
+	attrs := []any{"id", requestID, "method", incoming.Method, "path", incoming.URL.Path}
+	if principal.Account.Namespace != "" {
+		attrs = append(attrs, "namespace", principal.Account.Namespace)
+	}
+	if principal.PodName != "" {
+		attrs = append(attrs, "pod", principal.PodName)
+	}
+	return attrs
 }
 
 // maxLoggedRequestBody bounds the request body prefix kept for `log_llm_requests`; the body itself
