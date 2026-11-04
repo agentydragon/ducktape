@@ -22,6 +22,7 @@ import {
   Harness,
   HarnessState,
   LaunchOutcome,
+  SessionPlacementSchema,
   SessionSpecSchema,
   SetupState,
 } from "../../../../proto/session_pb";
@@ -46,7 +47,7 @@ export function threadView({ metadata = {}, summary = {} }: ThreadViewInit = {})
   const sandbox = { name: "composer-test", uid: "20000000-0000-4000-8000-000000000001" };
   const sandboxInit = Object.hasOwn(summary, "sandbox") ? summary.sandbox : sandbox;
   const spec = {
-    placement: {
+    placement: create(SessionPlacementSchema, {
       kind: {
         case: "environmentHosted" as const,
         value: {
@@ -54,7 +55,7 @@ export function threadView({ metadata = {}, summary = {} }: ThreadViewInit = {})
           harness: Harness.CLAUDE,
         },
       },
-    },
+    }),
     model: "test-model",
     cwd: "/test-workspace",
     reasoningEffort: "low",
