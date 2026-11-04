@@ -19,3 +19,20 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "routes",
+    srcs = ["routes.py"],
+    deps = [":registry"],
+)
+
+py_test(
+    name = "routes_test",
+    srcs = ["routes_test.py"],
+    deps = [
+        ":routes",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
