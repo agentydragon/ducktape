@@ -6,7 +6,7 @@
  * around it. Any other entity (an assistant's answer, confirmed input, a lifecycle observation worth
  * its own line) stands alone and ends whichever it interrupts.
  */
-import { ItemKind, TurnStatus, TurnStatusSchema, type Event } from "../../../proto/event_pb";
+import { ItemKind, TurnStatus, type Event } from "../../../proto/event_pb";
 import type { ThreadEntity } from "../../../history_service/history_service_pb";
 
 /** A row is identified by its first entity: its key and reading anchor stay put while later steps
@@ -141,14 +141,10 @@ const TURN_OUTCOMES: Record<TurnStatus, { label: string; prominent: boolean }> =
 
 export type TurnErrorLabel = { kind: "error"; label: string } | { kind: "ordinary" } | { kind: "unrecognised" };
 
-/** What a turn that ended with `status`, a TurnStatus member name as a thread's `last_turn_status` carries it,
- * is called when it ended in an error. `ordinary` is an ending the thread shows as ordinary. `unrecognised` is
- * a name outside this bundle's TurnStatus: a newer backend may have added one, and it is not known to be an
- * error. */
-export function turnErrorLabel(status: string): TurnErrorLabel {
-  const member = TurnStatusSchema.values.find((value) => value.name === status);
-  if (!member) return { kind: "unrecognised" };
-  const outcome = TURN_OUTCOMES[member.number as TurnStatus];
+/** Whether a generated TurnStatus is prominent or ordinary; unknown numeric values remain unrecognised. */
+export function turnErrorLabel(status: TurnStatus): TurnErrorLabel {
+  const outcome = TURN_OUTCOMES[status];
+  if (!outcome) return { kind: "unrecognised" };
   return outcome.prominent ? { kind: "error", label: outcome.label } : { kind: "ordinary" };
 }
 

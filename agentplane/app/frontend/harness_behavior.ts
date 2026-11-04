@@ -1,18 +1,17 @@
-import type { Harness } from "./model_catalog";
+import { Harness } from "../../proto/session_pb";
 
 interface HarnessBehavior {
   commandsRequireReadySandbox: boolean;
   llmTraceScope: "sandbox" | "session";
 }
 
-export function harnessBehavior(harness: Harness | "HARNESS_UNSPECIFIED" | null | undefined): HarnessBehavior {
+export function harnessBehavior(harness: Harness | undefined): HarnessBehavior {
   switch (harness) {
-    case "HARNESS_CENTRAL_SAMPLER":
+    case Harness.CENTRAL_SAMPLER:
       return { commandsRequireReadySandbox: false, llmTraceScope: "session" };
-    case "HARNESS_CODEX":
-    case "HARNESS_CLAUDE":
-    case "HARNESS_UNSPECIFIED":
-    case null:
+    case Harness.CODEX:
+    case Harness.CLAUDE:
+    case Harness.UNSPECIFIED:
     case undefined:
       return { commandsRequireReadySandbox: true, llmTraceScope: "sandbox" };
   }

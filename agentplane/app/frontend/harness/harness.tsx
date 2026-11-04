@@ -74,6 +74,7 @@ import { sampleConnection } from "../connections/testing/fixture";
 import type { Connection } from "../connections/models";
 
 import { type ThreadView, dispatchFromJson } from "../threads/client";
+import { ThreadMetadataSchema } from "../../app_service_pb";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { McpLinkageView } from "../mcp_linkage_client";
 import {
@@ -84,7 +85,15 @@ import {
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus, type Event } from "../../../proto/event_pb";
 import { CommandSchema } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
-import { Harness, ProcessState, SessionExecutionState } from "../../../proto/session_pb";
+import {
+  AttachedSchema,
+  Harness,
+  HarnessState,
+  LaunchOutcome,
+  ProcessState,
+  SessionExecutionState,
+  SetupState,
+} from "../../../proto/session_pb";
 import {
   ReadThreadEntitiesRequestSchema,
   ReadThreadEntitiesResponseSchema,
@@ -99,6 +108,9 @@ import {
   ThreadPayloadField,
   ThreadPayloadReferenceSchema,
   ThreadViewStateSchema,
+  FeedStatus,
+  SandboxRefSchema,
+  SessionSummarySchema,
   WatchSessionSummariesResponseSchema,
   type ThreadEntity,
   type ThreadPayloadReference,
@@ -121,20 +133,24 @@ localStorage.clear();
 // The visual harness freezes the wall clock before this bundle runs, so relative ages stay put.
 const NOW = Date.now();
 const HOUR = 3_600_000;
-const NULL_THREAD_FIELDS = {
-  sandbox_uid: null,
-  last_model_activity_at: null,
-  idle_since: null,
-  setup_state: null,
-  launch_outcome: null,
-  active_turn_id: null,
-  reasoning_effort: null,
-  feed_status: null,
-  last_turn_status: null,
-};
 
 function ago(ms: number): string {
   return new Date(NOW - ms).toISOString();
+}
+
+function threadView(
+  metadata: MessageInitShape<typeof ThreadMetadataSchema>,
+  summary: MessageInitShape<typeof SessionSummarySchema>
+): ThreadView {
+  return {
+    metadata: create(ThreadMetadataSchema, metadata),
+    summary: create(SessionSummarySchema, {
+      sessionId: metadata.threadId,
+      foldedThrough: 0n,
+      feedStatus: FeedStatus.UNSPECIFIED,
+      ...summary,
+    }),
+  };
 }
 
 function visualSandbox(
@@ -682,52 +698,69 @@ function notificationFrames(session: string, kind: string, delta: boolean): unkn
 
 /** The store's copy of the sessions: the idle one named, the stopped one not, so both renderings are on the page. */
 const THREADS: ThreadView[] = [
-  {
-    ...NULL_THREAD_FIELDS,
-    id: IDLE_THREAD,
-    sandbox: "ready-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(HOUR),
-    name: "Idle thread",
-    archived: false,
-    last_cursor: 14,
-    last_event_at: ago(60_000),
-    harness_state: "HARNESS_STATE_RUNNING",
-    feed_status: "active",
-  },
-  {
-    ...NULL_THREAD_FIELDS,
-    id: UNNAMED_STOPPED_THREAD,
-    sandbox: "ready-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(2 * HOUR),
-    name: null,
-    archived: false,
-    last_cursor: 31,
-    last_event_at: ago(90 * 60_000),
-    harness_state: "HARNESS_STATE_STOPPED",
-    feed_status: "active",
-  },
-  {
-    ...NULL_THREAD_FIELDS,
-    id: RUNNING_THREAD,
-    sandbox: "ready-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(30 * 60_000),
-    name: "Running thread",
-    archived: false,
-    last_cursor: 23,
-    last_event_at: ago(10_000),
-    harness_state: "HARNESS_STATE_RUNNING",
-    feed_status: "active",
-    active_turn_id: "t2",
-  },
+  threadView(
+    {
+      threadId: IDLE_THREAD,
+      createdAt: timestampFromDate(new Date(ago(HOUR))),
+      name: "Idle thread",
+      archived: false,
+    },
+    {
+      foldedThrough: 14n,
+      firstEventAt: timestampFromDate(new Date(ago(HOUR))),
+      lastEventAt: timestampFromDate(new Date(ago(60_000))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      attached: {
+        sessionId: IDLE_THREAD,
+        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        lastCursor: 14n,
+        harnessState: HarnessState.RUNNING,
+      },
+    }
+  ),
+  threadView(
+    {
+      threadId: UNNAMED_STOPPED_THREAD,
+      createdAt: timestampFromDate(new Date(ago(2 * HOUR))),
+      archived: false,
+    },
+    {
+      foldedThrough: 31n,
+      firstEventAt: timestampFromDate(new Date(ago(2 * HOUR))),
+      lastEventAt: timestampFromDate(new Date(ago(90 * 60_000))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      attached: {
+        sessionId: UNNAMED_STOPPED_THREAD,
+        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        lastCursor: 31n,
+        harnessState: HarnessState.STOPPED,
+      },
+    }
+  ),
+  threadView(
+    {
+      threadId: RUNNING_THREAD,
+      createdAt: timestampFromDate(new Date(ago(30 * 60_000))),
+      name: "Running thread",
+      archived: false,
+    },
+    {
+      foldedThrough: 23n,
+      firstEventAt: timestampFromDate(new Date(ago(30 * 60_000))),
+      lastEventAt: timestampFromDate(new Date(ago(10_000))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      attached: {
+        sessionId: RUNNING_THREAD,
+        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        lastCursor: 23n,
+        harnessState: HarnessState.RUNNING,
+        activeTurnId: "t2",
+      },
+    }
+  ),
 ];
 
 /**
@@ -737,131 +770,181 @@ const THREADS: ThreadView[] = [
  */
 const THREADS_WITH_SANDBOXES: ThreadView[] = [
   ...THREADS,
-  {
-    ...NULL_THREAD_FIELDS,
-    id: THREE_UNPROCESSED_THREAD,
-    sandbox: "ready-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(3 * HOUR),
-    name: "Three unprocessed thread",
-    archived: false,
-    last_cursor: 7,
-    last_event_at: ago(2 * 60_000),
-    harness_state: "HARNESS_STATE_RUNNING",
-    feed_status: "active",
-  },
-  {
-    ...NULL_THREAD_FIELDS,
-    id: ONE_UNPROCESSED_THREAD,
-    sandbox: "ready-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(3 * HOUR),
-    name: "One unprocessed thread",
-    archived: false,
-    last_cursor: 7,
-    last_event_at: ago(3 * 60_000),
-    harness_state: "HARNESS_STATE_RUNNING",
-    feed_status: "active",
-  },
-  {
-    ...NULL_THREAD_FIELDS,
-    id: DELIVERY_FAILED_THREAD,
-    sandbox: "ready-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(3 * HOUR),
-    name: "Delivery-failed thread",
-    archived: false,
-    last_cursor: 7,
-    last_event_at: ago(4 * 60_000),
-    harness_state: "HARNESS_STATE_STOPPED",
-    feed_status: "active",
-  },
-  {
-    ...NULL_THREAD_FIELDS,
-    id: "5f1c4a2e-0000-4000-8000-000000000003",
-    sandbox: "pending-sandbox",
-    harness: "HARNESS_CODEX",
-    model: "harness-codex-model",
-    cwd: "/state/work",
-    created_at: ago(5 * 60_000),
-    name: "Pending thread",
-    archived: false,
-    last_cursor: 2,
-    last_event_at: ago(5 * 60_000),
-    harness_state: "HARNESS_STATE_STOPPED",
-  },
-  {
-    ...NULL_THREAD_FIELDS,
-    id: SUSPENDED_THREAD,
-    sandbox: "suspended-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(47 * HOUR),
-    name: "Suspended thread",
-    archived: false,
-    last_cursor: 9,
-    last_event_at: ago(46 * HOUR),
-    harness_state: "HARNESS_STATE_STOPPED",
-    setup_state: "SETUP_STATE_SUCCEEDED",
-    launch_outcome: "LAUNCH_OUTCOME_STARTED",
-  },
-  {
-    ...NULL_THREAD_FIELDS,
-    id: "5f1c4a2e-0000-4000-8000-000000000005",
-    sandbox: "deleted-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(72 * HOUR),
-    name: "Read-only thread",
-    archived: false,
-    last_cursor: 18,
-    last_event_at: ago(70 * HOUR),
-    harness_state: "HARNESS_STATE_STOPPED",
-  },
-  {
-    ...NULL_THREAD_FIELDS,
-    id: "5f1c4a2e-0000-4000-8000-000000000006",
-    sandbox: "ready-sandbox",
-    harness: "HARNESS_CLAUDE",
-    model: "harness-claude-model",
-    cwd: "/state/work",
-    created_at: ago(96 * HOUR),
-    name: "Archived thread",
-    archived: true,
-    last_cursor: 3,
-    last_event_at: ago(95 * HOUR),
-    harness_state: "HARNESS_STATE_STOPPED",
-  },
+  threadView(
+    {
+      threadId: THREE_UNPROCESSED_THREAD,
+      createdAt: timestampFromDate(new Date(ago(3 * HOUR))),
+      name: "Three unprocessed thread",
+      archived: false,
+    },
+    {
+      foldedThrough: 7n,
+      firstEventAt: timestampFromDate(new Date(ago(3 * HOUR))),
+      lastEventAt: timestampFromDate(new Date(ago(2 * 60_000))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      attached: {
+        sessionId: THREE_UNPROCESSED_THREAD,
+        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        lastCursor: 7n,
+        harnessState: HarnessState.RUNNING,
+      },
+    }
+  ),
+  threadView(
+    {
+      threadId: ONE_UNPROCESSED_THREAD,
+      createdAt: timestampFromDate(new Date(ago(3 * HOUR))),
+      name: "One unprocessed thread",
+      archived: false,
+    },
+    {
+      foldedThrough: 7n,
+      firstEventAt: timestampFromDate(new Date(ago(3 * HOUR))),
+      lastEventAt: timestampFromDate(new Date(ago(3 * 60_000))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      attached: {
+        sessionId: ONE_UNPROCESSED_THREAD,
+        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        lastCursor: 7n,
+        harnessState: HarnessState.RUNNING,
+      },
+    }
+  ),
+  threadView(
+    {
+      threadId: DELIVERY_FAILED_THREAD,
+      createdAt: timestampFromDate(new Date(ago(3 * HOUR))),
+      name: "Delivery-failed thread",
+      archived: false,
+    },
+    {
+      foldedThrough: 7n,
+      firstEventAt: timestampFromDate(new Date(ago(3 * HOUR))),
+      lastEventAt: timestampFromDate(new Date(ago(4 * 60_000))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      attached: {
+        sessionId: DELIVERY_FAILED_THREAD,
+        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        lastCursor: 7n,
+        harnessState: HarnessState.STOPPED,
+      },
+    }
+  ),
+  threadView(
+    {
+      threadId: "5f1c4a2e-0000-4000-8000-000000000003",
+      createdAt: timestampFromDate(new Date(ago(5 * 60_000))),
+      name: "Pending thread",
+      archived: false,
+    },
+    {
+      foldedThrough: 2n,
+      sandbox: { namespace: "agentplane-visual", name: "pending-sandbox" },
+      attached: {
+        sessionId: "5f1c4a2e-0000-4000-8000-000000000003",
+        spec: { harness: Harness.CODEX, model: "harness-codex-model", cwd: "/state/work" },
+        lastCursor: 2n,
+        harnessState: HarnessState.STOPPED,
+      },
+    }
+  ),
+  threadView(
+    {
+      threadId: SUSPENDED_THREAD,
+      createdAt: timestampFromDate(new Date(ago(47 * HOUR))),
+      name: "Suspended thread",
+      archived: false,
+    },
+    {
+      foldedThrough: 9n,
+      firstEventAt: timestampFromDate(new Date(ago(47 * HOUR))),
+      lastEventAt: timestampFromDate(new Date(ago(46 * HOUR))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "suspended-sandbox" },
+      attached: {
+        sessionId: SUSPENDED_THREAD,
+        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        lastCursor: 9n,
+        harnessState: HarnessState.STOPPED,
+        setupState: SetupState.SUCCEEDED,
+        launchOutcome: LaunchOutcome.STARTED,
+      },
+    }
+  ),
+  threadView(
+    {
+      threadId: "5f1c4a2e-0000-4000-8000-000000000005",
+      createdAt: timestampFromDate(new Date(ago(72 * HOUR))),
+      name: "Read-only thread",
+      archived: false,
+    },
+    {
+      foldedThrough: 18n,
+      firstEventAt: timestampFromDate(new Date(ago(72 * HOUR))),
+      lastEventAt: timestampFromDate(new Date(ago(70 * HOUR))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "deleted-sandbox" },
+      attached: {
+        sessionId: "5f1c4a2e-0000-4000-8000-000000000005",
+        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        lastCursor: 18n,
+        harnessState: HarnessState.STOPPED,
+      },
+    }
+  ),
+  threadView(
+    {
+      threadId: "5f1c4a2e-0000-4000-8000-000000000006",
+      createdAt: timestampFromDate(new Date(ago(96 * HOUR))),
+      name: "Archived thread",
+      archived: true,
+    },
+    {
+      foldedThrough: 3n,
+      firstEventAt: timestampFromDate(new Date(ago(96 * HOUR))),
+      lastEventAt: timestampFromDate(new Date(ago(95 * HOUR))),
+      feedStatus: FeedStatus.ACTIVE,
+      sandbox: { namespace: "agentplane-visual", name: "ready-sandbox" },
+      attached: {
+        sessionId: "5f1c4a2e-0000-4000-8000-000000000006",
+        spec: { harness: Harness.CLAUDE, model: "harness-claude-model", cwd: "/state/work" },
+        lastCursor: 3n,
+        harnessState: HarnessState.STOPPED,
+      },
+    }
+  ),
 ];
 
 for (const thread of THREADS_WITH_SANDBOXES) {
-  thread.sandbox_uid = SANDBOXES.find((sandbox) => sandbox.target?.name === thread.sandbox)?.target?.uid ?? null;
+  const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === thread.summary.sandbox?.name);
+  if (sandbox?.target?.uid && thread.summary.sandbox) thread.summary.sandbox.uid = sandbox.target.uid;
 }
 
 function withDormantSession(thread: ThreadView): ThreadView {
-  return thread.id === RUNNING_THREAD
+  return thread.metadata.threadId === RUNNING_THREAD
     ? {
         ...thread,
-        name: "Dormant harness thread",
-        feed_status: "active",
-        harness_state: "HARNESS_STATE_STOPPED",
-        active_turn_id: null,
+        metadata: { ...thread.metadata, name: "Dormant harness thread" },
+        summary: {
+          ...thread.summary,
+          feedStatus: FeedStatus.ACTIVE,
+          attached: { ...thread.summary.attached!, harnessState: HarnessState.STOPPED, activeTurnId: "" },
+        },
       }
     : thread;
 }
 
 /** The `failedTurn` scenarios: the idle thread's history ends in a failed turn, which is also its last completed one. */
 function withFailedTurn(thread: ThreadView): ThreadView {
-  return thread.id === IDLE_THREAD
-    ? { ...thread, name: "Failed-turn thread", last_turn_status: "TURN_STATUS_FAILED" }
+  return thread.metadata.threadId === IDLE_THREAD
+    ? {
+        ...thread,
+        metadata: { ...thread.metadata, name: "Failed-turn thread" },
+        summary: { ...thread.summary, lastTurnStatus: TurnStatus.FAILED },
+      }
     : thread;
 }
 
@@ -872,13 +955,16 @@ function autosuspendCountdown(): void {
   sandbox.observedState!.idleSuspendAt = timestampFromDate(new Date(ago(-12 * 60_000)));
   threadEntityRows = interleavedRows;
   mapThread = (thread) =>
-    thread.id === IDLE_THREAD
+    thread.metadata.threadId === IDLE_THREAD
       ? {
           ...thread,
-          name: "Idle thread awaiting autosuspend",
-          active_turn_id: null,
-          last_model_activity_at: ago(13 * 60_000 + 25_000),
-          idle_since: ago(13 * 60_000 + 5_000),
+          metadata: { ...thread.metadata, name: "Idle thread awaiting autosuspend" },
+          summary: {
+            ...thread.summary,
+            lastModelActivityAt: timestampFromDate(new Date(ago(13 * 60_000 + 25_000))),
+            idleSince: timestampFromDate(new Date(ago(13 * 60_000 + 5_000))),
+            attached: { ...thread.summary.attached!, activeTurnId: "" },
+          },
         }
       : thread;
 }
@@ -896,10 +982,16 @@ function autosuspendBusy(): void {
   const countdownThread = mapThread;
   mapThread = (thread) => {
     const mapped = countdownThread(thread);
-    if (thread.id === IDLE_THREAD) return { ...mapped, name: "Idle thread sharing a busy Sandbox" };
-    if (thread.id === RUNNING_THREAD) return { ...mapped, name: "Session running a turn" };
-    if (thread.id === UNNAMED_STOPPED_THREAD) {
-      return { ...mapped, name: "Session running setup", setup_state: "SETUP_STATE_RUNNING" };
+    if (thread.metadata.threadId === IDLE_THREAD)
+      return { ...mapped, metadata: { ...mapped.metadata, name: "Idle thread sharing a busy Sandbox" } };
+    if (thread.metadata.threadId === RUNNING_THREAD)
+      return { ...mapped, metadata: { ...mapped.metadata, name: "Session running a turn" } };
+    if (thread.metadata.threadId === UNNAMED_STOPPED_THREAD) {
+      return {
+        ...mapped,
+        metadata: { ...mapped.metadata, name: "Session running setup" },
+        summary: { ...mapped.summary, attached: { ...mapped.summary.attached!, setupState: SetupState.RUNNING } },
+      };
     }
     return mapped;
   };
@@ -928,14 +1020,20 @@ function autosuspendStarting(): void {
   const countdownThread = mapThread;
   mapThread = (thread) => {
     const mapped = countdownThread(thread);
-    return thread.id === IDLE_THREAD
+    return thread.metadata.threadId === IDLE_THREAD
       ? {
           ...mapped,
-          sandbox: "starting-sandbox",
-          sandbox_uid: "0f9c1d2e-0000-4000-8000-000000000077",
-          name: "Thread waiting for Sandbox startup",
-          harness_state: "HARNESS_STATE_STOPPED",
-          feed_status: "ended",
+          metadata: { ...mapped.metadata, name: "Thread waiting for Sandbox startup" },
+          summary: {
+            ...mapped.summary,
+            sandbox: {
+              ...mapped.summary.sandbox!,
+              name: "starting-sandbox",
+              uid: "0f9c1d2e-0000-4000-8000-000000000077",
+            },
+            feedStatus: FeedStatus.ENDED,
+            attached: { ...mapped.summary.attached!, harnessState: HarnessState.STOPPED },
+          },
         }
       : mapped;
   };
@@ -1324,7 +1422,7 @@ function entity(
 ): Record<string, unknown> {
   const { kind, pending, state } = electricEntityVariant(entity);
   return {
-    thread_id: extra.threadId ?? THREADS[0].id,
+    thread_id: extra.threadId ?? THREADS[0].metadata.threadId,
     projection_epoch: CONVERSATION_EPOCH,
     entity_kind: kind,
     entity_id: id,
@@ -1481,14 +1579,14 @@ function standardRows(
   longReasoningBody: boolean
 ): Record<string, unknown>[] {
   const suspended = threadId === SUSPENDED_THREAD;
-  const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === threadId);
+  const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === threadId);
   if (!thread) throw new Error(`Unknown fixture Thread: ${threadId}`);
   const rows = [
     viewState(
       34,
       suspended ? null : "turn-visual",
       suspended ? ThreadFeedStatus.ENDED : ThreadFeedStatus.ACTIVE,
-      thread.model
+      thread.summary.attached?.spec?.model
     ),
     confirmedInput(4, "user-1", "user-1", ["input-1"], "List the repository files.", {
       threadId,
@@ -2182,7 +2280,7 @@ function recoveryRows(threadId: string, kind: "messages" | "tools" | "quiet"): R
 }
 
 let threadEntityRows = (threadId: string): Record<string, unknown>[] =>
-  threadId === THREADS[2].id ? statesRows(threadId) : standardRows(threadId, false, false);
+  threadId === THREADS[2].metadata.threadId ? statesRows(threadId) : standardRows(threadId, false, false);
 
 function realisticRolloutRows(
   threadId: string,
@@ -2234,7 +2332,7 @@ function threadScope(threadId: string): Record<string, unknown> {
 }
 
 function rememberPendingInput(): void {
-  const local = new LocalCommands(THREADS[2].id, COMMAND_TARGET);
+  const local = new LocalCommands(THREADS[2].metadata.threadId, COMMAND_TARGET);
   local.remember(
     create(CommandSchema, {
       commandId: "locally-retained",
@@ -2247,7 +2345,7 @@ function rememberPendingInput(): void {
 }
 
 function rememberInputEcho(): void {
-  const local = new LocalCommands(THREADS[2].id, COMMAND_TARGET);
+  const local = new LocalCommands(THREADS[2].metadata.threadId, COMMAND_TARGET);
   local.remember(
     create(CommandSchema, {
       commandId: "locally-retained",
@@ -2261,7 +2359,7 @@ function rememberInputEcho(): void {
 
 function rememberSettledCommands(): void {
   // A settled command shows while the browser that sent it still holds it.
-  const local = new LocalCommands(THREADS[2].id, COMMAND_TARGET);
+  const local = new LocalCommands(THREADS[2].metadata.threadId, COMMAND_TARGET);
   local.remember(
     create(CommandSchema, {
       commandId: "queued-model",
@@ -2823,7 +2921,12 @@ routes.push(
     "GET",
     /^\/threads$/,
     (_match, query) => ({
-      threads: THREADS.filter((thread) => !query.has("sandbox") || thread.sandbox === query.get("sandbox")),
+      threads: THREADS.filter(
+        (thread) => !query.has("sandbox") || thread.summary.sandbox?.name === query.get("sandbox")
+      ).map((thread) => ({
+        metadata: toJson(ThreadMetadataSchema, thread.metadata),
+        summary: toJson(SessionSummarySchema, thread.summary),
+      })),
       next_page_token: null,
     }),
   ],
@@ -2831,8 +2934,13 @@ routes.push(
     "GET",
     /^\/threads\/([0-9a-f-]+)$/,
     (match) => {
-      const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === match[1]);
-      return thread && mapThread(thread);
+      const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === match[1]);
+      if (!thread) return undefined;
+      const mapped = mapThread(thread);
+      return {
+        metadata: toJson(ThreadMetadataSchema, mapped.metadata),
+        summary: toJson(SessionSummarySchema, mapped.summary),
+      };
     },
   ]
 );
@@ -3126,10 +3234,10 @@ routes.push(
     "GET",
     /^\/upstream\/app\/v1\/threads\/([0-9a-f-]+)$/,
     (match) => {
-      const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === match[1]);
+      const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === match[1]);
       return thread === undefined
         ? Response.json({ detail: "thread not found" }, { status: 404 })
-        : threadMetadataProtoJson(mapThread(thread));
+        : toJson(ThreadMetadataSchema, mapThread(thread).metadata);
     },
   ],
   [
@@ -3138,16 +3246,16 @@ routes.push(
     (_match, query) => {
       const sandboxUID = query.get("sandbox_uid");
       const all = THREADS_WITH_SANDBOXES.map(mapThread).filter(
-        (thread) => sandboxUID === null || thread.sandbox_uid === sandboxUID
+        (thread) => sandboxUID === null || thread.summary.sandbox?.uid === sandboxUID
       );
-      const archivedCount = all.filter((thread) => thread.archived).length;
+      const archivedCount = all.filter((thread) => thread.metadata.archived).length;
       const includeArchived = query.get("include_archived") === "true";
-      const listed = all.filter((thread) => includeArchived || !thread.archived);
+      const listed = all.filter((thread) => includeArchived || !thread.metadata.archived);
       const offset = Number(query.get("page_token") ?? "0");
       const limit = Number(query.get("limit") ?? "50");
       const threads = listed.slice(offset, offset + limit);
       return {
-        threads: threads.map(threadMetadataProtoJson),
+        threads: threads.map((thread) => toJson(ThreadMetadataSchema, thread.metadata)),
         nextPageToken: offset + threads.length < listed.length ? String(offset + threads.length) : "",
         archivedCount,
       };
@@ -3157,9 +3265,9 @@ routes.push(
     "GET",
     /^\/upstream\/history\/v1\/sessions\/([0-9a-f-]+)\/summary$/,
     (match) => {
-      const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === match[1]);
+      const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === match[1]);
       if (thread === undefined) return Response.json({ detail: "session not found" }, { status: 404 });
-      return historySummaryProtoJson(mapThread(thread));
+      return toJson(SessionSummarySchema, mapThread(thread).summary);
     },
   ],
   [
@@ -3169,10 +3277,10 @@ routes.push(
       const search = query.get("sandbox_name_contains")?.toLowerCase();
       return {
         sessions: THREADS_WITH_SANDBOXES.map(mapThread)
-          .filter((thread) => search === undefined || thread.sandbox.toLowerCase().includes(search))
+          .filter((thread) => search === undefined || thread.summary.sandbox?.name.toLowerCase().includes(search))
           .map((thread) => ({
-            sessionId: thread.id,
-            sandbox: { namespace: "agentplane-visual", name: thread.sandbox },
+            sessionId: thread.metadata.threadId,
+            sandbox: thread.summary.sandbox,
           })),
       };
     },
@@ -3185,8 +3293,8 @@ routes.push(
       const wanted = new Set(request.sessionIds ?? []);
       return {
         summaries: THREADS_WITH_SANDBOXES.map(mapThread)
-          .filter((thread) => wanted.has(thread.id))
-          .map(historySummaryProtoJson),
+          .filter((thread) => wanted.has(thread.metadata.threadId))
+          .map((thread) => toJson(SessionSummarySchema, thread.summary)),
       };
     },
   ],
@@ -3242,63 +3350,6 @@ routes.push(
         : UNANSWERED,
   ]
 );
-
-function threadMetadataProtoJson(thread: ThreadView): Record<string, unknown> {
-  return {
-    threadId: thread.id,
-    createdAt: thread.created_at,
-    ...(thread.name === null ? {} : { name: thread.name }),
-    archived: thread.archived,
-  };
-}
-
-function historySummaryProtoJson(thread: ThreadView): Record<string, unknown> {
-  const feedStatus =
-    thread.feed_status === "active"
-      ? "FEED_STATUS_ACTIVE"
-      : thread.feed_status === "ended"
-        ? "FEED_STATUS_ENDED"
-        : thread.feed_status === "failed"
-          ? "FEED_STATUS_FAILED"
-          : undefined;
-  return {
-    sessionId: thread.id,
-    committedCursor: String(thread.last_cursor),
-    foldedThrough: String(thread.last_cursor),
-    ...(thread.last_event_at === null ? {} : { firstEventAt: thread.created_at, lastEventAt: thread.last_event_at }),
-    ...(thread.last_model_activity_at === null ? {} : { lastModelActivityAt: thread.last_model_activity_at }),
-    ...(thread.last_turn_status === null ? {} : { lastTurnStatus: thread.last_turn_status }),
-    ...(thread.idle_since === null ? {} : { idleSince: thread.idle_since }),
-    ...(feedStatus === undefined ? {} : { feedStatus }),
-    ...(thread.sandbox
-      ? {
-          sandbox: {
-            namespace: "agentplane-visual",
-            name: thread.sandbox,
-            ...(thread.sandbox_uid === null ? {} : { uid: thread.sandbox_uid }),
-          },
-        }
-      : {}),
-    ...(thread.harness === null
-      ? {}
-      : {
-          attached: {
-            sessionId: thread.id,
-            spec: {
-              harness: thread.harness,
-              cwd: thread.cwd ?? "",
-              model: thread.model ?? "",
-              reasoningEffort: thread.reasoning_effort ?? "",
-            },
-            lastCursor: String(thread.last_cursor),
-            harnessState: thread.harness_state ?? "HARNESS_STATE_UNSPECIFIED",
-            activeTurnId: thread.active_turn_id ?? "",
-            setupState: thread.setup_state ?? "SETUP_STATE_UNSPECIFIED",
-            launchOutcome: thread.launch_outcome ?? "LAUNCH_OUTCOME_UNSPECIFIED",
-          },
-        }),
-  };
-}
 
 /** What the live stream at `url` sends, when it opens and whenever a fixture publishes it again. */
 function liveEvents(url: URL): ServerSentEvent[] {
@@ -3562,16 +3613,30 @@ function projectQueuedSession(): void {
   const sessionId = queuedOpenSessionId;
   const source = THREADS[0];
   if (!source) throw new Error("No Session fixture to copy");
-  const projected: ThreadView = {
-    ...source,
-    id: sessionId,
-    name: "Queued opening thread",
-    created_at: ago(0),
-    last_cursor: 0,
-    last_event_at: ago(0),
-    harness_state: "HARNESS_STATE_STOPPED",
-    feed_status: "active",
-  };
+  const sourceAttached = source.summary.attached;
+  if (!sourceAttached) throw new Error("Queued Session source has no attachment");
+  const projected = threadView(
+    {
+      ...source.metadata,
+      threadId: sessionId,
+      name: "Queued opening thread",
+      createdAt: timestampFromDate(new Date(ago(0))),
+    },
+    {
+      ...source.summary,
+      sessionId,
+      foldedThrough: 0n,
+      lastEventAt: timestampFromDate(new Date(ago(0))),
+      feedStatus: FeedStatus.ACTIVE,
+      attached: {
+        ...create(AttachedSchema, sourceAttached),
+        sessionId,
+        lastCursor: 0n,
+        harnessState: HarnessState.STOPPED,
+        activeTurnId: "",
+      },
+    }
+  );
   THREADS.push(projected);
   THREADS_WITH_SANDBOXES.push(projected);
   publishStreams("/upstream/app/v1/threads:watch");
@@ -3604,14 +3669,24 @@ const visualHarness = {
     ];
   },
   nameThread(threadId: string, name: string): void {
-    const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === threadId);
+    const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === threadId);
     if (!thread) throw new Error(`Missing thread fixture ${threadId}`);
-    thread.name = name;
+    thread.metadata.name = name;
   },
-  updateThread(threadId: string, changes: Partial<ThreadView>): void {
-    const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.id === threadId);
+  centralSamplerOnSandbox(threadId: string, sandboxName: string): void {
+    const thread = THREADS_WITH_SANDBOXES.find((candidate) => candidate.metadata.threadId === threadId);
     if (!thread) throw new Error(`Missing thread fixture ${threadId}`);
-    Object.assign(thread, changes);
+    const target = SANDBOXES.find((candidate) => candidate.target?.name === sandboxName)?.target;
+    if (!target) throw new Error(`Missing Sandbox fixture ${sandboxName}`);
+    const spec = thread.summary.attached?.spec;
+    if (!spec) throw new Error(`Thread fixture ${threadId} has no attached Session spec`);
+    thread.summary.sandbox = create(SandboxRefSchema, {
+      namespace: target.namespace,
+      name: target.name,
+      uid: target.uid,
+    });
+    spec.harness = Harness.CENTRAL_SAMPLER;
+    spec.model = "harness-codex-model";
   },
   mountDisclosure(props: Parameters<typeof DisclosureVisual>[0]): void {
     mount(<DisclosureVisual {...props} />);
@@ -3728,7 +3803,10 @@ const visualHarness = {
     threadEntityRows = interleavedRows;
   },
   shortThreadSwitchHistory(): void {
-    mapThread = (thread) => (thread.id === IDLE_THREAD ? { ...thread, name: "Short thread arriving" } : thread);
+    mapThread = (thread) =>
+      thread.metadata.threadId === IDLE_THREAD
+        ? { ...thread, metadata: { ...thread.metadata, name: "Short thread arriving" } }
+        : thread;
     threadEntityRows = shortThreadSwitchRows;
   },
   historyProfile(rowCount: number): void {
@@ -3776,7 +3854,8 @@ const visualHarness = {
     threadEntityRows = (id) => standaloneReasoningRows(id, longPreview, codeFence, longBody);
   },
   standardHistory(longPreview: boolean, longBody: boolean): void {
-    threadEntityRows = (id) => (id === THREADS[2].id ? statesRows(id) : standardRows(id, longPreview, longBody));
+    threadEntityRows = (id) =>
+      id === THREADS[2].metadata.threadId ? statesRows(id) : standardRows(id, longPreview, longBody);
   },
   consecutiveReasoningHistory(): void {
     threadEntityRows = consecutiveReasoningRows;
@@ -3802,26 +3881,38 @@ const visualHarness = {
   rememberFailedDispatch,
   completedRollout(): void {
     mapThread = (thread) =>
-      thread.id === IDLE_THREAD
+      thread.metadata.threadId === IDLE_THREAD
         ? {
             ...thread,
-            name: "Completed diagnostic run",
-            harness: "HARNESS_CODEX",
-            active_turn_id: null,
-            last_turn_status: "TURN_STATUS_COMPLETED",
+            metadata: { ...thread.metadata, name: "Completed diagnostic run" },
+            summary: {
+              ...thread.summary,
+              lastTurnStatus: TurnStatus.COMPLETED,
+              attached: {
+                ...thread.summary.attached!,
+                spec: { ...thread.summary.attached!.spec!, harness: Harness.CODEX },
+                activeTurnId: "",
+              },
+            },
           }
         : thread;
     threadEntityRows = (id) => realisticRolloutRows(id, rollout);
   },
   reportedRollout(): void {
     mapThread = (thread) =>
-      thread.id === IDLE_THREAD
+      thread.metadata.threadId === IDLE_THREAD
         ? {
             ...thread,
-            name: "Reported thread excerpt",
-            harness: "HARNESS_CODEX",
-            active_turn_id: null,
-            last_turn_status: "TURN_STATUS_COMPLETED",
+            metadata: { ...thread.metadata, name: "Reported thread excerpt" },
+            summary: {
+              ...thread.summary,
+              lastTurnStatus: TurnStatus.COMPLETED,
+              attached: {
+                ...thread.summary.attached!,
+                spec: { ...thread.summary.attached!.spec!, harness: Harness.CODEX },
+                activeTurnId: "",
+              },
+            },
           }
         : thread;
     threadEntityRows = (id) => realisticRolloutRows(id, reportedRollout);

@@ -18,7 +18,7 @@ import {
   EnvironmentRuntimeLifecycleBlockerKind,
   EnvironmentRuntimeLifecycleMode,
   EnvironmentRuntimeLifecycleStage,
-  Harness as ProtoHarness,
+  type Harness as ProtoHarness,
   ProcessState,
   SessionExecutionState,
   type EnvironmentRuntimeLifecycleStatus,
@@ -403,17 +403,7 @@ function lifecycleBlockerLabel(kind: EnvironmentRuntimeLifecycleBlockerKind): st
 }
 
 function runtimeHarnessLabel(harness: ProtoHarness): string {
-  switch (harness) {
-    case ProtoHarness.CLAUDE:
-      return harnessLabel("HARNESS_CLAUDE");
-    case ProtoHarness.CODEX:
-      return harnessLabel("HARNESS_CODEX");
-    case ProtoHarness.CENTRAL_SAMPLER:
-      return harnessLabel("HARNESS_CENTRAL_SAMPLER");
-    case ProtoHarness.UNSPECIFIED:
-      return harnessLabel("HARNESS_UNSPECIFIED");
-  }
-  return harnessLabel("HARNESS_UNSPECIFIED");
+  return harnessLabel(harness);
 }
 
 function EnvironmentRuntimeLifecycleCard({ lifecycle }: { lifecycle: EnvironmentRuntimeLifecycleStatus }): JSX.Element {
@@ -549,7 +539,7 @@ function EnvironmentRuntimeDiagnostics({
       current = false;
     };
   }, [active, refreshVersion, target, sandbox.observedState?.operatingMode, sandbox.observedState?.phase]);
-  const threadsById = new Map(threads.map((thread) => [thread.id, thread]));
+  const threadsById = new Map(threads.map((thread) => [thread.metadata.threadId, thread]));
 
   return (
     <Stack gap="xs" data-testid="sandbox-environment-runtime-diagnostics">
@@ -632,7 +622,7 @@ function EnvironmentRuntimeDiagnostics({
             <Stack gap="xs">
               <Title order={6}>Sessions</Title>
               {state.value.sessions.map((session) => {
-                const title = threadsById.get(session.sessionId)?.name?.trim();
+                const title = threadsById.get(session.sessionId)?.metadata.name?.trim();
                 return (
                   <Paper key={session.sessionId} withBorder p="sm" radius="md">
                     <Stack gap={4}>

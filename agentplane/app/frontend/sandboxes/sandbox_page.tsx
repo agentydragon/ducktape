@@ -174,10 +174,12 @@ export function SandboxPage({
     }
   }, [requestedTab, sandbox, setSearchParams, vmConsoleAvailable]);
   // History's retained Thread projection, keyed by its ID.
-  const threadById: Record<string, ThreadView> = Object.fromEntries(threads.map((thread) => [thread.id, thread]));
+  const threadById: Record<string, ThreadView> = Object.fromEntries(
+    threads.map((thread) => [thread.metadata.threadId, thread])
+  );
   const pendingThreadId = pendingOpen?.threadId;
   const projectedPendingThread = pendingThreadId ? threadById[pendingThreadId] : undefined;
-  const visibleThreads = threads.filter((thread) => includeArchived || !thread.archived);
+  const visibleThreads = threads.filter((thread) => includeArchived || !thread.metadata.archived);
   const openProjectedPending = useEffectEvent((threadId: string) => {
     void openThread(threadId, threadId);
   });
@@ -319,7 +321,7 @@ export function SandboxPage({
         }
         rememberOpen(null);
       }
-      onOpenThread(thread.id);
+      onOpenThread(thread.metadata.threadId);
     } catch (reason: unknown) {
       if (attempt) resolvingOpen.current = null;
       setError(displayableError(reason));
@@ -367,7 +369,7 @@ export function SandboxPage({
           </Button>
           <NotificationStatus
             sandbox={name}
-            sessionIds={visibleThreads.map((thread) => thread.id)}
+            sessionIds={visibleThreads.map((thread) => thread.metadata.threadId)}
             opened={notificationsOpen}
             onClose={() => setNotificationsOpen(false)}
           />

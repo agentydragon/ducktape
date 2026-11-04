@@ -1,5 +1,8 @@
 // @vitest-environment happy-dom
 import { SandboxPhase, OperatingMode, ReadinessState } from "../../../environments/v1/environment_service_pb";
+import { toJson } from "@bufbuild/protobuf";
+import { ThreadMetadataSchema } from "../../app_service_pb";
+import { FeedStatus, SessionSummarySchema } from "../../../history_service/history_service_pb";
 
 import { readySandbox as makeReadySandbox } from "../testing/sandbox";
 import { MantineProvider } from "@mantine/core";
@@ -31,9 +34,12 @@ import {
   EnvironmentRuntimeLifecycleMode,
   EnvironmentRuntimeLifecycleStage,
   Harness,
+  HarnessState,
   ProcessState,
+  SetupState,
   SessionExecutionState,
 } from "../../../proto/session_pb";
+import { threadView } from "../threads/testing/state";
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
@@ -167,31 +173,6 @@ function requestFromFetchInput(input: RequestInfo | URL, init?: RequestInit): Re
   return new Request(input instanceof URL ? input : new URL(input, window.location.href), init);
 }
 
-function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id">): ThreadView {
-  return {
-    sandbox: "startup-test",
-    harness: "HARNESS_CLAUDE",
-    model: "test-model",
-    cwd: "/work",
-    created_at: "2026-01-01T00:00:00Z",
-    name: null,
-    archived: false,
-    last_cursor: 0,
-    sandbox_uid: null,
-    harness_state: "HARNESS_STATE_UNSPECIFIED",
-    last_event_at: null,
-    last_model_activity_at: null,
-    idle_since: null,
-    setup_state: null,
-    launch_outcome: null,
-    active_turn_id: null,
-    reasoning_effort: null,
-    feed_status: null,
-    last_turn_status: null,
-    ...overrides,
-  };
-}
-
 async function render(
   sessions: (request: Request) => Promise<Response>,
   threadActions: (request: Request) => Promise<Response> = async () => new Response(null, { status: 204 }),
@@ -293,8 +274,15 @@ async function render(
     const threadPath = /^\/threads\/([^/]+)$/.exec(path);
     if (threadPath && request.method === "GET") {
       const threads = Array.isArray(live.snapshot.threads) ? live.snapshot.threads : [];
-      const found = threads.find((thread) => thread.id === threadPath[1]);
-      return Promise.resolve(found ? Response.json(found) : Response.json({ detail: "not found" }, { status: 404 }));
+      const found = threads.find((thread) => thread.metadata.threadId === threadPath[1]);
+      return Promise.resolve(
+        found
+          ? Response.json({
+              metadata: toJson(ThreadMetadataSchema, found.metadata),
+              summary: toJson(SessionSummarySchema, found.summary),
+            })
+          : Response.json({ detail: "not found" }, { status: 404 })
+      );
     }
     if (/^\/sandboxes\/(startup-test|other-test)\/sessions/.test(path)) return sessions(request);
     if (/^\/upstream\/app\/v1\/threads\/[^/]+\/(un)?archive$/.test(path)) return threadActions(request);
@@ -387,7 +375,7 @@ async function choose(label: string, value: string): Promise<void> {
 it("does not join an old detail frame to a same-name replacement", async () => {
   mutableSnapshot.sandbox_uid = "00000000-0000-4000-8000-000000000099";
   live.snapshot.thread_snapshot_uid = mutableSnapshot.sandbox_uid;
-  live.snapshot.threads = [thread({ id: "old-thread", name: "Old incarnation thread" })];
+  live.snapshot.threads = [threadView({ metadata: { threadId: "old-thread", name: "Old incarnation thread" } })];
   await render(async () => Response.json([]));
   expect(container.textContent).not.toContain("Old incarnation thread");
   expect(container.textContent).not.toContain("There is no sandbox startup-test any more.");
@@ -399,7 +387,7 @@ it("does not join an old detail frame to a same-name replacement", async () => {
 it("does not use an incomplete target as an environment identity", async () => {
   const namespace = readySandbox.target!.namespace;
   readySandbox.target!.namespace = "";
-  live.snapshot.threads = [thread({ id: "old-thread", name: "Old incarnation thread" })];
+  live.snapshot.threads = [threadView({ metadata: { threadId: "old-thread", name: "Old incarnation thread" } })];
   try {
     await render(async () => Response.json([]));
     expect(container.textContent).not.toContain("Old incarnation thread");
@@ -648,10 +636,22 @@ it("uses the configured preset working directory template and setup script for l
 
 it("notes a Thread's setup only until it completes", async () => {
   live.snapshot.threads = [
-    thread({ id: "legacy", harness_state: "HARNESS_STATE_STOPPED", setup_state: null }),
-    thread({ id: "prepared", harness_state: "HARNESS_STATE_RUNNING", setup_state: "SETUP_STATE_SUCCEEDED" }),
-    thread({ id: "preparing", harness_state: "HARNESS_STATE_STOPPED", setup_state: "SETUP_STATE_RUNNING" }),
-    thread({ id: "broken", harness_state: "HARNESS_STATE_STOPPED", setup_state: "SETUP_STATE_FAILED" }),
+    threadView({
+      metadata: { threadId: "legacy" },
+      summary: { attached: { harnessState: HarnessState.STOPPED, setupState: undefined } },
+    }),
+    threadView({
+      metadata: { threadId: "prepared" },
+      summary: { attached: { harnessState: HarnessState.RUNNING, setupState: SetupState.SUCCEEDED } },
+    }),
+    threadView({
+      metadata: { threadId: "preparing" },
+      summary: { attached: { harnessState: HarnessState.STOPPED, setupState: SetupState.RUNNING } },
+    }),
+    threadView({
+      metadata: { threadId: "broken" },
+      summary: { attached: { harnessState: HarnessState.STOPPED, setupState: SetupState.FAILED } },
+    }),
   ];
   const sessions = vi.fn<(request: Request) => Promise<Response>>(() =>
     Promise.resolve(Response.json({ detail: "History owns the Sandbox inventory" }, { status: 500 }))
@@ -693,14 +693,18 @@ function menuItem(text: string): HTMLElement {
 }
 
 it("keeps retained History Threads visible through ready to suspended with no runner inventory read", async () => {
-  const retained = thread({
-    id: "retained-session",
-    name: "Previously active thread",
-    harness_state: "HARNESS_STATE_RUNNING",
-    feed_status: "active",
-    active_turn_id: "turn-last-seen",
-    setup_state: "SETUP_STATE_SUCCEEDED",
-    last_cursor: 12,
+  const retained = threadView({
+    metadata: { threadId: "retained-session", name: "Previously active thread" },
+    summary: {
+      feedStatus: FeedStatus.ACTIVE,
+      foldedThrough: 12n,
+      attached: {
+        harnessState: HarnessState.RUNNING,
+        activeTurnId: "turn-last-seen",
+        setupState: SetupState.SUCCEEDED,
+        lastCursor: 12n,
+      },
+    },
   });
   live.snapshot.threads = [retained];
   const sessions = vi.fn<(request: Request) => Promise<Response>>(() =>
@@ -753,13 +757,27 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   await rerender();
   expect(retainedRow()).toBeDefined();
 
-  live.snapshot.threads = [{ ...retained, harness_state: "HARNESS_STATE_STOPPED", active_turn_id: null }];
+  live.snapshot.threads = [
+    {
+      ...retained,
+      summary: {
+        ...retained.summary,
+        attached: { ...retained.summary.attached!, harnessState: HarnessState.STOPPED, activeTurnId: "" },
+      },
+    },
+  ];
   await rerender();
   const stoppedMenuButton = actionButton();
   if (!stoppedMenuButton) throw new Error("Missing retained Thread actions menu after Sandbox deletion");
   await act(async () => stoppedMenuButton.click());
   await act(async () => menuItem("Archive").click());
-  live.snapshot.threads = [{ ...retained, archived: true, harness_state: "HARNESS_STATE_STOPPED" }];
+  live.snapshot.threads = [
+    {
+      ...retained,
+      metadata: { ...retained.metadata, archived: true },
+      summary: { ...retained.summary, attached: { ...retained.summary.attached!, harnessState: HarnessState.STOPPED } },
+    },
+  ];
   await rerender();
   expect(retainedRow()).toBeUndefined();
   await act(async () => labeledInput("Show archived").click());
@@ -843,7 +861,7 @@ it("recovers a lost Open from its Thread without sending a second Open", async (
   const onOpenThread = await render(sessions);
   await submitNewThread();
   const first = await postedBody(sessions);
-  live.snapshot.threads = [thread({ id: first.session_id })];
+  live.snapshot.threads = [threadView({ metadata: { threadId: first.session_id } })];
   await act(async () => button("Check opening status").click());
   expect(onOpenThread).toHaveBeenCalledWith(first.session_id);
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
@@ -867,7 +885,7 @@ it("resolves a queued Open from the live matching Thread projection exactly once
   expect(container.textContent).toContain("Queued in Dispatcher");
   expect(onOpenThread).not.toHaveBeenCalled();
 
-  live.snapshot.threads = [thread({ id: sessionId })];
+  live.snapshot.threads = [threadView({ metadata: { threadId: sessionId } })];
   await rerender();
   expect(onOpenThread).toHaveBeenCalledTimes(1);
   expect(onOpenThread).toHaveBeenCalledWith(sessionId);
@@ -881,7 +899,7 @@ it("resolves a queued Open from the live matching Thread projection exactly once
 it("resumes a persisted pending Open when its matching Thread is already projected after remount", async () => {
   const sessionId = "recovered-open-session";
   sessionStorage.setItem("agentplane:pending-open:startup-test", sessionId);
-  live.snapshot.threads = [thread({ id: sessionId })];
+  live.snapshot.threads = [threadView({ metadata: { threadId: sessionId } })];
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(
       request.method === "GET" ? Response.json([]) : Response.json({ detail: "unexpected POST" }, { status: 500 })
@@ -899,7 +917,7 @@ it("does not resolve a pending Open from an unrelated Thread or clear it on manu
   const sessionId = "pending-session";
   const otherSessionId = "other-session";
   sessionStorage.setItem("agentplane:pending-open:startup-test", sessionId);
-  live.snapshot.threads = [thread({ id: otherSessionId })];
+  live.snapshot.threads = [threadView({ metadata: { threadId: otherSessionId } })];
   const onOpenThread = await render(async (request) =>
     Response.json(request.method === "GET" ? [{ sessionId: otherSessionId }] : { detail: "unexpected POST" })
   );
@@ -940,7 +958,7 @@ it("opens the client-minted Session ID returned by the opening", async () => {
   const sessions = vi.fn<(request: Request) => Promise<Response>>(async (request) => {
     if (request.method === "GET") return Response.json([]);
     publicId = (await request.clone().json()).session_id;
-    live.snapshot.threads = [thread({ id: publicId })];
+    live.snapshot.threads = [threadView({ metadata: { threadId: publicId } })];
     return Response.json({
       sessionId: publicId,
       sandbox: "startup-test",
@@ -955,7 +973,7 @@ it("opens the client-minted Session ID returned by the opening", async () => {
 });
 
 it("hides an archived Thread by default, reveals it via Show archived, and unarchives it", async () => {
-  live.snapshot.threads = [thread({ id: "existing-session", archived: true })];
+  live.snapshot.threads = [threadView({ metadata: { threadId: "existing-session", archived: true } })];
   const archiveRequests: Request[] = [];
   await render(
     async () => Response.json([{ sessionId: "existing-session" }]),
@@ -982,7 +1000,12 @@ it("hides an archived Thread by default, reveals it via Show archived, and unarc
 });
 
 it("allows archiving an idle Thread while its harness is running", async () => {
-  live.snapshot.threads = [thread({ id: "existing-session", harness_state: "HARNESS_STATE_RUNNING" })];
+  live.snapshot.threads = [
+    threadView({
+      metadata: { threadId: "existing-session" },
+      summary: { attached: { harnessState: HarnessState.RUNNING } },
+    }),
+  ];
   const archiveRequests: Request[] = [];
   await render(
     async () => Response.json({ detail: "History owns the Sandbox inventory" }, { status: 500 }),
@@ -1006,10 +1029,15 @@ it("allows archiving an idle Thread while its harness is running", async () => {
 });
 
 it.each([
-  [{ active_turn_id: "turn-1" }, "Wait for the active turn to finish before archiving"],
-  [{ setup_state: "SETUP_STATE_RUNNING" }, "Wait for setup to finish before archiving"],
+  [{ activeTurnId: "turn-1" }, "Wait for the active turn to finish before archiving"],
+  [{ setupState: SetupState.RUNNING }, "Wait for setup to finish before archiving"],
 ] as const)("blocks archiving when Thread work is visible: %o", async (overrides, reason) => {
-  live.snapshot.threads = [thread({ id: "existing-session", harness_state: "HARNESS_STATE_RUNNING", ...overrides })];
+  live.snapshot.threads = [
+    threadView({
+      metadata: { threadId: "existing-session" },
+      summary: { attached: { harnessState: HarnessState.RUNNING, ...overrides } },
+    }),
+  ];
   await render(async () => Response.json({ detail: "History owns the Sandbox inventory" }, { status: 500 }));
   const menuButton = [...container.querySelectorAll("button")].find(
     (node) => node.getAttribute("aria-label") === "More actions for existing-session"
@@ -1020,7 +1048,7 @@ it.each([
 });
 
 it("defaults new threads to an offered harness while retaining existing Claude threads", async () => {
-  live.snapshot.threads = [thread({ id: "old-session", name: "Existing Claude" })];
+  live.snapshot.threads = [threadView({ metadata: { threadId: "old-session", name: "Existing Claude" } })];
   presetDefaults = { harness: "HARNESS_CODEX", model: "test-model" };
   const sessions = vi.fn<(request: Request) => Promise<Response>>(async (request) =>
     request.method === "GET"
@@ -1107,7 +1135,7 @@ it("offers Delete in the actions menu only for a suspended Sandbox", async () =>
 });
 
 it("links the Sandbox and its Threads to their scoped Grafana trace searches", async () => {
-  live.snapshot.threads = [thread({ id: "existing-session" })];
+  live.snapshot.threads = [threadView({ metadata: { threadId: "existing-session" } })];
   await render(async () => Response.json([]));
   await act(async () => Promise.resolve());
 
@@ -1138,7 +1166,7 @@ it("links the Sandbox and its Threads to their scoped Grafana trace searches", a
 
 it("hides trace links when the app leaves trace search unconfigured", async () => {
   traceSearchSettings = null;
-  live.snapshot.threads = [thread({ id: "existing-session" })];
+  live.snapshot.threads = [threadView({ metadata: { threadId: "existing-session" } })];
   await render(async () => Response.json([]));
   await act(async () => Promise.resolve());
 
@@ -1166,7 +1194,7 @@ it("hides trace links when the app leaves trace search unconfigured", async () =
 
 it("hides Langfuse links independently when Langfuse search is unconfigured", async () => {
   langfuseSearchSettings = null;
-  live.snapshot.threads = [thread({ id: "existing-session" })];
+  live.snapshot.threads = [threadView({ metadata: { threadId: "existing-session" } })];
   await render(async () => Response.json([]));
   await act(async () => Promise.resolve());
 
@@ -1183,7 +1211,10 @@ it("hides Langfuse links independently when Langfuse search is unconfigured", as
 
 it("does not state a Session's status while Thread updates are not being heard", async () => {
   live.snapshot.threads = [
-    thread({ id: "quiet", name: "Quiet thread", harness_state: "HARNESS_STATE_RUNNING", feed_status: "active" }),
+    threadView({
+      metadata: { threadId: "quiet", name: "Quiet thread" },
+      summary: { feedStatus: FeedStatus.ACTIVE, attached: { harnessState: HarnessState.RUNNING } },
+    }),
   ];
   mutableSnapshot.updates_connected = false;
   try {
@@ -1196,7 +1227,7 @@ it("does not state a Session's status while Thread updates are not being heard",
 
 it("does not show a previous incarnation's Threads after same-name Sandbox replacement", async () => {
   live.snapshot.thread_snapshot_uid = readySandbox.target!.uid;
-  live.snapshot.threads = [thread({ id: "old-session", name: "Old Thread" })];
+  live.snapshot.threads = [threadView({ metadata: { threadId: "old-session", name: "Old Thread" } })];
   await render(async () => Response.json([]));
   expect(container.textContent).toContain("Old Thread");
   await act(async () => {

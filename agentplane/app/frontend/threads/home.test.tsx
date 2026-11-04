@@ -15,8 +15,8 @@ import { RoutedThreadsLiveProvider } from "./live";
 import { SandboxesLiveProvider } from "../sandboxes/live";
 import { Sidebar } from "../sidebar";
 import { ServedWatch, serveEventStreams } from "../testing/watch";
-
-type ThreadView = ThreadClientModule.ThreadView;
+import { threadView } from "./testing/state";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 
 vi.mock("./client", async (importOriginal) => ({
   ...(await importOriginal<typeof ThreadClientModule>()),
@@ -37,33 +37,18 @@ afterEach(async () => {
 const SANDBOX = readySandbox("test-sandbox", "00000000-0000-4000-8000-000000000001");
 SANDBOX.kubernetesDiagnostics!.pod = undefined;
 
-function thread(overrides: Partial<ThreadView> & Pick<ThreadView, "id" | "name">): ThreadView {
-  return {
-    sandbox: SANDBOX.target!.name,
-    harness: "HARNESS_CLAUDE",
-    model: "test-model",
-    cwd: "/work",
-    created_at: "2026-01-01T00:00:00Z",
-    archived: false,
-    last_cursor: 0,
-    sandbox_uid: null,
-    last_event_at: null,
-    last_model_activity_at: null,
-    idle_since: null,
-    harness_state: "HARNESS_STATE_RUNNING",
-    setup_state: null,
-    launch_outcome: null,
-    active_turn_id: null,
-    reasoning_effort: null,
-    feed_status: "active",
-    last_turn_status: null,
-    ...overrides,
-  };
-}
-
 const THREADS = [
-  thread({ id: "t-1", name: "Alpha thread", last_event_at: "2026-01-01T11:58:00Z" }),
-  thread({ id: "t-2", name: "Beta thread" }),
+  threadView({
+    metadata: { threadId: "t-1", name: "Alpha thread" },
+    summary: {
+      sandbox: { name: SANDBOX.target!.name, uid: SANDBOX.target!.uid },
+      lastEventAt: timestampFromDate(new Date("2026-01-01T11:58:00Z")),
+    },
+  }),
+  threadView({
+    metadata: { threadId: "t-2", name: "Beta thread" },
+    summary: { sandbox: { name: SANDBOX.target!.name, uid: SANDBOX.target!.uid } },
+  }),
 ];
 
 /** Renders Home beside the Sidebar, the way the shell lays them out on desktop; returns the URL of
@@ -116,7 +101,8 @@ async function render(): Promise<string[]> {
   });
   vi.mocked(listThreadWindow).mockImplementation(async (listing) => ({
     threads: THREADS.filter(
-      (candidate) => listing.search === null || candidate.name?.toLowerCase().includes(listing.search.toLowerCase())
+      (candidate) =>
+        listing.search === null || candidate.metadata.name?.toLowerCase().includes(listing.search.toLowerCase())
     ),
     more: false,
     archived_count: 0,

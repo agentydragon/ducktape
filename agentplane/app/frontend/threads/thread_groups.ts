@@ -7,6 +7,8 @@ import type { EnvironmentDescriptor } from "../../../environments/v1/environment
  */
 
 export interface ThreadGroup {
+  /** Name plus nonempty Sandbox UID, so recreated incarnations remain separate in the list. */
+  identity: string;
   sandboxName: string;
   /** The Sandbox's live view, or null once it no longer exists. */
   sandbox: EnvironmentDescriptor | null;
@@ -26,18 +28,32 @@ export function groupThreads(
   openThreadId: string | null
 ): ThreadGroup[] {
   const groups = new Map<string, ThreadGroup>();
+  const identity = (name: string, uid: string | undefined) => JSON.stringify([name, uid || null]);
   for (const thread of threads) {
-    if (!includeArchived && thread.archived && thread.id !== openThreadId) continue;
-    let group = groups.get(thread.sandbox);
+    const threadId = thread.metadata.threadId;
+    const sandbox = thread.summary.sandbox;
+    const sandboxName = sandbox?.name ?? "";
+    const sandboxUID = sandbox?.uid;
+    const key = identity(sandboxName, sandboxUID);
+    if (!includeArchived && thread.metadata.archived && threadId !== openThreadId) continue;
+    let group = groups.get(key);
     if (!group) {
-      group = { sandboxName: thread.sandbox, sandbox: sandboxes[thread.sandbox] ?? null, threads: [] };
-      groups.set(thread.sandbox, group);
+      const candidate = sandboxes[sandboxName] ?? null;
+      group = {
+        identity: key,
+        sandboxName,
+        sandbox: sandboxUID && candidate?.target?.uid === sandboxUID ? candidate : null,
+        threads: [],
+      };
+      groups.set(key, group);
     }
     group.threads.push(thread);
   }
   for (const sandbox of Object.values(sandboxes)) {
-    if (!groups.has(sandbox.target!.name)) {
-      groups.set(sandbox.target!.name, { sandboxName: sandbox.target!.name, sandbox, threads: [] });
+    const { name, uid } = sandbox.target!;
+    const key = identity(name, uid);
+    if (!groups.has(key)) {
+      groups.set(key, { identity: key, sandboxName: name, sandbox, threads: [] });
     }
   }
   return [...groups.values()];

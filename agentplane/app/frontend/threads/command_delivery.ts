@@ -40,7 +40,7 @@ interface ThreadCommands {
 }
 
 export function useThreadCommands(thread: ThreadView, entities: ThreadEntity[]): ThreadCommands {
-  const threadId = thread.id;
+  const threadId = thread.metadata.threadId;
   const store = useMemo(() => new LocalCommands(threadId, null), [threadId]);
   const local = useSyncExternalStore(store.subscribe, store.getSnapshot, () => EMPTY_LOCAL);
   const [errors, setErrors] = useState(new Map<string, CommandIssue>());
