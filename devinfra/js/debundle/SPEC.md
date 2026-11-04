@@ -991,10 +991,21 @@ A context window does not use a top-level `STMT_LIST` hole.
 ## Local selector explanations
 
 `inspect-source` labels the parsed file's top-level statements and original
-locations. `spec match-selector --explain --statements` compares one inline or
-authored selector against the entire selected range using its structural
-matching semantics. It reports a local match, mismatch, unsupported comparison,
-or diagnostic limit. An inconclusive comparison is not a mismatch.
+locations. With `--declarator-binding <raw-name>` and `--source-file` (or
+`--source-root` plus `--chunk`), it can select one unique top-level `var`,
+`let` or `const` declarator, including one inside an exported declaration or
+destructuring pattern. The reported
+`index` remains the enclosing raw `Module.body` index; `declarator_index` is its
+zero-based position in that declaration. The byte and line coordinates,
+bindings, and source cover only that declarator. Raw view preserves its exact
+source slice; pretty view emits a standalone declaration containing the
+selected declarator. This query has no surrounding-statement context. Without
+it, inspection continues to report whole top-level items.
+
+`spec match-selector --explain --statements` compares one inline or authored
+selector against the entire selected range using its structural matching
+semantics. It reports a local match, mismatch, unsupported comparison, or
+diagnostic limit. An inconclusive comparison is not a mismatch.
 
 This operation does not establish uniqueness, enforce ownership/all-different,
 or resolve references to other spec exports. Loading a selector from a spec

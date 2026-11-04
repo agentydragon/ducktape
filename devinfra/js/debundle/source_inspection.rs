@@ -11,10 +11,11 @@ use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use swc_common::{DUMMY_SP, Span, Spanned};
 use swc_ecma_ast::{
-    DefaultDecl, ExportDecl, ExportDefaultDecl, Module, ModuleDecl, ModuleItem, Stmt,
+    Decl, DefaultDecl, ExportDecl, ExportDefaultDecl, Module, ModuleDecl, ModuleItem, Stmt,
+    VarDecl, VarDeclarator,
 };
 
-use binding_targets::declaration_name_strings;
+use binding_targets::{binding_name_strings, declaration_name_strings};
 use js_ast::{
     ParsedJsModule, emit_module_source, parse_js_module_consuming,
     source_unit_ordinal_for_statement, split_var_declarators, statements_for_source_unit_ordinals,
@@ -158,6 +159,76 @@ impl PreparedSource {
         Ok(StatementRange { start, end })
     }
 
+    /// Find one top-level variable declarator by one of its declared names.
+    /// The returned row keeps the enclosing raw `Module.body` index while its
+    /// source span and text cover only the selected declarator.
+    pub fn variable_declarator_row(
+        &self,
+        name: &str,
+        include_pretty: bool,
+    ) -> Result<StatementRow> {
+        let mut matches = Vec::new();
+        for (body_index, item) in self.parsed.module.body.iter().enumerate() {
+            let Some((var, exported)) = top_level_var_decl(item) else {
+                continue;
+            };
+            for (declarator_index, declarator) in var.decls.iter().enumerate() {
+                if binding_name_strings(&declarator.name)
+                    .iter()
+                    .any(|binding| binding == name)
+                {
+                    matches.push((body_index, declarator_index, var, declarator, exported));
+                }
+            }
+        }
+
+        let (index, declarator_index, var, declarator, exported) = match matches.as_slice() {
+            [] => bail!(
+                "no top-level variable declarator binding `{name}` in {}",
+                self.path.display()
+            ),
+            [matched] => *matched,
+            _ => bail!(
+                "ambiguous top-level variable declarator binding `{name}` in {}: declared by {}",
+                self.path.display(),
+                matches
+                    .iter()
+                    .map(|(body_index, declarator_index, ..)| {
+                        format!("body[{body_index}] declarator[{declarator_index}]")
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        };
+        let coordinates = self.span_coordinates(index, declarator.span)?;
+        let original_source = self
+            .source
+            .get(coordinates.byte_start..coordinates.byte_end)
+            .with_context(|| {
+                format!("source span for body[{index}] declarator[{declarator_index}] is not on UTF-8 boundaries")
+            })?
+            .to_string();
+        let pretty_source = if include_pretty {
+            pretty_print_item(&single_declarator_item(var, declarator, exported))?
+        } else {
+            String::new()
+        };
+
+        Ok(StatementRow {
+            index,
+            declarator_index: Some(declarator_index),
+            byte_start: coordinates.byte_start,
+            byte_end: coordinates.byte_end,
+            start_line: coordinates.start_line,
+            start_column: coordinates.start_column,
+            end_line: coordinates.end_line,
+            end_column: coordinates.end_column,
+            bindings: binding_name_strings(&declarator.name),
+            original_source,
+            pretty_source,
+        })
+    }
+
     /// Coordinates only, without copying or pretty-printing the source item.
     pub fn statement_coordinates(&self, index: usize) -> Result<StatementCoordinates> {
         let item = self
@@ -271,6 +342,7 @@ impl PreparedSource {
 
         Ok(StatementRow {
             index,
+            declarator_index: None,
             byte_start: coordinates.byte_start,
             byte_end: coordinates.byte_end,
             start_line: coordinates.start_line,
@@ -354,6 +426,10 @@ impl FromStr for StatementRange {
 pub struct StatementRow {
     /// Zero-based index in the parsed source module's `Module.body` array.
     pub index: usize,
+    /// Zero-based declarator index when this row selects one fragment of a
+    /// variable declaration; absent when the row represents a whole item.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub declarator_index: Option<usize>,
     /// Half-open UTF-8 byte span in the original source file.
     pub byte_start: usize,
     pub byte_end: usize,
@@ -403,6 +479,35 @@ fn top_level_binding_names(item: &ModuleItem) -> Vec<String> {
             })
             .collect(),
         _ => Vec::new(),
+    }
+}
+
+fn top_level_var_decl(item: &ModuleItem) -> Option<(&VarDecl, bool)> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => Some((var, false)),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+            decl: Decl::Var(var),
+            ..
+        })) => Some((var, true)),
+        _ => None,
+    }
+}
+
+fn single_declarator_item(var: &VarDecl, declarator: &VarDeclarator, exported: bool) -> ModuleItem {
+    let declaration = Decl::Var(Box::new(VarDecl {
+        span: declarator.span,
+        ctxt: var.ctxt,
+        kind: var.kind,
+        declare: var.declare,
+        decls: vec![declarator.clone()],
+    }));
+    if exported {
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+            span: declarator.span,
+            decl: declaration,
+        }))
+    } else {
+        ModuleItem::Stmt(Stmt::Decl(declaration))
     }
 }
 
