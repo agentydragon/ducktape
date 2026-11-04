@@ -86,6 +86,7 @@ import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus, type Event } fr
 import { CommandSchema } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
 import {
+  AttachedSchema,
   Harness,
   HarnessState,
   LaunchOutcome,
@@ -3611,6 +3612,8 @@ function projectQueuedSession(): void {
   const sessionId = queuedOpenSessionId;
   const source = THREADS[0];
   if (!source) throw new Error("No Session fixture to copy");
+  const sourceAttached = source.summary.attached;
+  if (!sourceAttached) throw new Error("Queued Session source has no attachment");
   const projected = threadView(
     {
       ...source.metadata,
@@ -3625,7 +3628,7 @@ function projectQueuedSession(): void {
       lastEventAt: timestampFromDate(new Date(ago(0))),
       feedStatus: FeedStatus.ACTIVE,
       attached: {
-        ...source.summary.attached,
+        ...create(AttachedSchema, sourceAttached),
         sessionId,
         lastCursor: 0n,
         harnessState: HarnessState.STOPPED,
