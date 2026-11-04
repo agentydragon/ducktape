@@ -90,6 +90,17 @@ py_library(
 )
 
 py_library(
+    name = "async_database",
+    srcs = ["async_database.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":config",
+        "//util:db_url",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "examples",
     srcs = ["examples.py"],
     visibility = ["//props:__subpackages__"],

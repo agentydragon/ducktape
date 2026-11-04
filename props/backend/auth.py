@@ -158,6 +158,27 @@ def validate_postgres_credentials(username: str, password: str, db_config: Datab
     return agent_run_id
 
 
+async def validate_postgres_credentials_async(username: str, password: str, db_config: DatabaseConfig) -> UUID | None:
+    """Validate caller credentials without blocking an async request handler."""
+    agent_run_id = extract_agent_run_id_from_username(username)
+
+    try:
+        async with await psycopg.AsyncConnection.connect(
+            host=db_config.host,
+            port=db_config.port,
+            dbname=db_config.database,
+            user=username,
+            password=password,
+            connect_timeout=5,
+        ):
+            pass
+    except psycopg.OperationalError as e:
+        logger.warning(f"Postgres auth failed for user {username}: {e}")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    return agent_run_id
+
+
 def parse_credentials(authorization: str | None) -> tuple[str, str] | None:
     """Parse Bearer or Basic token containing base64-encoded username:password.
 

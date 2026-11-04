@@ -18,9 +18,9 @@ from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 
 from props.config import LLMProxyConfig, load_proxy_config_from_env
+from props.db.async_database import AsyncDatabase
 from props.db.config import DatabaseConfig
 from props.llm_proxy import routes
-from props.llm_proxy.database import ProxyDatabase
 from util.logging import LogLevel, configure_logging
 
 configure_logging(
@@ -29,7 +29,7 @@ configure_logging(
 logger = logging.getLogger(__name__)
 
 
-def create_app(*, db: ProxyDatabase | None = None, config: LLMProxyConfig | None = None) -> FastAPI:
+def create_app(*, db: AsyncDatabase | None = None, config: LLMProxyConfig | None = None) -> FastAPI:
     """Build the LLM proxy app.
 
     `db`/`config` are injected in tests; in production they are loaded from the
@@ -40,7 +40,7 @@ def create_app(*, db: ProxyDatabase | None = None, config: LLMProxyConfig | None
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with AsyncExitStack() as stack:
             if db is None:
-                admin_db = await stack.enter_async_context(ProxyDatabase(DatabaseConfig()))
+                admin_db = await stack.enter_async_context(AsyncDatabase(DatabaseConfig()))
                 await admin_db.verify()
             else:
                 admin_db = db
