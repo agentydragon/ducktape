@@ -156,7 +156,7 @@ func (b *delegatedBackend) OpenSession(ctx context.Context, request *dispatcherp
 	}
 	b.gotOpen = proto.Clone(request).(*dispatcherpb.OpenSessionRequest)
 	return &dispatcherpb.OpenSessionResponse{Opening: &dispatcherpb.SessionOpening{
-		SessionId: request.GetSessionId(), Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: request.GetSpec().GetPlacement().GetEnvironmentHosted()}},
+		SessionId: request.GetSessionId(), Placement: request.GetSpec().GetPlacement(),
 		State: dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
 	}}, nil
 }
@@ -612,19 +612,21 @@ func TestOpenForwardsRecordedCallerAndReturnsTypedOpening(t *testing.T) {
 	}
 	var result struct {
 		Opening struct {
-			SessionID         string `json:"session_id"`
-			EnvironmentHosted struct {
-				Environment struct {
-					UID string `json:"uid"`
-				} `json:"environment"`
-			} `json:"environment_hosted"`
+			SessionID string `json:"session_id"`
+			Placement struct {
+				EnvironmentHosted struct {
+					Environment struct {
+						UID string `json:"uid"`
+					} `json:"environment"`
+				} `json:"environment_hosted"`
+			} `json:"placement"`
 			State string `json:"state"`
 		} `json:"opening"`
 	}
 	if err := json.Unmarshal(outcome.Result, &result); err != nil {
 		t.Fatal(err)
 	}
-	if result.Opening.SessionID != testSessionID || result.Opening.EnvironmentHosted.Environment.UID != "sandbox-uid-1" || result.Opening.State != "DELIVERY_STATE_QUEUED_IN_DISPATCHER" {
+	if result.Opening.SessionID != testSessionID || result.Opening.Placement.EnvironmentHosted.Environment.UID != "sandbox-uid-1" || result.Opening.State != "DELIVERY_STATE_QUEUED_IN_DISPATCHER" {
 		t.Fatalf("opening result = %+v", result.Opening)
 	}
 }

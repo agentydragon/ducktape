@@ -93,6 +93,7 @@ import {
   HarnessState,
   LaunchOutcome,
   ProcessState,
+  SessionPlacementSchema,
   SessionSpecSchema,
   SessionExecutionState,
   SetupState,
@@ -3709,14 +3710,14 @@ const visualHarness = {
       name: target.name,
       uid: target.uid,
     });
-    spec.placement = {
+    spec.placement = create(SessionPlacementSchema, {
       kind: {
         case: "centralSamplerV1",
         value: create(CentralSamplerV1PlacementSchema, {
           executorEnvironment: { name: target.name, uid: target.uid },
         }),
       },
-    };
+    });
     spec.model = "harness-codex-model";
   },
   mountDisclosure(props: Parameters<typeof DisclosureVisual>[0]): void {
