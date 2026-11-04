@@ -425,7 +425,7 @@ pub fn build_dependency_graph_with(
         }
     }
     for stmt in facts {
-        for producer in &stmt.stable_array_spread_producers {
+        for producer in &stmt.stable_iterable_producers {
             let consumer = SourceUnitId(stmt.ordinal.0);
             let producer = SourceUnitId(producer.0);
             let binding = facts[producer.0]

@@ -49,6 +49,19 @@ impl EffectCoverageFragment {
         }
     }
 
+    /// Actual ordinary native iteration over a proved primitive source.
+    /// Its protocol/contents reads and fresh internal allocation are modeled;
+    /// it runs no application callback, accessor, host operation or exterior
+    /// write. This is body coverage, not completion of operand evaluation.
+    pub(super) fn native_iterable_protocol(dependencies: &ProofDependencies) -> Self {
+        Self {
+            global_properties: DomainCoverage::Covered(dependencies.clone()),
+            general_heap: DomainCoverage::Covered(dependencies.clone()),
+            host_effects: DomainCoverage::Covered(dependencies.clone()),
+            completion: Completion::Normal,
+        }
+    }
+
     pub(super) fn compose(&mut self, next: &Self) {
         self.global_properties.compose(&next.global_properties);
         self.general_heap.compose(&next.general_heap);

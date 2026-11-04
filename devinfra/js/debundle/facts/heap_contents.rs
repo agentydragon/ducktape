@@ -92,6 +92,22 @@ pub(crate) fn annotate_heap_contents(
                     [declarator] if matches!(declarator.name, Pat::Ident(_)) => {
                         match declarator.init.as_deref()?.unwrap_parens() {
                             Expr::Array(array) => Some(EffectCell::ArrayContents(array.span.lo.0)),
+                            Expr::New(construction) => {
+                                let cell = EffectCell::SetContents(construction.span.lo.0);
+                                // A direct eager source occurrence whose exact
+                                // construction is proved fresh. Reuse the same
+                                // one-shot producer as arrays; repeated or
+                                // deferred site exclusion remains downstream.
+                                (value_flow
+                                    .native_set_allocations()
+                                    .contains_key(&construction.span.lo.0)
+                                    && proofs
+                                        .set_iterable
+                                        .dependencies_for_constructor(construction.span)
+                                        .is_some()
+                                    && collector.eager.allocations.contains(&cell))
+                                .then_some(cell)
+                            }
                             _ => None,
                         }
                     }
@@ -523,8 +539,43 @@ impl Visit for ArrayContentCollector<'_> {
             self.record_allocation(EffectCell::SetContents(node.span.lo.0));
         }
         if certified_set {
-            // The exact author premise covers the constructor and the dense
-            // primitive array's iterator/next protocol at this site.
+            // The same static proof that seeded this allocation covers its
+            // constructor and iterable protocol. Preserve the proof's actual
+            // provenance; an inferred operation is not an authored input.
+            if let Some(dependencies) = self
+                .set_iterable_proof
+                .dependencies_for_constructor(node.span)
+            {
+                self.heap_native_integrity_uses.insert(
+                    crate::reports::schema::NativeIntegrityUse {
+                        guard: crate::reports::schema::NativeIntegrityGuard::SetIterable,
+                        value_input_refs: dependencies.value_inputs.clone(),
+                        no_accessor_install_refs: dependencies
+                            .no_accessor_install_callables
+                            .clone(),
+                        program_premises: dependencies.program_premises.clone(),
+                    },
+                );
+            }
+            if let Some(evidence) = self
+                .set_iterable_proof
+                .author_input_for_constructor(node.span)
+            {
+                self.native_read_inputs.insert(
+                    node.span.lo.0,
+                    crate::reports::schema::NativeOperationInputUse {
+                        evidence: evidence.clone(),
+                        source_location: None,
+                        span: node.span,
+                    },
+                );
+            } else if let Some(inference) = self
+                .set_iterable_proof
+                .inference_use_for_constructor(node.span)
+            {
+                self.native_read_inferences
+                    .insert(node.span.lo.0, inference.clone());
+            }
         } else if let Some(dependencies) = self
             .local_class_heap_proof
             .dependencies_for_construction(node.span)
@@ -588,6 +639,14 @@ impl Visit for ArrayContentCollector<'_> {
 
     fn visit_expr_or_spread(&mut self, node: &ExprOrSpread) {
         if let Some(token) = node.spread {
+            // Array spread can consume Set contents too. Keep this read in
+            // the static/Omit projection, using the same protected proof as
+            // runtime iteration to omit only its opaque protocol barrier.
+            let certified_set = self
+                .set_iterable_proof
+                .stable_spread_dependencies(token)
+                .is_some();
+            self.record_set_expr(&node.expr, true, false, !certified_set);
             // A certified primitive-array source reads its exact allocation
             // contents. Unsupported iterables retain the opaque heap barrier.
             let certified = self

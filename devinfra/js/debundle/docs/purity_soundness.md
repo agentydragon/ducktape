@@ -437,6 +437,56 @@ barrier and legacy at-init fallback consume the validated exact-site fact.
 Purity records the input dependency. Without an assertion the shared census may
 prove construction timing, while syntactic purity stays conservative.
 
+The engine also infers this narrow constructor family without authored inputs.
+Preparation uses the completed conservative all-source native-write census and
+the existing A11 / validated `intrinsics_never_written` contract, independently
+of the later refined census. It proves every required protocol slot before the
+single structural flow solve. Open/default integrity, an opaque write without
+an applicable premise, or source identity alone cannot supply this proof. An
+inferred protected spread requires unique unreassigned simple bindings in one
+original declaration; every declarator from the earlier fresh primitive-array
+Set through the consumer must itself be a proved primitive Set construction.
+The original parent span, exact source binding, and interval become canonical
+graph co-location constraints used by emission and graph-backed edits. Authored
+input validation remains independent, including its existing exact-site guards.
+
+Purity, heap-contents classification and staged analysis consume the same
+span-keyed static proof, including when synchronous execution is omitted for
+vendor pruning. They still classify evaluated operands and retain contents
+reads; they do not infer completion from a source certificate. Ordered execution
+uses a shared native iterable operation for both Array spread and Set's Iterate
+coercion. It admits exact settled dense array slots or finite primitive-only
+yields with unknown cardinality/order. The latter has no exact slots or length
+and cannot authorize ordinary own-property projection. A Set operand additionally
+requires its exact protected source origin and full Set iterator/next protocol
+proof; Set kind alone proves none of these facts. Prefix mutation, escape,
+accessor, reentry and taint guards remain required.
+
+After successful admission, the exact native Fresh Set row can retain a Set
+allocation kind/origin on its normal branch. This does not model Set contents,
+deduplication, size, own properties or allocation multiplicity. The common
+operation returns an `EffectCoverageFragment` for its modeled body; the existing
+Outcome channels preserve operand order, effects and abrupt completion, and only
+the owner executor can seal terminal initialization coverage. No certificate
+or receipt clears taint or substitutes for that terminal proof.
+
+The shared receipt retains its internal ArrayContents/SetContents reads and Set
+allocation. Its external heap projection distinguishes a borrowed/aliased operand
+from the exact canonical immediate argument-array literal. After validating the
+actual source origin and full protocol, only that immediate private array's read
+is internal to this construction: it cannot observe an earlier caller heap.
+Borrowed reads, spread-source Set reads and all Set allocations remain external.
+This is an operation-local input projection, not a claim that a pooled source
+origin is unique or that a constructor ran only once.
+
+Set spread retains its real SetContents read in both static and runtime heap
+summaries. The existing one-shot eager-allocation producer also accepts a direct
+simple declaration's whole `new Set` initializer when its exact proved native
+root, constructor premise and collected SetContents allocation agree. The
+existing frontier logic can then distinguish an earlier opaque heap from this
+later source occurrence. Duplicate and deferred sites remain excluded by the
+same consumer; callables, loops and indirect factory results gain no such fact.
+
 For `set_from_primitive_array`, the selected initializer is one direct
 unshadowed `new Set([primitive literals])` with a dense, nonspread array.
 The premise covers the original global Set constructor, Set adder, Array

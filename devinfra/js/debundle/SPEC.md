@@ -2170,6 +2170,37 @@ arguments with their effects and throws; the input grants no family-wide
 integrity, purity, return shape or guarantee at another site, and A11 remains
 the external obligation for code outside the analyzed program.
 
+Without an authored input, the engine can infer primitive Set construction from
+the completed conservative native-write census under A11 and any validated
+`intrinsics_never_written` premise. A protected `new Set([...seed, primitives])`
+also requires an earlier fresh primitive-array Set in the same original
+declaration, unique stable simple bindings, and independently proved primitive
+Set constructors for every intervening declarator. It requires all five protocol
+slots listed above, including `%SetIteratorPrototype%`; source shape and native
+constructor identity alone do not suffice. This proof is completed before the
+single structural value-flow solve, retains inference/premise provenance rather
+than an authored input reference, and adds an atomic placement constraint for
+the entire source interval to all graph-backed edits and emission.
+
+Spread and construction execute one shared native iterable operation. Its result
+distinguishes exact array slots from finite primitive-only yields of unknown
+cardinality and order. A successful native Set construction retains only its
+fresh Set allocation kind and source origin. Neither result establishes Set
+entries, size, properties, uniqueness, or exact array indexes/length. Runtime
+admission still checks the evaluated operand, source identity, prefix mutation
+and escape state, and protocol proof. The operation receipt covers its modeled
+body only; operand effects, abrupt completion and terminal initialization
+coverage remain separate.
+
+The newly inferred protected Set spread admits only the canonical identifier
+operand naming its earlier checked constructor. It cannot infer this contract
+for a Call, New, getter/member read or arbitrary computed spread source. Generic
+ArraySpread still uses the existing flattened operand/value projection boundary:
+those projections are separate runtime requests, with no cached operand reuse
+or proof of a single abstract evaluation. Unsupported effectful sources retain
+conservative fallback; preserving one observable Node invocation does not prove
+the interpreter projected that source only once.
+
 `text_encoder_empty` asserts the original standard constructor through an ordinary
 global data binding at this exact site. The checked shape excludes aliases,
 subclasses, qualified/global-property callees, arguments, spreads, shadowing,

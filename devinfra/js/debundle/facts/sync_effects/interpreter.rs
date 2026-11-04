@@ -17,7 +17,10 @@ use super::super::value_model::{
     MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr, Values,
 };
 use super::runtime_callbacks::{CallbackOperation, CallbackResult};
-use super::runtime_heap::{HeapOperation, HeapResult};
+use super::runtime_heap::{
+    HeapOperation, HeapResult, NativeIterableInput, NativeIterableReceipt, NativeIterableUse,
+    NativeIterableYields,
+};
 use super::runtime_inference::{
     CallOperands, CallTransfer, ProgramPoint, RuntimeOperation, RuntimeQueries, RuntimeValue,
 };
@@ -432,6 +435,7 @@ struct CallbackPoolObservation {
     reachability_revision: u64,
     prefix_object_properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
     dense_arrays: OrdMap<u32, DenseArray>,
+    primitive_arrays: OrdMap<u32, ProofDependencies>,
     accumulated_values: OrdMap<u32, Values>,
     applied_accessors: OrdMap<u32, BTreeMap<String, AppliedAccessor>>,
     class_superclasses: OrdMap<u32, Values>,
@@ -457,6 +461,7 @@ impl PartialEq for CallbackPoolObservation {
                 &other.prefix_object_properties,
             )
             && same(&self.dense_arrays, &other.dense_arrays)
+            && same(&self.primitive_arrays, &other.primitive_arrays)
             && same(&self.accumulated_values, &other.accumulated_values)
             && same(&self.applied_accessors, &other.applied_accessors)
             && same(&self.class_superclasses, &other.class_superclasses)
@@ -529,6 +534,7 @@ struct OwnDescriptorMapState {
 pub(super) struct NativeCallResolution {
     row: &'static Row,
     own_property_projection: Option<OwnPropertyProof>,
+    iterable: Option<NativeIterableReceipt>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -793,6 +799,7 @@ pub(super) struct ExecutionState {
     own_descriptor_maps: OrdMap<CallSite, OwnDescriptorMapState>,
     applied_accessors: OrdMap<u32, BTreeMap<String, AppliedAccessor>>,
     dense_arrays: OrdMap<u32, DenseArray>,
+    primitive_arrays: OrdMap<u32, ProofDependencies>,
     /// `reduce` results by call site allocation id.
     accumulated_values: OrdMap<u32, Values>,
     ordinary_spread_copies: BTreeSet<u32>,
@@ -1060,7 +1067,9 @@ impl ExecutionState {
     /// Skipped local code can change descriptors or prototypes even when no
     /// escape to foreign code was observed. Neither set permits prefix reads.
     fn object_properties_are_settled(&self, object: &u32) -> bool {
-        self.object_accessors_are_settled(object) && !self.unknown_array_contents.contains(object)
+        self.object_accessors_are_settled(object)
+            && !self.unknown_array_contents.contains(object)
+            && !self.primitive_arrays.contains_key(object)
     }
 
     fn object_accessors_are_settled(&self, object: &u32) -> bool {
@@ -2436,8 +2445,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if !row.arity.contains(&args.len()) || !row.invokes.is_empty() {
             return None;
         }
-        let set_primitive_array_iteration =
-            self.admit_set_primitive_array_iteration(row, kind, callee, site, expressions, args);
+        let iterable = self.admit_set_iteration(row, kind, callee, site, expressions, args);
         let native_call = match &source {
             NativeIdentitySource::Inferred { premise } => Some(premise.as_ref().clone()),
             NativeIdentitySource::AuthorInput { .. } => None,
@@ -2523,7 +2531,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             let ArgSel::Arg(index) = selector else {
                 return None;
             };
-            if set_primitive_array_iteration && index == 0 && operation == CoerceOp::Iterate {
+            if iterable.is_some() && index == 0 && operation == CoerceOp::Iterate {
                 continue;
             }
             if ordinary_operands.contains(&index) {
@@ -2560,25 +2568,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         Some(NativeCallResolution {
             row,
             own_property_projection,
+            iterable,
         })
     }
 
-    /// The indexed SetIterableProof discharges the one Set constructor
-    /// iteration step only for a direct dense primitive array at this
-    /// exact New site. ResolveNative runs in a child executor whose RuntimeKey
-    /// identifies only owner/path; this request payload carries the site,
-    /// source expression and evaluated operand. Admission must use those
-    /// request fields plus the indexed proof, never the parent's root-only
-    /// initializer candidate.
-    fn admit_set_primitive_array_iteration(
-        &self,
+    /// Preserve the exact native row contract; the shared iterable operation
+    /// owns protocol/content admission for both spread and construction.
+    fn admit_set_iteration(
+        &mut self,
         row: &'static Row,
         kind: CallKind,
         callee: &ValueExpr,
         site: CallSite,
         expressions: &[ValueExpr],
         arguments: &[Values],
-    ) -> bool {
+    ) -> Option<NativeIterableReceipt> {
         if kind != CallKind::New
             || row.op != IntrinsicOp::Set
             || row.invocation != [Invocation::Construct]
@@ -2590,76 +2594,154 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || row.throws != Throws::Never
             || !matches!(callee, ValueExpr::Binding(binding) if binding.0.as_ref() == "Set")
         {
-            return false;
+            return None;
         }
-        let [ValueExpr::ObjectLiteral(array, elements)] = expressions else {
-            return false;
+        let [expression] = expressions else {
+            return None;
         };
-        if self.inputs.index.dense_array_literals.get(array) != Some(&elements.len())
-            || elements.iter().any(|(name, _)| name.is_some())
-        {
-            return false;
-        }
         let [values] = arguments else {
-            return false;
+            return None;
         };
-        let source_span = site.source_span();
-        let transfer = self.dense_array_iteration_transfer(values, || {
-            self.inputs
-                .set_iterable_proof
-                .dependencies_for_constructor(source_span)
-                .is_some()
-        });
-        let DenseArrayIterationTransfer::Yielded { source, slots } = transfer else {
-            return false;
+        let input = match expression {
+            ValueExpr::ObjectLiteral(array, _)
+                if self.inputs.index.array_elements.contains_key(array) =>
+            {
+                NativeIterableInput::ImmediateArrayLiteral(*array)
+            }
+            _ => NativeIterableInput::Borrowed,
         };
-        if source != *array
-            || !slots.iter().all(|slot| {
-                !slot.is_empty()
-                    && slot.iter().all(|value| {
-                        matches!(value, AbstractValue::Value(Value::Prim(kinds))
-                                if [PrimKinds::STRING, PrimKinds::NUMBER, PrimKinds::BOOLEAN,
-                                    PrimKinds::NULL, PrimKinds::BIGINT]
-                                    .contains(kinds))
-                    })
-            })
-        {
-            return false;
-        }
+        self.native_iterable(NativeIterableUse::SetConstruction { site, input }, values)
+    }
 
-        let Some(dependencies) = self
-            .inputs
-            .set_iterable_proof
-            .dependencies_for_constructor(source_span)
+    fn native_iterable(
+        &mut self,
+        operation: NativeIterableUse,
+        operand: &Values,
+    ) -> Option<NativeIterableReceipt> {
+        let RuntimeValue::Heap(HeapResult::Iteration(receipt)) =
+            self.request(RuntimeOperation::Heap(HeapOperation::IterateNative {
+                operation,
+                operand: operand.clone(),
+            }))
         else {
-            return false;
+            unreachable!("native iterable requests return their operation receipt");
         };
-        if let Some(evidence) = self
-            .inputs
-            .set_iterable_proof
-            .author_input_for_constructor(source_span)
-            .cloned()
+        *receipt
+    }
+
+    pub(super) fn transfer_native_iterable(
+        &self,
+        operation: NativeIterableUse,
+        operand: &Values,
+    ) -> Option<NativeIterableReceipt> {
+        let [AbstractValue::Value(Value::Alloc(kind, object))] =
+            operand.iter().collect::<Vec<_>>().as_slice()
+        else {
+            return None;
+        };
+        if !self.state.object_accessors_are_settled(object)
+            || self.state.unknown_array_contents.contains(object)
+            || self.state.applied_accessors.contains_key(object)
+            || self.state.tainted_native_sets.contains(object)
         {
-            self.record_proof_dependencies(NativeIntegrityGuard::SetIterable, dependencies);
-            self.state.native_operation_input_uses.borrow_mut().insert(
-                (source_span.lo.0, source_span.hi.0),
-                crate::reports::schema::NativeOperationInputUse {
-                    evidence,
-                    source_location: None,
-                    span: source_span,
-                },
-            );
-            return true;
+            return None;
         }
-        let Some(proof) = self
-            .inputs
-            .set_iterable_proof
-            .inference_use_for_constructor(source_span)
-        else {
-            return false;
+        let proof = self.inputs.set_iterable_proof;
+        let mut dependencies = self.settled_prefix_dependencies();
+        let yields = match operation {
+            NativeIterableUse::ArraySpread(span) if *kind == Kind::Set => {
+                if proof.stable_spread_source(span) != Some(*object) {
+                    return None;
+                }
+                let premise = proof.stable_spread_dependencies(span)?;
+                dependencies.extend(premise);
+                self.record_proof_dependencies(NativeIntegrityGuard::SetIterable, premise);
+                NativeIterableYields::PrimitiveOnly
+            }
+            NativeIterableUse::ArraySpread(span) if *kind == Kind::Object => {
+                if let Some(premise) = proof.stable_array_spread_dependencies(span) {
+                    if proof.stable_array_spread_source(span) != Some(*object) {
+                        return None;
+                    }
+                    dependencies.extend(premise);
+                    let inference = proof.stable_array_spread_inference_use(span)?;
+                    self.record_inference_use(
+                        NativeIntegrityGuard::ArrayIntrinsics,
+                        inference,
+                        premise,
+                    );
+                } else if !self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS) {
+                    return None;
+                }
+                if let Some(slots) = self.settled_dense_array_slots(*object) {
+                    NativeIterableYields::ExactSlots(slots)
+                } else {
+                    let premise = self.state.primitive_arrays.get(object)?;
+                    dependencies.extend(premise);
+                    NativeIterableYields::PrimitiveOnly
+                }
+            }
+            NativeIterableUse::SetConstruction { site, input } if *kind == Kind::Object => {
+                if matches!(input, NativeIterableInput::ImmediateArrayLiteral(origin) if origin != *object)
+                {
+                    return None;
+                }
+                let span = site.source_span();
+                let premise = proof.dependencies_for_constructor(span)?;
+                dependencies.extend(premise);
+                let yields = if let Some(slots) = self.settled_dense_array_slots(*object) {
+                    if !slots.iter().all(|slot| !slot.is_empty() && slot.iter().all(|value| {
+                        matches!(value, AbstractValue::Value(Value::Prim(kinds)) if [PrimKinds::STRING, PrimKinds::NUMBER, PrimKinds::BOOLEAN, PrimKinds::NULL, PrimKinds::BIGINT].contains(kinds))
+                    })) { return None; }
+                    NativeIterableYields::ExactSlots(slots)
+                } else {
+                    let array_dependencies = self.state.primitive_arrays.get(object)?;
+                    dependencies.extend(array_dependencies);
+                    NativeIterableYields::PrimitiveOnly
+                };
+                if let Some(evidence) = proof.author_input_for_constructor(span).cloned() {
+                    self.record_proof_dependencies(NativeIntegrityGuard::SetIterable, premise);
+                    self.state.native_operation_input_uses.borrow_mut().insert(
+                        (span.lo.0, span.hi.0),
+                        crate::reports::schema::NativeOperationInputUse {
+                            evidence,
+                            source_location: None,
+                            span,
+                        },
+                    );
+                } else {
+                    self.record_inference_use(
+                        NativeIntegrityGuard::SetIterable,
+                        proof.inference_use_for_constructor(span)?,
+                        premise,
+                    );
+                }
+                yields
+            }
+            _ => return None,
         };
-        self.record_inference_use(NativeIntegrityGuard::SetIterable, proof, dependencies);
-        true
+        dependencies.extend(&self.settled_prefix_dependencies());
+        let mut heap_contents = crate::facts::HeapContentCells::default();
+        heap_contents.reads.insert(match kind {
+            Kind::Set => crate::facts::EffectCell::SetContents(*object),
+            Kind::Object => crate::facts::EffectCell::ArrayContents(*object),
+            _ => unreachable!("native iterable admission only models Set or Array sources"),
+        });
+        let input = if let NativeIterableUse::SetConstruction { site, input } = operation {
+            heap_contents
+                .allocations
+                .insert(crate::facts::EffectCell::SetContents(site.allocation_id()));
+            input
+        } else {
+            NativeIterableInput::Borrowed
+        };
+        Some(NativeIterableReceipt {
+            source: *object,
+            yields,
+            heap_contents,
+            input,
+            coverage: EffectCoverageFragment::native_iterable_protocol(&dependencies),
+        })
     }
 
     /// Author-asserted timing for two exact operations in the pinned Bun host.
@@ -2759,12 +2841,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let NativeCallResolution {
             row,
             own_property_projection,
+            iterable,
         } = resolution;
         let mut values = match row.returns {
             Return::Unknown => unknown(),
             Return::Prim(kinds) => Values::from([AbstractValue::Value(Value::Prim(kinds))]),
             Return::Arg(ArgSel::Arg(index)) => args.get(index).cloned().unwrap_or_else(unknown),
             Return::Arg(ArgSel::Rest(_)) => unknown(),
+            Return::Fresh if row.allocates == Some(Kind::Set) && iterable.is_some() => {
+                // The common operation modeled construction from primitive
+                // iteration. Preserve only its allocation kind/origin; this
+                // is no Set contents, size, properties or singleton proof.
+                Values::from([AbstractValue::Value(Value::Alloc(
+                    Kind::Set,
+                    site.allocation_id(),
+                ))])
+            }
             Return::Fresh => self.fresh_allocation_values(row, args, site, own_property_projection),
         };
         if may_throw {
@@ -3015,6 +3107,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && self.native_guard_intact(NativeIntegrityGuard::ArrayIntrinsics, slots)
     }
 
+    fn settled_dense_array_slots(&self, object: u32) -> Option<Vec<Values>> {
+        self.state
+            .object_properties_are_settled(&object)
+            .then(|| {
+                self.state
+                    .dense_arrays
+                    .get(&object)
+                    .map(|array| array.slots.clone())
+            })
+            .flatten()
+    }
+
     /// Transfer the ordinary dense-array iterator over the evaluated operand's
     /// prefix heap. The operation adapter supplies its already-defined native
     /// protocol premise (Set's typed certificate or a spread's exact Array
@@ -3032,15 +3136,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Exact singleton matching rejects an Unavailable throw alternative
         // before consulting protocol slots, as the previous dense-source
         // guard did.
-        if !protocol_intact() || !self.state.object_properties_are_settled(object) {
+        if !protocol_intact() {
             return DenseArrayIterationTransfer::Refused;
         }
-        let Some(array) = self.state.dense_arrays.get(object) else {
-            return DenseArrayIterationTransfer::Refused;
-        };
-        DenseArrayIterationTransfer::Yielded {
-            source: *object,
-            slots: array.slots.clone(),
+        match self.settled_dense_array_slots(*object) {
+            Some(slots) => DenseArrayIterationTransfer::Yielded {
+                source: *object,
+                slots,
+            },
+            None => DenseArrayIterationTransfer::Refused,
         }
     }
 
@@ -3111,6 +3215,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let mut slots = Vec::new();
         let mut containment = Values::new();
         let mut dense = true;
+        let mut primitive_only = true;
+        let mut iterable_dependencies = ProofDependencies::default();
         let mut may_throw = false;
         let mut can_complete = true;
         for element in elements {
@@ -3119,6 +3225,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             let Some(element) = element else {
                 dense = false;
+                primitive_only = false;
                 continue;
             };
             let mut values = self.evaluate(&element.value, env, captures);
@@ -3128,17 +3235,33 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 continue;
             }
             containment.extend(values.iter().cloned());
-            if element.spread {
-                match self.dense_array_iteration_transfer(&values, || {
-                    self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS)
-                }) {
-                    DenseArrayIterationTransfer::Yielded {
-                        slots: source_slots,
-                        ..
-                    } => slots.extend(source_slots),
-                    _ => dense = false,
+            if let Some(span) = element.spread {
+                match self.native_iterable(NativeIterableUse::ArraySpread(span), &values) {
+                    Some(receipt) => {
+                        iterable_dependencies.extend(
+                            &receipt
+                                .coverage
+                                .normal_dependencies()
+                                .expect("a yielded native protocol receipt is normal"),
+                        );
+                        match receipt.yields {
+                            NativeIterableYields::ExactSlots(source_slots) => {
+                                primitive_only &= source_slots
+                                    .iter()
+                                    .flatten()
+                                    .all(AbstractValue::is_primitive);
+                                slots.extend(source_slots);
+                            }
+                            NativeIterableYields::PrimitiveOnly => dense = false,
+                        }
+                    }
+                    None => {
+                        dense = false;
+                        primitive_only = false;
+                    }
                 }
             } else {
+                primitive_only &= values.iter().all(AbstractValue::is_primitive);
                 slots.push(values);
             }
         }
@@ -3160,7 +3283,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .extend(containment);
         if dense {
             self.retain_dense_array(object, slots);
+        } else if primitive_only {
+            // One source origin may represent several allocations. Drop exact
+            // slots but retain the reachability properties; qualitative
+            // contents make ordinary property projection refuse this origin.
+            self.state.dense_arrays.remove(&object);
+            self.state
+                .primitive_arrays
+                .insert(object, iterable_dependencies);
+            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
         } else {
+            self.state.primitive_arrays.remove(&object);
             self.state.tainted_objects.insert(object);
         }
         let mut result = Values::from([AbstractValue::Value(Value::Alloc(Kind::Object, object))]);
@@ -4613,7 +4746,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     return self.inputs.index.dense_array_literals.contains_key(key)
                         && elements.iter().all(|element| {
                             element.as_ref().is_some_and(|element| {
-                                !element.spread && self.closed_constructor_input(&element.value)
+                                element.spread.is_none()
+                                    && self.closed_constructor_input(&element.value)
                             })
                         });
                 }
@@ -7400,6 +7534,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             reachability_revision: state.reachability.revision,
             prefix_object_properties: state.prefix_object_properties.clone(),
             dense_arrays: state.dense_arrays.clone(),
+            primitive_arrays: state.primitive_arrays.clone(),
             accumulated_values: state.accumulated_values.clone(),
             applied_accessors: state.applied_accessors.clone(),
             class_superclasses: state.class_superclasses.clone(),
@@ -9797,36 +9932,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         if call.kind == CallKind::ArraySpread {
             let values = self.evaluate(&call.args[0], env, captures);
-            if let Some(dependencies) = self
-                .inputs
-                .set_iterable_proof
-                .stable_spread_dependencies(call.span)
+            if let Some(receipt) =
+                self.native_iterable(NativeIterableUse::ArraySpread(call.span), &values)
             {
-                self.record_proof_dependencies(NativeIntegrityGuard::SetIterable, dependencies);
-                return CallTransfer::EffectsOnly;
-            }
-            if call.caller.is_none()
-                && let Some(proof) = self
-                    .inputs
-                    .set_iterable_proof
-                    .stable_array_spread_inference_use(call.span)
-            {
-                self.record_inference_use(
-                    NativeIntegrityGuard::ArrayIntrinsics,
-                    proof,
-                    self.inputs
-                        .set_iterable_proof
-                        .stable_array_spread_dependencies(call.span)
-                        .expect("array spread certificate retains dependencies"),
-                );
-                return CallTransfer::EffectsOnly;
-            }
-            if matches!(
-                self.dense_array_iteration_transfer(&values, || {
-                    self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS)
-                }),
-                DenseArrayIterationTransfer::Yielded { .. }
-            ) {
+                outcome
+                    .effects
+                    .heap_contents
+                    .extend(&receipt.external_heap_contents());
+                outcome.effect_coverage.compose(&receipt.coverage);
                 return CallTransfer::EffectsOnly;
             }
             outcome.unsupported(ExecutionOperation::ArraySpread, call.owner, call.span);
@@ -9870,50 +9983,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // effects in such returned functions remain visible.
             self.promote_deferred_callbacks(&possible_values, outcome);
             self.invoke_possible_callbacks(&[possible_values], false, outcome);
-            return CallTransfer::EffectsOnly;
-        }
-        // Only a fresh primitive literal or a checked const alias to one is
-        // safe to omit from callback effects. A pure object/function element
-        // can be retained by the Set and invoked by a later opaque consumer.
-        if call.kind == CallKind::New
-            && call.caller.is_none()
-            && let Some(evidence) = self
-                .inputs
-                .set_iterable_proof
-                .author_input_for_constructor(call.span)
-                .cloned()
-        {
-            let dependencies = self
-                .inputs
-                .set_iterable_proof
-                .dependencies_for_constructor(call.span)
-                .expect("author Set input retains its typed dependency");
-            self.record_proof_dependencies(NativeIntegrityGuard::SetIterable, dependencies);
-            self.state.native_operation_input_uses.borrow_mut().insert(
-                (call.span.lo.0, call.span.hi.0),
-                crate::reports::schema::NativeOperationInputUse {
-                    evidence,
-                    source_location: None,
-                    span: call.span,
-                },
-            );
-            return CallTransfer::EffectsOnly;
-        }
-        if call.kind == CallKind::New
-            && call.caller.is_none()
-            && let Some(proof) = self
-                .inputs
-                .set_iterable_proof
-                .inference_use_for_constructor(call.span)
-        {
-            self.record_inference_use(
-                NativeIntegrityGuard::SetIterable,
-                proof,
-                self.inputs
-                    .set_iterable_proof
-                    .dependencies_for_constructor(call.span)
-                    .expect("a set certificate retains its typed dependencies"),
-            );
             return CallTransfer::EffectsOnly;
         }
         let (targets, mut args, prepared_receiver) = match operands {
@@ -10019,6 +10088,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 &args,
             )
         {
+            if let Some(receipt) = &resolution.iterable {
+                outcome
+                    .effects
+                    .heap_contents
+                    .extend(&receipt.external_heap_contents());
+                outcome.effect_coverage.compose(&receipt.coverage);
+            }
             if resolution
                 .row
                 .mutates
@@ -10904,6 +10980,8 @@ pub(crate) fn prepare_synchronous_call_index_with_source_facts(
         facts,
         author_set_inputs,
         &hints.stable_set_spreads,
+        &hints.inferred_set_constructions,
+        &hints.assumptions.native_operation_inputs,
         stable_array_spread_shapes.clone(),
     );
     index.local_constructors.retain(|key, constructor| {
@@ -11456,6 +11534,7 @@ pub(crate) fn annotate_synchronous_calls(
         own_descriptor_maps: OrdMap::new(),
         applied_accessors: OrdMap::new(),
         dense_arrays: OrdMap::new(),
+        primitive_arrays: OrdMap::new(),
         accumulated_values: OrdMap::new(),
         ordinary_spread_copies: BTreeSet::new(),
         descriptor_copy_results: BTreeSet::new(),

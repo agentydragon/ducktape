@@ -17,6 +17,7 @@ pub(crate) struct StableArraySpreadShape {
 pub(crate) struct StableArraySpreadShapes {
     pub(crate) by_initializer: BTreeMap<u32, StableArraySpreadShape>,
     pub(crate) by_site: BTreeMap<u32, u32>,
+    pub(crate) source_origins: BTreeMap<u32, u32>,
 }
 
 impl StableArraySpreadShapes {
@@ -41,7 +42,7 @@ impl StableArraySpreadShapes {
             if var.kind != VarDeclKind::Const || var.decls.len() < 2 {
                 continue;
             }
-            let mut previous = BTreeMap::<Id, SourceUnitOrdinal>::new();
+            let mut previous = BTreeMap::<Id, (SourceUnitOrdinal, u32)>::new();
             for decl in &var.decls {
                 let Pat::Ident(binding) = &decl.name else {
                     break;
@@ -53,29 +54,33 @@ impl StableArraySpreadShapes {
                     break;
                 };
                 if primitive_array_literal(array) {
-                    previous.insert(binding.id.to_id(), ordinal);
+                    previous.insert(binding.id.to_id(), (ordinal, array.span.lo.0));
                     continue;
                 }
                 let mut producers = BTreeSet::new();
                 let mut tokens = BTreeSet::new();
+                let mut source_origins = BTreeMap::new();
                 let valid = array.elems.iter().all(|element| {
                     let Some(element) = element else { return false };
                     if let Some(token) = element.spread {
                         let Expr::Ident(source) = element.expr.unwrap_parens() else {
                             return false;
                         };
-                        let Some(&producer) = previous.get(&source.to_id()) else {
+                        let Some(&(producer, origin)) = previous.get(&source.to_id()) else {
                             return false;
                         };
                         producers.insert(producer);
                         tokens.insert(token.lo.0);
                         tokens.insert(element.expr.span().lo.0);
+                        source_origins.insert(token.lo.0, origin);
+                        source_origins.insert(element.expr.span().lo.0, origin);
                         true
                     } else {
                         primitive_literal(&element.expr)
                     }
                 });
                 if valid && !tokens.is_empty() {
+                    shapes.source_origins.extend(source_origins);
                     let initializer = array.span.lo.0;
                     for token in &tokens {
                         shapes.by_site.insert(*token, initializer);

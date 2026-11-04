@@ -1117,8 +1117,8 @@ pub struct SourceUnitReport {
     /// call families; rejected unsupported guards are reported explicitly.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub callback_factory_barriers: Vec<CallbackFactoryBarrierReport>,
-    /// Author-conditioned native premises used by a certified local-class
-    /// heap construction in this source unit. Empty uses stay omitted.
+    /// Native premises used by proved heap construction in this source unit.
+    /// Empty uses stay omitted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub heap_native_integrity_uses: Vec<NativeIntegrityUse>,
     /// Reasons retained by synchronous inference, rather than reconstructed from purity.

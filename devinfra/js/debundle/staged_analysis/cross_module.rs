@@ -189,6 +189,8 @@ pub struct CrossModulePurities {
     pub native_operation_inputs: BTreeMap<String, Vec<ResolvedNativeOperationInput>>,
     pub stable_set_spreads:
         BTreeMap<String, BTreeMap<u32, analysis::analysis_inputs::StableSetIterableUse>>,
+    pub inferred_set_constructions:
+        BTreeMap<String, BTreeMap<u32, analysis::analysis_inputs::InferredSetConstruction>>,
     pub argument_inputs: BTreeMap<String, Vec<ResolvedArgumentInput>>,
     /// Source-resolved commuting source-unit pairs, keyed by their chunk.
     pub inline_callback_factories: BTreeMap<String, BTreeSet<String>>,
@@ -725,6 +727,7 @@ pub fn collect_cross_module_imported_purities(
         value_inputs: callable_summaries.value_inputs,
         native_operation_inputs: callable_summaries.native_operation_inputs,
         stable_set_spreads: callable_summaries.stable_set_spreads,
+        inferred_set_constructions: callable_summaries.inferred_set_constructions,
         argument_inputs: callable_summaries.argument_inputs,
         inline_callback_factories: resolve_asserted_inline_callback_factories(
             &modules,

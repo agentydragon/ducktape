@@ -232,7 +232,7 @@ where
 pub fn complete_chunk_structural(
     source: StructuralChunkSourceFacts<'_>,
 ) -> StructuralChunkAnalysis<'_> {
-    complete_chunk_structural_with_inputs(source, &[], &BTreeMap::new(), &[])
+    complete_chunk_structural_with_inputs(source, &[], &BTreeMap::new(), &BTreeMap::new(), &[])
 }
 
 pub fn complete_chunk_structural_with_native_allocations<'a>(
@@ -240,14 +240,26 @@ pub fn complete_chunk_structural_with_native_allocations<'a>(
     native_operation_inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
     stable_spreads: &BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>,
 ) -> StructuralChunkAnalysis<'a> {
-    complete_chunk_structural_with_inputs(source, native_operation_inputs, stable_spreads, &[])
+    complete_chunk_structural_with_inputs(
+        source,
+        native_operation_inputs,
+        stable_spreads,
+        &BTreeMap::new(),
+        &[],
+    )
 }
 
 pub fn complete_chunk_structural_with_argument_inputs<'a>(
     source: StructuralChunkSourceFacts<'a>,
     argument_inputs: &[crate::analysis_inputs::ResolvedArgumentInput],
 ) -> StructuralChunkAnalysis<'a> {
-    complete_chunk_structural_with_inputs(source, &[], &BTreeMap::new(), argument_inputs)
+    complete_chunk_structural_with_inputs(
+        source,
+        &[],
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        argument_inputs,
+    )
 }
 
 /// The canonical value flow `complete_chunk_structural_with_inputs` solves for
@@ -256,13 +268,18 @@ pub(crate) fn structural_value_flow(
     body: &[TopLevelItemView<'_>],
     native_operation_inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
     stable_spreads: &BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>,
+    inferred_set_constructions: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
 ) -> ChunkValueFlow {
     let mut candidate_roots = super::abstract_domain::heap::tracked_allocation_roots(body);
     candidate_roots.extend(super::heap_contents::array_candidate_roots(body));
     ChunkValueFlow::analyze_with_native_set_allocations(
         body,
         &candidate_roots,
-        &super::value_flow::native_set_allocation_roots(native_operation_inputs, stable_spreads),
+        &super::value_flow::native_set_allocation_roots(
+            native_operation_inputs,
+            stable_spreads,
+            inferred_set_constructions,
+        ),
     )
 }
 
@@ -273,9 +290,15 @@ pub fn complete_chunk_structural_with_inputs<'a>(
     source: StructuralChunkSourceFacts<'a>,
     native_operation_inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
     stable_spreads: &BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>,
+    inferred_set_constructions: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
     argument_inputs: &[crate::analysis_inputs::ResolvedArgumentInput],
 ) -> StructuralChunkAnalysis<'a> {
-    let value_flow = structural_value_flow(&source.body, native_operation_inputs, stable_spreads);
+    let value_flow = structural_value_flow(
+        &source.body,
+        native_operation_inputs,
+        stable_spreads,
+        inferred_set_constructions,
+    );
     complete_chunk_structural_with_flow(source, argument_inputs, value_flow)
 }
 
@@ -576,8 +599,38 @@ where
         })
         .collect();
     for fact in &mut facts {
-        if let Some(producers) = set_iterable_proof.stable_array_spread_producers(fact.ordinal) {
-            fact.stable_array_spread_producers = producers.clone();
+        if let Some(producers) = set_iterable_proof.stable_iterable_producers(fact.ordinal) {
+            fact.stable_iterable_producers = producers.clone();
+        }
+    }
+    // Protect the same source interval in the canonical graph, so every
+    // placement validator (including staged edit commands) sees this proof's
+    // co-location obligation before emission.
+    let binding_owners: BTreeMap<_, _> = facts
+        .iter()
+        .flat_map(|fact| {
+            fact.declared
+                .iter()
+                .map(move |id| (id.clone(), fact.ordinal))
+        })
+        .collect();
+    for interval in set_iterable_proof.protected_intervals() {
+        let Some(consumer) = interval
+            .last()
+            .and_then(|id| binding_owners.get(id))
+            .copied()
+        else {
+            continue;
+        };
+        for binding in interval {
+            if let Some(producer) = binding_owners
+                .get(binding)
+                .filter(|owner| **owner != consumer)
+            {
+                facts[consumer.0]
+                    .stable_iterable_producers
+                    .insert(*producer);
+            }
         }
     }
     value_flow.augment_calls(&body, &mut facts);
@@ -906,7 +959,7 @@ fn assemble_statement_facts(
 
     StatementFacts {
         ordinal,
-        stable_array_spread_producers: BTreeSet::new(),
+        stable_iterable_producers: BTreeSet::new(),
         source_location,
         callback_factory_barriers: Vec::new(),
         declared,

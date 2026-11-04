@@ -12,9 +12,10 @@ use super::value_model::{
     infer_namespace_aliases, object_data_property_name, static_prop, static_property_name,
 };
 use crate::analysis_inputs::{
-    AnalysisInputs, BundleGlobalNames, HostBehaviorKey, NamespaceWrapperSummary, NativeInputKind,
-    NativeIntegrity, NativeIntrinsic, NativeOperationInputEvidence, NoAccessorInstallRef,
-    ProgramPremiseKey, ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
+    AnalysisInputs, BundleGlobalNames, HostBehaviorKey, InferredSetConstruction,
+    InferredSetOperation, NamespaceWrapperSummary, NativeInputKind, NativeIntegrity,
+    NativeIntrinsic, NativeOperationInputEvidence, NoAccessorInstallRef, ProgramPremiseKey,
+    ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
     ResolvedNoAccessorInstall, SelectedBindingValueInput, SelectedNativeOperationInput,
     ValueInputEvidence, ValueInputRef,
 };
@@ -5807,6 +5808,7 @@ struct ExecutionIndex {
     owner_callable_prefix_reads: Vec<Option<BTreeSet<Id>>>,
     unindexed_accessor_owners: BTreeSet<SourceUnitOrdinal>,
     top_calls: Vec<Vec<Call>>,
+    original_statement_spans: Vec<Span>,
     /// Ordinary CallExpr syntax at lexical top level; optional calls use a
     /// conservative Call record too, but do not satisfy this witness shape.
     ordinary_top_call_sites: BTreeSet<CallSite>,
@@ -5996,6 +5998,7 @@ impl Default for ExecutionIndex {
             owner_callable_prefix_reads: Vec::new(),
             unindexed_accessor_owners: BTreeSet::new(),
             top_calls: Vec::new(),
+            original_statement_spans: Vec::new(),
             ordinary_top_call_sites: BTreeSet::new(),
             bare_constructor_sites: BTreeSet::new(),
             literal_true_second_arguments: BTreeSet::new(),
@@ -6256,7 +6259,7 @@ impl ExecutionIndex {
                 .iter()
                 .map(|element| {
                     let element = element.as_ref()?;
-                    (!element.spread).then(|| element.value.clone())
+                    element.spread.is_none().then(|| element.value.clone())
                 })
                 .collect::<Option<Vec<_>>>()
                 .map_or(LiteralLayout::Unsupported, LiteralLayout::DenseArray);
@@ -6684,6 +6687,155 @@ impl ExecutionIndex {
 
     pub(crate) fn validated_native_operation_inputs(&self) -> Vec<ResolvedNativeOperationInput> {
         self.resolved_native_operation_inputs.clone()
+    }
+
+    fn apply_native_integrity(&mut self, integrity: &NativeIntegrity) {
+        self.mutated_intrinsic_roots = integrity.mutated.clone();
+        self.native_integrity_witnesses = integrity.witnesses.clone();
+        self.native_integrity_value_input_refs = integrity.consumed_value_inputs.clone();
+        self.native_integrity_host_behavior = integrity.consumed_host_behavior.clone();
+        self.never_written = integrity.never_written.clone();
+        self.never_written_overrode = !integrity.never_written_overrides.is_empty();
+        self.integrity = self.integrity_flags();
+    }
+
+    /// Source-only construction proofs. Every protocol premise comes from the
+    /// completed census; this operation must run before its roots seed flow.
+    fn infer_set_constructions(
+        &self,
+        integrity: &IntegrityFlags,
+    ) -> BTreeMap<u32, InferredSetConstruction> {
+        use crate::reports::schema::InferenceRule;
+        use IntrinsicSlot::{ArrayIteratorPrototype, Global, Prototype, SetIteratorPrototype};
+        use NativeIntrinsic::{Array, Set};
+        if !self.dynamic_scope_owners.is_empty() {
+            return BTreeMap::new();
+        }
+        let declarations: BTreeMap<_, _> = self
+            .binding_declaration_writes
+            .iter()
+            .filter_map(|(binding, writes)| {
+                let [write] = writes.as_slice() else {
+                    return None;
+                };
+                (write.direct_top_level
+                    && write.simple_identifier
+                    && !self.reassigned_bindings.contains(binding))
+                .then_some((write.owner, (binding, write)))
+            })
+            .collect();
+        let set_binding = ("Set".into(), swc_common::SyntaxContext::empty());
+        if self.declared_bindings().iter().any(|id| id.0 == "Set")
+            || self.property_key_declarations.contains(&set_binding)
+        {
+            return BTreeMap::new();
+        }
+        let slots = [
+            Global(Set),
+            Prototype(Set),
+            Prototype(Array),
+            ArrayIteratorPrototype,
+        ];
+        let mut proofs: BTreeMap<u32, InferredSetConstruction> = BTreeMap::new();
+        let mut sites_by_binding = BTreeMap::new();
+        for (owner, (binding, declaration)) in &declarations {
+            let Some(ValueExpr::New(callee, _, site)) = &declaration.initializer else {
+                continue;
+            };
+            if !matches!(callee.as_ref(), ValueExpr::Binding(id) if id.0 == "Set") {
+                continue;
+            }
+            let operation = if declaration.set_from_primitive_array_shape {
+                InferredSetOperation::PrimitiveArray
+            } else if let Some((source, source_span, spread_token_span)) =
+                &declaration.set_from_set_spread_source
+            {
+                let Some(seed_site) = sites_by_binding.get(source) else {
+                    continue;
+                };
+                let Some(seed) = proofs.get(seed_site) else {
+                    continue;
+                };
+                if !matches!(seed.operation, InferredSetOperation::PrimitiveArray) {
+                    continue;
+                }
+                let Some((seed_owner, _)) = declarations.iter().find(|(_, (id, _))| *id == source)
+                else {
+                    continue;
+                };
+                if seed_owner >= owner {
+                    continue;
+                }
+                let mut interval_bindings = Vec::new();
+                let mut dependencies = ProofDependencies::default();
+                let mut valid = true;
+                for ordinal in seed_owner.0..owner.0 {
+                    let Some((id, write)) = declarations.get(&SourceUnitOrdinal(ordinal)) else {
+                        valid = false;
+                        break;
+                    };
+                    let Some(proof) = sites_by_binding.get(*id).and_then(|site| proofs.get(site))
+                    else {
+                        valid = false;
+                        break;
+                    };
+                    if !write.set_from_primitive_array_shape
+                        || self.original_statement_spans[ordinal]
+                            != self.original_statement_spans[owner.0]
+                    {
+                        valid = false;
+                        break;
+                    }
+                    interval_bindings.push((*id).clone());
+                    dependencies.extend(&proof.dependencies);
+                }
+                if !valid {
+                    continue;
+                }
+                interval_bindings.push((*binding).clone());
+                InferredSetOperation::ProtectedSpread {
+                    source: source.clone(),
+                    interval: Box::new(crate::analysis_inputs::StableSetIterableUse {
+                        source_span: *source_span,
+                        spread_token_span: *spread_token_span,
+                        interval_bindings,
+                        dependencies,
+                    }),
+                }
+            } else {
+                continue;
+            };
+            let required_slots = match operation {
+                InferredSetOperation::PrimitiveArray => slots.to_vec(),
+                InferredSetOperation::ProtectedSpread { .. } => {
+                    [slots.as_slice(), &[SetIteratorPrototype]].concat()
+                }
+            };
+            let Some(mut premise) = native_premise(
+                integrity,
+                &required_slots,
+                None,
+                InferenceRule::PrimitiveSetIteration,
+            ) else {
+                continue;
+            };
+            let mut operation = operation;
+            if let InferredSetOperation::ProtectedSpread { interval, .. } = &mut operation {
+                premise.dependencies.extend(&interval.dependencies);
+                interval.dependencies = premise.dependencies.clone();
+            }
+            sites_by_binding.insert((*binding).clone(), site.allocation_id());
+            proofs.insert(
+                site.allocation_id(),
+                InferredSetConstruction {
+                    binding: (*binding).clone(),
+                    operation,
+                    dependencies: premise.dependencies,
+                    inference: premise.inference_use,
+                },
+            );
+        }
+        proofs
     }
 
     /// Build one immutable context from the canonical source index and the
@@ -8532,6 +8684,13 @@ impl ExecutionIndex {
             global_guards_requested,
             local_class_construction_shapes: construction_proof.clone(),
             top_calls: vec![Vec::new(); body.len()],
+            original_statement_spans: body
+                .iter()
+                .map(|item| match item {
+                    TopLevelItemView::Borrowed(item) => item.span(),
+                    TopLevelItemView::Owned { provenance, .. } => provenance.parent_item.span(),
+                })
+                .collect(),
             owner_callable_prefix_reads: vec![None; body.len()],
             top_property_writes: vec![Vec::new(); body.len()],
             top_dynamic_property_receivers: vec![Vec::new(); body.len()],
@@ -11061,7 +11220,7 @@ impl Visit for ExecutionIndex {
                 .iter()
                 .map(|element| {
                     element.as_ref().map(|element| ArrayElement {
-                        spread: element.spread.is_some(),
+                        spread: element.spread,
                         value: ValueExpr::from_expr(&element.expr),
                     })
                 })
@@ -12903,6 +13062,55 @@ pub(crate) struct PreparedCallableCapabilities {
 }
 
 impl PreparedCallableCapabilities {
+    /// Called with the conservative completed all-source census before any
+    /// structural flow. A later refined census cannot add roots retroactively.
+    pub(crate) fn inferred_set_constructions(
+        &self,
+        integrity: &NativeIntegrity,
+    ) -> BTreeMap<u32, InferredSetConstruction> {
+        // Keep the early proof independent of the late index flags. A11 gives
+        // original slot identities; only this completed all-source census (or
+        // its validated program premise) may preserve them. Default flags are
+        // open/Unknown and no author exact-site axiom is supplied here.
+        let dependencies = ProofDependencies {
+            value_inputs: integrity.consumed_value_inputs.clone(),
+            host_behavior: integrity.consumed_host_behavior.clone(),
+            no_accessor_install_callables: if integrity
+                .consumed_host_behavior
+                .contains(&HostBehaviorKey::PredefinedGlobals)
+            {
+                self.index
+                    .census_globals
+                    .bundle
+                    .no_accessor_install_callables
+                    .clone()
+            } else {
+                BTreeSet::new()
+            },
+            program_premises: if integrity.never_written_overrides.is_empty() {
+                BTreeSet::new()
+            } else {
+                BTreeSet::from([ProgramPremiseKey::IntrinsicsNeverWritten])
+            },
+            ..ProofDependencies::default()
+        };
+        let flags = IntegrityFlags::new(
+            self.index.dynamic_scope_owners.is_empty(),
+            integrity.mutated.clone(),
+            &integrity.witnesses,
+            dependencies,
+            BTreeMap::new(),
+            PrototypeWrites::new(
+                integrity
+                    .prototype_mutations
+                    .iter()
+                    .map(|write| write.properties.as_ref()),
+            ),
+        )
+        .with_never_written(integrity.never_written.clone());
+        self.index.infer_set_constructions(&flags)
+    }
+
     pub(crate) fn bundle_global_candidates(&self) -> BundleGlobalNames {
         self.index.bundle_global_candidates()
     }
@@ -13191,13 +13399,7 @@ pub(crate) fn infer_callable_capabilities<'f>(
         exported_locals,
         flow: mut prepared_flow,
     } = prepared;
-    index.mutated_intrinsic_roots = integrity.mutated.clone();
-    index.native_integrity_witnesses = integrity.witnesses.clone();
-    index.native_integrity_value_input_refs = integrity.consumed_value_inputs.clone();
-    index.native_integrity_host_behavior = integrity.consumed_host_behavior.clone();
-    index.never_written = integrity.never_written.clone();
-    index.never_written_overrode = !integrity.never_written_overrides.is_empty();
-    index.integrity = index.integrity_flags();
+    index.apply_native_integrity(integrity);
     let mut result = InferredCallableCapabilities {
         foreign_calls: BTreeMap::new(),
         intact_collections: BTreeSet::new(),
@@ -13636,3 +13838,133 @@ mod runtime_inference;
 mod runtime_callbacks;
 #[path = "runtime_models.rs"]
 mod runtime_models;
+
+#[cfg(test)]
+mod preflow_set_protocol_tests {
+    use super::*;
+    use raw_js_test_support::parse;
+
+    // This tests the pre-flow prerequisite seam, which the CLI only exposes
+    // after flow and execution. It uses the real source/native preparation.
+    fn proofs(source: &str) -> BTreeMap<u32, InferredSetConstruction> {
+        proofs_with_premises(source, &BTreeSet::new())
+    }
+
+    fn proofs_with_premises(
+        source: &str,
+        families: &BTreeSet<NativeIntrinsic>,
+    ) -> BTreeMap<u32, InferredSetConstruction> {
+        let module = parse(source);
+        let views = crate::facts::top_level_item_views(&module.body);
+        let prepared = prepare_callable_capabilities(
+            &views,
+            StableArraySpreadShapes::default(),
+            BTreeSet::new(),
+            Vec::new(),
+            Vec::new(),
+            spec::PredefinedGlobals::Unknown,
+            BundleGlobalNames::default(),
+        );
+        assert!(prepared.flow.is_none());
+        assert!(
+            prepared
+                .index
+                .infer_set_constructions(&IntegrityFlags::default())
+                .is_empty()
+        );
+        let mut census = resolve_native_integrity([prepared.native_writes()]);
+        apply_intrinsics_never_written(&mut census, families)
+            .expect("premise is not source-refuted");
+        let proofs = prepared.inferred_set_constructions(&census);
+        assert!(prepared.flow.is_none());
+        proofs
+    }
+
+    #[test]
+    fn full_primitive_set_spread_protocol_is_proved_before_flow() {
+        let proofs = proofs(
+            r#"console.log("before");
+var seed = new Set(["a", "b"]), sibling = new Set(["x"]), copied = new Set([...seed, "c"]);
+console.log("after", copied.size);"#,
+        );
+        assert_eq!(proofs.len(), 3);
+        let spread = proofs
+            .values()
+            .find(|proof| proof.binding.0 == "copied")
+            .unwrap();
+        let InferredSetOperation::ProtectedSpread { interval, .. } = &spread.operation else {
+            panic!("spread needs a protected source interval")
+        };
+        assert_eq!(
+            interval
+                .interval_bindings
+                .iter()
+                .map(|id| id.0.as_ref())
+                .collect::<Vec<_>>(),
+            ["seed", "sibling", "copied"]
+        );
+        assert!(spread.dependencies.native_operation_inputs.is_empty());
+    }
+
+    #[test]
+    fn source_shape_never_substitutes_for_protocol_integrity() {
+        for prefix in [
+            "Set.prototype.add = function () {};",
+            "Set.prototype[Symbol.iterator] = function () {};",
+            "Object.getPrototypeOf(new Set()[Symbol.iterator]()).next = function () {};",
+            "Array.prototype[Symbol.iterator] = function () {};",
+        ] {
+            let source =
+                format!("{prefix} var seed = new Set(['a']), copied = new Set([...seed, 'b']);");
+            assert!(
+                !proofs(&source)
+                    .values()
+                    .any(|proof| proof.binding.0 == "copied"),
+                "{prefix}"
+            );
+        }
+    }
+
+    #[test]
+    fn preflow_protocol_consumes_the_existing_program_premise() {
+        let source = "globalThis[unknownKey] = 1; var seed = new Set(['a']), sibling = new Set(['x']), copied = new Set([...seed, 'c']);";
+        assert!(
+            !proofs(source)
+                .values()
+                .any(|proof| proof.binding.0 == "copied")
+        );
+        let proven = proofs_with_premises(
+            source,
+            &BTreeSet::from([NativeIntrinsic::Set, NativeIntrinsic::Array]),
+        );
+        let copied = proven
+            .values()
+            .find(|proof| proof.binding.0 == "copied")
+            .expect("all protocol slots inherit the validated Set/Array families");
+        assert!(
+            copied
+                .dependencies
+                .program_premises
+                .contains(&ProgramPremiseKey::IntrinsicsNeverWritten)
+        );
+        assert!(copied.dependencies.native_operation_inputs.is_empty());
+    }
+
+    #[test]
+    fn source_interval_requires_unique_stable_bindings_and_inert_siblings() {
+        for source in [
+            "var seed = new Set(['a']); var copied = new Set([...seed, 'c']);",
+            "var seed = new Set(['a']), seed = new Set(['b']), copied = new Set([...seed, 'c']);",
+            "var seed = new Set(['a']), sibling = mutate(seed), copied = new Set([...seed, 'c']);",
+            "var seed = new Set(['a']), copied = new Set([...seed, 'c']); seed = new Set(['b']);",
+            "var seed = new Set(['a']), copied = new Set([...seed, callback]);",
+        ] {
+            assert!(
+                !proofs(source)
+                    .values()
+                    .any(|proof| proof.binding.0 == "copied"),
+                "{source}"
+            );
+        }
+    }
+}

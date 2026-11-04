@@ -182,6 +182,39 @@ fn certified_fresh_sets_split_after_unrelated_constructor_heap_barrier() {
 }
 
 #[test]
+fn borrowed_set_array_keeps_its_read_across_an_unrelated_constructor_barrier() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { Box } from './box.js';\nconst source = ['a'];\nconst alias = source;\nconst memo = new Box(() => 1);\nconst seed = new Set(alias);\nconsole.log(seed.size);\n",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/box",
+            "export class Box { #callback; constructor(callback) { this.#callback = callback; } value() { return this.#callback(); } }\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/box")
+            .with_pure_new_exports(&["Box"])
+            .with_retained_callback_constructor("Box", 1, &[0])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "1\n");
+    let graph = fixture.dependency_graph();
+    let seed = source_unit_for_binding(&graph, "seed");
+    let memo = source_unit_for_binding(&graph, "memo");
+    assert!(
+        graph.edges.iter().any(|edge| edge.source == seed
+            && edge.target == memo
+            && edge.edge_kind == DepKind::Sequenced),
+        "borrowed array's live frontier disappeared: {graph:#?}"
+    );
+    let graph = serde_json::to_value(graph).unwrap();
+    assert_eq!(
+        node_for_binding(&graph, "seed")["synchronous_execution"]["complete"],
+        true
+    );
+}
+
+#[test]
 fn certified_same_output_set_spread_removes_only_its_constructor_barrier() {
     const DECLARATION: &str =
         "var seed = new Set(['a']), sibling = new Set(['b']), merged = new Set([...seed, 'c']);";
@@ -226,12 +259,17 @@ fn certified_same_output_set_spread_removes_only_its_constructor_barrier() {
             ],
         )
     };
-    let control = run_rejection_fixture(
-        opts().with_native_operation_inputs("static/app", inputs()[..2].to_vec()),
-    );
+    let inferred =
+        run_fixture(opts().with_native_operation_inputs("static/app", inputs()[..2].to_vec()));
+    assert_preserved_entry_output(&inferred, "2 LaterError\n");
+    let inferred_graph = serde_json::to_value(inferred.dependency_graph()).unwrap();
     assert!(
-        !control.atomic_group_conflicts().is_empty(),
-        "the unproved spread must still block the split"
+        node_for_binding(&inferred_graph, "merged")["synchronous_execution"]["inference_uses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|proof| proof["conclusion"] == "primitive_set_iteration"),
+        "the census-proved spread retains inferred provenance: {inferred_graph}"
     );
     let fixture = run_fixture(opts().with_native_operation_inputs("static/app", inputs()));
     assert_preserved_entry_output(&fixture, "2 LaterError\n");
@@ -327,7 +365,7 @@ fn set_spread_requires_every_intervening_constructor_and_one_output_module() {
             ],
         )
         .with_native_operation_inputs("static/app", vec![seed, sibling, spread]),
-        &["spans several output modules"],
+        &["atomic-group conflict"],
     );
 }
 
