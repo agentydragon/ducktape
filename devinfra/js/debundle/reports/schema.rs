@@ -641,8 +641,9 @@ pub struct SynchronousExecutionReport {
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "authority", rename_all = "snake_case")]
 pub enum BindingEffectAuthorityReport {
-    /// No runtime-only authority token is present in these facts. This is the
-    /// fail-closed state for deserialized or otherwise unclassified owners.
+    /// No operation or transitional authority is present in these facts.
+    /// Programmatically created, unclassified owners retain fallback; a saved
+    /// analysis artifact missing its required authority field is rejected.
     Unclassified,
     /// Temporary compatibility path for owners outside ordered root-body
     /// execution. `complete` is not an operation receipt.
