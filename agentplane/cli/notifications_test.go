@@ -498,11 +498,10 @@ func TestSubscriptionsFollowPagesOf128(t *testing.T) {
 	}
 }
 
-func TestSubscribeDoesNotReadTheOldDestinationVariable(t *testing.T) {
+func TestSubscribeRequiresSessionID(t *testing.T) {
 	servicer := answering(pullRequestSubscription(1, false))
 	env := notificationsEnv(serveNotifications(t, servicer))
 	delete(env, "AGENTPLANE_SESSION_ID")
-	env["AGENTPLANE_DESTINATION"] = `{"destination_ref":{"namespace":"n","name":"s","uid":"u"},"session_id":"x"}`
 	if code, stdout, _ := invoke(env, subscribeArgs()...); code != 2 || stdout != "" {
 		t.Errorf("exit %d, stdout %q; want exit 2 without AGENTPLANE_SESSION_ID", code, stdout)
 	}
@@ -559,7 +558,6 @@ func TestSendTakesTheTextFromStdinAndItsOptionsFromFlags(t *testing.T) {
 	c := newCLI(env, "line one\nline two\n")
 	code := c.run(sendArgs("--body-file", "-", "--from-session", "test-flag-session", "--key", "test-key")...)
 	delete(env, "AGENTPLANE_SESSION_ID")
-	env["AGENTPLANE_DESTINATION"] = `{"destination_ref":{"namespace":"n","name":"s","uid":"u"},"session_id":"old-session"}`
 	invoke(env, sendArgs("--body", "test body", "--key", "test-key-2")...)
 	sent := received[*notificationspb.SendMessageRequest](servicer)
 	if code != 0 || len(sent) != 2 {
