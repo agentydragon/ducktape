@@ -423,10 +423,10 @@ py_test(
         "//agentplane/proto:session_pb2",
         "//devinfra/bazel:runfiles",
         "//devinfra/oci",
+        "//devinfra/testing:undeclared_outputs",
         "//third_party/containers:debian_slim",
         "//third_party/containers:ryuk",
         "//util/testing:container_logs",
-        "//devinfra/testing:undeclared_outputs",
         "@pypi//grpcio",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",

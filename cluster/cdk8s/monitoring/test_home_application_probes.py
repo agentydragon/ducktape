@@ -15,9 +15,9 @@ import yaml
 
 from cluster.cdk8s.monitoring import blackbox_exporter, home_application_probes
 from devinfra.oci.oci import load_oci_image
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from third_party.containers import blackbox_exporter as blackbox_exporter_image
 from util.testing.container_logs import LoggedContainer
-from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 _PORT = 9115
 
