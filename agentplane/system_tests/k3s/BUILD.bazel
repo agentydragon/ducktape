@@ -357,6 +357,7 @@ py_library(
     name = "stack",
     testonly = True,
     srcs = ["stack.py"],
+    data = ["//agentplane/crds:crds_tree"],
     visibility = ["//agentplane/system_tests:__subpackages__"],
     deps = [
         ":block_storage",

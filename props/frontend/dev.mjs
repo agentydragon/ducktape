@@ -3,7 +3,7 @@
 
 import { spawn } from "child_process";
 import esbuild from "esbuild";
-import tailwindcss from "esbuild-plugin-tailwindcss";
+import esbuildConfig from "./esbuild_config.mjs";
 import { createServer } from "http";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
@@ -55,6 +55,12 @@ async function waitForBackend(timeoutMs = 30000) {
   return false;
 }
 
+function resolveRunfile(runfilesDir, rlocationPath) {
+  const path = resolve(runfilesDir, rlocationPath);
+  if (existsSync(path)) return path;
+  throw new Error(`Bazel runfile ${JSON.stringify(rlocationPath)} was not found at ${path}`);
+}
+
 // Start backend process
 let backendProcess = null;
 if (!skipBackend) {
@@ -66,13 +72,30 @@ if (!skipBackend) {
     console.warn(`${C.dim}Backend may fail. Run from props/ direnv shell.${C.reset}`);
   }
 
-  // Backend CLI is in runfiles at props/backend/backend_cli
-  // From props/frontend (chdir location), go up to runfiles root then down to backend
-  const backendBin = resolve(__dirname, "..", "backend", "backend_cli");
+  const backendRlocation = process.env.PROPS_BACKEND_CLI_RLOCATION;
+  if (!backendRlocation) {
+    throw new Error("PROPS_BACKEND_CLI_RLOCATION was not set by the Bazel dev target");
+  }
+  const backendRunfilesDir = process.env.JS_BINARY__RUNFILES;
+  if (!backendRunfilesDir) {
+    throw new Error("The rules_js launcher did not set JS_BINARY__RUNFILES");
+  }
+  const backendBin = resolveRunfile(backendRunfilesDir, backendRlocation);
+  const backendEnv = {
+    ...process.env,
+    RUNFILES_DIR: backendRunfilesDir,
+    JAVA_RUNFILES: backendRunfilesDir,
+  };
+  // rules_python prefers RUNFILES_MANIFEST_FILE over RUNFILES_DIR. The JS
+  // launcher exposes the runfiles tree used to resolve backendBin, so remove
+  // an inherited manifest that could direct Python into a different tree and
+  // select the same tree explicitly for its directory-based runfiles lookup.
+  delete backendEnv.RUNFILES_MANIFEST_FILE;
+  delete backendEnv.RUNFILES_MANIFEST_ONLY;
 
-  backendProcess = spawn(backendBin, ["--host", "127.0.0.1", "--port", String(BACKEND_PORT)], {
+  backendProcess = spawn(backendBin, ["serve", "--host", "127.0.0.1", "--port", String(BACKEND_PORT)], {
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env },
+    env: backendEnv,
   });
 
   backendProcess.stdout.on("data", (d) => prefixLines("backend", C.cyan, d));
@@ -104,20 +127,14 @@ const CONTENT_TYPES = {
 
 // Start esbuild in watch mode
 const ctx = await esbuild.context({
+  ...esbuildConfig,
   entryPoints: [resolve(__dirname, "src/main.tsx")],
   bundle: true,
   outdir: resolve(__dirname, "dist"),
   format: "esm",
-  jsx: "automatic",
   splitting: true,
   sourcemap: true,
   target: ["es2022"],
-  plugins: [tailwindcss()],
-  alias: {
-    $lib: resolve(__dirname, "src/lib"),
-    $components: resolve(__dirname, "src/components"),
-  },
-  conditions: ["browser", "module", "import"],
   logLevel: "info",
 });
 

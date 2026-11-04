@@ -9,6 +9,7 @@
 # Each *_crds module below is generated at build time by cdk8s_import, not a pip
 # package -- gazelle can't resolve it from the requirements manifest.
 
+load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
@@ -21,6 +22,17 @@ filegroup(
         "//agentplane/testing/kubeapiserver:__pkg__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/validation:__pkg__",
+    ],
+)
+
+copy_to_directory(
+    name = "crds_tree",
+    srcs = glob(["manifests/crd-*.yaml"]),
+    out = "crds_tree",
+    root_paths = [package_name() + "/manifests"],
+    visibility = [
+        "//agentplane/system_tests:__subpackages__",
+        "//agentplane/testing/kubeapiserver:__pkg__",
     ],
 )
 

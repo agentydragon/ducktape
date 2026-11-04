@@ -512,7 +512,7 @@ def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_sta
     assert workspace["spec"]["deletionPolicy"] == "Orphan"
     assert workspace["spec"]["forProvider"]["source"] == "Inline"
     assert "remotePullPolicy" not in workspace["spec"]["forProvider"]
-    root = get_required_path(own_repo_rlocation("tf/gitops/forgejo-agentydragon"))
+    root = get_required_path(own_repo_rlocation("tf/gitops/forgejo-agentydragon/inline_source"))
     assert workspace["spec"]["forProvider"]["module"] == "\n".join(
         source.read_text() for source in sorted(root.glob("*.tf"))
     )

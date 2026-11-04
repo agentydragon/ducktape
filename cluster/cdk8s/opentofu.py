@@ -50,11 +50,12 @@ WORKSPACE_HEALTH_CHECK_EXPR = KustomizationSpecHealthCheckExprs(
 
 
 def inline_module(directory: str) -> str:
-    """Combine an ordinary HCL root; the consumer declares its *.tf files as data.
+    """Combine an ordinary HCL root from its declared `inline_source` tree artifact.
 
     This does not package local modules, auxiliary files, JSON, or override semantics.
     """
-    sources = sorted(get_required_path(own_repo_rlocation(directory)).glob("*.tf"))
+    source_dir = get_required_path(own_repo_rlocation(f"{directory}/inline_source"))
+    sources = sorted(source_dir.glob("*.tf"))
     if not sources:
         raise ValueError(f"No Terraform source files in {directory}")
     return "\n".join(source.read_text() for source in sources)

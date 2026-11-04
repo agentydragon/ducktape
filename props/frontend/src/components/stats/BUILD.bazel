@@ -1,3 +1,4 @@
+load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
 load("//devinfra/js:ts_library.bzl", "ts_library")
 
 package(default_visibility = [
@@ -15,6 +16,22 @@ filegroup(
             "**/*.tsx",
         ],
         allow_empty = True,
+    ),
+    visibility = ["//props/frontend:__pkg__"],
+)
+
+copy_to_bin(
+    name = "dev_sources",
+    srcs = glob(
+        [
+            "*.ts",
+            "*.tsx",
+        ],
+        allow_empty = True,
+        exclude = [
+            "*.test.ts",
+            "*.test.tsx",
+        ],
     ),
     visibility = ["//props/frontend:__pkg__"],
 )

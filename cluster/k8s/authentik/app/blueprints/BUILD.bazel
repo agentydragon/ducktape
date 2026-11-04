@@ -1,4 +1,6 @@
 # Authentik app construction reads these as data for its generated ConfigMap.
+load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
+
 filegroup(
     name = "authentik_blueprints",
     srcs = glob(["*.yaml"]),
@@ -6,4 +8,12 @@ filegroup(
         "//cluster/cdk8s/authentik:__pkg__",
         "//cluster/validation:__pkg__",
     ],
+)
+
+copy_to_directory(
+    name = "authentik_blueprints_tree",
+    srcs = glob(["*.yaml"]),
+    out = "authentik_blueprints_tree",
+    root_paths = [package_name()],
+    visibility = ["//cluster/cdk8s/authentik:__pkg__"],
 )

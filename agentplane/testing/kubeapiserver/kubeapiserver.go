@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
 	"time"
@@ -60,11 +61,18 @@ func WithUserAudiences(audiences ...string) Option {
 
 // Start runs a control plane until Stop.
 func Start(options ...Option) (*Server, error) {
-	apiServer, err := runfiles.Rlocation("envtest_kubernetes_linux_amd64/kube-apiserver")
+	repository := runfiles.CurrentRepository()
+	runfilesRepository := repository
+	if runfilesRepository == "" {
+		runfilesRepository = "_main"
+	}
+	apiServerRlocation := path.Join(runfilesRepository, "agentplane/testing/kubeapiserver/envtest_assets_tree/kube-apiserver")
+	apiServer, err := runfiles.RlocationFrom(apiServerRlocation, repository)
 	if err != nil {
 		return nil, fmt.Errorf("locate kube-apiserver: %w", err)
 	}
-	crd, err := runfiles.Rlocation("ducktape/agentplane/crds/manifests/crd-sandboxes.yaml")
+	crdRlocation := path.Join(runfilesRepository, "agentplane/crds/crds_tree/crd-sandboxes.yaml")
+	crd, err := runfiles.RlocationFrom(crdRlocation, repository)
 	if err != nil {
 		return nil, fmt.Errorf("locate Agentplane's CRDs: %w", err)
 	}

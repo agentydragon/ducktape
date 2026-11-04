@@ -1,3 +1,4 @@
+load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
 
 tf_providers_versions(
@@ -20,8 +21,10 @@ tf_module(
     providers_versions = ":providers",
 )
 
-filegroup(
+copy_to_directory(
     name = "inline_source",
     srcs = glob(["*.tf"]),
+    out = "inline_source",
+    root_paths = [package_name()],
     visibility = ["//cluster/cdk8s:__subpackages__"],
 )

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"sync"
 	"syscall"
 	"testing"
@@ -64,10 +65,10 @@ func RunIntegrationTests(migrate func(context.Context, *sql.DB) error, run func(
 
 // Start ensures the PostgreSQL and Ryuk image tags are available, starts PostgreSQL, and applies migrate.
 func Start(ctx context.Context, migrate func(context.Context, *sql.DB) error) (*Database, error) {
-	if err := loadImage(ctx, postgresImage, "_main/third_party/containers/postgres_18_rloc.rloc"); err != nil {
+	if err := loadImage(ctx, postgresImage, "third_party/containers/postgres_18_rloc.rloc"); err != nil {
 		return nil, err
 	}
-	if err := loadImage(ctx, ryukImage, "_main/third_party/containers/ryuk_rloc.rloc"); err != nil {
+	if err := loadImage(ctx, ryukImage, "third_party/containers/ryuk_rloc.rloc"); err != nil {
 		return nil, err
 	}
 
@@ -208,15 +209,40 @@ func openDatabase(ctx context.Context, container testcontainers.Container) (stri
 }
 
 func loadImage(ctx context.Context, image, imageRlocation string) error {
-	loader, err := runfiles.Rlocation("ducktape/devinfra/oci/oci_load_bin")
+	loader, err := ownRepoRlocation("util/oci_load_bin")
 	if err != nil {
 		return fmt.Errorf("locate shared OCI image loader for %s: %w", image, err)
 	}
-	return runImageLoader(ctx, image, loader, imageRlocation, image)
+	return runImageLoader(ctx, image, loader, ownRepoRunfilesPath(imageRlocation), image)
+}
+
+// ownRepoRlocation resolves a path shipped by this repository, including when
+// this test library is imported by a different Bazel repository.
+func ownRepoRlocation(relativePath string) (string, error) {
+	repository := runfiles.CurrentRepository()
+	runfilesRepository := repository
+	if runfilesRepository == "" {
+		runfilesRepository = "_main"
+	}
+	return runfiles.RlocationFrom(path.Join(runfilesRepository, relativePath), repository)
+}
+
+// ownRepoRunfilesPath returns the runfiles-root-relative name for a path shipped by this repository.
+func ownRepoRunfilesPath(relativePath string) string {
+	repository := runfiles.CurrentRepository()
+	if repository == "" {
+		repository = "_main"
+	}
+	return path.Join(repository, relativePath)
 }
 
 func runImageLoader(ctx context.Context, image, loader string, args ...string) error {
+	runfilesEnv, err := runfiles.Env()
+	if err != nil {
+		return fmt.Errorf("get runfiles environment for OCI image loader: %w", err)
+	}
 	command := exec.CommandContext(ctx, loader, args...)
+	command.Env = append(os.Environ(), runfilesEnv...)
 	// The shared Python loader starts Docker as a child. Keep both in one group so cancelling this
 	// context cannot leave a detached `docker load` holding the daemon busy.
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

@@ -43,6 +43,7 @@ sh_test(
     data = [
         ":build_v2_garbled",
         ":inline_strings",
+        "@rules_shell//shell/runfiles",
     ],
     env = {
         "INLINE_STRINGS": "$(rlocationpath :inline_strings)",
@@ -62,6 +63,7 @@ sh_test(
     data = [
         ":build_v2_garbled",
         ":gotypes",
+        "@rules_shell//shell/runfiles",
     ],
     env = {
         "GOTYPES": "$(rlocationpath :gotypes)",
@@ -84,10 +86,12 @@ sh_test(
         "//third_party:go.mod",
         "//third_party:go.sum",
         "@io_bazel_rules_go//go",
+        "@rules_shell//shell/runfiles",
     ],
     env = {
         "GO": "$(rlocationpath @io_bazel_rules_go//go:go)",
         "GOSYMTAB": "$(rlocationpath :gosymtab)",
+        "GO_MOD": "$(rlocationpath //third_party:go.mod)",
         "V2_GARBLED": "$(rlocationpath :build_v2_garbled)",
     },
 )
@@ -105,6 +109,7 @@ sh_test(
         "@com_github_goretk_redress//:redress",
         "@com_github_mandiant_goresym//:GoReSym",
         "@io_bazel_rules_go//go",
+        "@rules_shell//shell/runfiles",
     ],
     env = {
         "GARBLE": "$(rlocationpath @cc_mvdan_garble//:garble)",
@@ -113,6 +118,8 @@ sh_test(
         "PCLNTOOL": "$(rlocationpath :pclntool)",
         "RECIPE": "$(rlocationpath garble_re_recipe.sh)",
         "REDRESS": "$(rlocationpath @com_github_goretk_redress//:redress)",
+        "GO_MOD": "$(rlocationpath //third_party:go.mod)",
+        "VICTIM_MAIN": "$(rlocationpath //devinfra/skills/reverse_engineer/cmd/garble_target:srcs)",
     },
 )
 
@@ -143,6 +150,7 @@ sh_test(
         "//third_party:go.mod",
         "//third_party:go.sum",
         "@io_bazel_rules_go//go",
+        "@rules_shell//shell/runfiles",
     ],
     env = {
         "GO": "$(rlocationpath @io_bazel_rules_go//go:go)",
@@ -150,5 +158,6 @@ sh_test(
         "RECIPE": "$(rlocationpath binary_diff_recipe.sh)",
         "V1_PLAIN": "$(rlocationpath :build_v1_plain)",
         "V2_GARBLED": "$(rlocationpath :build_v2_garbled)",
+        "GO_MOD": "$(rlocationpath //third_party:go.mod)",
     },
 )

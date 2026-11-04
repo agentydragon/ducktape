@@ -1,3 +1,5 @@
+load("@aspect_bazel_lib//lib:copy_to_bin.bzl", "copy_to_bin")
+
 # gazelle:exclude test_visual.py
 # gazelle:exclude test_navigation.py
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
@@ -144,22 +146,56 @@ ts_library(
 # ============================================================
 
 # Run: bazel run //props/frontend:dev
+copy_to_bin(
+    name = "dev_sources",
+    srcs = [
+        "src/App.tsx",
+        "src/main.tsx",
+    ],
+)
+
 js_binary(
     name = "dev",
     chdir = package_name(),
     data = [
         "dev.mjs",
+        ":esbuild_config",
         "index.html",
         "tsconfig.json",
+        # ts_library outputs compiled JavaScript, but esbuild needs the original
+        # TypeScript sources. copy_to_bin preserves their workspace-relative paths
+        # for module resolution. These staged copies are snapshots, so rerun Bazel
+        # after source edits to refresh what the esbuild watcher sees.
+        ":dev_sources",
         ":main",
+        ":node_modules/@mantine/core",
+        ":node_modules/@mantine/notifications",
+        ":node_modules/@tabler/icons-react",
+        ":node_modules/chart.js",
+        ":node_modules/chartjs-chart-matrix",
+        ":node_modules/date-fns",
         ":node_modules/esbuild",
         ":node_modules/esbuild-plugin-tailwindcss",
+        ":node_modules/highlight.js",
+        ":node_modules/openapi-fetch",
+        ":node_modules/react",
+        ":node_modules/react-dom",
         ":node_modules/tailwindcss",
         "//props/backend:backend_cli",
+        "//props/frontend/src/components:dev_sources",
+        "//props/frontend/src/components:json_code_css",
+        "//props/frontend/src/components/stats:dev_sources",
+        "//props/frontend/src/lib:dev_sources",
         "//props/frontend/src/lib:schema",
+        "//props/frontend/src/pages:dev_sources",
     ],
     entry_point = "dev.mjs",
-    no_copy_to_bin = ["//props/backend:backend_cli"],
+    env = {
+        "PROPS_BACKEND_CLI_RLOCATION": "$(rlocationpath //props/backend:backend_cli)",
+    },
+    no_copy_to_bin = [
+        "//props/backend:backend_cli",
+    ],
 )
 
 # ============================================================

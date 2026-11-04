@@ -50,7 +50,7 @@ from agentplane.system_tests.k3s import (
 from agentplane.system_tests.port_forward import PortForward
 from agentplane.system_tests.tracing import tracer
 from agentplane.testing import tls
-from devinfra.bazel.runfiles import get_required_path
+from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
@@ -1128,7 +1128,7 @@ def running_stack(
     persist_infrastructure: bool,
 ) -> Iterator[Stack]:
     """Create fresh fixtures; retain infrastructure only with the executor's lifecycle permission."""
-    crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
+    crds = sorted(get_required_path(own_repo_rlocation("agentplane/crds/crds_tree")).glob("crd-*.yaml"))
     fixture = inputs.fixture
     cert_manager, trust_manager = certificates.releases()
     pki_images = inputs.pki_image_layouts

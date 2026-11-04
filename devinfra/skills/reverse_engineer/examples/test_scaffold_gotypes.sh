@@ -20,12 +20,24 @@
 
 set -euo pipefail
 
-cp "$TEST_SRCDIR/$V2_GARBLED" "$TEST_TMPDIR/garbled"
+# --- begin runfiles.bash initialization v3 ---
+f=bazel_tools/tools/bash/runfiles/runfiles.bash
+source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null \
+  || source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null \
+  || source "$0.runfiles/$f" 2>/dev/null \
+  || source "$(dirname "$0").runfiles/$f" 2>/dev/null \
+  || {
+    echo >&2 "ERROR: cannot find $f"
+    exit 1
+  }
+# --- end runfiles.bash initialization v3 ---
+
+cp "$(rlocation "$V2_GARBLED")" "$TEST_TMPDIR/garbled"
 chmod +w "$TEST_TMPDIR/garbled"
 cd "$TEST_TMPDIR"
 
 echo "== dump types =="
-"$TEST_SRCDIR/$GOTYPES" garbled >types.txt 2>types.err
+"$(rlocation "$GOTYPES")" garbled >types.txt 2>types.err
 cat types.err
 grep -q 'types base 0x' types.err || {
   echo "FAIL: expected gotypes to report a detected types base" >&2
@@ -84,7 +96,7 @@ name=$(awk '/json:"host"/{print prev} {prev=$0}' types.txt | head -1 \
   | sed -E 's/^type ([^ ]+) struct.*/\1/')
 [ -n "$name" ] || name=$(grep -B20 'json:"host"' types.txt | grep '^type ' | tail -1 \
   | sed -E 's/^type ([^ ]+) struct.*/\1/')
-"$TEST_SRCDIR/$GOTYPES" -filter "$name" garbled >filtered.txt 2>/dev/null
+"$(rlocation "$GOTYPES")" -filter "$name" garbled >filtered.txt 2>/dev/null
 grep -qF 'json:"host"' filtered.txt || {
   echo "FAIL: -filter dropped the match" >&2
   exit 1

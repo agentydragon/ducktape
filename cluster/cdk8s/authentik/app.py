@@ -299,8 +299,8 @@ def _pod_monitor(chart: Chart) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    # The data dependency includes every blueprint in the source directory.
-    blueprints = get_required_path(own_repo_rlocation(f"{OUTPUT_DIR}/blueprints"))
+    # The data dependency is an explicit tree artifact containing every blueprint.
+    blueprints = get_required_path(own_repo_rlocation("cluster/k8s/authentik/app/blueprints/authentik_blueprints_tree"))
     ConfigMap(
         chart,
         "blueprints",

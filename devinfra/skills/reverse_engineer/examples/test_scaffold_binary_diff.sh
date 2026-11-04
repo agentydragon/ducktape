@@ -13,19 +13,32 @@
 
 set -euo pipefail
 
+# --- begin runfiles.bash initialization v3 ---
+f=bazel_tools/tools/bash/runfiles/runfiles.bash
+source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null \
+  || source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null \
+  || source "$0.runfiles/$f" 2>/dev/null \
+  || source "$(dirname "$0").runfiles/$f" 2>/dev/null \
+  || {
+    echo >&2 "ERROR: cannot find $f"
+    exit 1
+  }
+# --- end runfiles.bash initialization v3 ---
+
 mkdir -p "$TEST_TMPDIR/bin"
-ln -s "$TEST_SRCDIR/$PCLNTOOL" "$TEST_TMPDIR/bin/pclntool"
+ln -s "$(rlocation "$PCLNTOOL")" "$TEST_TMPDIR/bin/pclntool"
 
 # 'go version -m' is used by the recipe to verify binary properties.
-ln -s "$TEST_SRCDIR/$GO" "$TEST_TMPDIR/bin/go_bin_runner"
+ln -s "$(rlocation "$GO")" "$TEST_TMPDIR/bin/go_bin_runner"
 export GOROOT
-GOROOT=$(cd "$TEST_SRCDIR/_main" && "$TEST_TMPDIR/bin/go_bin_runner" env GOROOT)
+workspace_root="$(dirname "$(dirname "$(rlocation "$GO_MOD")")")"
+GOROOT=$(cd "$workspace_root" && "$TEST_TMPDIR/bin/go_bin_runner" env GOROOT)
 ln -s "$GOROOT/bin/go" "$TEST_TMPDIR/bin/go"
 export PATH="$TEST_TMPDIR/bin:$PATH"
 
 # Symlink pre-built binaries into cwd (recipe uses bare names v1_plain/v2_garbled).
-ln -s "$TEST_SRCDIR/$V1_PLAIN" "$TEST_TMPDIR/v1_plain"
-ln -s "$TEST_SRCDIR/$V2_GARBLED" "$TEST_TMPDIR/v2_garbled"
+ln -s "$(rlocation "$V1_PLAIN")" "$TEST_TMPDIR/v1_plain"
+ln -s "$(rlocation "$V2_GARBLED")" "$TEST_TMPDIR/v2_garbled"
 
 cd "$TEST_TMPDIR"
-exec bash "$TEST_SRCDIR/$RECIPE"
+exec bash "$(rlocation "$RECIPE")"

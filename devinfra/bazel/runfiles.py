@@ -40,22 +40,38 @@ def own_repo_rlocation(relative: str) -> str:
     return f"{_get_runfiles().CurrentRepository() or '_main'}/{relative}"
 
 
-def get_required_path(rlocation: str) -> Path:
-    """Resolve a runfiles path to an absolute Path, raising if missing."""
-    if not (resolved := _get_runfiles().Rlocation(rlocation)):
+def get_required_path(rlocation: str, *, source_repo: str | None = None) -> Path:
+    """Resolve a runfiles path to an existing Path, raising if missing.
+
+    ``source_repo`` is the canonical repository name whose mapping should be used for
+    apparent repository names in ``rlocation``. When omitted, rules_python uses the mapping
+    for this wrapper's repository. Pass it explicitly when ``rlocation`` contains an
+    apparent name from a different repository's context. Raises when runfiles cannot be
+    initialized, ``Rlocation`` has no result, or the resolved path does not exist.
+    """
+    rf = _get_runfiles()
+    if not (resolved := rf.Rlocation(rlocation, source_repo=source_repo)):
         raise RuntimeError(f"Could not resolve runfiles path: {rlocation}")
     if not (path := Path(resolved)).exists():
         raise RuntimeError(f"Resolved path does not exist: {path}")
     return path
 
 
-def find_path(rlocation: str) -> Path | None:
-    """Resolve a runfiles path, or None when the running target did not package it.
+def find_path(rlocation: str, *, source_repo: str | None = None) -> Path | None:
+    """Resolve a runfiles path, or None when the target did not package the asset.
 
     For an asset a library uses when its binary ships it and does without otherwise — the
-    absence is a valid state of the caller's contract, not a failure to report.
+    absence is a valid state of the caller's contract, not a failure to report. Returns None
+    if Rlocation has no result or the resolved path does not exist. A missing Bazel runfiles
+    environment still raises, as it does for ``get_required_path``.
+
+    ``source_repo`` is the canonical repository name whose mapping should be used for
+    apparent repository names in ``rlocation``. When omitted, rules_python uses the mapping
+    for this wrapper's repository. Pass it explicitly for an apparent name from a different
+    repository's context. This helper still raises if no Bazel runfiles environment exists.
     """
-    resolved = _get_runfiles().Rlocation(rlocation)
+    rf = _get_runfiles()
+    resolved = rf.Rlocation(rlocation, source_repo=source_repo)
     if not resolved:
         return None
     path = Path(resolved)

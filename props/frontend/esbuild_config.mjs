@@ -1,8 +1,8 @@
-// esbuild option overrides for the production bundle, threaded into the native
-// esbuild() rule via spa_bundle's `config` attribute. The rule owns
-// entryPoints/bundle/outdir/format/target/sourcemap/minify/splitting and the
-// bazel-sandbox module resolver; this file adds the automatic React JSX runtime,
-// Tailwind plugin, $lib/$components aliases, and the .svg=text loader.
+// esbuild options shared by the production bundle and dev.mjs. The native
+// esbuild() rule threads this through spa_bundle's `config` attribute and owns
+// entryPoints/bundle/outdir/format/target/sourcemap/minify/splitting plus the
+// Bazel-sandbox module resolver. The dev server reuses the same JSX runtime,
+// Tailwind plugin, aliases, loader, nodePaths, and package conditions.
 import tailwindcss from "esbuild-plugin-tailwindcss";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
