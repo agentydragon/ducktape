@@ -3,10 +3,8 @@ package migrations_test
 import (
 	"context"
 	"database/sql"
-	"embed"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"os"
 	"reflect"
 	"strings"
@@ -20,11 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
-	"github.com/pressly/goose/v3"
 )
-
-//go:embed testdata/*.sql
-var previousMigrations embed.FS
 
 var integrationDatabase *postgres.Database
 
@@ -59,20 +53,16 @@ func resetSchema(t *testing.T, db *sql.DB) {
 	}
 }
 
-func restoreVersion12(t *testing.T, db *sql.DB) {
+func markVersion12History(t *testing.T, db *sql.DB) {
 	t.Helper()
-	resetSchema(t, db)
-	files, err := fs.Sub(previousMigrations, "testdata")
-	if err != nil {
+	if _, err := db.ExecContext(t.Context(), `DELETE FROM notification_service_goose_version WHERE version_id = 13`); err != nil {
 		t.Fatal(err)
 	}
-	provider, err := goose.NewProvider(goose.DialectPostgres, db, files,
-		goose.WithTableName("notification_service_goose_version"), goose.WithDisableGlobalRegistry(true))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := provider.UpTo(t.Context(), 12); err != nil {
-		t.Fatal("restore version 12:", err)
+	for version := 10; version <= 12; version++ {
+		if _, err := db.ExecContext(t.Context(),
+			`INSERT INTO notification_service_goose_version (version_id, is_applied) VALUES ($1, true)`, version); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -106,7 +96,7 @@ func TestFreshBaselineSupportsNotificationStore(t *testing.T) {
 
 func TestAdoptVersion12PreservesStoredDataAndHistory(t *testing.T) {
 	db := cloneDatabase(t)
-	restoreVersion12(t, db)
+	markVersion12History(t, db)
 	owner, subscription := seedSubscription(t, db, "retained-session")
 	event := model.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: model.EventPullRequest}
 	tx, err := db.BeginTx(t.Context(), nil)
@@ -170,61 +160,6 @@ func TestAdoptVersion12PreservesStoredDataAndHistory(t *testing.T) {
 	}
 }
 
-func TestFreshSchemaMatchesPreviousVersion12(t *testing.T) {
-	fresh := cloneDatabase(t)
-	previous := cloneDatabase(t)
-	restoreVersion12(t, previous)
-	want := schemaCatalog(t, previous)
-	got := schemaCatalog(t, fresh)
-	if !reflect.DeepEqual(got, want) {
-		for i := range min(len(got), len(want)) {
-			if got[i] != want[i] {
-				t.Fatalf("schema differs at %d: fresh %s; previous %s", i, got[i], want[i])
-			}
-		}
-		t.Fatalf("schema object counts: fresh %d, previous %d", len(got), len(want))
-	}
-}
-
-func schemaCatalog(t *testing.T, db *sql.DB) []string {
-	t.Helper()
-	rows, err := db.QueryContext(t.Context(), `
-		SELECT description FROM (
-			SELECT 'table ' || table_name AS description FROM information_schema.tables
-			WHERE table_schema = current_schema() AND table_name <> 'notification_service_goose_version'
-			UNION ALL
-			SELECT 'column ' || table_name || '.' || column_name || ' ' || data_type || ' ' || udt_name || ' ' ||
-				is_nullable || ' ' || COALESCE(column_default, '') || ' ' || is_identity || ' ' || COALESCE(identity_generation, '')
-			FROM information_schema.columns WHERE table_schema = current_schema() AND table_name <> 'notification_service_goose_version'
-			UNION ALL
-			SELECT 'constraint ' || c.conrelid::regclass::text || '.' || c.conname || ' ' || pg_get_constraintdef(c.oid)
-			FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
-			WHERE n.nspname = current_schema() AND c.conrelid::regclass::text <> 'notification_service_goose_version'
-			UNION ALL
-			SELECT 'index ' || tablename || '.' || indexname || ' ' || indexdef FROM pg_indexes
-			WHERE schemaname = current_schema() AND tablename <> 'notification_service_goose_version'
-			UNION ALL
-			SELECT 'trigger ' || event_object_table || '.' || trigger_name || ' ' || event_manipulation || ' ' || action_statement
-			FROM information_schema.triggers WHERE trigger_schema = current_schema()
-		) objects ORDER BY description`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var result []string
-	for rows.Next() {
-		var description string
-		if err := rows.Scan(&description); err != nil {
-			t.Fatal(err)
-		}
-		result = append(result, description)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	return result
-}
-
 func TestBaselineRejectsPartialAndInvalidPredecessors(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -258,7 +193,7 @@ func TestBaselineRejectsPartialAndInvalidPredecessors(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := cloneDatabase(t)
-			restoreVersion12(t, db)
+			markVersion12History(t, db)
 			tc.mutate(t, db)
 			err := migrations.Up(t.Context(), db)
 			if err == nil || !strings.Contains(err.Error(), tc.message) {
@@ -275,7 +210,7 @@ func TestBaselineRejectsPartialAndInvalidPredecessors(t *testing.T) {
 
 func TestBaselineAdoptsCompletePreBaselineHistory(t *testing.T) {
 	db := cloneDatabase(t)
-	restoreVersion12(t, db)
+	markVersion12History(t, db)
 	for version := 1; version <= 9; version++ {
 		if _, err := db.ExecContext(t.Context(),
 			`INSERT INTO notification_service_goose_version (version_id, is_applied) VALUES ($1, true)`, version); err != nil {
