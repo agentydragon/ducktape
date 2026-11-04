@@ -1967,11 +1967,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         guard: NativeIntegrityGuard,
         dependencies: &crate::analysis_inputs::ProofDependencies,
     ) {
-        self.queries.assume(dependencies);
-        self.state
-            .proof_dependencies
-            .borrow_mut()
-            .extend(dependencies);
+        self.consume_proof_dependencies(dependencies);
         if !dependencies.value_inputs.is_empty()
             || !dependencies.no_accessor_install_callables.is_empty()
             || !dependencies.program_premises.is_empty()
@@ -1985,6 +1981,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 },
             );
         }
+    }
+
+    fn consume_proof_dependencies(&self, dependencies: &crate::analysis_inputs::ProofDependencies) {
+        self.queries.assume(dependencies);
+        self.state
+            .proof_dependencies
+            .borrow_mut()
+            .extend(dependencies);
     }
 
     fn record_inference_use(
@@ -2639,6 +2643,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             return false;
         }
+        let mut dependencies = crate::analysis_inputs::ProofDependencies::default();
         // Both arms below hold only when the index saw the matching
         // `reentry_free_operations` entry; an unaudited host selects neither.
         let operation = match (call.kind, &call.callee) {
@@ -2685,6 +2690,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     return false;
                 }
                 if !native_integrity_intact && let Some(evidence) = native_input {
+                    dependencies
+                        .native_operation_inputs
+                        .insert(evidence.reference.clone());
                     self.state.native_operation_input_uses.borrow_mut().insert(
                         (call.span.lo.0, call.span.hi.0),
                         crate::reports::schema::NativeOperationInputUse {
@@ -2698,6 +2706,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             _ => return false,
         };
+        dependencies
+            .host_behavior
+            .insert(crate::analysis_inputs::HostBehaviorKey::ReentryFreeOperation(operation));
+        self.consume_proof_dependencies(&dependencies);
         let proof_use = crate::reports::schema::ReentryFreeOperationUse {
             operation,
             source_location: None,

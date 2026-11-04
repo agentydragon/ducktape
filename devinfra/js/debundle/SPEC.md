@@ -1332,7 +1332,12 @@ unused assertion produces no use record. These are static proof uses, not a
 runtime invocation trace. Failed Promise/global integrity guards remain visible
 under `native_integrity_checks` as `host_promise_resolve`. Host assertions
 establish timing only; their provenance must not be presented as an
-unconditional inferred native guarantee.
+unconditional inferred native guarantee. A successful use also adds the exact
+`reentry_free_operation` key to typed proof dependencies, so evaluation,
+covered-owner and relocation evidence retain the host assertion they consumed.
+When a same-site `promise_resolve` native input substitutes for a failed
+integrity guard, its exact input reference enters the same dependencies. A
+refused, unselected or unused operation contributes neither dependency.
 
 ### Reentry-free builtin modules
 

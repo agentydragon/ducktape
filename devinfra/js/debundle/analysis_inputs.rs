@@ -485,6 +485,7 @@ pub enum HostBehaviorKey {
     ReentryFreeBuiltinModule(spec::NodeBuiltinModule),
     ReentryFreeBunModule(spec::BunModule),
     ReentryFreeEmbeddedLoader(spec::EmbeddedLoader),
+    ReentryFreeOperation(spec::ReentryFreeOperation),
     PredefinedGlobals,
 }
 
