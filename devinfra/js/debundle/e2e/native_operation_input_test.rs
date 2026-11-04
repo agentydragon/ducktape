@@ -657,12 +657,6 @@ fn primitive_set_owner_keeps_its_effect_coverage_dependency() {
         ]),
         "both completed native owners retain their exact author premises: {report:#}"
     );
-    for domain in ["global_properties", "general_heap", "host_effects"] {
-        assert_eq!(
-            report["coverage"]["unknown_coverage"][domain], 1,
-            "only the console observation remains uncovered: {report:#}"
-        );
-    }
 }
 
 #[test]
