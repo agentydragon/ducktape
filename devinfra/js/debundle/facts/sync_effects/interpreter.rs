@@ -555,6 +555,12 @@ pub(super) struct NativeCallResolution {
     row: &'static Row,
     own_property_projection: Option<OwnPropertyProof>,
     iterable: Option<NativeIterableReceipt>,
+    operation_coverage: Option<EffectCoverageFragment>,
+}
+
+struct NewEvaluation {
+    values: Values,
+    operation_coverage: Option<EffectCoverageFragment>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -2876,10 +2882,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .borrow_mut()
                 .insert(proof.inference_use());
         }
+        let operation_coverage =
+            if kind == CallKind::New && row.op == IntrinsicOp::Map && expressions.is_empty() {
+                let mut dependencies = self.state.proof_dependencies.borrow().clone();
+                dependencies.extend(&self.queries.dependencies());
+                super::super::allocation_transfer::keyed_collection_new(row, site, dependencies)
+                    .map(|result| result.effects)
+            } else {
+                None
+            };
         Some(NativeCallResolution {
             row,
             own_property_projection,
             iterable,
+            operation_coverage,
         })
     }
 
@@ -3153,6 +3169,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             row,
             own_property_projection,
             iterable,
+            operation_coverage,
         } = resolution;
         let mut values = match row.returns {
             Return::Unknown => unknown(),
@@ -3168,6 +3185,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     site.allocation_id(),
                 ))])
             }
+            Return::Fresh if operation_coverage.is_some() => unknown(),
             Return::Fresh => self.fresh_allocation_values(row, args, site, own_property_projection),
         };
         if may_throw {
@@ -3190,7 +3208,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         let kind = candidate.kind();
         let (expected_op, expected_allocation, expected_return) = match kind {
-            NativeConstructorKind::Map => (IntrinsicOp::Map, Some(Kind::Map), Return::Fresh),
             NativeConstructorKind::Set => (IntrinsicOp::Set, Some(Kind::Set), Return::Fresh),
             NativeConstructorKind::TextEncoder => (IntrinsicOp::TextEncoder, None, Return::Unknown),
         };
@@ -3200,12 +3217,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // opaque in value flow, so its abstract value is not an identity test.
         let row = resolution.row;
         let dispatch_form = match (kind, expressions) {
-            (
-                NativeConstructorKind::Map
-                | NativeConstructorKind::Set
-                | NativeConstructorKind::TextEncoder,
-                [],
-            ) => NativeConstructorForm::Empty,
+            (NativeConstructorKind::Set | NativeConstructorKind::TextEncoder, []) => {
+                NativeConstructorForm::Empty
+            }
             (NativeConstructorKind::Set, [ValueExpr::ObjectLiteral(array, _)]) => {
                 NativeConstructorForm::SetPrimitiveArray { array: *array }
             }
@@ -3216,8 +3230,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // Empty collection forms cannot run coercions of absent arguments.
         // TextEncoder's host row has exact zero arity and no coercions.
         let root_call_shape_matches = match (kind, dispatch_form) {
-            (NativeConstructorKind::Map, NativeConstructorForm::Empty)
-            | (NativeConstructorKind::Set, NativeConstructorForm::Empty) => {
+            (NativeConstructorKind::Set, NativeConstructorForm::Empty) => {
                 row.arity.contains(&0)
                     && row
                         .coerces
@@ -8796,6 +8809,173 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
+    fn evaluate_new(
+        &mut self,
+        callee: &ValueExpr,
+        args: &[ValueExpr],
+        span: CallSite,
+        env: &Context,
+        captures: &Context,
+    ) -> NewEvaluation {
+        let mut operation_coverage = None;
+        let values = (|| {
+            let targets = self.evaluate(callee, env, captures);
+            let evaluated_args: Vec<_> = args
+                .iter()
+                .map(|arg| self.evaluate(arg, env, captures))
+                .collect();
+            let mut successful_args = evaluated_args.clone();
+            let mut args_may_throw = targets.contains(&AbstractValue::Value(Value::Unavailable));
+            for values in &mut successful_args {
+                args_may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
+            }
+            if let Some(summary) = self.foreign_call_summary(CallKind::New, callee) {
+                if (targets.len() == 1
+                    && targets.contains(&AbstractValue::Value(Value::Unavailable)))
+                    || evaluated_args.iter().any(|values| {
+                        values.len() == 1
+                            && values.contains(&AbstractValue::Value(Value::Unavailable))
+                    })
+                {
+                    return Values::from([AbstractValue::Value(Value::Unavailable)]);
+                }
+                let mut result = self.foreign_call_result(&summary, &successful_args);
+                if args_may_throw {
+                    result.insert(AbstractValue::Value(Value::Unavailable));
+                }
+                return result;
+            }
+            if let Some(returns) =
+                self.resolve_native_call(CallKind::New, callee, span, args, &successful_args)
+            {
+                self.record_native_initializer_transfer(
+                    callee,
+                    args,
+                    &successful_args,
+                    args_may_throw,
+                    span,
+                    &returns,
+                );
+                if !args_may_throw {
+                    operation_coverage = returns.operation_coverage.clone();
+                }
+                return self.native_return_values(returns, &successful_args, args_may_throw, span);
+            }
+            // The iterable assertion does not bypass native-row checks:
+            // if this exact request and indexed SetIterableProof do not
+            // admit the Set New row, retain the conservative value.
+            if self
+                .inputs
+                .set_iterable_proof
+                .author_input_for_constructor(span.source_span())
+                .is_some()
+            {
+                return Values::from([
+                    AbstractValue::Value(Value::Alloc(Kind::Set, span.allocation_id())),
+                    AbstractValue::Value(Value::Unavailable),
+                ]);
+            }
+            if self
+                .inputs
+                .index
+                .retained_constructor_calls
+                .contains_key(&span)
+            {
+                if targets.len() == 1 && targets.contains(&AbstractValue::Value(Value::Unavailable))
+                {
+                    return Values::from([AbstractValue::Value(Value::Unavailable)]);
+                }
+                if evaluated_args.iter().any(|values| {
+                    values.len() == 1 && values.contains(&AbstractValue::Value(Value::Unavailable))
+                }) {
+                    return Values::from([AbstractValue::Value(Value::Unavailable)]);
+                }
+                let mut successful_args = evaluated_args.clone();
+                let mut may_throw = false;
+                for values in &mut successful_args {
+                    may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
+                }
+                if let Some(callbacks) =
+                    self.retained_constructor_callbacks(span, args, &successful_args)
+                {
+                    let result =
+                        self.audited_retained_result(RetainedResultKind::Constructor, callbacks);
+                    return if may_throw {
+                        Values::from([result, AbstractValue::Value(Value::Unavailable)])
+                    } else {
+                        Values::from([result])
+                    };
+                }
+            }
+            let mut results = Values::new();
+            if self.state.current_top_owner.is_some_and(|owner| {
+                self.is_proven_map_entry_array(callee, args, env, captures, owner)
+            }) {
+                let mut can_complete = true;
+                let mut may_throw = false;
+                let mut successful_args = Values::new();
+                for values in &evaluated_args {
+                    if values.contains(&AbstractValue::Value(Value::Unavailable)) {
+                        may_throw = true;
+                        can_complete &= values.len() > 1;
+                    }
+                    successful_args.extend(
+                        values
+                            .iter()
+                            .filter(|value| **value != AbstractValue::Value(Value::Unavailable))
+                            .cloned(),
+                    );
+                }
+                if can_complete {
+                    let callbacks = self.callback_values(&successful_args);
+                    results.insert(self.deferred_callbacks(callbacks));
+                }
+                if may_throw || !can_complete {
+                    results.insert(AbstractValue::Value(Value::Unavailable));
+                }
+                return results;
+            }
+            for target in targets {
+                match target {
+                    AbstractValue::Value(Value::Alloc(Kind::Class, key)) => {
+                        if let Ok((_, instance)) = self.construct_local_class(key, &evaluated_args)
+                        {
+                            results.insert(instance);
+                        } else {
+                            // Re-evaluation may lose the private instance proof after
+                            // constructor execution taints one of its inputs. Keep the
+                            // result opaque, but do not drop callbacks reachable from
+                            // the arguments: the unknown instance may retain them.
+                            results.insert(AbstractValue::Value(Value::Top));
+                            let callbacks: Values = successful_args
+                                .iter()
+                                .flat_map(|values| self.callback_values(values))
+                                .collect();
+                            if !callbacks.is_empty() {
+                                results.insert(self.deferred_callbacks(callbacks));
+                            }
+                        }
+                    }
+                    AbstractValue::Value(Value::Unavailable) => {
+                        results.insert(AbstractValue::Value(Value::Unavailable));
+                    }
+                    _ => {
+                        results.insert(AbstractValue::Value(Value::Top));
+                    }
+                }
+            }
+            if results.is_empty() {
+                unknown()
+            } else {
+                results
+            }
+        })();
+        NewEvaluation {
+            values,
+            operation_coverage,
+        }
+    }
+
     pub(super) fn evaluate_transfer(
         &mut self,
         expr: &ValueExpr,
@@ -9216,162 +9396,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 returns
             }
             ValueExpr::New(callee, args, span) => {
-                let targets = self.evaluate(callee, env, captures);
-                let evaluated_args: Vec<_> = args
-                    .iter()
-                    .map(|arg| self.evaluate(arg, env, captures))
-                    .collect();
-                let mut successful_args = evaluated_args.clone();
-                let mut args_may_throw =
-                    targets.contains(&AbstractValue::Value(Value::Unavailable));
-                for values in &mut successful_args {
-                    args_may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
-                }
-                if let Some(summary) = self.foreign_call_summary(CallKind::New, callee) {
-                    if (targets.len() == 1
-                        && targets.contains(&AbstractValue::Value(Value::Unavailable)))
-                        || evaluated_args.iter().any(|values| {
-                            values.len() == 1
-                                && values.contains(&AbstractValue::Value(Value::Unavailable))
-                        })
-                    {
-                        return Values::from([AbstractValue::Value(Value::Unavailable)]);
-                    }
-                    let mut result = self.foreign_call_result(&summary, &successful_args);
-                    if args_may_throw {
-                        result.insert(AbstractValue::Value(Value::Unavailable));
-                    }
-                    return result;
-                }
-                if let Some(returns) =
-                    self.resolve_native_call(CallKind::New, callee, *span, args, &successful_args)
-                {
-                    self.record_native_initializer_transfer(
-                        callee,
-                        args,
-                        &successful_args,
-                        args_may_throw,
-                        *span,
-                        &returns,
-                    );
-                    return self.native_return_values(
-                        returns,
-                        &successful_args,
-                        args_may_throw,
-                        *span,
-                    );
-                }
-                // The iterable assertion does not bypass native-row checks:
-                // if this exact request and indexed SetIterableProof do not
-                // admit the Set New row, retain the conservative value.
-                if self
-                    .inputs
-                    .set_iterable_proof
-                    .author_input_for_constructor(span.source_span())
-                    .is_some()
-                {
-                    return Values::from([
-                        AbstractValue::Value(Value::Alloc(Kind::Set, span.allocation_id())),
-                        AbstractValue::Value(Value::Unavailable),
-                    ]);
-                }
-                if self
-                    .inputs
-                    .index
-                    .retained_constructor_calls
-                    .contains_key(span)
-                {
-                    if targets.len() == 1
-                        && targets.contains(&AbstractValue::Value(Value::Unavailable))
-                    {
-                        return Values::from([AbstractValue::Value(Value::Unavailable)]);
-                    }
-                    if evaluated_args.iter().any(|values| {
-                        values.len() == 1
-                            && values.contains(&AbstractValue::Value(Value::Unavailable))
-                    }) {
-                        return Values::from([AbstractValue::Value(Value::Unavailable)]);
-                    }
-                    let mut successful_args = evaluated_args.clone();
-                    let mut may_throw = false;
-                    for values in &mut successful_args {
-                        may_throw |= values.remove(&AbstractValue::Value(Value::Unavailable));
-                    }
-                    if let Some(callbacks) =
-                        self.retained_constructor_callbacks(*span, args, &successful_args)
-                    {
-                        let result = self
-                            .audited_retained_result(RetainedResultKind::Constructor, callbacks);
-                        return if may_throw {
-                            Values::from([result, AbstractValue::Value(Value::Unavailable)])
-                        } else {
-                            Values::from([result])
-                        };
-                    }
-                }
-                let mut results = Values::new();
-                if self.state.current_top_owner.is_some_and(|owner| {
-                    self.is_proven_map_entry_array(callee, args, env, captures, owner)
-                }) {
-                    let mut can_complete = true;
-                    let mut may_throw = false;
-                    let mut successful_args = Values::new();
-                    for values in &evaluated_args {
-                        if values.contains(&AbstractValue::Value(Value::Unavailable)) {
-                            may_throw = true;
-                            can_complete &= values.len() > 1;
-                        }
-                        successful_args.extend(
-                            values
-                                .iter()
-                                .filter(|value| **value != AbstractValue::Value(Value::Unavailable))
-                                .cloned(),
-                        );
-                    }
-                    if can_complete {
-                        let callbacks = self.callback_values(&successful_args);
-                        results.insert(self.deferred_callbacks(callbacks));
-                    }
-                    if may_throw || !can_complete {
-                        results.insert(AbstractValue::Value(Value::Unavailable));
-                    }
-                    return results;
-                }
-                for target in targets {
-                    match target {
-                        AbstractValue::Value(Value::Alloc(Kind::Class, key)) => {
-                            if let Ok((_, instance)) =
-                                self.construct_local_class(key, &evaluated_args)
-                            {
-                                results.insert(instance);
-                            } else {
-                                // Re-evaluation may lose the private instance proof after
-                                // constructor execution taints one of its inputs. Keep the
-                                // result opaque, but do not drop callbacks reachable from
-                                // the arguments: the unknown instance may retain them.
-                                results.insert(AbstractValue::Value(Value::Top));
-                                let callbacks: Values = successful_args
-                                    .iter()
-                                    .flat_map(|values| self.callback_values(values))
-                                    .collect();
-                                if !callbacks.is_empty() {
-                                    results.insert(self.deferred_callbacks(callbacks));
-                                }
-                            }
-                        }
-                        AbstractValue::Value(Value::Unavailable) => {
-                            results.insert(AbstractValue::Value(Value::Unavailable));
-                        }
-                        _ => {
-                            results.insert(AbstractValue::Value(Value::Top));
-                        }
-                    }
-                }
-                if results.is_empty() {
-                    unknown()
-                } else {
-                    results
-                }
+                self.evaluate_new(callee, args, *span, env, captures).values
             }
             ValueExpr::Primitive(operands) => {
                 let mut can_complete = true;
@@ -9430,8 +9455,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
     }
 
-    /// Run one dedicated owner initializer while retaining evidence only for
-    /// the exact root native New dispatch, if that dispatch actually applies.
+    /// Evaluate one source-checked root. A native operation returns its own
+    /// effect receipt; the owner later seals that receipt against source identity.
     pub(super) fn evaluate_initializer_transfer(
         &mut self,
         source: &OriginalInitializer,
@@ -9442,6 +9467,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         Values,
         super::super::allocation_transfer::AllocationJudgment,
         Option<NativeConstructorTransfer>,
+        Option<EffectCoverageFragment>,
     ) {
         let expression = if let Some(covered) = source.composed_expression() {
             self.cover_source_expression();
@@ -9451,10 +9477,24 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         self.native_initializer_candidate = source.native_constructor_candidate(expression);
         self.native_initializer_transfer = None;
-        let values = self.evaluate_transfer(expression, env, captures);
+        let (values, operation_coverage) = match expression {
+            ValueExpr::New(callee, arguments, site)
+                if source.operation_source(expression).is_some() =>
+            {
+                self.mark_allocation_opaque();
+                let result = self.evaluate_new(callee, arguments, *site, env, captures);
+                (result.values, result.operation_coverage)
+            }
+            _ => (self.evaluate_transfer(expression, env, captures), None),
+        };
         let transfer = self.native_initializer_transfer.take();
         self.native_initializer_candidate = None;
-        (values, self.allocation_judgment.clone(), transfer)
+        (
+            values,
+            self.allocation_judgment.clone(),
+            transfer,
+            operation_coverage,
+        )
     }
 
     /// Stop the frame without replaying its earlier operations. An unproved
@@ -12649,16 +12689,26 @@ impl Executor<'_, '_> {
         });
         // Canonical source identity is independent of leaf/value admission.
         // Retain the exact selected body span, not a lowered-value guess.
-        let effect_initializer_source = ordered_initializer.and_then(|body| {
-            let [(binding, _)] = assignments.as_slice() else {
-                return None;
-            };
-            let span = body.initializer_span()?;
-            let source = index.initialization_source_identities.get(&owner)?;
-            source
-                .matches(owner, binding, span)
-                .then_some((source, binding, span))
-        });
+        let effect_initializer_source = ordered_initializer
+            .and_then(|body| {
+                let [(binding, _)] = assignments.as_slice() else {
+                    return None;
+                };
+                let span = body.initializer_span()?;
+                let source = index.initialization_source_identities.get(&owner)?;
+                source
+                    .matches(owner, binding, span)
+                    .then_some((source, binding, span))
+            })
+            .or_else(|| {
+                let [(binding, expression)] = assignments.as_slice() else {
+                    return None;
+                };
+                let source = initializer_source?.operation_source(expression)?;
+                source
+                    .matches(owner, binding, source.initializer_span())
+                    .then_some((source, binding, source.initializer_span()))
+            });
         // Keep the selected result in this owner until publication. Operands
         // and calls execute once, at their position in the shared local plan.
         let mut ordered_initializer_result = if let Some(body) = ordered_initializer {
@@ -12830,6 +12880,7 @@ impl Executor<'_, '_> {
                 let RuntimeValue::Initializer {
                     values,
                     evaluated,
+                    operation_coverage,
                     refusal,
                 } = self.request(RuntimeOperation::EvaluateInitializer {
                     source: source.clone(),
@@ -12841,6 +12892,9 @@ impl Executor<'_, '_> {
                     unreachable!("checked initializer transfers produce initializer results");
                 };
                 evaluated_initializer = evaluated;
+                if let Some(coverage) = operation_coverage {
+                    outcome.effect_coverage = *coverage;
+                }
                 initialization_coverage_refusal = initialization_coverage_refusal.or(refusal);
                 values
             } else if let Some(values) = ordered_initializer_result.take() {

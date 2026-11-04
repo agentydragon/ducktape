@@ -255,23 +255,27 @@ impl EffectCoverageFragment {
         }
     }
 
-    /// Actual ordinary native iteration over a proved primitive source.
-    /// Its protocol/contents reads and fresh internal allocation are modeled;
-    /// it runs no application callback, accessor, host operation or exterior
-    /// write. This is body coverage, not completion of operand evaluation.
-    pub(super) fn native_iterable_protocol(dependencies: &ProofDependencies) -> Self {
+    /// Checked native body with no application callback, accessor, host
+    /// operation or exterior write. Callee and operand evaluation remain with
+    /// the caller; this receipt grants no lexical binding-effect authority.
+    pub(super) fn native_operation(dependencies: &ProofDependencies) -> Self {
         Self {
             initialization: Some(Box::new(InitializationEffectCoverage {
                 global_properties: DomainCoverage::Covered(dependencies.clone()),
                 general_heap: DomainCoverage::Covered(dependencies.clone()),
                 host_effects: DomainCoverage::Covered(dependencies.clone()),
             })),
-            // Native operand paths are outside the bounded lexical migration.
-            // Preserve their initialization coverage without granting authority
-            // to suppress binding fallback.
+            // Native operands are outside the bounded lexical migration.
             lexical: None,
             completion: Completion::Normal,
         }
+    }
+
+    /// Actual ordinary native iteration over a proved primitive source.
+    /// Its protocol/contents reads and fresh internal allocation are modeled;
+    /// this is body coverage, not completion of operand evaluation.
+    pub(super) fn native_iterable_protocol(dependencies: &ProofDependencies) -> Self {
+        Self::native_operation(dependencies)
     }
 
     /// A top-level module-cell read has no global/heap/host effect, and its

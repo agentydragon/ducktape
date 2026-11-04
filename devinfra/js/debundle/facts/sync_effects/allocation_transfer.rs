@@ -3,6 +3,7 @@
 //! A covered result additionally requires complete canonical source coverage.
 //! Lowered values alone can have erased calls, writes or coercions.
 
+use super::effect_coverage::EffectCoverageFragment;
 use super::value_model::{
     AbstractValue, CallSite, Context, DenseArray, LiteralPropertyKind, PropertyDefinition,
     ProviderScopeId, ValueExpr, Values,
@@ -82,11 +83,18 @@ pub(super) trait AllocationContext {
 
 /// Transfer the exact zero-argument keyed-collection constructor row. Provider
 /// and application adapters both use this kernel after proving callee identity.
+pub(super) struct KeyedCollectionOperationResult {
+    pub(super) allocation: AllocationValue,
+    /// Normal operation effects only. The caller still owns callee/operand
+    /// evaluation and whole-source completion.
+    pub(super) effects: EffectCoverageFragment,
+}
+
 pub(super) fn keyed_collection_new(
     row: &'static Row,
     site: CallSite,
     dependencies: ProofDependencies,
-) -> Option<AllocationValue> {
+) -> Option<KeyedCollectionOperationResult> {
     let (family, kind) = match row.op {
         IntrinsicOp::Map => (NativeIntrinsic::Map, Kind::Map),
         IntrinsicOp::Set => (NativeIntrinsic::Set, Kind::Set),
@@ -110,12 +118,16 @@ pub(super) fn keyed_collection_new(
     {
         return None;
     }
-    Some(AllocationValue {
-        values: Values::from([AbstractValue::Value(Value::Alloc(
-            kind,
-            site.allocation_id(),
-        ))]),
-        judgment: AllocationJudgment::CoveredAllocationOnly(dependencies),
+    let effects = EffectCoverageFragment::native_operation(&dependencies);
+    Some(KeyedCollectionOperationResult {
+        allocation: AllocationValue {
+            values: Values::from([AbstractValue::Value(Value::Alloc(
+                kind,
+                site.allocation_id(),
+            ))]),
+            judgment: AllocationJudgment::CoveredAllocationOnly(dependencies),
+        },
+        effects,
     })
 }
 

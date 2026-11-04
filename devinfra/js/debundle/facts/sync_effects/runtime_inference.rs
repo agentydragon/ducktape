@@ -2,6 +2,7 @@
 //! preceding prefix's settled state and never changes that earlier state.
 
 use super::super::allocation_transfer::AllocationJudgment;
+use super::super::effect_coverage::EffectCoverageFragment;
 use super::super::local_transfer::EvaluatedCallee;
 use super::super::noninvoking_initialization::{EvaluatedInitializer, OriginalInitializer};
 use super::super::property_inference::OwnPropertyProof;
@@ -131,6 +132,7 @@ pub(super) enum RuntimeValue {
     Initializer {
         values: Values,
         evaluated: Option<EvaluatedInitializer>,
+        operation_coverage: Option<Box<EffectCoverageFragment>>,
         refusal: Option<OwnerInitializationCoverageRefusalReason>,
     },
     Outcome(Box<Outcome>),
@@ -539,16 +541,31 @@ impl RuntimeRules<'_, '_> {
                 environment,
                 captures,
             } => {
-                let (values, judgment, native_constructor_transfer) = executor
+                let (values, judgment, native_constructor_transfer, operation_coverage) = executor
                     .evaluate_initializer_transfer(&source, &expression, &environment, &captures);
-                let evaluated =
-                    source.evaluated(&expression, &values, &judgment, native_constructor_transfer);
-                let refusal = evaluated
-                    .is_none()
+                let operation_source = source.operation_source(&expression).is_some();
+                let evaluated = if operation_source {
+                    None
+                } else {
+                    source.evaluated(&expression, &values, &judgment, native_constructor_transfer)
+                };
+                let covered_operation = operation_source
+                    && !values.is_empty()
+                    && !values.contains(&super::super::value_model::AbstractValue::Value(
+                        crate::facts::abstract_domain::value::Value::Unavailable,
+                    ))
+                    && operation_coverage
+                        .as_ref()
+                        .and_then(EffectCoverageFragment::normal_dependencies)
+                        .is_some();
+                let refusal = (evaluated.is_none() && !covered_operation)
                     .then_some(OwnerInitializationCoverageRefusalReason::InitializerResultUnproved);
                 RuntimeValue::Initializer {
                     values,
                     evaluated,
+                    operation_coverage: operation_coverage
+                        .filter(|_| covered_operation)
+                        .map(Box::new),
                     refusal,
                 }
             }
