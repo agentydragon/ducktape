@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ThreadView } from "../schema";
+import type { ThreadView } from "./client";
 import { readySandbox, suspendedSandbox } from "../testing/sandbox";
 import { threadStatusFromSnapshot } from "./thread_status";
 

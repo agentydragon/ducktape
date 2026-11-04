@@ -178,7 +178,6 @@ py_test(
         "//:conftest",
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
-        "//agentplane/app/testing:models",
         "//agentplane/app/testing:replication_process",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:identity_pb2",

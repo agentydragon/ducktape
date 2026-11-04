@@ -1,10 +1,9 @@
 import { Box, Group, Stack, Text } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import type { ThreadView } from "../schema";
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { displayableError } from "../client";
-import { getThread } from "./client";
+import { type ThreadView, getThread } from "./client";
 import { harnessBehavior } from "../harness_behavior";
 import { harnessLabel } from "../model_catalog";
 import { resumeSandbox } from "../sandboxes/client";
@@ -144,7 +143,13 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
               className="agentplane-thread-heading-name"
               threadId={threadId}
               thread={thread}
-              onRenamed={setThread}
+              onRenamed={(metadata) =>
+                setThread((current) =>
+                  current && current.id === metadata.threadId
+                    ? { ...current, name: metadata.name ?? null, archived: metadata.archived }
+                    : current
+                )
+              }
               onError={setError}
             />
             {thread && (

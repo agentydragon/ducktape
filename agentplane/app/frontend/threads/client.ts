@@ -1,11 +1,17 @@
 import { create, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
 
-import type { ThreadView as ThreadViewSchema } from "../schema";
-import { api, displayableError, fetchWithLogin, HttpError, ok } from "../client";
+import { displayableError, fetchWithLogin, HttpError } from "../client";
+import type { Harness } from "../app_config_client";
 import { TurnStatusSchema } from "../../../proto/event_pb";
 import { HarnessSchema, HarnessStateSchema, LaunchOutcomeSchema, SetupStateSchema } from "../../../proto/session_pb";
-import { ListThreadMetadataResponseSchema, ThreadMetadataSchema, type ThreadMetadata } from "../../app_service_pb";
+import {
+  ListThreadMetadataResponseSchema,
+  RenameThreadRequestSchema,
+  ThreadMetadataTargetSchema,
+  ThreadMetadataSchema,
+  type ThreadMetadata,
+} from "../../app_service_pb";
 import {
   BatchGetSessionSummariesRequestSchema,
   BatchGetSessionSummariesResponseSchema,
@@ -49,7 +55,29 @@ import {
 
 export type CommandTarget = { sandbox: string; sandboxUid: string };
 
-type ThreadView = ThreadViewSchema;
+// UI projection of app-owned metadata joined with the History Session summary.
+export interface ThreadView {
+  id: ThreadMetadata["threadId"];
+  sandbox: string;
+  sandbox_uid: string | null;
+  harness: Harness | null;
+  model: string | null;
+  cwd: string | null;
+  created_at: string;
+  name: string | null;
+  archived: ThreadMetadata["archived"];
+  last_cursor: number;
+  last_event_at: string | null;
+  last_model_activity_at: string | null;
+  idle_since: string | null;
+  harness_state: string;
+  setup_state: string | null;
+  launch_outcome: string | null;
+  active_turn_id: string | null;
+  reasoning_effort: string | null;
+  feed_status: string | null;
+  last_turn_status: string | null;
+}
 export interface ThreadListing {
   limit: number;
   search: string | null;
@@ -447,11 +475,14 @@ function composeThreadView(metadata: ThreadMetadata, summary: SessionSummary): T
     throw new Error(`History Service returned an unknown FeedStatus: ${feedStatusName}`);
   }
 
+  const harness = spec ? enumName(spec.harness, HarnessSchema, "Harness") : null;
+  if (harness === "HARNESS_UNSPECIFIED") throw new Error("History Service returned an unspecified Harness");
+
   return {
     id: metadata.threadId,
     sandbox: summary.sandbox?.name ?? "",
     sandbox_uid: sandboxUID || null,
-    harness: spec ? enumName(spec.harness, HarnessSchema, "Harness") : null,
+    harness: harness as Harness | null,
     model: spec?.model ?? null,
     cwd: spec?.cwd ?? null,
     created_at: createdAt,
@@ -469,7 +500,7 @@ function composeThreadView(metadata: ThreadMetadata, summary: SessionSummary): T
     feed_status: feedStatus ?? null,
     last_turn_status:
       summary.lastTurnStatus === undefined ? null : enumName(summary.lastTurnStatus, TurnStatusSchema, "TurnStatus"),
-  } as ThreadView;
+  };
 }
 
 /** Pages app-owned Thread rows, joins History summaries, and keeps the former live-list semantics. */
@@ -562,20 +593,34 @@ export async function listThreadWindow(
   return { threads: visible, more, archived_count: archivedCount };
 }
 
-/** Set the thread's name; null (or a blank, which the API normalises) leaves it unnamed. */
-export async function renameThread(threadId: string, name: string | null): Promise<ThreadView> {
-  return ok(
-    await api.PATCH("/threads/{thread_id}", {
-      params: { path: { thread_id: threadId } },
-      body: { name },
+/** Set or clear the operator-managed name. */
+export async function renameThread(threadId: string, name: string | null): Promise<ThreadMetadata> {
+  const request = create(RenameThreadRequestSchema, { threadId, name: name ?? undefined });
+  const response = await fetchWithLogin(
+    new Request(new URL(`/upstream/app/v1/threads/${encodeURIComponent(threadId)}`, window.location.href), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(toJson(RenameThreadRequestSchema, request)),
     })
   );
+  if (!response.ok) throw new HttpError(response, await response.json().catch(() => null));
+  return fromJson(ThreadMetadataSchema, (await response.json()) as JsonValue);
 }
 
 export async function archiveThread(threadId: string, archived: boolean): Promise<void> {
-  ok(
-    await api.POST(`/threads/{thread_id}/${archived ? "archive" : "unarchive"}`, {
-      params: { path: { thread_id: threadId } },
-    })
+  const request = create(ThreadMetadataTargetSchema, { threadId });
+  const response = await fetchWithLogin(
+    new Request(
+      new URL(
+        `/upstream/app/v1/threads/${encodeURIComponent(threadId)}/${archived ? "archive" : "unarchive"}`,
+        window.location.href
+      ),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(toJson(ThreadMetadataTargetSchema, request)),
+      }
+    )
   );
+  if (!response.ok) throw new HttpError(response, await response.json().catch(() => null));
 }

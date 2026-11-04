@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 
-import type { ThreadView } from "../schema";
+import type { ThreadView } from "./client";
 import {
   SandboxPhase,
   OperatingMode,

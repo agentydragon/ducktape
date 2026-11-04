@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -15,17 +16,13 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
-	"google.golang.org/grpc"
-
 	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/go/historydata"
-	"github.com/agentydragon/ducktape/agentplane/app/go/httperror"
 	"github.com/agentydragon/ducktape/agentplane/app/go/threads"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc/codes"
@@ -54,20 +51,11 @@ type threadReadHistory interface {
 	FindSessions(context.Context, *string, *string, *string) (map[uuid.UUID]string, error)
 }
 
-type threadSandboxInventory interface {
-	GetEnvironment(context.Context, *environmentpb.GetEnvironmentRequest, ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error)
-}
-
 type threadEnvironmentRuntimeStatusReader interface {
 	EnvironmentRuntimeStatus(context.Context, *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error)
 }
 
-type (
-	threadViewOutput struct{ Body threadView }
-)
-
-// threadView keeps the JSON contract of Python's ThreadView, including explicit nulls. The
-// History Service owns the fold fields; PostgreSQL supplies only the operator metadata.
+// threadView combines History Session fields with app-owned operator metadata for listing.
 type threadView struct {
 	ID                  uuid.UUID  `json:"id" format:"uuid"`
 	Sandbox             string     `json:"sandbox"`
@@ -109,139 +97,17 @@ type threadPageToken struct {
 	ID        uuid.UUID     `json:"id"`
 }
 
-type threadIDInput struct {
-	ThreadID uuid.UUID `path:"thread_id" format:"uuid"`
-}
-
-type threadRenameInput struct {
-	ThreadID uuid.UUID `path:"thread_id" format:"uuid"`
-	Body     threadRenameBody
-}
-
-type threadRenameBody struct {
-	Name    *string `json:"name" maxLength:"200"`
-	Present bool    `json:"-"`
-}
-
-func (b *threadRenameBody) UnmarshalJSON(data []byte) error {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return err
-	}
-	for key := range fields {
-		if key != "name" {
-			return fmt.Errorf("unexpected field %q", key)
-		}
-	}
-	raw, ok := fields["name"]
-	if !ok {
-		return errors.New("name is required")
-	}
-	b.Present = true
-	if string(raw) == "null" {
-		b.Name = nil
-		return nil
-	}
-	return json.Unmarshal(raw, &b.Name)
-}
-
-// RegisterThreadReadRoutes adds the Thread read/mutation routes.
-// History-owned reads are served by the History gateway; content and stream routes remain separate.
-// The inventory and Environment Runtime status reader are required for the archive guard.
-func RegisterThreadReadRoutes(
-	server *HTTPServer,
-	namespace string,
-	store threadReadStore,
-	history threadReadHistory,
-	inventory threadSandboxInventory,
-	environmentRuntime threadEnvironmentRuntimeStatusReader,
-) error {
-	api := server.ProtectedAPI()
-	huma.Register[threadRenameInput, threadViewOutput](api, huma.Operation{
-		OperationID: "renameThread", Method: http.MethodPatch, Path: "/threads/{thread_id}", Tags: []string{"threads"},
-		Summary: "Set or clear an operator-managed Thread title",
-	}, func(ctx context.Context, input *threadRenameInput) (*threadViewOutput, error) {
-		if !input.Body.Present {
-			return nil, huma.Error422UnprocessableEntity("name is required")
-		}
-		name := input.Body.Name
-		if name != nil {
-			trimmed := strings.TrimSpace(*name)
-			if !utf8.ValidString(trimmed) || utf8.RuneCountInString(trimmed) > 200 {
-				return nil, huma.Error422UnprocessableEntity("Thread name must be at most 200 characters")
-			}
-			if trimmed == "" {
-				name = nil
-			} else {
-				name = &trimmed
-			}
-		}
-		summary, err := readThreadSummary(ctx, history, input.ThreadID)
-		if err != nil {
-			return nil, threadReadHTTPError(err)
-		}
-		if !summary.Present {
-			return nil, huma.Error404NotFound(fmt.Sprintf("no thread %s", input.ThreadID))
-		}
-		thread, err := store.Rename(ctx, input.ThreadID, name)
-		if err != nil {
-			return nil, threadReadHTTPError(err)
-		}
-		view, err := makeThreadView(thread, summary)
-		if err != nil {
-			return nil, threadReadHTTPError(err)
-		}
-		return &threadViewOutput{Body: view}, nil
-	})
-	huma.Register[threadIDInput, struct{}](api, huma.Operation{
-		OperationID: "archiveThread", Method: http.MethodPost, Path: "/threads/{thread_id}/archive", Tags: []string{"threads"},
-		Summary: "Hide an idle Thread from the default list", DefaultStatus: http.StatusNoContent,
-	}, func(ctx context.Context, input *threadIDInput) (*struct{}, error) {
-		thread, err := store.GetThread(ctx, input.ThreadID)
-		if err != nil {
-			return nil, threadReadHTTPError(err)
-		}
-		if thread == nil {
-			return nil, huma.Error404NotFound(fmt.Sprintf("no thread %s", input.ThreadID))
-		}
-		summary, err := readThreadSummary(ctx, history, input.ThreadID)
-		if err != nil {
-			return nil, threadReadHTTPError(err)
-		}
-		if !summary.Present {
-			return nil, huma.Error404NotFound(fmt.Sprintf("no thread %s", input.ThreadID))
-		}
-		if _, err := makeThreadView(*thread, summary); err != nil {
-			return nil, threadReadHTTPError(err)
-		}
-		if err := ensureThreadArchivable(ctx, namespace, *thread, summary, inventory, environmentRuntime); err != nil {
-			return nil, threadArchiveHTTPError(err)
-		}
-		if _, err := store.Archive(ctx, input.ThreadID); err != nil {
-			return nil, threadReadHTTPError(err)
-		}
-		return nil, nil
-	})
-	huma.Register[threadIDInput, struct{}](api, huma.Operation{
-		OperationID: "unarchiveThread", Method: http.MethodPost, Path: "/threads/{thread_id}/unarchive", Tags: []string{"threads"},
-		Summary: "Show an archived Thread in the default list", DefaultStatus: http.StatusNoContent,
-	}, func(ctx context.Context, input *threadIDInput) (*struct{}, error) {
-		if _, err := store.Unarchive(ctx, input.ThreadID); err != nil {
-			return nil, threadReadHTTPError(err)
-		}
-		return nil, nil
-	})
-	return nil
-}
-
 func registerThreadMetadataGateway(server *HTTPServer, service *appService) error {
-	mux := gatewayruntime.NewServeMux()
+	mux := gatewayruntime.NewServeMux(gatewayruntime.WithErrorHandler(sessionGatewayError))
 	if err := apppb.RegisterAppServiceHandlerServer(context.Background(), mux, service); err != nil {
 		return fmt.Errorf("register generated Thread Metadata gateway: %w", err)
 	}
 	gateway := http.StripPrefix("/upstream/app", mux)
 	server.RegisterRawRoute("GET /upstream/app/v1/threads", gateway, false)
 	server.RegisterRawRoute("GET /upstream/app/v1/threads/{thread_id}", gateway, false)
+	server.RegisterRawRoute("PATCH /upstream/app/v1/threads/{thread_id}", gateway, false)
+	server.RegisterRawRoute("POST /upstream/app/v1/threads/{thread_id}/archive", gateway, false)
+	server.RegisterRawRoute("POST /upstream/app/v1/threads/{thread_id}/unarchive", gateway, false)
 	// grpc-gateway's in-process registration supports unary calls only. Forward the same typed
 	// watch through its standard stream encoder, without a local gRPC listener or transport.
 	server.RegisterRawRoute("GET /upstream/app/v1/threads:watch", http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
@@ -261,10 +127,94 @@ func registerThreadMetadataGateway(server *HTTPServer, service *appService) erro
 	return nil
 }
 
-func (s *appService) GetThreadMetadata(ctx context.Context, request *apppb.GetThreadMetadataRequest) (*apppb.ThreadMetadata, error) {
-	id, err := uuid.Parse(request.GetThreadId())
-	if err != nil || id.String() != request.GetThreadId() {
-		return nil, status.Error(codes.InvalidArgument, "thread_id must be a canonical UUID")
+func threadTargetID(value string) (uuid.UUID, error) {
+	id, err := uuid.Parse(value)
+	if err != nil || id.String() != value {
+		return uuid.Nil, status.Error(codes.InvalidArgument, "thread_id must be a canonical UUID")
+	}
+	return id, nil
+}
+
+func (s *appService) RenameThread(ctx context.Context, request *apppb.RenameThreadRequest) (*apppb.ThreadMetadata, error) {
+	id, err := threadTargetID(request.GetThreadId())
+	if err != nil {
+		return nil, err
+	}
+	name := request.Name
+	if name != nil {
+		trimmed := strings.TrimSpace(*name)
+		if !utf8.ValidString(trimmed) || utf8.RuneCountInString(trimmed) > 200 {
+			return nil, status.Error(codes.InvalidArgument, "Thread name must be at most 200 characters")
+		}
+		if trimmed == "" {
+			name = nil
+		} else {
+			name = &trimmed
+		}
+	}
+	summary, err := readThreadSummary(ctx, s.threadHistory, id)
+	if err != nil {
+		return nil, threadMutationRPCError(err)
+	}
+	if !summary.Present {
+		return nil, status.Errorf(codes.NotFound, "no thread %s", id)
+	}
+	if _, err := makeThreadView(threads.Thread{ID: id}, summary); err != nil {
+		return nil, threadMutationRPCError(err)
+	}
+	thread, err := s.threadReader.Rename(ctx, id, name)
+	if err != nil {
+		return nil, threadMutationRPCError(err)
+	}
+	return threadMetadataProto(thread), nil
+}
+
+func (s *appService) ArchiveThread(ctx context.Context, request *apppb.ThreadMetadataTarget) (*emptypb.Empty, error) {
+	id, err := threadTargetID(request.GetThreadId())
+	if err != nil {
+		return nil, err
+	}
+	thread, err := s.threadReader.GetThread(ctx, id)
+	if err != nil {
+		return nil, threadMutationRPCError(err)
+	}
+	if thread == nil {
+		return nil, status.Errorf(codes.NotFound, "no thread %s", id)
+	}
+	summary, err := readThreadSummary(ctx, s.threadHistory, id)
+	if err != nil {
+		return nil, threadMutationRPCError(err)
+	}
+	if !summary.Present {
+		return nil, status.Errorf(codes.NotFound, "no thread %s", id)
+	}
+	if _, err := makeThreadView(*thread, summary); err != nil {
+		return nil, threadMutationRPCError(err)
+	}
+	if err := ensureThreadArchivable(ctx, s.config.SandboxNamespace, *thread, summary, s.environments, s.threadRuntime); err != nil {
+		return nil, threadMutationRPCError(err)
+	}
+	if _, err := s.threadReader.Archive(ctx, id); err != nil {
+		return nil, threadMutationRPCError(err)
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *appService) UnarchiveThread(ctx context.Context, request *apppb.ThreadMetadataTarget) (*emptypb.Empty, error) {
+	id, err := threadTargetID(request.GetThreadId())
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.threadReader.Unarchive(ctx, id); err != nil {
+		return nil, threadMutationRPCError(err)
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *appService) GetThreadMetadata(ctx context.Context, request *apppb.ThreadMetadataTarget) (*apppb.ThreadMetadata, error) {
+	id, err := threadTargetID(request.GetThreadId())
+	if err != nil {
+		return nil, err
 	}
 	thread, err := s.threadReader.GetThread(ctx, id)
 	if err != nil {
@@ -650,7 +600,7 @@ func makeThreadView(thread threads.Thread, summary historydata.FoldSummary) (thr
 
 func stringPointer(value string) *string { return &value }
 
-func ensureThreadArchivable(ctx context.Context, namespace string, thread threads.Thread, summary historydata.FoldSummary, inventory threadSandboxInventory, environmentRuntime threadEnvironmentRuntimeStatusReader) error {
+func ensureThreadArchivable(ctx context.Context, namespace string, thread threads.Thread, summary historydata.FoldSummary, inventory sessionEnvironmentReader, environmentRuntime threadEnvironmentRuntimeStatusReader) error {
 	if inventory == nil {
 		return errors.New("Sandbox inventory is unavailable")
 	}
@@ -695,53 +645,29 @@ func threadSandboxReady(sandbox *environmentpb.EnvironmentDescriptor) bool {
 		sandbox.GetObservedState().GetReadiness().GetState() == environmentpb.ReadinessState_READINESS_STATE_READY
 }
 
-func threadReadHTTPError(err error) error {
-	return httperror.LogServerError(classifyThreadReadError(err), err)
-}
-
-func classifyThreadReadError(err error) error {
+func threadMutationRPCError(err error) error {
 	switch {
 	case errors.Is(err, threads.ErrNotFound):
-		return huma.Error404NotFound(err.Error())
-	case errors.Is(err, errMalformedThreadPageToken), errors.Is(err, errMismatchedThreadListing):
-		return huma.Error400BadRequest(err.Error())
-	case strings.HasPrefix(err.Error(), "no thread "):
-		return huma.Error404NotFound(err.Error())
+		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, errThreadEnvironmentRuntimeUnready), errors.Is(err, errThreadBusy):
-		return huma.Error409Conflict(err.Error())
-	case errors.Is(err, historydata.ErrInvalidPage), errors.Is(err, historydata.ErrInvalidSessionID):
-		return huma.Error503ServiceUnavailable("Upstream service unavailable")
+		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, context.DeadlineExceeded):
-		return huma.Error504GatewayTimeout("Upstream deadline expired")
-	case isHistoryConnectionError(err):
-		return huma.Error503ServiceUnavailable("Upstream service unavailable")
+		return status.Error(codes.DeadlineExceeded, "Upstream deadline expired")
+	case errors.Is(err, historydata.ErrInvalidPage), errors.Is(err, historydata.ErrInvalidSessionID), isHistoryConnectionError(err):
+		return status.Error(codes.Unavailable, "Upstream service unavailable")
 	default:
 		switch status.Code(err) {
-		case codes.NotFound:
-			return huma.Error404NotFound(err.Error())
-		case codes.FailedPrecondition, codes.AlreadyExists, codes.Aborted:
-			return huma.Error409Conflict(err.Error())
-		case codes.InvalidArgument:
-			return huma.Error422UnprocessableEntity(err.Error())
-		case codes.ResourceExhausted:
-			return huma.Error429TooManyRequests(err.Error())
-		case codes.DeadlineExceeded:
-			return huma.Error504GatewayTimeout("Upstream deadline expired")
+		case codes.NotFound, codes.FailedPrecondition, codes.AlreadyExists, codes.Aborted, codes.InvalidArgument, codes.ResourceExhausted, codes.DeadlineExceeded, codes.Unavailable:
+			return err
 		}
-		return huma.Error500InternalServerError("Thread metadata could not be read")
+		slog.Error("Thread metadata mutation failed", "error", err)
+		return status.Error(codes.Internal, "Thread metadata could not be updated")
 	}
 }
 
 func isHistoryConnectionError(err error) bool {
 	var networkError interface{ Timeout() bool }
 	return errors.As(err, &networkError) || errors.Is(err, context.Canceled) || strings.Contains(err.Error(), "History Service") || strings.Contains(err.Error(), "service observation page")
-}
-
-func threadArchiveHTTPError(err error) error {
-	if errors.Is(err, errThreadBusy) || errors.Is(err, errThreadEnvironmentRuntimeUnready) {
-		return huma.Error409Conflict(err.Error())
-	}
-	return sandboxHTTPError(err)
 }
 
 var _ threadReadStore = (*threads.Store)(nil)

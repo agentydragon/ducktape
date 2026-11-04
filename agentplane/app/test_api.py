@@ -13,7 +13,6 @@ from google.protobuf.json_format import MessageToDict, ParseDict
 
 from agentplane import sandbox_resource
 from agentplane.app.sandbox_models import NewSandboxDefaults
-from agentplane.app.testing.models import ThreadView
 from agentplane.app.testing.replication_process import AppProcess, spawn_go_app
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.environments.v1 import environment_service_pb2
@@ -190,10 +189,7 @@ async def test_go_openapi_tracks_selected_python_http_contract_fields(http: http
     paths = document["paths"]
     schemas = document["components"]["schemas"]
 
-    assert "/threads/{thread_id}" in paths
     assert "/frontend-config" in paths
-
-    assert ThreadView.model_fields.keys() <= schemas["ThreadView"]["properties"].keys()
 
     form_properties = schemas["SandboxFormOutputBody"]["properties"]
     assert {"policy_sets", "new_sandbox_defaults"} <= form_properties.keys()

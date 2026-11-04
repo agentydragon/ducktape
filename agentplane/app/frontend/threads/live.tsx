@@ -11,8 +11,7 @@ import { protoJson } from "./proto_json";
 import { WatchThreadMetadataResponseSchema } from "../../app_service_pb";
 import { WatchSessionSummariesResponseSchema } from "../../../history_service/history_service_pb";
 
-import type { ThreadView } from "../schema";
-import { listThreadWindow, type ThreadListing } from "./client";
+import { type ThreadView, listThreadWindow, type ThreadListing } from "./client";
 
 /** The Thread window. Sandboxes come from the EnvironmentService inventory watch (`SandboxesLiveProvider`), their one source. */
 export type ThreadsSnapshot = {

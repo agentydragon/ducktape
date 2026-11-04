@@ -1,7 +1,6 @@
 import { DeliveryState } from "../../../runner_gateway/dispatcher/session_dispatcher_pb";
 import { clone, create } from "@bufbuild/protobuf";
 
-import type { ThreadView } from "../schema";
 import { NotificationStatus } from "../notification_status";
 import {
   ActionIcon,
@@ -21,8 +20,8 @@ import { IconDotsVertical, IconPlus, IconTrash } from "../icons";
 import { type JSX, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { api, displayableError } from "../client";
-import { findThread, getThread } from "../threads/client";
+import { displayableError } from "../client";
+import { archiveThread, findThread, getThread, type ThreadView } from "../threads/client";
 import {
   deleteEnvironment,
   getSessionOpening,
@@ -208,10 +207,12 @@ export function SandboxPage({
 
   // No refresh after an action: the live stream carries the thread's new archived state back.
   async function threadAct(threadId: string, action: "archive" | "unarchive"): Promise<void> {
-    const { error: failure } = await api.POST(`/threads/{thread_id}/${action}`, {
-      params: { path: { thread_id: threadId } },
-    });
-    setError(failure ? displayableError(failure) : null);
+    try {
+      await archiveThread(threadId, action === "archive");
+      setError(null);
+    } catch (failure: unknown) {
+      setError(displayableError(failure));
+    }
   }
 
   /** Deleting leaves nothing to look at, so a deleted sandbox takes the view back to the list. */

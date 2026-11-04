@@ -57,42 +57,12 @@ func TestFrontendConfigOpenAPIDocumentsNullableTargets(t *testing.T) {
 	}
 }
 
-func TestExportOpenAPIUsesHumaSchemasForThreadRoutes(t *testing.T) {
+func TestExportOpenAPISandboxFormSchema(t *testing.T) {
 	var output bytes.Buffer
 	if err := exportOpenAPI(&output); err != nil {
 		t.Fatal(err)
 	}
 	document := assertSaneOpenAPI(t, output.Bytes())
-	for _, path := range []string{"/threads/{thread_id}", "/threads/{thread_id}/archive", "/threads/{thread_id}/unarchive"} {
-		if _, ok := document.Paths[path]; !ok {
-			t.Errorf("OpenAPI document omits Huma route %q", path)
-		}
-	}
-
-	threadView := document.Components.Schemas["ThreadView"]
-	if threadView == nil {
-		t.Fatal("OpenAPI document omits ThreadView")
-	}
-	properties, ok := threadView["properties"].(map[string]any)
-	if !ok {
-		t.Fatalf("ThreadView.properties = %T, want object", threadView["properties"])
-	}
-	id, ok := properties["id"].(map[string]any)
-	if !ok || id["format"] != "uuid" {
-		t.Fatal("ThreadView.id must be documented as a UUID")
-	}
-	sandboxUID, ok := properties["sandbox_uid"].(map[string]any)
-	if !ok || sandboxUID["format"] != nil {
-		t.Fatalf("ThreadView.sandbox_uid = %v, want an opaque nullable string", properties["sandbox_uid"])
-	}
-	types, ok := sandboxUID["type"].([]any)
-	if !ok || len(types) != 2 || types[0] != "string" || types[1] != "null" {
-		t.Fatalf("ThreadView.sandbox_uid.type = %v, want string or null", sandboxUID["type"])
-	}
-	lastCursor, ok := properties["last_cursor"].(map[string]any)
-	if !ok || lastCursor["type"] != "integer" || lastCursor["format"] != "int64" {
-		t.Fatal("ThreadView.last_cursor must be documented as an int64")
-	}
 	for schemaName, fields := range map[string][]string{
 		"SandboxFormOutputBody": {"policy_sets"},
 	} {

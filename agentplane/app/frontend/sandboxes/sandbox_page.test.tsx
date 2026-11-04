@@ -3,7 +3,8 @@ import { SandboxPhase, OperatingMode, ReadinessState } from "../../../environmen
 
 import { readySandbox as makeReadySandbox } from "../testing/sandbox";
 import { MantineProvider } from "@mantine/core";
-import type { LangfuseSearchSettings, ThreadView, TraceSearchSettings } from "../schema";
+import type { LangfuseSearchSettings, TraceSearchSettings } from "../schema";
+import type { ThreadView } from "../threads/client";
 import {
   TEST_REASONING_EFFORTS,
   testModelCatalog,
@@ -296,7 +297,7 @@ async function render(
       return Promise.resolve(found ? Response.json(found) : Response.json({ detail: "not found" }, { status: 404 }));
     }
     if (/^\/sandboxes\/(startup-test|other-test)\/sessions/.test(path)) return sessions(request);
-    if (/^\/threads\/[^/]+\/(un)?archive$/.test(path)) return threadActions(request);
+    if (/^\/upstream\/app\/v1\/threads\/[^/]+\/(un)?archive$/.test(path)) return threadActions(request);
     throw new Error(`Unexpected request: ${request.method} ${path}`);
   });
   container = document.createElement("div");
@@ -976,7 +977,7 @@ it("hides an archived Thread by default, reveals it via Show archived, and unarc
   await act(async () => menuItem("Unarchive").click());
 
   expect(archiveRequests.map((request) => [request.method, new URL(request.url).pathname])).toEqual([
-    ["POST", "/threads/existing-session/unarchive"],
+    ["POST", "/upstream/app/v1/threads/existing-session/unarchive"],
   ]);
 });
 
@@ -1000,7 +1001,7 @@ it("allows archiving an idle Thread while its harness is running", async () => {
   expect((archiveItem as HTMLButtonElement).disabled).toBe(false);
   await act(async () => archiveItem.click());
   expect(archiveRequests.map((request) => [request.method, new URL(request.url).pathname])).toEqual([
-    ["POST", "/threads/existing-session/archive"],
+    ["POST", "/upstream/app/v1/threads/existing-session/archive"],
   ]);
 });
 

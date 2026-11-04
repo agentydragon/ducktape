@@ -1,3 +1,4 @@
+import type * as ThreadClientModule from "./client";
 // @vitest-environment happy-dom
 import { toJson } from "@bufbuild/protobuf";
 import { EnvironmentDescriptorSchema } from "../../../environments/v1/environment_service_pb";
@@ -8,14 +9,14 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import type { ThreadView } from "../schema";
-import type * as ThreadClientModule from "./client";
 import { listThreadWindow } from "./client";
 import { Home } from "./home";
 import { RoutedThreadsLiveProvider } from "./live";
 import { SandboxesLiveProvider } from "../sandboxes/live";
 import { Sidebar } from "../sidebar";
 import { ServedWatch, serveEventStreams } from "../testing/watch";
+
+type ThreadView = ThreadClientModule.ThreadView;
 
 vi.mock("./client", async (importOriginal) => ({
   ...(await importOriginal<typeof ThreadClientModule>()),

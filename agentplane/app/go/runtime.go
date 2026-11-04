@@ -313,7 +313,7 @@ func run(ctx context.Context, config Config) error {
 	server := NewHTTPServer(appAuth)
 	app := &appService{
 		config: config, environments: environments, bridge: appBridge, runnerStatus: appBridge,
-		threadWriter: threadStore, threadReader: threadStore, threadHistory: history,
+		threadWriter: threadStore, threadReader: threadStore, threadHistory: history, threadRuntime: runner,
 		updates: wakeupHub, updatesConnected: wakeupHub.Connected, drainDone: server.DrainDone(),
 	}
 	if err := RegisterAppConfigRoutes(server, app); err != nil {
@@ -331,9 +331,6 @@ func run(ctx context.Context, config Config) error {
 	}
 	if err := registerThreadMetadataGateway(server, app); err != nil {
 		return fmt.Errorf("register Thread metadata facade: %w", err)
-	}
-	if err := RegisterThreadReadRoutes(server, config.SandboxNamespace, threadStore, history, environments, runner); err != nil {
-		return fmt.Errorf("register Thread routes: %w", err)
 	}
 	RegisterOperatorRoutes(server, policies, actionCallbackHTTP, config.ActionFederation.ServiceURL)
 	RegisterStatusRoutes(server, serviceStatus)

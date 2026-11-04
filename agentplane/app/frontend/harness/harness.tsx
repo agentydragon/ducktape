@@ -16,7 +16,6 @@ import {
   type ServerSentEvent,
   UNANSWERED,
 } from "./network";
-import type { ThreadView } from "../schema";
 import type { ActionGroupView, ActionRequestView } from "../actions/client";
 import {
   PolicyBindingSchema,
@@ -74,7 +73,7 @@ import {
 import { sampleConnection } from "../connections/testing/fixture";
 import type { Connection } from "../connections/models";
 
-import { dispatchFromJson } from "../threads/client";
+import { type ThreadView, dispatchFromJson } from "../threads/client";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
 import type { McpLinkageView } from "../mcp_linkage_client";
 import {
