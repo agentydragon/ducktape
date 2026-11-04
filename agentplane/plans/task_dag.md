@@ -2047,6 +2047,7 @@ flowchart LR
     SESSION_DIRECTORY_NATIVE[Ready: Dispatcher Session directory for native placement]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: send authority and internal fencing]
     SESSION_DELETION_FENCE[In progress: bounded deletion outcome delivery]
+    SESSION_AND_INBOX_LIFETIME[Decision: Session and inbox lifetimes after environment deletion]
     DELIVERY_DESTINATION_CONTRACT[In progress: Session-ID command addressing]
     SESSION_NOTIFICATION_ADDRESS[Blocked: remaining Session notification addressing]
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
@@ -2054,6 +2055,7 @@ flowchart LR
     SESSION_DIRECTORY_NATIVE --> SESSION_NOTIFICATION_ADDRESS
     DELIVERY_DESTINATION_AUTHORITY_DESIGN --> SESSION_NOTIFICATION_ADDRESS
     DELIVERY_DESTINATION_CONTRACT --> SESSION_NOTIFICATION_ADDRESS
+    SESSION_AND_INBOX_LIFETIME -. central lifetime .-> SESSION_NOTIFICATION_ADDRESS
     SESSION_RUNTIME_MODEL_DESIGN --> SESSION_HISTORY_PRESENTATION
     AGENT_PRINCIPAL_MODEL_DESIGN --> SESSION_HISTORY_PRESENTATION
     HARNESS_IDENTITY_DESIGN[Decision: private store and native Session mapping]
@@ -2209,6 +2211,30 @@ semantics and the enforced Gateway proxy boundary. Review remaining Action-facin
 stores. This does not decide central attachment policy.
 [Address inventory](session_environment_model.md#session-address-inventory).
 
+### `SESSION_AND_INBOX_LIFETIME` — decide Session and inbox lifetimes
+
+**Decision; operator requested joint review, 2026-11-03 PDT.** Dispatcher currently removes Session
+openings for a deleted Sandbox UID. Independently, Notification's stale-destination check retires the
+inbox and cancels subscriptions after confirming that its recorded Sandbox is absent or replaced.
+Neither transition is a cross-service transaction; central Sessions currently still depend on their
+original Sandbox. The selected central Session lifetime is indefinite, independent of attachments;
+app archive is separate and complete forgetting applies when a Session is actually deleted.
+
+Compare ending an environment-hosted Session and retiring its inbox on deletion of its required
+environment with retaining an unavailable Session and inbox for an explicit lifetime or until an
+explicit end. For central Sessions, environment loss or detachment must not by itself end the
+Session; decide whether its inbox likewise remains active, with that as the initial recommendation.
+Decide the owning signals and reconciliation, pending messages and
+subscriptions, read/admin authority after a Sandbox-owned ServiceAccount disappears, History handoff,
+and deletion, reattachment and same-name-replacement races. Preserve exact UID fences, unread data,
+no-replay recovery and authorized unattended wake; suspension and temporary unavailability are not
+Session deletion. Command-receipt retention is separately tracked in `SESSION_DELETION_FENCE` and
+is deferred; do not choose a period here. See the [Session and inbox lifetime discussion](session_environment_model.md#decision-session-and-inbox-lifetimes-after-environment-deletion).
+
+**Exit:** a reviewed lifecycle and authority contract for both Session kinds, with owners and
+cross-service failure behavior identified before implementing central Session inbox lifetime changes.
+This decision does not block independently safe native-only addressing cleanup.
+
 ### `SESSION_NOTIFICATION_ADDRESS` — address inboxes and notices by Session ID
 
 **Remaining delivery cutover is blocked on `SESSION_DIRECTORY_NATIVE`, `DELIVERY_DESTINATION_CONTRACT`, and reviewed send authority.**
@@ -2224,7 +2250,8 @@ placement, authorization or wake decision needs it. Preserve subscription and me
 inbox cursors, actor attribution, cross-Session denial, authorized unattended wake, and exact UID
 fencing of accepted work. Account for central Sessions without an environment without assuming the
 unresolved principal model. Review state ownership and data preservation before any store cutover;
-no silent inbox or message loss. See the [inventory](session_environment_model.md#session-address-inventory).
+no silent inbox or message loss. Central Session inbox lifetime changes additionally require
+`SESSION_AND_INBOX_LIFETIME`. See the [inventory](session_environment_model.md#session-address-inventory).
 
 ### `SESSION_HISTORY_PRESENTATION` — represent Sessions without a required Sandbox
 
