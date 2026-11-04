@@ -37,6 +37,7 @@ use spec_modules::{
 };
 use yaml_edit::write_yaml_atomic;
 
+use crate::candidate_assessment::CandidateEffectAssessmentArgs;
 use crate::edit_gate::{GraphEditArgs, PostEditSpec, post_delete_spec, post_edit_spec_from_docs};
 use crate::outcome::{GateOutcome, MutationOutcome, emit_gate_rejection_json, print_outcome_json};
 
@@ -44,6 +45,11 @@ use crate::outcome::{GateOutcome, MutationOutcome, emit_gate_rejection_json, pri
 pub struct MergeArgs {
     #[command(flatten)]
     pub edit: GraphEditArgs,
+
+    /// Optional full-context report-only effect assessment of the complete
+    /// in-memory merge candidate. Requires `--dry-run` and `--analysis`.
+    #[command(flatten)]
+    pub effect_assessment: CandidateEffectAssessmentArgs,
 
     /// Target module path (relative to --modules) to merge into.
     /// Created if it doesn't exist yet.
@@ -86,6 +92,8 @@ pub struct MergeOutcome {
     #[serde(flatten)]
     pub outcome: MutationOutcome,
     pub target: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect_relocation_assessment: Option<gate::EffectRelocationAssessment>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -93,6 +101,8 @@ struct MergeBatchOutcome {
     #[serde(flatten)]
     outcome: MutationOutcome,
     targets: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effect_relocation_assessment: Option<gate::EffectRelocationAssessment>,
 }
 
 /// `modules delete` outcome: just the shared core (deleted paths in
@@ -259,7 +269,29 @@ pub fn run_merge(
             plan_merge(&modules_root, &request.target, &sources)
         })
         .collect::<Result<Vec<_>>>()?;
-    if let Err(err) = gate.check(&modules_root, || post_merge_spec(&modules_root, &plans)) {
+    let effect_context = merge
+        .effect_assessment
+        .resolve(&merge.edit, source_context)?;
+    let (candidate_docs, effect_relocation_assessment) =
+        if let Some(context) = effect_context.as_ref() {
+            let docs = post_merge_docs(&modules_root, &plans)?;
+            let candidate_modules = docs
+                .iter()
+                .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
+                .collect();
+            let assessment = context.assess(&merge.edit.modules_root, &candidate_modules)?;
+            (Some(docs), Some(assessment))
+        } else {
+            (None, None)
+        };
+    let validation = if let Some(docs) = candidate_docs.as_ref() {
+        gate.check(&modules_root, || {
+            post_edit_spec_from_docs(docs, &BTreeSet::new())
+        })
+    } else {
+        gate.check(&modules_root, || post_merge_spec(&modules_root, &plans))
+    };
+    if let Err(err) = validation {
         emit_gate_rejection_json("merge", merge.edit.format, &err);
         return Err(err);
     }
@@ -317,12 +349,20 @@ pub fn run_merge(
                 .iter()
                 .map(|p| p.summary.target.display().to_string())
                 .collect();
-            print_outcome_json(&MergeBatchOutcome { outcome, targets }, format)?;
+            print_outcome_json(
+                &MergeBatchOutcome {
+                    outcome,
+                    targets,
+                    effect_relocation_assessment,
+                },
+                format,
+            )?;
         }
         format => print_outcome_json(
             &MergeOutcome {
                 outcome,
                 target: plans[0].summary.target.display().to_string(),
+                effect_relocation_assessment,
             },
             format,
         )?,
@@ -344,6 +384,46 @@ impl MergePlan {
             .with_context(|| format!("re-encoding merged {}", target.display()))?;
         write_yaml_atomic(target, &doc)
     }
+}
+
+fn post_merge_docs(
+    modules_root: &Path,
+    plans: &[MergePlan],
+) -> Result<BTreeMap<String, (PathBuf, LogicalModule)>> {
+    let replaced: BTreeSet<_> = plans
+        .iter()
+        .flat_map(|plan| {
+            plan.summary
+                .merged_sources
+                .iter()
+                .cloned()
+                .chain(std::iter::once(plan.summary.target.clone()))
+        })
+        .collect();
+    let mut docs = BTreeMap::new();
+    for file in collect_module_files(modules_root)? {
+        if replaced.contains(&file) {
+            continue;
+        }
+        let module_path = module_path_from_file(&file, modules_root);
+        anyhow::ensure!(
+            docs.insert(module_path.clone(), (file.clone(), read_module(&file)?))
+                .is_none(),
+            "duplicate logical module path in modules tree: {module_path}"
+        );
+    }
+    for plan in plans {
+        let module_path = module_path_from_file(&plan.summary.target, modules_root);
+        anyhow::ensure!(
+            docs.insert(
+                module_path.clone(),
+                (plan.summary.target.clone(), plan.document.clone())
+            )
+            .is_none(),
+            "merge target collides with another logical module path: {module_path}"
+        );
+    }
+    Ok(docs)
 }
 
 fn post_merge_spec(modules_root: &Path, plans: &[MergePlan]) -> Result<PostEditSpec> {

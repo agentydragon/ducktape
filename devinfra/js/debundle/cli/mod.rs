@@ -1,4 +1,5 @@
 pub mod binding;
+mod candidate_assessment;
 pub mod comment;
 pub mod edit_gate;
 pub mod gate;
