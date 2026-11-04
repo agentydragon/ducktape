@@ -1107,10 +1107,15 @@ fn early_destructuring_split_refusal_matches_with_saved_facts() {
     assert_eq!(direct.status.code(), from_artifact.status.code());
     for result in [&direct, &from_artifact] {
         assert!(
-            result.stderr.contains("destructure declarator binds left")
+            result
+                .stderr
+                .contains("source/destination placement projection is unmappable")
+                && result.stderr.contains("OwnedBindingDestinationMismatch")
+                && result.stderr.contains("DestructuringDestinationSplit")
                 && result.stderr.contains("left_module")
-                && result.stderr.contains("right_module"),
-            "expected the typed early placement refusal in stderr:\n{}",
+                && result.stderr.contains("right_module")
+                && result.stderr.contains("unresolved checks: {}"),
+            "expected the common typed placement refusal with complete destinations in stderr:\n{}",
             result.stderr
         );
     }
@@ -2911,4 +2916,180 @@ fn bindings_assign_requested_assessment_refuses_stale_inputs_before_yaml_writes(
     );
     assert!(refused.stderr.contains("projection"), "{}", refused.stderr);
     assert_eq!(module_snapshot(&staged.modules), before);
+}
+
+fn assert_candidate_has_placement_violation(
+    result: &CommandResult,
+    expected_violation: &str,
+    label: &str,
+) {
+    assert_ok(result, label);
+    let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
+    let assessment = &outcome["effect_relocation_assessment"];
+    assert_eq!(
+        assessment["status"], "blocked_by_placement",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["placement"]["status"], "blocked",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["placement"]["projection_violations"]
+            .as_array()
+            .expect("typed placement violations")
+            .iter()
+            .any(|violation| violation["kind"] == expected_violation),
+        "expected {expected_violation} in {assessment:#}"
+    );
+}
+
+fn assert_normal_run_refuses_with_projection_violation(
+    run: &TreeRun,
+    expected_debug_variant: &str,
+    label: &str,
+) {
+    assert!(
+        !run.result.status.success(),
+        "{label} unexpectedly emitted runnable output"
+    );
+    assert!(
+        run.result
+            .stderr
+            .contains("placement projection is unmappable"),
+        "{label} did not use the common projection refusal:\n{}",
+        run.result.stderr
+    );
+    assert!(
+        run.result.stderr.contains(expected_debug_variant),
+        "{label} did not report {expected_debug_variant}:\n{}",
+        run.result.stderr
+    );
+    assert!(
+        !run.out_root.join("app").exists(),
+        "{label} wrote application output after placement refusal"
+    );
+}
+
+#[test]
+fn staged_assessment_types_conflicting_destructuring_claims() {
+    const SOURCE: &str = "const source = { a: 1, b: 2 };\n\
+const { a, b } = source;\n\
+export { a, b };\n";
+    let invalid = run_tree_graph_fixture(
+        &TreeFixture {
+            chunks: &[("main", SOURCE)],
+            module_roots: &[],
+            modules: &[
+                (
+                    "a_left.yaml",
+                    "members: [{selector: {binding: {name: source}}}, {selector: {binding: {name: a}}}]\n",
+                ),
+                (
+                    "b_right.yaml",
+                    "members: [{selector: {binding: {name: b}}}]\n",
+                ),
+            ],
+        },
+        &[],
+    );
+
+    let staged = staged_tree(
+        &[("main", SOURCE)],
+        &[(
+            "z_same.yaml",
+            "members: [{selector: {binding: {name: source}}}, {selector: {binding: {name: a}}}, {selector: {binding: {name: b}}}]\n",
+        )],
+    );
+    let result = staged.assign(Some("b:zz_right"), Some(&staged.artifact), true);
+    assert_candidate_has_placement_violation(
+        &result,
+        "destructuring_destination_split",
+        "bindings assign --dry-run --analysis for split destructuring",
+    );
+    assert_normal_run_refuses_with_projection_violation(
+        &invalid,
+        "DestructuringDestinationSplit",
+        "split destructuring",
+    );
+}
+
+#[test]
+fn staged_assessment_types_partially_owned_nested_var_statement() {
+    const SOURCE: &str = "if (true) { var a = 1; var b = 2; }\n\
+console.log(a, b);\n\
+export { a, b };\n";
+    let invalid = run_tree_graph_fixture(
+        &TreeFixture {
+            chunks: &[("main", SOURCE)],
+            module_roots: &[],
+            modules: &[(
+                "z_same.yaml",
+                "members: [{selector: {binding: {name: a}}}]\n",
+            )],
+        },
+        &[],
+    );
+
+    let staged = staged_tree(
+        &[("main", SOURCE)],
+        &[(
+            "z_same.yaml",
+            "members: [{selector: {binding: {name: a}}}, {selector: {binding: {name: b}}}]\n",
+        )],
+    );
+    let result = staged.unassign("b", Some(&staged.artifact), true);
+    assert_candidate_has_placement_violation(
+        &result,
+        "nested_var_missing_owner",
+        "bindings unassign --dry-run --analysis for partial nested var",
+    );
+    assert_normal_run_refuses_with_projection_violation(
+        &invalid,
+        "NestedVarMissingOwner",
+        "partially owned nested var",
+    );
+}
+
+#[test]
+fn staged_assessment_types_split_nested_var_bindings() {
+    const SOURCE: &str = "if (true) { var a = 1; var b = 2; }\n\
+console.log(a, b);\n\
+export { a, b };\n";
+    let invalid = run_tree_graph_fixture(
+        &TreeFixture {
+            chunks: &[("main", SOURCE)],
+            module_roots: &[],
+            modules: &[
+                (
+                    "a_left.yaml",
+                    "members: [{selector: {binding: {name: a}}}]\n",
+                ),
+                (
+                    "b_right.yaml",
+                    "members: [{selector: {binding: {name: b}}}]\n",
+                ),
+            ],
+        },
+        &[],
+    );
+
+    let staged = staged_tree(
+        &[("main", SOURCE)],
+        &[(
+            "z_same.yaml",
+            "members: [{selector: {binding: {name: a}}}, {selector: {binding: {name: b}}}]\n",
+        )],
+    );
+    let result = staged.assign(Some("b:zz_right"), Some(&staged.artifact), true);
+    assert_candidate_has_placement_violation(
+        &result,
+        "nested_var_destination_split",
+        "bindings assign --dry-run --analysis for split nested-var bindings",
+    );
+    assert_normal_run_refuses_with_projection_violation(
+        &invalid,
+        "NestedVarDestinationSplit",
+        "split nested-var bindings",
+    );
 }

@@ -277,7 +277,11 @@ export { a, b };
                 logical_module("right", &[Member::new("b")]),
             ],
         ),
-        &["declares bindings assigned to different modules"],
+        &[
+            "atomic-group conflict",
+            "Shared var declaration",
+            "claims across {left, right}",
+        ],
     );
 }
 

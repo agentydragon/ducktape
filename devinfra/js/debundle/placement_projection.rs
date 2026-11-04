@@ -5,7 +5,6 @@
 //! exact maps the emitter needs together with typed structural evidence.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::fmt;
 
 use serde::Serialize;
 use source_identity::{SourceUnitOrdinal, StatementId};
@@ -55,14 +54,6 @@ pub enum DestructuringGroupOwnerClassification {
     OneOwner { destination: ModuleId },
     Split { destinations: Vec<ModuleId> },
 }
-
-impl fmt::Display for DestructuringGroupDestinationCheck {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("destructuring declarator placement check")
-    }
-}
-
-impl std::error::Error for DestructuringGroupDestinationCheck {}
 
 /// Classify observed owners for one destructuring declarator. Callers choose
 /// the ownership evidence domain: explicit module requests during planning, or
@@ -145,22 +136,6 @@ impl NestedVarPlacementCheck {
                 .any(|destination| *destination != entry)
     }
 }
-
-impl fmt::Display for NestedVarPlacementCheck {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "nested-var placement for statement {}: {:?}",
-            self.statement, self.classification
-        )?;
-        if !self.missing_bindings.is_empty() {
-            write!(formatter, "; missing owners: {:?}", self.missing_bindings)?;
-        }
-        Ok(())
-    }
-}
-
-impl std::error::Error for NestedVarPlacementCheck {}
 
 /// Classify nested-var placement from the retained statement identity, exact
 /// SWC binding owners, and any existing whole-statement request. The entry
@@ -403,6 +378,10 @@ pub enum PlacementProjectionViolation {
         destinations: Vec<ModuleId>,
     },
     NestedVarMissingOwner {
+        statement: StatementId,
+        binding: Id,
+    },
+    NestedVarMissingSourceProjection {
         statement: StatementId,
         binding: Id,
     },
@@ -715,10 +694,16 @@ pub fn project_placement<'a>(input: PlacementProjectionInput<'a>) -> PlacementPr
             .bindings
             .iter()
             .filter_map(|binding| {
-                binding_destinations
-                    .get(binding)
-                    .copied()
-                    .map(|destination| (binding.clone(), destination))
+                let source_destination = binding_destinations.get(binding).copied()?;
+                let destination = match input.local_bindings.as_map().get(binding) {
+                    // A source unit's graph assignment can collapse several
+                    // explicit claims to one destination. Classify the
+                    // retained hygienic requests only after the canonical
+                    // source projection proves this binding is present.
+                    Some(BindingKind::Owned { module }) => *module,
+                    _ => source_destination,
+                };
+                Some((binding.clone(), destination))
             })
             .collect();
         let present_bindings: BTreeSet<_> =
@@ -749,14 +734,22 @@ pub fn project_placement<'a>(input: PlacementProjectionInput<'a>) -> PlacementPr
     }
 
     for nested in input.nested_var_statements {
-        let owners = nested
+        for binding in &nested.bindings {
+            if !binding_destinations.contains_key(binding) {
+                violations.push(
+                    PlacementProjectionViolation::NestedVarMissingSourceProjection {
+                        statement: nested.statement,
+                        binding: binding.clone(),
+                    },
+                );
+            }
+        }
+        let explicit_owners: Vec<_> = nested
             .bindings
             .iter()
-            .filter_map(|binding| {
-                binding_destinations
-                    .get(binding)
-                    .copied()
-                    .map(|destination| (binding.clone(), destination))
+            .filter_map(|binding| match input.local_bindings.as_map().get(binding) {
+                Some(BindingKind::Owned { module }) => Some((binding.clone(), *module)),
+                _ => None,
             })
             .collect();
         let whole_statement_request = input
@@ -764,12 +757,33 @@ pub fn project_placement<'a>(input: PlacementProjectionInput<'a>) -> PlacementPr
             .get(&nested.statement)
             .copied()
             .map(ModuleId);
+        let has_ownership_request =
+            !explicit_owners.is_empty() || whole_statement_request.is_some();
+        // Retain conflicting/partial authored claims even when one graph node
+        // projects all of its bindings to a single destination. With no claims,
+        // the completed source projection supplies ordinary entry placement.
+        let owners = if has_ownership_request {
+            explicit_owners
+        } else {
+            nested
+                .bindings
+                .iter()
+                .filter_map(|binding| {
+                    binding_destinations
+                        .get(binding)
+                        .copied()
+                        .map(|destination| (binding.clone(), destination))
+                })
+                .collect()
+        };
         let check = classify_nested_var_placement(nested, owners, whole_statement_request);
-        for binding in &check.missing_bindings {
-            violations.push(PlacementProjectionViolation::NestedVarMissingOwner {
-                statement: check.statement,
-                binding: binding.clone(),
-            });
+        if has_ownership_request {
+            for binding in &check.missing_bindings {
+                violations.push(PlacementProjectionViolation::NestedVarMissingOwner {
+                    statement: check.statement,
+                    binding: binding.clone(),
+                });
+            }
         }
         if check.requires_whole_statement_claim(entry) {
             violations.push(

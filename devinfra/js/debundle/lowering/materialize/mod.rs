@@ -248,7 +248,7 @@ pub(super) fn prepare_logical_chunk(
         )?;
     }
     builder.drop_explicit_request_scratch();
-    builder.apply_destructuring_group_placement(&ast_analysis.destructuring_groups)?;
+    builder.apply_destructuring_group_placement(&ast_analysis.destructuring_groups);
     builder.add_residual_sweep(
         residual_request.as_ref(),
         chunk_unassigned_mode.catchall_file_target(),
@@ -324,7 +324,7 @@ pub(super) fn claim_prepared_chunk<'a>(
     )?;
     prepared
         .builder
-        .apply_destructuring_group_placement(&prepared.ast_analysis.destructuring_groups)?;
+        .apply_destructuring_group_placement(&prepared.ast_analysis.destructuring_groups);
     prepared
         .builder
         .adopt_bindings_of_claimed_anonymous_statements(&prepared.ast_analysis.declarations);
@@ -530,7 +530,7 @@ pub(super) fn finish_logical_chunk(
     if matches!(chunk_unassigned_mode, UnassignedMode::PerAtomicGroup) {
         builder.synthesize_per_atomic_group(&precomputed, &source_unit_layout, target_dir)?;
     }
-    builder.route_nested_var_statements(&ast_analysis.nested_var_statements)?;
+    builder.route_nested_var_statements(&ast_analysis.nested_var_statements);
     if matches!(chunk_unassigned_mode, UnassignedMode::CatchallFile { .. }) {
         builder.route_unclaimed_anonymous_to_catchall(&precomputed, &source_unit_layout)?;
     }
