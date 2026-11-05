@@ -12,8 +12,16 @@ from agentplane.system_tests.vm.configuration import CPU_QUOTA_PERIOD_MICROS, RE
 
 _SETUP = r"""set -eu
 test -w .
+test "$HOME" = /state/home
+test "$(stat -c '%u:%g' "$HOME")" = 107:107
+test "$(stat -c '%a' "$HOME")" = 700
+test "$(getent passwd agent | cut -d: -f6)" = /state/home
+printf 'home-write-check\n' > "$HOME/.agentplane-home-supervision"
+test "$(cat "$HOME/.agentplane-home-supervision")" = home-write-check
 printf 'UID %s\nGID %s\nCWD %s\nHOME %s\nOWNER %s\nPID1 %s\n' \
     "$(id -u)" "$(id -g)" "$PWD" "$HOME" "$(stat -c '%u:%g' .)" "$(cat /proc/1/comm)"
+printf 'HOME_OWNER %s\nHOME_MODE %s\nHOME_WRITABLE yes\n' \
+    "$(stat -c '%u:%g' "$HOME")" "$(stat -c '%a' "$HOME")"
 printf 'PARENT_OWNER %s\n' "$(stat -c '%u:%g' ..)"
 printf 'setup-stderr\n' >&2
 group=$(awk -F: '$1 == 0 {print $3}' /proc/self/cgroup)
@@ -69,7 +77,10 @@ async def session_setup_is_supervised(
     assert values["OWNER"] == "107:107", values
     assert values["PARENT_OWNER"] == "107:107", values
     assert values["CWD"] == cwd, values
-    assert values["HOME"] == "/state/workspaces/.home", values
+    assert values["HOME"] == "/state/home", values
+    assert values["HOME_OWNER"] == "107:107", values
+    assert values["HOME_MODE"] == "700", values
+    assert values["HOME_WRITABLE"] == "yes", values
     assert values["PID1"] == "systemd", values
     group = values["GROUP"]
     assert group.startswith("/agentplane.slice/agentplane-workloads.slice/agentplane-native-"), group

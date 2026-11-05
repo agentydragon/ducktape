@@ -101,6 +101,7 @@ let
   applyRunnerResourceLimits = pkgs.writeShellScript "agentplane-runner-resource-limits" (
     builtins.readFile ./systemd/apply-resource-limits
   );
+  prepareHome = pkgs.writeShellScript "agentplane-home-prepare" (builtins.readFile ./home_prepare);
   supervisionUnits = pkgs.linkFarm "agentplane-supervision-units" (
     map
       (name: {
@@ -223,7 +224,7 @@ in
     isSystemUser = true;
     uid = agentId;
     group = agentUser;
-    home = "${workspaceDir}/.home";
+    home = "${stateDir}/home";
     shell = pkgs.bash;
   };
   users.mutableUsers = false;
@@ -321,8 +322,6 @@ in
     "d ${workspaceDir} 2770 ${agentUser} ${agentUser} -"
     "z ${workspaceDir} 2770 ${agentUser} ${agentUser} -"
     "a+ ${workspaceDir} - - - - d:user:${toString agentId}:rwx,d:group:${toString agentId}:rwx"
-    "d ${workspaceDir}/.home 0700 ${agentUser} ${agentUser} -"
-    "z ${workspaceDir}/.home 0700 ${agentUser} ${agentUser} -"
     "d ${runtimeDir} 0755 root root -"
     "d ${builtins.dirOf runtimeTLS.private_mount} 0700 root root -"
     "d ${runtimeTrust.mount} 0755 root root -"
@@ -332,9 +331,15 @@ in
 
   systemd.services.agentplane-workspace = {
     description = "Give the harness user the Agentplane workspace";
-    requires = [ "state-workspaces.mount" ];
-    after = [ "state-workspaces.mount" ];
-    before = [ "agentplane-environment-runtime.service" ];
+    requires = [
+      "state.mount"
+      "state-workspaces.mount"
+    ];
+    after = [
+      "state.mount"
+      "state-workspaces.mount"
+    ];
+    before = [ "agentplane-home-prepare.service" ];
     path = [
       pkgs.acl
       pkgs.coreutils
@@ -347,13 +352,36 @@ in
     serviceConfig.ExecStart = "${pkgs.systemd}/bin/systemd-tmpfiles --create --prefix=${workspaceDir}";
   };
 
+  systemd.services.agentplane-home-prepare = {
+    description = "Move the VM home onto the persistent state volume";
+    requires = [
+      "state.mount"
+      "state-workspaces.mount"
+      "agentplane-workspace.service"
+    ];
+    after = [
+      "state.mount"
+      "state-workspaces.mount"
+      "agentplane-workspace.service"
+    ];
+    before = [ "agentplane-environment-runtime.service" ];
+    path = [ pkgs.coreutils ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      User = agentUser;
+      Group = agentUser;
+      ExecStart = "${prepareHome} ${workspaceDir}/.home ${stateDir}/home";
+    };
+  };
+
   # The production guest and the real-manager test fixture consume the same Runtime unit policy.
   # Only the Nix store helper path and workspace preparation dependency need a drop-in.
   systemd.services.agentplane-environment-runtime = {
     overrideStrategy = "asDropin";
     wantedBy = [ "multi-user.target" ];
-    requires = [ "agentplane-workspace.service" ];
-    after = [ "agentplane-workspace.service" ];
+    requires = [ "agentplane-home-prepare.service" ];
+    after = [ "agentplane-home-prepare.service" ];
     path = [
       pkgs.coreutils
       pkgs.systemd

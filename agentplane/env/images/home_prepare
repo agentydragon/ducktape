@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+legacy_home=$1
+agent_home=$2
+
+exists() {
+	[ -e "$1" ] || [ -L "$1" ]
+}
+
+fail() {
+	printf '%s\n' "$1" >&2
+	exit 1
+}
+
+if exists "$legacy_home"; then
+	exists "$agent_home" && fail "both legacy and canonical Agentplane home paths exist: $legacy_home and $agent_home"
+	[ ! -L "$legacy_home" ] && [ -d "$legacy_home" ] || fail "legacy Agentplane home is not a directory: $legacy_home"
+	mv -T -- "$legacy_home" "$agent_home"
+elif exists "$agent_home"; then
+	[ ! -L "$agent_home" ] && [ -d "$agent_home" ] || fail "canonical Agentplane home is not a directory: $agent_home"
+else
+	mkdir -- "$agent_home"
+fi
+
+chmod 0700 -- "$agent_home"

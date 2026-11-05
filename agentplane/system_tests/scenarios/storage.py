@@ -220,6 +220,10 @@ async def _probe(
         source += "awk '$5 == \"/workspace\" { print; found=1 } END { exit !found }' /proc/self/mountinfo\n"
     else:
         source += f"findmnt -n -o FSTYPE,SOURCE,TARGET -T {workspace_dir}\n"
+        home_marker = "/state/home/storage-systest-home"
+        source += 'test "$HOME" = /state/home\ntest "$(stat -c \'%u:%g\' "$HOME")" = 107:107\n'
+        source += 'test "$(stat -c \'%a\' "$HOME")" = 700\n'
+        source += f'test "$(cat {home_marker})" = {shlex.quote(marker)}\nsha256sum {home_marker}\n'
     source += "printf 'STORAGE_PROBE_OK\\n'\n"
     session = uuid4()
     await client.create_session_and_wait(
@@ -275,9 +279,8 @@ async def fresh_workspace_storage_survives_replacement(
     template = name
     spec = copy.deepcopy(base["spec"])
     workspace_dir = "/state/workspaces" if vm else "/workspace"
-    # The guest creates .home before starting Environment Runtime on a fresh disk. Runtime requires a
-    # child of its workspace root; the mount root itself is forbidden.
-    cwd = f"{workspace_dir}/.home" if vm else workspace_dir
+    # Runtime requires a child of its workspace root; the mount root itself is forbidden.
+    cwd = f"{workspace_dir}/storage-systest-cwd" if vm else workspace_dir
     if not vm:
         environment_runtime = next(
             container
@@ -286,7 +289,10 @@ async def fresh_workspace_storage_survives_replacement(
         )
         environment_runtime["volumeMounts"].append({"name": "workspace", "mountPath": workspace_dir})
     marker = f"storage-test-{uuid4().hex}"
-    bootstrap = f"set -eu\nprintf '%s\\n' {marker} > /state/storage-systest-state\nprintf '%s\\n' {marker} > {workspace_dir}/storage-systest-workspace\nsync\n"
+    bootstrap = f"set -eu\nprintf '%s\\n' {marker} > /state/storage-systest-state\nprintf '%s\\n' {marker} > {workspace_dir}/storage-systest-workspace\n"
+    if vm:
+        bootstrap += f"printf '%s\\n' {marker} > /state/home/storage-systest-home\n"
+    bootstrap += "sync\n"
     config = await _object(cluster, "configmap", "runner-gateway-settings")
     policies = yaml.safe_load(config["data"]["settings.yaml"])["environment_default_policy_sets"]
     assert policies

@@ -95,6 +95,7 @@ def test_harness_env_reaches_the_vm_environment(scratch_app: App) -> None:
     rendered = _environment_vm_manifests(app=scratch_app, console_autologin=False)
     config = Configuration.model_validate(rendered["environment_runtime"])
     assert all(config.harness_environment.values[name] == value for name, value in HARNESS_ENV.items())
+    assert config.harness_environment.values["HOME"] == "/state/home"
     assert config.session_reconcile_concurrency is None
     assert config.codex_readiness is None
     assert "codex_readiness" not in rendered["environment_runtime"]

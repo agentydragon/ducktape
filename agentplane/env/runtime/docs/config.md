@@ -156,11 +156,13 @@ configuration; it does not mount environment configuration, provider token varia
 sidecar tokens.
 
 Home persistence is explicit template policy. Pod configuration uses `/home/runner`, shared through
-an `emptyDir` in isolated mode. VM configuration uses the existing `/state/workspaces/.home` on the
-workspace disk. This contract change neither moves nor deletes home/state data. Image installation
-paths also remain explicit: `/bin/{claude,codex}` in Pods and `/run/current-system/sw/bin/{claude,codex}`
-in the NixOS guest. VM native processes use uid/gid 107, matching KubeVirt's virtiofs owner; Pod
-processes use uid/gid 1000.
+an `emptyDir` in isolated mode. VM configuration uses `/state/home` on the state PVC. Before Runtime
+starts, the guest moves an existing `/state/workspaces/.home` there when the canonical path is
+absent; if both paths exist, either is not a real directory, or the move fails, startup stops without
+merging or replacing data. The home shares the state's 10 GiB staging claim with journals and native
+state. Image installation paths also remain explicit: `/bin/{claude,codex}` in Pods and
+`/run/current-system/sw/bin/{claude,codex}` in the NixOS guest. VM native processes use uid/gid 107,
+matching KubeVirt's virtiofs owner; Pod processes use uid/gid 1000.
 
 ## VM boot and resource policy
 
