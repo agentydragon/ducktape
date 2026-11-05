@@ -446,8 +446,12 @@ pub(super) fn derive(
     shadowed: &BTreeSet<&'static str>,
 ) -> Option<DerivedForeignCall> {
     let body = index.callables.get(&callable)?;
-    let local_body = body.local_body.as_ref();
-    if body.allocation_return.is_none()
+    let local_body = body.body_facts.ordered_plan();
+    if body
+        .body_facts
+        .value_flow()
+        .direct_allocation_return()
+        .is_none()
         && !local_body
             .is_some_and(|body| body.allocation_only_syntax() || body.closure_allocation_syntax())
     {
@@ -471,7 +475,7 @@ pub(super) fn derive(
         argument_values.insert(value);
     }
     let mut reads = BTreeSet::new();
-    if let Some(expression) = &body.allocation_return
+    if let Some(expression) = body.body_facts.value_flow().direct_allocation_return()
         && !closure_mode
     {
         expression.bindings(&mut reads);
@@ -530,8 +534,8 @@ pub(super) fn derive(
         final_environment: None,
         class_mode: false,
         local_bindings: body
-            .local_body
-            .as_ref()
+            .body_facts
+            .ordered_plan()
             .map(|body| body.bindings.keys().cloned().collect())
             .unwrap_or_default(),
         shadowed: shadowed.clone(),
@@ -540,7 +544,7 @@ pub(super) fn derive(
         arrays: OrdMap::new(),
         revision: 0,
     };
-    let result = if let Some(expression) = &body.allocation_return
+    let result = if let Some(expression) = body.body_facts.value_flow().direct_allocation_return()
         && !closure_mode
     {
         allocation_transfer::transfer(&mut context, expression)?
@@ -794,7 +798,11 @@ mod tests {
             Default::default(),
         );
         assert_eq!(
-            prepared.index.callables[&key].allocation_return.is_some(),
+            prepared.index.callables[&key]
+                .body_facts
+                .value_flow()
+                .direct_allocation_return()
+                .is_some(),
             syntax_covered,
             "{source}"
         );
@@ -951,8 +959,8 @@ mod tests {
 
                 assert!(
                     prepared.index.callables[&key]
-                        .local_body
-                        .as_ref()
+                        .body_facts
+                        .ordered_plan()
                         .is_some_and(|body| body.closure_allocation_syntax()),
                     "the source is admitted to the shared closure transfer"
                 );

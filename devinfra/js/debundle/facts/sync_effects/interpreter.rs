@@ -668,7 +668,7 @@ fn captured_local_bindings(index: &ExecutionIndex) -> FxHashSet<Id> {
     let owners: FxHashMap<_, _> = index
         .callables
         .iter()
-        .filter_map(|(key, callable)| Some((*key, callable.local_body.as_ref()?)))
+        .filter_map(|(key, callable)| Some((*key, callable.body_facts.ordered_plan()?)))
         .filter(|(_, body)| !body.requires_keyed_collection_new())
         .flat_map(|(key, body)| body.bindings.keys().map(move |binding| (binding, key)))
         .collect();
@@ -5276,8 +5276,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 !callable.local_functions.contains_key(id)
                     || !matches!(value, ValueExpr::Alloc(Kind::Function, _))
             })
-            || callable.returns.len() != 1
-            || !matches!(callable.returns[0], ValueExpr::ObjectLiteral(..))
+            || callable.body_facts.value_flow().returns().len() != 1
+            || !matches!(
+                callable.body_facts.value_flow().returns()[0],
+                ValueExpr::ObjectLiteral(..)
+            )
         {
             return false;
         }
@@ -5288,7 +5291,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .chain(callable.local_functions.keys().cloned())
             .collect();
         callable.reads.is_subset(&allowed)
-            && self.closed_local_record_value(&callable.returns[0], &allowed)
+            && self
+                .closed_local_record_value(&callable.body_facts.value_flow().returns()[0], &allowed)
     }
 
     /// Check that the shared ordered record certificate is fully represented
@@ -5313,8 +5317,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || callable.local_assignments.len() != 1
             || !matches!(&callable.local_assignments[0], (id, ValueExpr::ObjectLiteral(object, _))
                 if id == &proof.local && object == &proof.object)
-            || callable.returns.len() != 1
-            || !matches!(&callable.returns[0], ValueExpr::Binding(id) if id == &proof.local)
+            || callable.body_facts.value_flow().returns().len() != 1
+            || !matches!(&callable.body_facts.value_flow().returns()[0], ValueExpr::Binding(id) if id == &proof.local)
             || callable.escaped_bindings != BTreeSet::from([proof.local.clone()])
             || !self.inputs.index.plain_data_objects.contains(&proof.object)
             || callable.callback_result_writes.len() != proof.write_spans.len()
@@ -5441,8 +5445,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         factory: &Id,
     ) -> Option<(Option<u32>, ConstructionRejection)> {
         let key = self.inputs.index.hoisted_bindings.get(factory)?;
-        let [ValueExpr::New(class, args, _)] =
-            self.inputs.index.callables.get(key)?.returns.as_slice()
+        let [ValueExpr::New(class, args, _)] = self
+            .inputs
+            .index
+            .callables
+            .get(key)?
+            .body_facts
+            .value_flow()
+            .returns()
         else {
             return None;
         };
@@ -5583,7 +5593,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             || callable.dynamic_property_effect
             || !callable.escaped_bindings.is_empty()
             || !callable.namespace_escape_values.is_empty()
-            || callable.returns.len() != 1
+            || callable.body_facts.value_flow().returns().len() != 1
             || callable.params.len() != args.len()
             || callable
                 .params
@@ -5601,7 +5611,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let mut class_reads = BTreeSet::new();
         let mut allocations = BTreeMap::new();
         let checked_return = self.checked_constructor_return(
-            &callable.returns[0],
+            &callable.body_facts.value_flow().returns()[0],
             &params,
             false,
             &mut class_reads,
@@ -6985,7 +6995,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         };
         if callable.opaque
             || !callable.calls.is_empty()
-            || !matches!(callable.returns.as_slice(), [ValueExpr::Binding(returned)] if returned == parameter)
+            || !matches!(callable.body_facts.value_flow().returns(), [ValueExpr::Binding(returned)] if returned == parameter)
             || writes.is_empty()
             || writes.len() != callable.member_value_writes.len()
             || writes.len()
@@ -10625,7 +10635,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && self.state.array_iteration_depth == 0
             && self.inputs.index.dynamic_scope_owners.is_empty()
             && callable.member_value_writes.is_empty()
-            && callable.local_body.as_ref().is_some_and(|body| {
+            && callable.body_facts.ordered_plan().is_some_and(|body| {
                 !body.requires_keyed_collection_new()
                     && body
                         .captured_writes()
@@ -10695,7 +10705,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         if !unsupported_inputs
             && self.inputs.index.dynamic_scope_owners.is_empty()
-            && let Some(body) = &callable.local_body
+            && let Some(body) = callable.body_facts.ordered_plan()
             // A default-bearing plan must execute its prologue in the shared
             // kernel. Pre-evaluating its value would omit the default's calls.
             && (ordered_prologue || body.parameters.iter().all(|parameter| parameter.default.is_none()))
@@ -10904,7 +10914,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .extend(certified_data_receivers.iter().copied());
             certified_data_receivers.clear();
         }
-        for expr in &callable.returns {
+        for expr in callable.body_facts.value_flow().returns() {
             let returned = self.evaluate(expr, &env, &env);
             for value in &returned {
                 if let AbstractValue::OwnDescriptorMap(site) = value {

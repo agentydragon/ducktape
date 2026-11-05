@@ -1,6 +1,7 @@
 //! Synchronous call-effect analysis.
 
 mod allocation_transfer;
+mod callable_body_facts;
 mod effect_coverage;
 pub(crate) use effect_coverage::{BindingEffectAuthority, BindingEffectCoverage};
 pub(crate) mod execution_index;

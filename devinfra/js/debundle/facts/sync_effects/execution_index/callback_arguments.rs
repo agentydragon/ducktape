@@ -101,7 +101,7 @@ pub(super) fn ordinary_callback_arguments(
     if !contents.is_empty() || !index.plain_data_objects.contains(value) {
         return None;
     }
-    if !matches!(inner.returns.as_slice(), [ValueExpr::Member(base, Some(property), MemberKey::Static, _)]
+    if !matches!(inner.body_facts.value_flow().returns(), [ValueExpr::Member(base, Some(property), MemberKey::Static, _)]
         if matches!(base.as_ref(), ValueExpr::Binding(id) if id == cache) && property == field)
     {
         return None;
