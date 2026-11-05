@@ -356,6 +356,15 @@ def delete_prunable_entries(
         try:
             shutil.rmtree(trash, onexc=retry_rmtree_after_permission_error)
         except OSError as error:
+            if error.errno == errno.ENOENT:
+                try:
+                    trash.lstat()
+                except FileNotFoundError:
+                    # Bazel may have consumed this entry from `_trash` after we released its lock.
+                    results.append(DeletedEntry(path))
+                    continue
+                except OSError:
+                    pass
             results.append(FailedEntry(path, trash, str(error)))
         else:
             results.append(DeletedEntry(path))
