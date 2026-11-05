@@ -40,12 +40,3 @@ mount-type checks, projected-token absence and RAM/process continuity in 959.2 s
 129.575 seconds of cleanup. This was a separate full target run, not the regular Debian-guest CI
 test or a controlled comparison against the production guest. The production image pin and guest
 configuration were unchanged.
-
-## Manual TLS refresh while suspended
-
-In the Go-supervisor proof on `wyrm2` (source `4303939f11c1a7397d3f9541809290fac4515bf4`), a
-synthetic projected-Secret generation changed while the guest was suspended. After RAM restore,
-direct vsock gRPC synchronization refreshed the Runtime certificate before network admission,
-without restarting Runtime. This was a manual disposable-Pod observation. It did not exercise
-Kubernetes TokenReview, real ServiceAccount-token rotation or deployed credential projection.
-The primitive spike already records the distinct networking experiments.
