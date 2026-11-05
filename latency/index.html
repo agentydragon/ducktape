@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CI latency — current feedback and next bottlenecks</title>
+    <title>CI latency — Rust results and hosted capacity visibility</title>
     <style>
       :root {
         color-scheme: light;
@@ -278,25 +278,170 @@
   <body>
     <main>
       <header>
-        <div class="eyebrow">Ducktape · CI latency · 4 November 2026</div>
-        <h1>PR feedback: 6m22s mean, 11m18s p90</h1>
+        <div class="eyebrow">Ducktape · CI latency · 5 November 2026 follow-up</div>
+        <h1>Rust builds do less work; the timing win is unproven</h1>
         <p>
-          Bazel is last on 86% of green heads. The strongest next candidates are repeat Debian resolution, overly broad
-          test selection and a serial Rust build chain. The latest fixture changes are verified but have not soaked.
+          Both dependency changes are merged. Seven controlled E2E runs show fewer compiler actions, but no reliable
+          elapsed improvement. One later CI run has a confirmed 35.6s worker wait on its critical path. The org admin
+          key opens account usage visibility; our hosted capacity ceiling remains unknown.
         </p>
         <p class="muted">
-          PR workflow creation: 2–4 November, cutoff 12:44:59 UTC. Fresh execution audit: 4 November, 06:15–12:45 UTC.
-          Source inspected through <code>5ba096b454e3967a6dd1d82689b1a6c257060a6c</code>; Grafana extraction merged
-          after the measurement cutoff.
+          This is a bounded follow-up, not a new PR-feedback census. The retained mean 6m22s / p90 11m18s describe 247
+          green heads from 3–4 November, before these Rust changes. They have not been remeasured. Follow-up source:
+          <code>7fe51fd3cc159b7cecf1995eee15d5c0b4aa9a73</code>. No new performance experiments or infrastructure
+          changes.
         </p>
         <nav aria-label="Report sections">
-          <a href="#current-feedback">PR feedback</a><a href="#bottlenecks">Measured bottlenecks</a
-          ><a href="#selection">Test selection</a><a href="#interventions">Ranked interventions</a
+          <a href="#followup">Latest findings</a><a href="#capacity">Hosted capacity</a
+          ><a href="#current-feedback">Historical PR feedback</a><a href="#bottlenecks">Measured bottlenecks</a
+          ><a href="#selection">Test selection</a><a href="#interventions">Remaining candidates</a
           ><a href="#continuity">Prior work</a><a href="#method">Evidence &amp; method</a>
         </nav>
       </header>
+      <section id="followup">
+        <h2>What the Rust experiments established</h2>
+        <p>
+          <a href="https://github.com/agentydragon/ducktape/pull/14407">#14407</a> injects the configured-input
+          fingerprint at CLI entrypoints;
+          <a href="https://github.com/agentydragon/ducktape/pull/14409">#14409</a> separates artifact models from the
+          analysis engine. Both are merged. Together they avoid <strong>11 fresh compiler actions</strong>
+          after an analysis-only edit. The real CLI and Node test oracle remain in the test path.
+        </p>
+        <div class="table-scroll" role="region" aria-label="Controlled Rust source-delta results" tabindex="0">
+          <table class="wide-6">
+            <thead>
+              <tr>
+                <th>Arm</th>
+                <th>Inner test elapsed</th>
+                <th>Coverage and interpretation</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Controls A1 / A2 / A3</td>
+                <td>263.127 / 234.074 / 219.914s</td>
+                <td>Same frozen base and 190-target nonmanual E2E roster.</td>
+              </tr>
+              <tr>
+                <td>Combined D1 / D2</td>
+                <td>229.030 / 227.241s</td>
+                <td>Both fall inside the control range; no reliable elapsed gain demonstrated.</td>
+              </tr>
+              <tr>
+                <td>All seven arms</td>
+                <td>190 / 190 targets passed in each arm</td>
+                <td>
+                  Fingerprint-only and models-only arms also passed. New physical test actions, not cached timings.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="muted">
+          This is a source-delta experiment after a warm build on frozen base
+          <code>46ac6921a1bb953861bdb6104a4963700f07a059</code>, not a PR-feedback measurement or benchmark of latest
+          devel. Each arm changes an unused public engine constant and produces distinct engine outputs. Worker
+          variation matters. The later saved-summary/runtime-analysis change (#14406) is outside this experiment.
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/77cd7fd5188d3a845f6a1d651589eb11fe27893f/devinfra/js/debundle/debug/2026_11_04_production_rust_boundaries.md"
+            >Full method, all seven runs and validation</a
+          >.
+        </p>
+        <h3>A later CI run spent 35.6s waiting for a worker</h3>
+        <p>
+          In the
+          <a href="https://app.buildbuddy.io/invocation/c76a9967-64f9-50ea-8e7c-859062f1dc40">#14409 CI invocation</a>,
+          the <code>//devinfra/js/debundle:cli</code> rlib action waited <strong>35.585s</strong> between native
+          <code>queuedTimestamp</code> and <code>workerStartTimestamp</code>, then spent
+          <strong>20.145s executing</strong>. Input fetching took 0.221s. The recorded action critical path was
+          <strong>130.98s</strong>; the CLI wait alone is about 27% of that path, not 27% of whole PR feedback.
+        </p>
+        <div class="callout">
+          <strong>Next discriminator:</strong> inspect 20 recent PR invocations for recurring critical-path waits, ready
+          work, overlapping executions and resource estimates versus actual usage. Only then choose a resource-sizing,
+          scheduling or capacity experiment with identical coverage. This one targeted run does not establish recurring
+          contention, account throttling or a 25–50% speedup opportunity.
+        </div>
+      </section>
+      <section id="capacity">
+        <h2>Hosted capacity: usage is visible, the ceiling is not</h2>
+        <p>
+          At 08:00 UTC on 5 November, the SOPS-managed org admin key received <strong>HTTP 200</strong> from
+          <code>GetUsage</code> and <code>GetExecutionNodes</code>. The session key received 403. The admin key was
+          decrypted into process memory; no credential value or raw response is published.
+        </p>
+        <div class="table-scroll" role="region" aria-label="Complete UTC day hosted CPU consumption" tabindex="0">
+          <table class="wide-6">
+            <thead>
+              <tr>
+                <th>Complete UTC day</th>
+                <th>Hosted RBE CPU-hours</th>
+                <th>Hosted runner CPU-hours</th>
+                <th>Mean busy cores, combined</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1 November</td>
+                <td>938.0</td>
+                <td>76.8</td>
+                <td>42.28</td>
+              </tr>
+              <tr>
+                <td>2 November</td>
+                <td>1,687.8</td>
+                <td>182.3</td>
+                <td>77.92</td>
+              </tr>
+              <tr>
+                <td>3 November</td>
+                <td>326.9</td>
+                <td>53.6</td>
+                <td>15.85</td>
+              </tr>
+              <tr>
+                <td>4 November</td>
+                <td>973.4</td>
+                <td>165.7</td>
+                <td>47.46</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="muted">
+          Account-wide consumption across repositories and workflows, not this repository alone. Mean busy cores =
+          hosted RBE plus hosted runner CPU-nanoseconds divided by 86,400 × 10⁹. Idle time is excluded from CPU usage.
+          These daily averages do not measure peak concurrency, reserved capacity, provider fleet size or our quota.
+          Partial 5 November and self-hosted usage are excluded.
+        </p>
+        <p>
+          Executor enumeration returned our two registered pools: <code>wyrm2-kvm</code> (4 CPUs, 8 GiB) and
+          <code>wyrm2-kvm-vm</code> (4 CPUs, 14 GiB), neither the default. This is not a list of BuildBuddy's hosted
+          workers. Org-profile lookup failed server-side with a token-refresh error; no allocation information came from
+          that request.
+        </p>
+        <p>
+          Our <code>--jobs=50</code> is a per-invocation submission limit. The default 8-unit outer-runner request and
+          3-unit action request are resource requests, not an organization capacity grant. Public Personal/Team pricing
+          advertises up to 80/800 Linux cores and describes plan limits as soft; it does not establish our actual
+          allowance or instantaneous headroom. <a href="https://www.buildbuddy.io/pricing/">Provider pricing</a> ·
+          <a href="https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/usage.proto"
+            >Usage field definitions</a
+          >
+          ·
+          <a
+            href="https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/scheduling/scheduler_server/scheduler_server.go"
+            >Executor-list implementation</a
+          >.
+        </p>
+        <p>
+          <strong>Provider questions, not yet sent:</strong> what is our effective organization-wide CPU/concurrency
+          allowance; do runners and RBE share it; what fair-share, burst, pool or regional constraints apply; and did
+          the cited 35.6s wait reflect an account limit, shared capacity or another scheduling decision?
+        </p>
+      </section>
       <section id="current-feedback">
-        <h2>PR feedback across all required checks</h2>
+        <h2>Historical PR feedback · 3–4 November</h2>
         <div class="cards">
           <div class="card">
             <span class="metric">6m22s</span>Mean green feedback
@@ -471,7 +616,7 @@
         </details>
       </section>
       <section id="bottlenecks">
-        <h2>The bottlenecks change with the workload</h2>
+        <h2>Historical bottlenecks · measured through 4 November</h2>
         <p>
           The deep execution sample spans 24 selected invocations, with execution data available for 23. It deliberately
           includes broad sweeps and targeted tests; it is not a random fleet sample. The required-gate population above
@@ -616,12 +761,12 @@
       <section id="selection">
         <h2>Which changes should trigger which tests?</h2>
         <p>
-          The selector performs affected-target hashing for ordinary PRs, but unconditionally falls back to
+          The current selector uses native attribute fingerprinting for ordinary PRs, but still falls back to
           <code>//...</code> for every <code>*.bzl</code> change, module/config roots, package manifests and
           <code>requirements*.txt</code>. Selection breadth and actual execution are different questions.
           <a
             href="https://github.com/agentydragon/ducktape/blob/5ba096b454e3967a6dd1d82689b1a6c257060a6c/devinfra/ci/bazel_ci.py"
-            >Current selector</a
+            >Selector at the historical cutoff</a
           >.
         </p>
         <div class="table-scroll" role="region" aria-label="Selected versus executed scope in PR14029" tabindex="0">
@@ -711,14 +856,18 @@
         </p>
       </section>
       <section id="interventions">
-        <h2>Rank the interventions by feedback reach</h2>
+        <h2>Remaining candidates and historical bounds</h2>
         <p>
-          <strong
-            >Start with the APT barrier and selection soundness; investigate the Rust build chain as its own
-            lane.</strong
-          >
-          These have plausible minute-scale reach. Small cleanup and readiness changes cannot deliver a 25–50% broad-run
-          reduction on their own.
+          The APT resolution cache has shipped in
+          <a href="https://github.com/agentydragon/ducktape/pull/14361">#14361</a>; validated reuse took 3.298s versus
+          36.506s with resolution off in the later matched pair. This is a query-level result, not measured fleet
+          feedback savings.
+          <a
+            href="https://github.com/agentydragon/ducktape/blob/7fe51fd3cc159b7cecf1995eee15d5c0b4aa9a73/devinfra/debug/bazel_module_lockfile.md"
+            >Method and cache invalidation proof</a
+          >. Rust boundary work has also shipped; its result is <a href="#followup">above</a>. Remaining source
+          candidates below retain their historical bounds. The next diagnostic is recurring queueing; it is not yet a
+          justified resource or workflow change.
         </p>
         <div class="table-scroll" role="region" aria-label="Ranked intervention candidates" tabindex="0">
           <table class="wide-6">
@@ -733,24 +882,7 @@
             </thead>
             <tbody>
               <tr>
-                <td>1 · Cache unchanged APT resolution</td>
-                <td>179.4s extension despite warm outer runner/server and unchanged APT tags.</td>
-                <td>
-                  Unmeasured estimate <strong>0–150s</strong> on an affected slow run; low confidence. Even an ideal
-                  179s cut leaves the 721s job at 542s.
-                </td>
-                <td>
-                  Validate a complete content-keyed extension result or maintained lockfile; retain exact package
-                  resolution and stale-input checks. Compare whole-driver/gate timings, resolved packages, cold/warm
-                  modes and regeneration/conflict cost.
-                </td>
-                <td>
-                  Pod and the other system tests remain. Changed APT inputs still require resolution; no claim every PR
-                  saves minutes.
-                </td>
-              </tr>
-              <tr>
-                <td>2 · Narrow safe local Starlark selection</td>
+                <td>1 · Narrow safe local Starlark selection</td>
                 <td>Every local <code>*.bzl</code> edit currently selects <code>//...</code>.</td>
                 <td>
                   <strong>Potential 100–400s for a demonstrated local case</strong>, hypothesis only; not a fleet
@@ -765,24 +897,7 @@
                 </td>
               </tr>
               <tr>
-                <td>3 · Shorten the debundle build prerequisite chain</td>
-                <td>~171–175s of a 243–247s path precedes a 71s test; repeated in two hosted pushes.</td>
-                <td>
-                  A <strong>25–50% path cut is 61–123s</strong>: a target for design/measurement, not an achieved
-                  estimate. Hash-only28s cannot reach it.
-                </td>
-                <td>
-                  Profile compiler and identity-hasher work separately. Evaluate cached stable-input groups and narrower
-                  crate/CLI dependencies while preserving complete configured-input identity, the CLI boundary and real
-                  performance coverage.
-                </td>
-                <td>
-                  Other E2E and compilation lanes become critical. Prior threaded hashing was slower; do not repeat it
-                  as the proposal.
-                </td>
-              </tr>
-              <tr>
-                <td>4 · Remove failure / rerun tails</td>
+                <td>2 · Remove failure / rerun tails</td>
                 <td>One physical VM failure consumed 358s; cohort retry gaps are tracked separately.</td>
                 <td>Can remove minutes on the affected tail; average/p90 impact unmeasured and failure-specific.</td>
                 <td>
@@ -795,7 +910,7 @@
                 </td>
               </tr>
               <tr>
-                <td>5 · Reduce cold Pod image setup</td>
+                <td>3 · Reduce cold Pod image setup</td>
                 <td>66.03s environment-tools import within 179.44s cold setup; blob reuse already exists.</td>
                 <td>
                   <strong>0–66s ideal bound</strong> for the cited run, before overlap and next-test limits; below the
@@ -826,8 +941,8 @@
             input, not permission to discard those costs.
             <a href="https://bazel.build/external/lockfile">Bazel’s lockfile documentation</a> explains how unchanged
             module-extension results can be reused; that capability does not establish this repository’s savings or
-            cross-machine correctness. Match source, flags, warm state and package results before shipping a mode
-            change.
+            cross-machine correctness. The cache has since shipped with native stale-input validation; measure matched
+            required-gate feedback before assigning a fleet-wide saving.
           </p>
         </details>
         <h3>How much does a faster Bazel gate help the whole cohort?</h3>
@@ -936,6 +1051,19 @@
       <section id="continuity">
         <h2>What has landed, and what stays closed</h2>
         <p>
+          Later follow-up dispositions: native fingerprinting merged in
+          <a href="https://github.com/agentydragon/ducktape/pull/14377">#14377</a>, but the global
+          <code>*.bzl</code> fallback remains. The package-default hashing patch is retained in
+          <a href="https://github.com/agentydragon/ducktape/pull/14390">draft #14390</a>; it has not been adopted or
+          submitted upstream. The native YAML loader merged in
+          <a href="https://github.com/agentydragon/ducktape/pull/14375">#14375</a>: parsing fell 13.527→1.219s on
+          identical inputs, but whole-target runs (55.3s control, 68.4s candidate) did not demonstrate an elapsed gain.
+          Repeated JSII IPC remains a profile finding, not a measured optimization. Costly budget/traffic and
+          SQL-history scale cases were moved to explicit manual scale runs; the old budget-test critical path above
+          describes the historical source, not today's routine CI roster.
+        </p>
+
+        <p>
           The newest fixture changes remove declared work from tests that do not use it. Their graph and correctness
           checks passed; the measured window contains too little time after the last merge to estimate an end-to-end
           speedup.
@@ -1001,7 +1129,7 @@
           <p>
             Continuity ledger from the
             <a
-              href="https://github.com/agentydragon/ducktape/blob/4c66263ec799649e8b2845d85cffbb62563c9186/latency/index.html"
+              href="https://github.com/agentydragon/ducktape/blob/552b8b2af66bc6cd94c30777f4594988a92bc5ca/latency/index.html"
               >fully reviewed prior report</a
             >. These are retained historical results and constraints, not 31 new experiments.
           </p>
@@ -1303,6 +1431,12 @@
       </section>
       <section id="method">
         <h2>Evidence, provenance and limits</h2>
+        <p>
+          November 5 adds the bounded Rust experiment, one targeted CI queue observation, admin API visibility and four
+          complete UTC days of account usage. It does not extend the historical PR-feedback population. Source
+          identities and clocks remain separate in <code>post_snapshot_followup</code> in the evidence. The broader
+          under-five-minute goal and unapproved snapshot/KVM experiments stay paused.
+        </p>
         <ul>
           <li>
             <strong>GitHub:</strong> complete 48h run-outcome enumeration recursively split below the 1,000-result API
@@ -1350,7 +1484,7 @@
           <a href="evidence.json">Sanitized measurements and source links</a> ·
           <a href="manifest.json">Publication and visual-validation manifest</a> ·
           <a
-            href="https://github.com/agentydragon/ducktape/blob/4c66263ec799649e8b2845d85cffbb62563c9186/latency/index.html"
+            href="https://github.com/agentydragon/ducktape/blob/552b8b2af66bc6cd94c30777f4594988a92bc5ca/latency/index.html"
             >Previous report</a
           >.
         </p>
@@ -1359,7 +1493,7 @@
         Latest snapshot · <a href="../">CI reports</a> · <a href="../reliability/">Reliability</a> ·
         <a href="evidence.json">Evidence JSON</a> · <a href="manifest.json">Manifest</a> ·
         <a
-          href="https://github.com/agentydragon/ducktape/blob/4c66263ec799649e8b2845d85cffbb62563c9186/latency/index.html"
+          href="https://github.com/agentydragon/ducktape/blob/552b8b2af66bc6cd94c30777f4594988a92bc5ca/latency/index.html"
           >Previous report, pinned</a
         >
       </footer>
