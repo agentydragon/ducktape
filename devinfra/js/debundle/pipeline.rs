@@ -175,7 +175,7 @@ pub fn run_transform_with_analysis(
             path,
             analysis_engine_sha256,
         }) => AnalysisMode::Load {
-            base: AnalysisSpec::from_transform(&spec, &prepared.source_root)?,
+            base: Box::new(AnalysisSpec::from_transform(&spec, &prepared.source_root)?),
             artifact: fs::read(path)
                 .with_context(|| format!("read analysis artifact {}", path.display()))?,
             analysis_engine_sha256: analysis_engine_sha256.to_string(),
@@ -266,7 +266,7 @@ pub fn assess_candidate_effect_relocation(
     let artifact = fs::read(analysis.path)
         .with_context(|| format!("read analysis artifact {}", analysis.path.display()))?;
     let mode = AnalysisMode::Load {
-        base: AnalysisSpec::from_transform(&spec, &prepared.source_root)?,
+        base: Box::new(AnalysisSpec::from_transform(&spec, &prepared.source_root)?),
         artifact,
         analysis_engine_sha256: analysis.analysis_engine_sha256.to_string(),
     };
@@ -315,17 +315,8 @@ pub fn project_analysis(cli: &TransformRequest, out: &Path) -> Result<()> {
     let options = audit_options();
     let (spec, prepared) = prepare_transform(cli, &options, None, None)?;
     let base = AnalysisSpec::from_transform(&spec, &prepared.source_root)?;
-    let projection = match run_prepared_transform(
-        &spec,
-        prepared,
-        options,
-        true,
-        AnalysisMode::Project(base),
-        false,
-    )? {
-        PreparedTransformResult::Projected(projection) => projection,
-        _ => bail!("projection run did not stop after the selector solve"),
-    };
+    let artifact = prepared.source.program.into_artifact();
+    let projection = frontend_elaboration::project_analysis(artifact, &spec, &base)?;
     fs::write(out, projection.encode()?)
         .with_context(|| format!("write analysis projection {}", out.display()))
 }
@@ -544,11 +535,8 @@ fn prepare_transform(
     ))
 }
 
-/// Returns the completed projection when `analysis` is
-/// [`AnalysisMode::Project`], which stops after the selector solve.
 enum PreparedTransformResult {
     Completed,
-    Projected(Box<AnalysisSpec>),
     EffectAssessed(Vec<(String, CandidateRelocationAssessmentReport)>),
 }
 
@@ -696,10 +684,7 @@ fn run_prepared_transform(
             Materialized::Assessed(assessments) => {
                 return Ok(PreparedTransformResult::EffectAssessed(assessments));
             }
-            Materialized::Projected(projection) => {
-                return Ok(PreparedTransformResult::Projected(Box::new(projection)));
-            }
-            Materialized::Lowered(result) if !assessment_only => result,
+            Materialized::Lowered(result) if !assessment_only => *result,
             Materialized::Lowered(_) => {
                 bail!("assessment-only materialization unexpectedly lowered chunks");
             }

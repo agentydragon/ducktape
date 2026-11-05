@@ -45,10 +45,6 @@ impl OutcomeSink {
         }
     }
 
-    pub(super) fn fail_fast(&self) -> bool {
-        self.fail_fast
-    }
-
     pub(super) fn record(&mut self, outcome: SelectorOutcome) -> Result<()> {
         if let Some(placement) = &outcome.placement
             && let Some(entity) = &placement.entity

@@ -24,7 +24,7 @@ pub(super) use plan_references::{
 };
 pub(super) use runtime_imports::{
     RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind, imported_binding_named_specifier,
-    record_runtime_imports, runtime_reimport_named_specifier, runtime_reimport_specifier,
+    runtime_reimport_named_specifier, runtime_reimport_specifier,
 };
 pub(super) use vendor_imports::{
     PlannedVendorReimports, VendorReimportOracle, plan_vendor_reimports,

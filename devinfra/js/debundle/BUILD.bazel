@@ -1014,6 +1014,34 @@ rust_library(
     ],
 )
 
+rust_library(
+    name = "frontend_elaboration",
+    srcs = [
+        "frontend_elaboration.rs",
+        "frontend_elaboration/chunk_ast.rs",
+        "frontend_elaboration/elaboration.rs",
+        "frontend_elaboration/source_ast.rs",
+    ],
+    crate_root = "frontend_elaboration.rs",
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":artifact",
+        ":binding_targets",
+        ":js_ast",
+        ":selector_outcome",
+        ":selector_resolve",
+        ":source_identity",
+        ":spec",
+        ":spec_resolution",
+        ":staged_analysis",
+        "@crates//:anyhow",
+        "@crates//:rayon",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+    ],
+)
+
 rust_test(
     name = "staged_analysis_unit_test",
     crate = ":staged_analysis",
@@ -1025,7 +1053,6 @@ rust_library(
     srcs = [
         "lowering/anonymous.rs",
         "lowering/body_facts.rs",
-        "lowering/chunk_ast.rs",
         "lowering/chunk_renames.rs",
         "lowering/commuting_statements.rs",
         "lowering/exports.rs",
@@ -1065,6 +1092,7 @@ rust_library(
         ":artifact",
         ":binding_targets",
         ":chunk_analysis",
+        ":frontend_elaboration",
         ":gate",
         ":graph_provenance",
         ":js_ast",
@@ -1215,6 +1243,7 @@ rust_library(
     deps = [
         ":artifact",
         ":emit_harness",
+        ":frontend_elaboration",
         ":gate",
         ":graph_provenance",
         ":js_ast",

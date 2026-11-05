@@ -22,6 +22,7 @@ use analysis::{
     classify_nested_var_placement, top_level_id,
 };
 use anyhow::{Context, Result, bail, ensure};
+use frontend_elaboration::MemberClaimProjection;
 use gate::simulated_evaluation_post_order;
 use selector_outcome::{
     Declaration, Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
@@ -92,10 +93,6 @@ pub(super) struct ChunkPlanBuilder {
     /// (non-declared) top-level statements claimed by spec
     /// `anonymous_statements` entries.
     whole_statement_assignment: BTreeMap<StatementId, usize>,
-    /// Source-selected registration-call assertions, keyed by original
-    /// top-level body item. These stay attached to the canonical resolved
-    /// statement until analysis assumptions are built.
-    no_reentry_calls: BTreeMap<StatementId, spec::NoReentryCall>,
     /// The plans being constructed, in append order. Final indices
     /// stable: binding destinations and `whole_statement_assignment`
     /// hold positional references.
@@ -138,10 +135,6 @@ pub(super) struct ChunkPlanBuilder {
     /// known source binding spelling but whose ownership is claimed after chunk
     /// analysis through the global solver.
     deferred_binding_claims_by_name: HashMap<String, EntityRef>,
-    /// Later members whose deferred binding claim duplicated an earlier one.
-    /// Keep the original member in the solver so validation records its actual
-    /// selector result; only the duplicate member is excluded.
-    duplicate_deferred_binding_entities: BTreeSet<(String, String)>,
     /// Every selector outcome worth reporting. In keep-going mode a failed
     /// selector is left out of canonical ownership, so later modules in the
     /// chunk can still be checked; the chunk fails in `finalize` if any
@@ -153,7 +146,6 @@ impl ChunkPlanBuilder {
     pub(super) fn new(fail_fast: bool, list_template_identifiers: bool) -> Self {
         Self {
             whole_statement_assignment: BTreeMap::new(),
-            no_reentry_calls: BTreeMap::new(),
             module_plans: Vec::new(),
             generated_residual_plans: BTreeSet::new(),
             bindings_catalogue: HashMap::new(),
@@ -161,13 +153,8 @@ impl ChunkPlanBuilder {
             unmatched_spec_claims: Vec::new(),
             catalogue_index_by_name: HashMap::new(),
             deferred_binding_claims_by_name: HashMap::new(),
-            duplicate_deferred_binding_entities: BTreeSet::new(),
             outcomes: OutcomeSink::new(fail_fast, list_template_identifiers),
         }
-    }
-
-    pub(super) fn no_reentry_calls(&self) -> &BTreeMap<StatementId, spec::NoReentryCall> {
-        &self.no_reentry_calls
     }
 
     /// Restrict ownership to selected explicit modules after the full selector
@@ -299,10 +286,6 @@ impl ChunkPlanBuilder {
                     );
                     self.outcomes.record(duplicate)?;
                     duplicate_bindings.insert(member.binding.clone());
-                    if member.resolves_after_chunk_analysis() {
-                        self.duplicate_deferred_binding_entities
-                            .insert((request.target_path.clone(), member.export_name.clone()));
-                    }
                     continue;
                 }
                 if let Some(existing) = self
@@ -324,8 +307,6 @@ impl ChunkPlanBuilder {
                         },
                     ))?;
                     duplicate_bindings.insert(member.binding.clone());
-                    self.duplicate_deferred_binding_entities
-                        .insert((request.target_path.clone(), member.export_name.clone()));
                     continue;
                 }
             }
@@ -491,9 +472,6 @@ impl ChunkPlanBuilder {
         plan.anonymous_statements.push(claim.body_index);
         plan.anonymous_statements.sort_unstable();
         plan.anonymous_statements.dedup();
-        if let Some(assertion) = claim.no_reentry_call.clone() {
-            self.no_reentry_calls.insert(claim.body_index, assertion);
-        }
         if let Some(comment) = &claim.comment {
             plan.anonymous_statement_comments
                 .insert(claim.body_index, comment.clone());
@@ -505,42 +483,6 @@ impl ChunkPlanBuilder {
         self.outcomes.record(outcome)
     }
 
-    /// The entities of the explicit requests the selector resolve decides:
-    /// every solver-resolved member and anonymous statement. A name pin whose
-    /// binding no top-level declaration carries was already recorded as an
-    /// unmatched claim, and a duplicate claim as its outcome, so neither is
-    /// resolved.
-    pub(super) fn selector_member_indices(
-        &self,
-        explicit_requests: &[LogicalRequest],
-        chunk_top_level_mark: swc_common::Mark,
-        declaration_by_name: &HashMap<Id, Vec<StatementId>>,
-    ) -> Vec<Vec<usize>> {
-        explicit_requests
-            .iter()
-            .map(|request| {
-                request
-                    .members
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, member)| {
-                        member.resolves_after_chunk_analysis()
-                            && !self.duplicate_deferred_binding_entities.contains(&(
-                                request.target_path.clone(),
-                                member.export_name.clone(),
-                            ))
-                            && (!matches!(member.selector, MemberSelector::Binding(_))
-                                || declaration_by_name.contains_key(&top_level_id(
-                                    &member.binding,
-                                    chunk_top_level_mark,
-                                )))
-                    })
-                    .map(|(index, _)| index)
-                    .collect()
-            })
-            .collect()
-    }
-
     /// Claims what `resolution` resolved of `selectors`, and records every
     /// other outcome.
     #[allow(clippy::too_many_arguments)]
@@ -549,6 +491,7 @@ impl ChunkPlanBuilder {
         explicit_requests: &[LogicalRequest],
         resolution: Resolution,
         resolved_members: Vec<Vec<usize>>,
+        member_claims: &MemberClaimProjection,
         chunk_top_level_mark: swc_common::Mark,
         chunk_id: &str,
         body: &[ModuleItem],
@@ -575,23 +518,32 @@ impl ChunkPlanBuilder {
             };
             let claimed = match entity {
                 EntityIndex::AnonymousStatement(statement_index) => {
+                    let statement = StatementId(body_index);
+                    ensure!(
+                        member_claims
+                            .claimed_anonymous_statements
+                            .get(&(index, statement_index))
+                            == Some(&statement),
+                        "frontend anonymous-statement claim projection disagrees for logical_module {} statement {} at body index {}",
+                        request.id,
+                        statement_index,
+                        body_index,
+                    );
                     self.claim_anonymous_statement(
                         index,
                         &request.id,
                         &ResolvedAnonymousStatement {
-                            body_index: StatementId(body_index),
+                            body_index: statement,
                             comment: request.anonymous_statements[statement_index]
                                 .comment
-                                .clone(),
-                            no_reentry_call: request.anonymous_statements[statement_index]
-                                .no_reentry_call
                                 .clone(),
                         },
                     )?;
                     true
                 }
                 EntityIndex::Member(member_index) => {
-                    let member = &request.members[resolved_members[index][member_index]];
+                    let request_member_index = resolved_members[index][member_index];
+                    let member = &request.members[request_member_index];
                     let binding = binding.with_context(|| {
                         format!(
                             "logical_module {}: global selector solver resolved member `{}` to \
@@ -599,7 +551,7 @@ impl ChunkPlanBuilder {
                             request.id, member.export_name,
                         )
                     })?;
-                    self.claim_binding_after_chunk_analysis(
+                    let applied = self.claim_binding_after_chunk_analysis(
                         request,
                         member,
                         &binding,
@@ -608,7 +560,20 @@ impl ChunkPlanBuilder {
                         chunk_id,
                         body,
                         declaration_by_name,
-                    )?
+                    )?;
+                    let projected = member_claims
+                        .claimed_members
+                        .get(&(index, request_member_index))
+                        == Some(&binding);
+                    ensure!(
+                        applied == projected,
+                        "frontend member-claim projection disagrees for logical_module {} member {} (binding `{binding}`): projected {}, applied {}",
+                        request.id,
+                        member.export_name,
+                        projected,
+                        applied,
+                    );
+                    applied
                 }
             };
             if matches!(
@@ -797,40 +762,6 @@ impl ChunkPlanBuilder {
                 .insert(binding.to_string(), comment.clone());
         }
         Ok(true)
-    }
-
-    pub(super) fn resolved_binding_for_member(
-        &self,
-        request_index: usize,
-        member: &MemberRequest,
-    ) -> Option<String> {
-        if !member.binding.is_empty() {
-            return Some(member.binding.clone());
-        }
-        let plan = self.module_plans.get(request_index)?;
-        if let Some((binding, _)) = plan
-            .bindings
-            .iter()
-            .find(|(_, export_name)| *export_name == &member.export_name)
-        {
-            return Some(binding.clone());
-        }
-        self.bindings_catalogue
-            .iter()
-            .find_map(|(binding, kind)| match kind {
-                BindingKind::Imported {
-                    re_exporter: ModuleId(index),
-                    public_name,
-                    ..
-                } if *index == request_index && public_name.as_ref() == member.export_name => {
-                    Some(binding.0.as_str().to_string())
-                }
-                _ => None,
-            })
-    }
-
-    pub(super) fn fail_fast(&self) -> bool {
-        self.outcomes.fail_fast()
     }
 
     /// Drop the name-keyed catalogue scratch index now that the

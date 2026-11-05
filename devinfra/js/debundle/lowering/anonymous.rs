@@ -8,5 +8,4 @@ use source_identity::StatementId;
 pub(super) struct ResolvedAnonymousStatement {
     pub(super) body_index: StatementId,
     pub(super) comment: Option<String>,
-    pub(super) no_reentry_call: Option<spec::NoReentryCall>,
 }

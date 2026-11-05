@@ -23,7 +23,7 @@ use spec::{
 
 mod anonymous;
 mod body_facts;
-mod chunk_ast;
+use frontend_elaboration::chunk_ast;
 mod chunk_renames;
 mod commuting_statements;
 mod exports;
@@ -53,12 +53,10 @@ use imports::VendorReimportOracle;
 use io::{ProgramGraphOutput, prepare_output_dir, write_chunk_report_json};
 
 use materialize::{
-    ChunkContext, ChunkSpec, ClaimedLogicalChunk, EmissionChunkOutputs, FinishedLogicalChunk,
-    GraphConstructionContext, MaterializeLogicalChunkInputs, claim_prepared_chunk,
-    collect_materialized_logical_chunks, finish_logical_chunk, prepare_logical_chunk,
+    ChunkContext, ChunkSpec, EmissionChunkOutputs, FinishedLogicalChunk, GraphConstructionContext,
+    MaterializeLogicalChunkInputs, claim_prepared_chunk, collect_materialized_logical_chunks,
+    finish_logical_chunk, prepare_logical_chunk,
 };
-use spec_resolution::solve_projected_chunks;
-use staged_analysis::analysis_projection::{self, AnalysisProjection};
 use staged_analysis::{
     AnalysisSpec, ExportReentryReport, export_policies, export_reentry_reports, load_analysis,
     loader_surface, normalized_chunk_ids, program_summary, prune_artifact_to_chunk_ids,
@@ -261,25 +259,20 @@ pub struct MaterializeLogicalModulesOptions {
 #[derive(Debug, Clone)]
 pub enum AnalysisMode {
     Compute,
-    /// Stop after the selector solve and return the completed projection
-    /// (`debundle spec project-analysis`).
-    Project(AnalysisSpec),
     /// Take the analysis from an artifact (`debundle run --analysis`). The
     /// run refuses an artifact computed by another engine, from other
     /// sources, or for a projection other than `base` completed by this
     /// run's selector solve.
     Load {
-        base: AnalysisSpec,
+        base: Box<AnalysisSpec>,
         artifact: Vec<u8>,
         analysis_engine_sha256: String,
     },
 }
 
-/// A materialization's result: lowered modules, or the projection when
-/// [`AnalysisMode::Project`] stopped it after the selector solve.
+/// A materialization's result.
 pub enum Materialized {
-    Lowered(MaterializeLogicalModulesResult),
-    Projected(AnalysisSpec),
+    Lowered(Box<MaterializeLogicalModulesResult>),
     Assessed(Vec<(String, CandidateRelocationAssessmentReport)>),
 }
 
@@ -367,15 +360,8 @@ pub fn materialize_logical_modules(
         &artifact_indexes,
         &selected_chunk_ids,
     )?;
-    let reparsed = match &options.analysis {
-        AnalysisMode::Project(_) => BTreeMap::new(),
-        AnalysisMode::Compute | AnalysisMode::Load { .. } => {
-            program_summary::reparse_unretained_entries(
-                &artifact,
-                Some(&program_summary_chunk_closure),
-            )
-        }
-    };
+    let reparsed =
+        program_summary::reparse_unretained_entries(&artifact, Some(&program_summary_chunk_closure));
     let mut loaded = match &options.analysis {
         AnalysisMode::Load {
             artifact: bytes,
@@ -390,7 +376,7 @@ pub fn materialize_logical_modules(
             options.graph_provenance.as_ref(),
             analysis_engine_sha256,
         )?),
-        AnalysisMode::Compute | AnalysisMode::Project(_) => None,
+        AnalysisMode::Compute => None,
     };
     let export_reentry_reports = match (&options.analysis, &mut loaded) {
         (_, Some((_, body))) => std::mem::take(&mut body.export_reentry)
@@ -407,8 +393,6 @@ pub fn materialize_logical_modules(
                 Ok((chunk_id, report))
             })
             .collect::<Result<_>>()?,
-        // The projection needs only the selector solve.
-        (AnalysisMode::Project(_), None) => BTreeMap::new(),
         _ => export_reentry_reports(
             &artifact,
             &artifact_indexes,
@@ -440,99 +424,92 @@ pub fn materialize_logical_modules(
     // `Globals` and re-set inside each worker closure so `Mark::new()`
     // and `Id`-comparisons stay consistent across the whole pipeline.
     //
-    // Chunks are planned in parallel up to the selector resolve, resolved
-    // together, then analysed and lowered in parallel. Each phase's errors
-    // are taken in chunk-id order, so which one fails a run (under
-    // `--fail-fast`, which selector outcome) does not depend on scheduling.
+    // Source analysis, selector eligibility, the joint solve and source-bound
+    // premises belong to the independent frontend service. The result is
+    // shared with project-analysis; only this caller constructs output plans.
+    let frontend = frontend_elaboration::elaborate(
+        selected_chunk_ids
+            .iter()
+            .map(|chunk_id| frontend_elaboration::FrontendChunkInput {
+                artifact: artifact_ref,
+                chunk_id,
+                file: options.config.file.as_deref(),
+            })
+            .collect(),
+        frontend_elaboration::FrontendSpecInputs {
+            logical_modules,
+            chunk_renames,
+            unassigned_mode,
+            chunk_analysis_options,
+            chunk_export_purity,
+            host_behavior,
+            intrinsics_never_written: program_premises.intrinsics_never_written.as_ref(),
+            fail_fast: !options.keep_going,
+            report_warnings: false,
+        },
+    )?;
+    let frontend_elaboration::FrontendElaboration {
+        chunks: frontend_chunks,
+        projection,
+        graph_inputs,
+        resolved_member_sites,
+    } = frontend;
+    // Frontend resolution runs once for every caller. Output-plan construction
+    // can proceed in parallel after that shared result exists.
     let prepared = GLOBALS
         .with(|globals| {
             selected_chunk_ids
                 .par_iter()
-                .map(|chunk_id| {
+                .zip(frontend_chunks.into_par_iter())
+                .map(|(chunk_id, frontend_chunk)| {
                     GLOBALS.set(globals, || {
-                        prepare_logical_chunk(MaterializeLogicalChunkInputs {
-                            context: ChunkContext {
-                                ownership_subset: options.ownership_subset.as_ref(),
-                                artifact: artifact_ref,
-                                artifact_indexes: &artifact_indexes,
-                                chunk_id,
-                                file: options.config.file.as_deref(),
-                                target_dir: &target_dir,
-                                keep_going: options.keep_going,
-                                list_template_identifiers: options.list_template_identifiers,
-                                report_emission: &options.report_emission,
-                                graph_reports: options.graph_reports,
-                                effect_conflicts_jsonl: options.effect_conflicts_jsonl,
-                                effect_conflicts_chunks: &options.effect_conflicts_chunks,
-                                full_reports: &options.full_reports,
-                                full_report_chunks: &options.full_report_chunks,
-                                gate_rejection: options.gate_rejection,
-                                assessment_only: options.assessment_only,
-                                export_reentry_reports: &export_reentry_reports,
-                                vendor_import_oracle: vendor_import_oracle.as_ref(),
-                                export_reentry_policies: &export_reentry_policies,
+                        prepare_logical_chunk(
+                            MaterializeLogicalChunkInputs {
+                                context: ChunkContext {
+                                    ownership_subset: options.ownership_subset.as_ref(),
+                                    artifact: artifact_ref,
+                                    artifact_indexes: &artifact_indexes,
+                                    chunk_id,
+                                    target_dir: &target_dir,
+                                    keep_going: options.keep_going,
+                                    list_template_identifiers: options.list_template_identifiers,
+                                    report_emission: &options.report_emission,
+                                    graph_reports: options.graph_reports,
+                                    effect_conflicts_jsonl: options.effect_conflicts_jsonl,
+                                    effect_conflicts_chunks: &options.effect_conflicts_chunks,
+                                    full_reports: &options.full_reports,
+                                    full_report_chunks: &options.full_report_chunks,
+                                    gate_rejection: options.gate_rejection,
+                                    assessment_only: options.assessment_only,
+                                    export_reentry_reports: &export_reentry_reports,
+                                    vendor_import_oracle: vendor_import_oracle.as_ref(),
+                                    export_reentry_policies: &export_reentry_policies,
+                                },
+                                spec: ChunkSpec {
+                                    chunk_renames,
+                                    unassigned_mode,
+                                },
                             },
-                            spec: ChunkSpec {
-                                logical_modules,
-                                chunk_renames,
-                                unassigned_mode,
-                            },
-                        })
+                            frontend_chunk,
+                        )
                     })
                 })
                 .collect::<Vec<_>>()
         })
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
-    let (prepared, projections): (Vec<_>, Vec<_>) = prepared.into_iter().unzip();
-    let resolutions = solve_projected_chunks(projections)?;
-    let mut claimed = GLOBALS
+    let claimed = GLOBALS
         .with(|globals| {
             prepared
                 .into_par_iter()
-                .zip(resolutions)
-                .map(|(chunk, resolution)| {
-                    GLOBALS.set(globals, || claim_prepared_chunk(chunk, resolution))
-                })
+                .map(|chunk| GLOBALS.set(globals, || claim_prepared_chunk(chunk)))
                 .collect::<Vec<_>>()
         })
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
-    let declared_assumptions = claimed
-        .iter_mut()
-        .map(ClaimedLogicalChunk::take_declared_assumptions)
-        .collect();
-    let mut resolved_member_sites = BTreeMap::new();
-    for chunk in &claimed {
-        for site in chunk.resolved_member_sites() {
-            resolved_member_sites
-                .entry((site.module.clone(), site.name.clone()))
-                .or_insert_with(Vec::new)
-                .push(site);
-        }
-    }
-    let projected_chunk_options =
-        analysis_projection::project_chunk_options(chunk_analysis_options)?;
-    let graph_inputs = projected_chunk_options
-        .iter()
-        .map(|(chunk, options)| (chunk.clone(), options.graph.clone()))
-        .collect::<BTreeMap<_, _>>();
-    let projection = AnalysisProjection::new(
-        &projected_chunk_options,
-        chunk_export_purity,
-        host_behavior,
-        program_premises.intrinsics_never_written.as_ref(),
-        declared_assumptions,
-        &resolved_member_sites,
-    )?;
-    let completed = |base: &AnalysisSpec| {
-        base.clone().with_premises(
-            projection.declared_assumptions.clone(),
-            projection.native_operation_inputs.clone(),
-        )
-    };
+    let completed =
+        |base: &AnalysisSpec| frontend_elaboration::complete_analysis_spec(base, &projection);
     let (program_summary, mut loaded_chunks) = match (&options.analysis, loaded) {
-        (AnalysisMode::Project(base), _) => return Ok(Materialized::Projected(completed(base)?)),
         (AnalysisMode::Load { base, .. }, Some((header, body))) => {
             let completed = completed(base)?;
             if completed.encode()? != header.projection {
@@ -657,12 +634,14 @@ pub fn materialize_logical_modules(
     let output = collect_materialized_logical_chunks(artifact, &target_dir, chunk_results)?;
 
     let module_count: usize = reports.iter().map(|r| r.final_module_contents.len()).sum();
-    Ok(Materialized::Lowered(MaterializeLogicalModulesResult {
-        output,
-        selected_lowerings: applied,
-        module_count,
-        vendor_reference_rewrites,
-        unmatched_spec_claims,
-        gate_rejections,
-    }))
+    Ok(Materialized::Lowered(Box::new(
+        MaterializeLogicalModulesResult {
+            output,
+            selected_lowerings: applied,
+            module_count,
+            vendor_reference_rewrites,
+            unmatched_spec_claims,
+            gate_rejections,
+        },
+    )))
 }
