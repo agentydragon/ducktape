@@ -119,6 +119,88 @@ fn same_owner_completed_map_initialization_does_not_create_own_heap_barrier() {
 }
 
 #[test]
+fn frozen_namespace_initialization_does_not_create_own_heap_barrier() {
+    let source = "const values = [];\nvalues.push('first');\nfunction run() { return 1; }\nconst facade = Object.freeze(Object.defineProperty({__proto__: null, run}, Symbol.toStringTag, {value: 'Module'}));\nvalues.push('second');\nconsole.log(values.join(','), facade.run());\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "values",
+                    &[Member::new("values")],
+                    &[FIRST_PUSH, SECOND_PUSH],
+                ),
+                logical_module("facade", &[Member::new("run"), Member::new("facade")]),
+                logical_module_with_anon(
+                    "observe",
+                    &[],
+                    &["console.log(values.join(','), facade.run());"],
+                ),
+            ],
+        )
+        .with_host_behavior(HostBehavior::default())
+        .with_program_premises(ProgramPremises {
+            intrinsics_never_written: Some(IntrinsicsNeverWritten {
+                families: IntrinsicFamilies::Listed(
+                    [IntrinsicFamily::Object, IntrinsicFamily::Symbol]
+                        .into_iter()
+                        .collect(),
+                ),
+                note: Some("neutral source contains no Object or Symbol writes".to_string()),
+            }),
+            ..ProgramPremises::default()
+        }),
+    );
+    assert_preserved_entry_output(&fixture, "first,second 1\n");
+}
+
+#[test]
+fn frozen_namespace_with_inherited_descriptor_getter_keeps_heap_barrier() {
+    let setup = "Object.defineProperty(Object.prototype, 'enumerable', {get() { values.push('during'); return false; }, configurable: true});";
+    let cleanup = "delete Object.prototype.enumerable;";
+    let source = format!(
+        "const values = [];\nvalues.push('first');\nfunction run() {{ return 1; }}\n{setup}\nconst facade = Object.freeze(Object.defineProperty({{__proto__: null, run}}, Symbol.toStringTag, {{value: 'Module'}}));\n{cleanup}\nvalues.push('second');\nconsole.log(values.join(','), facade.run());\n"
+    );
+    let colocated = run_fixture(FixtureOpts::new(
+        &source,
+        vec![logical_module_with_anon(
+            "all",
+            &[
+                Member::new("values"),
+                Member::new("run"),
+                Member::new("facade"),
+            ],
+            &[
+                FIRST_PUSH,
+                setup,
+                cleanup,
+                SECOND_PUSH,
+                "console.log(values.join(','), facade.run());",
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&colocated, "first,during,second 1\n");
+    expect_cycle_rejection(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module_with_anon(
+                    "values",
+                    &[Member::new("values")],
+                    &[FIRST_PUSH, SECOND_PUSH],
+                ),
+                logical_module_with_anon(
+                    "facade",
+                    &[Member::new("run"), Member::new("facade")],
+                    &[setup, cleanup],
+                ),
+            ],
+        ),
+        &["values", "facade"],
+    );
+}
+
+#[test]
 fn unknown_construction_keeps_sequenced_fallback_barrier() {
     let cycle = expect_cycle_rejection(
         heap_frontier_options(UNKNOWN_HEAP_FRONTIER_SOURCE, IntrinsicFamily::Map),

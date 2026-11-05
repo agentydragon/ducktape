@@ -1,5 +1,6 @@
 //! Abstract value vocabulary and value relationships used by synchronous execution analysis.
 
+use crate::analysis_inputs::ProofDependencies;
 use crate::facts::abstract_domain::builtins::IterationRow;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::value_flow::static_prop as static_string_prop;
@@ -434,6 +435,9 @@ pub(super) struct FrozenNamespaceProof {
     pub(super) freeze_site: CallSite,
     pub(super) define_site: CallSite,
     pub(super) stored_bindings: BTreeSet<Id>,
+    /// Whole initializer effects additionally need the descriptor's inherited
+    /// properties to be ordinary; private callback retention alone does not.
+    pub(super) initialization_dependencies: Option<ProofDependencies>,
 }
 
 /// Ordered literal definitions keep accessor payloads distinct from data values.

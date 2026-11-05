@@ -5052,10 +5052,32 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }) {
             return None;
         }
+        // ToPropertyDescriptor checks inherited fields on this ordinary
+        // descriptor. Identity of defineProperty alone excludes no getter.
+        let initialization_slots = [
+            IntrinsicSlot::Global(NativeIntrinsic::Object),
+            IntrinsicSlot::Static(NativeIntrinsic::Object, "freeze"),
+            IntrinsicSlot::Static(NativeIntrinsic::Object, "defineProperty"),
+            IntrinsicSlot::Prototype(NativeIntrinsic::Object),
+            IntrinsicSlot::Global(NativeIntrinsic::Symbol),
+            IntrinsicSlot::Static(NativeIntrinsic::Symbol, "toStringTag"),
+        ];
+        let initialization_dependencies = if self
+            .census_slots_intact(NativeIntegrityGuard::FrozenNamespace, &initialization_slots)
+        {
+            self.inputs
+                .index
+                .integrity
+                .require(&initialization_slots, None)
+                .dependencies()
+        } else {
+            None
+        };
         Some(FrozenNamespaceProof {
             freeze_site: *freeze_site,
             define_site: *define_site,
             stored_bindings,
+            initialization_dependencies,
         })
     }
 
@@ -13662,6 +13684,18 @@ impl Executor<'_, '_> {
                 source
                     .matches(owner, binding, source.initializer_span())
                     .then_some((source, binding, source.initializer_span()))
+            })
+            .or_else(|| {
+                let proof = frozen_namespace.as_ref()?;
+                proof.initialization_dependencies.as_ref()?;
+                let [(binding, _)] = assignments.as_slice() else {
+                    return None;
+                };
+                let source = index.initialization_source_identities.get(&owner)?;
+                let span = proof.freeze_site.source_span();
+                source
+                    .matches(owner, binding, span)
+                    .then_some((source, binding, span))
             });
         // Keep the selected result in this owner until publication. Operands
         // and calls execute once, at their position in the shared local plan.
@@ -14052,13 +14086,23 @@ impl Executor<'_, '_> {
             && outcome.effects.uninitialized_reads.is_empty()
             && let Some((source, binding, span)) = effect_initializer_source
         {
+            // The existing exact namespace proof covers every operand and
+            // both native calls in this whole initializer. Its result value
+            // and callback reachability keep their ordinary execution paths.
+            let namespace_coverage = frozen_namespace.as_ref().and_then(|proof| {
+                let dependencies = proof.initialization_dependencies.as_ref()?;
+                self.record_proof_dependencies(NativeIntegrityGuard::FrozenNamespace, dependencies);
+                Some(EffectCoverageFragment::native_operation(dependencies))
+            });
             outcome.effects.completed_initialization = CompletedInitialization::from_root_effects(
                 source,
                 owner,
                 binding,
                 span,
                 &self.state.initialized_bindings,
-                &outcome.effect_coverage,
+                namespace_coverage
+                    .as_ref()
+                    .unwrap_or(&outcome.effect_coverage),
             );
         }
         if outcome.effects.completed_initialization.is_none() {
