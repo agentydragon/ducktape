@@ -551,10 +551,12 @@ The review must settle who may claim and bind an Environment, how competing clai
 who cleans up abandoned unbound Environments or partially provisioned SAs, and how retries and
 uncertain cross-system writes recover without adopting foreign objects or reusing an old UID's
 evidence. A valid same-name replacement represents the same named principal. An unbound
-Environment must not start with a default or unverified SA. A bound Environment cannot be silently
-retargeted to another SA or receive extra grants when a different Session is created. Decide whether
-the binding is immutable, what the user sees while provisioning, and how the form offers creation
-versus selection of an existing identity. Reconcile Session deletion with any other Session or
+Environment must not start with a default or unverified SA. Once bound, reject unbinding or changing
+the SA name for that Environment's lifetime: its retained workspace or other state may contain
+sensitive data. Deleting the SA object does not erase the binding; a same-name replacement is the
+same named principal, while old workload evidence stays fenced. A bound Environment cannot receive
+extra grants merely because a different Session is created. Decide what the user sees while
+provisioning, and how the form offers creation versus selection of an existing identity. Reconcile Session deletion with any other Session or
 Environment using its managed SA: blocking deletion or explicitly changing identity ownership are
 possible policies, not yet selected. Deleting a Session never deletes an unmanaged SA.
 
@@ -565,9 +567,29 @@ selecting the workload identity; changing the SA of an already-running Pod needs
 separately designed credential mechanism. See
 [`ENVIRONMENT_IDENTITY_BINDING_DESIGN`](task_dag.md#environment_identity_binding_design--environment-sa-binding-and-session-creation-order).
 
+**Open: materialization cost.** A distinct live SA, PolicyBinding and possibly native RBAC objects
+for every retained Session could accumulate in Kubernetes. Compare eager creation with reserving
+the Session's SA name and materializing it only when an authorized operation needs it; measure the
+object counts and control-plane costs rather than assuming a bottleneck. A Session that only needs
+provider-side work might avoid a Kubernetes object, but the current delegated-authentication path
+requires the effective SA to exist and match its UID, and an Environment uses a Pod-projected SA
+token. Deferring an SA until explicit Kubernetes API access would therefore not support every
+current Agentplane call. Decide whether to materialize at first Agentplane authorization, represent
+a reserved-but-unavailable identity until then, or design an independent logical principal; the
+latter is more than lazy creation of a Kubernetes object. Keep selected PolicySets and authorization
+intent durable without granting access based only on an unverified name. See
+[`SESSION_SA_PROVISIONING_DESIGN`](task_dag.md#session_sa_provisioning_design--when-to-materialize-session-sas).
+
 ### Changing the associated ServiceAccount
 
-The operator suggested the association need not be immutable: at most one SA per Sandbox and per Session at any instant does not rule out changing it later. For an ordinary Kubernetes Pod, `spec.serviceAccountName` cannot be changed after creation, so using a different mounted identity means creating a replacement Pod. For VM Sandboxes the launcher Pod obtains its SA through the existing launcher admission and relay; establish the exact VM/VMI replacement procedure separately. A different credential or delegation architecture might support another approach, but the existing Pod-bound egress design does not simply switch SA by editing a policy binding.
+The operator earlier suggested the association need not be immutable, but now requires the initial
+Environment binding to reject unbinding or changing its SA name once bound. A Session's own identity
+reassignment remains a separate question. For an ordinary Kubernetes Pod, `spec.serviceAccountName`
+cannot be changed after creation, so a different mounted identity also needs a replacement Pod. For
+VM Sandboxes the launcher Pod obtains its SA through the existing launcher admission and relay;
+establish the exact VM/VMI replacement procedure separately. A different credential or delegation
+architecture might support another approach, but the existing Pod-bound egress design does not
+simply switch SA by editing a policy binding.
 
 Reassignment is not currently supported by the Session contract: the Dispatcher, sampler and retained Runtime record treat their execution principal as immutable, and History pins writer and principal associations. If reassignment becomes a feature, define how the Session and its attached environments change together, handle other Sessions sharing the environment and other environments attached to the Session, fence old work and credentials, and record identity provenance for History. Preserve old authorization/receipt evidence and never replay uncertain effects. Do not present reassignment as a necessary first implementation or a decided product feature.
 
@@ -645,7 +667,7 @@ broker, workload authentication and journal writer; do not assume an online iden
 
 For a central Session with no environment, the principal still exists and the sampler must exercise authorized capabilities under that principal through an appropriate authenticated delegation or broker path. A stored ServiceAccount name is neither a bearer token nor authority to impersonate it; the central sampler’s own ServiceAccount must not silently become the agent’s. Calls made _inside_ an environment use that environment’s actual Pod/relay and egress identity; verify that this agrees with the Session principal and each destination’s authorization contract. Losing an Environment alone does not imply the agent identity disappeared: the human-operator-only fallback applies when the relevant Sandbox-owned ServiceAccount has actually disappeared, not merely when a Session has no attached Environment. The rights of a surviving independent identity still need their reviewed authorization contract.
 
-**Open cases:** which principal owns a Session when the creator is a human or another agent; who grants acting as P; whether, how and when Session or environment SA associations may change; whether absence is a supported state or only a cardinality limit; recreation and intentional revocation; historical access when P is absent; central Session creation without any environment; multiple exact environments for P; and what is allowed when policies are revoked or an environment is replaced. A same-name replacement can receive the named principal's grants and Session access under the future contract; preserve actual UID provenance and fence stale effects, and do not treat SA deletion alone as guaranteed durable revocation.
+**Open cases:** which principal owns a Session when the creator is a human or another agent; who grants acting as P; whether, how and when Session SA associations may change; whether absence is a supported state or only a cardinality limit; recreation and intentional revocation; historical access when P is absent; central Session creation without any environment; multiple exact environments for P; and what is allowed when policies are revoked or an environment is replaced. An Environment's first SA binding cannot be removed or changed in the initial model. A same-name replacement can receive the named principal's grants and Session access under the future contract; preserve actual UID provenance and fence stale effects, and do not treat SA deletion alone as guaranteed durable revocation.
 
 Current source contracts: [Sandbox identities and ownership](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/sandbox_controller/SPEC.md#identity) · [Dispatcher admission and identity](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/runner_gateway/dispatcher/SPEC.md) · [egress workload identity](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/egress/README.md#serviceaccount-permissions) · [delegated authorization](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/docs/delegated_authorization.md) · [central sampler identity](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/central_sampler/SPEC.md) · [PolicySets and PolicyBindings](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/docs/adr_policy_sets.md) · [Kubernetes Pod ServiceAccount assignment](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/) · [egress authentication and substitution](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/egress/SPEC.md) · [shared workload authentication](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/workload_auth/README.md) · [inbox identity and scope](https://github.com/agentydragon/ducktape/blob/d1aeff8ca2/agentplane/notification_service/docs/api.md).
 

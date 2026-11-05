@@ -2133,6 +2133,7 @@ flowchart LR
     KUBERNETES_UID_CHECK_AUDIT[Unscheduled: audit Kubernetes name and UID checks]
     SESSION_IDENTITY_CONTRACT[Decision: Session identity and shared-Environment admission]
     ENVIRONMENT_IDENTITY_BINDING_DESIGN[Decision: Environment SA binding and Session creation order]
+    SESSION_SA_PROVISIONING_DESIGN[Decision: when to materialize Session SAs]
     SESSION_MANAGED_IDENTITY[Blocked: Session-managed SA provisioning]
     SESSION_NATIVE_IDENTITY_WORKFLOW[Blocked: native Session creation with managed SA]
     ENVIRONMENT_SHARED_ACCOUNT[Shared-SA foundation, section 3]
@@ -2158,6 +2159,7 @@ flowchart LR
     SESSION_AND_INBOX_LIFETIME --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     SESSION_IDENTITY_CONTRACT --> SESSION_IDENTITY_ENFORCEMENT
     SESSION_IDENTITY_CONTRACT --> SESSION_MANAGED_IDENTITY
+    SESSION_SA_PROVISIONING_DESIGN --> SESSION_MANAGED_IDENTITY
     SESSION_IDENTITY_CONTRACT --> SESSION_NATIVE_IDENTITY_WORKFLOW
     ENVIRONMENT_IDENTITY_BINDING_DESIGN --> SESSION_NATIVE_IDENTITY_WORKFLOW
     SESSION_MANAGED_IDENTITY --> SESSION_NATIVE_IDENTITY_WORKFLOW
@@ -2326,8 +2328,11 @@ then persisting the Session, provisioning its SA, atomically binding the Environ
 the workload, with pre-provisioning the SA or other explicit reservation designs. Preserve exact
 Environment UID and authenticated SA incarnation, authorization, conflict handling, idempotency and recovery for partial
 creation. Decide who may bind an unbound Environment, whether binding is one-time, and what happens
-to abandoned, failed, deleted or concurrently claimed resources. No workload may gain a default or
-unverified identity while a binding is pending.
+to abandoned, failed, deleted or concurrently claimed resources. Once an Environment is bound,
+reject unbinding and changes to a different SA name for that Environment's lifetime: its retained
+workspace or other state may contain sensitive data. SA object deletion must not erase the binding;
+a same-name replacement remains the same named principal with a different object incarnation.
+No workload may gain a default or unverified identity while a binding is pending.
 
 SPIFFE URI mTLS authenticates Environment Runtime control; outbound egress currently authenticates
 the Pod-bound SA token and substitutes the Pod's projected credentials. Binding before workload
@@ -2337,11 +2342,36 @@ replacement or a separately designed credential mechanism. Coordinate the implem
 `SESSION_ATTACHMENT_CONTRACT`; central zero-Environment creation need not wait for this native flow.
 
 **Exit:** a reviewed creation and recovery sequence covering new and already-bound Environments,
-managed and existing SAs, authorized concurrent claims, UID replacement and partial failure.
+managed and existing SAs, authorized concurrent claims, UID replacement and partial failure. Show
+that unbinding or changing the bound SA is refused even after its object disappears.
+
+### `SESSION_SA_PROVISIONING_DESIGN` — when to materialize Session SAs
+
+**Decision; operator discussion, 2026-11-04.** Compare eagerly creating a managed SA for every
+live Session with reserving a name and provisioning the Kubernetes SA only when a Session needs an
+Environment, an authorized service operation or an explicit Kubernetes identity. Estimate the
+number, retention and churn of ServiceAccounts, PolicyBindings and generated RoleBindings, and
+measure control-plane cost before claiming an etcd bottleneck. Include web-preset PolicySets and
+the authority that retains their desired grants while an SA is absent. Avoid needless credential or
+policy materialization while preserving unattended work and predictable readiness.
+
+Current delegated authentication requires a live SA and its current UID, and Environment egress
+uses Pod-projected SA tokens. Thus "only when Kubernetes API access is requested" is not sufficient
+for every current Agentplane service call. Define which operations need materialization, how a
+trusted actor proves the effective caller, and what a reserved but absent SA authorizes; don't
+treat a caller-provided name as proof. Consider whether acting internally before the SA exists
+creates a separate Agentplane principal model rather than merely deferring an external object.
+Define creation/deletion races, recreation and intentional revocation, stale RBAC/PolicyBinding
+grants, retained audit identity and unknown outcomes. Repeatedly deleting and recreating active SAs
+is not implied by lazy first provisioning.
+
+**Exit:** an evidence-backed materialization policy, status and activation examples for a central
+Session and a native Environment, plus authorization and failure/retry behavior. The decision gates
+`SESSION_MANAGED_IDENTITY`, not unrelated native work.
 
 ### `SESSION_MANAGED_IDENTITY` — provision a Session-managed SA
 
-**Blocked on `SESSION_IDENTITY_CONTRACT`.** Have the Dispatcher durably reconcile an SA and its
+**Blocked on `SESSION_IDENTITY_CONTRACT` and `SESSION_SA_PROVISIONING_DESIGN`.** Have the Dispatcher durably reconcile an SA and its
 Session-managed PolicyBinding, including the web preset and editable PolicySet workflow. Support an
 explicit existing-SA path without taking ownership or adding grants. Persist exact identity, desired
 policy and provisioning progress, and recover retries and uncertain cross-system outcomes without
