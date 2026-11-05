@@ -3007,7 +3007,9 @@ account and the proxy.
 Notification's inbox ownership, the Action Service's caller and the delegation envelope carry an
 identity reference plus the workload incarnation as provenance; the central sampler delegates as
 the Session's identity and its own account never becomes the agent's; `CreateSession` names an
-identity and Dispatcher is the authority for that association. Migrations rewrite rows whose
+identity, Dispatcher is the authority for that association, and its delivery and wake path refuses
+a Session whose identity differs from its environment's current one, so a bypassed identity change
+strands Sessions rather than re-attributing them. Migrations rewrite rows whose
 Sandbox still exists and mark the rest historical, as History migration 8 did. **Exit:** the
 existing service tests pass with identity principals, a retained Session with a deleted Sandbox
 reads as historical, and the sampler scenario in the k3s stack submits an Action as an identity
@@ -3016,8 +3018,9 @@ with no environment.
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox names its identity and creates nothing else
 
 **Blocked on `IDENTITY_KINDS`.** `Sandbox.spec.identity` may be absent or changed only while nothing is
-running, a start without one is refused with `IdentityMissing`, and a change discards any RAM
-snapshot and rotates the credential ID; the Sandbox Controller creates no ServiceAccount and no
+running, a start without one is refused with `IdentityMissing`, a change discards any RAM
+snapshot and rotates the credential ID, and `EnvironmentService` refuses a change while a Session
+of another identity is placed on or attached to the environment; the Sandbox Controller creates no ServiceAccount and no
 PolicyBinding, runs the Pod on the default SA with `automountServiceAccountToken: false`, and
 reports `IdentityMissing` when the identity is gone;
 the sandbox templates stop mounting a kubeconfig; `EnvironmentService` creation takes an identity;

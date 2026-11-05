@@ -203,9 +203,16 @@ hazard is handled. An environment may therefore be created unbound and bound by 
 attaches it, the create-then-bind sequence the
 [Session/environment model](session_environment_model.md#session-managed-sa-and-native-creation-order)
 floated.
-Sessions placed on the environment under the old identity, including native harness conversations
-on its state volume, are retained, readable and marked unrunnable with a reason, the way a Session
-is when its required environment is deleted; they are never re-attributed. New identity, new
+A change is admitted only when no Session of a different identity is still placed on or attached
+to the environment (operator, 2026-11-05: never pull the identity out from under a harness); the
+operator ends or detaches those Sessions first. Two layers hold this, because the Sandbox is a
+Kubernetes object and Sessions live in Dispatcher's directory. The admitted path, the change through
+`EnvironmentService`, runs in Dispatcher's process, checks the directory and refuses with the
+Sessions named. A bypass, such as `kubectl edit`, cannot be caught by CRD validation, so
+Dispatcher's delivery and wake path checks that the environment's current identity equals the
+Session's, which the same-environment invariant already requires, and refuses to deliver to a
+mismatched Session with a reason. Nothing ever runs as an identity it was not created as; the worst
+a bypass does is strand those Sessions until the identity is put back. New identity, new
 Sessions. The workspace and state volumes carry over, which is the point of reusing the
 environment: the operator is accepting that the next agent sees whatever the previous one left
 there, exactly as two Sessions sharing an environment do today, and the app says so in the same
