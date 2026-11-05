@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -535,7 +536,7 @@ func reviewToken(ctx context.Context, reviews workloadauth.TokenReviews, audienc
 		reason = "missing_username"
 	default:
 		username = review.Status.User.Username
-		if !contains(review.Status.Audiences, audience) {
+		if !slices.Contains(review.Status.Audiences, audience) {
 			reason = "wrong_audience"
 		} else if _, ok := subjects[username]; !ok {
 			reason = "subject_not_allowed"
@@ -578,15 +579,6 @@ func randomURLToken(size int) (string, error) {
 
 func safeMethod(method string) bool {
 	return method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions
-}
-
-func contains(values []string, wanted string) bool {
-	for _, value := range values {
-		if value == wanted {
-			return true
-		}
-	}
-	return false
 }
 
 type responseError struct {
