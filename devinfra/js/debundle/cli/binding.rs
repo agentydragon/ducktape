@@ -1258,7 +1258,7 @@ pub fn run_source_unit_refine(
         source_context,
         &claim_sets,
     )?;
-    let claim_projection = project_source_unit_claims(dependency_graph, &initial_spec, &resolved)?;
+    let claim_projection = project_source_unit_claims(&graph_input, &initial_spec, &resolved)?;
     let current_source_unit_modules = source_unit_module_assignments_from_projection(
         dependency_graph,
         modules_root,
@@ -1271,12 +1271,6 @@ pub fn run_source_unit_refine(
         &current_source_unit_modules,
         scope.as_ref(),
     )?;
-
-    let mut source_unit_index_by_id = BTreeMap::<String, SourceUnitId>::new();
-    for (index, node) in dependency_graph.nodes.iter().enumerate() {
-        let source_unit = SourceUnitId(index);
-        source_unit_index_by_id.insert(node.id.clone(), source_unit);
-    }
 
     let locations = source_unit_claim_locations(
         dependency_graph,
@@ -1313,18 +1307,20 @@ pub fn run_source_unit_refine(
 
     let mut requested_destinations = BTreeMap::<String, String>::new();
     for assignment in assignments {
-        anyhow::ensure!(
-            source_unit_index_by_id.contains_key(&assignment.unit_id),
-            "source unit ID {:?} is absent from dependency_graph.json.gz",
-            assignment.unit_id
-        );
+        let source_unit = graph_input
+            .source_unit_id(&assignment.unit_id)
+            .with_context(|| {
+                format!(
+                    "source unit ID {:?} is absent from dependency_graph.json.gz",
+                    assignment.unit_id
+                )
+            })?;
         anyhow::ensure!(
             !requested_destinations.contains_key(&assignment.unit_id),
             "source unit assignment batch repeats {:?}",
             assignment.unit_id
         );
-        let source_unit = source_unit_index_by_id[&assignment.unit_id];
-        let node = &dependency_graph.nodes[source_unit.0];
+        let node = graph_input.source_unit_report(source_unit);
         anyhow::ensure!(
             !matches!(
                 node.statement_kind,
