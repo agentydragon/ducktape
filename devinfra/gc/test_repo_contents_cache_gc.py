@@ -1,7 +1,10 @@
+import errno
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 import pytest_bazel
@@ -151,6 +154,50 @@ def test_delete_removes_exactly_the_unreferenced_entries(cache: FakeCache, proc:
     assert cache.missing_inputs.is_dir()
     assert cache.malformed.is_dir()
     assert list((cache.contents / "_trash").iterdir()) == []
+
+
+def test_delete_succeeds_when_a_competing_cleaner_removes_the_trash_root(
+    cache: FakeCache, proc: Path, mountinfo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    candidates = _prunable(cache, proc, mountinfo)
+    real_rmtree = gc.shutil.rmtree
+
+    def competing_cleaner(trash: Path, *, onexc: Callable[[Callable[..., Any], str, BaseException], None]) -> None:
+        real_rmtree(trash, onexc=onexc)
+        real_rmtree(trash, onexc=onexc)
+
+    monkeypatch.setattr(gc.shutil, "rmtree", competing_cleaner)
+
+    [result] = _delete(cache, candidates, mountinfo)
+
+    assert result == gc.DeletedEntry(cache.unreferenced)
+    assert not cache.unreferenced.exists()
+    assert list((cache.contents / "_trash").iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "error_number", [pytest.param(errno.EIO, id="io-error"), pytest.param(errno.ENOENT, id="enoent-with-trash-root")]
+)
+def test_delete_reports_cleanup_errors_while_the_trash_root_remains(
+    cache: FakeCache, proc: Path, mountinfo: Path, monkeypatch: pytest.MonkeyPatch, error_number: int
+) -> None:
+    candidates = _prunable(cache, proc, mountinfo)
+
+    def fail_rmtree(trash: Path, *, onexc: Callable[[Callable[..., Any], str, BaseException], None]) -> None:
+        del onexc
+        if error_number == errno.ENOENT:
+            raise FileNotFoundError(error_number, "simulated cleanup error", str(trash))
+        raise OSError(error_number, "simulated cleanup error", str(trash))
+
+    monkeypatch.setattr(gc.shutil, "rmtree", fail_rmtree)
+
+    [result] = _delete(cache, candidates, mountinfo)
+
+    assert isinstance(result, gc.FailedEntry)
+    assert result.trash is not None
+    assert result.trash.is_dir()
+    assert result.path == cache.unreferenced
+    assert "simulated cleanup error" in result.error
 
 
 def test_delete_skips_an_entry_a_base_linked_to_since_the_scan(cache: FakeCache, proc: Path, mountinfo: Path) -> None:
