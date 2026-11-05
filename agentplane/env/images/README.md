@@ -33,8 +33,10 @@ The guest declares `/state/workspaces` in NixOS `fileSystems` as ext4 with `auto
 has one, so a disk holding data but no recognized signature is formatted too
 ([why that is accepted](../../docs/vm_sandboxes.md#guest-and-storage)).
 
-`systemd.tmpfiles` owns the mounted workspace directory's `agent:agent` ownership, setgid mode,
-default ACL and private `.home` directory.
+`systemd.tmpfiles` owns the mounted workspace directory's `agent:agent` ownership, setgid mode and
+default ACL. Before Environment Runtime starts, a separate service runs as `agent` and moves an
+existing `/state/workspaces/.home` to `/state/home`, or creates the canonical home with mode `0700`.
+The state PVC is mounted before this move, and a collision fails closed without merging either tree.
 
 ## Ducktape development image
 

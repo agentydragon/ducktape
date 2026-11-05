@@ -17,6 +17,7 @@ from agentplane.system_tests.driver.session_setup import run_setup
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 WORKSPACE_ROOT = "/state/workspaces"
+HOME = "/state/home"
 AGENT_UID = 107
 AGENT_GID = 107
 
@@ -34,6 +35,7 @@ async def fresh_vm_session_workspace_is_created_for_harness_identity(
     session_id = uuid4()
     preflight_session_id = uuid4()
     workspace = f"{WORKSPACE_ROOT}/{session_id}"
+    preflight_workspace = f"{WORKSPACE_ROOT}/{preflight_session_id}"
     absent, _ = await run_setup(
         client,
         dispatcher,
@@ -42,9 +44,12 @@ async def fresh_vm_session_workspace_is_created_for_harness_identity(
         session_id=preflight_session_id,
         harness=harness,
         model=model,
-        cwd=f"{WORKSPACE_ROOT}/.home",
+        cwd=preflight_workspace,
         setup_script=(
             "set -eu\n"
+            f'test "$HOME" = {shlex.quote(HOME)}\n'
+            f'test "$(stat -c \'%u:%g\' "$HOME")" = {AGENT_UID}:{AGENT_GID}\n'
+            f'test "$(stat -c \'%a\' "$HOME")" = 700\n'
             f"if test -e {shlex.quote(workspace)} || test -L {shlex.quote(workspace)}; then\n"
             f"  printf 'workspace existed before Session creation: %s\\n' {shlex.quote(workspace)} >&2\n"
             "  exit 1\n"
@@ -100,6 +105,8 @@ async def fresh_vm_session_workspace_is_created_for_harness_identity(
         "harness_gid": AGENT_GID,
         "session_id": str(session_id),
         "preflight_session_id": str(preflight_session_id),
+        "preflight_workspace": preflight_workspace,
+        "home": HOME,
         "workspace": workspace,
         "absent_before_open": True,
         "preflight_output": absent,

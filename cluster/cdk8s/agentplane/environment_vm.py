@@ -135,7 +135,7 @@ class EnvironmentVmTemplate(Construct):
                     **network,
                     **env.sandbox_workload_env,
                     **harness_env,
-                    "HOME": "/state/workspaces/.home",
+                    "HOME": "/state/home",
                     "USER": "agent",
                     "LOGNAME": "agent",
                     "PATH": "/run/current-system/sw/bin:/run/agentplane/environment/bin",

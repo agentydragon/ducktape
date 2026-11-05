@@ -2,8 +2,8 @@
 Description=Give the harness user the Agentplane workspace
 Requires=agentplane-guest-prepare.service
 After=agentplane-guest-prepare.service
-RequiresMountsFor=/state/workspaces
-Before=agentplane-environment-runtime.service
+RequiresMountsFor=/state /state/workspaces
+Before=agentplane-home-prepare.service
 
 [Service]
 Type=oneshot

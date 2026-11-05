@@ -1,0 +1,16 @@
+[Unit]
+Description=Move the VM home onto the persistent state volume
+Requires=agentplane-workspace.service
+After=agentplane-workspace.service
+RequiresMountsFor=/state /state/workspaces
+Before=agentplane-environment-runtime.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=agent
+Group=agent
+Environment=PATH=/run/current-system/sw/bin:/usr/sbin:/usr/bin
+ExecStart=/usr/sbin/agentplane-home-prepare /state/workspaces/.home /state/home
+StandardOutput=journal+console
+StandardError=journal+console

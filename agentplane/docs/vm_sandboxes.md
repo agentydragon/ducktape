@@ -52,7 +52,8 @@ lost.
   changing a template never converts an existing volume.
 - The state PVC reaches the guest over virtiofs at `/state`, laid out as in a runner Pod. KubeVirt's
   `virtiofsd` is uid/gid 107 with no capabilities, so only guest root and a user with uid and gid 107
-  can write there; the runner runs as root and harnesses as 107. Upstream has no rootful alternative.
+  can write there; the runner runs as root and harnesses as 107. The VM home lives at `/state/home`
+  on this 10 GiB claim alongside journals and native state. Upstream has no rootful alternative.
 - The config, launch and trust ConfigMap disks are read-only ISO 9660 images, mounted at
   `/run/agentplane/<disk>`, and `systemd-tmpfiles` links the files the runner reads into
   `/run/agentplane`. A file keeps its ConfigMap's mode, which must stay world-readable: harnesses
@@ -84,9 +85,9 @@ lost.
   console with its own `virtualmachineinstances/console` permission and relays it to a logged-in operator.
   KubeVirt serves one attached client per VMI, so a viewer holds out anyone else, and nothing is replayed.
   An interactive console or a diagnostics path would need its own authorization.
-- The guest root is small and replaceable; journals live on the state PVC and agent work on the
-  workspace disk. The guest keeps a serial console (`ttyS0`) because a failed boot unit is otherwise
-  invisible.
+- The guest root is small and replaceable; journals and home live on the state PVC and agent work on
+  the workspace disk. The guest keeps a serial console (`ttyS0`) because a failed boot unit is
+  otherwise invisible.
 
 ## Fresh VM trial readiness
 
