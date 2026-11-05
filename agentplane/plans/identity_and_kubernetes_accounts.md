@@ -253,6 +253,29 @@ it acts as, and that `kubectl --server <host> --token <placeholder>` or a kubeco
 writes itself is the way in. The platform instructions point at the endpoint, as they do today.
 Nothing inside the sandbox ever holds a real token, and a new grant needs no file to change.
 
+## Operator UI
+
+Because nothing in Kubernetes owns an identity, the app has to show identities as first-class
+objects and let the operator end them (operator, 2026-11-05). The surface is the existing policy
+watch and "View grants" disclosure re-anchored on the identity instead of a ServiceAccount:
+
+- **An identities list.** Name, description, origin (git, app, Session), what references it (the
+  Sandboxes naming it and the Sessions Dispatcher has bound to it, both live reads), its bindings
+  with expiry, the Kubernetes accounts its rules let it present, and last activity from the egress
+  decision history and Action receipts, which already name the subject. A filter for identities
+  nothing references, so a leak is visible rather than silent.
+- **Delete.** Enabled when nothing references the identity; refused by the app otherwise, with the
+  referencing objects named. Git-origin identities are read-only here, since Flux would recreate
+  them. The check is advisory and racy against a concurrent launch, which is acceptable because a
+  Sandbox that names a missing identity fails closed and says so; Kubernetes cannot enforce
+  "unreferenced" on delete.
+- **Finish an agent.** The Thread's finish, and a Sandbox delete, offer to take the identity along
+  when it is the last thing naming it. The default is to keep it, since a standing agent's grants are
+  the expensive thing to recreate.
+- **Launch** is unchanged on the surface: pick sets, and either a new identity or an existing one
+  from the list. Choosing an existing identity shows its current grants, so the operator sees what
+  the new environment will be able to do before it starts.
+
 ## Lifetimes
 
 Who cleans what, and by which mechanism:
@@ -368,10 +391,9 @@ cannot change in place, and the new launch writes the identity.
 11. **Admission for controller-written policy.** The Policy Controller writing a `PolicySet` and an
     `EgressCredential` per managed account is new authority; an admission rule limits it to the
     one-rule shape naming that account's own ServiceAccount and apiserver host.
-12. **Ending an identity.** With no Kubernetes owner, an app-created identity ends only when the
-    operator says so. Decide what that affordance is (the Thread's "finish", a Sandbox delete that
-    offers to take the identity with it when nothing else names it, or an `expiresAt` on the
-    identity for one-off agents) and whether the app lists identities nothing references.
+12. **Ending an identity.** The identities list and the finish-time offer above cover the operator
+    path. Open: whether a one-off agent's identity may carry an `expiresAt` the Policy Controller
+    honours, and what "referenced" means for a retired Sandbox that could still resume.
 13. **Second control plane.** Accounts live on target apiservers regardless of where Agentplane's
     records live, so this plan is neutral across the [architecture directions](architecture_overview.md);
     `Identity`, grants and managed accounts move with the Sandbox family under D3.
