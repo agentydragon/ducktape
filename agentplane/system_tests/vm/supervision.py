@@ -16,8 +16,11 @@ test "$HOME" = /state/home
 test "$(stat -c '%u:%g' "$HOME")" = 107:107
 test "$(stat -c '%a' "$HOME")" = 700
 test "$(getent passwd agent | cut -d: -f6)" = /state/home
-printf 'home-write-check\n' > "$HOME/.agentplane-home-supervision"
-test "$(cat "$HOME/.agentplane-home-supervision")" = home-write-check
+home_proof="$HOME/agentplane-home-supervision"
+printf 'home-write-check\n' > "$home_proof"
+test "$(cat "$home_proof")" = home-write-check
+rm -- "$home_proof"
+test ! -e "$home_proof"
 printf 'UID %s\nGID %s\nCWD %s\nHOME %s\nOWNER %s\nPID1 %s\n' \
     "$(id -u)" "$(id -g)" "$PWD" "$HOME" "$(stat -c '%u:%g' .)" "$(cat /proc/1/comm)"
 printf 'HOME_OWNER %s\nHOME_MODE %s\nHOME_WRITABLE yes\n' \
