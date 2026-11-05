@@ -14,6 +14,13 @@
       EnvironmentService clients repeat route spelling and snapshot, upsert and removal assembly;
       preserve authentication, cancellation, stream errors and reconnect behavior.
 
+## Console capability scope
+
+- [ ] Decide whether KubeVirt console access remains an app-owned browser capability or needs a
+      backend API for non-app callers. Establish the intended callers and authorization boundary
+      before introducing a shared capability; the current app route is in
+      [`go/sandboxes/console.go`](go/sandboxes/console.go).
+
 ## Session and Environment listings
 
 - [ ] Revisit the Environment-filtered Thread metadata query with
