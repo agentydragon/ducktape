@@ -569,7 +569,10 @@ separately designed credential mechanism. See
 
 **Open: materialization cost.** A distinct live SA, PolicyBinding and possibly native RBAC objects
 for every retained Session could accumulate in Kubernetes. Compare eager creation with reserving
-the Session's SA name and materializing it only when an authorized operation needs it; measure the
+the Session's SA name and materializing it only when an authorized operation needs it. The operator
+expects fewer than 10,000 Sessions in existence at present and considers eager SAs likely acceptable;
+this is a working scale assumption, not a measured capacity limit. Eager creation is a reasonable
+first candidate, with lazy creation revisited if observed scale warrants it. Measure the
 object counts and control-plane costs rather than assuming a bottleneck. A Session that only needs
 provider-side work might avoid a Kubernetes object, but the current delegated-authentication path
 requires the effective SA to exist and match its UID, and an Environment uses a Pod-projected SA

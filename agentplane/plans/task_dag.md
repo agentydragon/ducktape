@@ -2349,9 +2349,13 @@ that unbinding or changing the bound SA is refused even after its object disappe
 
 **Decision; operator discussion, 2026-11-04.** Compare eagerly creating a managed SA for every
 live Session with reserving a name and provisioning the Kubernetes SA only when a Session needs an
-Environment, an authorized service operation or an explicit Kubernetes identity. Estimate the
-number, retention and churn of ServiceAccounts, PolicyBindings and generated RoleBindings, and
-measure control-plane cost before claiming an etcd bottleneck. Include web-preset PolicySets and
+Environment, an authorized service operation or an explicit Kubernetes identity. The operator
+expects fewer than 10,000 Sessions in existence at present and considers eager provisioning likely
+acceptable; that is a scale expectation, not a measured etcd capacity limit. Eager provisioning is
+a reasonable initial candidate, with lazy provisioning revisited if observed scale or cost warrants.
+Estimate the number, retention and churn of ServiceAccounts, PolicyBindings and generated RoleBindings, and
+measure control-plane cost before claiming an etcd bottleneck; a speculative bottleneck alone does
+not require a production-scale benchmark before choosing a simpler initial model. Include web-preset PolicySets and
 the authority that retains their desired grants while an SA is absent. Avoid needless credential or
 policy materialization while preserving unattended work and predictable readiness.
 
