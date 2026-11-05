@@ -65,8 +65,10 @@ The initial Sandbox still keeps one fixed SA throughout its lifetime.
 
 [#8596](https://github.com/agentydragon/ducktape/issues/8596) selected one ServiceAccount
 per managed Sandbox. Its egress sidecar holds a projected Kubernetes-audience token and
-substitutes that Sandbox SA's identity for `kubectl` requests. The workload receives a
-placeholder kubeconfig, not the token. Kubernetes enforces the resulting SA's RBAC.
+substitutes that Sandbox SA's identity for `kubectl` requests. The credential description at the
+egress rules endpoint supplies the API server, that it acts as the Sandbox's ServiceAccount, and the
+`kubectl --server <host> --token <placeholder>` invocation. The workload holds no token; Kubernetes
+enforces the resulting SA's RBAC.
 
 [Agent RBAC](../../cluster/docs/agent_rbac.md#agentplane-managed-sandbox-grants) documents the
 implemented grant catalog, launch-time resolution and binding ownership, and the

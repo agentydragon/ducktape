@@ -235,6 +235,7 @@ func rulesText(raw json.RawMessage) (string, error) {
 				Paths      *list    `json:"paths"`
 				Credential *struct {
 					Name        string             `json:"name"`
+					Description string             `json:"description"`
 					Placeholder string             `json:"placeholder"`
 					Targets     []credentialTarget `json:"targets"`
 				} `json:"credential"`
@@ -260,6 +261,9 @@ func rulesText(raw json.RawMessage) (string, error) {
 					presented[i] = place.presenting(credential.Placeholder)
 				}
 				line += fmt.Sprintf("  credential %s: send %s", credential.Name, strings.Join(presented, "  or  "))
+				if credential.Description != "" {
+					line += "  " + credential.Description
+				}
 			}
 			lines = append(lines, line)
 		}

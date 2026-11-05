@@ -23,6 +23,7 @@ from typing import Any
 
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
+from agentplane.egress.kubernetes_audience import KUBERNETES_AUDIENCE
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.k3s import bootstrap, iptables_rule, pki_infrastructure, release_manifests
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -244,6 +245,11 @@ class K3s:
                 # The runner Pod mounts the runner disk image as an image volume (beta, off by default in 1.34).
                 "--kube-apiserver-arg",
                 "feature-gates=ImageVolume=true",
+                # K3s defaults to its issuer and the `k3s` audience. Production also accepts the
+                # projected Kubernetes workload audience; include it here so this fixture exercises
+                # the same token the egress proxy substitutes for a Sandbox.
+                "--kube-apiserver-arg",
+                f"api-audiences=https://kubernetes.default.svc.cluster.local,k3s,{KUBERNETES_AUDIENCE}",
                 "--kubelet-arg",
                 "feature-gates=ImageVolume=true",
             ],

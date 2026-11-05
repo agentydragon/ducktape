@@ -24,7 +24,7 @@ pkgs: with pkgs; [
   ripgrep
   jq
   openssl
-  kubectl # the sandbox's own Kubernetes identity, through the egress proxy
+  kubectl # Kubernetes access with the credential returned by the egress rules endpoint
 
   # FULL python3, never `python3Minimal`, whose missing `json`/`shutil` broke the Haku image's
   # scripts. nixpkgs marks it EXTERNALLY-MANAGED, so a run installs packages into a

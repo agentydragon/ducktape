@@ -444,12 +444,13 @@ skips it, and `--config=live-openai` runs it:
 bbr test --config=live-openai //agentplane/system_tests/suites:test_real_model
 ```
 
-That target runs the egress probe, whose evidence is what a real model works out. The probe's
-Sandbox discovers and presents the fixture's own credential ([`probe_credential.py`](deployment/probe_credential.py)),
-a token for a ServiceAccount holding no RBAC, which the Kubernetes API names back only if the proxy
-substituted it. The egress scenario in `test_pod` runs the other egress cases with the scripted model: the model call goes
-through the proxy, and a PolicySet bound to a running Sandbox takes effect. The latter binds the
-fixture's own PolicySet ([`runtime_grant.py`](deployment/runtime_grant.py)), not one a deployment's Sandboxes use.
+That target asks a real model to read a fresh ConfigMap value that only the Sandbox's own
+ServiceAccount may get, fetch public Git refs, and try an unlisted host. The test checks the value
+against the random fixture value and checks the proxy's Kubernetes and denial decisions. The
+egress scenario in `test_pod` runs the model-ingress and runtime-grant cases with the scripted
+model: the model call goes through the proxy, and a PolicySet bound to a running Sandbox takes
+effect. The latter binds the fixture's own PolicySet ([`runtime_grant.py`](deployment/runtime_grant.py)),
+not one a deployment's Sandboxes use.
 
 ## Running live
 

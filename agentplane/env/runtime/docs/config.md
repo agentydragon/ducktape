@@ -141,7 +141,6 @@ The paths consumed by Runtime and tools are identical.
 | ---------------------------------------------------------------- | ---------------------------------------------------- |
 | `/run/agentplane/config/environment-runtime.json`                | Template-owned environment configuration.            |
 | `/run/agentplane/sandbox/launch.json`                            | Controller-owned Sandbox identity and bootstrap.     |
-| `/run/agentplane/config/kubeconfig`                              | Sandbox workload identity through the egress proxy.  |
 | `/run/agentplane/trust/ca-certificates.crt`                      | Egress proxy CA bundle.                              |
 | `/run/agentplane/trust/ca-certificates.p12`                      | Java proxy trust store.                              |
 | `/run/agentplane/environment/bin/agentplane-environment-runtime` | Environment, Session and Execution owner; Pod PID 1. |

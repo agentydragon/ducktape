@@ -114,7 +114,6 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
         "/etc/ssl/certs/ca-certificates.crt",
         "/run/agentplane/trust/ca-certificates.crt",
         "/run/agentplane/trust/ca-certificates.p12",
-        "/run/agentplane/config/kubeconfig",
     ):
         assert runner_mounts[path] == executor_mounts[path]
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
@@ -122,7 +121,6 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
         assert "emptyDir" in volumes[runner_mounts[path]]
 
     executor_mount_names = set(executor_mounts.values())
-    assert executor_mounts["/run/agentplane/config/kubeconfig"] == "tool-config"
     # The executor shares the BuildBuddy key, which `bbr` in a Codex shell needs; the runner's own
     # config and the sidecar's token are its alone.
     assert "buildbuddy-api-key" in executor_mount_names
@@ -131,7 +129,8 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     runner_env = {variable["name"]: variable["value"] for variable in runner["env"]}
     for name in (*sandbox_pod.PROXY_VAR_NAMES, *sandbox_pod.NO_PROXY_VAR_NAMES, *sandbox_pod.CA_BUNDLE_VAR_NAMES):
         assert executor_env[name] == runner_env[name]
-    assert executor_env["KUBECONFIG"] == runner_env["KUBECONFIG"]
+    assert "KUBECONFIG" not in executor_env | runner_env
+    assert "/run/agentplane/config/kubeconfig" not in executor_mounts.keys() | runner_mounts.keys()
     assert {"ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "LITELLM_URL"}.isdisjoint(executor_env)
 
 
@@ -329,7 +328,8 @@ def test_launcher_relay_listens_on_every_interface_and_otherwise_matches_the_run
 
 
 def test_runner_tool_config_role_is_scoped_to_the_canonical_map(staging_manifests: list[dict[str, Any]]) -> None:
-    _by_name(staging_manifests, "ConfigMap", "sandbox-tool-config")
+    tool_config = _by_name(staging_manifests, "ConfigMap", "sandbox-tool-config")
+    assert set(tool_config["data"]) == {"bazel.bazelrc"}
     role = _by_name(staging_manifests, "Role", "agentplane-sandbox-tool-config-reader")
     assert role["rules"] == [
         {"apiGroups": [""], "resourceNames": ["sandbox-tool-config"], "resources": ["configmaps"], "verbs": ["get"]}
@@ -339,6 +339,13 @@ def test_runner_tool_config_role_is_scoped_to_the_canonical_map(staging_manifest
     config_maps = {volume["name"]: volume["configMap"]["name"] for volume in volumes if "configMap" in volume}
     assert config_maps["environment-runtime-config"] == f"{staging.POD_TEMPLATE}-config"
     assert config_maps["tool-config"] == "sandbox-tool-config"
+
+    pod = one(_templates(staging_manifests))["spec"]["pod"]["spec"]
+    for container in [*pod["containers"], *pod.get("initContainers", [])]:
+        env_names = {item["name"] for item in container.get("env", [])}
+        mount_paths = {item["mountPath"] for item in container.get("volumeMounts", [])}
+        assert "KUBECONFIG" not in env_names
+        assert "/run/agentplane/config/kubeconfig" not in mount_paths
 
 
 if __name__ == "__main__":

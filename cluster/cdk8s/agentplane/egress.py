@@ -48,6 +48,8 @@ from trust_manager_crds.io.cert_manager.trust import (
 )
 
 from agentplane.crd_group import GROUP
+from agentplane.egress.kubernetes_audience import KUBERNETES_AUDIENCE
+from agentplane.egress.resources import placeholder_of
 from agentplane.egress.settings import Settings
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.subjects import ServiceAccountRef
@@ -84,16 +86,11 @@ PROXY_PORT = 8888
 # The health service whose verdict is "the process answers", whatever the index says; keep equal to
 # `LivenessService` in agentplane/egress/admin/grpc_health.go.
 _LIVENESS_HEALTH_SERVICE = "livez"
-# The API server's own ServiceAccount token audience (Talos `--api-audiences`, equal to
-# `--service-account-issuer`): an issuer ID, not an address; never "fix" it to the Service DNS name.
-# The sidecar projects and the proxy reviews this exact string, so a mismatch with the cluster shows
-# up as a 401 inside the sandbox, not a proxy denial.
-KUBERNETES_AUDIENCE = "https://localhost:7445"
 # Only the app's authenticated admin gRPC caller receives this audience.
 ADMIN_GRPC_AUDIENCE = "agentplane-egress-admin"
 # Where a sandbox's kubectl sends everything. Cluster-internal by definition, hence the rule below.
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
-# The credential substituted there, whose placeholder a sandbox's kubeconfig carries (sandbox_pod.py).
+# The credential substituted there; agents discover its usage through the rules endpoint.
 KUBERNETES_CREDENTIAL = "kubernetes-workload"
 # The in-cluster Forgejo, plain HTTP, so the proxy reads the request without bumping TLS.
 # It is the name to prefer: the public name below would hairpin out through the Gateway and back
@@ -341,10 +338,11 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
         "egresscredential-kubernetes-workload",
         metadata=ApiObjectMetadata(name=KUBERNETES_CREDENTIAL, namespace=namespace),
         description=(
-            "The calling Sandbox Pod's own ServiceAccount, minted for the Kubernetes API server "
-            "rather than for this proxy. Requests carrying it are authorized by the API server "
-            "as that account and by nothing here: what the sandbox may do is the RBAC bound to "
-            "it, and this proxy adds only the rule's hosts, methods and paths on top."
+            f"Kubernetes API server: https://{KUBERNETES_HOST}. This credential acts as the calling "
+            "Sandbox's own ServiceAccount. Use "
+            f"kubectl --server https://{KUBERNETES_HOST} --token {placeholder_of(KUBERNETES_CREDENTIAL)} "
+            "for Kubernetes commands; the proxy substitutes this Sandbox's projected "
+            "Kubernetes-audience token. Check agentplane egress rules for the live host and placeholder."
         ),
         source=Source.projected_workload_token(audience=KUBERNETES_AUDIENCE),
         targets=[
@@ -480,10 +478,10 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
             ),
             # The API server, inside `basic` rather than behind a policy a launch opts into: every
             # agent talks to Kubernetes, so what decides it is RBAC and not whether a preset or a
-            # caller happened to name a policy. Every SandboxTemplate already mounts the kubeconfig
-            # naming this credential (sandbox_pod.py), so a box without this rule held a config
-            # whose requests the proxy refused for want of a rule -- a transport gap that read as
-            # an authorization answer and could not be narrowed into one.
+            # caller happened to name a policy. Every Sandbox discovers this credential through
+            # the rules endpoint. Kubernetes commands carry its placeholder directly; the proxy
+            # substitutes the Sandbox's own projected token. A missing rule therefore means no
+            # available Kubernetes route.
             #
             # No method or path list: what a sandbox may read or write is the API server's answer
             # for its own ServiceAccount, and narrowing verbs here would be a second, weaker copy

@@ -241,6 +241,8 @@ def test_vm_template_matches_the_guest_disk_and_runtime_file_contract(
     assert runtime_config["environment"]["block_devices"] == [vm_guest_contract["disks"]["workspace"]["device"]]
     assert vm_guest_contract["files"]["runtime_config"] in config_map
     assert vm_guest_contract["files"]["runtime_environment"] in config_map
+    assert "kubeconfig" not in config_map
+    assert "KUBECONFIG" not in runtime_config["harness_environment"]["values"]
 
     config_mount = vm_guest_contract["disks"]["config"]["mount"]
     launch_mount = vm_guest_contract["disks"]["launch"]["mount"]

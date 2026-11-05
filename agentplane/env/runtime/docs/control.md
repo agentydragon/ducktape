@@ -39,8 +39,8 @@ environment values are preserved.
 Session configuration cannot override template resource ceilings or executor selection.
 
 Pods and VMs expose `/run/agentplane/config/environment-runtime.json`,
-`/run/agentplane/sandbox/launch.json`, `/run/agentplane/config/kubeconfig`, and
-`/run/agentplane/trust/` at the same paths. Pod templates mount ConfigMaps; VM boot mounts disks.
+`/run/agentplane/sandbox/launch.json`, and `/run/agentplane/trust/` at the same
+paths. Pod templates mount ConfigMaps; VM boot mounts disks.
 The [configuration inventory](config.md) specifies every field, source and file.
 
 The required `environment.kind` selects a Pod or VM variant. Pod policy contains an optional

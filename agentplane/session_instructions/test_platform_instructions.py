@@ -17,6 +17,8 @@ def test_platform_guide_describes_the_selected_runtime(runtime: SessionRuntime) 
     assert "Environment Runtime" in guide
     assert "http://test-actions.invalid" in guide
     assert "http://test-sessions.invalid" in guide
+    assert "agentplane egress rules" in guide
+    assert "kubectl --server <host> --token <placeholder>" in guide
     match runtime:
         case SessionRuntime.NATIVE_HARNESS:
             assert "You run inside an Agentplane Sandbox" in guide

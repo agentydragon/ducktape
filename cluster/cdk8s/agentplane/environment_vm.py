@@ -2,7 +2,7 @@
 KubeVirt VM the Sandbox Controller makes from `spec.vm` (agentplane/sandbox_controller/SPEC.md § VMs).
 
 The guest gets what a runner Pod's container gets, as the disks vm.nix reads by serial: the public
-launch config (platform instructions included) and kubeconfig, the egress trust bundle, the runner
+launch config (platform instructions included), the egress trust bundle, the runner
 and `agentplane` command on their own read-only disk, and the Sandbox-owned workspace disk, which
 survives VM replacements. The controller attaches its PVC and
 adds the state PVC as the virtiofs filesystem named after the state volume, along with the Sandbox's
@@ -36,7 +36,6 @@ from agentplane.env import config as configuration
 from agentplane.env.config import (
     CA_BUNDLE,
     JAVA_TRUST_STORE,
-    KUBECONFIG,
     CodexReadiness,
     Configuration,
     Endpoint,
@@ -50,7 +49,6 @@ from agentplane.sandboxes.runtimeconfig.model_catalog import WORKSPACE_ROOT
 from cluster.cdk8s.agentplane import launcher_relay, llm_ingress, platform_routes, sandbox_pod, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.cert_manager.cluster_ca import BUNDLE_KEY as ENVIRONMENT_RUNTIME_TRUST_BUNDLE_KEY
-from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_template
 
 NAME = "environment-vm"
@@ -140,7 +138,6 @@ class EnvironmentVmTemplate(Construct):
                     "LOGNAME": "agent",
                     "PATH": "/run/current-system/sw/bin:/run/agentplane/environment/bin",
                     "TZDIR": "/usr/share/zoneinfo",
-                    "KUBECONFIG": KUBECONFIG,
                     "JAVA_TOOL_OPTIONS": f"-Djavax.net.ssl.trustStore={JAVA_TRUST_STORE} -Djavax.net.ssl.trustStoreType=PKCS12",
                 }
             ),
@@ -161,7 +158,6 @@ class EnvironmentVmTemplate(Construct):
         )
         config_map_data = {
             "environment-runtime.json": config.model_dump_json(exclude_none=True),
-            "kubeconfig": yaml_config(sandbox_pod.kubeconfig(str(CA_BUNDLE))),
             _ENVIRONMENT_RUNTIME_ENV_FILE: "".join(
                 f'{name}="{value}"\n'
                 for name, value in sorted(

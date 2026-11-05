@@ -165,7 +165,7 @@ def _workload(
         # dispose, and the quota the box holds, for the whole termination grace period.
         command=["bash", "-c", "trap 'exit 0' TERM; sleep infinity & wait"],
         security_context=sandbox_pod.workload_security_context(),
-        env=sandbox_pod.workload_environment(env, sandbox_pod.egress_env()),
+        env=sandbox_pod.workload_environment(env, sandbox_pod.proxy_environment()),
         resources=resources,
         volume_mounts=[*trust_mounts, sandbox_pod.bazelrc_mount(), *mounts],
     )
