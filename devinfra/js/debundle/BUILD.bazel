@@ -26,6 +26,17 @@ py_library(
     srcs = ["analysis_identity_hasher.py"],
 )
 
+py_test(
+    name = "analysis_identity_hasher_test",
+    srcs = ["analysis_identity_hasher_test.py"],
+    deps = [
+        ":analysis_identity_hasher",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 analysis_identity(
     name = "analysis_identity_source",
     engine = ":staged_analysis",
