@@ -71,7 +71,7 @@ struct ApplyRequest {
 #[serde(tag = "kind", content = "selector", rename_all = "snake_case")]
 enum ApplySelectorOverride {
     SourceMatch(spec::SourceMatchClaim),
-    Relational(Box<spec::MemberSelector>),
+    Relational(Box<spec::RawMemberSelector>),
 }
 
 #[derive(Serialize)]
@@ -97,7 +97,7 @@ enum SelectorReview {
         source_file: PathBuf,
         binding_id: String,
         readable_name: String,
-        selector: Box<spec::MemberSelector>,
+        selector: Box<spec::RawMemberSelector>,
         review_warnings: Vec<&'static str>,
     },
 }
@@ -389,7 +389,7 @@ pub fn run_modules_apply(
                 doc.source_matches.push(claim);
             }
             ApplySelectorOverride::Relational(selector) => {
-                if matches!(selector.selected()?, spec::MemberSelectorSpec::Binding(_)) {
+                if matches!(selector.validate()?, spec::MemberSelectorSpec::Binding(_)) {
                     bail!("relational override for {runtime:?} cannot use a binding name pin");
                 }
                 selector_reviews.push(SelectorReview::Relational {

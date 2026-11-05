@@ -10,9 +10,10 @@ use spec::{
     ChunkRenameSelector, ChunkRenames, CrossRefSelector, DependencyGraphOptions,
     EmitBrowserHarnessConfig, IntrinsicAliasSelector, LoadJsChunksArgs, LogicalModule,
     MakesDecorateCallSelector, MaterializeLogicalModulesConfig, Member as SpecMember,
-    MemberOfModuleSelector, MemberSelector, PassedToCallSelector, ReadsMemberSelector, SourceMatch,
-    SourceMatchBinding, SourceMatchBindingDetail, SourceMatchClaim, SourceMatchIdentifierMode,
-    SwapVendorChunksConfig, TransformSpec, UnassignedMode, WriteJsTreeConfig,
+    MemberOfModuleSelector, PassedToCallSelector, RawMemberSelector, ReadsMemberSelector,
+    SourceMatch, SourceMatchBinding, SourceMatchBindingDetail, SourceMatchClaim,
+    SourceMatchIdentifierMode, SwapVendorChunksConfig, TransformSpec, UnassignedMode,
+    WriteJsTreeConfig,
 };
 use spec::{MemberEffect, MemberPurity};
 use std::collections::BTreeMap;
@@ -52,7 +53,7 @@ pub fn composed_global_access_fixture() -> FixtureOpts<'static> {
 #[derive(Default)]
 pub struct Member {
     pub name: &'static str,
-    selector: MemberSelector,
+    selector: RawMemberSelector,
     source_match: Option<SourceMatch>,
     purity: Option<MemberPurity>,
     initializer_purity: Option<InitializerPurity>,
@@ -117,7 +118,7 @@ impl BindingGroup {
 }
 
 impl Member {
-    fn pinned(name: &'static str, selector: MemberSelector) -> Self {
+    fn pinned(name: &'static str, selector: RawMemberSelector) -> Self {
         Self {
             name,
             selector,
@@ -145,7 +146,7 @@ impl Member {
     ) -> Self {
         Self::pinned(
             name,
-            MemberSelector {
+            RawMemberSelector {
                 binding: Some(BindingSelector {
                     name: binding.to_string(),
                     kind: parse_kind(kind),
@@ -198,7 +199,7 @@ impl Member {
     ) -> Self {
         Self::pinned(
             name,
-            MemberSelector {
+            RawMemberSelector {
                 cross_ref: Some(CrossRefSelector {
                     references: Some(anchor.to_string()),
                     aliases: None,
@@ -214,7 +215,7 @@ impl Member {
     pub fn cross_ref_aliases(name: &'static str, anchor: &'static str) -> Self {
         Self::pinned(
             name,
-            MemberSelector {
+            RawMemberSelector {
                 cross_ref: Some(CrossRefSelector {
                     references: None,
                     aliases: Some(anchor.to_string()),
@@ -239,7 +240,7 @@ impl Member {
     ) -> Self {
         Self::pinned(
             name,
-            MemberSelector {
+            RawMemberSelector {
                 reads_member: Some(ReadsMemberSelector {
                     member: member.to_string(),
                     object: object.map(str::to_string),
@@ -262,7 +263,7 @@ impl Member {
     ) -> Self {
         Self::pinned(
             name,
-            MemberSelector {
+            RawMemberSelector {
                 member_of_module: Some(MemberOfModuleSelector {
                     module: module.to_string(),
                     member: member.to_string(),
@@ -290,7 +291,7 @@ impl Member {
     ) -> Self {
         Self::pinned(
             name,
-            MemberSelector {
+            RawMemberSelector {
                 passed_to_call: Some(PassedToCallSelector {
                     callee_member: callee_member.to_string(),
                     object: object.map(str::to_string),
@@ -317,7 +318,7 @@ impl Member {
     ) -> Self {
         Self::pinned(
             name,
-            MemberSelector {
+            RawMemberSelector {
                 makes_decorate_call: Some(MakesDecorateCallSelector {
                     class: class.to_string(),
                     member: member.map(str::to_string),
@@ -338,7 +339,7 @@ impl Member {
     ) -> Self {
         Self::pinned(
             name,
-            MemberSelector {
+            RawMemberSelector {
                 intrinsic_alias: Some(IntrinsicAliasSelector {
                     property: property.to_string(),
                     referenced_by: referenced_by.to_string(),

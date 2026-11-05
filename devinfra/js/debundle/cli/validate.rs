@@ -352,7 +352,7 @@ fn validate_modules_against_source(
         }
         let mut members = Vec::new();
         for member in module.members {
-            match member.selector.selected() {
+            match member.selector.validate() {
                 // A member without an export name was reported above.
                 Ok(selector) => {
                     let export_name = match (&member.name, &selector) {
