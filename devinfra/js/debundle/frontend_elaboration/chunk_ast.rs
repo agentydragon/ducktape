@@ -1,17 +1,17 @@
 //! Pre-naturalization analysis of one chunk AST: which top-level
 //! statements declare what, which imports are runtime, which patterns
 //! introduce destructure siblings, etc. `ChunkAstAnalysis` is the
-//! input to `materialize_logical_chunk`s spec-driven plan resolution.
+//! input to selector projection and downstream planning.
 
 use binding_targets::binding_names as bt_binding_names;
-pub(super) use binding_targets::{
+pub use binding_targets::{
     binding_name_strings as binding_names, declaration_ids,
     declaration_name_strings as declaration_names,
 };
 use selector_outcome::{Declaration, DeclarationKind};
 use source_identity::StatementId;
 
-use crate::imports::{RuntimeImportFacts, RuntimeImportInfo, record_runtime_imports};
+use crate::source_ast::{RuntimeImportFacts, RuntimeImportInfo, record_runtime_imports};
 use analysis::{DestructuringDeclaratorGroup, NestedVarStatement, SourceUnitSyntaxLocation};
 use anyhow::{Context, Result, bail};
 use js_ast::post_split_top_level_count;
@@ -20,26 +20,26 @@ use std::collections::{HashMap, HashSet};
 use swc_ecma_ast::*;
 
 #[derive(Debug, Clone)]
-pub(super) struct TopLevelDecl {
-    pub(super) statement: StatementId,
-    pub(super) bindings: Vec<(String, Id)>,
-    pub(super) exported: bool,
+pub struct TopLevelDecl {
+    pub statement: StatementId,
+    pub bindings: Vec<(String, Id)>,
+    pub exported: bool,
 }
 
-pub(super) struct ChunkAstAnalysis {
-    pub(super) runtime_import_facts: RuntimeImportFacts,
-    pub(super) declarations: Vec<TopLevelDecl>,
+pub struct ChunkAstAnalysis {
+    pub runtime_import_facts: RuntimeImportFacts,
+    pub declarations: Vec<TopLevelDecl>,
     /// Every source statement that declares a top-level binding, in source order.
     /// `var` may redeclare the same hygienic Id at several sites; consumers that
     /// need one body_index choose a representative explicitly instead of losing the
     /// earlier sites to `HashMap::collect`'s last-write behavior.
-    pub(super) declaration_by_name: HashMap<Id, Vec<StatementId>>,
+    pub declaration_by_name: HashMap<Id, Vec<StatementId>>,
     /// Exact AST identities of top-level destructuring declarators, retained
     /// during this single source-AST pass for both request planning and final
     /// placement projection.
-    pub(super) source_unit_syntax_locations: Vec<SourceUnitSyntaxLocation>,
-    pub(super) destructuring_groups: Vec<DestructuringDeclaratorGroup>,
-    pub(super) nested_var_statements: Vec<NestedVarStatement>,
+    pub source_unit_syntax_locations: Vec<SourceUnitSyntaxLocation>,
+    pub destructuring_groups: Vec<DestructuringDeclaratorGroup>,
+    pub nested_var_statements: Vec<NestedVarStatement>,
     /// Bindings that the source chunk's entry already exports (via
     /// `export { foo, bar }` re-exports of local bindings, or
     /// `export const foo = …` style declarations). The materializer
@@ -47,7 +47,7 @@ pub(super) struct ChunkAstAnalysis {
     /// auto-grown `export { name }` block doesn't duplicate an
     /// existing source-level export — emitting a duplicate would be
     /// a `SyntaxError: Duplicate export of 'name'` at load time.
-    pub(super) pre_existing_entry_exports: HashSet<Id>,
+    pub pre_existing_entry_exports: HashSet<Id>,
     /// **Public** names the source chunk's entry already uses (the
     /// `exported` side of `export { orig as exported }` specifiers
     /// and the declared name of `export const foo = …` style
@@ -59,10 +59,10 @@ pub(super) struct ChunkAstAnalysis {
     /// a peeled module references a different local binding named
     /// `av`, growing the export under the same public name would
     /// produce a duplicate-export `SyntaxError` at load time.
-    pub(super) pre_existing_public_export_names: HashSet<String>,
+    pub pre_existing_public_export_names: HashSet<String>,
 }
 
-pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
+pub fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
     let mut imports = HashMap::<Id, RuntimeImportInfo>::new();
     let mut declarations = Vec::new();
     let mut pre_existing_entry_exports = HashSet::<Id>::new();
@@ -179,7 +179,7 @@ fn record_exact_destructuring_groups(
 /// that binds it. The full source-ordered declaration-site list stays in
 /// `declaration_by_name`; this helper returns one representative for diagnostics
 /// whose wire format names a single declaration.
-pub(super) fn binding_declaration(
+pub fn binding_declaration(
     body: &[ModuleItem],
     declaration_by_name: &HashMap<Id, Vec<StatementId>>,
     binding: &Id,
@@ -258,7 +258,7 @@ pub(super) fn binding_declaration(
 ///   specifier (falls back to `orig`'s sym when no `as` rename is
 ///   present). Keyed on bare `String` because export names are pure
 ///   labels, not bound to a hygienic scope.
-pub(super) fn record_pre_existing_named_exports(
+pub fn record_pre_existing_named_exports(
     item: &ModuleItem,
     local_out: &mut HashSet<Id>,
     public_out: &mut HashSet<String>,
@@ -286,7 +286,7 @@ pub(super) fn record_pre_existing_named_exports(
     }
 }
 
-pub(super) fn top_level_declaration_names(item: &ModuleItem) -> (Vec<String>, bool) {
+pub fn top_level_declaration_names(item: &ModuleItem) -> (Vec<String>, bool) {
     match item {
         ModuleItem::Stmt(Stmt::Decl(decl)) => (declaration_names(decl), false),
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
@@ -307,7 +307,7 @@ pub(super) fn top_level_declaration_names(item: &ModuleItem) -> (Vec<String>, bo
     }
 }
 
-pub(super) fn top_level_declaration_ids(item: &ModuleItem) -> Vec<Id> {
+pub fn top_level_declaration_ids(item: &ModuleItem) -> Vec<Id> {
     match item {
         ModuleItem::Stmt(Stmt::Decl(decl)) => declaration_ids(decl),
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
@@ -318,6 +318,6 @@ pub(super) fn top_level_declaration_ids(item: &ModuleItem) -> Vec<Id> {
     }
 }
 
-pub(super) fn binding_ids(pattern: &Pat) -> Vec<Id> {
+pub fn binding_ids(pattern: &Pat) -> Vec<Id> {
     bt_binding_names(pattern).collect()
 }

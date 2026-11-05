@@ -7,20 +7,15 @@ mod apply;
 mod outcome_sink;
 mod plan_builder;
 
-use analysis::analysis_inputs::SourceDeclaration;
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
 use staged_analysis::ResolvedMemberSite;
-use staged_analysis::chunk_facts::{
-    ChunkFacts, ChunkFactsContext, chunk_runtime_entry, compute_logical_chunk_facts,
-};
+use staged_analysis::chunk_facts::{ChunkFacts, ChunkFactsContext, compute_logical_chunk_facts};
 use staged_analysis::progress::emit_debundle_progress;
 
-use super::analysis_projection::{AnalysisProjection, ChunkGraphInputs};
 use super::commuting_statements::resolve_chunk_commuting_statements;
 use super::io::{JsonlReport, ProgramGraphOutput, chunk_report_path, write_chunk_report_json};
 use super::util::{render_atomic_group_cause_guidance, target_file_for_request};
-use crate::chunk_ast::{ChunkAstAnalysis, analyze_chunk_ast};
 use crate::chunk_renames::collect_chunk_renames;
 use crate::imports::{ArtifactSourceImportResolutionCache, VendorReimportOracle};
 use crate::lower::{
@@ -39,15 +34,16 @@ use crate::{
 };
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis::{
-    AnalysisAssumptions, BindingCatalogue, BindingId, BindingKind, DependencyGraphAndAtomicGroups,
-    EntryDestination, ModuleId, ModuleRole, PlacementProjectionInput, PlannedModule,
-    SourceUnitLayout, top_level_id,
+    BindingCatalogue, BindingId, BindingKind, DependencyGraphAndAtomicGroups, EntryDestination,
+    ModuleId, ModuleRole, PlacementProjectionInput, PlannedModule, SourceUnitLayout, top_level_id,
 };
 use anyhow::{Context, Result, bail, ensure};
 use artifact::paths::join_module_path;
 use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, SelectedModuleLowering};
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileRole, JsFile};
 use chunk_analysis::build_chunk_graph;
+use frontend_elaboration::chunk_ast::ChunkAstAnalysis;
+use frontend_elaboration::{FrontendChunk, MemberClaimProjection};
 use gate::{
     AssignmentAnalysis, RejectedAssignment, SccRejection, ValidatedAssignment,
     render_atomic_group_conflict_summary, render_cycle_summary,
@@ -61,14 +57,9 @@ use output_layout::{
     SELECTOR_DIAGNOSTICS_REPORT, TRANSLATION_VALIDATION_REPORT,
 };
 use reconstruction::{ChunkGateRejection, GateVerdict};
-use spec::{
-    ChunkRenames, InitializerBindingEffects, InitializerPurity, LogicalModule, MemberPurity,
-    UnassignedMode,
-};
-use spec_resolution::{
-    LogicalRequest, MemberRequest, ProjectedChunk, ResolvedChunk, known_effect_from_member_effect,
-    logical_requests_for_chunk, project_chunk,
-};
+use spec::{ChunkRenames, UnassignedMode};
+use spec_resolution::LogicalRequest;
+use staged_analysis::analysis_projection::{AnalysisProjection, ChunkGraphInputs};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 
@@ -79,7 +70,6 @@ pub(super) struct ChunkContext<'a> {
     pub(super) artifact: &'a ChunkBundle,
     pub(super) artifact_indexes: &'a ArtifactIndexes,
     pub(super) chunk_id: &'a str,
-    pub(super) file: Option<&'a str>,
     pub(super) target_dir: &'a str,
     pub(super) keep_going: bool,
     pub(super) list_template_identifiers: bool,
@@ -104,7 +94,6 @@ pub(super) struct ChunkContext<'a> {
 /// `AnalysisProjection` instead. Bundled into
 /// `MaterializeLogicalChunkInputs::spec`.
 pub(super) struct ChunkSpec<'a> {
-    pub(super) logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
     pub(super) chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub(super) unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
 }
@@ -162,6 +151,11 @@ pub(super) struct PreparedLogicalChunk<'a> {
     ast_analysis: ChunkAstAnalysis,
     requests: Vec<LogicalRequest>,
     explicit_requests: Vec<LogicalRequest>,
+    resolution: selector_resolve::Resolution,
+    resolved_members: Vec<Vec<usize>>,
+    member_claims: MemberClaimProjection,
+    structural_analysis: Option<StructuralChunkSourceFacts<'a>>,
+    source_only_initializer_bindings: BTreeSet<String>,
     builder: ChunkPlanBuilder,
 }
 
@@ -171,23 +165,21 @@ pub(super) struct PreparedLogicalChunk<'a> {
 pub(super) struct ClaimedLogicalChunk<'a> {
     prepared: PreparedLogicalChunk<'a>,
     structural_analysis: StructuralChunkSourceFacts<'a>,
-    /// Taken into the `AnalysisProjection` before analysis.
-    declared_assumptions: AnalysisAssumptions,
     /// Selector-resolved author overlay, applied after raw facts are computed or loaded.
     source_only_initializer_bindings: BTreeSet<String>,
 }
 
-/// Prepare one chunk's lowering state and project its eligible selector
-/// requests through the shared spec-resolution service.
-pub(super) fn prepare_logical_chunk(
-    inputs: MaterializeLogicalChunkInputs<'_>,
-) -> Result<(PreparedLogicalChunk<'_>, ProjectedChunk<'_>)> {
+/// Construct output-plan state from source-level facts and the exact shared
+/// frontend resolution. This phase does not project or solve selectors.
+pub(super) fn prepare_logical_chunk<'a>(
+    inputs: MaterializeLogicalChunkInputs<'a>,
+    frontend: FrontendChunk<'a>,
+) -> Result<PreparedLogicalChunk<'a>> {
     let MaterializeLogicalChunkInputs { context, spec } = inputs;
     let ChunkContext {
         artifact,
         artifact_indexes,
         chunk_id,
-        file,
         target_dir,
         keep_going,
         list_template_identifiers,
@@ -204,28 +196,27 @@ pub(super) fn prepare_logical_chunk(
         .with_context(|| {
             format!("materialize_logical_modules missing unassigned_mode for chunk: {chunk_id}")
         })?;
-    let chunk_id_interned = artifact
-        .chunk_table
-        .get(chunk_id)
-        .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
-    emit_debundle_progress(chunk_id, "materialize_logical_chunk", "start");
-    let (target_file, runtime_file, runtime_ast) =
-        chunk_runtime_entry(artifact, chunk_id, chunk_id_interned, file)?;
-    // Chunk-wide `top_level_mark` for resolving spec-derived String
-    // binding names to hygiene-aware `Id`s via `top_level_id`.
+    let FrontendChunk {
+        chunk_id: frontend_chunk_id,
+        chunk_id_interned,
+        target_file,
+        runtime_ast,
+        header_lines,
+        source_path,
+        ast_analysis,
+        requests,
+        explicit_requests,
+        structural_analysis,
+        resolution,
+        resolved_members,
+        member_claims,
+        source_only_initializer_bindings,
+        ..
+    } = frontend;
+    ensure!(frontend_chunk_id == chunk_id, "frontend chunk id mismatch");
     let chunk_top_level_mark = runtime_ast.top_level_mark;
-    let source_path = runtime_file.metadata.source_path.clone();
-    let ast_analysis = analyze_chunk_ast(&runtime_ast.module);
-    let requests = logical_requests_for_chunk(
-        spec.logical_modules.get(chunk_id),
-        &chunk_unassigned_mode,
-        chunk_id,
-    )?;
-    let mut explicit_requests = requests
-        .iter()
-        .filter(|request| !request.residual)
-        .cloned()
-        .collect::<Vec<_>>();
+    emit_debundle_progress(chunk_id, "materialize_logical_chunk", "start");
+    let mut explicit_requests = explicit_requests;
     let residual_request = requests.iter().find(|request| request.residual).cloned();
 
     let mut builder = ChunkPlanBuilder::new(!keep_going, list_template_identifiers);
@@ -259,47 +250,25 @@ pub(super) fn prepare_logical_chunk(
         target_dir,
     )?;
 
-    // The structural half is hint-free. Selector resolution runs over this
-    // source-level fact layer so semantic annotations can be projected to
-    // concrete bindings before the final, hint-sensitive dependency graph is built.
-    emit_debundle_progress(chunk_id, "collect_chunk_source_facts", "start");
-    let line_index = runtime_ast.line_index();
-    let structural_analysis = analysis::facts::collect_chunk_source_facts(
-        &runtime_ast.module,
-        Some(&source_path),
-        |span| line_index.line_range_and_start_column_for_span(span),
-    );
-    emit_debundle_progress(chunk_id, "collect_chunk_source_facts", "end");
-    // `add_explicit_request` left deferred selector members unclaimed; the
-    // resolve every chunk shares assigns them and the anonymous statements
-    // over the hint-free structural facts.
-    let selectors =
-        selector_resolve::Chunk::new(chunk_id, &runtime_ast.module, structural_analysis);
-    let resolved_members = builder.selector_member_indices(
-        &explicit_requests,
-        chunk_top_level_mark,
-        &ast_analysis.declaration_by_name,
-    );
-    emit_debundle_progress(chunk_id, "project_selectors", "start");
-    let projected = project_chunk(selectors, &explicit_requests, resolved_members)?;
-    emit_debundle_progress(chunk_id, "project_selectors", "end");
-    Ok((
-        PreparedLogicalChunk {
-            context,
-            spec,
-            chunk_unassigned_mode,
-            chunk_id_interned,
-            target_file,
-            runtime_ast,
-            header_lines: runtime_file.header_lines.clone(),
-            source_path,
-            ast_analysis,
-            requests,
-            explicit_requests,
-            builder,
-        },
-        projected,
-    ))
+    Ok(PreparedLogicalChunk {
+        context,
+        spec,
+        chunk_unassigned_mode,
+        chunk_id_interned,
+        target_file,
+        runtime_ast,
+        header_lines,
+        source_path,
+        ast_analysis,
+        requests,
+        explicit_requests,
+        resolution,
+        resolved_members,
+        member_claims,
+        structural_analysis: Some(structural_analysis),
+        source_only_initializer_bindings,
+        builder,
+    })
 }
 
 /// The file a chunk's modules are cut from (`materialize_logical_modules.file`,
@@ -308,18 +277,13 @@ pub(super) fn prepare_logical_chunk(
 /// The same resolved hints are later used by this chunk's source unit analysis.
 pub(super) fn claim_prepared_chunk<'a>(
     mut prepared: PreparedLogicalChunk<'a>,
-    resolved: ResolvedChunk<'a>,
 ) -> Result<ClaimedLogicalChunk<'a>> {
-    let ResolvedChunk {
-        resolution,
-        resolved_members,
-        structural_analysis,
-    } = resolved;
     let chunk_top_level_mark = prepared.runtime_ast.top_level_mark;
     prepared.builder.claim_resolution(
         &prepared.explicit_requests,
-        resolution,
-        resolved_members,
+        std::mem::take(&mut prepared.resolution),
+        std::mem::take(&mut prepared.resolved_members),
+        &prepared.member_claims,
         chunk_top_level_mark,
         prepared.context.chunk_id,
         &prepared.runtime_ast.module.body,
@@ -331,16 +295,15 @@ pub(super) fn claim_prepared_chunk<'a>(
     prepared
         .builder
         .adopt_bindings_of_claimed_anonymous_statements(&prepared.ast_analysis.declarations);
-    let (declared_assumptions, source_only_initializer_bindings) = collect_binding_contracts(
-        &prepared.explicit_requests,
-        &prepared.builder,
-        prepared.spec.chunk_renames.get(prepared.context.chunk_id),
-        &prepared.runtime_ast.module,
-    )?;
+    let source_only_initializer_bindings =
+        std::mem::take(&mut prepared.source_only_initializer_bindings);
+    let structural_analysis = prepared
+        .structural_analysis
+        .take()
+        .expect("prepared frontend structure is present");
     Ok(ClaimedLogicalChunk {
         prepared,
         structural_analysis,
-        declared_assumptions,
         source_only_initializer_bindings,
     })
 }
@@ -348,47 +311,6 @@ pub(super) fn claim_prepared_chunk<'a>(
 impl ClaimedLogicalChunk<'_> {
     pub(super) fn chunk_id(&self) -> &str {
         self.prepared.context.chunk_id
-    }
-
-    pub(super) fn resolved_member_sites(&self) -> Vec<ResolvedMemberSite> {
-        let prepared = &self.prepared;
-        let owned = prepared.builder.owned_binding_destinations();
-        let mut sites = Vec::new();
-        for (request_index, request) in prepared.explicit_requests.iter().enumerate() {
-            for member in &request.members {
-                let site = prepared
-                    .builder
-                    .resolved_binding_for_member(request_index, member)
-                    .and_then(|binding| {
-                        let id = top_level_id(&binding, prepared.runtime_ast.top_level_mark);
-                        if !owned.contains_key(&id) {
-                            return None;
-                        }
-                        let statements = prepared.ast_analysis.declaration_by_name.get(&id)?;
-                        if statements.len() != 1 {
-                            return None;
-                        }
-                        Some(SourceDeclaration {
-                            binding,
-                            body_index: statements[0].0,
-                        })
-                    });
-                sites.push(ResolvedMemberSite {
-                    provider_chunk: prepared.context.chunk_id.to_owned(),
-                    module: request.target_path.clone(),
-                    name: member.export_name.clone(),
-                    declaration: site,
-                });
-            }
-        }
-        sites
-    }
-
-    pub(super) fn take_declared_assumptions(&mut self) -> (String, AnalysisAssumptions) {
-        (
-            self.prepared.context.chunk_id.to_owned(),
-            std::mem::take(&mut self.declared_assumptions),
-        )
     }
 }
 
@@ -1127,334 +1049,6 @@ where
         }
     }
     Ok(())
-}
-
-/// Separate resolved binding contracts into source-analysis assumptions and
-/// materialization effect overlays.
-fn collect_binding_contracts(
-    explicit_requests: &[LogicalRequest],
-    builder: &ChunkPlanBuilder,
-    chunk_renames: Option<&ChunkRenames>,
-    module: &Module,
-) -> Result<(AnalysisAssumptions, BTreeSet<String>)> {
-    let mut assumptions = AnalysisAssumptions::default();
-    let mut source_only_initializer_bindings = BTreeSet::new();
-    for (request_index, req) in explicit_requests.iter().enumerate() {
-        for m in &req.members {
-            collect_member_binding_contracts(
-                request_index,
-                req,
-                m,
-                builder,
-                module,
-                &mut assumptions,
-                &mut source_only_initializer_bindings,
-            )?;
-        }
-    }
-    for (statement, assertion) in builder.no_reentry_calls() {
-        let Some(ModuleItem::Stmt(Stmt::Expr(expression_statement))) = module.body.get(statement.0)
-        else {
-            // An unsupported selected shape does not activate the premise.
-            // The ordinary synchronous-call analysis remains in force.
-            continue;
-        };
-        let Some(call) = asserted_registration_call(&expression_statement.expr) else {
-            // Unsupported expressions keep ordinary synchronous-call analysis.
-            continue;
-        };
-        let argument_count = call.args.len();
-        if let Some(position) = assertion
-            .callback_arguments
-            .iter()
-            .find(|position| **position >= argument_count)
-        {
-            bail!(
-                "no_reentry_call callback argument position {position} is out of range for the matched call with {argument_count} arguments"
-            );
-        }
-        assumptions.no_reentry_statement_calls.insert(
-            (call.span.lo.0, call.span.hi.0),
-            spec::RetainedCallbackSignature {
-                argument_count,
-                callback_arguments: assertion.callback_arguments.iter().copied().collect(),
-            },
-        );
-    }
-    collect_chunk_rename_binding_contracts(
-        chunk_renames,
-        module,
-        &mut assumptions,
-        &mut source_only_initializer_bindings,
-    )?;
-    Ok((assumptions, source_only_initializer_bindings))
-}
-
-/// Select only the terminal registration call. Every guard expression keeps
-/// its ordinary effects; the premise is keyed to this call's exact span.
-fn asserted_registration_call(expression: &Expr) -> Option<&CallExpr> {
-    match expression.unwrap_parens() {
-        Expr::Call(call) => Some(call),
-        Expr::Bin(binary) if binary.op == BinaryOp::LogicalAnd => {
-            asserted_registration_call(&binary.right)
-        }
-        _ => None,
-    }
-}
-
-fn collect_chunk_rename_binding_contracts(
-    chunk_renames: Option<&ChunkRenames>,
-    module: &Module,
-    assumptions: &mut AnalysisAssumptions,
-    source_only_initializer_bindings: &mut BTreeSet<String>,
-) -> Result<()> {
-    let Some(chunk_renames) = chunk_renames else {
-        return Ok(());
-    };
-    let mut by_export_name = BTreeMap::<String, Vec<String>>::new();
-    for member in &chunk_renames.members {
-        let binding = &member.selector.binding.name;
-        let export_name = member.name.as_deref().unwrap_or(binding);
-        by_export_name
-            .entry(export_name.to_string())
-            .or_default()
-            .push(binding.clone());
-    }
-
-    for (export_name, annotation) in &chunk_renames.annotations {
-        let Some(bindings) = by_export_name.get(export_name) else {
-            bail!(
-                "chunk_renames.annotations key `{export_name}` does not match any \
-                 chunk_renames member name"
-            );
-        };
-        if bindings.len() != 1 {
-            bail!(
-                "chunk_renames.annotations key `{export_name}` is ambiguous because that \
-                 readable binding name is claimed {} times",
-                bindings.len()
-            );
-        }
-        collect_binding_annotation_contracts(
-            assumptions,
-            source_only_initializer_bindings,
-            &bindings[0],
-            annotation,
-            module,
-        )?;
-    }
-    Ok(())
-}
-
-fn collect_binding_annotation_contracts(
-    assumptions: &mut AnalysisAssumptions,
-    source_only_initializer_bindings: &mut BTreeSet<String>,
-    binding: &str,
-    annotation: &spec::BindingAnnotation,
-    module: &Module,
-) -> Result<()> {
-    if annotation.retained_record_factory {
-        assumptions
-            .retained_record_factories
-            .insert(binding.to_string());
-    }
-    if annotation.initializer_purity == InitializerPurity::Pure {
-        validate_initializer_purity_target(module, binding)?;
-        assumptions
-            .declared_pure_initializers
-            .insert(binding.to_string());
-    }
-    if annotation.initializer_binding_effects == Some(InitializerBindingEffects::SourceOnly) {
-        validate_initializer_binding_effects_target(module, binding)?;
-        source_only_initializer_bindings.insert(binding.to_string());
-    }
-    if annotation.purity == MemberPurity::Pure {
-        assumptions.declared_pure.insert(binding.to_string());
-    }
-    if annotation.purity == MemberPurity::PureNew {
-        assumptions.declared_pure_new.insert(binding.to_string());
-    }
-    if !annotation.pure_members.is_empty() {
-        assumptions
-            .declared_pure_members
-            .entry(binding.to_string())
-            .or_default()
-            .extend(annotation.pure_members.iter().cloned());
-    }
-    if !annotation.no_sync_callback_members.is_empty() {
-        assumptions
-            .no_sync_callback_members
-            .entry(binding.to_string())
-            .or_default()
-            .extend(annotation.no_sync_callback_members.iter().cloned());
-    }
-    if let Some(effect) = known_effect_from_member_effect(annotation.effect) {
-        assumptions
-            .known_effects
-            .insert(binding.to_string(), effect);
-    }
-    Ok(())
-}
-
-fn collect_member_binding_contracts(
-    request_index: usize,
-    request: &LogicalRequest,
-    member: &MemberRequest,
-    builder: &ChunkPlanBuilder,
-    module: &Module,
-    assumptions: &mut AnalysisAssumptions,
-    source_only_initializer_bindings: &mut BTreeSet<String>,
-) -> Result<()> {
-    if !member.has_semantic_annotations() {
-        return Ok(());
-    }
-    if let Some(binding) = builder.resolved_binding_for_member(request_index, member) {
-        if member.initializer_purity == InitializerPurity::Pure {
-            validate_initializer_purity_target(module, &binding)?;
-        }
-        if member.initializer_binding_effects == Some(InitializerBindingEffects::SourceOnly) {
-            validate_initializer_binding_effects_target(module, &binding)?;
-            source_only_initializer_bindings.insert(binding.to_string());
-        }
-        member.collect_assumptions_for_binding(assumptions, &binding);
-        return Ok(());
-    }
-    if !builder.fail_fast() {
-        return Ok(());
-    }
-    bail!(
-        "logical_module {}: semantic annotations on selector member `{}` could not be applied \
-         because selector resolution did not produce a concrete binding",
-        request.id,
-        member.export_name,
-    )
-}
-
-fn validate_initializer_purity_target(module: &Module, binding: &str) -> Result<()> {
-    validate_initializer_target(module, binding, "initializer_purity", false)
-}
-
-fn validate_initializer_binding_effects_target(module: &Module, binding: &str) -> Result<()> {
-    validate_initializer_target(module, binding, "initializer_binding_effects", true)
-}
-
-fn validate_initializer_target(
-    module: &Module,
-    binding: &str,
-    contract: &str,
-    require_single_source_unit: bool,
-) -> Result<()> {
-    let mut initialized_sites = 0usize;
-    let mut unsupported_sites = 0usize;
-    let mut bare_var_sites = 0usize;
-
-    // Match the analyzer's canonical per-declarator source-unit view. A
-    // comma-list declaration therefore admits one binding's initializer at a
-    // time; its sibling declarators are separate source units and receive no
-    // assumption from this binding name.
-    for view in analysis::facts::top_level_item_views(&module.body) {
-        let item = view.as_module_item();
-        let var = match item {
-            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => Some(var.as_ref()),
-            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => match &export.decl {
-                Decl::Var(var) => Some(var.as_ref()),
-                _ => None,
-            },
-            _ => None,
-        };
-        if let Some(var) = var {
-            for declarator in &var.decls {
-                if !pattern_binds_name(&declarator.name, binding) {
-                    continue;
-                }
-                match &declarator.name {
-                    Pat::Ident(ident) if ident.id.sym.as_ref() == binding => {
-                        if require_single_source_unit && var.decls.len() != 1 {
-                            unsupported_sites += 1;
-                        } else if declarator.init.is_some() {
-                            initialized_sites += 1;
-                        } else if var.kind == VarDeclKind::Var {
-                            bare_var_sites += 1;
-                        } else {
-                            unsupported_sites += 1;
-                        }
-                    }
-                    _ => unsupported_sites += 1,
-                }
-            }
-            continue;
-        }
-
-        let is_import_of_binding = match item {
-            ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => import
-                .specifiers
-                .iter()
-                .any(|specifier| specifier.local().sym.as_ref() == binding),
-            _ => false,
-        };
-        if is_import_of_binding || item_declares_nonvariable_name(item, binding) {
-            unsupported_sites += 1;
-        }
-    }
-
-    if initialized_sites == 1 && unsupported_sites == 0 {
-        return Ok(());
-    }
-    let detail = if initialized_sites > 1 {
-        "multiple initialized declarations"
-    } else if unsupported_sites > 0 {
-        "a non-simple, imported, or non-variable declaration"
-    } else if bare_var_sites > 0 && initialized_sites == 0 {
-        "no initialized declaration"
-    } else {
-        "no simple initialized variable declaration"
-    };
-    bail!(
-        "{contract} for binding `{binding}` requires exactly one direct top-level simple variable initializer; found {detail}"
-    )
-}
-
-fn item_declares_nonvariable_name(item: &ModuleItem, binding: &str) -> bool {
-    let declaration_matches = |declaration: &Decl| match declaration {
-        Decl::Fn(function) => function.ident.sym.as_ref() == binding,
-        Decl::Class(class) => class.ident.sym.as_ref() == binding,
-        _ => false,
-    };
-    match item {
-        ModuleItem::Stmt(Stmt::Decl(declaration)) => declaration_matches(declaration),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => declaration_matches(&export.decl),
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(export)) => match &export.decl {
-            DefaultDecl::Fn(function) => function
-                .ident
-                .as_ref()
-                .is_some_and(|ident| ident.sym.as_ref() == binding),
-            DefaultDecl::Class(class) => class
-                .ident
-                .as_ref()
-                .is_some_and(|ident| ident.sym.as_ref() == binding),
-            _ => false,
-        },
-        _ => false,
-    }
-}
-
-fn pattern_binds_name(pattern: &Pat, binding: &str) -> bool {
-    match pattern {
-        Pat::Ident(ident) => ident.id.sym.as_ref() == binding,
-        Pat::Array(array) => array
-            .elems
-            .iter()
-            .flatten()
-            .any(|element| pattern_binds_name(element, binding)),
-        Pat::Rest(rest) => pattern_binds_name(&rest.arg, binding),
-        Pat::Object(object) => object.props.iter().any(|property| match property {
-            ObjectPatProp::KeyValue(property) => pattern_binds_name(&property.value, binding),
-            ObjectPatProp::Assign(property) => property.key.id.sym.as_ref() == binding,
-            ObjectPatProp::Rest(property) => pattern_binds_name(&property.arg, binding),
-        }),
-        Pat::Assign(assign) => pattern_binds_name(&assign.left, binding),
-        Pat::Expr(_) | Pat::Invalid(_) => false,
-    }
 }
 
 /// The gate's judgement of one chunk's assignment, with the evidence reports

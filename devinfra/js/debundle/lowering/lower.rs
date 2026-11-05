@@ -20,13 +20,12 @@ use super::scope_names::{
     collect_local_binding_names, collect_nested_binding_names, collect_occupied_local_names,
 };
 use super::util::remaining_item_after_selection;
-use crate::chunk_ast::{TopLevelDecl, top_level_declaration_names};
 use crate::exports::{
     ExportGrowthFacts, auto_grown_residual_exports, entry_exports_for_moved_bindings,
     export_named_for_bindings, trim_dead_named_specifiers,
 };
 use crate::imports::{
-    ArtifactSourceImportResolutionCache, RuntimeImportFacts, VendorReimportOracle,
+    ArtifactSourceImportResolutionCache, VendorReimportOracle,
     collect_entry_exports_by_original_local, collect_imported_reexports_by_module,
 };
 use crate::naturalize::NaturalizedModuleBody;
@@ -41,6 +40,8 @@ use analysis::{ModuleId, top_level_id};
 use anyhow::Result;
 use artifact::reports::SelectedModuleLowering;
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileMetadata, FileRole, JsFile, JsFileBody};
+use frontend_elaboration::chunk_ast::{TopLevelDecl, top_level_declaration_names};
+use frontend_elaboration::source_ast::RuntimeImportFacts;
 use js_ast::ParsedJsModule;
 use rayon::prelude::*;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};

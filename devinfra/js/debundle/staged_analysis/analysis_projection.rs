@@ -187,7 +187,7 @@ pub struct AnalysisProjection<'a> {
 
 impl<'a> AnalysisProjection<'a> {
     pub fn new(
-        chunk_options: &'a BTreeMap<String, ProjectedChunkOptions>,
+        chunk_options: &BTreeMap<String, ProjectedChunkOptions>,
         chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
         host_behavior: &'a HostBehavior,
         intrinsics_never_written: Option<&'a IntrinsicsNeverWritten>,

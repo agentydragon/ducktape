@@ -2723,11 +2723,17 @@ from us — so they add no edges into user chunks; a vendor chunk that
 re-exports something from a user chunk is a bundler-configuration problem,
 not a spec problem.
 
-### Pipeline split (chunk analysis / materialization)
+### Pipeline split (frontend elaboration / chunk analysis / materialization)
 
-The per-chunk pipeline is two halves with sharply different
-dependencies:
+The pipeline has three stages with different inputs and responsibilities:
 
+- **Frontend elaboration** (source and authored claims):
+  `frontend_elaboration::elaborate` collects source AST structure, projects
+  eligible selector requests, solves them jointly once, and returns canonical
+  member claims, source-bound premises, and `AnalysisProjection`. This target
+  has no dependency on lowering. Projection generation returns directly from
+  this service; materialization consumes its same resolution and claims before
+  constructing output plans.
 - **Chunk analysis** (assignment-independent): parse → per-statement facts →
   dependency graph → structural atomic groups, in two steps.
   `chunk_analysis::compute_chunk_facts` is a pure function of
@@ -2741,13 +2747,11 @@ dependencies:
   the chunk's resolved commuting contracts; graph inputs do not reach facts.
 - **Materialization** (spec-dependent): assemble the assignment from the
   spec's binding claims, run the realizability gate, lower to ESM. This is
-  `lowering::materialize_logical_modules`; `spec_resolution` compiles claims
-  into requests, projects each chunk's eligible entities, and solves the
-  projections jointly. Lowering prepares assignment state before projection,
-  applies resolved claims afterward, then `finish_logical_chunk` performs
+  `lowering::materialize_logical_modules`. Lowering applies the frontend's
+  resolved claims to its assignment state, then `finish_logical_chunk` performs
   chunk analysis, assignment assembly, the gate, and lowering.
 
-The materializer is the composition of both. Analysis (the cross-module
+The materializer composes these stages. Analysis (the cross-module
 pass and each chunk's facts) reads the spec only through
 `staged_analysis::analysis_projection::AnalysisProjection`, built after the selector
 solve, so it can also run in another process:
@@ -2755,7 +2759,8 @@ solve, so it can also run in another process:
 - `debundle spec project-analysis` writes the projection as canonical bytes
   (`AnalysisSpec`): source-analysis inputs only, with notes and graph inputs
   kept in their owning contexts, source paths relative to the source root, and
-  premises resolved to bindings.
+  premises resolved to bindings. It rejects selector errors before writing the
+  projection, without constructing `ChunkPlanBuilder` or entering lowering.
 - `debundle analyze --projection` computes the analysis from the projection
   and the sources alone and writes an analysis artifact
   (`staged_analysis::analysis_artifact`): a header naming the engine, the projection
@@ -2774,9 +2779,9 @@ are wrong.
 The reason to call this out: every diagnostic in §"Two classes of
 atom" lives in materialization (it depends on the spec's quotient), but
 its inputs all come from chunk analysis. Refactors that move work
-between the two halves must respect the boundary — anything
-spec-dependent cannot move into chunk analysis; anything that only
-depends on source bytes should not stay in materialization.
+between these stages must respect their boundaries: source-bound claims and
+premises belong to elaboration, assignment-independent facts belong to analysis,
+and assignment construction and output reconstruction belong to materialization.
 
 ### Two classes of atom
 
@@ -3611,15 +3616,16 @@ implements each, and when each runs — is the fixed composition in
 `run_transform` (<../pipeline.rs>); this doc does not
 mirror it. The shape to know: spec load/validate → chunk load/prepare
 (one parallel per-chunk SWC parse) → artifact indexes → the read-only
-`build_vendor_resolution_plan` → `materialize_logical_modules` (the only
-lowering stage) → `apply_emission_rewrites` →
+`build_vendor_resolution_plan` → `materialize_logical_modules` (frontend
+elaboration → chunk analysis → output-plan construction and lowering) →
+`apply_emission_rewrites` →
 `validate_emitted_exports` (duplicate-public-export tripwire) →
 optional tree/harness outputs.
 
-Within `materialize_logical_modules`, analysis (chunk AST scan,
-statement facts, dependency graph construction — <../lowering/chunk_ast.rs>,
-<../facts/mod.rs>, <../graph/>) feeds the stages that carry design
-invariants:
+Frontend source structure (<../frontend_elaboration/chunk_ast.rs>) and chunk
+analysis (statement facts and dependency graph construction —
+<../facts/mod.rs>, <../graph/>) feed the materialization stages that carry
+design invariants:
 
 1. **Binding assignment** → a per-binding `ModuleId`
    (`BindingKind::Owned`) from the spec's explicit member list. Bindings

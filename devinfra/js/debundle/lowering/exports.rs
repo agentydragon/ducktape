@@ -2,10 +2,10 @@
 //! duplicates, auto-grow residual exports for cross-module references,
 //! and convert binding maps into `export { ... }` ModuleItems.
 
-use crate::chunk_ast::{TopLevelDecl, binding_names};
 use crate::naturalize::NaturalizedModuleBody;
 use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use analysis::{BindingKind, top_level_id};
+use frontend_elaboration::chunk_ast::{TopLevelDecl, binding_names};
 use js_ast::{named_export_module_item, named_export_specifier};
 use rustc_hash::FxHashSet;
 use source_identity::StatementId;
