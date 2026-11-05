@@ -145,8 +145,11 @@ status:
 
 The Policy Controller creates the ServiceAccount, emits the account's `EgressCredential` and
 one-rule `PolicySet` owned by it (the same two objects cdk8s renders for a static account), and
-deletes all of it at `expiresAt` or owner deletion. Grants and use bindings for a temporary account
-are owned by it, so one clock covers the whole grant.
+deletes the account at `expiresAt`. Grants and use bindings for a temporary account are owned by
+it, so one clock covers the whole grant. The ServiceAccount lives in another namespace, or on
+another apiserver, so no ownerReference reaches it: the controller labels it with the account's
+UID and prunes it on reconcile once that account is gone, exactly as it prunes native RoleBindings
+today, and never adopts one on name alone. No finalizer, for the reason the PolicySet ADR gives.
 
 ## Workload authentication
 
@@ -199,9 +202,22 @@ workload credential:
 role sets of every live grant naming it expand to, exactly as it keeps them for an SA subject today
 (additive, one native binding per grant, role and namespace, pruned when no live grant covers them,
 never adopted on name alone). A grant naming a ServiceAccount that does not exist reports
-`SubjectMissing`, as a binding does now. For a `KubernetesAccount`, also create and delete the
-ServiceAccount; tokens for a deleted SA are rejected by UID, so nothing else needs revoking.
-Reconcile on start covers controller downtime, as it does now.
+`SubjectMissing`, as a binding does now. For a `KubernetesAccount`, also create the ServiceAccount
+and prune it by UID label once the account is gone. Reconcile on start covers controller downtime,
+as it does now.
+
+**What revokes.** Three cuts, in the order they take effect:
+
+1. The use rule leaving the identity's bindings. The proxy stops substituting on the next request;
+   this is the cut that matters, and it needs no apiserver write.
+2. The controller pruning the RoleBindings once no live grant covers them. RBAC matches a
+   ServiceAccount by name, and impersonation does not require the object to exist, so until this
+   pass an impersonated request still carries the old roles.
+3. The ServiceAccount going. This matters only under TokenRequest, whose tokens are rejected by
+   UID; under impersonation it revokes nothing by itself.
+
+So a deleted ServiceAccount is not revocation, and a grant's expiry is only as prompt as the
+controller's pass, the same as today.
 
 **Egress proxy, acting as the account.** Two options, both bounded to the accounts namespace:
 
@@ -228,6 +244,24 @@ writes itself is the way in. The platform instructions point at the endpoint, as
 Nothing inside the sandbox ever holds a real token, and a new grant needs no file to change.
 
 ## Lifetimes
+
+Who cleans what, and by which mechanism:
+
+| Object                                       | Owner                                                                                       | Removed by                                                    |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `Identity`                                   | Sandbox, Flux, or Dispatcher                                                                | GC with the Sandbox; Flux prune; Dispatcher's explicit delete |
+| `PolicyBinding`                              | Sandbox (launch sets), Identity (runtime grants), Flux, `KubernetesAccount` (temporary use) | GC with its owner; the controller at `expiresAt`              |
+| `KubernetesAccountGrant`                     | Flux, Identity (runtime widening), `KubernetesAccount`                                      | GC with its owner; the controller at `expiresAt`              |
+| `KubernetesAccount`                          | Identity                                                                                    | GC with the identity; the controller at `expiresAt`           |
+| Generated `EgressCredential` and `PolicySet` | `KubernetesAccount`, or Flux for a static account                                           | GC with the account; Flux prune                               |
+| ServiceAccount in the accounts namespace     | Flux, or the controller (UID-labelled)                                                      | Flux prune; the controller's prune pass                       |
+| Native RoleBindings                          | The controller (labelled, grant UID)                                                        | The controller's prune pass                                   |
+
+Two things do not garbage-collect: the Dispatcher-owned identity of a central Session, which needs
+an explicit delete on whatever Session deletion turns out to be, and anything on a remote
+apiserver, which the controller prunes with that apiserver's credential. A runtime grant the
+operator makes on a standing agent is owned by the identity, not the Sandbox, so it survives the
+Sandbox being replaced.
 
 | Case                                  | Identity                                         | Kubernetes account                                                        | Grants and use                                  |
 | ------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------- | ----------------------------------------------- |
@@ -286,10 +320,13 @@ cannot change in place, and the new launch writes the identity.
    certificate under the same Sandbox path for the relay. Agent code that can read Runtime's key can
    already act as the workload at the Gateway; presenting it at the proxy adds no reach beyond that
    identity's rules, but say so where the SPEC states what the certificate authenticates.
-3. **SVID to identity.** The path carries the Sandbox UID and credential ID, not the identity. The
-   proxy needs the Sandbox-to-identity fact from somewhere it trusts: the Sandbox Controller writing
-   `status.workloadCredentials` with the current SPIFFE ID is the proposal, and the rotation race on
-   incarnation replacement needs the same fencing the Gateway applies.
+3. **SVID to identity.** The path carries the Sandbox UID and credential ID, not the identity. A
+   status list of SPIFFE IDs on the identity is a cache that dangles once a Sandbox is gone while
+   its Flux-owned identity stays. Prefer the Gateway's way: the proxy resolves the UID to the live
+   Sandbox, checks the credential ID against its status, and reads `spec.identity`, so a deleted or
+   replaced Sandbox fails the lookup with nothing to clean. That gives the proxy a Sandbox read it
+   does not have today. `status.workloadCredentials` then holds only the SA-token entries for
+   workloads without an SVID.
 4. **Impersonation versus TokenRequest** is an operator decision, and which apiservers the proxy and
    controller may reach with what credential.
 5. **Credential descriptions as the only instructions.** With no kubeconfig, the `description`
