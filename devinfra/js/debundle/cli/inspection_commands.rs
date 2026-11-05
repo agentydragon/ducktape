@@ -1,6 +1,6 @@
 //! Graph/source inspection commands and their ID resolution and rendering.
 use crate::emit_report;
-use analysis::DepKind;
+use analysis_model::DepKind;
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, ValueEnum};
 use graph_provenance::VerifiedGraphSourceContext;

@@ -77,6 +77,23 @@ rust_library(
 )
 
 rust_library(
+    name = "analysis_model",
+    srcs = ["analysis_model.rs"],
+    crate_root = "analysis_model.rs",
+    edition = "2024",
+    deps = [
+        "@crates//:serde",
+        "@crates//:strum",
+    ],
+)
+
+rust_test(
+    name = "analysis_model_test",
+    crate = ":analysis_model",
+    edition = "2024",
+)
+
+rust_library(
     name = "analysis_codec",
     srcs = ["analysis_codec.rs"],
     crate_root = "analysis_codec.rs",
@@ -300,10 +317,11 @@ rust_library(
     crate_root = "artifacts/artifact.rs",
     edition = "2024",
     deps = [
-        ":analysis",
+        ":analysis_model",
         ":graph_provenance",
         ":js_ast",
         ":output_layout",
+        ":source_identity",
         ":spec",
         "@crates//:anyhow",
         "@crates//:rayon",
@@ -332,6 +350,7 @@ rust_library(
     deps = [
         ":artifact",
         ":output_layout",
+        ":source_identity",
         ":spec",
         ":validate_emitted_exports",
         ":vendor",
@@ -353,6 +372,7 @@ rust_library(
         ":identifier_rename_queue",
         ":output_layout",
         ":reconstruction",
+        ":source_identity",
         "@crates//:anyhow",
     ],
 )
@@ -400,6 +420,7 @@ rust_library(
         ":graph_provenance",
         ":js_ast",
         ":program_analysis",
+        ":source_identity",
         ":spec",
         "@crates//:anyhow",
         "@crates//:rayon",
@@ -434,6 +455,7 @@ rust_library(
         ":artifact",
         ":binding_targets",
         ":js_ast",
+        ":source_identity",
         "@crates//:anyhow",
         "@crates//:strum",
         "@crates//:swc_common",
@@ -496,6 +518,7 @@ rust_library(
         ":artifact",
         ":output_layout",
         ":reconstruction",
+        ":source_identity",
         ":write_tree",
         "@crates//:anyhow",
         "@crates//:serde",
@@ -654,6 +677,7 @@ rust_library(
     rustc_env = {"STANDARD_GLOBALS_JSON": "$(execpath :standard_globals_json)"},
     deps = [
         ":analysis_codec",
+        ":analysis_model",
         ":binding_targets",
         ":graph_provenance",
         ":js_ast",
@@ -711,6 +735,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":analysis_model",
         ":source_identity",
         ":spec",
         "@crates//:petgraph",
@@ -776,6 +801,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":analysis_model",
         ":source_identity",
         ":spec",
     ],
@@ -937,6 +963,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":analysis_model",
         ":anonymous_resolution",
         ":gate",
         ":graph_provenance",
@@ -991,6 +1018,7 @@ rust_library(
     deps = [
         ":analysis",
         ":analysis_codec",
+        ":analysis_model",
         ":artifact",
         ":chunk_analysis",
         ":graph_provenance",
@@ -999,6 +1027,7 @@ rust_library(
         ":program_analysis",
         ":selector_outcome",
         ":selector_resolve",
+        ":source_identity",
         ":source_match",
         ":spec",
         ":spec_resolution",
@@ -1089,6 +1118,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":analysis_model",
         ":artifact",
         ":binding_targets",
         ":chunk_analysis",
@@ -1138,6 +1168,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":analysis_model",
         ":artifact",
         ":binding_targets",
         ":js_ast",
@@ -1164,6 +1195,7 @@ rust_library(
         ":artifact",
         ":js_ast",
         ":program_analysis",
+        ":source_identity",
         ":spec",
         "@crates//:anyhow",
         "@crates//:rayon",
@@ -1190,6 +1222,7 @@ rust_library(
         ":artifact",
         ":binding_targets",
         ":js_ast",
+        ":source_identity",
         "@crates//:anyhow",
         "@crates//:serde",
         "@crates//:swc_ecma_ast",
@@ -1252,6 +1285,7 @@ rust_library(
         ":prune_dead_imports",
         ":prune_module_exports",
         ":reconstruction",
+        ":source_identity",
         ":spec",
         ":spec_modules",
         ":spec_tree",
@@ -1306,6 +1340,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":analysis_model",
         ":analyze_command",
         ":anonymous_resolution",
         ":artifact",
@@ -1568,6 +1603,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":analysis_model",
         ":chunk_facts",
         ":js_ast",
         ":selector_ir",

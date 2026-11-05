@@ -2,9 +2,10 @@
 //! renderer-over-quotient. Fixtures seed quotients through the
 //! test-only constructors in `quotient::testing`.
 
+use analysis_model::DepKind;
 use std::collections::BTreeMap;
 
-use analysis::{DepKind, DependencyGraphInput, DependencyGraphReport, ModuleId};
+use analysis::{DependencyGraphInput, DependencyGraphReport, ModuleId};
 use report_fixtures::{
     active_source_unit, atomic_edge, atomic_group_for, claims, dependency_edge, graph_of,
     promoted_dependency_edge, residual_source_unit, singleton_graph,
@@ -895,7 +896,7 @@ fn planner_and_materializer_agree_on_corpus() {
                     "edge:0",
                     "unit:a",
                     "unit:b",
-                    analysis::DepKind::EagerUse,
+                    analysis_model::DepKind::EagerUse,
                     true,
                 )],
             ),
@@ -950,35 +951,35 @@ fn planner_and_materializer_agree_on_corpus() {
                         "edge:entry_mediator",
                         "unit:entry",
                         "unit:mediator_init",
-                        analysis::DepKind::EagerUse,
+                        analysis_model::DepKind::EagerUse,
                         true,
                     ),
                     dependency_edge(
                         "edge:mediator_dep",
                         "unit:mediator_helper",
                         "unit:dep_value",
-                        analysis::DepKind::LazyUse,
+                        analysis_model::DepKind::LazyUse,
                         false,
                     ),
                     dependency_edge(
                         "edge:mediator_intra",
                         "unit:mediator_init",
                         "unit:mediator_helper",
-                        analysis::DepKind::EagerUse,
+                        analysis_model::DepKind::EagerUse,
                         true,
                     ),
                     dependency_edge(
                         "edge:dependent_dep",
                         "unit:cross_value",
                         "unit:dep_value",
-                        analysis::DepKind::EagerUse,
+                        analysis_model::DepKind::EagerUse,
                         true,
                     ),
                     dependency_edge(
                         "edge:dep_back",
                         "unit:lazy_reader",
                         "unit:cross_value",
-                        analysis::DepKind::LazyUse,
+                        analysis_model::DepKind::LazyUse,
                         false,
                     ),
                 ],
@@ -1007,14 +1008,14 @@ fn planner_and_materializer_agree_on_corpus() {
                         "edge:fwd",
                         "unit:a1",
                         "unit:b1",
-                        analysis::DepKind::EagerUse,
+                        analysis_model::DepKind::EagerUse,
                         true,
                     ),
                     dependency_edge(
                         "edge:back",
                         "unit:b1",
                         "unit:a1",
-                        analysis::DepKind::EagerUse,
+                        analysis_model::DepKind::EagerUse,
                         true,
                     ),
                 ],
@@ -1042,14 +1043,14 @@ fn planner_and_materializer_agree_on_corpus() {
                         "edge:0",
                         "unit:alpha",
                         "unit:beta",
-                        analysis::DepKind::LazyUse,
+                        analysis_model::DepKind::LazyUse,
                         false,
                     ),
                     dependency_edge(
                         "edge:1",
                         "unit:beta",
                         "unit:alpha",
-                        analysis::DepKind::LazyUse,
+                        analysis_model::DepKind::LazyUse,
                         false,
                     ),
                 ],

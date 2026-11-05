@@ -4,7 +4,6 @@ use anyhow::{Context, Result};
 use rayon::prelude::*;
 use swc_common::GLOBALS;
 
-use analysis::ChunkId;
 use artifact::reports::{ArtifactChunkRecord, ArtifactCounts, ChunkAnalysisReport};
 use artifact::{
     CANONICAL_CHUNK_ENTRY_FILE, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
@@ -12,6 +11,7 @@ use artifact::{
 };
 use js_ast::{ParsedJsModule, parse_js_module_consuming};
 use program_analysis::{analyze_program_shallow, build_chunk_manifest_from_analysis};
+use source_identity::ChunkId;
 use spec::VendorMark;
 
 const CANONICALIZE_HEADER_LINES: &[&str] = &[

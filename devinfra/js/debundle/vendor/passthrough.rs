@@ -26,13 +26,14 @@
 //! `suppress`-marked chunks are skipped entirely — suppress means
 //! hands-off, so their directives pass through byte-identical.
 
+use source_identity::{ChunkId, ChunkTable};
 use std::collections::BTreeMap;
 
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use artifact::paths::{join_module_path, module_path_dirname, relative_module_path};
-use artifact::{ArtifactIndexes, ChunkId, ChunkTable, ImportReferenceKind};
+use artifact::{ArtifactIndexes, ImportReferenceKind};
 use binding_targets::module_export_name;
 use js_ast::{set_str_value, str_value};
 use spec::PartialSwapKind;

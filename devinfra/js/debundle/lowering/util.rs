@@ -1,4 +1,5 @@
-use analysis::{AtomicGroupConflict, DepKind};
+use analysis::AtomicGroupConflict;
+use analysis_model::DepKind;
 use anyhow::Result;
 use artifact::paths::{join_module_path, normalize_module_path};
 use frontend_elaboration::chunk_ast::{binding_ids, declaration_ids};

@@ -75,7 +75,7 @@ fn initializer_override_keeps_callback_read_dependency() {
         .filter(|edge| {
             edge.source == caller_source_unit
                 && edge.target == seed_source_unit
-                && edge.edge_kind == analysis::DepKind::EagerUse
+                && edge.edge_kind == analysis_model::DepKind::EagerUse
                 && edge.binding.as_deref() == Some("seed")
                 && matches!(
                     edge.role,

@@ -1,5 +1,6 @@
 //! A local array content mutation must stay ordered before a separate reader.
-use analysis::{DepKind, DependencyGraphReport};
+use analysis::DependencyGraphReport;
+use analysis_model::DepKind;
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 

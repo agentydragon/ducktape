@@ -1,6 +1,7 @@
 //! Compose vendor substitution. Package lookup, export inspection, import resolution,
 //! and identifier rewriting live in their named modules; the final consumer gate
 //! remains here because it validates the combined post-strip emission result.
+use source_identity::{ChunkId, ChunkTable};
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Result, bail};
@@ -20,7 +21,7 @@ use swc_common::{DUMMY_SP, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
-use artifact::{ChunkId, ChunkTable, list_chunk_file_paths};
+use artifact::list_chunk_file_paths;
 use binding_targets::declaration_ids;
 pub use emission::{apply_emission_rewrites_in_place, write_planned_vendor_outputs};
 use export_surface::collect_local_idents_by_export_name;

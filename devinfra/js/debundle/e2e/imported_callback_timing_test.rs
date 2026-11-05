@@ -1,7 +1,7 @@
 //! Imported wrappers keep callback-body reads deferred until invocation.
 
-use analysis::DepKind;
 use analysis::reports::schema::CallbackFactoryUseKind;
+use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 

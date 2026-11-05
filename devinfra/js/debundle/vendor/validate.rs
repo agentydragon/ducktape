@@ -5,13 +5,14 @@
 //! here so the phases shrink to mode-specific glue while diagnostics retain
 //! their phase context.
 
+use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
-use artifact::{ChunkBundle, ChunkId};
+use artifact::ChunkBundle;
 use binding_targets::module_export_name;
 use js_ast::{ParsedJsModule, is_binding_identifier};
 use spec::{BundledPartialSwapPackage, PartialSwapKind, PartialSwapPackage, PartialSwapSymbol};

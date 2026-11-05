@@ -17,6 +17,7 @@
 //! (directive rewrites, residual computation, file writes) stays at
 //! those sites.
 
+use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -27,9 +28,7 @@ use swc_common::GLOBALS;
 use swc_ecma_ast::{ImportSpecifier, ModuleDecl, ModuleItem};
 
 use artifact::paths::{join_module_path, manifest_relative_path};
-use artifact::{
-    ArtifactIndexes, ChunkBundle, ChunkId, get_chunk_entry_path, list_chunk_file_paths,
-};
+use artifact::{ArtifactIndexes, ChunkBundle, get_chunk_entry_path, list_chunk_file_paths};
 use binding_targets::module_export_name;
 use js_ast::parse_js_module;
 use spec::{

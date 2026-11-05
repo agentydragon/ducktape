@@ -6,9 +6,10 @@ use analysis::analysis_inputs::CallableSummary;
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use anyhow::{Context, Result};
 use artifact::paths::normalize_module_path;
-use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, JsFile, get_chunk_entry_path};
+use artifact::{ArtifactIndexes, ChunkBundle, JsFile, get_chunk_entry_path};
 use chunk_analysis::{DynamicImportTarget, check_chunk_facts, compute_chunk_facts};
 use js_ast::ParsedJsModule;
+use source_identity::ChunkId;
 use std::collections::BTreeMap;
 
 pub fn chunk_runtime_entry<'a>(

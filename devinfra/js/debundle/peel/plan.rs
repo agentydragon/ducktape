@@ -4,6 +4,7 @@
 //! stable JSON operations over the dependency graph and spec tree instead of
 //! human-oriented "views".
 
+use analysis_model::DepKind;
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -22,7 +23,7 @@ use clap::{Args as ClapArgs, ValueEnum};
 use serde::Serialize;
 
 use analysis::{
-    AtomicGroupEdgeReport, AtomicGroupReport, BindingReport, DepKind, DependencyEdgeReport,
+    AtomicGroupEdgeReport, AtomicGroupReport, BindingReport, DependencyEdgeReport,
     DependencyGraphInput, DependencyGraphReport, ProgramGraphReport, QuotientEdgeReport,
     SourceLocation, SourceUnitReport,
 };

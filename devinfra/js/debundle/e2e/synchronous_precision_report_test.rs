@@ -102,7 +102,7 @@ console.log(selected[0]);
             edge.source == read
                 && edge.target == initializer
                 && edge.binding.as_deref() == Some("Status")
-                && edge.edge_kind == analysis::DepKind::EagerUse
+                && edge.edge_kind == analysis_model::DepKind::EagerUse
                 && edge.constrains_init_order
         }),
         "the member-read proof must keep the binding's eager initialization dependency"
@@ -348,7 +348,7 @@ console.log(preferences.ready);
             edge.source == preferences_unit
                 && edge.target == status_unit
                 && edge.binding.as_deref() == Some("Status")
-                && edge.edge_kind == analysis::DepKind::EagerUse
+                && edge.edge_kind == analysis_model::DepKind::EagerUse
                 && edge.constrains_init_order
         }),
         "the primitive enum proof must retain the eager binding dependency"

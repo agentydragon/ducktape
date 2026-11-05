@@ -48,7 +48,7 @@ use crate::facts::abstract_domain::builtins::{
 use crate::facts::abstract_domain::effect::{CoerceOp, CoerceOperand};
 use crate::facts::abstract_domain::heap::Mutation;
 use crate::facts::abstract_domain::integrity::{Integrity, IntrinsicSlot};
-use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
+use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::callable_inference::CallableInferenceInputs;
 use crate::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
 use crate::facts::item_views::TopLevelItemView;
@@ -86,6 +86,7 @@ use crate::reports::schema::{
     OrderedCallAdmissionRefusal, OrderedFieldReadRefusal, PossibleGetterLookupSite,
     PossibleGetterPromotion, RecordFactoryRejectionReason,
 };
+use analysis_model::PrimKinds;
 use imbl::OrdMap;
 use rustc_hash::{FxHashMap, FxHashSet};
 use source_identity::SourceUnitOrdinal;

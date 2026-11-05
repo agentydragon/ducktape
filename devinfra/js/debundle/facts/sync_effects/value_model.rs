@@ -1,8 +1,9 @@
 //! Abstract value vocabulary and value relationships used by synchronous execution analysis.
 
 use crate::facts::abstract_domain::builtins::IterationRow;
-use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
+use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::value_flow::static_prop as static_string_prop;
+use analysis_model::PrimKinds;
 use imbl::{OrdMap, OrdSet};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};

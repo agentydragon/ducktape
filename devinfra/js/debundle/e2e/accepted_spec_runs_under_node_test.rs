@@ -56,7 +56,7 @@
 //! in entry's import list, so ESM DFS visits `mod_logger`
 //! first and the emitted entry runs cleanly.
 
-use analysis::DepKind;
+use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 

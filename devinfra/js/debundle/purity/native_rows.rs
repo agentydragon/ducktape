@@ -12,6 +12,7 @@ use crate::facts::TopLevelNativeIterableOperandProjection;
 use crate::facts::abstract_domain::builtins::{self, ArgSel, Invocation, Row, Throws};
 use crate::facts::abstract_domain::effect::{CoerceCheck, CoerceOp};
 use crate::facts::abstract_domain::heap::{Mutation, is_plain_data_prop};
+use analysis_model::PrimKinds;
 
 /// What an operand must syntactically be for the row's steps on it to run no
 /// user code and complete normally.

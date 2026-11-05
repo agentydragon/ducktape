@@ -1,6 +1,6 @@
 //! Direct binding claim mismatches are rejected by pre-write edit gates.
 
-use analysis::DepKind;
+use analysis_model::DepKind;
 use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 

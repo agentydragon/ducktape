@@ -3,6 +3,7 @@
 //! `analysis::reports::schema`. The wire-stable key codecs
 //! (`source_unit_key`, `module_key`, …) live in `analysis::reports`.
 
+use analysis_model::DepKind;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use rayon::prelude::*;
@@ -19,10 +20,10 @@ use analysis::{
     AtomicGraphReport, AtomicGroup, AtomicGroupEdgeReport, AtomicGroupReport, BindingId,
     BindingReport, CallbackFactoryBarrierRejection, CallbackFactoryBarrierReport,
     CallbackFactoryCallArgumentWitnessReport, CallbackFactoryContractReport,
-    CallbackFactoryRejectionReport, CallbackFactoryWriteWitnessReport, DepKind,
-    DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, ModuleDestinationKind,
-    ModuleEntry, ModuleId, ModuleKey, ModuleQuotientReport, ModuleRole, Purity, PurityCauseReport,
-    QuotientEdgeReport, QuotientSccReport, SourceUnitClass, SourceUnitReport,
+    CallbackFactoryRejectionReport, CallbackFactoryWriteWitnessReport, DependencyEdgeReport,
+    DependencyGraphReport, EdgeRoleReport, ModuleDestinationKind, ModuleEntry, ModuleId, ModuleKey,
+    ModuleQuotientReport, ModuleRole, Purity, PurityCauseReport, QuotientEdgeReport,
+    QuotientSccReport, SourceUnitClass, SourceUnitReport,
 };
 use source_identity::SourceUnitOrdinal;
 use swc_atoms::Atom;

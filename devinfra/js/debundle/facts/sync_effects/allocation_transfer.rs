@@ -13,7 +13,8 @@ use crate::facts::abstract_domain::builtins::{
     ArgSel, IntrinsicOp, Invocation, Return, Row, Throws,
 };
 use crate::facts::abstract_domain::integrity::IntrinsicSlot;
-use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
+use crate::facts::abstract_domain::value::{Kind, Value};
+use analysis_model::PrimKinds;
 use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;

@@ -37,6 +37,7 @@
 //! The quotient is the single source of truth for "which source units are
 //! in which proposed class."
 
+use analysis_model::DepKind;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 
@@ -44,9 +45,8 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 
 use analysis::{
-    DepKind, DependencyEdgeReport, DependencyGraphInput, DependencyGraphReport, LineRange,
-    ModuleAssignment, ModuleDestinationKind, ModuleId, SourceUnitClass, SourceUnitReport,
-    StatementKind,
+    DependencyEdgeReport, DependencyGraphInput, DependencyGraphReport, LineRange, ModuleAssignment,
+    ModuleDestinationKind, ModuleId, SourceUnitClass, SourceUnitReport, StatementKind,
 };
 use anonymous_resolution::{
     ModuleNeutralReferenceMeaning, ResolvedLocalMemberOrigin, ResolvedLocalMemberReference,
@@ -3075,7 +3075,8 @@ fn diagnostic_reason_key(reason: ProposalDiagnosticReason) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use analysis::{DepKind, StatementKind};
+    use analysis::StatementKind;
+    use analysis_model::DepKind;
     use report_fixtures::{
         active_source_unit, atomic_edge, atomic_group_for, claims, dependency_edge, graph_of,
         module_ref, residual_source_unit, source_unit,

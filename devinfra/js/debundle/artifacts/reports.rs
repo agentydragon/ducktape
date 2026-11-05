@@ -5,8 +5,8 @@ use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use analysis::DepKind;
-use analysis::cross_module_purity::StableExportValue;
+use analysis_model::DepKind;
+use analysis_model::StableExportValue;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use swc_common::Span;

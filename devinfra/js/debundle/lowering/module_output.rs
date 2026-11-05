@@ -1,6 +1,7 @@
 //! Emit one accepted logical-module plan. Chunk selection and entry construction stay in
 //! `lower`; this phase owns per-module imports, sealed renames, comments, and output metadata.
 
+use source_identity::ChunkId;
 use source_identity::StatementId;
 use std::sync::Mutex;
 
@@ -27,7 +28,7 @@ use analysis::{BindingId, ModuleId, ModuleRole, top_level_id};
 use anyhow::{Result, bail};
 use artifact::paths::join_module_path;
 use artifact::reports::SelectedModuleLowering;
-use artifact::{ChunkId, FileMetadata, FileRole, JsFile, JsFileBody};
+use artifact::{FileMetadata, FileRole, JsFile, JsFileBody};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
 use gate::AssignmentAnalysis;
 use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
