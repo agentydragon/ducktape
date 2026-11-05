@@ -187,6 +187,25 @@ class PolicyObjects:
             "PolicyBinding", POLICY_BINDINGS_PLURAL, name, {"subject": subject, "policySets": policy_sets}
         )
 
+    async def ensure_basic_binding(self, sandbox: environment_service_pb2.EnvironmentDescriptor) -> None:
+        inventory = json.loads(await self.cluster.kubectl("get", POLICY_BINDINGS_PLURAL, "-o", "json"))
+        subject = sandbox.execution_account.account
+        names = [
+            binding["metadata"]["name"]
+            for binding in inventory["items"]
+            if binding.get("spec", {}).get("subject", {}).get("namespace") == subject.namespace
+            and binding.get("spec", {}).get("subject", {}).get("name") == subject.name
+            and "basic" in binding.get("spec", {}).get("policySets", [])
+        ]
+        if not names:
+            names = [
+                await self.create_binding(
+                    f"{sandbox.target.name}-delegation-basic", sandbox=sandbox, policy_sets=["basic"]
+                )
+            ]
+        for name in names:
+            await self.wait_actions_ready(name)
+
     async def bind(
         self, sandbox: environment_service_pb2.EnvironmentDescriptor, name: str, auto_approve: list[dict[str, Any]]
     ) -> tuple[str, str]:

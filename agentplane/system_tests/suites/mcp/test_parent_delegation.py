@@ -16,8 +16,6 @@ from more_itertools import one
 
 from agentplane.action_service import action_service_pb2
 from agentplane.app.testing.client import Client
-from agentplane.environments.v1 import environment_service_pb2
-from agentplane.policy_sets import POLICY_BINDINGS_PLURAL
 from agentplane.proto import session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.agent import Agent
@@ -138,28 +136,6 @@ async def _submit(
     return json_format.MessageToDict(receipt.execution.result)
 
 
-async def _wait_basic_policy(
-    cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor, policy_objects: mcp.PolicyObjects
-) -> None:
-    inventory = json.loads(await cluster.kubectl("get", POLICY_BINDINGS_PLURAL, "-o", "json"))
-    subject = view.execution_account.account
-    bindings = [
-        binding
-        for binding in inventory["items"]
-        if binding.get("spec", {}).get("subject", {}).get("namespace") == subject.namespace
-        and binding.get("spec", {}).get("subject", {}).get("name") == subject.name
-        and "basic" in binding.get("spec", {}).get("policySets", [])
-    ]
-    if not bindings:
-        name = await policy_objects.create_binding(
-            f"{view.target.name}-delegation-basic", sandbox=view, policy_sets=["basic"]
-        )
-        await policy_objects.wait_actions_ready(name)
-        return
-    for binding in bindings:
-        await policy_objects.wait_actions_ready(binding["metadata"]["name"])
-
-
 @pytest.mark.scripted_model
 @pytest.mark.timeout(600)
 async def test_parent_session_delegates_through_the_action_cli(
@@ -173,7 +149,7 @@ async def test_parent_session_delegates_through_the_action_cli(
     offered = await models_offered_for(client, [session_pb2.HARNESS_CODEX])
     parent_view = await sandbox("systest-parent-delegation")
     assert parent_view.kubernetes_diagnostics.HasField("pod")
-    await _wait_basic_policy(cluster, parent_view, policy_objects)
+    await policy_objects.ensure_basic_binding(parent_view)
     service_account = json.loads(
         await cluster.kubectl("get", "serviceaccount", parent_view.execution_account.account.name, "-o", "json")
     )
