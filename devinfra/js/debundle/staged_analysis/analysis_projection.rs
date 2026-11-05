@@ -236,10 +236,8 @@ impl<'a> AnalysisProjection<'a> {
             chunk_analysis_inputs: Cow::Owned(
                 chunk_options
                     .iter()
-                    .filter_map(|(chunk, options)| {
-                        (!options.analysis.is_default())
-                            .then(|| (chunk.clone(), options.analysis.clone()))
-                    })
+                    .filter(|(_, options)| !options.analysis.is_default())
+                    .map(|(chunk, options)| (chunk.clone(), options.analysis.clone()))
                     .collect(),
             ),
             chunk_export_purity,
@@ -301,9 +299,8 @@ impl AnalysisSpec {
         // Graph-only and empty authored entries have no source-analysis identity.
         let chunk_analysis_inputs = projected_options
             .into_iter()
-            .filter_map(|(chunk, options)| {
-                (!options.analysis.is_default()).then(|| (chunk, options.analysis))
-            })
+            .filter(|(_, options)| !options.analysis.is_default())
+            .map(|(chunk, options)| (chunk, options.analysis))
             .collect();
         Ok(Self {
             inputs: LoadJsChunksArgs {
