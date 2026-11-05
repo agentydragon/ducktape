@@ -16,6 +16,8 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use analysis::facts::ChunkFactAnalysis;
+use analysis::facts::saved::SavedChunkFactAnalysis;
+use analysis::purity::saved::{PuritySnapshot, SavedPurityGraph};
 use analysis_codec::ContextOrdinals;
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
@@ -46,25 +48,45 @@ pub struct AnalysisArtifactBody {
 /// here instead of implementing Serde on the runtime containers.
 #[derive(Serialize, Deserialize)]
 struct SavedAnalysisBody<'a> {
+    purity_graph: SavedPurityGraph,
     program_summary: SavedProgramSummary<'a>,
     export_reentry: Cow<'a, BTreeMap<String, ExportReentryReport>>,
-    chunks: Cow<'a, BTreeMap<String, ChunkFactAnalysis>>,
+    chunks: BTreeMap<String, SavedChunkFactAnalysis<'a>>,
 }
 
 impl<'a> SavedAnalysisBody<'a> {
     fn snapshot(body: &'a AnalysisArtifactBody, ordinals: &ContextOrdinals) -> Result<Self> {
+        let mut purities = PuritySnapshot::default();
+        let program_summary =
+            SavedProgramSummary::snapshot(&body.program_summary, ordinals, &mut purities)?;
+        let chunks = body
+            .chunks
+            .iter()
+            .map(|(name, chunk)| {
+                (
+                    name.clone(),
+                    SavedChunkFactAnalysis::snapshot(chunk, &mut purities),
+                )
+            })
+            .collect();
         Ok(Self {
-            program_summary: SavedProgramSummary::snapshot(&body.program_summary, ordinals)?,
+            purity_graph: purities.finish(),
+            program_summary,
             export_reentry: Cow::Borrowed(&body.export_reentry),
-            chunks: Cow::Borrowed(&body.chunks),
+            chunks,
         })
     }
 
     fn restore(self, ordinals: &ContextOrdinals) -> Result<AnalysisArtifactBody> {
+        let purities = self.purity_graph.restore()?;
         Ok(AnalysisArtifactBody {
-            program_summary: self.program_summary.restore(ordinals)?,
+            program_summary: self.program_summary.restore(ordinals, &purities)?,
             export_reentry: self.export_reentry.into_owned(),
-            chunks: self.chunks.into_owned(),
+            chunks: self
+                .chunks
+                .into_iter()
+                .map(|(name, chunk)| Ok((name, chunk.restore(&purities)?)))
+                .collect::<Result<_>>()?,
         })
     }
 }
@@ -130,16 +152,19 @@ mod tests {
     const CHUNKS: &[(&str, &str)] = &[
         (
             "static/app",
-            "import { counter as shared, wrap } from '../peer/peer.js';\n\
+            "import { counter as shared, wrap, effect } from '../peer/peer.js';\n\
              const counter = shared + 1;\n\
              function increment() { let counter = 1; return counter; }\n\
+             const firstEffect = effect();\n\
+             const secondEffect = effect();\n\
              export const wrapped = wrap(() => counter + increment());\n\
              window.app = wrapped;",
         ),
         (
             "static/peer",
             "export const counter = 41;\n\
-             export function wrap(callback) { const inner = () => callback(); return inner; }",
+             export function wrap(callback) { const inner = () => callback(); return inner; }\n\
+             export function effect() { console.log('effect'); }",
         ),
     ];
 
@@ -281,6 +306,29 @@ mod tests {
         }
     }
 
+    /// The summary owns the imported verdict; both statement causes must
+    /// reference that same node after restoration, across the saved boundary.
+    fn assert_shared_imported_cause(body: &AnalysisArtifactBody) {
+        let imported = &body.program_summary.bindings["static/app"]["effect"];
+        for name in ["firstEffect", "secondEffect"] {
+            let fact = body.chunks["static/app"]
+                .facts
+                .iter()
+                .find(|fact| fact.declared.iter().any(|binding| binding.0 == name))
+                .expect("fixture statement");
+            let analysis::purity::Purity::NotPure { reasons } = &fact.purity else {
+                panic!("effect call must be impure");
+            };
+            assert!(
+                reasons.iter().any(|reason| reason
+                    .cause
+                    .as_ref()
+                    .is_some_and(|cause| std::sync::Arc::ptr_eq(cause, imported))),
+                "{name} lost its shared imported cause"
+            );
+        }
+    }
+
     /// The lessons-learned round trip: encode in one `Globals`, re-parse in a
     /// fresh one whose contexts are numbered differently, decode, and get
     /// exactly the facts a fresh analysis there computes.
@@ -289,6 +337,7 @@ mod tests {
         let (bytes, debug_first) = GLOBALS.set(&Globals::new(), || {
             let artifact = bundle(&[0, 1]);
             let body = analyze(&artifact);
+            assert_shared_imported_cause(&body);
             let ordinals = ContextOrdinals::new(modules(&artifact));
             (
                 write_artifact(&header(), &body, &ordinals).expect("encode"),
@@ -305,6 +354,7 @@ mod tests {
             let (read, body) = read_header(&bytes).expect("header");
             assert_eq!(read, header());
             let decoded = read_body(body, &ordinals).expect("decode");
+            assert_shared_imported_cause(&decoded);
             let debug_fresh = format!("{:?}", fresh.chunks);
             assert_ne!(debug_fresh, debug_first, "contexts are renumbered");
             assert_eq!(format!("{:?}", decoded.chunks), debug_fresh);
@@ -319,7 +369,7 @@ mod tests {
     const CHILD_REVERSE: &str = "ANALYSIS_ARTIFACT_TEST_REVERSE";
 
     /// Child half of `fresh_processes_write_identical_bytes`: analyzes the
-    /// fixture and writes the artifact and its raw MessagePack encoding.
+    /// fixture and writes the artifact and its raw binding encoding.
     #[test]
     #[ignore = "run by fresh_processes_write_identical_bytes"]
     fn write_fixture_artifact() {
@@ -340,7 +390,23 @@ mod tests {
             .expect("write artifact");
             std::fs::write(
                 output.with_extension("raw"),
-                rmp_serde::to_vec_named(&body.chunks).expect("raw encode"),
+                rmp_serde::to_vec_named(
+                    &body
+                        .chunks
+                        .iter()
+                        .map(|(name, chunk)| {
+                            (
+                                name,
+                                chunk
+                                    .facts
+                                    .iter()
+                                    .map(|fact| &fact.declared)
+                                    .collect::<Vec<_>>(),
+                            )
+                        })
+                        .collect::<BTreeMap<_, _>>(),
+                )
+                .expect("raw encode"),
             )
             .expect("write raw encoding");
         });

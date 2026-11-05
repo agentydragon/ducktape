@@ -51,6 +51,7 @@ mod fresh_record;
 mod native_rows;
 mod purity_type;
 mod redundant_hints;
+pub mod saved;
 mod ts_enum_iife;
 
 // Crate-internal re-exports: each submodule reaches its siblings'

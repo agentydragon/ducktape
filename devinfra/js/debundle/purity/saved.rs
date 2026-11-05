@@ -1,35 +1,36 @@
-//! Saved imported verdicts. Runtime `Arc`s become references into a postorder
+//! Saved purity verdicts. Runtime `Arc`s become references into a postorder
 //! table; the ordinary Serde representation includes proof metadata and spans
 //! without consulting the report serializer or an ambient artifact scope.
 
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
-use analysis::analysis_inputs::ProofDependencies;
-use analysis::purity::{Purity, PurityReason, PurityRule};
-use analysis::reports::schema::SourceLocation;
+use crate::analysis_inputs::ProofDependencies;
+use crate::purity::{Purity, PurityReason, PurityRule};
+use crate::reports::schema::SourceLocation;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use swc_common::Span;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(transparent)]
-pub(super) struct PurityNodeId(usize);
+pub struct PurityNodeId(usize);
 
 #[derive(Serialize, Deserialize)]
-pub(super) struct SavedPurityGraph {
+pub struct SavedPurityGraph {
     nodes: Vec<SavedPurity>,
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-enum SavedPurity {
+pub enum SavedPurity {
     Pure { dependencies: ProofDependencies },
     NotPure { reasons: Vec<SavedReason> },
 }
 
 #[derive(Serialize, Deserialize)]
-struct SavedReason {
+pub struct SavedReason {
     rule: PurityRule,
     source_location: Option<SourceLocation>,
     detail: Option<String>,
@@ -41,18 +42,29 @@ struct SavedReason {
 
 /// Snapshot state belongs to the conversion, never to the saved data.
 #[derive(Default)]
-pub(super) struct PuritySnapshot {
+pub struct PuritySnapshot<'a> {
     nodes: Vec<SavedPurity>,
     identities: HashMap<*const Purity, PurityNodeId>,
+    // Keep every pointer key alive until the snapshot is finished.
+    roots: PhantomData<&'a Purity>,
 }
 
-impl PuritySnapshot {
-    pub(super) fn snapshot(&mut self, purity: &Arc<Purity>) -> PurityNodeId {
+impl<'a> PuritySnapshot<'a> {
+    pub fn snapshot(&mut self, purity: &'a Arc<Purity>) -> PurityNodeId {
         let identity = Arc::as_ptr(purity);
         if let Some(id) = self.identities.get(&identity) {
             return *id;
         }
-        let saved = match purity.as_ref() {
+        let saved = self.snapshot_value(purity);
+        let id = PurityNodeId(self.nodes.len());
+        self.nodes.push(saved);
+        self.identities.insert(identity, id);
+        id
+    }
+
+    /// A statement owns its verdict by value; only its cause edges are shared.
+    pub fn snapshot_value(&mut self, purity: &'a Purity) -> SavedPurity {
+        match purity {
             Purity::Pure { dependencies } => SavedPurity::Pure {
                 dependencies: dependencies.clone(),
             },
@@ -70,51 +82,51 @@ impl PuritySnapshot {
                     })
                     .collect(),
             },
-        };
-        let id = PurityNodeId(self.nodes.len());
-        self.nodes.push(saved);
-        self.identities.insert(identity, id);
-        id
+        }
     }
 
-    pub(super) fn finish(self) -> SavedPurityGraph {
+    pub fn finish(self) -> SavedPurityGraph {
         SavedPurityGraph { nodes: self.nodes }
     }
 }
 
 impl SavedPurityGraph {
-    pub(super) fn restore(self) -> Result<RestoredPurities> {
+    pub fn restore(self) -> Result<RestoredPurities> {
         let mut nodes = RestoredPurities(Vec::with_capacity(self.nodes.len()));
         for saved in self.nodes {
-            let purity = match saved {
-                SavedPurity::Pure { dependencies } => Purity::Pure { dependencies },
-                SavedPurity::NotPure { reasons } => Purity::NotPure {
-                    reasons: reasons
-                        .into_iter()
-                        .map(|reason| {
-                            Ok(PurityReason {
-                                rule: reason.rule,
-                                source_location: reason.source_location,
-                                detail: reason.detail,
-                                author_guidance: reason.author_guidance,
-                                cause_ref: reason.cause_ref,
-                                cause: reason.cause.map(|id| nodes.get(id)).transpose()?,
-                                span: reason.span,
-                            })
-                        })
-                        .collect::<Result<_>>()?,
-                },
-            };
+            let purity = nodes.restore_value(saved)?;
             nodes.0.push(Arc::new(purity));
         }
         Ok(nodes)
     }
 }
 
-pub(super) struct RestoredPurities(Vec<Arc<Purity>>);
+pub struct RestoredPurities(Vec<Arc<Purity>>);
 
 impl RestoredPurities {
-    pub(super) fn get(&self, id: PurityNodeId) -> Result<Arc<Purity>> {
+    pub fn restore_value(&self, saved: SavedPurity) -> Result<Purity> {
+        Ok(match saved {
+            SavedPurity::Pure { dependencies } => Purity::Pure { dependencies },
+            SavedPurity::NotPure { reasons } => Purity::NotPure {
+                reasons: reasons
+                    .into_iter()
+                    .map(|reason| {
+                        Ok(PurityReason {
+                            rule: reason.rule,
+                            source_location: reason.source_location,
+                            detail: reason.detail,
+                            author_guidance: reason.author_guidance,
+                            cause_ref: reason.cause_ref,
+                            cause: reason.cause.map(|id| self.get(id)).transpose()?,
+                            span: reason.span,
+                        })
+                    })
+                    .collect::<Result<_>>()?,
+            },
+        })
+    }
+
+    pub fn get(&self, id: PurityNodeId) -> Result<Arc<Purity>> {
         self.0.get(id.0).cloned().with_context(|| {
             format!(
                 "invalid saved purity reference {}: expected an earlier node",
@@ -127,7 +139,7 @@ impl RestoredPurities {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use analysis::analysis_inputs::ValueInputRef;
+    use crate::analysis_inputs::ValueInputRef;
     use swc_common::{BytePos, DUMMY_SP};
 
     #[test]

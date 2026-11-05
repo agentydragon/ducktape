@@ -49,7 +49,7 @@ impl PositionBucketed<BTreeSet<Id>> {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct StatementFacts {
     pub ordinal: SourceUnitOrdinal,
     /// Exact protected iterable producers that must remain in this module.
@@ -217,7 +217,9 @@ pub(crate) struct SynchronousCalls {
         Option<crate::facts::OwnerInitializationCoverageRefusalReason>,
     /// Report-only, source-site may-accesses; never a legacy graph input.
     pub(crate) evaluation_effects: super::evaluation_effects::EvaluationEffects,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    // SavedSynchronousCalls transports both verdicts through the artifact's
+    // shared purity graph; the report projects this runtime field separately.
+    #[serde(skip)]
     pub purity_disagreement: Option<crate::reports::schema::PurityCompletionDisagreement>,
     pub local_record_factory_uses: Vec<crate::reports::schema::LocalRecordFactoryUse>,
     pub local_record_factory_rejections: Vec<crate::reports::schema::LocalRecordFactoryRejection>,
@@ -540,7 +542,7 @@ impl HeapContentAccesses {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ChunkFactAnalysis {
     pub facts: Vec<StatementFacts>,
     pub top_level_await: Option<SourceUnitOrdinal>,
