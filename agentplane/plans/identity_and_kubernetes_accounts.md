@@ -270,8 +270,12 @@ watch and "View grants" disclosure re-anchored on the identity instead of a Serv
   Sandbox that names a missing identity fails closed and says so; Kubernetes cannot enforce
   "unreferenced" on delete.
 - **Finish an agent.** The Thread's finish, and a Sandbox delete, offer to take the identity along
-  when it is the last thing naming it. The default is to keep it, since a standing agent's grants are
-  the expensive thing to recreate.
+  when it is the last thing naming it. The default follows how the identity came to be (operator,
+  2026-11-05): an identity the app minted for this launch is selected for deletion, since its whole
+  reason to exist was this agent; an existing identity the operator chose at launch, or a git-origin
+  one, is kept, since a standing agent's grants are the expensive thing to recreate. The app records
+  that fact on the identity at creation (an annotation naming the Sandbox or Session it was minted
+  for), so the default is a property of the object, not of whichever screen happens to finish it.
 - **Launch** is unchanged on the surface: pick sets, and either a new identity or an existing one
   from the list. Choosing an existing identity shows its current grants, so the operator sees what
   the new environment will be able to do before it starts.
