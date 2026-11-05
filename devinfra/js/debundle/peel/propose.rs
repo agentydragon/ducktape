@@ -2553,9 +2553,7 @@ struct ProposalBuildContext<'context, 'graph> {
     source_modules: &'context HashMap<&'graph str, &'graph analysis::ModuleEntry>,
 }
 
-fn source_modules_by_id<'a>(
-    graph: &'a DependencyGraphReport,
-) -> HashMap<&'a str, &'a analysis::ModuleEntry> {
+fn source_modules_by_id(graph: &DependencyGraphReport) -> HashMap<&str, &analysis::ModuleEntry> {
     let modules_by_key: HashMap<&str, &analysis::ModuleEntry> = graph
         .quotient
         .nodes

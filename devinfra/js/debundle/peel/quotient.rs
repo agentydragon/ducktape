@@ -467,7 +467,7 @@ impl QuotientGraph {
             source_unit_modules.to_vec(),
             analysis::EntryDestination::from_module_id(residual_module),
         );
-        let verdict = gate::check_realizability(&dependency_graph, &assignment);
+        let verdict = gate::check_realizability(dependency_graph, &assignment);
         anyhow::ensure!(
             verdict.is_realizable(),
             "candidate assignment is not realizable under the shared gate"

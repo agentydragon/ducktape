@@ -574,7 +574,7 @@ pub fn run_atomic_groups_report(args: &AtomicGroupsArgs) -> Result<AtomicGroupsR
     });
     apply_limit(&mut atomic_groups, args.limit);
     let destination_groups = if args.by_destination {
-        group_atomic_groups_by_destination(&graph, &atomic_groups)
+        group_atomic_groups_by_destination(graph, &atomic_groups)
     } else {
         Vec::new()
     };
@@ -606,7 +606,7 @@ pub fn run_patch_plan_report(
         None
     };
     let mut rows = patch_plan_rows(
-        &graph,
+        graph,
         &args.common.dependency_graph_path,
         &args.common.modules_root,
         args.source_root.as_deref(),
@@ -1255,7 +1255,7 @@ pub fn run_source_selection_report(
         },
     )?;
     let source_unit_set: BTreeSet<String> = source_unit_ids.iter().cloned().collect();
-    let source_units = source_units_for_ids(&graph, &source_unit_set);
+    let source_units = source_units_for_ids(graph, &source_unit_set);
     let mut selected = Vec::new();
     let mut resolved_paths: BTreeMap<String, String> = BTreeMap::new();
     for source_unit in source_units {
