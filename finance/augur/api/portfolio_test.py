@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from decimal import Decimal
 
 import pytest
@@ -128,27 +129,6 @@ def test_holding_positions_sharing_series_must_share_unit_value() -> None:
         )
 
 
-# -- Bonds ---------------------------------------------------------------------------------
-
-
-def _bond_portfolio(**overrides: object) -> PortfolioConfig:
-    bond = {
-        "bond_id": "tips_rung",
-        "account_id": "brokerage",
-        "character": {"kind": "treasury"},
-        "face_value": 100_000,
-        "purchase_price": 100_000,
-        "annual_coupon_rate": 0.02,
-        "inflation_indexed": True,
-        "holding_period_months_at_start": 24,
-        "months_to_maturity_at_start": 96,
-    } | overrides
-    return PortfolioConfig(
-        accounts=(PortfolioAccountConfig(account_id=BROKERAGE, owner_agent_id=ALICE),),
-        bonds=(BondHoldingConfig.model_validate(bond),),
-    )
-
-
 def test_a_bond_on_an_unknown_account_is_rejected() -> None:
     with pytest.raises(ValidationError):
         PortfolioConfig(
@@ -185,11 +165,11 @@ def test_duplicate_bond_ids_are_rejected() -> None:
         )
 
 
-def test_bond_face_is_kept_out_of_the_holdings_value_total() -> None:
+def test_bond_face_is_kept_out_of_the_holdings_value_total(bond_portfolio: Callable[..., PortfolioConfig]) -> None:
     """A held-to-maturity bond is never marked, so one total conflating face with marked value
     would assert a price the model does not produce."""
 
-    portfolio = _bond_portfolio()
+    portfolio = bond_portfolio()
 
     assert portfolio.total_holdings_value == Decimal(0)
     assert portfolio.total_bond_face_value == Decimal(100_000)
