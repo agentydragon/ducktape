@@ -92,6 +92,12 @@ rust_library(
     ],
 )
 
+rust_test(
+    name = "analysis_codec_test",
+    crate = ":analysis_codec",
+    edition = "2024",
+)
+
 rust_library(
     name = "js_ast",
     srcs = ["js_ast.rs"],
@@ -999,6 +1005,7 @@ rust_library(
         ":program_analysis",
         ":selector_outcome",
         ":selector_resolve",
+        ":source_identity",
         ":source_match",
         ":spec",
         ":spec_resolution",

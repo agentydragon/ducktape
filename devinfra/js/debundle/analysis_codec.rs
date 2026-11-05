@@ -40,13 +40,21 @@ use std::fmt;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use serde::de::{self, Deserialize, DeserializeOwned, DeserializeSeed, Deserializer, Visitor};
-use serde::ser::{self, Serialize, Serializer};
+use serde::de::{self, DeserializeOwned, DeserializeSeed, Deserializer, Visitor};
+use serde::ser::{self, Serializer};
+use serde::{Deserialize, Serialize};
 use swc_common::SyntaxContext;
-use swc_ecma_ast::Module;
+use swc_ecma_ast::{Id, Module};
 use swc_ecma_visit::{Visit, VisitWith};
 
 const ZSTD_LEVEL: i32 = 3;
+
+/// A binding's saved identity, independent of the current SWC hygiene table.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedBinding {
+    symbol: String,
+    context_ordinal: u32,
+}
 
 /// First-occurrence ordinals of the hygiene contexts in a list of modules.
 /// Ordinal 0 is the empty context.
@@ -56,6 +64,25 @@ pub struct ContextOrdinals {
 }
 
 impl ContextOrdinals {
+    pub fn snapshot_binding(&self, binding: &Id) -> Result<SavedBinding> {
+        Ok(SavedBinding {
+            symbol: binding.0.to_string(),
+            context_ordinal: self
+                .ordinal(binding.1.as_u32())
+                .context("binding context is outside the analyzed modules")?,
+        })
+    }
+
+    pub fn restore_binding(&self, binding: SavedBinding) -> Result<Id> {
+        let context = self.context(binding.context_ordinal).with_context(|| {
+            format!(
+                "unknown binding context ordinal {}",
+                binding.context_ordinal
+            )
+        })?;
+        Ok((binding.symbol.into(), SyntaxContext::from_u32(context)))
+    }
+
     /// Numbers contexts across `modules` in the given order; callers pass the
     /// same modules in the same order in every process.
     pub fn new<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Self {
@@ -1021,5 +1048,45 @@ impl<'de, A: de::VariantAccess<'de>> de::VariantAccess<'de> for Access<'_, A> {
                 pair: false,
             },
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use swc_common::{GLOBALS, Globals, Mark};
+
+    #[test]
+    fn saved_bindings_use_explicit_ordinals_with_ordinary_serde() {
+        GLOBALS.set(&Globals::new(), || {
+            let first = SyntaxContext::empty().apply_mark(Mark::new());
+            let second = SyntaxContext::empty().apply_mark(Mark::new());
+            let mut writer = ContextOrdinals::new([]);
+            writer.visit_syntax_context(&first);
+            let saved = writer
+                .snapshot_binding(&("captured".into(), first))
+                .expect("known binding");
+            let bytes = rmp_serde::to_vec_named(&saved).expect("ordinary encode");
+            let saved: SavedBinding = rmp_serde::from_slice(&bytes).expect("ordinary decode");
+            let mut reader = ContextOrdinals::new([]);
+            reader.visit_syntax_context(&second);
+            assert_eq!(
+                reader.restore_binding(saved).expect("known ordinal"),
+                ("captured".into(), second),
+            );
+            assert!(
+                writer
+                    .snapshot_binding(&("captured".into(), second))
+                    .is_err()
+            );
+            assert!(
+                reader
+                    .restore_binding(SavedBinding {
+                        symbol: "captured".to_string(),
+                        context_ordinal: 2,
+                    })
+                    .is_err()
+            );
+        });
     }
 }

@@ -12,6 +12,7 @@
 //! instead would repeat the program-wide census per chunk (1.77 GB on the
 //! Claude CLI).
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use analysis::facts::ChunkFactAnalysis;
@@ -21,6 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use super::ExportReentryReport;
 use super::program_summary::ProgramSummary;
+use super::saved_program_summary::SavedProgramSummary;
 
 /// What an artifact was computed from; a reader recomputes it and refuses an
 /// artifact whose header differs.
@@ -34,11 +36,37 @@ pub struct AnalysisArtifactHeader {
     pub chunk_sources: BTreeMap<String, String>,
 }
 
-#[derive(Serialize, Deserialize)]
 pub struct AnalysisArtifactBody {
     pub program_summary: ProgramSummary,
     pub export_reentry: BTreeMap<String, ExportReentryReport>,
     pub chunks: BTreeMap<String, ChunkFactAnalysis>,
+}
+
+/// The top-level body and program summary select their saved representations
+/// here instead of implementing Serde on the runtime containers.
+#[derive(Serialize, Deserialize)]
+struct SavedAnalysisBody<'a> {
+    program_summary: SavedProgramSummary<'a>,
+    export_reentry: Cow<'a, BTreeMap<String, ExportReentryReport>>,
+    chunks: Cow<'a, BTreeMap<String, ChunkFactAnalysis>>,
+}
+
+impl<'a> SavedAnalysisBody<'a> {
+    fn snapshot(body: &'a AnalysisArtifactBody, ordinals: &ContextOrdinals) -> Result<Self> {
+        Ok(Self {
+            program_summary: SavedProgramSummary::snapshot(&body.program_summary, ordinals)?,
+            export_reentry: Cow::Borrowed(&body.export_reentry),
+            chunks: Cow::Borrowed(&body.chunks),
+        })
+    }
+
+    fn restore(self, ordinals: &ContextOrdinals) -> Result<AnalysisArtifactBody> {
+        Ok(AnalysisArtifactBody {
+            program_summary: self.program_summary.restore(ordinals)?,
+            export_reentry: self.export_reentry.into_owned(),
+            chunks: self.chunks.into_owned(),
+        })
+    }
 }
 
 /// `ordinals` numbers the contexts of every module the analysis read; a
@@ -49,7 +77,8 @@ pub fn write_artifact(
     ordinals: &ContextOrdinals,
 ) -> Result<Vec<u8>> {
     let header = rmp_serde::to_vec_named(header)?;
-    let body = analysis_codec::encode(body, ordinals)?;
+    let saved = SavedAnalysisBody::snapshot(body, ordinals)?;
+    let body = analysis_codec::encode(&saved, ordinals)?;
     let mut bytes = Vec::with_capacity(4 + header.len() + body.len());
     bytes.extend_from_slice(&u32::try_from(header.len())?.to_le_bytes());
     bytes.extend_from_slice(&header);
@@ -73,7 +102,8 @@ pub fn read_header(bytes: &[u8]) -> Result<(AnalysisArtifactHeader, &[u8])> {
 }
 
 pub fn read_body(body: &[u8], ordinals: &ContextOrdinals) -> Result<AnalysisArtifactBody> {
-    analysis_codec::decode(body, ordinals)
+    let saved: SavedAnalysisBody<'_> = analysis_codec::decode(body, ordinals)?;
+    saved.restore(ordinals)
 }
 
 #[cfg(test)]
@@ -309,7 +339,7 @@ mod tests {
             .expect("write artifact");
             std::fs::write(
                 output.with_extension("raw"),
-                rmp_serde::to_vec_named(&body).expect("raw encode"),
+                rmp_serde::to_vec_named(&body.chunks).expect("raw encode"),
             )
             .expect("write raw encoding");
         });

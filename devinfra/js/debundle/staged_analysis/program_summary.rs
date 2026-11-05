@@ -8,8 +8,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
-
 use analysis::analysis_inputs::{
     ArgumentInputEvidence, ArgumentInputRef, CallableSummary, NativeInputKind, NativeIntegrity,
     NativeOperationInputEvidence, NativeOperationInputRef, NativeOperationSelectorProvenance,
@@ -164,7 +162,6 @@ pub struct ReparsedEntry {
 }
 
 /// Program-wide analysis summaries, keyed by source chunk name.
-#[derive(Serialize, Deserialize)]
 pub struct ProgramSummary {
     /// Per-chunk imported-binding verdicts (`AnalysisInputs::imported_purities`).
     pub bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,
