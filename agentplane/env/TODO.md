@@ -19,6 +19,11 @@ shell when it is enabled.
   every Session, app-server updates map to every Codex Session, and snapshot publication uses a
   manager-wide mutex. If significant, narrow subscriptions or locking without losing the
   pre-fence settlement status and wakeups needed by the drain barrier.
+- Profile aggregate shutdown scans before adding cached inventory or generation-scoped scan state.
+  The [shutdown scan note](runtime/debug/shutdown-scan.md) counts per-Session and process reads but
+  records no profile. Measure a real shutdown with many retained Sessions and process attempts; use
+  a Go CPU profile to separate inventory listing, sorting and COSI reads, and record resource counts
+  and blocker transitions. Preserve the full membership and recovery proof if optimizing.
 
 ## Simplify ownership and process fencing with COSI lifecycle primitives
 
