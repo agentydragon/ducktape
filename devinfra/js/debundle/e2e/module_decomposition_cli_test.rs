@@ -1,6 +1,6 @@
 //! Read-only module decomposition from gated same-module seed fragments.
 
-use debundle_e2e_support::GraphFixture;
+use debundle_e2e_graph_support::GraphFixture;
 use serde_json::{Value, json};
 use std::fs;
 use std::process::Command;

@@ -1,6 +1,6 @@
 //! Observed consumer evidence from the real `modules propose` command.
 
-use debundle_e2e_support::GraphFixture;
+use debundle_e2e_graph_support::GraphFixture;
 use serde_json::{Value, json};
 
 fn proposal_for_binding<'a>(report: &'a Value, binding: &str) -> &'a Value {

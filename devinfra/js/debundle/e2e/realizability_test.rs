@@ -7,6 +7,7 @@
 //! match, or rejection with cycle evidence naming the implicated
 //! modules.
 
+use debundle_e2e_graph_support::FixtureGraphExt;
 use std::fs;
 use std::path::Path;
 

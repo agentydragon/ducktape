@@ -1,6 +1,7 @@
 //! Stable imported primitives cannot execute ToPrimitive callbacks, and a
 //! coercion of operands whose types cannot throw is pure.
 use analysis::DepKind;
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 fn source(import: &str, expression: &str) -> String {

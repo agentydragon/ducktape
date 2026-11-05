@@ -1,3 +1,4 @@
+use debundle_e2e_graph_support::{FixtureGraphExt, GraphFixture, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 #[test]

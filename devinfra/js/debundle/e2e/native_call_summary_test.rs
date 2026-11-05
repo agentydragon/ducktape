@@ -1,6 +1,7 @@
 //! Guarded native summaries describe both call timing and returned values.
 
 use analysis::analysis_provenance::InferenceRule;
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 fn split_opts<'a>(source: &'a str, members: &[Member], anonymous: &[&str]) -> FixtureOpts<'a> {

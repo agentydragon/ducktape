@@ -1,6 +1,7 @@
 //! Author-conditioned captured ordinary-object values stay bounded to one
 //! stable provider binding and retain provenance through native checks.
 
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use serde_json::Value;
 use sha2::{Digest, Sha256};

@@ -15,6 +15,7 @@
 //! <docs/purity_soundness.md> "Declared purity".
 
 use analysis::{DepKind, EdgeRoleReport};
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 use spec::ChunkRenames;
 

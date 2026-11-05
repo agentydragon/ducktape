@@ -1,7 +1,7 @@
 //! Direct binding claim mismatches are rejected by pre-write edit gates.
 
 use analysis::DepKind;
-use debundle_e2e_support::GraphFixture;
+use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 
 const EMPTY: (&str, &str) = ("empty.yaml", "members: []\n");

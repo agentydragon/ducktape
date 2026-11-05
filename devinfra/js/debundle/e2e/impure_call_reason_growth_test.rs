@@ -1,6 +1,7 @@
 //! A known impure callee should explain each call site once. Copying the
 //! callee's full reason list makes a branching call graph grow exponentially.
 
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 use std::collections::BTreeSet;
 

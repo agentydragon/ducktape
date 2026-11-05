@@ -4,6 +4,9 @@
 //! premise can never inert, the pairs the gate would reject, the endpoints
 //! without a unique selector, and every SCC that pairs alone cannot break.
 
+use debundle_e2e_graph_support::{
+    FixtureGraphExt, assert_cycle_edge_source_units, source_unit_for_binding,
+};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;

@@ -2,6 +2,7 @@
 //! unknown receiver writes elsewhere in the provider remain visible.
 
 use analysis::{DepKind, StatementKind};
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 use serde_json::Value;
 use sha2::{Digest, Sha256};

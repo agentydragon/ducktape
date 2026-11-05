@@ -1,5 +1,6 @@
 //! Source-visible and opaque-provider publication both keep later callbacks.
 
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 fn assert_later_callback_read(publication: &str) {

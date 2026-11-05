@@ -1,4 +1,5 @@
 //! Report evidence comes from the same bounded execution used by the gate.
+use debundle_e2e_graph_support::{FixtureGraphExt, GraphFixture, source_unit_for_binding};
 use debundle_e2e_support::*;
 use serde_json::Value;
 

@@ -1,6 +1,7 @@
 //! Exact-site native identity can retain the ordinary call model under opaque
 //! startup writes without granting purity or whole-family integrity.
 
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use sha2::{Digest, Sha256};
 

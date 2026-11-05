@@ -1,7 +1,8 @@
 //! Exact source-match consolidation is a checked authoring edit, not a source rewrite.
 
+use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::{
-    GraphFixture, TreeFixture, assert_module_exports, assert_module_source, run_tree_fixture,
+    TreeFixture, assert_module_exports, assert_module_source, run_tree_fixture,
 };
 use serde_json::json;
 use serde_yaml::Value;

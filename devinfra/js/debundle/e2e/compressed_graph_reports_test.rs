@@ -1,5 +1,6 @@
 //! Full graph compression preserves query, snapshot and emitted-program behavior.
 
+use debundle_e2e_graph_support::{GraphFixture, program_graph_path};
 use debundle_e2e_support::*;
 use serde_json::Value;
 use std::fs;

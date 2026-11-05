@@ -1,7 +1,7 @@
 //! `explain-integrity` joins a source unit's failed native guards to the
 //! census witnesses that leave each required slot unknown.
 
-use debundle_e2e_support::GraphFixture;
+use debundle_e2e_graph_support::GraphFixture;
 use serde_json::{Value, json};
 
 // Line 1 writes an Object static, line 2 deletes `map` through a global's

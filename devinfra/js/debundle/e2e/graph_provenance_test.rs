@@ -1,12 +1,12 @@
 //! Real CLI checks that a saved graph is joined only to its analyzed inputs.
 
+use debundle_e2e_graph_support::{FixtureGraphExt, GraphFixture, program_graph_path};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
 use debundle_e2e_support::{
-    FixtureOpts, GraphFixture, TreeFixture, debundler_path, program_graph_path, run_fixture,
-    run_tree_graph_fixture,
+    FixtureOpts, TreeFixture, debundler_path, run_fixture, run_tree_graph_fixture,
 };
 use tempfile::TempDir;
 

@@ -2,6 +2,7 @@
 //! slots intact against census writes it overrides, which the program graph
 //! lists, and is refuted by a write on a named family's exact object.
 
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 /// zod's shape: a descriptor installed on an instance's prototype under a

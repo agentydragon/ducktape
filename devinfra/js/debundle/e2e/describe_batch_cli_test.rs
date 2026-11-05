@@ -1,6 +1,7 @@
 //! A batch uses the same query semantics as separate real CLI invocations.
 
-use debundle_e2e_support::{GraphFixture, TreeFixture, debundler_path, run_tree_graph_fixture};
+use debundle_e2e_graph_support::GraphFixture;
+use debundle_e2e_support::{TreeFixture, debundler_path, run_tree_graph_fixture};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::Path;

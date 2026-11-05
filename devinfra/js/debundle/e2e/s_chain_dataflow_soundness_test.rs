@@ -22,6 +22,7 @@
 //!   the global object, despite README claiming otherwise.
 
 use analysis::{DepKind, DependencyGraphReport};
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 fn source_unit_for_ordinal(graph: &DependencyGraphReport, ordinal: usize) -> &str {

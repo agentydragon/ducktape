@@ -1,3 +1,4 @@
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 
 // Each guarded write names `Map`, so through the unknown `globalThis.shared`

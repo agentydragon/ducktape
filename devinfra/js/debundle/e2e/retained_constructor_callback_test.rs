@@ -1,5 +1,6 @@
 //! Constructor callback retention is independent of call timing and purity.
 
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 const PROVIDER: &str = "export class Box { constructor(callback, compare, metadata) { this.callback = callback; this.compare = compare; this.metadata = metadata; } invoke() { return this.callback(); } }\n";

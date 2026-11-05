@@ -1,6 +1,7 @@
 //! `Error` construction runs no user code once its message converts silently,
 //! so a published callback cannot reenter through it.
 
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 
 fn opts<'a>(source: &'a str, anonymous: &[&str]) -> FixtureOpts<'a> {

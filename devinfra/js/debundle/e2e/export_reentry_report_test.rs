@@ -1,5 +1,6 @@
 //! Exposes the predicates behind export-reentry policy selection.
 
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use serde_json::Value;
 use std::path::PathBuf;
