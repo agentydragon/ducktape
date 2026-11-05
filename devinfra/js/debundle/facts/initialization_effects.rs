@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
 use super::evaluation_effects::{GlobalAccessKind, GlobalMayAccess};
+use super::sync_effects::noninvoking_initialization::CompletedInitialization;
 use super::{DataflowOpacityCause, EffectCell, StatementFacts, StatementKind};
 use crate::analysis_inputs::ProofDependencies;
 use crate::reports::schema::SourceLocation;
@@ -144,6 +145,21 @@ impl InitializationEffects<'_> {
 }
 
 impl StatementFacts {
+    /// One view of this owner's completed-initialization receipt and the own
+    /// syntax-opacity bit it can discharge. The receipt is exact to this
+    /// source owner; it never changes explicit heap cells or callee effects.
+    pub(crate) fn own_heap_content_summary(&self) -> OwnHeapContentSummary<'_> {
+        let completed_initialization = self
+            .synchronous_calls
+            .as_ref()
+            .and_then(|calls| calls.completed_initialization.as_ref())
+            .filter(|proof| proof.covers(self.ordinal));
+        OwnHeapContentSummary {
+            opaque: self.heap_contents.opaque && completed_initialization.is_none(),
+            completed_initialization,
+        }
+    }
+
     /// Shared with the binding timeline: module instantiation is not an
     /// evaluation-time write. A variable initialized with a function remains
     /// an evaluation-time initializer.
@@ -153,6 +169,7 @@ impl StatementFacts {
     }
 
     pub fn initialization_effects(&self) -> InitializationEffects<'_> {
+        let own_heap = self.own_heap_content_summary();
         let mut effects = InitializationEffects {
             ordinal: self.ordinal,
             reads: BTreeMap::new(),
@@ -163,7 +180,7 @@ impl StatementFacts {
             dataflow_opacity: self.havoc.clone(),
             incomplete_execution: false,
             execution_losses: &[],
-            opaque_heap: self.heap_contents.opaque,
+            opaque_heap: own_heap.opaque,
             owner_coverage_refusal: None,
         };
         // These statement kinds execute no body at module evaluation. In
@@ -174,11 +191,7 @@ impl StatementFacts {
             effects.opaque_heap = false;
             return effects;
         }
-        let completed = self
-            .synchronous_calls
-            .as_ref()
-            .and_then(|calls| calls.completed_initialization.as_ref())
-            .filter(|proof| proof.covers(self.ordinal));
+        let completed = own_heap.completed_initialization;
         effects.coverage_dependencies = completed.map(|proof| proof.dependencies());
         if completed.is_none() {
             effects.unknown_coverage.extend([
@@ -304,6 +317,11 @@ impl StatementFacts {
         }
         effects
     }
+}
+
+pub(crate) struct OwnHeapContentSummary<'a> {
+    pub(crate) opaque: bool,
+    pub(crate) completed_initialization: Option<&'a CompletedInitialization>,
 }
 
 fn record(

@@ -3,6 +3,7 @@ use analysis::DependencyGraphReport;
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
+use spec::{IntrinsicFamilies, IntrinsicFamily, IntrinsicsNeverWritten};
 
 fn source_unit_for_ordinal(graph: &DependencyGraphReport, ordinal: usize) -> &str {
     graph
@@ -65,6 +66,71 @@ fn assert_no_sequenced_edge(graph: &DependencyGraphReport, a: usize, b: usize) {
     assert!(
         found.is_empty(),
         "independent array cells must not be sequenced: {found:#?}"
+    );
+}
+
+const MAP_HEAP_FRONTIER_SOURCE: &str = r#"
+const values = [];
+values.push('first');
+const cache = new Map();
+values.push('second');
+console.log(values.join(','), cache.size);
+"#;
+const UNKNOWN_HEAP_FRONTIER_SOURCE: &str = r#"
+const values = [];
+values.push('first');
+const cache = new UnlistedCollection();
+values.push('second');
+console.log(values.join(','), cache.size);
+"#;
+const FIRST_PUSH: &str = "values.push('first');";
+const SECOND_PUSH: &str = "values.push('second');";
+const OBSERVE_ORDER: &str = "console.log(values.join(','), cache.size);";
+
+fn heap_frontier_options(source: &'static str, family: IntrinsicFamily) -> FixtureOpts<'static> {
+    let modules = vec![
+        logical_module_with_anon(
+            "values",
+            &[Member::new("values")],
+            &[FIRST_PUSH, SECOND_PUSH],
+        ),
+        logical_module("cache", &[Member::new("cache")]),
+        logical_module_with_anon("observe", &[], &[OBSERVE_ORDER]),
+    ];
+    let premises = ProgramPremises {
+        intrinsics_never_written: Some(IntrinsicsNeverWritten {
+            families: IntrinsicFamilies::Listed([family].into_iter().collect()),
+            note: Some("neutral source contains no Map writes".to_string()),
+        }),
+        ..ProgramPremises::default()
+    };
+    FixtureOpts::new(source, modules)
+        .with_host_behavior(HostBehavior::default())
+        .with_program_premises(premises)
+}
+
+#[test]
+fn same_owner_completed_map_initialization_does_not_create_own_heap_barrier() {
+    let fixture = run_fixture(heap_frontier_options(
+        MAP_HEAP_FRONTIER_SOURCE,
+        IntrinsicFamily::Map,
+    ));
+    assert_preserved_entry_output(&fixture, "first,second 0\n");
+}
+
+#[test]
+fn unknown_construction_keeps_sequenced_fallback_barrier() {
+    let cycle = expect_cycle_rejection(
+        heap_frontier_options(UNKNOWN_HEAP_FRONTIER_SOURCE, IntrinsicFamily::Map),
+        &["values", "cache"],
+    );
+    assert!(
+        cycle["cut"]
+            .as_array()
+            .expect("SCC cut")
+            .iter()
+            .any(|edge| edge["kind"] == "sequenced"),
+        "expected unknown construction to retain its sequenced fallback barrier: {cycle:#}"
     );
 }
 
