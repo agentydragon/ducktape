@@ -51,7 +51,7 @@ def generated(tmp_path_factory: pytest.TempPathFactory, checkout: Path) -> Path:
 @pytest.fixture(scope="module")
 def parsed_yaml_documents(generated: Path) -> dict[Path, tuple[Any, ...]]:
     """Cache parsed documents for read-only inspection by manifest assertions."""
-    return {path: tuple(yaml.safe_load_all(path.read_text())) for path in generated.rglob("*.yaml")}
+    return {path: tuple(yaml.load_all(path.read_text(), Loader=yaml.CSafeLoader)) for path in generated.rglob("*.yaml")}
 
 
 def _generated_documents(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> list[dict[str, Any]]:
