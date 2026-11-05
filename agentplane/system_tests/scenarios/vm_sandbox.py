@@ -236,7 +236,7 @@ async def _capture_native_profile(cluster: Cluster, sandbox_name: str, sandbox_u
     source = Path((volume["spec"].get("hostPath") or volume["spec"]["local"])["path"])
     output = undeclared_outputs_dir() / "vm-artifacts" / "profiles" / f"{sandbox_uid}.perf.data"
     output.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(source / ".agentplane-native-startup.perf.data", output)
+    shutil.copyfile(source / "testing" / "profiles" / "native-startup.perf.data", output)
     assert output.stat().st_size > 1024
     with output.open("rb") as profile:
         assert profile.read(8) == b"PERFILE2"

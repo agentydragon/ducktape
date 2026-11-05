@@ -20,7 +20,7 @@ uses the same manual target and root image but omits that runtime flag.
 The guest's opt-in systemd service starts before Runner and is outside the
 96 MiB native executor leaf. It probes `cpu-clock` with the guest's root
 capabilities, samples all user-space processes for a bounded 60 seconds, and
-writes `/state/.agentplane-native-startup.perf.data.partial`. A successful
+writes `/state/testing/profiles/native-startup.perf.data.partial`. A successful
 `perf record` atomically publishes the final file in the VM's state virtiofs.
 The test checks the state PVC's Sandbox owner UID and PV claim UID, then copies
 the raw file into `test.outputs/vm-artifacts/profiles/<sandbox UID>.perf.data`
