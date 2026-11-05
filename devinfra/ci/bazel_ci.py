@@ -153,6 +153,7 @@ def graph_wide_change_reason(paths: list[str]) -> str | None:
         if path in exact_paths or basename in manifest_basenames:
             return path
         if fnmatch.fnmatch(path, "*.bzl"):
+            # Keep this fallback for the gaps in debug/bazel_diff_starlark.md.
             return path
         if basename.startswith("requirements") and basename.endswith(".txt"):
             return path
@@ -257,10 +258,21 @@ def _select_targets(temp_dir: Path) -> tuple[bool, list[str], Path]:
     # Cross-run base-hash caching was evaluated and deferred; see
     # debug/bazel_diff_base_hash_cache.md for measurements and revisit conditions.
     # Base/head queries share warm Bazel state: time the whole driver, not just base.
+    # Query flattens scalar select() values; fingerprint the raw attributes too.
+    # Remaining omissions are documented in debug/bazel_diff_starlark.md.
+    hash_command = [
+        "bazel-diff",
+        "generate-hashes",
+        "-co=--proto:include_synthetic_attribute_hash",
+        "-w",
+        str(Path.cwd()),
+        "-b",
+        "bazel",
+    ]
     _run(["git", "-c", "advice.detachedHead=false", "checkout", "--quiet", "--force", base])
-    _run(["bazel-diff", "generate-hashes", "-w", str(Path.cwd()), "-b", "bazel", str(base_hashes)])
+    _run([*hash_command, str(base_hashes)])
     _run(["git", "-c", "advice.detachedHead=false", "checkout", "--quiet", "--force", head_sha])
-    _run(["bazel-diff", "generate-hashes", "-w", str(Path.cwd()), "-b", "bazel", str(head_hashes)])
+    _run([*hash_command, str(head_hashes)])
     affected_raw.write_text(
         _capture(
             [
