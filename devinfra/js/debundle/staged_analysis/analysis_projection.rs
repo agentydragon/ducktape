@@ -79,7 +79,7 @@ pub enum NativeOperationSourceSelector {
 
 /// Author inputs consumed while facts are analyzed for one chunk.
 /// Graph construction and authored report context have separate projections.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ChunkAnalysisInputs {
     pub trusted_dataflow_summaries: bool,
     pub deferred_global_publications: BTreeMap<BuiltinGlobalRoot, BTreeSet<String>>,
@@ -90,6 +90,12 @@ pub struct ChunkAnalysisInputs {
     pub native_call_identity_inputs: Vec<NativeCallIdentityInputContract>,
     pub argument_inputs: Vec<ArgumentInputContract>,
     pub no_accessor_install_callables: Vec<NoAccessorInstallCallableContract>,
+}
+
+impl ChunkAnalysisInputs {
+    fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
 }
 
 /// Inputs used only while building a chunk's dependency graph. The commuting
@@ -230,7 +236,10 @@ impl<'a> AnalysisProjection<'a> {
             chunk_analysis_inputs: Cow::Owned(
                 chunk_options
                     .iter()
-                    .map(|(chunk, options)| (chunk.clone(), options.analysis.clone()))
+                    .filter_map(|(chunk, options)| {
+                        (!options.analysis.is_default())
+                            .then(|| (chunk.clone(), options.analysis.clone()))
+                    })
                     .collect(),
             ),
             chunk_export_purity,
@@ -289,12 +298,12 @@ impl AnalysisSpec {
             }
         }
         let projected_options = project_chunk_options(&spec.chunk_analysis_options)?;
-        // Preserve authored chunk keys, including entries whose options all
-        // belong to graph construction. Their source-analysis projection is
-        // empty, matching the previous analysis-cache identity.
+        // Graph-only and empty authored entries have no source-analysis identity.
         let chunk_analysis_inputs = projected_options
             .into_iter()
-            .map(|(chunk, options)| (chunk, options.analysis))
+            .filter_map(|(chunk, options)| {
+                (!options.analysis.is_default()).then(|| (chunk, options.analysis))
+            })
             .collect();
         Ok(Self {
             inputs: LoadJsChunksArgs {

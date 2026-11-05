@@ -1598,10 +1598,12 @@ fn graph_options_survive_the_source_only_analysis_boundary() {
             logical_module("first", &[Member::new("a")]),
             logical_module("second", &[Member::new("b")]),
         ],
-    ).with_dataflow_aware_s_chain());
+    ));
     let mut spec: serde_yaml::Value =
         serde_yaml::from_str(&fs::read_to_string(&staged.spec).unwrap()).unwrap();
-    for enabled in [false, true] {
+    spec["chunk_analysis_options"]["static/app"] =
+        serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+    for enabled in [true, false] {
         spec["chunk_analysis_options"]["static/app"]["dataflow_aware_s_chain"] = enabled.into();
         write_yaml_file(&staged.spec, &spec);
         let edited = staged.root().join("edited.projection");
@@ -1702,8 +1704,15 @@ export { Holder1, Holder2, instA, instB };
 }
 
 #[test]
-fn empty_chunk_options_keep_their_analysis_projection_key() {
-    let (staged, _fixture) = staged(split_with_pure_import());
+fn graph_only_chunk_options_keep_analysis_identity_and_evidence() {
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        "const trace = [];\nglobalThis.record = (key) => { trace.push(key); };\nconst alpha = (globalThis.record(\"alpha\"), \"A\");\nconst beta = (globalThis.record(\"beta\"), \"B\");\nconsole.log(alpha, beta);\nexport { alpha, beta };\n",
+        vec![logical_module_with_anon(
+            "all",
+            &[Member::new("trace"), Member::new("alpha"), Member::new("beta")],
+            &["globalThis.record = (key) => { trace.push(key); };"],
+        )],
+    ).with_unassigned_mode(unassigned_mode_inline()));
     let original = fs::read(&staged.projection).unwrap();
     let mut spec: serde_yaml::Value =
         serde_yaml::from_str(&fs::read_to_string(&staged.spec).unwrap()).unwrap();
@@ -1713,20 +1722,45 @@ fn empty_chunk_options_keep_their_analysis_projection_key() {
 
     let edited = staged.root().join("empty-chunk-options.projection");
     assert_ok(&staged.project(&edited), "project empty chunk options");
-    assert_ne!(
+    assert_eq!(
         original,
         fs::read(&edited).unwrap(),
-        "an authored per-chunk key remains part of the projection"
+        "an empty authored per-chunk entry changed source-analysis identity"
     );
-    let refused = staged.run(&["--analysis", path(&staged.artifact)]);
-    assert!(
-        !refused.result.status.success(),
-        "adding an empty per-chunk options entry reused saved facts"
+    assert_ok(
+        &staged.run(&["--analysis", path(&staged.artifact)]).result,
+        "reuse analysis after adding an empty chunk entry",
     );
-    assert!(
-        refused.result.stderr.contains("another projection"),
-        "{}",
-        refused.result.stderr
+
+    spec["chunk_analysis_options"]["static/app"]["commuting_statements"] =
+        serde_yaml::to_value(vec![commuting_pair(
+            member_source_unit("all", "alpha"),
+            member_source_unit("all", "beta"),
+        )])
+        .unwrap();
+    write_yaml_file(&staged.spec, &spec);
+
+    let edited = staged.root().join("commuting-options.projection");
+    assert_ok(
+        &staged.project(&edited),
+        "project graph-only commuting option",
+    );
+    assert_eq!(
+        original,
+        fs::read(&edited).unwrap(),
+        "a commuting premise changed source-analysis identity"
+    );
+    let reused = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert_ok(&reused.result, "reuse analysis with commuting option");
+    let graph: DependencyGraphReport = read_gzip_json(
+        &reused
+            .output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz"),
+    );
+    assert_eq!(
+        graph.commuting_statements.len(),
+        1,
+        "the graph-only premise was not applied to the reused analysis"
     );
 }
 
