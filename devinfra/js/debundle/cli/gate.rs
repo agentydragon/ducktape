@@ -25,7 +25,7 @@
 //! arbitrary cycles, of which a single SCC can contain exponentially
 //! many.
 
-use source_identity::SourceUnitOrdinal;
+use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -34,8 +34,9 @@ use ::gate::{
     render_explanations,
 };
 use analysis::{
-    CallbackFactoryBarrierReport, CallbackFactoryRejectionReport, DepKind, DependencyGraphReport,
-    EdgeRoleReport, ModuleKey, Purity, SequencedSourceUnitCause, SourceUnitReport,
+    CallbackFactoryBarrierReport, CallbackFactoryRejectionReport, DepKind, DependencyEdgeId,
+    DependencyGraphInput, EdgeRole, EdgeRoleReport, ModuleKey, Purity, SequencedSourceUnitCause,
+    SourceUnitReport,
 };
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
@@ -437,7 +438,7 @@ pub fn run_gate_cli(args: GateArgs, inspection_roots: InspectionRoots) -> Result
 }
 
 fn run_diagnose(args: GateDiagnoseArgs, inspection_roots: InspectionRoots) -> Result<()> {
-    let graph = crate::load_dependency_graph_report(&args.graph)?;
+    let graph = DependencyGraphInput::read(&args.graph)?;
     let limit = args.limit.unwrap_or(5);
     if limit == 0 && !args.all {
         anyhow::bail!("--limit must be greater than zero; use --all for exhaustive output");
@@ -474,23 +475,20 @@ fn run_diagnose(args: GateDiagnoseArgs, inspection_roots: InspectionRoots) -> Re
 }
 
 fn diagnose_binding(
-    graph: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     args: &GateDiagnoseArgs,
     inspection_roots: &InspectionRoots,
     limit: Option<usize>,
 ) -> Result<(Vec<GateDiagnoseTrace>, usize, bool)> {
-    let node_by_id: HashMap<&str, _> = graph
-        .nodes
-        .iter()
-        .map(|node| (node.id.as_str(), node))
-        .collect();
+    let graph = input.report();
+    let dependency_graph = input.graph();
     let module_by_key: HashMap<&ModuleKey, _> = graph
         .quotient
         .nodes
         .iter()
         .map(|module| (&module.key, module))
         .collect();
-    let target_ids: BTreeSet<&str> = graph
+    let target_ids: BTreeSet<_> = graph
         .nodes
         .iter()
         .filter(|node| {
@@ -498,31 +496,39 @@ fn diagnose_binding(
                 .iter()
                 .any(|binding| binding.binding.as_ref() == args.binding)
         })
-        .map(|node| node.id.as_str())
+        .filter_map(|node| input.source_unit_id(&node.id))
         .collect();
-    let mut promoted = graph
-        .edges
+    let mut promoted = target_ids
         .iter()
-        .filter(|edge| {
-            edge.constrains_init_order
-                && target_ids.contains(edge.target.as_str())
-                && edge
+        .flat_map(|target| dependency_graph.in_edges_of(*target).iter().copied())
+        .filter(|edge_id| {
+            let edge = dependency_graph.edge(*edge_id);
+            let report_edge = input.edge_report(*edge_id);
+            edge.reason.constrains_init_order()
+                && report_edge
                     .binding
                     .as_ref()
-                    .is_some_and(|b| b.as_ref() == args.binding)
-                && matches!(edge.role, Some(EdgeRoleReport::PromotedAtInit { .. }))
+                    .is_some_and(|binding| binding.as_ref() == args.binding)
+                && matches!(
+                    &report_edge.role,
+                    Some(EdgeRoleReport::PromotedAtInit { .. })
+                )
         })
-        .collect::<Vec<_>>();
-    promoted.sort_by(|a, b| a.id.cmp(&b.id));
+        .collect::<Vec<DependencyEdgeId>>();
+    promoted.sort_by(|left, right| {
+        input
+            .edge_report(*left)
+            .id
+            .cmp(&input.edge_report(*right).id)
+    });
 
     let mut traces = Vec::new();
     let mut total_count = 0;
     let mut has_supported_witness = false;
-    for edge in promoted {
-        let target = node_by_id
-            .get(edge.target.as_str())
-            .copied()
-            .with_context(|| format!("edge {} has missing target {}", edge.id, edge.target))?;
+    for edge_id in promoted {
+        let topology_edge = dependency_graph.edge(edge_id);
+        let edge = input.edge_report(edge_id);
+        let target = input.source_unit_report(topology_edge.to);
         let target_module = module_by_key
             .get(&target.destination)
             .copied()
@@ -534,12 +540,9 @@ fn diagnose_binding(
             })?
             .path
             .clone();
-        let call_site = node_by_id
-            .get(edge.source.as_str())
-            .copied()
-            .with_context(|| format!("edge {} has missing source {}", edge.id, edge.source))?;
-        let Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) = edge.role.as_ref() else {
-            unreachable!("filtered promoted role")
+        let call_site = input.source_unit_report(topology_edge.from);
+        let Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) = &edge.role else {
+            unreachable!("filtered promoted report role")
         };
 
         if call_site.callback_factory_barriers.is_empty() {
@@ -979,7 +982,7 @@ fn find_entry(entries: &[BlockingSccEntry], id: usize) -> Result<&BlockingSccEnt
 fn run_describe(args: GateDescribeArgs, inspection_roots: InspectionRoots) -> Result<()> {
     let entries = load_cycles(&args.common)?;
     let entry = find_entry(&entries, args.id)?;
-    let graph = crate::load_dependency_graph_report(
+    let graph = DependencyGraphInput::read(
         args.common
             .dependency_graph_path
             .as_deref()
@@ -1222,11 +1225,14 @@ fn edge_touches_binding(edge: &CycleEdge, binding: &str) -> bool {
 ///
 /// `cycles.json` uses canonical [`ModulePath`]s; resolve each source unit's interned
 /// destination [`ModuleKey`] through the report's module table. A missing table
-/// entry is malformed and errors; edges with absent source units are skipped.
+/// entry is malformed and errors; `DependencyGraphInput` rejects edges with absent
+/// source units before the diagnostic projection runs.
 fn recompute_evidence(
-    graph: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     modules: &[ModulePath],
 ) -> Result<Vec<CycleEdge>> {
+    let graph = input.report();
+    let dependency_graph = input.graph();
     // Module table: interned key -> canonical path.
     let path_by_key: HashMap<&ModuleKey, &ModulePath> = graph
         .quotient
@@ -1236,10 +1242,10 @@ fn recompute_evidence(
         .collect();
     // SourceUnit id -> report node and canonical destination. Reuse this index for
     // source labels and sequencing causes instead of scanning nodes per edge.
-    let source_units: HashMap<&str, _> = graph
-        .nodes
-        .iter()
-        .map(|n| {
+    let source_units: HashMap<SourceUnitId, _> = dependency_graph
+        .iter_nodes()
+        .map(|node| {
+            let n = input.source_unit_report(node.id);
             let path = path_by_key.get(&n.destination).copied().ok_or_else(|| {
                 anyhow::anyhow!(
                     "source unit {} has destination {} with no module-table entry",
@@ -1247,7 +1253,7 @@ fn recompute_evidence(
                     n.destination
                 )
             })?;
-            Ok((n.id.as_str(), (n, path)))
+            Ok((node.id, (n, path)))
         })
         .collect::<Result<_>>()?;
     // Statement ordinal -> first declared binding of any source unit
@@ -1267,13 +1273,10 @@ fn recompute_evidence(
 
     let mut out = Vec::new();
     let mut seen_sequenced_pairs: BTreeSet<(&ModulePath, &ModulePath)> = BTreeSet::new();
-    for edge in &graph.edges {
-        let Some(&(source, from_mod)) = source_units.get(edge.source.as_str()) else {
-            continue;
-        };
-        let Some(&(target, to_mod)) = source_units.get(edge.target.as_str()) else {
-            continue;
-        };
+    for topology_edge in dependency_graph.iter_edges() {
+        let edge = input.edge_report(topology_edge.id);
+        let (source, from_mod) = source_units[&topology_edge.from];
+        let (target, to_mod) = source_units[&topology_edge.to];
         if from_mod == to_mod {
             // Intra-module edges cannot explain a module-quotient cycle.
             continue;
@@ -1284,13 +1287,14 @@ fn recompute_evidence(
         // Preserve the diagnostic projection's lenient promotion policy:
         // cross-module callees are represented by the direct caller->callee
         // edge, not the manufactured caller->target edge.
-        if let Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) = &edge.role
-            && let Some(&(_, callee_mod)) = source_units.get(callee_source_unit.as_str())
+        if let EdgeRole::PromotedAtInit { callee_source_unit } = topology_edge.reason.role()
+            && let Some(&(_, callee_mod)) = source_units.get(&callee_source_unit)
             && callee_mod != from_mod
         {
             continue;
         }
-        if matches!(edge.edge_kind, DepKind::Sequenced) {
+        let edge_kind = topology_edge.reason.kind();
+        if matches!(edge_kind, DepKind::Sequenced) {
             // Mirror `chunk_constraining_module_edges`'s sequenced-edge
             // dedup: collapse parallel sequenced edges between the same
             // module pair into one evidence row.
@@ -1299,12 +1303,12 @@ fn recompute_evidence(
             }
         }
         let from_binding = from_binding_by_ordinal
-            .get(&edge.statement_ordinal)
+            .get(&topology_edge.reason.statement_ordinal())
             .cloned()
             .or_else(|| source.declared_bindings.first().map(|b| b.binding.clone()));
-        let explanation = match edge.edge_kind {
+        let explanation = match edge_kind {
             DepKind::EagerUse => {
-                let position = match &edge.role {
+                let position = match edge.role.as_ref() {
                     None => AtInitReadPosition::Direct,
                     Some(EdgeRoleReport::PromotedAtInit { callee_source_unit })
                         if callee_source_unit == &edge.source =>
@@ -1314,8 +1318,9 @@ fn recompute_evidence(
                     Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) => {
                         AtInitReadPosition::PromotedAtInit {
                             callee_source_unit: callee_source_unit.clone(),
-                            callee_binding: source_units
-                                .get(callee_source_unit.as_str())
+                            callee_binding: input
+                                .source_unit_id(callee_source_unit)
+                                .and_then(|id| source_units.get(&id))
                                 .and_then(|(callee, _)| callee.declared_bindings.first())
                                 .map(|binding| binding.binding.clone()),
                         }
@@ -1338,11 +1343,11 @@ fn recompute_evidence(
             to: to_mod.clone(),
             from_source_unit_id: edge.source.clone(),
             to_source_unit_id: edge.target.clone(),
-            statement_ordinal: edge.statement_ordinal,
+            statement_ordinal: topology_edge.reason.statement_ordinal(),
             binding: edge.binding.clone(),
             from_binding,
-            kind: edge.edge_kind,
-            sequenced_source_unit: (edge.edge_kind == DepKind::Sequenced)
+            kind: edge_kind,
+            sequenced_source_unit: (edge_kind == DepKind::Sequenced)
                 .then(|| impure_source_unit_cause(source))
                 .flatten(),
             explanation,

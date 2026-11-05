@@ -907,9 +907,19 @@ constraining-only projection drops `LazyUse` and `HoistedUse` edges and becomes 
 asymmetric `(eager forward, lazy back)` I-cycles that the
 `EsmEvaluationSimulator` pass catches.
 
-1. `DependencyGraph::from_report` rebuilds the typed IR from the report, with every
-   edge (constraining and lazy) and its original `DepKind`.
-2. `QuotientGraph::from_report` keeps that `DependencyGraph` and builds a
+1. `DependencyGraphInput` loads a report once and reconstructs one immutable typed
+   `DependencyGraph`, with every edge (constraining and lazy), its original
+   `DepKind`, edge role and commuting premise. Inspection, proposals, decomposition
+   candidates and post-edit gates borrow that topology; quotient working states
+   share it through `Arc`. Only the input boundary reconstructs the graph.
+   Report rows retain external IDs, binding labels, saved destinations and
+   diagnostic facts. Saved module and atomic projections remain report data:
+   they describe an assignment, while the source graph describes dependencies.
+   Report-backed graphs do not supply the hygienic bindings and analysis facts
+   needed for compiler assignment assembly. Compatibility checks still read the
+   small provenance header before loading full graph input. Final edit validation
+   resolves claims from the post-edit documents against that same graph input.
+2. `QuotientGraph::from_graph` keeps the shared `DependencyGraph` and builds a
    `RealizabilityIndex` over the class projection: each class is one
    `ModuleId`, except that classes made only of residual-destined source units
    (and not anchored to an existing module) share the residual

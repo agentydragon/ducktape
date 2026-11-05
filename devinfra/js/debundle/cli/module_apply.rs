@@ -145,11 +145,11 @@ pub fn run_modules_apply(
     if requests.is_empty() {
         bail!("apply batch is empty");
     }
-    let graph = crate::load_dependency_graph_report(&args.graph)?;
+    let graph = std::sync::Arc::new(analysis::DependencyGraphInput::read(&args.graph)?);
     let scope = args
         .tree_config
         .as_deref()
-        .map(|config| ModuleTreeScope::from_config(config, &graph.chunk_id))
+        .map(|config| ModuleTreeScope::from_config(config, &graph.report().chunk_id))
         .transpose()?;
     let proposals = propose_from_graph(
         &graph,
@@ -231,13 +231,12 @@ pub fn run_modules_apply(
         let mut residual_bindings = BTreeSet::new();
         for source_unit_id in &proposal.source_unit_ids {
             let node = graph
-                .nodes
-                .iter()
-                .find(|node| node.id == *source_unit_id)
+                .source_unit_id(source_unit_id)
+                .map(|id| &graph.report().nodes[id.0])
                 .with_context(|| {
                     format!("proposal source unit {source_unit_id:?} absent from graph")
                 })?;
-            if !graph.is_unassigned_or_entry(&node.destination) {
+            if !graph.report().is_unassigned_or_entry(&node.destination) {
                 continue;
             }
             let location = node.source_location.as_ref().with_context(|| {
@@ -413,7 +412,8 @@ pub fn run_modules_apply(
 
     let deleted = BTreeSet::new();
     let gate = Gate::Run {
-        graph: &args.graph,
+        graph_path: &args.graph,
+        input: std::sync::Arc::clone(&graph),
         source_root: Some(&args.source_root),
         source_context,
     };

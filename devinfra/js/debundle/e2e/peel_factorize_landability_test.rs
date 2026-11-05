@@ -6,7 +6,7 @@
 //! graph on demand. Blocked or size-capped frontier states are
 //! diagnostics, not proposals.
 
-use analysis::DepKind;
+use analysis::{DepKind, DependencyGraphInput};
 use debundle_e2e_support::*;
 use peel::propose::{PeelCandidateStatus, ProposalsReport, propose};
 use spec::MemberEffect;
@@ -22,7 +22,8 @@ fn residual_fixture(source: &str, modules: Vec<LogicalModuleEntry>) -> Fixture {
 
 fn factorize_residual(source: &str, modules: Vec<LogicalModuleEntry>) -> ProposalsReport {
     propose(
-        &residual_fixture(source, modules).dependency_graph(),
+        &DependencyGraphInput::from_report(residual_fixture(source, modules).dependency_graph())
+            .unwrap(),
         &BTreeMap::new(),
         10_000,
     )
@@ -236,7 +237,12 @@ export { anchor, dep, consumer };
         vec![logical_module("anchors/anchor", &[Member::new("anchor")])],
     )
     .dependency_graph();
-    let report = propose(&graph, &BTreeMap::new(), 1).unwrap();
+    let report = propose(
+        &DependencyGraphInput::from_report(graph).unwrap(),
+        &BTreeMap::new(),
+        1,
+    )
+    .unwrap();
 
     let blocked = report
         .proposals
@@ -404,7 +410,12 @@ export { anchor, SearchPopoverState };
         "the later tail must stay ordered after the temporary-array decorator call: {:#?}",
         graph.edges,
     );
-    let report = propose(&graph, &BTreeMap::new(), 10_000).unwrap();
+    let report = propose(
+        &DependencyGraphInput::from_report(graph).unwrap(),
+        &BTreeMap::new(),
+        10_000,
+    )
+    .unwrap();
 
     assert!(
         report.proposals.iter().any(|proposal| {

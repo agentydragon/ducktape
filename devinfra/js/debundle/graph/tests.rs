@@ -124,7 +124,9 @@ mod from_report_tests {
     };
     use source_identity::SourceUnitId;
 
-    use crate::{DepKind, DependencyEdgeId, DependencyGraph, EdgeRole, StatementKind};
+    use crate::{
+        DepKind, DependencyEdgeId, DependencyGraph, DependencyGraphInput, EdgeRole, StatementKind,
+    };
 
     fn node(id: &str, ordinal: usize) -> SourceUnitReport {
         SourceUnitReport {
@@ -203,6 +205,41 @@ mod from_report_tests {
                 "{case}"
             );
         }
+    }
+
+    #[test]
+    fn loaded_graph_shares_topology_and_retains_report_metadata() {
+        let mut report = report_with_edge(
+            "unit:0",
+            Some(EdgeRoleReport::PromotedAtInit {
+                callee_source_unit: "unit:2".to_string(),
+            }),
+        );
+        report.nodes[1]
+            .declared_bindings
+            .push(crate::BindingReport {
+                binding: "localName".into(),
+                export_name: "readableName".into(),
+            });
+        let input = DependencyGraphInput::from_report(report).unwrap();
+        let first = input.shared_graph();
+        let second = input.shared_graph();
+        assert!(std::sync::Arc::ptr_eq(&first, &second));
+        assert!(std::ptr::eq(input.graph(), &*first));
+        assert_eq!(input.source_unit_id("unit:1"), Some(SourceUnitId(1)));
+        assert_eq!(input.source_unit_id("missing"), None);
+        assert_eq!(first.edge(DependencyEdgeId(0)).from, SourceUnitId(1));
+        assert_eq!(first.edge(DependencyEdgeId(0)).to, SourceUnitId(0));
+        assert_eq!(
+            first.edge(DependencyEdgeId(0)).reason.role(),
+            EdgeRole::PromotedAtInit {
+                callee_source_unit: SourceUnitId(2)
+            },
+        );
+        assert_eq!(
+            input.report().nodes[1].declared_bindings[0].export_name,
+            "readableName"
+        );
     }
 
     /// Strict mapping: an edge referencing an source unit id missing from

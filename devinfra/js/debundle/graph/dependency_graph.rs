@@ -173,7 +173,7 @@ impl DependencyGraph {
     /// a malformed or version-skewed `dependency_graph.json.gz`. Silently
     /// dropping such edges would hand the planner-side gate a weaker
     /// graph than the one the report described.
-    pub fn from_report(
+    pub(crate) fn from_report(
         report: &crate::DependencyGraphReport,
     ) -> Result<Self, UnresolvedDependencyEdgeEndpoint> {
         let by_id: HashMap<String, SourceUnitId> = report

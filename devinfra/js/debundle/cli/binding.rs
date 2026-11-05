@@ -41,8 +41,7 @@ use yaml_edit::write_yaml_atomic;
 
 use crate::edit_gate::{
     Gate, ProjectedBindingKind, SourceUnitClaimProjection, SourceUnitModuleAssignments,
-    gate_post_edit_assignment_with_expected_source_unit_modules, post_edit_spec_from_docs,
-    project_source_unit_claims, source_claim_sets_from_post_spec,
+    post_edit_spec_from_docs, project_source_unit_claims, source_claim_sets_from_post_spec,
     source_unit_module_assignments_from_projection,
 };
 use crate::outcome::{GateOutcome, MutationOutcome};
@@ -1238,7 +1237,9 @@ pub fn run_source_unit_refine(
         validate_refine_module_id(&assignment.module)?;
     }
 
-    let dependency_graph = crate::load_dependency_graph_report(dependency_graph_path)?;
+    let graph_input =
+        std::sync::Arc::new(analysis::DependencyGraphInput::read(dependency_graph_path)?);
+    let dependency_graph = graph_input.report();
     let scope = tree_config
         .map(|path| ModuleTreeScope::from_config(path, &dependency_graph.chunk_id))
         .transpose()?;
@@ -1250,23 +1251,23 @@ pub fn run_source_unit_refine(
     let initial_spec = post_edit_spec_from_docs(&original_docs, &BTreeSet::new())?;
     let claim_sets = source_claim_sets_from_post_spec(&initial_spec);
     let resolved = resolve_source_claims(
-        &dependency_graph,
+        dependency_graph,
         dependency_graph_path,
         modules_root,
         Some(source_root),
         source_context,
         &claim_sets,
     )?;
-    let claim_projection = project_source_unit_claims(&dependency_graph, &initial_spec, &resolved)?;
+    let claim_projection = project_source_unit_claims(dependency_graph, &initial_spec, &resolved)?;
     let current_source_unit_modules = source_unit_module_assignments_from_projection(
-        &dependency_graph,
+        dependency_graph,
         modules_root,
         &initial_spec,
         &claim_projection,
         scope.as_ref(),
     )?;
     check_graph_source_unit_destinations(
-        &dependency_graph,
+        dependency_graph,
         &current_source_unit_modules,
         scope.as_ref(),
     )?;
@@ -1278,7 +1279,7 @@ pub fn run_source_unit_refine(
     }
 
     let locations = source_unit_claim_locations(
-        &dependency_graph,
+        dependency_graph,
         modules_root,
         &original_docs,
         &initial_spec,
@@ -1582,11 +1583,14 @@ pub fn run_source_unit_refine(
     let post_spec = post_edit_spec_from_docs(&docs, &to_delete)?;
     // This unchanged gate first proves the complete expected source-unit map
     // and applies its legacy realizability/atom-split checks to `post_spec`.
-    gate_post_edit_assignment_with_expected_source_unit_modules(
-        dependency_graph_path,
-        modules_root,
-        Some(source_root),
+    Gate::Run {
+        graph_path: dependency_graph_path,
+        input: std::sync::Arc::clone(&graph_input),
+        source_root: Some(source_root),
         source_context,
+    }
+    .check_source_units(
+        modules_root,
         &post_spec,
         &expected_source_unit_modules,
         scope.as_ref(),
@@ -2361,7 +2365,8 @@ mod tests {
             ],
             vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
         );
-        let report = propose(&graph, active_claims, 10_000).unwrap();
+        let input = analysis::DependencyGraphInput::from_report(graph).unwrap();
+        let report = propose(&input, active_claims, 10_000).unwrap();
         parse_batch_json(&serde_json::to_string(&report).unwrap())
     }
 

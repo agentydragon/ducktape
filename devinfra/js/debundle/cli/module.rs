@@ -5,8 +5,8 @@
 //! Both verbs run the unified realizability gate through
 //! [`crate::edit_gate::Gate::check`] against the
 //! **post-edit** assignment before touching the filesystem. The gate
-//! reconstructs the chunk's `DependencyGraph` from `dependency_graph.json.gz`
-//! (via `DependencyGraph::from_report`), builds the post-edit `ModuleAssignment`
+//! borrows the chunk's canonical topology from a `DependencyGraphInput`,
+//! builds the post-edit `ModuleAssignment`
 //! by mapping each surviving spec module's bindings to a fresh
 //! `ModuleId`, and runs BOTH `validate_assignment` (cross-module
 //! cycles) AND atom-split detection (every `AtomicGroup`'s members

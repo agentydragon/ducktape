@@ -99,7 +99,9 @@ fn full_overlay_verdict_matches_pure_gate_across_typed_moves() {
             DepKind::Sequenced,
             true,
         ));
-        let graph = DependencyGraph::from_report(&singleton_graph(nodes, edges)).unwrap();
+        let graph = analysis::DependencyGraphInput::from_report(singleton_graph(nodes, edges))
+            .unwrap()
+            .shared_graph();
         let assignments = (0..names.len())
             .map(|i| ModuleId((i * 3 + seed) % 5))
             .collect();
@@ -281,7 +283,9 @@ fn pass_two_is_skipped_while_pass_one_has_a_cycle() {
     let mut cyclic = shared.clone();
     cyclic.push(edge("e:21", "unit:2", "unit:1", DepKind::EagerUse, true));
     let verdict_of = |edges: Vec<_>| {
-        let graph = DependencyGraph::from_report(&singleton_graph(nodes(4), edges)).unwrap();
+        let graph = analysis::DependencyGraphInput::from_report(singleton_graph(nodes(4), edges))
+            .unwrap()
+            .shared_graph();
         let assignment = ModuleAssignment::from_assignments(
             (0..4).map(ModuleId).collect(),
             analysis::EntryDestination::from_module_id(ModuleId(0)),
@@ -1333,7 +1337,9 @@ fn validation_reports_pass_two_after_collapsing_pass_one_as_conditional() {
         dependency_edge("e:56", "unit:5", "unit:6", DepKind::EagerUse, true),
         dependency_edge("e:65", "unit:6", "unit:5", DepKind::EagerUse, true),
     ];
-    let graph = DependencyGraph::from_report(&singleton_graph(nodes, edges)).unwrap();
+    let graph = analysis::DependencyGraphInput::from_report(singleton_graph(nodes, edges))
+        .unwrap()
+        .shared_graph();
     let assignment = ModuleAssignment::from_assignments(
         (0..7).map(ModuleId).collect(),
         analysis::EntryDestination::from_module_id(ModuleId(0)),
