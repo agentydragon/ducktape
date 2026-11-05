@@ -111,10 +111,19 @@ fn long_witness_paths_report_total_length_and_truncate_steps() {
         assert_eq!(path["truncated"], true, "{path}");
         let steps = path["steps"].as_array().unwrap();
         assert_eq!(steps.len(), 12, "{path}");
-        assert!(steps.iter().all(|step| {
-            step["projection"] == "directed_init_order"
-                && step["orientation"] == "forward"
-                && step["edge"]["edge_kind"] == "eager_use"
-        }));
+        // Sequencing constraints can tie the eager-read chain for shortest
+        // length. Both are valid forward arcs in the atomic projection.
+        assert!(
+            steps.iter().all(|step| {
+                step["projection"] == "directed_init_order"
+                    && step["orientation"] == "forward"
+                    && step["edge"]["constrains_init_order"] == true
+                    && matches!(
+                        step["edge"]["edge_kind"].as_str(),
+                        Some("eager_use" | "sequenced")
+                    )
+            }),
+            "{path}"
+        );
     }
 }
