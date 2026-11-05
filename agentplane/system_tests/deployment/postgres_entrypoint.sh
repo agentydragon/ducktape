@@ -12,9 +12,10 @@ if [[ ! -s "$PGDATA/PG_VERSION" ]]; then
   trap 'pg_ctl -D "$PGDATA" -m fast -w stop' EXIT
   psql --host=/tmp --username="$POSTGRES_USER" --dbname=postgres --no-password \
     --set=ON_ERROR_STOP=1 --file=/fixture/bootstrap.sql
+  # A timed-out shutdown can leave initialized PGDATA, so install client access first.
+  printf '\nhost all all all scram-sha-256\n' >>"$PGDATA/pg_hba.conf"
   pg_ctl -D "$PGDATA" -m fast -w stop
   trap - EXIT
-  printf '\nhost all all all scram-sha-256\n' >>"$PGDATA/pg_hba.conf"
 fi
 
 exec postgres -D "$PGDATA" -c "listen_addresses=*" -c unix_socket_directories=/tmp "$@"
