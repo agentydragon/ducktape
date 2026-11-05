@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::fmt;
 
 use analysis_model::DepKind;
 use serde::{Deserialize, Serialize};
