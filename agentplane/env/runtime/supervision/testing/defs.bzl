@@ -22,7 +22,7 @@ def pid1_go_test(name, srcs, embed, deps, git = False, size = "small", **kwargs)
         env = {
             "DOCKER_HOST": "tcp://127.0.0.1:2375",
             "PID1_GO_TEST_IMAGE": "agentplane.env.runtime.supervision.testing.git_tools" if git else "third_party.containers.debian_slim",
-            "PID1_GO_TEST_RUNFILE": "_main/{}/{}_/{}".format(native.package_name(), binary, binary),
+            "PID1_GO_TEST_RUNFILE": "$(rlocationpath :{})".format(binary),
         },
         exec_properties = {
             "test.dockerUser": "1000:1000",
