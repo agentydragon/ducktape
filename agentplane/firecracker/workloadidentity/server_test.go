@@ -3,7 +3,9 @@ package workloadidentity
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"net"
 	"os"
 	"testing"
@@ -193,6 +195,33 @@ func TestParsePEMRequiresRuntimeServerAuthUsage(t *testing.T) {
 	config := ca.IssueWithUsage(t, identity, x509.ExtKeyUsageClientAuth)
 	if _, err := ParsePEM(readFile(t, config.CertFile), readFile(t, config.KeyFile), readFile(t, ca.RootFile)); err == nil {
 		t.Fatal("ParsePEM accepted a Runtime certificate without serverAuth EKU")
+	}
+}
+
+func TestParsePEMNormalizesPKCS8AndRejectsMismatchedKeys(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	identity := "spiffe://agentplane/environment-runtime/agent-ns/sandbox-uid/credential-id"
+	config := issueRuntime(t, ca, identity)
+	want := parseFixture(t, ca, config) // The cert-manager-style fixture uses SEC1 EC PEM.
+	pair, err := tls.LoadX509KeyPair(config.CertFile, config.KeyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(pair.PrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
+	got, err := ParsePEM(readFile(t, config.CertFile), keyPEM, readFile(t, ca.RootFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !proto.Equal(got, want) {
+		t.Fatal("SEC1 and PKCS8 inputs produced different Workload API credentials")
+	}
+	other := issueRuntime(t, ca, identity)
+	if _, err := ParsePEM(readFile(t, config.CertFile), readFile(t, other.KeyFile), readFile(t, ca.RootFile)); err == nil {
+		t.Fatal("ParsePEM accepted a private key that does not match the certificate")
 	}
 }
 
