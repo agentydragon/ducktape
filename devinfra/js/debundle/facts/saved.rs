@@ -15,6 +15,10 @@ use super::statement_facts::{
 use super::*;
 use crate::facts::sync_effects::SavedBindingEffectCoverage;
 use crate::purity::saved::{PuritySnapshot, RestoredPurities, SavedPurity};
+use crate::reports::saved::{
+    SavedExecutionPrecisionLoss, SavedLocalRecordFactoryRejection, SavedLocalRecordFactoryUse,
+    SavedNativeOperationInputUse, SavedReentryFreeOperationUse,
+};
 
 fn snapshot_bindings(
     bindings: &BTreeSet<Id>,
@@ -445,8 +449,8 @@ struct SavedSynchronousCalls<'a> {
     initialization_coverage_refusal:
         Cow<'a, Option<crate::facts::OwnerInitializationCoverageRefusalReason>>,
     evaluation_effects: Cow<'a, super::evaluation_effects::EvaluationEffects>,
-    local_record_factory_uses: Cow<'a, [crate::reports::schema::LocalRecordFactoryUse]>,
-    local_record_factory_rejections: Cow<'a, [crate::reports::schema::LocalRecordFactoryRejection]>,
+    local_record_factory_uses: Vec<SavedLocalRecordFactoryUse<'a>>,
+    local_record_factory_rejections: Vec<SavedLocalRecordFactoryRejection<'a>>,
     local_record_factory_purity: Cow<'a, Option<super::LocalRecordFactoryPurityCertificate>>,
     reads: BTreeSet<(SavedBinding, SourceUnitOrdinal)>,
     rebinds: BTreeSet<(SavedBinding, SourceUnitOrdinal)>,
@@ -458,17 +462,17 @@ struct SavedSynchronousCalls<'a> {
     global_object_aliases: Option<BTreeSet<SavedBinding>>,
     heap_contents: SavedHeapContentCells,
     non_assumed_heap_accesses: SavedHeapContentAccesses,
-    precision_losses: Cow<'a, [crate::reports::schema::ExecutionPrecisionLoss]>,
+    precision_losses: Vec<SavedExecutionPrecisionLoss<'a>>,
     native_integrity_checks: Cow<'a, [crate::reports::schema::NativeIntegrityCheck]>,
     native_prototype_property_checks:
         Cow<'a, [crate::reports::schema::NativePrototypePropertyCheck]>,
     native_prefix_observations: Cow<'a, [crate::reports::schema::NativePrefixObservation]>,
     native_integrity_uses: Cow<'a, [crate::reports::schema::NativeIntegrityUse]>,
-    native_operation_input_uses: Cow<'a, [crate::reports::schema::NativeOperationInputUse]>,
+    native_operation_input_uses: Vec<SavedNativeOperationInputUse<'a>>,
     inference_uses: Cow<'a, [crate::analysis_provenance::InferenceUse]>,
     callback_factory_uses: Cow<'a, [super::CallbackFactoryUseFact]>,
     returned_record_uses: Cow<'a, [super::ReturnedRecordUseFact]>,
-    author_host_contract_uses: Cow<'a, [crate::reports::schema::ReentryFreeOperationUse]>,
+    author_host_contract_uses: Vec<SavedReentryFreeOperationUse<'a>>,
     purity_disagreement: Option<SavedPurityDisagreement>,
 }
 
@@ -489,8 +493,16 @@ impl<'a> SavedSynchronousCalls<'a> {
             completed_initialization: Cow::Borrowed(&calls.completed_initialization),
             initialization_coverage_refusal: Cow::Borrowed(&calls.initialization_coverage_refusal),
             evaluation_effects: Cow::Borrowed(&calls.evaluation_effects),
-            local_record_factory_uses: Cow::Borrowed(&calls.local_record_factory_uses),
-            local_record_factory_rejections: Cow::Borrowed(&calls.local_record_factory_rejections),
+            local_record_factory_uses: calls
+                .local_record_factory_uses
+                .iter()
+                .map(SavedLocalRecordFactoryUse::snapshot)
+                .collect(),
+            local_record_factory_rejections: calls
+                .local_record_factory_rejections
+                .iter()
+                .map(SavedLocalRecordFactoryRejection::snapshot)
+                .collect(),
             local_record_factory_purity: Cow::Borrowed(&calls.local_record_factory_purity),
             reads: calls
                 .reads
@@ -523,18 +535,30 @@ impl<'a> SavedSynchronousCalls<'a> {
                 &calls.non_assumed_heap_accesses,
                 ordinals,
             )?,
-            precision_losses: Cow::Borrowed(&calls.precision_losses),
+            precision_losses: calls
+                .precision_losses
+                .iter()
+                .map(SavedExecutionPrecisionLoss::snapshot)
+                .collect(),
             native_integrity_checks: Cow::Borrowed(&calls.native_integrity_checks),
             native_prototype_property_checks: Cow::Borrowed(
                 &calls.native_prototype_property_checks,
             ),
             native_prefix_observations: Cow::Borrowed(&calls.native_prefix_observations),
             native_integrity_uses: Cow::Borrowed(&calls.native_integrity_uses),
-            native_operation_input_uses: Cow::Borrowed(&calls.native_operation_input_uses),
+            native_operation_input_uses: calls
+                .native_operation_input_uses
+                .iter()
+                .map(SavedNativeOperationInputUse::snapshot)
+                .collect(),
             inference_uses: Cow::Borrowed(&calls.inference_uses),
             callback_factory_uses: Cow::Borrowed(&calls.callback_factory_uses),
             returned_record_uses: Cow::Borrowed(&calls.returned_record_uses),
-            author_host_contract_uses: Cow::Borrowed(&calls.author_host_contract_uses),
+            author_host_contract_uses: calls
+                .author_host_contract_uses
+                .iter()
+                .map(SavedReentryFreeOperationUse::snapshot)
+                .collect(),
             purity_disagreement: calls.purity_disagreement.as_ref().map(|disagreement| {
                 SavedPurityDisagreement {
                     prepared: purities.snapshot_value(&disagreement.prepared),
@@ -563,8 +587,16 @@ impl<'a> SavedSynchronousCalls<'a> {
                     })
                 })
                 .transpose()?,
-            local_record_factory_uses: self.local_record_factory_uses.into_owned(),
-            local_record_factory_rejections: self.local_record_factory_rejections.into_owned(),
+            local_record_factory_uses: self
+                .local_record_factory_uses
+                .into_iter()
+                .map(SavedLocalRecordFactoryUse::restore)
+                .collect(),
+            local_record_factory_rejections: self
+                .local_record_factory_rejections
+                .into_iter()
+                .map(SavedLocalRecordFactoryRejection::restore)
+                .collect(),
             local_record_factory_purity: self.local_record_factory_purity.into_owned(),
             reads: self
                 .reads
@@ -591,16 +623,28 @@ impl<'a> SavedSynchronousCalls<'a> {
                 .transpose()?,
             heap_contents: self.heap_contents.restore(ordinals)?,
             non_assumed_heap_accesses: self.non_assumed_heap_accesses.restore(ordinals)?,
-            precision_losses: self.precision_losses.into_owned(),
+            precision_losses: self
+                .precision_losses
+                .into_iter()
+                .map(SavedExecutionPrecisionLoss::restore)
+                .collect(),
             native_integrity_checks: self.native_integrity_checks.into_owned(),
             native_prototype_property_checks: self.native_prototype_property_checks.into_owned(),
             native_prefix_observations: self.native_prefix_observations.into_owned(),
             native_integrity_uses: self.native_integrity_uses.into_owned(),
-            native_operation_input_uses: self.native_operation_input_uses.into_owned(),
+            native_operation_input_uses: self
+                .native_operation_input_uses
+                .into_iter()
+                .map(SavedNativeOperationInputUse::restore)
+                .collect(),
             inference_uses: self.inference_uses.into_owned(),
             callback_factory_uses: self.callback_factory_uses.into_owned(),
             returned_record_uses: self.returned_record_uses.into_owned(),
-            author_host_contract_uses: self.author_host_contract_uses.into_owned(),
+            author_host_contract_uses: self
+                .author_host_contract_uses
+                .into_iter()
+                .map(SavedReentryFreeOperationUse::restore)
+                .collect(),
         })
     }
 }
@@ -637,6 +681,7 @@ mod tests {
     fn disagreement_verdicts_preserve_spans_and_shared_causes() {
         let cause = Arc::new(Purity::pure());
         let span = Span::new(BytePos(5), BytePos(13));
+        let precision_loss_span = Span::new(BytePos(17), BytePos(23));
         let calls = SynchronousCalls {
             purity_disagreement: Some(PurityCompletionDisagreement {
                 prepared: Purity::Pure {
@@ -654,8 +699,18 @@ mod tests {
                     }],
                 },
             }),
+            precision_losses: vec![crate::reports::schema::ExecutionPrecisionLoss {
+                reason: crate::reports::schema::ExecutionPrecisionLossReason::RecursiveInvocation,
+                reach: crate::reports::schema::HavocReach::Bounded,
+                statement_ordinal: SourceUnitOrdinal(3),
+                source_location: None,
+                span: precision_loss_span,
+            }],
             ..SynchronousCalls::default()
         };
+        let report = serde_json::to_value(&calls.precision_losses[0])
+            .expect("precision-loss report serializes");
+        assert!(report.get("span").is_none());
         let mut snapshot = PuritySnapshot::default();
         let ordinals = ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>());
         let saved = SavedSynchronousCalls::snapshot(&calls, &ordinals, &mut snapshot)
@@ -671,6 +726,7 @@ mod tests {
         let calls = saved
             .restore(&ordinals, &purities)
             .expect("valid execution facts");
+        assert_eq!(calls.precision_losses[0].span, precision_loss_span);
         let disagreement = calls.purity_disagreement.expect("preserved disagreement");
         assert_eq!(disagreement.prepared, Purity::pure());
         let Purity::NotPure { reasons } = disagreement.completed else {
