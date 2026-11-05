@@ -3,7 +3,7 @@
 //! and referenced Ids. At the naturalization boundary, each reference is
 //! paired with its source binding Id before any import/export planner sees it.
 
-use crate::chunk_ast::{binding_names, top_level_declaration_ids};
+use frontend_elaboration::chunk_ast::{binding_names, top_level_declaration_ids};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use swc_common::SyntaxContext;
 use swc_ecma_ast::*;

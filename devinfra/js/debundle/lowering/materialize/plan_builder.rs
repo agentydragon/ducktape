@@ -6,10 +6,7 @@
 
 use super::outcome_sink::OutcomeSink;
 use crate::anonymous::ResolvedAnonymousStatement;
-use crate::chunk_ast::{TopLevelDecl, binding_declaration};
-use crate::imports::{
-    ArtifactSourceImportResolutionCache, RuntimeImportFacts, resolve_imported_binding,
-};
+use crate::imports::{ArtifactSourceImportResolutionCache, resolve_imported_binding};
 use crate::plans::ModulePlan;
 use crate::rebind_fold::RebindFold;
 use crate::util::target_file_for_request;
@@ -23,6 +20,8 @@ use analysis::{
 };
 use anyhow::{Context, Result, bail, ensure};
 use frontend_elaboration::MemberClaimProjection;
+use frontend_elaboration::chunk_ast::{TopLevelDecl, binding_declaration};
+use frontend_elaboration::source_ast::RuntimeImportFacts;
 use gate::simulated_evaluation_post_order;
 use selector_outcome::{
     Declaration, Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,

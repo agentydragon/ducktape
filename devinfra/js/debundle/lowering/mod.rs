@@ -23,7 +23,6 @@ use spec::{
 
 mod anonymous;
 mod body_facts;
-use frontend_elaboration::chunk_ast;
 mod chunk_renames;
 mod commuting_statements;
 mod exports;

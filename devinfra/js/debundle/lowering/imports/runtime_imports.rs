@@ -1,9 +1,6 @@
-//! Per-chunk runtime-imports table built from the source chunk
-//! plus the helpers that emit re-import specifiers in moved modules.
+//! Reconstruction helpers for emitting runtime import specifiers in moved modules.
 
-pub(crate) use frontend_elaboration::source_ast::{
-    RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind,
-};
+use frontend_elaboration::source_ast::{RuntimeImportInfo, RuntimeImportKind};
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::*;
 

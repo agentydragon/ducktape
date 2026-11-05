@@ -13,11 +13,10 @@ use super::scope_names::collect_local_binding_names;
 use crate::exports::{export_named_for_bindings, omit_existing_local_exports};
 use crate::imports::{
     ArtifactSourceImportResolutionCache, EntryExport, ImportLocalRenameSink, ModuleReferenceNeeds,
-    PlannedVendorReimports, RuntimeImportFacts, VendorReimportOracle,
-    cross_module_imports_for_plan, final_module_exports, group_specifiers_into_import_decls,
-    imported_binding_named_specifier, phantom_side_effect_imports, plan_module_reference_needs,
-    plan_vendor_reimports, residual_entry_imports_for_moved_body,
-    source_chunk_imports_for_moved_body,
+    PlannedVendorReimports, VendorReimportOracle, cross_module_imports_for_plan,
+    final_module_exports, group_specifiers_into_import_decls, imported_binding_named_specifier,
+    phantom_side_effect_imports, plan_module_reference_needs, plan_vendor_reimports,
+    residual_entry_imports_for_moved_body, source_chunk_imports_for_moved_body,
 };
 use crate::naturalize::NaturalizedModuleBody;
 use crate::plans::ModulePlan;
@@ -29,6 +28,7 @@ use anyhow::{Result, bail};
 use artifact::paths::join_module_path;
 use artifact::reports::SelectedModuleLowering;
 use artifact::{ChunkId, FileMetadata, FileRole, JsFile, JsFileBody};
+use frontend_elaboration::source_ast::RuntimeImportFacts;
 use gate::AssignmentAnalysis;
 use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
 use output_layout::{CHUNK_REPORT, REPORTS_DIR, TREE_DIR};

@@ -16,7 +16,6 @@ use staged_analysis::progress::emit_debundle_progress;
 use super::commuting_statements::resolve_chunk_commuting_statements;
 use super::io::{JsonlReport, ProgramGraphOutput, chunk_report_path, write_chunk_report_json};
 use super::util::{render_atomic_group_cause_guidance, target_file_for_request};
-use crate::chunk_ast::ChunkAstAnalysis;
 use crate::chunk_renames::collect_chunk_renames;
 use crate::imports::{ArtifactSourceImportResolutionCache, VendorReimportOracle};
 use crate::lower::{
@@ -43,6 +42,7 @@ use artifact::paths::join_module_path;
 use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, SelectedModuleLowering};
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileRole, JsFile};
 use chunk_analysis::build_chunk_graph;
+use frontend_elaboration::chunk_ast::ChunkAstAnalysis;
 use frontend_elaboration::{FrontendChunk, MemberClaimProjection};
 use gate::{
     AssignmentAnalysis, RejectedAssignment, SccRejection, ValidatedAssignment,

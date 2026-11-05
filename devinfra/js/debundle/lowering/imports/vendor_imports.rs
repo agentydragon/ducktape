@@ -13,8 +13,8 @@ use vendor::{
     resolve_partial_swap_import_target,
 };
 
-use crate::imports::{RuntimeImportInfo, RuntimeImportKind};
 use artifact::{ArtifactIndexes, ChunkId, ChunkTable};
+use frontend_elaboration::source_ast::{RuntimeImportInfo, RuntimeImportKind};
 use std::collections::BTreeMap;
 use swc_ecma_ast::*;
 
