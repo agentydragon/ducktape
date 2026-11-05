@@ -284,7 +284,7 @@ fn extraction_invocation_and_opaque_publication_promote_all_retained_callbacks()
             let target = source_unit_for_binding(&graph, name);
             assert!(graph.edges.iter().any(|edge| edge.source == observed
                 && edge.target == target
-                && edge.edge_kind == analysis::DepKind::EagerUse
+                && edge.edge_kind == analysis_model::DepKind::EagerUse
                 && edge.constrains_init_order));
         }
         expect_atomic_conflict_rejection(

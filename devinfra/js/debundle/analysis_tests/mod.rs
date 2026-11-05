@@ -2,6 +2,7 @@ use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::*;
+use analysis_model::DepKind;
 use raw_js_test_support::{parse, parse_with_source_map};
 use swc_common::SyntaxContext;
 use swc_ecma_ast::*;

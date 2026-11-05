@@ -7,6 +7,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use super::{analyze_facts, build_dependency_graph, parse, parse_with_source_map, test_id};
 use crate::*;
 use analysis::*;
+use analysis_model::DepKind;
+use source_identity::ChunkId;
 
 #[derive(Debug, Clone, Copy)]
 enum TestDestination {

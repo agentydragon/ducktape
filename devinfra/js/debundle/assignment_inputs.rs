@@ -8,6 +8,7 @@
 //! [`crate::AssignmentAnalysis`] — the assignment-and-derived state
 //! that depends on which output-module assignment the spec chose.
 
+use source_identity::ChunkId;
 use std::collections::{BTreeSet, HashMap};
 
 use swc_atoms::Atom;
@@ -15,8 +16,8 @@ use swc_ecma_ast::Id;
 
 use analysis::reports::source_unit_key;
 use analysis::{
-    BindingCatalogue, BindingId, BindingKind, BindingScopeError, ChunkId, DependencyGraph,
-    LocalBindings, ModuleId, PlannedModule,
+    BindingCatalogue, BindingId, BindingKind, BindingScopeError, DependencyGraph, LocalBindings,
+    ModuleId, PlannedModule,
 };
 
 /// Per-chunk inputs + IR + input-derived caches.

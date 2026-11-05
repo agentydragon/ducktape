@@ -3,11 +3,12 @@
 //! walks binding uses that retain both the source and emitted Id.
 
 use crate::body_facts::NaturalizedBodyFacts;
-use analysis::{BindingId, BindingKind, ChunkId, ModuleId};
+use analysis::{BindingId, BindingKind, ModuleId};
 use anyhow::{Context, Result};
 use artifact::{ArtifactIndexes, ArtifactSourceImportResolver, ChunkBundle};
 use frontend_elaboration::source_ast::{RuntimeImportFacts, RuntimeImportInfo};
 use gate::AssignmentAnalysis;
+use source_identity::ChunkId;
 use source_identity::StatementId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;

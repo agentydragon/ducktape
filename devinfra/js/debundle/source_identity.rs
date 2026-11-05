@@ -1,6 +1,48 @@
-//! Source coordinates and graph identifiers used by debundle analysis.
+//! Source and chunk identities used by the debundler.
+
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+
+/// Interned chunk identifier. Created by `ChunkTable::intern` during chunk
+/// loading and used throughout the pipeline in place of `String` chunk names.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ChunkId(pub usize);
+
+#[derive(Debug, Clone, Default)]
+pub struct ChunkTable {
+    names: Vec<String>,
+    ids_by_name: HashMap<String, ChunkId>,
+}
+
+impl ChunkTable {
+    pub fn intern(&mut self, name: String) -> ChunkId {
+        if let Some(id) = self.ids_by_name.get(&name) {
+            return *id;
+        }
+        let id = ChunkId(self.names.len());
+        self.names.push(name.clone());
+        self.ids_by_name.insert(name, id);
+        id
+    }
+
+    pub fn get(&self, name: &str) -> Option<ChunkId> {
+        self.ids_by_name.get(name).copied()
+    }
+
+    pub fn name(&self, id: ChunkId) -> &str {
+        &self.names[id.0]
+    }
+
+    pub fn len(&self) -> usize {
+        self.names.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.names.is_empty()
+    }
+}
 
 /// Position of an original item in a parsed chunk's `Module.body`.
 /// Several movable source units may originate from the same statement.

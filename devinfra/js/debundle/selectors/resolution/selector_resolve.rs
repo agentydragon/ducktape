@@ -10,12 +10,13 @@
 
 mod selector_conflict;
 
+use analysis_model::DepKind;
 use source_identity::SourceUnitOrdinal;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use analysis::StatementKind;
 use analysis::facts::StructuralChunkSourceFacts;
-use analysis::{DepKind, StatementKind};
 use anyhow::{Context, Result, bail};
 use js_ast::statement_for_source_unit_ordinal;
 use rayon::prelude::*;

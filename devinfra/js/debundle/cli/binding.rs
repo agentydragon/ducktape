@@ -2255,7 +2255,8 @@ fn set_readable_name(doc: &mut LogicalModule, location: &BindingLocation, name: 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use analysis::{DepKind, SourceUnitReport};
+    use analysis::SourceUnitReport;
+    use analysis_model::DepKind;
     use peel::propose::propose;
     use report_fixtures::{
         active_source_unit, atomic_edge, atomic_group_for, claims, dependency_edge, graph_of,

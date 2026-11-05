@@ -3,7 +3,8 @@
 use super::value_model::{
     PropertyDefinition, ValueExpr, object_data_property_name, static_property_name,
 };
-use crate::facts::abstract_domain::value::{Kind, PrimKinds};
+use crate::facts::abstract_domain::value::Kind;
+use analysis_model::PrimKinds;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use swc_common::{Span, Spanned};
@@ -365,7 +366,7 @@ impl LocalExpression {
                     .collect::<Option<Arc<[_]>>>()?,
             }),
             Expr::Tpl(template) if template.exprs.is_empty() => Some(Self::Value(
-                ValueExpr::NonCallable(crate::facts::abstract_domain::value::PrimKinds::STRING),
+                ValueExpr::NonCallable(analysis_model::PrimKinds::STRING),
             )),
             Expr::Fn(function)
                 if (function.ident.is_none() || !class_template)

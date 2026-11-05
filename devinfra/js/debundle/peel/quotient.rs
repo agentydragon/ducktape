@@ -61,13 +61,12 @@
 //! speculative merge delta targets the single post-merge module,
 //! asserted in `realizability_cycles_after_contract`).
 
+use analysis_model::DepKind;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use std::sync::Arc;
 
-use analysis::{
-    DepKind, DependencyGraph, DependencyGraphInput, ModuleAssignment, ModuleId, StatementKind,
-};
+use analysis::{DependencyGraph, DependencyGraphInput, ModuleAssignment, ModuleId, StatementKind};
 use anyhow::Context;
 use gate::{LadderDecision, ModuleAssignmentDelta, RealizabilityIndex, RealizabilityVerdict};
 use rustc_hash::{FxHashMap, FxHashSet};

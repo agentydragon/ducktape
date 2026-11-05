@@ -1,7 +1,8 @@
 //! `debundle scc` / `debundle cluster`: module-quotient SCC listing
 //! and per-binding neighbor queries over a generated dependency graph.
 
-use analysis::{DepKind, DependencyGraphInput};
+use analysis::DependencyGraphInput;
+use analysis_model::DepKind;
 use anyhow::{Context, Result};
 use clap::Args as ClapArgs;
 use peel::plan::{LimitReport, apply_limit_with_metadata};

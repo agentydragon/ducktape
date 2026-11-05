@@ -26,8 +26,8 @@ use spec::{
 };
 
 use crate::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey, ProofDependencies};
-use crate::ids::ChunkId;
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
+use source_identity::ChunkId;
 
 /// Why a target is not loader-closed. A report keeps the first witness and the
 /// occurrence count per kind.

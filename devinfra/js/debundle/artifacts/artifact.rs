@@ -2,6 +2,7 @@
 //! reconstruction pipeline. Filesystem path rules, report models, metrics,
 //! and final script writing live in their dedicated sibling modules.
 
+use source_identity::{ChunkId, ChunkTable};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
@@ -9,7 +10,6 @@ use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use swc_common::BytePos;
 
-pub use analysis::{ChunkId, ChunkTable};
 use js_ast::{ParsedJsModule, emit_js_module_with_comments};
 use paths::{
     chunk_id_for_js_path, join_module_path, module_path_dirname, normalize_module_path,

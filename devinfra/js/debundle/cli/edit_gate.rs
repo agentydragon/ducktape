@@ -38,6 +38,7 @@
 //! are removed when the gate passes (or when the rejection kind
 //! changes), keeping `gate list` consistent with the latest verdict.
 
+use analysis_model::DepKind;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::fs;
@@ -50,8 +51,8 @@ use ::gate::{
 };
 use analysis::assignment_assembly::detect_atomic_group_conflict;
 use analysis::{
-    AtomicGroupConflictReport, DepKind, DependencyGraphInput, DependencyGraphReport,
-    ModuleAssignment, ModuleId, compute_atomic_groups,
+    AtomicGroupConflictReport, DependencyGraphInput, DependencyGraphReport, ModuleAssignment,
+    ModuleId, compute_atomic_groups,
 };
 use anonymous_resolution::{
     DirectBindingSourceCheck, DirectBindingSourceResolution, ResolvedSourceClaims, SourceClaimSet,

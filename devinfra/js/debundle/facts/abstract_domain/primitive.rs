@@ -9,8 +9,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::builtins::{self, ArgSel, Invocation, Return, Row};
-use super::value::PrimKinds;
 use crate::facts::{TopLevelItemView, top_level_initializers, var_decl_of_item};
+use analysis_model::PrimKinds;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 

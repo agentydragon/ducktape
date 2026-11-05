@@ -11,6 +11,7 @@
 //! (`--out`); applying an entry is the author's step, after which the gate's
 //! own contradiction and unused checks validate it.
 
+use analysis_model::DepKind;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
@@ -20,7 +21,7 @@ use analysis::graph::{
     CommutationOrder, EndpointView, TemporalConstraint, TemporalEdge, assignment_endpoints,
 };
 use analysis::{
-    DepKind, DependencyEdgeId, DependencyEdgeReport, DependencyGraph, DependencyGraphInput,
+    DependencyEdgeId, DependencyEdgeReport, DependencyGraph, DependencyGraphInput,
     DependencyGraphReport, EntryDestination, KnownConflict, ModuleAssignment,
     ModuleDestinationKind, ModuleId, ModuleKey, PremiseVerdict, SequencedCause, SourceLocation,
     SourceUnitReport,

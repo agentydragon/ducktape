@@ -74,7 +74,9 @@ export { first, middle, last };
     let first = source_unit_for_binding(&graph, "first");
     let seed = source_unit_for_binding(&graph, "seed");
     assert!(graph.edges.iter().any(|edge| {
-        edge.source == first && edge.target == seed && edge.edge_kind == analysis::DepKind::EagerUse
+        edge.source == first
+            && edge.target == seed
+            && edge.edge_kind == analysis_model::DepKind::EagerUse
     }));
 }
 

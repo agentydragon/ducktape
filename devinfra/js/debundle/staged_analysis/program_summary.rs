@@ -5,6 +5,8 @@
 //! (`analysis::cross_module_purity`). Its results feed each chunk's
 //! `AnalysisInputs`, including `imported_purities` for imported calls.
 
+use analysis_model::{PrimKinds, StableExportValue};
+use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -16,7 +18,7 @@ use analysis::analysis_inputs::{
     SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
 use analysis::cross_module_purity::{
-    CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedImport, StableExportValue,
+    CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedImport,
     resolve_asserted_callback_factory_members, resolve_asserted_fluent_bindings,
     resolve_asserted_inline_callback_factories, resolve_asserted_member_purities,
     resolve_asserted_namespace_independent_members, resolve_asserted_no_reentry_bindings,
@@ -26,11 +28,11 @@ use analysis::cross_module_purity::{
     resolve_asserted_retained_callback_factory_members, resolve_export_values,
     resolve_imported_callable_summaries, resolve_imported_purities,
 };
-use analysis::facts::abstract_domain::value::{PrimKinds, Value};
+use analysis::facts::abstract_domain::value::Value;
 use analysis::purity::Purity;
 use anyhow::{Context, Result, bail, ensure};
 use artifact::reports::{ExportAliasRecord, ImportRecord, ImportSpecifierKind};
-use artifact::{ArtifactIndexes, ChunkBundle, ChunkId};
+use artifact::{ArtifactIndexes, ChunkBundle};
 use graph_provenance::GraphProvenance;
 use js_ast::ParsedJsModule;
 use program_analysis::analyze_program_shallow;
@@ -1327,9 +1329,10 @@ mod tests {
     use super::*;
     use artifact::reports::{ChunkAnalysisReport, ChunkFileRecord};
     use artifact::{
-        ChunkArtifact, ChunkBundle, ChunkMetadata, ChunkTable, FileMetadata, FileRole, JsChunk,
-        JsFile, JsFileBody,
+        ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile,
+        JsFileBody,
     };
+    use source_identity::ChunkTable;
     use spec::ChunkExportPurity;
 
     fn test_bundle(chunks: &[(&str, &str)]) -> ChunkBundle {

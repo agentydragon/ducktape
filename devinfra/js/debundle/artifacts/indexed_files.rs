@@ -1,8 +1,9 @@
 //! File/index ownership shared by the source and emission phases.
 
 use anyhow::{Result, bail};
+use source_identity::ChunkId;
 
-use super::{ArtifactIndexes, ChunkBundle, ChunkId, named_manifest_imports};
+use super::{ArtifactIndexes, ChunkBundle, named_manifest_imports};
 
 /// Paths and manifest inputs whose changes invalidate `ArtifactIndexes`.
 #[derive(PartialEq, Eq)]

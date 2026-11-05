@@ -8,6 +8,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "@crates//:serde_json",
     ],
 )
@@ -54,6 +55,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:sha2",
@@ -102,6 +104,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:spec",
         "//devinfra/js/debundle:staged_analysis",
         "@crates//:rmp-serde",
@@ -142,6 +145,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "@crates//:serde_json",
     ],
 )
@@ -271,6 +275,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
     ],
 )
 
@@ -289,6 +294,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
     ],
 )
 
@@ -330,6 +336,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
     ],
 )
 
@@ -386,6 +393,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "@crates//:serde_json",
     ],
 )
@@ -404,6 +412,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "@crates//:serde_json",
     ],
 )
@@ -415,6 +424,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
     ],
 )
 
@@ -460,6 +470,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "@crates//:serde_json",
     ],
 )
@@ -656,6 +667,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:sha2",
@@ -667,6 +679,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
     ],
 )
 
@@ -675,6 +688,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
     ],
 )
 
@@ -703,6 +717,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
     ],
 )
 
@@ -868,6 +883,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "@crates//:serde_json",
     ],
 )
@@ -886,6 +902,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
     ],
 )
 
@@ -894,6 +911,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
     ],
 )
 
@@ -902,6 +920,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
     ],
 )
 
@@ -910,6 +929,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
     ],
 )
 
@@ -918,6 +938,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:spec",
     ],
 )
@@ -927,6 +948,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
     ],
 )
 
@@ -945,6 +967,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:peel",
         "//devinfra/js/debundle:spec",
         "@crates//:serde_json",
@@ -1001,6 +1024,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:report_io",
     ],
 )
@@ -1020,6 +1044,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "@crates//:serde_json",
     ],
 )
@@ -1218,6 +1243,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
         "@crates//:serde_json",
     ],
 )

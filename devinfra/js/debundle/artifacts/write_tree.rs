@@ -1,16 +1,17 @@
+use source_identity::ChunkId;
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
 
 use anyhow::{Result, bail};
 
+use artifact::EmissionFiles;
 use artifact::metrics::DecompositionMetrics;
 use artifact::reports::{
     ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkDecompositionOutput, ChunksReport,
     PackageManifest, RootLogicalModulesSummary, SelectedModuleLowering, write_json,
 };
 use artifact::script_output::materialize_artifact_scripts;
-use artifact::{ChunkId, EmissionFiles};
 use identifier_rename_queue::compute_identifier_rename_queue;
 use output_layout::{DebundleOutputLayout, GATE_REJECTED_MARKER};
 use reconstruction::{EmittablePlan, RejectedPlan};

@@ -1,6 +1,7 @@
 use super::*;
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::abstract_domain::effect::{CoerceOperand, CoerceOperands};
+use analysis_model::PrimKinds;
 use std::sync::Arc;
 
 /// Two-state expression-level purity with structured reasons.

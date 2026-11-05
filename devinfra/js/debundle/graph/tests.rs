@@ -9,6 +9,7 @@ mod chunk_constraining_module_edges_tests {
     use crate::graph::*;
     use crate::ids::ModuleId;
     use crate::module_assignment::ModuleAssignment;
+    use analysis_model::DepKind;
     use source_identity::SourceUnitId;
 
     use crate::{AnalysisInputs, DependencyGraph, facts::analyze_chunk};
@@ -124,9 +125,8 @@ mod from_report_tests {
     };
     use source_identity::SourceUnitId;
 
-    use crate::{
-        DepKind, DependencyEdgeId, DependencyGraph, DependencyGraphInput, EdgeRole, StatementKind,
-    };
+    use crate::{DependencyEdgeId, DependencyGraph, DependencyGraphInput, EdgeRole, StatementKind};
+    use analysis_model::DepKind;
 
     fn node(id: &str, ordinal: usize) -> SourceUnitReport {
         SourceUnitReport {

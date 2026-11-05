@@ -10,10 +10,11 @@ use analysis::AnalysisAssumptions;
 use analysis::analysis_inputs::SourceDeclaration;
 use analysis::facts::StructuralChunkSourceFacts;
 use anyhow::{Context, Result, bail, ensure};
-use artifact::{ChunkBundle, ChunkId};
+use artifact::ChunkBundle;
 use rayon::prelude::*;
 use selector_outcome::{Entity, EntityRef, Outcome, SelectorOutcome, Severity};
 use selector_resolve::MemberSelector;
+use source_identity::ChunkId;
 use source_identity::StatementId;
 use spec::{
     ChunkExportPurity, ChunkRenames, DependencyGraphOptions, HostBehavior, IntrinsicsNeverWritten,

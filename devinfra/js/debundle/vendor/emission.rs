@@ -20,6 +20,7 @@
 //! written by [`write_planned_vendor_outputs`] (write-gated behind
 //! `swap_vendor_chunks.write`).
 
+use source_identity::{ChunkId, ChunkTable};
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result, bail};
@@ -29,8 +30,7 @@ use swc_ecma_ast::Id;
 use swc_ecma_visit::VisitMutWith;
 
 use artifact::{
-    ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, FileRole, JsFile, JsFileAstParts,
-    list_chunk_file_paths,
+    ArtifactIndexes, ChunkBundle, FileRole, JsFile, JsFileAstParts, list_chunk_file_paths,
 };
 use js_ast::ParsedJsModule;
 use spec::PartialSwapSymbol;

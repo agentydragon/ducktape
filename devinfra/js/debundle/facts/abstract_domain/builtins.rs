@@ -11,8 +11,9 @@
 use super::effect::CoerceOp;
 use super::heap::Mutation;
 use super::integrity::IntrinsicSlot;
-use super::value::{Kind, PrimKinds};
+use super::value::Kind;
 use crate::analysis_inputs::NativeIntrinsic;
+use analysis_model::PrimKinds;
 use std::collections::BTreeSet;
 use std::ops::RangeInclusive;
 use std::sync::LazyLock;

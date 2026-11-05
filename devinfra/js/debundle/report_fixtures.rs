@@ -14,11 +14,12 @@
 //! represents the physical entry destination; other keys represent specified
 //! planned outputs.
 
+use analysis_model::DepKind;
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::{
-    AtomicGraphReport, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport, DepKind,
+    AtomicGraphReport, AtomicGroupEdgeReport, AtomicGroupReport, BindingReport,
     DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, LineRange, ModuleDestinationKind,
     ModuleEntry, ModuleKey, ModuleQuotientReport, Purity, SourceLocation, SourceUnitReport,
     StatementKind,

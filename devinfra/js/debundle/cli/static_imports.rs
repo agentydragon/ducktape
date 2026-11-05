@@ -1,11 +1,12 @@
 //! Source-only reachability through original, ordinary static ESM requests.
 
+use source_identity::ChunkId;
 use std::collections::{BTreeSet, VecDeque};
 use transform_command::TransformArgs;
 
 use anyhow::{Context, Result};
 use artifact::reports::{InteropUseKind, StaticModuleRequestMode};
-use artifact::{ChunkBundle, ChunkId, ImportReferenceKind};
+use artifact::{ChunkBundle, ImportReferenceKind};
 use clap::Args;
 use peel::OutputFormat;
 use pipeline::load_transform_spec_source;

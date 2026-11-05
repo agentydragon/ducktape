@@ -27,7 +27,7 @@ use crate::facts::abstract_domain::builtins::{
 use crate::facts::abstract_domain::integrity::{
     IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites,
 };
-use crate::facts::abstract_domain::value::{Kind, PrimKinds, Value};
+use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, member_row_invokes_no_argument,
 };
@@ -58,6 +58,7 @@ use crate::reports::schema::{
     NativePrototypeMutationKind, NativeReceiverPath, NativeWriteSlot, RecordFactoryRejectionReason,
     SourceLocation,
 };
+use analysis_model::PrimKinds;
 use source_identity::SourceUnitOrdinal;
 use spec::{BuiltinGlobalRoot, ReentryFreeOperation};
 use std::cell::RefCell;

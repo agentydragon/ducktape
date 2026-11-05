@@ -3,7 +3,7 @@
 //! canonical ESM linker/source-import orderings derived from it.
 //!
 //! Submodules:
-//! - [`edge`] — edge types ([`EdgeRole`], [`EdgeReason`], [`DepKind`],
+//! - [`edge`] — edge types ([`EdgeRole`], [`EdgeReason`],
 //!   [`DependencyEdge`], [`DependencyEdgeId`]).
 //! - [`dependency_graph`] — the [`DependencyGraph`] IR and [`SourceUnit`] rows;
 //!   their dense IDs are `source_identity::SourceUnitId`. It also provides JSON
@@ -38,7 +38,7 @@ pub use dependency_graph::{
     UnresolvedDependencyEdgeEndpoint,
 };
 pub use edge::{
-    BindingTimelineOrder, CellConflict, CellEffectClass, DepKind, DependencyEdge, DependencyEdgeId,
+    BindingTimelineOrder, CellConflict, CellEffectClass, DependencyEdge, DependencyEdgeId,
     EdgeReason, EdgeRole, EffectCellReport, HeapBarrierCause, SequencedCause,
 };
 pub use input::DependencyGraphInput;

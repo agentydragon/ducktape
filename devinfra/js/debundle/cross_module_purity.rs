@@ -24,6 +24,7 @@
 //! export, an unresolved re-export) simply gets no entry, so the call stays
 //! `unknown_call` exactly as before. Pinned assertions remain trusted axioms.
 
+use analysis_model::PrimKinds;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -41,7 +42,8 @@ use crate::analysis_inputs::{
     ResolvedBindingValueInput, ResolvedNativeOperationInput, ReturnedRecordSummary,
     SelectedBindingValueInput, SelectedNativeOperationInput,
 };
-use crate::facts::abstract_domain::value::{PrimKinds, Value};
+
+use crate::facts::abstract_domain::value::Value;
 use crate::facts::{ChunkValueFlow, TopLevelItemView, top_level_item_views};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::{ChunkCodeGraph, Purity, PurityEffectRules, PurityMode};
@@ -61,20 +63,6 @@ pub struct ResolvedImport {
     pub module: SourceModuleKey,
     /// The export name read from that module.
     pub export: String,
-}
-
-/// A stable direct ESM export's primitive value before import resolution.
-/// Canonical shallow-scan facts; never serialized or author asserted.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum StableExportValue {
-    /// The types the exported binding's history computes itself, joined with
-    /// the values of the named/default import bindings it copies.
-    Local {
-        kinds: PrimKinds,
-        imports: BTreeSet<String>,
-    },
-    /// `export { export as name } from source`.
-    ReExport { source: String, export: String },
 }
 
 /// A stable export after its imports resolved: its own types and the exports

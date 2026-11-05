@@ -1,3 +1,4 @@
+use analysis_model::DepKind;
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
@@ -15,7 +16,7 @@ use swc_atoms::Atom;
 
 use analysis::analysis_inputs::CommutingStatementsRef;
 use analysis::{
-    DepKind, DependencyEdge, DependencyGraph, EdgeRole, ModuleId, Purity, SequencedCause,
+    DependencyEdge, DependencyGraph, EdgeRole, ModuleId, Purity, SequencedCause,
     SequencedSourceUnitCause,
 };
 

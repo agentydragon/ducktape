@@ -1,7 +1,8 @@
+use source_identity::ChunkId;
 use source_identity::SourceUnitOrdinal;
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use swc_atoms::Atom;
 use swc_common::{Mark, SyntaxContext};
 use swc_ecma_ast::Id;
@@ -45,46 +46,6 @@ impl EntryDestination {
 
     pub fn module_id(self) -> ModuleId {
         self.0
-    }
-}
-
-/// Interned chunk identifier. Created by `ChunkTable::intern` during chunk
-/// loading and used throughout the pipeline in place of `String` chunk names.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct ChunkId(pub usize);
-
-#[derive(Debug, Clone, Default)]
-pub struct ChunkTable {
-    names: Vec<String>,
-    ids_by_name: HashMap<String, ChunkId>,
-}
-
-impl ChunkTable {
-    pub fn intern(&mut self, name: String) -> ChunkId {
-        if let Some(id) = self.ids_by_name.get(&name) {
-            return *id;
-        }
-        let id = ChunkId(self.names.len());
-        self.names.push(name.clone());
-        self.ids_by_name.insert(name, id);
-        id
-    }
-
-    pub fn get(&self, name: &str) -> Option<ChunkId> {
-        self.ids_by_name.get(name).copied()
-    }
-
-    pub fn name(&self, id: ChunkId) -> &str {
-        &self.names[id.0]
-    }
-
-    pub fn len(&self) -> usize {
-        self.names.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.names.is_empty()
     }
 }
 

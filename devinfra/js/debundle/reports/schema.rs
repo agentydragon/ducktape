@@ -1,3 +1,4 @@
+use analysis_model::DepKind;
 use serde::{Deserialize, Serialize};
 use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::BTreeSet;
@@ -9,7 +10,7 @@ use crate::analysis_inputs::{
 use crate::assignment_assembly::AtomicGroupConflict;
 use crate::ids::ModuleId;
 use crate::purity::Purity;
-use crate::{DepKind, SourceUnitClass, StatementKind};
+use crate::{SourceUnitClass, StatementKind};
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceLocation {

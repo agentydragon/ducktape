@@ -21,7 +21,8 @@
 //! - **window/self**: only the literal `globalThis` was treated as
 //!   the global object, despite README claiming otherwise.
 
-use analysis::{DepKind, DependencyGraphReport};
+use analysis::DependencyGraphReport;
+use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 

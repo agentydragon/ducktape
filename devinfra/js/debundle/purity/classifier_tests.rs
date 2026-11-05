@@ -1,3 +1,4 @@
+use analysis_model::PrimKinds;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::*;

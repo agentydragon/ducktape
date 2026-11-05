@@ -1,4 +1,5 @@
 use artifact::load_js_chunks;
+use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6,8 +7,8 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 
+use artifact::EmissionFiles;
 use artifact::reports::{ArtifactChunkRecord, ChunkDecompositionOutput};
-use artifact::{ChunkId, EmissionFiles};
 use emit_harness::emit_browser_harness;
 use gate::CandidateRelocationAssessmentReport;
 use graph_provenance::{

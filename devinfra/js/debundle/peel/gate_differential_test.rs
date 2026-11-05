@@ -18,11 +18,12 @@
 //! TDZ, module-granularity Pass 1) plus the clause-2 cross-rebind
 //! case.
 
+use analysis_model::DepKind;
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
-use analysis::{DepKind, DependencyGraphInput, DependencyGraphReport, SourceUnitReport};
+use analysis::{DependencyGraphInput, DependencyGraphReport, SourceUnitReport};
 use gate::{
     LadderDecision, RealizabilityVerdict, SccRejection, check_realizability,
     check_realizability_touching,

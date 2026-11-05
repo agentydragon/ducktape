@@ -1,18 +1,19 @@
+use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use anyhow::{Result, bail};
 use artifact::reports::{
     ChunkAnalysisReport, ChunkDecompositionOutput, ChunkFileRecord, ChunkLogicalModulesSummary,
 };
-use artifact::{ChunkArtifact, ChunkBundle, ChunkId, ChunkMetadata, JsChunk};
+use artifact::{ChunkArtifact, ChunkBundle, ChunkMetadata, JsChunk};
 
 use super::MaterializedLogicalChunk;
 #[cfg(test)]
 use crate::{ChunkModulesCounts, ChunkModulesReport};
 #[cfg(test)]
-use artifact::ChunkTable;
-#[cfg(test)]
 use artifact::reports::ChunkValidationSummary;
+#[cfg(test)]
+use source_identity::ChunkTable;
 
 /// Files finalized by lowering, together with decomposition metadata for
 /// lowered chunks. Pass-through chunks retain their original position.

@@ -1,7 +1,7 @@
 //! Steps a builtin performs on its operands that can run user code.
 
 use super::primitive::binary_throws;
-use super::value::PrimKinds;
+use analysis_model::PrimKinds;
 use swc_ecma_ast::{BinaryOp, Id};
 
 /// An abstract operation or internal method a builtin applies to one operand.

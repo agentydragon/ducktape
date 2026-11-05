@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+use analysis_model::DepKind;
 use serde::{Deserialize, Serialize};
 use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use swc_atoms::Atom;
@@ -698,64 +699,6 @@ impl EdgeReason {
     }
 }
 
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Eq,
-    PartialEq,
-    Ord,
-    PartialOrd,
-    Hash,
-    Serialize,
-    Deserialize,
-    strum::IntoStaticStr,
-    strum::Display,
-    strum::EnumString,
-    strum::EnumMessage,
-)]
-#[cfg_attr(test, derive(strum::EnumIter))]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum DepKind {
-    #[strum(message = "at-init")]
-    EagerUse,
-    #[strum(message = "lazy")]
-    LazyUse,
-    #[strum(message = "hoisted read")]
-    HoistedUse,
-    #[strum(message = "at-init rebind")]
-    EagerRebind,
-    #[strum(message = "lazy rebind")]
-    LazyRebind,
-    /// Rebinding write that only fires after module init (nested ≥2
-    /// closures deep, or past an `await` in an async body). Rejected
-    /// across destinations like the other rebinds (ESM imports are
-    /// read-only whenever the write fires), but excluded from
-    /// init-order constraints and the I-graph.
-    #[strum(message = "deferred rebind")]
-    DeferredRebind,
-    #[strum(message = "side-effect")]
-    Sequenced,
-    /// Two statements declare the same module-scoped var binding. Emitted in
-    /// both directions to require one destination without rewriting the AST.
-    #[strum(message = "shared var declaration")]
-    CoDeclaration,
-    /// A source-prefix proof needs the producer and consumer in one module.
-    #[strum(message = "stable array spread co-location")]
-    CoLocation,
-    #[strum(message = "local-effect")]
-    LocalEffect,
-}
-
-impl DepKind {
-    /// Short human-readable label used in cycle and gate diagnostics.
-    pub fn diagnostic_label(self) -> &'static str {
-        strum::EnumMessage::get_message(&self)
-            .expect("every dependency kind has a diagnostic message")
-    }
-}
-
 /// Stable per-chunk identity of a dependency graph edge. Equal to the
 /// edge's position in [`DependencyGraph::edges`]. The previous
 /// representation stored the report-shape spelling
@@ -783,20 +726,4 @@ pub struct DependencyEdge {
     pub from: SourceUnitId,
     pub to: SourceUnitId,
     pub reason: EdgeReason,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::DepKind;
-    use strum::IntoEnumIterator;
-
-    #[test]
-    fn every_dependency_kind_has_a_diagnostic_message() {
-        for kind in DepKind::iter() {
-            assert!(!kind.diagnostic_label().is_empty());
-        }
-        // Diagnostic messages must not replace the machine-readable spelling.
-        assert_eq!(DepKind::EagerUse.to_string(), "eager_use");
-        assert_eq!(DepKind::EagerUse.diagnostic_label(), "at-init");
-    }
 }

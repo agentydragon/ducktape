@@ -116,10 +116,11 @@ mod tests {
     use analysis::AnalysisInputs;
     use artifact::reports::{ChunkAnalysisReport, ChunkFileRecord};
     use artifact::{
-        ArtifactIndexes, ChunkArtifact, ChunkBundle, ChunkMetadata, ChunkTable, FileMetadata,
-        FileRole, JsChunk, JsFile, JsFileBody,
+        ArtifactIndexes, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
+        JsChunk, JsFile, JsFileBody,
     };
     use program_analysis::analyze_program_shallow;
+    use source_identity::ChunkTable;
     use std::process::Command;
     use swc_common::{GLOBALS, Globals};
 

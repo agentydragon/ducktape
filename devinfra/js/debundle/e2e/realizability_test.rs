@@ -7,11 +7,12 @@
 //! match, or rejection with cycle evidence naming the implicated
 //! modules.
 
+use analysis_model::DepKind;
 use debundle_e2e_graph_support::FixtureGraphExt;
 use std::fs;
 use std::path::Path;
 
-use analysis::{BindingReport, DepKind};
+use analysis::BindingReport;
 use debundle_e2e_support::*;
 
 #[test]
