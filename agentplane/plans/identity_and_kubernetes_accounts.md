@@ -1,14 +1,15 @@
 # Identities, workload authentication and Kubernetes accounts
 
-Status: **proposal, 2026-11-05.** The operator selected three directions that day (recorded in
+Status: **proposal, 2026-11-05.** The operator selected these directions that day (recorded in
 [`NETWORK_WORKLOAD_IDENTITY`](task_dag.md#network_workload_identity--spiffe-as-the-one-way-agent-workloads-authenticate)
 and [`AGENT_PRINCIPAL_MODEL_DESIGN`](task_dag.md#agent_principal_model_design--agentplane-principals-and-external-identities)):
 agent workloads authenticate to the Runner Gateway and the central egress proxy with SPIFFE SVIDs,
 not ServiceAccount tokens; Agentplane owns agent identity and no agent is provisioned a Kubernetes
-ServiceAccount by default; a Kubernetes account is a resource of its own that several identities may
-act as, with grants attached by bindings rather than fields, so Flux and runtime writers can share
-one account. Everything below the direction (kind names, field shapes, impersonation versus
-TokenRequest, the migration order) is this plan's proposal and waits on the open questions at the
+ServiceAccount by default; a Kubernetes account is a resource several identities may act as, with
+grants attached by separate objects rather than fields so Flux and runtime writers can share one
+account; and the Agentplane-side binding and the Kubernetes-side grant are separate kinds, since
+no rule type is meaningful on both. Everything below the direction (kind names, field shapes,
+impersonation versus TokenRequest) is this plan's proposal and waits on the open questions at the
 end. Policy objects stay Kubernetes objects.
 
 ## What this separates
@@ -19,13 +20,20 @@ own projected token, substituted by `projectedWorkloadToken`), the `PolicyBindin
 execution principal History and Dispatcher pin by UID. Its lifetime is the Sandbox's. The proposal
 gives each role its own object:
 
-| Role                        | Today                                  | Proposed                                                           |
-| --------------------------- | -------------------------------------- | ------------------------------------------------------------------ |
-| Who the agent is            | ServiceAccount name and UID            | `Identity`                                                         |
-| Proof of a workload         | Projected SA token, TokenReview        | SVID on the egress hop; SA token only for workloads without one    |
-| Policy subject              | ServiceAccount                         | `Identity`, or `KubernetesAccount` for Kubernetes rules            |
-| Kubernetes reach            | The Pod's own SA, granted RoleBindings | `KubernetesAccount`, acted as through the proxy; none unless bound |
-| Execution principal records | ServiceAccount UID                     | Identity name and UID, plus the workload incarnation as provenance |
+| Role                        | Today                               | Proposed                                                                             |
+| --------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------ |
+| Who the agent is            | ServiceAccount name and UID         | `Identity`                                                                           |
+| Proof of a workload         | Projected SA token, TokenReview     | SVID on the egress hop; SA token only for workloads without one                      |
+| What Agentplane enforces    | `PolicyBinding` to a ServiceAccount | `PolicyBinding` to an `Identity`; Kubernetes rule types leave `PolicySet`            |
+| What Kubernetes enforces    | RoleBindings for the Pod's own SA   | `KubernetesAccountGrant` for any SA on any configured apiserver                      |
+| Kubernetes reach            | The Pod's own SA                    | An account the identity may present a credential for, through the proxy; none unless |
+| Execution principal records | ServiceAccount UID                  | Identity name and UID, plus the workload incarnation as provenance                   |
+
+Two systems fall out, each with one kind of input: Agentplane policy (`PolicySet`, `PolicyBinding`,
+`EgressCredential`, subject `Identity`) and a Kubernetes RBAC provisioner (`KubernetesRoleSet`,
+`KubernetesAccountGrant`, subject a ServiceAccount). The Policy Controller is the provisioner, as it
+already is for SA subjects today; the Crossplane managed-resource pattern is the same shape. The two
+meet in exactly one place: an `EgressCredential` whose source names a ServiceAccount.
 
 ## Objects
 
@@ -54,73 +62,91 @@ Who creates it decides its lifetime: the Sandbox Controller for a Sandbox-create
 Sandbox, as its SA is today), Flux for a standing agent, Dispatcher if Session-managed identities
 land ([Session/environment model](session_environment_model.md#sessions-serviceaccounts-and-environments)).
 
-### `KubernetesAccount`
+### `PolicyBinding` and `PolicySet`: Agentplane policy only
 
-A ServiceAccount on one apiserver that Agentplane keeps, in a namespace dedicated to this Agentplane
-instance there. The spec holds only what is intrinsic to the account; roles and users reach it by
-binding.
+`PolicyBinding.spec.subject` is an `Identity`; the ServiceAccount subject goes with the cutover.
+`PolicySet` keeps `egress`, `action_auto_approve` and `session_inbox_access` and loses the two
+Kubernetes rule types, so every rule in a set is enforced for every binding of it. Sets, `expiresAt`
+and ownership are unchanged. "May act as a Kubernetes account" is an `egress` rule like any other
+credential use:
+
+```yaml
+kind: PolicyBinding # the basic set carries the shared account's use rule for every agent
+spec: { subject: { identity: agent-123 }, policySets: [basic, github-ducktape] }
+---
+kind: PolicySet
+metadata: { name: k8s-account-shared-diagnostics } # cdk8s-rendered for a static account
+spec:
+  rules:
+    - type: egress
+      hosts: [kubernetes.default.svc.cluster.local]
+      clusterInternal: true
+      credentialRef: { name: k8s-account-shared-diagnostics }
+---
+kind: EgressCredential
+metadata: { name: k8s-account-shared-diagnostics }
+spec:
+  description: Act as the shared read-only diagnostics account on the local apiserver.
+  source:
+    kubernetesServiceAccount: { apiServer: local, namespace: agentplane-k8s-accounts, name: shared-diagnostics }
+  targets: [{ header: Authorization, method: schemeToken, scheme: Bearer }]
+```
+
+### `KubernetesRoleSet` and `KubernetesAccountGrant`: the provisioner's input
+
+The two Kubernetes rule shapes move, unchanged, from `PolicySet` into a set of their own, so
+"cluster diagnostics" stays one reusable name. A grant attaches sets to one ServiceAccount, named by
+apiserver, namespace and name, with the binding's expiry and ownership semantics:
+
+```yaml
+kind: KubernetesRoleSet
+metadata: { name: cluster-diagnostics }
+spec:
+  rules:
+    - { type: role_binding, role: { kind: ClusterRole, name: agent-diagnostics }, namespaces: [cnpg, forgejo] }
+    - { type: cluster_role_binding, clusterRole: agent-node-reader }
+---
+kind: KubernetesAccountGrant # Flux: standing roles on the shared account
+metadata: { name: shared-diagnostics }
+spec:
+  account: { apiServer: local, namespace: agentplane-k8s-accounts, name: shared-diagnostics }
+  roleSets: [cluster-diagnostics]
+---
+kind: KubernetesAccountGrant # app: every agent on the shared account gets more for an hour
+metadata: { name: shared-diagnostics-cnpg-read-20261105 }
+spec:
+  account: { apiServer: local, namespace: agentplane-k8s-accounts, name: shared-diagnostics }
+  roleSets: [cnpg-read]
+  expiresAt: "2026-11-05T13:00:00Z"
+```
+
+Grants on one account combine additively; revoking one never removes what another grants, exactly as
+bindings do today. The Policy Controller reads grants and role sets and nothing else; whether a
+grant may instead list roles inline is open (question 10).
+
+### `KubernetesAccount`: optional, for accounts Agentplane creates
+
+A static account is a ServiceAccount Flux creates, referenced by the triple above; no object stands
+in for it. An account Agentplane must create, such as a temporary one for a single agent, needs one
+object to hold its expiry and owner, because a ServiceAccount in another namespace or on another
+apiserver can carry neither an ownerReference to the identity nor an `expiresAt`:
 
 ```yaml
 kind: KubernetesAccount
 metadata:
-  name: shared-diagnostics # Flux-authored; no expiry
-spec:
-  apiServer: local # a target the Policy Controller and proxy are configured with
----
-kind: KubernetesAccount
-metadata:
-  name: agent-123-extra # app-authored on an approved request
+  name: agent-123-extra
   ownerReferences: [{ kind: Identity, name: agent-123 }]
 spec:
   apiServer: local
   expiresAt: "2026-11-05T12:34:00Z"
 status:
   serviceAccount: { namespace: agentplane-k8s-accounts, name: agent-123-extra, uid: ... }
-  conditions: [{ type: Ready, ... }]
 ```
 
-### `PolicyBinding` subject kinds
-
-`spec.subject` becomes a oneof of `identity` and `kubernetesAccount`; the ServiceAccount subject
-goes with the cutover. The rest of the binding, its sets, `expiresAt` and ownership, is unchanged,
-so one expiry mechanism and one admission surface cover every grant.
-
-```yaml
-kind: PolicyBinding # Flux: standing roles on the shared account
-spec: { subject: { kubernetesAccount: shared-diagnostics }, policySets: [cluster-diagnostics] }
----
-kind: PolicyBinding # app: every agent gets more for an hour
-spec:
-  subject: { kubernetesAccount: shared-diagnostics }
-  policySets: [cnpg-read]
-  expiresAt: "2026-11-05T13:00:00Z"
----
-kind: PolicyBinding # who may act as it; the basic set carries this for every agent
-spec: { subject: { identity: agent-123 }, policySets: [k8s-account-shared-diagnostics] }
-```
-
-Which rule types mean something on which subject:
-
-| Rule type                                                    | `identity` subject | `kubernetesAccount` subject |
-| ------------------------------------------------------------ | ------------------ | --------------------------- |
-| `egress`, `action_auto_approve`, `session_inbox_access`      | enforced           | ignored, reported           |
-| `kubernetes_role_binding`, `kubernetes_cluster_role_binding` | ignored, reported  | enforced                    |
-
-"Ignored, reported" means the reader's condition names the inapplicable rule rather than staying
-silent; admission can reject once the `serviceAccount` subject is gone.
-
-### Generated per-account objects
-
-For each `KubernetesAccount` the Policy Controller emits, owned by it:
-
-- an `EgressCredential` of the same name with source `kubernetesAccount: {name}`, targets
-  `Authorization: Bearer`, whose placeholder is therefore `agentplane-credential-<account>`;
-- a `PolicySet` `k8s-account-<name>` holding one `egress` rule to that apiserver's host with that
-  `credentialRef`.
-
-Binding an identity to that set is the whole act of letting it act as the account. The controller
-writing a `PolicySet` is new authority; an admission rule limits it to this one shape, as
-`orchestration_v1` launcher grants are limited today.
+The Policy Controller creates the ServiceAccount, emits the account's `EgressCredential` and
+one-rule `PolicySet` owned by it (the same two objects cdk8s renders for a static account), and
+deletes all of it at `expiresAt` or owner deletion. Grants and use bindings for a temporary account
+are owned by it, so one clock covers the whole grant.
 
 ## Workload authentication
 
@@ -141,21 +167,48 @@ Workloads without an SVID, such as the public coder's OpenClaw fronted by the pr
 a projected SA token; `status.workloadCredentials` maps that account to its identity. The MCP edge
 binds a Connection to an `Identity` instead of a ServiceAccount.
 
+## Central Sessions with no environment
+
+A central-sampler Session can run with zero environments
+([Session/environment model](session_environment_model.md#central-session-without-a-required-executor-environment)).
+Nothing then holds an SVID for the agent, so the identity is proven by delegation rather than by a
+workload credential:
+
+- The Session names its `Identity` at `CreateSession`; Dispatcher is the authority for that
+  association, and either creates a Session-managed identity or checks the caller may use an
+  existing one. The identity's `status.workloadCredentials` may be empty.
+- The sampler calls the Action Service, Notification and History as the actor under the
+  [delegated authorization contract](../docs/delegated_authorization.md), with the effective caller
+  an identity reference instead of an SA UID. The receiving service trusts the sampler to assert
+  identities in its namespace, as the contract already provides, and applies the identity's
+  bindings. The sampler's own ServiceAccount never becomes the agent's.
+- Egress from the sampler itself is the sampler's: it reaches LLM ingress and the direct Anthropic
+  route with its own credentials today and keeps doing so. The agent's egress rules apply where
+  its code runs, which with no environment is nowhere; outbound reach for such a Session is Actions.
+- Kubernetes without an environment is an Action or nothing. There is no `kubectl` process to
+  present a placeholder, so a grant to an account is inert until an environment is attached; the
+  `kubernetes_admin` Action path is what remains, and it is authorized by the identity's bindings.
+- Attaching an environment later: the Sandbox's spec names the identity, the Sandbox Controller
+  records that incarnation's SPIFFE ID on the identity, and the proxy admits it under the same
+  bindings. The same-environment invariant holds because the environment runs as exactly one
+  identity, whichever Session attached it.
+
 ## Kubernetes execution
 
-**Policy Controller, per `KubernetesAccount`:** ensure the ServiceAccount on the target apiserver and
-the RoleBindings that the Kubernetes rules of every live binding naming the account expand to,
-exactly as it expands them for an SA subject today (additive, one native binding per binding, role
-and namespace, pruned when no live binding grants them). Delete the SA with the account at its
-`expiresAt` or owner deletion; tokens for a deleted SA are rejected by UID, so nothing else needs
-revoking. Reconcile on start covers controller downtime, as it does now.
+**Policy Controller, per ServiceAccount named by a live grant:** keep the RoleBindings that the
+role sets of every live grant naming it expand to, exactly as it keeps them for an SA subject today
+(additive, one native binding per grant, role and namespace, pruned when no live grant covers them,
+never adopted on name alone). A grant naming a ServiceAccount that does not exist reports
+`SubjectMissing`, as a binding does now. For a `KubernetesAccount`, also create and delete the
+ServiceAccount; tokens for a deleted SA are rejected by UID, so nothing else needs revoking.
+Reconcile on start covers controller downtime, as it does now.
 
 **Egress proxy, acting as the account.** Two options, both bounded to the accounts namespace:
 
 - **Impersonation (recommended).** The proxy's own apiserver credential gets `impersonate` on
   `serviceaccounts` in the accounts namespace. Per request it replaces the placeholder with its own
   bearer and adds `Impersonate-User: system:serviceaccount:<ns>/<account>`; the apiserver adds the
-  `system:serviceaccounts` groups itself. No token is minted or cached, revocation is the binding
+  `system:serviceaccounts` groups itself. No token is minted or cached, revocation is the rule
   going, enforced on the next request, and the audit log records both the account and the proxy as
   original user. Impersonating ServiceAccounts rather than users keeps OIDC users bound by name out
   of reach.
@@ -165,38 +218,41 @@ revoking. Reconcile on start covers controller downtime, as it does now.
 A remote apiserver is a named target in both the controller's and the proxy's settings carrying its
 kubeconfig, the way tofu-controller holds Forgejo credentials.
 
-**What the agent sees.** One kubeconfig with a context per account its bindings currently grant,
-each context's token the account's placeholder; the rules endpoint already lists the credentials a
-subject may present. The preset picks the default context; `kubectl auth whoami` shows the account.
-Nothing inside the sandbox ever holds a real token.
+**What the agent sees.** One kubeconfig with a context per account its rules currently let it
+present, each context's token that credential's placeholder; the rules endpoint already lists the
+credentials a subject may present. The preset picks the default context; `kubectl auth whoami`
+shows the account. Nothing inside the sandbox ever holds a real token.
 
 ## Lifetimes
 
-| Case                                  | Identity           | Kubernetes account                            | Grants                                     |
-| ------------------------------------- | ------------------ | --------------------------------------------- | ------------------------------------------ |
-| Standing agent (Haku, daily CI agent) | Flux               | Flux-authored shared account, or none         | Flux bindings                              |
-| Sandbox-created agent                 | Sandbox Controller | None, or the shared account via `basic`       | Sandbox-owned binding from the launch sets |
-| Agent with no Kubernetes need         | as above           | None; no object anywhere                      | No Kubernetes rule reaches it              |
-| Temporary extra permissions           | unchanged          | App-authored, owned by the identity, expiring | Role and use bindings owned by the account |
-| Widening a shared account for an hour | unchanged          | unchanged                                     | One expiring binding on the account        |
-| Identity deleted                      | gone               | Owned accounts garbage-collected              | Owned bindings garbage-collected           |
+| Case                                  | Identity                                         | Kubernetes account                                                        | Grants and use                                  |
+| ------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------- | ----------------------------------------------- |
+| Standing agent (Haku, daily CI agent) | Flux                                             | Flux ServiceAccount, or none                                              | Flux grant; use rule in the agent's sets        |
+| Sandbox-created agent                 | Sandbox Controller                               | None, or the shared account via `basic`                                   | Sandbox-owned binding from the launch sets      |
+| Agent with no Kubernetes need         | as above                                         | None; no object anywhere                                                  | No use rule, no grant                           |
+| Temporary extra permissions           | unchanged                                        | `KubernetesAccount` owned by the identity, expiring                       | Grant and use binding owned by the account      |
+| Widening a shared account for an hour | unchanged                                        | unchanged                                                                 | One expiring grant on the account               |
+| Central Session, no environment       | Dispatcher, or an existing one named at creation | None unless granted; usable only through an Action or a later environment | Bindings on the identity; reached by delegation |
+| Identity deleted                      | gone                                             | Owned accounts garbage-collected                                          | Owned bindings and grants garbage-collected     |
 
 ## Cutover
 
 One incompatible cutover, not a staged migration (operator, 2026-11-05: downtime in existing
 services until images converge is acceptable; [`AGENTS.md`](../AGENTS.md) § Deployed state is
-disposable). No dual readers, no `serviceAccount` binding subject, no tolerant decoding of SA-keyed
+disposable). No dual readers, no ServiceAccount binding subject, no tolerant decoding of SA-keyed
 rows. The change set lands together, and the PR states the rollback: revert the Flux pins and
 delete the objects of the new kinds.
 
-- **CRDs and catalog:** `Identity`, `KubernetesAccount`, the new `PolicyBinding` subject oneof and
-  the `kubernetesAccount` credential source; Flux-rendered identities and accounts for the static
-  agents (`claude-ai`, `haku-agent`) in place of their ServiceAccounts, `shared-diagnostics` with
-  its roles binding, every identity binding rewritten from its SA subject, and the `basic` set
-  carrying the use binding for the shared account.
+- **CRDs and catalog:** `Identity`, `KubernetesRoleSet`, `KubernetesAccountGrant`,
+  `KubernetesAccount`, the `Identity` binding subject, `PolicySet` without Kubernetes rule types,
+  and the `kubernetesServiceAccount` credential source; Flux-rendered identities for the static
+  agents (`claude-ai`, `haku-agent`) in place of their ServiceAccounts, the `shared-diagnostics`
+  ServiceAccount with its grant, credential and set, every binding rewritten from its SA subject,
+  every Kubernetes rule moved from its `PolicySet` to a role set, and the `basic` set carrying the
+  shared account's use rule.
 - **Controllers:** the Sandbox Controller writes an `Identity` and its binding per Sandbox and no
-  ServiceAccount, and records the SPIFFE ID on the identity; the Policy Controller reconciles
-  accounts and identity subjects and nothing else.
+  ServiceAccount, and records the SPIFFE ID on the identity; the Policy Controller reads grants
+  and role sets, keeps `PolicyBinding` expiry, and manages `KubernetesAccount`s.
 - **Data plane:** the egress sidecar and the Firecracker relay present the SVID on the hop; the
   proxy accepts SVIDs, resolves identities, and drops the proxy-audience and Kubernetes-audience
   projected tokens; the kubeconfig carries a context per account.
@@ -233,10 +289,13 @@ cannot change in place, and the new launch writes the identity.
 4. **Impersonation versus TokenRequest** is an operator decision, and which apiservers the proxy and
    controller may reach with what credential.
 5. **Kubeconfig contexts at runtime.** The kubeconfig is rendered at launch; contexts change as
-   bindings come and go. Either an exec credential plugin that reads the rules endpoint, or agent
+   rules come and go. Either an exec credential plugin that reads the rules endpoint, or agent
    instructions to add a context, or a single placeholder with the account chosen another way.
 6. **Central sampler as an identity.** Delegation today carries an SA UID as the effective caller;
    it must carry an identity reference, and the sampler's own account must never become the agent's.
+   With zero environments the identity has no workload credential at all, so every service the
+   agent reaches must accept the delegated form, and whether the sampler may assert any identity in
+   the namespace or only those Dispatcher has bound to its Sessions is the trust decision to make.
 7. **Stored principals.** History's `execution_principal` and Dispatcher rows pin SA UIDs. The
    cutover migration rewrites rows whose Sandbox still exists to its identity and marks the rest
    historical; confirm that is enough for the retained Sessions the operator wants readable, since
@@ -244,21 +303,25 @@ cannot change in place, and the new launch writes the identity.
 8. **Same-environment invariant** ([identity contract](task_dag.md#session_identity_contract--session-identity-and-shared-environment-admission))
    becomes "same identity"; co-resident Sessions share one SVID, so it holds by construction, and
    admission must still refuse a Session whose identity differs.
-9. **Revocation granularity.** Removing an identity's binding stops substitution on the next request;
+9. **Revocation granularity.** Removing an identity's rule stops substitution on the next request;
    an established TLS connection to the apiserver carrying earlier requests is not cut. State whether
    the proxy ends tunnels on rule loss, as the egress SPEC does for other credentials.
-10. **Admission for generated sets.** The controller writing `PolicySet`s needs a rule that limits it
-    to the one-egress-rule shape, and the per-account set must not be bindable to a different host.
-11. **Second control plane.** Accounts live on target apiservers regardless of where Agentplane's
+10. **Role sets or inline roles.** A grant referencing `KubernetesRoleSet`s keeps today's reusable
+    names and the existing rule schema; a grant listing roles inline is one kind fewer and loses the
+    reuse. Also whether the app may author role sets, or only grants to Flux-authored ones.
+11. **Admission for controller-written policy.** The Policy Controller writing a `PolicySet` and an
+    `EgressCredential` per managed account is new authority; an admission rule limits it to the
+    one-rule shape naming that account's own ServiceAccount and apiserver host.
+12. **Second control plane.** Accounts live on target apiservers regardless of where Agentplane's
     records live, so this plan is neutral across the [architecture directions](architecture_overview.md);
-    `Identity` and `KubernetesAccount` move with the Sandbox family under D3.
+    `Identity`, grants and managed accounts move with the Sandbox family under D3.
 
 ## Exit
 
-A reviewed decision on items 1 and 4, then the migration steps as DAG nodes with these acceptance
+A reviewed decision on items 1, 4 and 10, then the cutover as DAG nodes with these acceptance
 checks: an SVID-authenticated egress hop and one platform route in the system tests; a Sandbox with
-no Kubernetes binding has no ServiceAccount and `kubectl` fails closed; two identities act as one
+no Kubernetes use rule has no ServiceAccount and `kubectl` fails closed; two identities act as one
 shared account and one of them loses it without the other noticing; a temporary account expires and
-its SA, RoleBindings and both bindings are gone with no controller restart; deleting an identity
-removes everything it owned. When those land, this file's content moves to `docs/` and the file is
-deleted.
+its SA, RoleBindings, grant, credential, set and use binding are gone with no controller restart;
+deleting an identity removes everything it owned. When those land, this file's content moves to
+`docs/` and the file is deleted.
