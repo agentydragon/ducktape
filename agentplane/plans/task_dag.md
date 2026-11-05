@@ -977,8 +977,8 @@ paused and is not a prerequisite; `LOCAL_BAZEL` independently proves the VM-base
 
 ### `AGENT_PRINCIPAL_MODEL_DESIGN` — Agentplane principals and external identities
 
-**Decision, unscheduled; operator direction 2026-11-05: Agentplane-owned identity, no automatic
-ServiceAccount.** An agent's permission subject is an Agentplane identity, not a Kubernetes
+**Decided 2026-11-05: Agentplane-owned identity, no automatic ServiceAccount; implementation in
+[section 14](#14-identity-and-kubernetes-accounts-cutover).** An agent's permission subject is an Agentplane identity, not a Kubernetes
 ServiceAccount, and an agent workload gets no ServiceAccount unless a binding grants it Kubernetes
 access; `NETWORK_WORKLOAD_IDENTITY` supplies the workload authentication this needs. Kubernetes is
 a downstream system with its own grant kind: `PolicyBinding` binds Agentplane rules to an identity,
@@ -1032,12 +1032,11 @@ trust domain. Do not trust a caller-supplied principal, expose substituted crede
 workload, or assume the proxy can distinguish co-resident Sessions. Choose how revocation, account
 replacement, UID fencing, queued work and historical attribution work across identity changes.
 
-**Exit:** compare the direct-SA and Agentplane-principal alternatives with one end-to-end
-Agentplane service call and one Kubernetes API call, including provisioning, policy reconciliation,
-denial and revocation, credential lifetime, recovery and a data-preserving transition. Identify
-which existing consumers and approved contracts change, and request an operator decision. This is
-related to `MULTIAGENT_MODEL` and `SESSION_RUNTIME_MODEL_DESIGN`, not a prerequisite for their
-already selected work; no identity service, broker or runtime migration is selected here.
+**Exit:** the blocking questions were decided on 2026-11-05 (services verify SVIDs themselves,
+impersonation, `KubernetesRoleSet`, `ManagedServiceAccount`); the remaining text above is context.
+The node closes when `IDENTITY_CUTOVER` lands and the plan's content moves to `docs/`. Related to
+`MULTIAGENT_MODEL` and `SESSION_RUNTIME_MODEL_DESIGN`, not a prerequisite for their already selected
+work; no identity service or broker is selected.
 
 ### `SESSION_RUNTIME_MODEL_DESIGN` — Sessions, harness placement and execution attachments
 
@@ -1532,8 +1531,8 @@ design that before removing the projected tokens. Consequence for `AGENT_PRINCIP
 the Pod's ServiceAccount stops being what authenticates an agent, and no agent is provisioned one by
 default. Costs that stand: a second authentication scheme in each agent-facing service during the
 migration, and the projected-token path kept for non-SVID workloads the proxy fronts (the public
-coder's OpenClaw). **Exit:** the egress hop and one platform route authenticate an SVID end to end
-in the system tests; the Gateway path is already covered.
+coder's OpenClaw). **Exit:** `SVID_EGRESS_HOP` and `SVID_PLATFORM_ROUTES` in
+[section 14](#14-identity-and-kubernetes-accounts-cutover); the Gateway path is already covered.
 
 ## 7. Our own Sandbox resource: Sessions that outlive their Pod
 
@@ -2914,6 +2913,161 @@ wheels and every caller before removing old per-Session-process assumptions and 
 Do not delete retained runner stores, native conversations or History. Confirm exact UID/Session
 routing to the private store, suspended-queue retry and restart on the deployed images before retiring
 old paths.
+
+## 14. Identity and Kubernetes accounts cutover
+
+The implementation of [identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md)
+under the 2026-11-05 decisions. Everything but the last node lands as code that is off in staging
+and exercised in the k3s system tests, so each PR stays small; `IDENTITY_CUTOVER` is the one change
+with downtime, per [`AGENTS.md`](../AGENTS.md) § Changes that can break staging. Stage edges are
+technical prerequisites; the fan-in to the system tests is a sequencing hold, not a permission to
+start them early.
+
+```mermaid
+flowchart LR
+    IDENTITY_KINDS[Ready: identity and grant kinds] --> SVID_EGRESS_HOP[Blocked: SVID on the egress hop]
+    IDENTITY_KINDS --> POLICY_GRANTS[Blocked: grants, role sets, managed SAs]
+    IDENTITY_KINDS --> EGRESS_IDENTITY_RULES[Blocked: identity rules and impersonation]
+    IDENTITY_KINDS --> SERVICES_IDENTITY_PRINCIPAL[Blocked: services act and record by identity]
+    IDENTITY_KINDS --> SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
+    IDENTITY_KINDS --> IDENTITY_CATALOG[Blocked: catalog and RBAC in cdk8s]
+    IDENTITY_KINDS --> APP_IDENTITIES_UI[Blocked: identities in the app]
+    SVID_EGRESS_HOP --> SVID_PLATFORM_ROUTES[Blocked: services verify SVIDs]
+    SVID_PLATFORM_ROUTES --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
+    POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS
+    EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS
+    SERVICES_IDENTITY_PRINCIPAL --> IDENTITY_SYSTEM_TESTS
+    SANDBOX_IDENTITY_SPEC --> IDENTITY_SYSTEM_TESTS
+    IDENTITY_CATALOG --> IDENTITY_SYSTEM_TESTS
+    IDENTITY_SYSTEM_TESTS --> IDENTITY_CUTOVER[Blocked: the staging cutover]
+    APP_IDENTITIES_UI --> IDENTITY_CUTOVER
+```
+
+### `IDENTITY_KINDS` — identity and grant kinds
+
+**Ready.** Go types, controller-gen output, `crds/generate.py` manifests and admission tests for
+`Identity`, `KubernetesRoleSet`, `KubernetesAccountGrant` and `ManagedServiceAccount`;
+`PolicyBinding.spec.subject` becomes an identity reference; the two Kubernetes rule types leave
+`PolicySet`; `EgressCredential` gains the `kubernetesServiceAccount` source. Generated clients and
+the policy protobuf follow. No reader changes. **Exit:** the CRDs install on the envtest apiserver,
+admission rejects a Kubernetes rule in a `PolicySet` and a binding with no identity, and existing
+tests of untouched kinds still pass.
+
+### `SVID_EGRESS_HOP` — the sidecar and relay present the SVID to the proxy
+
+**Blocked on `IDENTITY_KINDS`.** The central proxy accepts a client certificate on the hop,
+verified with `environment_runtime_transport` against the trust-manager roots, parses the SPIFFE
+path, resolves the Sandbox UID to the live Sandbox, checks the credential ID against its status
+(question 2 of the plan decides whether the sidecar shares Runtime's Secret or gets a second
+certificate under the same path), and reads `spec.identity`; this gives the proxy a Sandbox read.
+The Pod sidecar and the Firecracker relay present it instead of the proxy-audience projected token.
+Behind a proxy setting, off in staging. **Exit:** the egress test harness (`test_proxy.py`, real
+binaries, envtest) admits an SVID-authenticated request under the identity's rules, refuses a
+certificate for a deleted or replaced Sandbox, and refuses a name in any header as identity.
+
+### `SVID_PLATFORM_ROUTES` — first-party services verify SVIDs themselves
+
+**Blocked on `SVID_EGRESS_HOP`.** Decided 2026-11-05: the proxy tunnels the TLS connection through
+and each of Notification, Dispatcher, runner ingress, the Action Service and LLM ingress verifies
+the client certificate with the shared transport package and resolves the identity through the
+live Sandbox; the proxy never asserts an identity. Each service drops its Pod-bound projected-token
+path for sandbox callers and keeps its own authorization as the whole gate; `authenticatedWorkloadToken`
+and the per-audience `projectedWorkloadToken` entries go. The central sampler's zero-environment
+path stays on delegation with an identity reference (`SERVICES_IDENTITY_PRINCIPAL`). **Exit:** one
+platform route per service authenticates an SVID end to end in the k3s stack, and a forged or
+expired leaf is refused before any handler runs.
+
+### `POLICY_GRANTS` — grants, role sets and managed ServiceAccounts
+
+**Blocked on `IDENTITY_KINDS`.** The Policy Controller reads `KubernetesAccountGrant` and
+`KubernetesRoleSet` instead of `PolicyBinding` Kubernetes rules, keeping native RoleBindings per
+grant, role and namespace with the existing additive, pruned, never-adopt-on-name semantics;
+expiry extends to grants and managed accounts; `ManagedServiceAccount` creates the SA in the
+accounts namespace with a UID label, emits the account's `EgressCredential` and one-rule
+`PolicySet` owned by it, and prunes the SA on reconcile once the account is gone. Local apiserver
+only; remote targets are a settings entry added when one exists. **Exit:** envtest coverage for a
+grant on a Flux SA, a temporary account's full lifecycle including expiry with no restart, and a
+same-name SA recreated while a grant is live; the controller's RBAC adds SA create and delete in the
+accounts namespace and nothing else.
+
+### `EGRESS_IDENTITY_RULES` — identity subjects and impersonation at the proxy
+
+**Blocked on `IDENTITY_KINDS`.** The shared `policy/reader` resolves identity subjects; the proxy's
+decision keys on the identity; the `kubernetesServiceAccount` source substitutes the proxy's own
+apiserver bearer and adds `Impersonate-User` for the named account, bounded by a Role granting
+`impersonate` on `serviceaccounts` in the accounts namespace; decision history records identity and
+account. The Kubernetes-audience projected token is removed with the kubeconfig
+(`SANDBOX_IDENTITY_SPEC`). **Exit:** the egress harness shows two identities acting as one account,
+one losing its use rule without the other noticing, and the apiserver audit entry naming both the
+account and the proxy.
+
+### `SERVICES_IDENTITY_PRINCIPAL` — services act and record by identity
+
+**Blocked on `IDENTITY_KINDS`.** History's execution principal, Dispatcher's Session rows,
+Notification's inbox ownership, the Action Service's caller and the delegation envelope carry an
+identity reference plus the workload incarnation as provenance; the central sampler delegates as
+the Session's identity and its own account never becomes the agent's; `CreateSession` names an
+identity and Dispatcher is the authority for that association. Migrations rewrite rows whose
+Sandbox still exists and mark the rest historical, as History migration 8 did. **Exit:** the
+existing service tests pass with identity principals, a retained Session with a deleted Sandbox
+reads as historical, and the sampler scenario in the k3s stack submits an Action as an identity
+with no environment.
+
+### `SANDBOX_IDENTITY_SPEC` — a Sandbox names its identity and creates nothing else
+
+**Blocked on `IDENTITY_KINDS`.** `Sandbox.spec.identity` is required and immutable; the Sandbox
+Controller creates no ServiceAccount and no PolicyBinding, runs the Pod on the default SA with
+`automountServiceAccountToken: false`, and reports `IdentityMissing` when the identity is gone;
+the sandbox templates stop mounting a kubeconfig; `EnvironmentService` creation takes an identity;
+the agent Kubernetes docs lose the kubeconfig and point at the rules endpoint. **Exit:** controller
+tests for a Sandbox with and without a live identity, the rendered Pod has no token projection but
+the sidecar's, and a Sandbox with no Kubernetes use rule has nothing in the accounts namespace.
+
+### `IDENTITY_CATALOG` — the catalog and RBAC rendered in the new shapes
+
+**Blocked on `IDENTITY_KINDS`.** cdk8s renders `Identity` objects for the static agents
+(`claude-ai`, `haku-agent`) in place of their ServiceAccounts, the `shared-diagnostics` SA with its
+grant, credential and one-rule set, every Kubernetes rule as a `KubernetesRoleSet`, every binding on
+an identity, the `basic` set carrying the shared account's use rule, the accounts namespace, and the
+proxy's and controller's new Roles; the MCP edge binds a Connection to an identity. Rendering is
+behind the same staging switch as the rest, so `devel` keeps rendering today's objects until the
+cutover. **Exit:** `test_generate_manifests` and the egress and policy manifest tests pass on both
+renderings, and no `PolicySet` in the new rendering carries a Kubernetes rule.
+
+### `APP_IDENTITIES_UI` — identities in the app
+
+**Blocked on `IDENTITY_KINDS`; parallel with the service work.** The identities list with
+references, grants and last activity and an unreferenced filter; delete refused while referenced;
+the identity page re-anchoring "View grants"; the session form with placement and identity, the
+set selector hidden for an existing identity; the permission-request approval card with new
+temporary account, widen shared, or deny; the finish dialog defaulting to delete an identity the
+app minted for that session. Mockups: the plan's operator UI section. **Exit:** BFF routes with
+tests, visual tests capturing each screen, and a browser test that a referenced identity cannot be
+deleted.
+
+### `IDENTITY_SYSTEM_TESTS` — cutover acceptance scenarios
+
+**Blocked on `SVID_PLATFORM_ROUTES`, `POLICY_GRANTS`, `EGRESS_IDENTITY_RULES`,
+`SERVICES_IDENTITY_PRINCIPAL`, `SANDBOX_IDENTITY_SPEC` and `IDENTITY_CATALOG`.** k3s scenarios for
+the plan's exit checks: an SVID-authenticated egress hop and one platform route; a Sandbox with no
+Kubernetes use rule has no ServiceAccount and `kubectl` fails closed at the proxy; two identities act
+as one shared account and one loses it alone; a temporary account expires and its SA, RoleBindings,
+grant, credential, set and use binding are gone with no controller restart; deleting an identity
+removes everything it owned; a Firecracker guest's relay authenticates with the SVID. **Exit:** the
+scenarios pass on the new rendering in CI; they are the gate the cutover PR cites.
+
+### `IDENTITY_CUTOVER` — the staging cutover
+
+**Blocked on `IDENTITY_SYSTEM_TESTS` and `APP_IDENTITIES_UI`.** One PR flips the staging rendering
+and settings, deletes the old code paths (SA binding subject, Kubernetes rule types in `PolicySet`,
+Sandbox-created SAs and bindings, the proxy-audience and Kubernetes-audience projected tokens, the
+kubeconfig mount), deletes the old objects, and states the rollback: revert the Flux pins and delete
+the objects of the new kinds. Running Sandboxes are replaced, not patched. Expected downtime: every
+running Sandbox loses egress and platform routes until its sidecar image carries the SVID hop.
+**Exit:** staging agents launch, reach GitHub and `kubectl` as the shared account, a temporary grant
+is approved and expires, and the plan's content moves to `docs/` with the SPECs of the Sandbox
+Controller, Policy Controller and egress proxy updated and `agent_rbac.md` rewritten; this section
+and `AGENT_PRINCIPAL_MODEL_DESIGN` are then removed.
 
 ## 15. Cleanups after the current tracks
 
