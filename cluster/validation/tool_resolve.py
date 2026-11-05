@@ -25,6 +25,6 @@ def resolve_tool(name: str, runfiles_rlocation: str) -> Path:
             return path
     except ImportError, RuntimeError:
         pass
-    if path := shutil.which(name):
-        return Path(path)
+    if executable := shutil.which(name):
+        return Path(executable)
     raise FileNotFoundError(f"{name} not found on PATH or in Bazel runfiles ({runfiles_rlocation})")
