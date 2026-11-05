@@ -49,7 +49,7 @@ kind: Identity
 metadata:
   name: agent-123
   namespace: agentplane-staging
-  ownerReferences: [{ kind: Sandbox, name: agent-123, uid: ... }] # Flux-owned for a standing agent
+  # no ownerReference: an identity is never owned by an environment
 spec:
   description: Daily CI agent
 status:
@@ -58,9 +58,18 @@ status:
     - serviceAccount: { namespace: agentplane-staging, name: openclaw } # workloads with no SVID only
 ```
 
-Who creates it decides its lifetime: the Sandbox Controller for a Sandbox-created agent (owned by the
-Sandbox, as its SA is today), Flux for a standing agent, Dispatcher if Session-managed identities
-land ([Session/environment model](session_environment_model.md#sessions-serviceaccounts-and-environments)).
+An identity is never owned by a Sandbox or any other environment (operator, 2026-11-05): a central
+Session attaches and detaches environments repeatedly, and a standing agent moves between Sandboxes,
+so the agent's lifetime and the compute's are different things. A Sandbox names its identity in
+`spec.identity`, immutable for the Sandbox's life, and the Sandbox Controller refuses a Sandbox
+without one. Who creates the identity decides its lifetime: Flux for a standing agent; the app at
+launch when the operator starts a fresh agent, deleted by the operator's explicit "finish with this
+agent"; Dispatcher for a Session-managed identity, deleted with the Session
+([Session/environment model](session_environment_model.md#sessions-serviceaccounts-and-environments)).
+Deleting the environment never deletes the identity; deleting the identity does not delete an
+environment that names it, which then cannot start a new workload and reports `IdentityMissing`.
+Every binding and grant that belongs to the agent is owned by the identity, so the agent's whole
+authority goes with one delete and survives any number of environment changes.
 
 ### `PolicyBinding` and `PolicySet`: Agentplane policy only
 
@@ -191,10 +200,11 @@ workload credential:
 - Kubernetes without an environment is an Action or nothing. There is no `kubectl` process to
   present a placeholder, so a grant to an account is inert until an environment is attached; the
   `kubernetes_admin` Action path is what remains, and it is authorized by the identity's bindings.
-- Attaching an environment later: the Sandbox's spec names the identity, the Sandbox Controller
-  records that incarnation's SPIFFE ID on the identity, and the proxy admits it under the same
-  bindings. The same-environment invariant holds because the environment runs as exactly one
-  identity, whichever Session attached it.
+- Attaching an environment later: the Sandbox's spec names the identity, and the proxy resolves the
+  incarnation's SVID to that Sandbox and so to the identity, admitting it under the same bindings.
+  Detaching, or deleting the environment, changes nothing about the identity or its grants. The
+  same-environment invariant holds because the environment runs as exactly one identity, whichever
+  Session attached it.
 
 ## Kubernetes execution
 
@@ -247,26 +257,28 @@ Nothing inside the sandbox ever holds a real token, and a new grant needs no fil
 
 Who cleans what, and by which mechanism:
 
-| Object                                       | Owner                                                                                       | Removed by                                                    |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `Identity`                                   | Sandbox, Flux, or Dispatcher                                                                | GC with the Sandbox; Flux prune; Dispatcher's explicit delete |
-| `PolicyBinding`                              | Sandbox (launch sets), Identity (runtime grants), Flux, `KubernetesAccount` (temporary use) | GC with its owner; the controller at `expiresAt`              |
-| `KubernetesAccountGrant`                     | Flux, Identity (runtime widening), `KubernetesAccount`                                      | GC with its owner; the controller at `expiresAt`              |
-| `KubernetesAccount`                          | Identity                                                                                    | GC with the identity; the controller at `expiresAt`           |
-| Generated `EgressCredential` and `PolicySet` | `KubernetesAccount`, or Flux for a static account                                           | GC with the account; Flux prune                               |
-| ServiceAccount in the accounts namespace     | Flux, or the controller (UID-labelled)                                                      | Flux prune; the controller's prune pass                       |
-| Native RoleBindings                          | The controller (labelled, grant UID)                                                        | The controller's prune pass                                   |
+| Object                                       | Owner                                                                                | Removed by                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `Identity`                                   | Nobody in Kubernetes: Flux, the app, or Dispatcher created it                        | Flux prune; the operator's explicit delete; Dispatcher with the Session |
+| `PolicyBinding`                              | Identity (launch sets and runtime grants), Flux, `KubernetesAccount` (temporary use) | GC with its owner; the controller at `expiresAt`                        |
+| `KubernetesAccountGrant`                     | Flux, Identity (runtime widening), `KubernetesAccount`                               | GC with its owner; the controller at `expiresAt`                        |
+| `KubernetesAccount`                          | Identity                                                                             | GC with the identity; the controller at `expiresAt`                     |
+| Generated `EgressCredential` and `PolicySet` | `KubernetesAccount`, or Flux for a static account                                    | GC with the account; Flux prune                                         |
+| ServiceAccount in the accounts namespace     | Flux, or the controller (UID-labelled)                                               | Flux prune; the controller's prune pass                                 |
+| Native RoleBindings                          | The controller (labelled, grant UID)                                                 | The controller's prune pass                                             |
 
-Two things do not garbage-collect: the Dispatcher-owned identity of a central Session, which needs
-an explicit delete on whatever Session deletion turns out to be, and anything on a remote
-apiserver, which the controller prunes with that apiserver's credential. A runtime grant the
-operator makes on a standing agent is owned by the identity, not the Sandbox, so it survives the
-Sandbox being replaced.
+Identities do not garbage-collect at all, by design: nothing in Kubernetes owns them. Three
+things therefore need an explicit end: the app-created identity of an agent the operator is done
+with, the Dispatcher-created identity of a central Session on whatever Session deletion turns out
+to be, and anything on a remote apiserver, which the controller prunes with that apiserver's
+credential. A leaked identity costs nothing while nothing can authenticate as it, but its bindings
+remain latent authority for whoever can later run as it, which is why question 6 bounds what the
+sampler may assert.
 
 | Case                                  | Identity                                         | Kubernetes account                                                        | Grants and use                                  |
 | ------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------- | ----------------------------------------------- |
 | Standing agent (Haku, daily CI agent) | Flux                                             | Flux ServiceAccount, or none                                              | Flux grant; use rule in the agent's sets        |
-| Sandbox-created agent                 | Sandbox Controller                               | None, or the shared account via `basic`                                   | Sandbox-owned binding from the launch sets      |
+| Agent started from the app            | The app at launch, free-standing                 | None, or the shared account via `basic`                                   | Identity-owned binding from the launch sets     |
 | Agent with no Kubernetes need         | as above                                         | None; no object anywhere                                                  | No use rule, no grant                           |
 | Temporary extra permissions           | unchanged                                        | `KubernetesAccount` owned by the identity, expiring                       | Grant and use binding owned by the account      |
 | Widening a shared account for an hour | unchanged                                        | unchanged                                                                 | One expiring grant on the account               |
@@ -288,9 +300,10 @@ delete the objects of the new kinds.
   ServiceAccount with its grant, credential and set, every binding rewritten from its SA subject,
   every Kubernetes rule moved from its `PolicySet` to a role set, and the `basic` set carrying the
   shared account's use rule.
-- **Controllers:** the Sandbox Controller writes an `Identity` and its binding per Sandbox and no
-  ServiceAccount, and records the SPIFFE ID on the identity; the Policy Controller reads grants
-  and role sets, keeps `PolicyBinding` expiry, and manages `KubernetesAccount`s.
+- **Controllers:** the Sandbox Controller requires `spec.identity`, creates no ServiceAccount, and
+  owns nothing identity-related; the app creates a free-standing `Identity` and its launch binding
+  before the Sandbox, or names an existing one; the Policy Controller reads grants and role sets,
+  keeps `PolicyBinding` expiry, and manages `KubernetesAccount`s.
 - **Data plane:** the egress sidecar and the Firecracker relay present the SVID on the hop; the
   proxy accepts SVIDs, resolves identities, and drops the proxy-audience and Kubernetes-audience
   projected tokens; the sandbox templates stop mounting a kubeconfig.
@@ -355,7 +368,11 @@ cannot change in place, and the new launch writes the identity.
 11. **Admission for controller-written policy.** The Policy Controller writing a `PolicySet` and an
     `EgressCredential` per managed account is new authority; an admission rule limits it to the
     one-rule shape naming that account's own ServiceAccount and apiserver host.
-12. **Second control plane.** Accounts live on target apiservers regardless of where Agentplane's
+12. **Ending an identity.** With no Kubernetes owner, an app-created identity ends only when the
+    operator says so. Decide what that affordance is (the Thread's "finish", a Sandbox delete that
+    offers to take the identity with it when nothing else names it, or an `expiresAt` on the
+    identity for one-off agents) and whether the app lists identities nothing references.
+13. **Second control plane.** Accounts live on target apiservers regardless of where Agentplane's
     records live, so this plan is neutral across the [architecture directions](architecture_overview.md);
     `Identity`, grants and managed accounts move with the Sandbox family under D3.
 
