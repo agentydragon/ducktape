@@ -359,8 +359,10 @@ pub fn materialize_logical_modules(
         &artifact_indexes,
         &selected_chunk_ids,
     )?;
-    let reparsed =
-        program_summary::reparse_unretained_entries(&artifact, Some(&program_summary_chunk_closure));
+    let reparsed = program_summary::reparse_unretained_entries(
+        &artifact,
+        Some(&program_summary_chunk_closure),
+    );
     let mut loaded = match &options.analysis {
         AnalysisMode::Load {
             artifact: bytes,
