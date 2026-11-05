@@ -44,9 +44,9 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 
 use analysis::{
-    DepKind, DependencyEdgeReport, DependencyGraph, DependencyGraphReport, EdgeRoleReport,
-    LineRange, ModuleAssignment, ModuleDestinationKind, ModuleId, SourceUnitClass,
-    SourceUnitReport, StatementKind,
+    DepKind, DependencyEdgeReport, DependencyGraphInput, DependencyGraphReport, LineRange,
+    ModuleAssignment, ModuleDestinationKind, ModuleId, SourceUnitClass, SourceUnitReport,
+    StatementKind,
 };
 use anonymous_resolution::{
     ModuleNeutralReferenceMeaning, ResolvedLocalMemberOrigin, ResolvedLocalMemberReference,
@@ -54,6 +54,7 @@ use anonymous_resolution::{
     resolve_source_claims,
 };
 use graph_provenance::VerifiedGraphSourceContext;
+use source_identity::SourceUnitId;
 use spec::{MemberSelectorSpec, ModulePath};
 use spec_modules::{
     ModuleClaims, collect_module_files, load_active_claims, module_claims, module_path_from_file,
@@ -477,18 +478,18 @@ pub struct ProposalDiagnostic {
 }
 
 pub fn propose_from_files(options: &ProposalOptions) -> Result<ProposalsReport> {
-    let graph: DependencyGraphReport = report_io::read_json_gzip(&options.dependency_graph_path)?;
-    propose_from_graph(&graph, options)
+    let input = DependencyGraphInput::read(&options.dependency_graph_path)?;
+    propose_from_graph(&input, options)
 }
 
-/// [`propose_from_files`] for callers that already hold the parsed
-/// `DependencyGraphReport`. The planner verbs load the graph once for their
-/// own report sections; re-reading `dependency_graph_path` here would parse
-/// the same multi-megabyte JSON a second time per command.
+/// [`propose_from_files`] for callers that already hold the validated graph
+/// input. Topology is shared across proposal construction and every candidate
+/// gate query; report data supplies labels and destinations.
 pub fn propose_from_graph(
-    graph: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     options: &ProposalOptions,
 ) -> Result<ProposalsReport> {
+    let graph = input.report();
     let claims = active_claims_from_options(graph, options)?;
     let addressable_anonymous_source_unit_ids =
         if options.source_root.is_some() || options.source_context.is_some() {
@@ -503,7 +504,7 @@ pub fn propose_from_graph(
             None
         };
     propose_with_context(
-        graph,
+        input,
         &claims,
         options.size_cap_lines,
         ProposalContext {
@@ -529,19 +530,20 @@ pub fn decompose_modules_from_files_with_options(
     options: &ProposalOptions,
     decomposition: ModuleDecompositionOptions,
 ) -> Result<ModuleDecompositionReport> {
-    let graph: DependencyGraphReport = report_io::read_json_gzip(&options.dependency_graph_path)?;
-    decompose_modules_from_graph_with_options(&graph, options, decomposition)
+    let input = DependencyGraphInput::read(&options.dependency_graph_path)?;
+    decompose_modules_from_graph_with_options(&input, options, decomposition)
 }
 
 pub fn decompose_modules_from_graph_with_options(
-    graph: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     options: &ProposalOptions,
     decomposition: ModuleDecompositionOptions,
 ) -> Result<ModuleDecompositionReport> {
+    let graph = input.report();
     let claims = active_claims_from_options(graph, options)?;
     let existing_module_paths = module_paths_from_options(graph, options)?;
     decompose_modules(
-        graph,
+        input,
         &claims,
         existing_module_paths,
         options,
@@ -598,12 +600,13 @@ fn active_claims_from_options(
 }
 
 fn decompose_modules(
-    graph: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     active_claims: &BTreeMap<String, ModulePath>,
     existing_module_paths: BTreeSet<ModulePath>,
     options: &ProposalOptions,
     decomposition: ModuleDecompositionOptions,
 ) -> Result<ModuleDecompositionReport> {
+    let graph = input.report();
     let strategy = decomposition.strategy;
     let source_unit_modules: Vec<ModulePath> = graph
         .nodes
@@ -649,11 +652,11 @@ fn decompose_modules(
             // structural and timing checks while allowing an existing large module
             // to be considered as a whole.
             let (quotient, _) = build_same_module_seed_quotient(
-                graph,
+                input,
                 &graph.atomic_graph.nodes,
                 &spec_modules,
                 usize::MAX,
-            )?;
+            );
             module_source_units
                 .iter()
                 .map(|(module_id, source_unit_indices)| {
@@ -683,14 +686,14 @@ fn decompose_modules(
                 .collect::<Result<BTreeMap<_, _>>>()?
         }
         ModuleDecompositionStrategy::Atomic => atomic_module_groups(
-            graph,
+            input,
             &module_source_units,
             &source_unit_modules,
             &residual_path,
             false,
         )?,
         ModuleDecompositionStrategy::AtomicIncludingResidual => atomic_module_groups(
-            graph,
+            input,
             &module_source_units,
             &source_unit_modules,
             &residual_path,
@@ -769,7 +772,7 @@ fn decompose_modules(
     }
 
     let mut validation =
-        validate_decomposition_candidate(graph, &candidate_source_unit_modules, &residual_path)?;
+        validate_decomposition_candidate(input, &candidate_source_unit_modules, &residual_path)?;
     let mut coarsening = None;
     anyhow::ensure!(
         !decomposition.coarsen_atomic_conflicts
@@ -789,7 +792,7 @@ fn decompose_modules(
             )?;
             if !merges.is_empty() {
                 validation = validate_decomposition_candidate(
-                    graph,
+                    input,
                     &candidate_source_unit_modules,
                     &residual_path,
                 )?;
@@ -867,7 +870,7 @@ fn decompose_modules(
                 suggested_merge_paths,
             });
             validation = validate_decomposition_candidate(
-                graph,
+                input,
                 &candidate_source_unit_modules,
                 &residual_path,
             )?;
@@ -894,7 +897,7 @@ fn decompose_modules(
             coarsening_report.stop_reason == ModuleDecompositionCoarseningStopReason::Accepted;
         let home_rejoining = if accepted_baseline {
             rejoin_original_home_fragments(
-                graph,
+                input,
                 &source_unit_modules,
                 &residual_path,
                 &mut candidate_source_unit_modules,
@@ -913,7 +916,7 @@ fn decompose_modules(
             )
         };
         validation = validate_decomposition_candidate(
-            graph,
+            input,
             &candidate_source_unit_modules,
             &residual_path,
         )?;
@@ -1458,29 +1461,25 @@ struct DecompositionValidation {
 }
 
 fn validate_decomposition_candidate(
-    graph: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     candidate_source_unit_modules: &[ModulePath],
     residual_path: &ModulePath,
 ) -> Result<DecompositionValidation> {
-    let source_unit_index: HashMap<&str, usize> = graph
-        .nodes
-        .iter()
-        .enumerate()
-        .map(|(idx, node)| (node.id.as_str(), idx))
-        .collect();
+    let graph = input.report();
     let mut atomic_group_conflicts = Vec::new();
     for atomic_group in &graph.atomic_graph.nodes {
         let mut candidate_modules = BTreeSet::new();
         for source_unit_id in &atomic_group.source_unit_ids {
-            let source_unit_idx = source_unit_index
-                .get(source_unit_id.as_str())
+            let source_unit_idx = input
+                .source_unit_id(source_unit_id)
+                .map(|source_unit| source_unit.0)
                 .with_context(|| {
                     format!(
                         "atomic group {} references unknown source unit {source_unit_id}",
                         atomic_group.id
                     )
                 })?;
-            candidate_modules.insert(candidate_source_unit_modules[*source_unit_idx].clone());
+            candidate_modules.insert(candidate_source_unit_modules[source_unit_idx].clone());
         }
         if candidate_modules.len() > 1 {
             atomic_group_conflicts.push(ModuleDecompositionAtomicConflict {
@@ -1491,8 +1490,6 @@ fn validate_decomposition_candidate(
         }
     }
 
-    let dependency_graph = DependencyGraph::from_report(graph)
-        .context("reconstructing the dependency graph for decomposition validation")?;
     let (assignments, paths_by_module_id) =
         candidate_module_assignments(candidate_source_unit_modules, residual_path)?;
     let assignment = ModuleAssignment::from_assignments(
@@ -1500,7 +1497,7 @@ fn validate_decomposition_candidate(
         analysis::EntryDestination::from_module_id(ModuleId(0)),
     );
     let gate_validation =
-        gate::validate_assignment_with_verdict(&dependency_graph, &assignment, &|module_id| {
+        gate::validate_assignment_with_verdict(input.graph(), &assignment, &|module_id| {
             paths_by_module_id
                 .get(&module_id)
                 .cloned()
@@ -1545,7 +1542,7 @@ fn candidate_module_assignments(
 }
 
 fn rejoin_original_home_fragments(
-    graph: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     original_source_unit_modules: &[ModulePath],
     residual_path: &ModulePath,
     candidate_source_unit_modules: &mut [ModulePath],
@@ -1605,8 +1602,8 @@ fn rejoin_original_home_fragments(
     // Decomposition has no size ceiling: an original home can be larger than
     // the proposer's default cap. The shared incremental gate still checks
     // every contraction against the complete candidate assignment.
-    let mut quotient = QuotientGraph::from_report_with_realizable_assignment(
-        graph,
+    let mut quotient = QuotientGraph::from_graph_with_realizable_assignment(
+        input,
         usize::MAX,
         &assignments,
         ModuleId(0),
@@ -1979,23 +1976,19 @@ fn coarsened_naming_collisions(
 type AtomicModuleGroups = BTreeMap<ModulePath, Vec<(Vec<usize>, bool)>>;
 
 fn atomic_module_groups(
-    graph: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     module_source_units: &BTreeMap<ModulePath, Vec<usize>>,
     source_unit_modules: &[ModulePath],
     residual_path: &ModulePath,
     include_residual: bool,
 ) -> Result<AtomicModuleGroups> {
-    let source_unit_index: HashMap<&str, usize> = graph
-        .nodes
-        .iter()
-        .enumerate()
-        .map(|(idx, node)| (node.id.as_str(), idx))
-        .collect();
+    let graph = input.report();
     let mut atomic_group_by_source_unit = vec![None; graph.nodes.len()];
     for (atomic_group_idx, atomic_group) in graph.atomic_graph.nodes.iter().enumerate() {
         for source_unit_id in &atomic_group.source_unit_ids {
-            let source_unit_idx = source_unit_index
-                .get(source_unit_id.as_str())
+            let source_unit_idx = input
+                .source_unit_id(source_unit_id)
+                .map(|source_unit| source_unit.0)
                 .with_context(|| {
                     format!(
                         "atomic group {} references unknown source unit {source_unit_id}",
@@ -2003,7 +1996,7 @@ fn atomic_module_groups(
                     )
                 })?;
             if let Some(previous_atomic_group) =
-                atomic_group_by_source_unit[*source_unit_idx].replace(atomic_group_idx)
+                atomic_group_by_source_unit[source_unit_idx].replace(atomic_group_idx)
             {
                 anyhow::bail!(
                     "source unit {source_unit_id} appears in atomic groups {previous_atomic_group} and {atomic_group_idx}"
@@ -2025,9 +2018,9 @@ fn atomic_module_groups(
             .source_unit_ids
             .iter()
             .map(|source_unit_id| {
-                source_unit_index
-                    .get(source_unit_id.as_str())
-                    .copied()
+                input
+                    .source_unit_id(source_unit_id)
+                    .map(|source_unit| source_unit.0)
                     .with_context(|| {
                         format!(
                             "atomic group {} references unknown source unit {source_unit_id}",
@@ -2128,12 +2121,12 @@ fn next_residual_fragment_path(occupied_paths: &mut BTreeSet<ModulePath>) -> Mod
 }
 
 pub fn propose(
-    graph: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     active_claims: &BTreeMap<String, ModulePath>,
     size_cap_lines: usize,
 ) -> Result<ProposalsReport> {
     propose_with_context(
-        graph,
+        input,
         active_claims,
         size_cap_lines,
         ProposalContext::default(),
@@ -2146,18 +2139,12 @@ struct ProposalContext {
 }
 
 fn propose_with_context(
-    graph: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     active_claims: &BTreeMap<String, ModulePath>,
     size_cap_lines: usize,
     context: ProposalContext,
 ) -> Result<ProposalsReport> {
-    let source_unit_index: HashMap<&str, usize> = graph
-        .nodes
-        .iter()
-        .enumerate()
-        .map(|(i, node)| (node.id.as_str(), i))
-        .collect();
-
+    let graph = input.report();
     let residual: BTreeSet<usize> = graph
         .nodes
         .iter()
@@ -2180,11 +2167,11 @@ fn propose_with_context(
     // absorbs orphans into them.
     let spec_modules = spec_module_groups(graph);
     let (mut quotient, seed_rejections) = build_seed_quotient(
-        graph,
+        input,
         &graph.atomic_graph.nodes,
         &spec_modules,
         size_cap_lines,
-    )?;
+    );
     // Mutates the quotient in place; the returned merge-step list is unused here.
     greedy_merge_to_convergence(&mut quotient);
 
@@ -2198,16 +2185,11 @@ fn propose_with_context(
     // to peel proposals.
     let mut residual_constraining_edges: Vec<(usize, usize)> = Vec::new();
     let mut edges_to_active: Vec<(usize, ModulePath)> = Vec::new();
-    for edge in &graph.edges {
-        if !edge.constrains_init_order {
+    for edge in input.graph().iter_edges() {
+        if !edge.reason.constrains_init_order() {
             continue;
         }
-        let (Some(&source), Some(&target)) = (
-            source_unit_index.get(edge.source.as_str()),
-            source_unit_index.get(edge.target.as_str()),
-        ) else {
-            continue;
-        };
+        let (source, target) = (edge.from.0, edge.to.0);
         if !residual.contains(&source) || source == target {
             continue;
         }
@@ -2236,7 +2218,7 @@ fn propose_with_context(
         &class_to_labels,
         &residual_constraining_edges,
         &edges_to_active,
-        graph,
+        input,
         size_cap_lines,
         &context,
     );
@@ -2374,14 +2356,16 @@ fn emit_proposals(
     class_to_labels: &BTreeMap<ClassId, BTreeSet<ModulePath>>,
     residual_edges: &[(usize, usize)],
     active_edges: &[(usize, ModulePath)],
-    graph: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     size_cap_lines: usize,
     context: &ProposalContext,
 ) -> Vec<ModuleProposal> {
-    let incoming_consumers = IncomingConsumerIndex::build(graph);
+    let graph = input.report();
+    let source_modules = source_modules_by_id(graph);
     let build_context = ProposalBuildContext {
         proposal_context: context,
-        incoming_consumers: &incoming_consumers,
+        input,
+        source_modules: &source_modules,
     };
 
     // Candidate classes: every live class that either has source_units or
@@ -2469,7 +2453,6 @@ fn emit_proposals(
                 class_to_labels.get(&class_id),
                 quotient,
                 edges,
-                graph,
                 &build_context,
             )
         })
@@ -2564,111 +2547,96 @@ struct CandidateEdgeStats {
     active_targets: BTreeSet<ModulePath>,
 }
 
-struct IncomingConsumerIndex<'a> {
-    by_target: HashMap<&'a str, Vec<&'a DependencyEdgeReport>>,
-    source_modules: HashMap<&'a str, &'a analysis::ModuleEntry>,
-}
-
 struct ProposalBuildContext<'context, 'graph> {
     proposal_context: &'context ProposalContext,
-    incoming_consumers: &'context IncomingConsumerIndex<'graph>,
+    input: &'graph DependencyGraphInput,
+    source_modules: &'context HashMap<&'graph str, &'graph analysis::ModuleEntry>,
 }
 
-impl<'a> IncomingConsumerIndex<'a> {
-    fn build(graph: &'a DependencyGraphReport) -> Self {
-        let mut by_target: HashMap<&str, Vec<&DependencyEdgeReport>> = HashMap::new();
-        for edge in &graph.edges {
-            by_target
-                .entry(edge.target.as_str())
-                .or_default()
-                .push(edge);
-        }
-        let modules_by_key: HashMap<&str, &analysis::ModuleEntry> = graph
-            .quotient
-            .nodes
-            .iter()
-            .map(|module| (module.key.as_str(), module))
-            .collect();
-        let source_modules = graph
-            .nodes
-            .iter()
-            .map(|source_unit| {
-                let module = modules_by_key
-                    .get(source_unit.destination.as_str())
-                    .copied()
-                    .expect("source unit destination must exist in graph modules");
-                (source_unit.id.as_str(), module)
-            })
-            .collect();
-        Self {
-            by_target,
-            source_modules,
-        }
-    }
+fn source_modules_by_id<'a>(
+    graph: &'a DependencyGraphReport,
+) -> HashMap<&'a str, &'a analysis::ModuleEntry> {
+    let modules_by_key: HashMap<&str, &analysis::ModuleEntry> = graph
+        .quotient
+        .nodes
+        .iter()
+        .map(|module| (module.key.as_str(), module))
+        .collect();
+    graph
+        .nodes
+        .iter()
+        .map(|source_unit| {
+            let module = modules_by_key
+                .get(source_unit.destination.as_str())
+                .copied()
+                .expect("source unit destination must exist in graph modules");
+            (source_unit.id.as_str(), module)
+        })
+        .collect()
 }
 
 fn observed_consumers_for(
     target_source_unit_idxs: &[usize],
     proposal_class_source_unit_idxs: &[usize],
-    graph: &DependencyGraphReport,
-    incoming: &IncomingConsumerIndex<'_>,
+    input: &DependencyGraphInput,
+    source_modules: &HashMap<&str, &analysis::ModuleEntry>,
 ) -> ObservedConsumers {
-    let candidate_source_units: BTreeSet<&str> = proposal_class_source_unit_idxs
-        .iter()
-        .map(|&idx| graph.nodes[idx].id.as_str())
-        .collect();
+    let candidate_source_units: BTreeSet<usize> =
+        proposal_class_source_unit_idxs.iter().copied().collect();
     let mut value_reads = Vec::new();
     let mut writes = Vec::new();
     let mut scheduling_or_promoted_context = Vec::new();
 
     for &target_idx in target_source_unit_idxs {
-        let target_id = graph.nodes[target_idx].id.as_str();
-        for edge in incoming.by_target.get(target_id).into_iter().flatten() {
-            if candidate_source_units.contains(edge.source.as_str()) {
+        for &edge_id in input.graph().in_edges_of(SourceUnitId(target_idx)) {
+            let edge = input.graph().edge(edge_id);
+            let report = input.edge_report(edge_id);
+            if candidate_source_units.contains(&edge.from.0) {
                 continue;
             }
-            let promoted = matches!(&edge.role, Some(EdgeRoleReport::PromotedAtInit { .. }));
-            match edge.edge_kind {
+            // Keep recorded promotion evidence even when a historical
+            // report's callee is unavailable to the canonical topology.
+            let promoted = report.role.is_some();
+            match edge.reason.kind() {
                 DepKind::EagerUse | DepKind::LazyUse | DepKind::HoistedUse => {
-                    value_reads.push(*edge);
+                    value_reads.push(report);
                     if promoted {
-                        scheduling_or_promoted_context.push(*edge);
+                        scheduling_or_promoted_context.push(report);
                     }
                 }
                 DepKind::EagerRebind | DepKind::LazyRebind | DepKind::DeferredRebind => {
-                    writes.push(*edge);
+                    writes.push(report);
                     if promoted {
-                        scheduling_or_promoted_context.push(*edge);
+                        scheduling_or_promoted_context.push(report);
                     }
                 }
                 DepKind::Sequenced
                 | DepKind::CoDeclaration
                 | DepKind::CoLocation
                 | DepKind::LocalEffect => {
-                    scheduling_or_promoted_context.push(*edge);
+                    scheduling_or_promoted_context.push(report);
                 }
             }
         }
     }
 
     ObservedConsumers {
-        value_reads: consumer_evidence(&value_reads, incoming),
-        writes: consumer_evidence(&writes, incoming),
+        value_reads: consumer_evidence(&value_reads, source_modules),
+        writes: consumer_evidence(&writes, source_modules),
         scheduling_or_promoted_context: consumer_evidence(
             &scheduling_or_promoted_context,
-            incoming,
+            source_modules,
         ),
     }
 }
 
 fn consumer_evidence(
     edges: &[&DependencyEdgeReport],
-    incoming: &IncomingConsumerIndex<'_>,
+    source_modules: &HashMap<&str, &analysis::ModuleEntry>,
 ) -> ConsumerEvidence {
     let mut source_units = BTreeMap::new();
     for edge in edges {
-        let current_module = incoming
-            .source_modules
+        let current_module = source_modules
             .get(edge.source.as_str())
             .expect("dependency edge source must exist in graph nodes")
             .path
@@ -2818,9 +2786,9 @@ fn build_proposal(
     labels: Option<&BTreeSet<ModulePath>>,
     quotient: &QuotientGraph,
     edges: CandidateEdgeStats,
-    graph: &DependencyGraphReport,
     context: &ProposalBuildContext<'_, '_>,
 ) -> ModuleProposal {
+    let graph = context.input.report();
     // Labels arrive sorted (BTreeSet over canonical `ModulePath`).
     // Convert to wire strings once, at this boundary; identity logic
     // above this point is type-safe.
@@ -2939,8 +2907,8 @@ fn build_proposal(
         observed_consumers: observed_consumers_for(
             source_unit_idxs.as_slice(),
             all_source_unit_idxs.as_slice(),
-            graph,
-            context.incoming_consumers,
+            context.input,
+            context.source_modules,
         ),
         anonymous_statement_source_unit_ids: anonymous_source_unit_ids,
         size_lines_estimate: size_lines,
@@ -3115,6 +3083,15 @@ mod tests {
         module_ref, residual_source_unit, source_unit,
     };
 
+    fn propose_report(
+        report: &DependencyGraphReport,
+        active_claims: &BTreeMap<String, ModulePath>,
+        size_cap_lines: usize,
+    ) -> Result<ProposalsReport> {
+        let input = DependencyGraphInput::from_report(report.clone())?;
+        propose(&input, active_claims, size_cap_lines)
+    }
+
     #[test]
     fn residual_atomic_groups_become_singleton_proposals() {
         let a = residual_source_unit("a", 1, &["a"], 10);
@@ -3128,7 +3105,7 @@ mod tests {
             ],
             vec![],
         );
-        let report = propose(&graph, &BTreeMap::new(), 10_000).unwrap();
+        let report = propose_report(&graph, &BTreeMap::new(), 10_000).unwrap();
         assert_eq!(report.residual_source_unit_count, 2);
         assert_eq!(report.proposals.len(), 2);
         assert!(
@@ -3181,7 +3158,7 @@ mod tests {
             ],
             vec![],
         );
-        let report = propose(&graph, &BTreeMap::new(), 10_000).unwrap();
+        let report = propose_report(&graph, &BTreeMap::new(), 10_000).unwrap();
         let blocked = report
             .proposals
             .iter()
@@ -3241,8 +3218,8 @@ mod tests {
             ],
             vec![],
         );
-        let json =
-            serde_json::to_value(propose(&graph, &BTreeMap::new(), 10_000).unwrap()).unwrap();
+        let json = serde_json::to_value(propose_report(&graph, &BTreeMap::new(), 10_000).unwrap())
+            .unwrap();
         let proposal = |binding: &str| {
             json["proposals"]
                 .as_array()
@@ -3274,9 +3251,10 @@ mod tests {
             ],
             vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
         );
-        let json =
-            serde_json::to_value(propose(&graph, &claims(&[("a", "ui/x")]), 10_000).unwrap())
-                .unwrap();
+        let json = serde_json::to_value(
+            propose_report(&graph, &claims(&[("a", "ui/x")]), 10_000).unwrap(),
+        )
+        .unwrap();
         assert_eq!(json["proposals"][0]["extends_module_id"], "ui/x");
         assert_eq!(
             json["proposals"][0]["extension_source_unit_ids"],
@@ -3298,7 +3276,7 @@ mod tests {
             ],
             vec![atomic_edge("atomic_edge:0", "atomic:1", "atomic:0")],
         );
-        let report = propose(&graph, &claims(&[("a", "ui/x")]), 10_000).unwrap();
+        let report = propose_report(&graph, &claims(&[("a", "ui/x")]), 10_000).unwrap();
         let proposal = report
             .proposals
             .iter()
@@ -3364,7 +3342,7 @@ mod tests {
             // consumer and bridge into one class.
             vec![atomic_edge("atomic_edge:0", "atomic:2", "atomic:0")],
         );
-        let report = propose(
+        let report = propose_report(
             &graph,
             &claims(&[("foo", "features/foo"), ("baz", "features/baz")]),
             10_000,
@@ -3451,7 +3429,7 @@ mod tests {
             ],
             vec![],
         );
-        let report = propose(&graph, &BTreeMap::new(), 10_000).unwrap();
+        let report = propose_report(&graph, &BTreeMap::new(), 10_000).unwrap();
         let proposal = report
             .proposals
             .iter()
@@ -3491,7 +3469,8 @@ mod tests {
             ],
             vec![],
         );
-        let report = propose(&graph, &claims(&[("a", "domains/system/ids")]), 10_000).unwrap();
+        let report =
+            propose_report(&graph, &claims(&[("a", "domains/system/ids")]), 10_000).unwrap();
         assert!(
             report.proposals.iter().all(|p| p.merge_into.is_none()),
             "expected no self-merge proposal from two spellings of one module: {report:#?}",
@@ -3523,7 +3502,7 @@ mod tests {
             .retain(|entry| entry.key != a.destination);
         assert!(graph.module(&a.destination).is_none());
 
-        let result = propose(&graph, &BTreeMap::new(), 10_000);
+        let result = propose_report(&graph, &BTreeMap::new(), 10_000);
         let err = result.expect_err("missing destination must be a clean error, not a panic");
         let message = format!("{err:#}");
         assert!(
@@ -3542,7 +3521,7 @@ mod tests {
             vec![atomic_group_for("atomic:0", &[&import])],
             vec![],
         );
-        let report = propose(&graph, &BTreeMap::new(), 10_000).unwrap();
+        let report = propose_report(&graph, &BTreeMap::new(), 10_000).unwrap();
         let proposal = report.proposals.first().expect("anonymous proposal");
         assert_eq!(
             proposal.anonymous_statement_source_unit_ids,
@@ -3572,8 +3551,9 @@ mod tests {
             vec![atomic_group_for("atomic:0", &[&effect])],
             vec![],
         );
+        let input = DependencyGraphInput::from_report(graph).unwrap();
         let report = propose_with_context(
-            &graph,
+            &input,
             &BTreeMap::new(),
             10_000,
             ProposalContext {
@@ -3607,7 +3587,7 @@ mod tests {
             ],
             vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
         );
-        let report = propose(&graph, &BTreeMap::new(), 5).unwrap();
+        let report = propose_report(&graph, &BTreeMap::new(), 5).unwrap();
         assert!(
             report.proposals.is_empty(),
             "oversized source units should not appear as proposals: {report:#?}",

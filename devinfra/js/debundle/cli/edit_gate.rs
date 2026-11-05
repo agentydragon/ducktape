@@ -38,6 +38,7 @@
 //! are removed when the gate passes (or when the rejection kind
 //! changes), keeping `gate list` consistent with the latest verdict.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::fs;
@@ -49,8 +50,8 @@ use ::gate::{
 };
 use analysis::assignment_assembly::detect_atomic_group_conflict;
 use analysis::{
-    AtomicGroupConflictReport, DepKind, DependencyGraph, DependencyGraphReport, ModuleAssignment,
-    ModuleId, compute_atomic_groups,
+    AtomicGroupConflictReport, DepKind, DependencyGraphInput, DependencyGraphReport,
+    ModuleAssignment, ModuleId, compute_atomic_groups,
 };
 use anonymous_resolution::{
     DirectBindingSourceCheck, DirectBindingSourceResolution, ResolvedSourceClaims, SourceClaimSet,
@@ -108,12 +109,13 @@ impl GraphEditArgs {
 /// `(no_verify: bool, dependency_graph_path: Option<&Path>)` pair whose
 /// `(false, None)` combination used to silently skip the
 /// realizability gate.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub enum Gate<'a> {
     /// Run name-collision checks and the post-edit realizability +
     /// atom-split gate against this dependency graph.
     Run {
-        graph: &'a Path,
+        graph_path: &'a Path,
+        input: Cow<'a, DependencyGraphInput>,
         /// Root used to resolve relative `source_location.source_path`
         /// values when the gate resolves source-backed selectors.
         source_root: Option<&'a Path>,
@@ -144,7 +146,8 @@ impl<'a> Gate<'a> {
         }
         match graph {
             Some(graph) => Ok(Self::Run {
-                graph,
+                graph_path: graph,
+                input: Cow::Owned(DependencyGraphInput::read(graph)?),
                 source_root,
                 source_context,
             }),
@@ -189,11 +192,13 @@ impl<'a> Gate<'a> {
     ) -> Result<()> {
         match self {
             Self::Run {
-                graph,
+                graph_path,
+                input,
                 source_root,
                 source_context,
             } => gate_post_edit_assignment_with_expected(
-                graph,
+                graph_path,
+                input,
                 modules_root,
                 EditSourceLookup {
                     root: *source_root,
@@ -810,6 +815,7 @@ pub fn read_gate_claims(path: &Path) -> Result<ModuleClaims> {
 /// is exactly the reviewed assignment, including source units that remain residual.
 pub fn gate_post_edit_assignment_with_expected_source_unit_modules(
     dependency_graph_path: &Path,
+    input: &DependencyGraphInput,
     modules_root: &Path,
     source_root: Option<&Path>,
     source_context: Option<&VerifiedGraphSourceContext>,
@@ -819,6 +825,7 @@ pub fn gate_post_edit_assignment_with_expected_source_unit_modules(
 ) -> Result<()> {
     gate_post_edit_assignment_with_expected(
         dependency_graph_path,
+        input,
         modules_root,
         EditSourceLookup {
             root: source_root,
@@ -833,6 +840,7 @@ pub fn gate_post_edit_assignment_with_expected_source_unit_modules(
 
 fn gate_post_edit_assignment_with_expected(
     dependency_graph_path: &Path,
+    input: &DependencyGraphInput,
     modules_root: &Path,
     source_lookup: EditSourceLookup<'_>,
     post_spec: &PostEditSpec,
@@ -840,19 +848,8 @@ fn gate_post_edit_assignment_with_expected(
     expected_source_unit_modules: Option<&SourceUnitModuleAssignments>,
     scope: Option<&ModuleTreeScope>,
 ) -> Result<()> {
-    let dependency_graph_report = crate::load_dependency_graph_report(dependency_graph_path)?;
-
-    // The gate algorithm walks edges + assignment, not declared sets:
-    // `from_report` leaves `declared` empty, which is fine for
-    // `check_realizability`/`validate_assignment` (both consume the
-    // assignment we build below, not the per-source-unit declared field).
-    let dependency_graph =
-        DependencyGraph::from_report(&dependency_graph_report).with_context(|| {
-            format!(
-                "reconstructing dependency graph {}",
-                dependency_graph_path.display()
-            )
-        })?;
+    let dependency_graph_report = input.report();
+    let dependency_graph = input.graph();
 
     // Source-backed claims resolve to the chunk-top bindings and anonymous
     // source units they claim. A claim the gate cannot resolve (missing chunk
@@ -860,7 +857,7 @@ fn gate_post_edit_assignment_with_expected(
     // source unit must never silently fall to residual.
     let claim_sets = source_claim_sets_from_post_spec(post_spec);
     let resolved_claims = resolve_source_claims(
-        &dependency_graph_report,
+        dependency_graph_report,
         dependency_graph_path,
         modules_root,
         source_lookup.root,
@@ -868,11 +865,11 @@ fn gate_post_edit_assignment_with_expected(
         &claim_sets,
     )?;
     let claim_projection =
-        project_source_unit_claims(&dependency_graph_report, post_spec, &resolved_claims)?;
+        project_source_unit_claims(dependency_graph_report, post_spec, &resolved_claims)?;
     reject_unresolved_projected_claims(&claim_projection)?;
     if let Some(expected_source_unit_modules) = expected_source_unit_modules {
         let actual_source_unit_modules = source_unit_module_assignments_from_projection(
-            &dependency_graph_report,
+            dependency_graph_report,
             modules_root,
             post_spec,
             &claim_projection,
@@ -962,7 +959,7 @@ fn gate_post_edit_assignment_with_expected(
 
     // Atom splits remain the primary diagnosis; the shared validation below
     // supplies any co-occurring cycle report as secondary evidence.
-    let atomic_groups = compute_atomic_groups(&dependency_graph);
+    let atomic_groups = compute_atomic_groups(dependency_graph);
     let atomic_conflicts = atomic_groups
         .iter()
         .filter_map(|atomic_group| {
@@ -984,7 +981,7 @@ fn gate_post_edit_assignment_with_expected(
             )
         })
         .collect::<Vec<_>>();
-    let report = validate_assignment(&dependency_graph, &assignment, &module_path);
+    let report = validate_assignment(dependency_graph, &assignment, &module_path);
 
     // Replace artifacts only after this candidate's assignment and shared
     // realizability report are complete. A preflight error keeps the last
@@ -999,7 +996,7 @@ fn gate_post_edit_assignment_with_expected(
         let conflicts = AtomicGroupConflictReport::from_conflicts(
             &atomic_conflicts,
             &module_path,
-            &dependency_graph,
+            dependency_graph,
         );
         write_rejection_artifact(
             dependency_graph_path,
@@ -1014,11 +1011,8 @@ fn gate_post_edit_assignment_with_expected(
                 &blocking_sccs,
             )?;
         }
-        let summary = render_atomic_group_conflict_summary(
-            &atomic_conflicts,
-            &module_path,
-            &dependency_graph,
-        );
+        let summary =
+            render_atomic_group_conflict_summary(&atomic_conflicts, &module_path, dependency_graph);
         eprintln!("error: post-edit spec splits one or more atomic groups:\n{summary}");
         return Err(GateRejection {
             report: GateRejectionReport::AtomSplit { conflicts },

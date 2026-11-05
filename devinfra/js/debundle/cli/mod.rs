@@ -42,15 +42,6 @@ use crate::modules_commands::ModulesNs;
 use crate::scc_cluster::{ClusterArgs, SccArgs, run_cluster, run_scc};
 use crate::spec_commands::SpecNs;
 
-/// Read and JSON-parse an `dependency_graph.json.gz` into an [`DependencyGraphReport`],
-/// the load every `cli` verb that takes `--graph` shares.
-pub(crate) fn load_dependency_graph_report(
-    path: &std::path::Path,
-) -> Result<analysis::DependencyGraphReport> {
-    report_io::read_json_gzip(path)
-        .with_context(|| format!("reading full dependency graph {}; export it with debundle run --graphs or the dependency_graphs Bazel output group", path.display()))
-}
-
 /// Which current authoring scope a graph-backed command actually interprets.
 #[derive(Clone, Copy)]
 pub(crate) enum GraphCompatibilityScope<'a> {
@@ -61,7 +52,7 @@ pub(crate) enum GraphCompatibilityScope<'a> {
 }
 
 /// Shared pre-edit/pre-query check for any operation that joins a saved graph
-/// to current authoring files. Historical graph-only views use the loader above.
+/// to current authoring files. Historical graph-only views load a `DependencyGraphInput` directly.
 pub(crate) fn verify_graph_compatibility(
     graph_path: &std::path::Path,
     modules_root: &std::path::Path,

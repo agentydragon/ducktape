@@ -21,6 +21,7 @@ mod build;
 mod commutation_order;
 mod dependency_graph;
 mod edge;
+mod input;
 mod linker_order;
 mod quotient;
 
@@ -40,6 +41,7 @@ pub use edge::{
     BindingTimelineOrder, CellConflict, CellEffectClass, DepKind, DependencyEdge, DependencyEdgeId,
     EdgeReason, EdgeRole, EffectCellReport, HeapBarrierCause, SequencedCause,
 };
+pub use input::DependencyGraphInput;
 pub use linker_order::{
     ChunkConstrainingEdgeSet, chunk_constraining_module_edges, chunk_linker_order_from_pairs,
     chunk_source_import_order_from_adjacency, position_lookup,

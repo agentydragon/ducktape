@@ -20,9 +20,10 @@ use analysis::graph::{
     CommutationOrder, EndpointView, TemporalConstraint, TemporalEdge, assignment_endpoints,
 };
 use analysis::{
-    DepKind, DependencyEdgeId, DependencyEdgeReport, DependencyGraph, DependencyGraphReport,
-    EntryDestination, KnownConflict, ModuleAssignment, ModuleDestinationKind, ModuleId, ModuleKey,
-    PremiseVerdict, SequencedCause, SourceLocation, SourceUnitReport,
+    DepKind, DependencyEdgeId, DependencyEdgeReport, DependencyGraph, DependencyGraphInput,
+    DependencyGraphReport, EntryDestination, KnownConflict, ModuleAssignment,
+    ModuleDestinationKind, ModuleId, ModuleKey, PremiseVerdict, SequencedCause, SourceLocation,
+    SourceUnitReport,
 };
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
@@ -342,7 +343,8 @@ pub(super) fn run(
 ) -> Result<()> {
     let cycles_path = args.resolved_cycles_path();
     let sccs = crate::gate::load_blocking_sccs(&cycles_path)?;
-    let report = crate::load_dependency_graph_report(&args.graph)?;
+    let input = DependencyGraphInput::read(&args.graph)?;
+    let report = input.report();
     let authored_modules = match &args.modules {
         Some(root) => Some(authored_module_paths(root)?),
         None => None,
@@ -353,7 +355,7 @@ pub(super) fn run(
         context.source().to_owned(),
     )?;
     let limit = (!args.all).then_some(args.limit);
-    let mut analysis = Analysis::new(&report, &source, authored_modules.as_ref())?;
+    let mut analysis = Analysis::new(&input, &source, authored_modules.as_ref())?;
     let (mut needs_co_location, mut rejected) = analysis.collect_candidates(&sccs)?;
     let ranked = analysis.rank_candidates();
     let (proposals, proposal_total) = analysis.emit_proposals(ranked, limit, &mut rejected)?;
@@ -463,12 +465,10 @@ struct Analysis<'a> {
     report: &'a DependencyGraphReport,
     source: &'a PreparedSource,
     authored_modules: Option<&'a BTreeMap<ModulePath, String>>,
-    graph: DependencyGraph,
+    graph: &'a DependencyGraph,
     assignment: ModuleAssignment,
     temporal_order: CommutationOrder,
     existing_pairs: Vec<(SourceUnitId, SourceUnitId)>,
-    /// Source-unit indices of every report edge's `(source, target)`.
-    edge_nodes: Vec<(usize, usize)>,
     /// Module path of every source unit.
     node_modules: Vec<&'a ModulePath>,
     /// `sequenced` and `co_declaration` edges by unordered source-unit pair:
@@ -508,12 +508,12 @@ struct SccState {
 
 impl<'a> Analysis<'a> {
     fn new(
-        report: &'a DependencyGraphReport,
+        input: &'a DependencyGraphInput,
         source: &'a PreparedSource,
         authored_modules: Option<&'a BTreeMap<ModulePath, String>>,
     ) -> Result<Self> {
-        let graph =
-            DependencyGraph::from_report(report).context("reconstructing dependency graph")?;
+        let report = input.report();
+        let graph = input.graph();
         let module_ids: HashMap<&ModuleKey, ModuleId> = report
             .quotient
             .nodes
@@ -547,37 +547,24 @@ impl<'a> Analysis<'a> {
             of,
             EntryDestination::from_module_id(ModuleId(entry)),
         );
-        let node_index: HashMap<&str, usize> = report
-            .nodes
-            .iter()
-            .enumerate()
-            .map(|(index, node)| (node.id.as_str(), index))
-            .collect();
-        let mut edge_nodes = Vec::with_capacity(report.edges.len());
         let mut premise_edges: HashMap<(usize, usize), Vec<DependencyEdgeId>> = HashMap::new();
         let mut sequenced_by_ordinal: HashMap<SourceUnitOrdinal, Vec<DependencyEdgeId>> =
             HashMap::new();
-        for (index, edge) in report.edges.iter().enumerate() {
-            let (Some(&source), Some(&target)) = (
-                node_index.get(edge.source.as_str()),
-                node_index.get(edge.target.as_str()),
-            ) else {
-                bail!(
-                    "edge {} references a source unit missing from the graph",
-                    edge.id
-                );
-            };
-            edge_nodes.push((source, target));
-            let id = DependencyEdgeId(index);
-            if matches!(edge.edge_kind, DepKind::Sequenced | DepKind::CoDeclaration) {
+        for edge in graph.iter_edges() {
+            let (source, target) = (edge.from.0, edge.to.0);
+            let id = edge.id;
+            if matches!(
+                edge.reason.kind(),
+                DepKind::Sequenced | DepKind::CoDeclaration
+            ) {
                 premise_edges
                     .entry((source.min(target), source.max(target)))
                     .or_default()
                     .push(id);
             }
-            if edge.edge_kind == DepKind::Sequenced && edge.constrains_init_order {
+            if edge.reason.kind() == DepKind::Sequenced && edge.reason.constrains_init_order() {
                 sequenced_by_ordinal
-                    .entry(edge.statement_ordinal)
+                    .entry(edge.reason.statement_ordinal())
                     .or_default()
                     .push(id);
             }
@@ -600,7 +587,7 @@ impl<'a> Analysis<'a> {
         let temporal_order = CommutationOrder::new(
             graph.num_nodes(),
             graph.iter_edges().filter_map(|edge| {
-                if !matches!(edge.reason.kind, DepKind::EagerUse | DepKind::Sequenced) {
+                if !matches!(edge.reason.kind(), DepKind::EagerUse | DepKind::Sequenced) {
                     return None;
                 }
                 let constraint = if let Some(reference) = edge.reason.commuting_premise() {
@@ -612,7 +599,7 @@ impl<'a> Analysis<'a> {
                     )
                 } else if edge.reason.constrains_init_order() {
                     if matches!(
-                        report.edges[edge.id.0].premise_verdict,
+                        input.edge_report(edge.id).premise_verdict,
                         Some(PremiseVerdict::Inertable)
                     ) {
                         TemporalConstraint::Inertable
@@ -637,7 +624,6 @@ impl<'a> Analysis<'a> {
             assignment,
             temporal_order,
             existing_pairs,
-            edge_nodes,
             node_modules,
             premise_edges,
             sequenced_by_ordinal,
@@ -748,11 +734,11 @@ impl<'a> Analysis<'a> {
             let mut by_pair: BTreeMap<(usize, usize), Vec<ConstrainingEdge>> = BTreeMap::new();
             for (&module_pair, edges) in &constraining {
                 for &edge_id in edges {
-                    let edge = &self.report.edges[edge_id.0];
-                    if edge.edge_kind != DepKind::Sequenced {
+                    let edge = self.graph.edge(edge_id);
+                    if edge.reason.kind() != DepKind::Sequenced {
                         continue;
                     }
-                    let (a, b) = self.edge_nodes[edge_id.0];
+                    let (a, b) = (edge.from.0, edge.to.0);
                     by_pair
                         .entry((a.min(b), a.max(b)))
                         .or_default()
@@ -842,7 +828,8 @@ impl<'a> Analysis<'a> {
             .flatten()
             .copied()
             .filter(|id| {
-                let (source, target) = self.edge_nodes[id.0];
+                let edge = self.graph.edge(*id);
+                let (source, target) = (edge.from.0, edge.to.0);
                 self.node_modules[source] == &cut.from && self.node_modules[target] == &cut.to
             })
             .collect()
@@ -1212,7 +1199,8 @@ impl<'a> Analysis<'a> {
                     .inerted
                     .iter()
                     .map(|id| {
-                        let (a, b) = self.edge_nodes[id.0];
+                        let edge = self.graph.edge(*id);
+                        let (a, b) = (edge.from.0, edge.to.0);
                         (SourceUnitId(a.min(b)), SourceUnitId(a.max(b)))
                     })
                     .collect();
@@ -1272,7 +1260,7 @@ impl<'a> Analysis<'a> {
                         continue;
                     }
                     for &id in edges {
-                        let kind = self.report.edges[id.0].edge_kind;
+                        let kind = self.graph.edge(id).reason.kind();
                         *counts
                             .entry((kind, self.blocking_reason(scc, id)?))
                             .or_default() += 1;
@@ -1321,10 +1309,14 @@ impl<'a> Analysis<'a> {
     /// Why a constraining edge no proposal inerts stays constraining.
     fn blocking_reason(&self, scc: &SccState, id: DependencyEdgeId) -> Result<BlockingReason> {
         let edge = &self.report.edges[id.0];
-        if !matches!(edge.edge_kind, DepKind::Sequenced | DepKind::CoDeclaration) {
+        let topology_edge = self.graph.edge(id);
+        if !matches!(
+            topology_edge.reason.kind(),
+            DepKind::Sequenced | DepKind::CoDeclaration
+        ) {
             return Ok(BlockingReason::KindNotInertable);
         }
-        let (source, target) = self.edge_nodes[id.0];
+        let (source, target) = (topology_edge.from.0, topology_edge.to.0);
         if let Some(&reason) = scc
             .rejected_pairs
             .get(&(source.min(target), source.max(target)))

@@ -1,7 +1,7 @@
 //! `debundle scc` / `debundle cluster`: module-quotient SCC listing
 //! and per-binding neighbor queries over a generated dependency graph.
 
-use analysis::DepKind;
+use analysis::{DepKind, DependencyGraphInput};
 use anyhow::{Context, Result};
 use clap::Args as ClapArgs;
 use peel::plan::{LimitReport, apply_limit_with_metadata};
@@ -147,7 +147,8 @@ fn resolve_one_binding_source_unit<'a>(
 }
 
 pub fn run_scc(args: SccArgs) -> Result<()> {
-    let graph = crate::load_dependency_graph_report(&args.common.dependency_graph_path)?;
+    let input = DependencyGraphInput::read(&args.common.dependency_graph_path)?;
+    let graph = input.report();
     // If a binding was supplied, find its source unit -> destination module
     // first; we restrict SCCs to ones containing that destination.
     // Uses the shared `resolve_binding_source_units` helper so minified and
@@ -233,7 +234,8 @@ pub fn run_cluster(args: ClusterArgs) -> Result<()> {
         args.limit.unwrap_or(DEFAULT_DESCRIBE_LIMIT)
     };
     let sym = args.resolve_sym()?;
-    let graph = crate::load_dependency_graph_report(&args.common.dependency_graph_path)?;
+    let input = DependencyGraphInput::read(&args.common.dependency_graph_path)?;
+    let graph = input.report();
     // Use the shared `resolve_binding_source_units` helper (same code path
     // `describe` / `inspect-source --id` / `scc --binding` use), so minified
     // and readable names both work.
