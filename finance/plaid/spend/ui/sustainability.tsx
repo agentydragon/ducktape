@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import Decimal from "decimal.js";
 import {
   Alert,
@@ -23,6 +23,7 @@ import { money, time } from "./spend_display";
 import { SustainabilityHistoryChart } from "./SustainabilityHistoryChart";
 import type { SustainabilityPortfolio, SustainabilitySource } from "./types";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
+import { useTooltipInteraction } from "../../../../util/frontend/tooltip_interaction";
 
 type AccountCoverage = NonNullable<SustainabilityView["account_coverage"]>[number];
 
@@ -106,37 +107,7 @@ function ScenarioMarker({
   currentRate: string | null;
   style: CSSProperties;
 }) {
-  const markerRef = useRef<HTMLButtonElement>(null);
-  const [hovered, setHovered] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const [pinned, setPinned] = useState(false);
-  const opened = hovered || focused || pinned;
-
-  useEffect(() => {
-    if (!opened) return;
-
-    const dismissOnOutsidePointer = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node) || markerRef.current?.contains(target)) return;
-      if (target instanceof Element && target.closest('[role="tooltip"]')) return;
-      setHovered(false);
-      setFocused(false);
-      setPinned(false);
-    };
-    const dismissOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setHovered(false);
-      setFocused(false);
-      setPinned(false);
-    };
-
-    document.addEventListener("pointerdown", dismissOnOutsidePointer);
-    document.addEventListener("keydown", dismissOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", dismissOnOutsidePointer);
-      document.removeEventListener("keydown", dismissOnEscape);
-    };
-  }, [opened]);
+  const { opened, triggerProps } = useTooltipInteraction<HTMLButtonElement>();
 
   return (
     <Tooltip
@@ -149,26 +120,9 @@ function ScenarioMarker({
       position="top"
     >
       <button
-        ref={markerRef}
+        {...triggerProps}
         type="button"
         aria-label={`Scenario ${index + 1}: ${percent(rate)} draw rate`}
-        onPointerEnter={(event) => {
-          if (event.pointerType !== "touch") setHovered(true);
-        }}
-        onPointerLeave={() => setHovered(false)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => {
-          setFocused(false);
-          setPinned(false);
-        }}
-        onClick={() => {
-          if (pinned) {
-            setFocused(false);
-            setPinned(false);
-          } else {
-            setPinned(true);
-          }
-        }}
         style={style}
       >
         {percent(rate)}
