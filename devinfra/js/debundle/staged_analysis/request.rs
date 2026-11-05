@@ -1,8 +1,8 @@
-//! Source/projection-only entry point shared by the dedicated analyzer and CLI.
+//! Source/projection application service with explicit, resolved inputs.
+
 use super::{AnalysisSpec, AnalyzeProgramInputs};
 use anyhow::{Context, Result};
 use artifact::load_js_chunks;
-use clap::Args as ClapArgs;
 use graph_provenance::{InputCapture, ProvenanceRoots};
 use prepare_chunks::prepare_js_chunks;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -10,61 +10,20 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use vendor::{VendorPlanOptions, build_vendor_resolution_plan};
 
-pub fn parse_package_root_kv(value: &str) -> Result<(String, PathBuf), String> {
-    let Some(separator) = value.find('=') else {
-        return Err(format!(
-            "package root mapping must be <package>=<dir>, got {value}"
-        ));
-    };
-    if separator == 0 || separator == value.len() - 1 {
-        return Err(format!(
-            "package root mapping must be <package>=<dir>, got {value}"
-        ));
-    }
-    Ok((
-        value[..separator].to_string(),
-        PathBuf::from(&value[separator + 1..]),
-    ))
-}
-
-pub fn collect_package_roots(
-    pairs: impl IntoIterator<Item = (String, PathBuf)>,
-) -> Result<std::collections::BTreeMap<String, PathBuf>> {
-    let mut roots = std::collections::BTreeMap::new();
-    for (name, path) in pairs {
-        anyhow::ensure!(
-            roots.insert(name.clone(), path).is_none(),
-            "duplicate package root mapping for {name}"
-        );
-    }
-    Ok(roots)
-}
-
-/// Command-line arguments for `debundle analyze`.
-#[derive(ClapArgs, Debug, Clone)]
-pub struct AnalyzeArgs {
-    /// Analysis projection written by `debundle spec project-analysis`; the
-    /// only spec input.
-    #[arg(long)]
+/// Resolved inputs for computing a reusable analysis artifact.
+#[derive(Debug, Clone)]
+pub struct AnalyzeRequest {
     pub projection: PathBuf,
-    /// Root the projection's source paths are relative to.
-    #[arg(long = "tree-source-root", env = "DEBUNDLE_TREE_SOURCE_ROOT")]
     pub tree_source_root: PathBuf,
-    /// Map a package name to its source directory: `<pkg>=<dir>`. May be repeated.
-    #[arg(long = "package-root", value_parser = parse_package_root_kv)]
-    pub package_roots: Vec<(String, PathBuf)>,
-    /// Root directory containing per-package sources (alternative to repeated --package-root).
-    #[arg(long)]
+    pub package_roots: HashMap<String, PathBuf>,
     pub packages_root: Option<PathBuf>,
-    /// Where to write the analysis artifact.
-    #[arg(long)]
     pub out: PathBuf,
 }
 
 /// `debundle analyze`: compute the cross-module pass and every analysed
 /// chunk's facts from a projection and the sources, and write them as an
 /// analysis artifact for `debundle run --analysis`.
-pub fn analyze_cli(args: AnalyzeArgs, analysis_engine_sha256: &str) -> Result<()> {
+pub fn analyze_from_projection(args: AnalyzeRequest, analysis_engine_sha256: &str) -> Result<()> {
     let projection_bytes = fs::read(&args.projection)
         .with_context(|| format!("read analysis projection {}", args.projection.display()))?;
     let spec = AnalysisSpec::decode(&projection_bytes)?;
@@ -73,9 +32,7 @@ pub fn analyze_cli(args: AnalyzeArgs, analysis_engine_sha256: &str) -> Result<()
         "{} is not a canonical analysis projection",
         args.projection.display()
     );
-    let package_roots: HashMap<String, PathBuf> = collect_package_roots(args.package_roots)?
-        .into_iter()
-        .collect();
+    let package_roots = args.package_roots;
     let source_root = graph_provenance::absolute(&args.tree_source_root)?;
     let mut packages = BTreeMap::new();
     for (name, root) in &package_roots {

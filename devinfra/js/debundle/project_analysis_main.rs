@@ -1,8 +1,8 @@
 //! Small Bazel entry point for the canonical analysis projection.
 
 use clap::Parser;
-use pipeline::ProjectAnalysisArgs;
 use swc_common::{GLOBALS, Globals};
+use transform_command::ProjectAnalysisArgs;
 
 #[derive(Parser)]
 struct Args {

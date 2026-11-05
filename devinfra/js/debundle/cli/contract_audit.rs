@@ -3,12 +3,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
+use transform_command::TransformArgs;
 
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Args, ValueEnum};
 use graph_provenance::{CurrentRoots, GraphProvenance};
 use peel::OutputFormat;
-use pipeline::{ContractAudit, ContractProbeOutcome, TransformArgs, load_transform_spec_source};
+use pipeline::{ContractAudit, ContractProbeOutcome, load_transform_spec_source};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use spec::{ChunkExportPurity, RetainedCallbackSignature};

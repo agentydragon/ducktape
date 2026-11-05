@@ -7,12 +7,11 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use transform_command::{TransformContextArgs, TransformContextAuxArgs};
 
 use anyhow::{Context, Result, ensure};
 use graph_provenance::VerifiedGraphSourceContext;
-use pipeline::{
-    AnalysisArtifactInput, TransformCli, TransformContextArgs, TransformContextAuxArgs,
-};
+use pipeline::{AnalysisArtifactInput, TransformRequest};
 use spec::LogicalModule;
 
 use crate::edit_gate::GraphEditArgs;
@@ -51,7 +50,7 @@ pub struct CandidateEffectAssessmentExistingTreeArgs {
 
 /// Inputs resolved once for an explicit effect assessment request.
 pub struct ResolvedCandidateEffectAssessment<'a> {
-    pub transform: TransformCli,
+    pub transform: TransformRequest,
     pub analysis_path: PathBuf,
     pub graph_source: &'a VerifiedGraphSourceContext,
 }

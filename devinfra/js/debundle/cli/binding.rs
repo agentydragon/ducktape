@@ -27,7 +27,7 @@ use selector_outcome::SelectorKind;
 use serde::Deserialize;
 
 use crate::candidate_assessment::EffectAssessmentUnavailable;
-use pipeline::{AnalysisArtifactInput, TransformCli, assess_candidate_effect_relocation};
+use pipeline::{AnalysisArtifactInput, TransformRequest, assess_candidate_effect_relocation};
 use spec::{
     AnonymousStatement, BindingAnnotation, LogicalModule, Member, MemberSelectorSpec, ModulePath,
     SourceMatchBinding, SourceMatchBindingDetail, SourceMatchClaim, is_residual_namespace_path,
@@ -712,7 +712,7 @@ pub struct AssignOutcome {
 
 #[derive(Clone, Copy)]
 pub struct CandidateEffectAssessmentContext<'a> {
-    pub transform: &'a TransformCli,
+    pub transform: &'a TransformRequest,
     pub analysis: AnalysisArtifactInput<'a>,
     pub graph_source: &'a VerifiedGraphSourceContext,
 }

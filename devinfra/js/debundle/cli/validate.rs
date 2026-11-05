@@ -18,6 +18,7 @@
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::Path;
+use transform_command::TransformArgs;
 
 use crate::print_section;
 use analysis::CommutingStatementsDiagnostic;
@@ -25,9 +26,7 @@ use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
 use output_layout::{COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT, SELECTOR_DIAGNOSTICS_REPORT};
 use peel::{OutputFormat, print_report};
-use pipeline::{
-    RunOutput, TransformArgs, TransformRunOptions, TransformSpecSource, run_transform_cli,
-};
+use pipeline::{RunOutput, TransformRunOptions, TransformSpecSource, run_transform};
 use selector_codemod::source_input::resolve_chunk_source_file;
 use selector_outcome::{
     Entity, Outcome, Placement, SelectorKind, SelectorOutcome, SelectorOutcomeReport,
@@ -145,7 +144,7 @@ fn run_spec_validate(args: ValidateArgs) -> Result<ValidateReport> {
     // before deciding its exit status in `run_validate_cmd`; only a pass that
     // errored without producing a report fails here (bad spec path, parse
     // error, …).
-    let pass = run_transform_cli(
+    let pass = run_transform(
         &cli,
         TransformRunOptions {
             ownership_subset: None,

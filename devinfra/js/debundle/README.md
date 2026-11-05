@@ -121,6 +121,7 @@ the shared resolver and gate rather than their own acceptance rules.
 
 | Responsibility                                                                  | Start here                                                          |
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Parse command/environment inputs into typed service requests                    | `transform_command.rs`, `analyze_command.rs`, `package_args.rs`     |
 | Load source and retain in-memory chunk/file artifacts and import indexes        | `prepare_chunks.rs`, `program_analysis.rs`, `artifacts/artifact.rs` |
 | Normalize module paths and parse JS-list input                                  | `artifacts/paths.rs`                                                |
 | Define serialized report models and write JSON reports                          | `artifacts/reports.rs`                                              |
