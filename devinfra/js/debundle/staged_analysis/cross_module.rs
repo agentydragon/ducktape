@@ -932,11 +932,18 @@ fn resolve_native_operation_inputs(
     projected_inputs: &BTreeMap<String, Vec<AnalysisNativeOperationInput>>,
 ) -> Result<BTreeMap<String, Vec<SelectedNativeOperationInput>>> {
     let mut resolved = BTreeMap::new();
-    for (chunk_name, options) in options {
+    // Native operation inputs have their own projection, so their chunks may
+    // not have a source-analysis entry.
+    let chunk_names: BTreeSet<&String> = options.keys().chain(projected_inputs.keys()).collect();
+    for chunk_name in chunk_names {
+        let analysis_options = options.get(chunk_name);
+        let native_call_identity_inputs = analysis_options.map_or(&[][..], |options| {
+            options.native_call_identity_inputs.as_slice()
+        });
         let operation_inputs = projected_inputs
             .get(chunk_name)
             .map_or(&[][..], Vec::as_slice);
-        if operation_inputs.is_empty() && options.native_call_identity_inputs.is_empty() {
+        if operation_inputs.is_empty() && native_call_identity_inputs.is_empty() {
             continue;
         }
         let chunk = artifact
@@ -992,7 +999,7 @@ fn resolve_native_operation_inputs(
                     NativeInputKind::Operation(contract.operation),
                 )
             })
-            .chain(options.native_call_identity_inputs.iter().enumerate().map(
+            .chain(native_call_identity_inputs.iter().enumerate().map(
                 |(index, contract)| {
                     (
                         operation_inputs.len() + index,
@@ -1004,7 +1011,7 @@ fn resolve_native_operation_inputs(
                 },
             ));
         let mut chunk_inputs =
-            Vec::with_capacity(operation_inputs.len() + options.native_call_identity_inputs.len());
+            Vec::with_capacity(operation_inputs.len() + native_call_identity_inputs.len());
         for (input_index, request_id, selector, audited_source_sha256, operation) in contracts {
             ensure!(
                 audited_source_sha256.len() == 64
