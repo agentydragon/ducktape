@@ -79,11 +79,6 @@ async def test_dashboard(view: VisualPage, scene: str) -> None:
         await expect(claude.get_by_text("Data stale · 1d", exact=True)).to_be_visible()
     if scene == "anthropic_platform_credits":
         card = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
-        await expect(card.get_by_text("Expires Nov 25", exact=True)).to_be_visible()
-        await expect(card.get_by_text("Expires Jul 1, 2027", exact=True)).to_be_visible()
-        openai = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
-        for date in ("Dec 1", "Jan 1, 2027", "Feb 1, 2027"):
-            await expect(openai.get_by_text(f"Expires {date}", exact=True)).to_be_visible()
         await expect(card.get_by_role("heading", name="Anthropic API")).to_be_visible()
         await expect(card.get_by_text("Main org", exact=True)).to_be_visible()
         await expect(card.get_by_text("$123.45", exact=True)).to_be_visible()
@@ -120,8 +115,13 @@ async def test_dashboard(view: VisualPage, scene: str) -> None:
         await expect(view.page.locator(".aiquota-window")).to_have_count(2)
         await expect(view.page.locator(".aiquota-reading-row .aiquota-details")).to_have_count(5)
         card = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
+        await expect(card.get_by_text("Expires Nov 25", exact=True)).to_be_visible()
+        await expect(card.get_by_text("Expires Jul 1, 2027", exact=True)).to_be_visible()
+        openai = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
+        for date in ("Dec 1", "Jan 1, 2027", "Feb 1, 2027"):
+            await expect(openai.get_by_text(f"Expires {date}", exact=True)).to_be_visible()
         await expect(card.locator(".aiquota-reading-note").filter(has_text="Scope:")).to_have_count(0)
-        promo = card.locator(".aiquota-reading-row").filter(has=card.get_by_text("Promo grant", exact=True))
+        promo = card.locator(".aiquota-reading-row").filter(has=view.page.get_by_text("Promo grant", exact=True))
         await promo.get_by_text("Grant details", exact=True).click()
         await expect(promo.get_by_text("managed-agents-onprem", exact=False)).to_be_visible()
         await view.capture("promo-details", target=view.page.locator("#app"))
