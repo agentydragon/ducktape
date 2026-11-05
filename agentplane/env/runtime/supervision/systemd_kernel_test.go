@@ -26,7 +26,10 @@ import (
 	"go.uber.org/zap"
 )
 
-const fixtureStopGrace = 5 * time.Second
+const (
+	fixtureStopGrace      = 5 * time.Second
+	supervisionResultPath = "/state/testing/supervision/result.json"
+)
 
 type heldSystemdLaunch struct {
 	name       string
@@ -40,7 +43,10 @@ type heldSystemdLaunch struct {
 // It is deliberately excluded from supervision_test: no fake manager establishes these claims.
 func TestSystemdKernelFixture(t *testing.T) {
 	t.Setenv("AGENTPLANE_PARENT_ONLY_SENTINEL", "must not reach native services")
-	if err := os.Remove("/state/supervision-checks.json"); err != nil && !os.IsNotExist(err) {
+	if err := os.MkdirAll(filepath.Dir(supervisionResultPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(supervisionResultPath); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
 	config, sandboxUID := loadSystemdProofConfiguration(t)
@@ -57,7 +63,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		t.Logf("native launch enqueue: unit=%s job=%d error=%v kind=%s", name, job, err, systemdErrorKind(err))
 		return job, err
 	}
-	stateDir := "/state/.supervision-proof"
+	stateDir := "/state/testing/supervision/proof"
 	runtimeOwner := SystemdOwner{
 		Unit: "agentplane-environment-runtime.service", LifetimeDirectory: "/run/agentplane-environment-runtime-lifetime", ScopeID: SystemdEnvironmentRuntimeScopeID,
 	}
@@ -205,7 +211,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 				return bus.StartTransientUnitContext(launchCtx, name, "fail", submitted, completion)
 			},
 		}
-		stateDir := filepath.Join("/state/.supervision-invocation-fence", ownerSuffix)
+		stateDir := filepath.Join("/state/testing/supervision/invocation-fence", ownerSuffix)
 		supervisorA := reconcileKernelSystemdScope(t, syntheticLauncher, stateDir, sandboxUID, owner)
 		if _, err := os.Stat(markerA); err != nil {
 			t.Fatalf("COSI scope reconciliation did not create owner A marker %s: %v", markerA, err)
@@ -609,10 +615,10 @@ func TestSystemdKernelFixture(t *testing.T) {
 	if t.Failed() {
 		return
 	}
-	if err := os.WriteFile("/state/supervision-checks.json", []byte("{\"real_systemd_supervision\":\"passed\"}\n"), 0644); err != nil {
+	if err := os.WriteFile(supervisionResultPath, []byte("{\"real_systemd_supervision\":\"passed\"}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod("/state/supervision-checks.json", 0644); err != nil {
+	if err := os.Chmod(supervisionResultPath, 0644); err != nil {
 		t.Fatal(err)
 	}
 }

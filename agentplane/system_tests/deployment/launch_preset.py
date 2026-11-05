@@ -9,7 +9,7 @@ from agentplane.env.runtime.harness import Harness
 SANDBOX_PRESET = "test-scripted-sandbox-preset"
 THREAD_PRESET = "test-scripted-thread-preset"
 # The file the preset's bootstrap writes, and what it writes there.
-READY_MARKER = "/state/workspaces/.test-scripted-preset-ready"
+READY_MARKER = "/state/testing/bootstrap/scripted-preset-ready"
 READY_TEXT = "test scripted preset workspace initialized"
 
 
@@ -29,5 +29,5 @@ def sandbox_preset(*, template: str, policy_sets: list[str]) -> SandboxPreset:
         template=template,
         policy_sets=policy_sets,
         thread_preset=THREAD_PRESET,
-        bootstrap=f"mkdir -p /state/workspaces\nprintf '%s\\n' '{READY_TEXT}' > {READY_MARKER}\n",
+        bootstrap=f"mkdir -p /state/testing/bootstrap\nprintf '%s\\n' '{READY_TEXT}' > {READY_MARKER}\n",
     )

@@ -24,8 +24,8 @@ while :; do
 			END {printf "\"oom\":%d,\"oom_kill\":%d,\"oom_group_kill\":%d", oom, kill, group_kill}
 		' "$group/memory.events") || continue
 		printf '{"cgroup":"%s","sample":%s,"max":%s,"swap_max":%s,"oom_group":%s,"executor_oom":%s,%s}\n' \
-			"${group#/sys/fs/cgroup}" "$sample" "$limit" "$swap" "$oom_group" "$executor_oom" "$events" >"$destination/.snapshot"
-		mv "$destination/.snapshot" "$destination/${group##*/}.json"
+			"${group#/sys/fs/cgroup}" "$sample" "$limit" "$swap" "$oom_group" "$executor_oom" "$events" >"$destination/snapshot.tmp"
+		mv "$destination/snapshot.tmp" "$destination/${group##*/}.json"
 	done
 	sleep 0.25
 done

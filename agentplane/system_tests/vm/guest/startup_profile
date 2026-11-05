@@ -11,7 +11,8 @@ fi
 # the 96 MiB native executor leaf, and leaves the Codex app-server command and PID unchanged.
 # The state virtiofs is shared with the launcher's virtiofs-state sidecar, which the test uses
 # to retain the raw file before deleting this Sandbox.
-profile=/state/.agentplane-native-startup.perf.data
+profile=/state/testing/profiles/native-startup.perf.data
+mkdir -p /state/testing/profiles
 (
     read uptime idle </proc/uptime
     echo "AGENTPLANE_NATIVE_PERF_CLOCK_BEGIN unix_seconds=$(/usr/bin/busybox date -u +%s) uptime_seconds=$uptime" >/dev/ttyS0
