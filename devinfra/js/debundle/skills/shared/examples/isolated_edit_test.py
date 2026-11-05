@@ -118,6 +118,17 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(tmp_path: P
     assert refusal["kind"] == "graph_compatibility"
     assert refusal["mismatch"]["reason"] == "yaml_membership"
 
+    # Argument parsing can fail before the CLI writes its invocation record.
+    invalid = evidence / "invalid-command"
+    with pytest.raises(RuntimeError, match="command exited 2"):
+        recorded_run([engine, "not-a-command"], Path(worker["directory"]), invalid)
+    assert json.loads(invalid.with_suffix(".started.json").read_text()) == {
+        "argv": [engine, "--invocation-out", str(invalid.with_suffix(".invocation.json")), "not-a-command"],
+        "cwd": worker["directory"],
+    }
+    assert json.loads(invalid.with_suffix(".result.json").read_text()) == {"exit_code": 2}
+    assert not invalid.with_suffix(".invocation.json").exists()
+
     # Verify the receiving baseline BEFORE applying the reviewed YAML delta.
     recorded_run(
         [integration["engine"], "snapshot", "verify", integration["directory"]],

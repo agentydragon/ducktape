@@ -6,8 +6,9 @@ paths relative to that subtree, and a new evidence directory. ``modules merge``
 accepts a per-chunk modules root, not the app-level ``--tree-config`` option.
 Run this file with ``--help`` for its standalone arguments. It uses the copied
 engine and roots, previews before applying, then explicitly regenerates analysis.
-Invocation JSON describes the attempt; *.result.json records the actual exit
-status, with stdout/stderr alongside it. Adapter smoke tests remain separate.
+The launcher saves argv/cwd in *.started.json before execution; CLI invocation
+JSON and *.result.json separately record the interpreted request and exit
+status, with stdout/stderr alongside them. Adapter smoke tests remain separate.
 """
 
 import argparse
@@ -32,6 +33,7 @@ class Snapshot(TypedDict):
 def recorded_run(argv: list[str], cwd: Path, evidence: Path) -> str:
     """Capture an attempted invocation and its actual result, including failures."""
     command = [argv[0], "--invocation-out", str(evidence.with_suffix(".invocation.json")), *argv[1:]]
+    evidence.with_suffix(".started.json").write_text(json.dumps({"argv": command, "cwd": str(cwd)}) + "\n")
     result = subprocess.run(command, cwd=cwd, capture_output=True, text=True, check=False)
     evidence.with_suffix(".stdout").write_text(result.stdout)
     evidence.with_suffix(".stderr").write_text(result.stderr)
