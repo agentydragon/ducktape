@@ -171,8 +171,9 @@ def _grant_line(grant: GrantView, indent: str, now: datetime, tz: tzinfo | None,
         line += " · expiry unknown"
     else:
         line += f" · expires {format_deadline(grant.expires_at, now, tz, details=details)}"
-    if grant.scope:
-        line += f" · scope: {grant.scope}"
+    scope = (grant.scope_detail or grant.scope) if details else grant.scope
+    if scope:
+        line += f" · scope: {scope}"
     if grant.status:
         line += f" · {grant.status}"
     if details:

@@ -105,6 +105,10 @@ Provider headings stay short; labelled balance and grant rows preserve each pool
 organization and product restrictions. Grant rows show remaining value and expiry; expanded
 details add the original amount. Banked resets are separate from monetary and paid-credit balances.
 
+GNOME places a single ungrouped balance in the provider heading for both prepaid money and
+paid credits. Its popup wraps to a bounded width. Broad API promo scopes are shown in
+details; product or model restrictions remain visible in the default output on all surfaces.
+
 `aiquota --details` expands numeric pace, exact expiry times, all known reset-credit expiries,
 peak schedules and original error messages. The default keeps usage, reset countdowns,
 forecasts and concise error summaries. `--verbose` remains provider-response debugging.

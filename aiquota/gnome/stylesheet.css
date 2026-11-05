@@ -76,6 +76,11 @@
   font-feature-settings: "tnum";
 }
 
+.quota-popup-content {
+  width: 28em;
+  max-width: 28em;
+}
+
 .quota-popup-bar-item {
   padding-top: 5px;
   padding-bottom: 5px;

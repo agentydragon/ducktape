@@ -114,7 +114,13 @@ async def test_dashboard(view: VisualPage, scene: str) -> None:
     if scene == "observed_account_2026_11_04":
         await expect(view.page.locator(".aiquota-window")).to_have_count(2)
         await expect(view.page.locator(".aiquota-reading-row .aiquota-details")).to_have_count(5)
-        await expect(view.page.get_by_text("managed-agents-onprem", exact=False)).to_be_visible()
+        card = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
+        await expect(card.locator(".aiquota-reading-note").filter(has_text="Scope:")).to_have_count(0)
+        promo = card.locator(".aiquota-reading-row").filter(has=card.get_by_text("Promo grant", exact=True))
+        await promo.get_by_text("Grant details", exact=True).click()
+        await expect(promo.get_by_text("managed-agents-onprem", exact=False)).to_be_visible()
+        await view.capture("promo-details", target=view.page.locator("#app"))
+        await promo.get_by_text("Grant details", exact=True).click()
     await view.capture(target=view.page.locator("#app"))
 
 

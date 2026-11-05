@@ -223,6 +223,12 @@ function GrantRow({ grant, now }: { grant: GrantView; now: number }): JSX.Elemen
         <dl className="aiquota-detail-list">
           <dt>Original amount</dt>
           <dd>{grant.original}</dd>
+          {grant.scope_detail && (
+            <>
+              <dt>Scope</dt>
+              <dd>{grant.scope_detail}</dd>
+            </>
+          )}
           {grant.expires_at && (
             <>
               <dt>Expiry time</dt>
