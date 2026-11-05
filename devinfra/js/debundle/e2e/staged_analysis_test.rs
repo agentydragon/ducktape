@@ -1706,11 +1706,11 @@ export { Holder1, Holder2, instA, instB };
 #[test]
 fn graph_only_chunk_options_keep_analysis_identity_and_evidence() {
     let (staged, _fixture) = staged(FixtureOpts::new(
-        "const trace = [];\nglobalThis.record = (key) => { trace.push(key); };\nconst alpha = (globalThis.record(\"alpha\"), \"A\");\nconst beta = (globalThis.record(\"beta\"), \"B\");\nconsole.log(alpha, beta);\nexport { alpha, beta };\n",
+        "const effects = { left: 0, right: 0 };\nglobalThis.record = (key) => { effects[key] = 1; };\nconst alpha = (globalThis.record(\"left\"), \"A\");\nconst beta = (globalThis.record(\"right\"), \"B\");\nconsole.log(alpha, beta, effects.left, effects.right);\nexport { alpha, beta };\n",
         vec![logical_module_with_anon(
             "all",
-            &[Member::new("trace"), Member::new("alpha"), Member::new("beta")],
-            &["globalThis.record = (key) => { trace.push(key); };"],
+            &[Member::new("effects"), Member::new("alpha"), Member::new("beta")],
+            &["globalThis.record = (key) => { effects[key] = 1; };"],
         )],
     ).with_unassigned_mode(unassigned_mode_inline()));
     let original = fs::read(&staged.projection).unwrap();
