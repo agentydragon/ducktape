@@ -2,6 +2,7 @@
 
 use crate::analysis_inputs::ProofDependencies;
 use crate::reports::schema::BindingEffectAuthorityReport;
+use analysis_codec_derive::Artifact;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeMap;
@@ -34,14 +35,14 @@ pub(super) enum Completion {
 
 /// Exact identity for the one root initializer whose ordered execution may
 /// seal lexical binding-effect coverage.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Artifact)]
 pub(crate) struct RootInitializerIdentity {
     pub(super) owner: SourceUnitOrdinal,
     pub(super) binding: Id,
     pub(super) initializer_span: Option<Span>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Artifact)]
 pub(super) enum LocalBodyIdentity {
     RootInitializer {
         owner: SourceUnitOrdinal,
@@ -56,7 +57,7 @@ pub(super) enum LocalBodyIdentity {
 /// One selected direct local invocation. The flat edge set avoids expanding
 /// every root-to-leaf path; each edge retains prerequisites merged from every
 /// invocation context that selected it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Artifact)]
 pub(super) struct LocalCallReceipt {
     pub(super) caller: LocalBodyIdentity,
     pub(super) call_span: Span,
@@ -64,7 +65,7 @@ pub(super) struct LocalCallReceipt {
     pub(super) dependencies: Box<ProofDependencies>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Artifact)]
 pub(crate) struct LexicalBindingEffectReceipt {
     pub(super) identity: RootInitializerIdentity,
     pub(super) read_dependencies: ProofDependencies,
@@ -72,7 +73,7 @@ pub(crate) struct LexicalBindingEffectReceipt {
     pub(super) calls: Vec<LocalCallReceipt>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum BindingEffectCoverage {
     #[default]

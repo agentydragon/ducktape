@@ -4,6 +4,7 @@
 //! synchronous execution completeness and purity do not certify the absence
 //! of general property, callee-global, or host effects.
 
+use analysis_codec_derive::Artifact;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -79,7 +80,7 @@ pub enum UnknownEffectCoverage {
     HostEffects,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum OwnerInitializationCoverageRefusalReason {
     UnsupportedOwnerKind,

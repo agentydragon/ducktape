@@ -2766,10 +2766,17 @@ solve, so it can also run in another process:
   and top-level `await` checks and prints the same warnings, so its output,
   reports and exit code equal a run that computes the analysis.
 
-Facts cross the process boundary through `analysis_codec`, which writes
-hygiene contexts as first-occurrence ordinals of the re-parsed modules; see
-`docs/lessons_learned/cross_process_stage_b.md` for why simpler encodings
-are wrong.
+Facts cross the process boundary through typed `analysis_codec::Artifact`
+records. Each stored field must implement that trait; only the `SyntaxContext`
+implementation maps hygiene contexts to first-occurrence ordinals of the
+re-parsed modules. An ordinary `(String, u32)` remains an ordinary tuple.
+The codec passes an explicit context through records and containers to preserve
+shared `Arc` cause graphs. Report Serde attributes apply only to reports;
+artifact records include private proof dependencies and spans independently.
+The private encoding changes with the exact compiled analysis-engine identity,
+which the header already verifies. See
+`docs/lessons_learned/cross_process_stage_b.md` for why process-local contexts
+cannot be stored directly.
 
 The reason to call this out: every diagnostic in §"Two classes of
 atom" lives in materialization (it depends on the spec's quotient), but

@@ -1,5 +1,5 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_proc_macro", "rust_test")
 load("@rules_rust_prost//:defs.bzl", "rust_prost_library")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load(":analysis_identity.bzl", "analysis_identity")
@@ -82,13 +82,42 @@ rust_library(
     crate_root = "analysis_codec.rs",
     edition = "2024",
     deps = [
+        ":source_identity",
         "@crates//:anyhow",
         "@crates//:rmp-serde",
         "@crates//:serde",
+        "@crates//:swc_atoms",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
         "@crates//:zstd",
+    ],
+)
+
+rust_proc_macro(
+    name = "analysis_codec_derive",
+    srcs = ["analysis_codec_derive.rs"],
+    edition = "2024",
+    deps = [
+        "@crates//:proc-macro2",
+        "@crates//:quote",
+        "@crates//:syn",
+    ],
+)
+
+rust_test(
+    name = "analysis_codec_test",
+    srcs = ["analysis_codec_test.rs"],
+    edition = "2024",
+    proc_macro_deps = [":analysis_codec_derive"],
+    deps = [
+        ":analysis_codec",
+        ":js_ast",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:swc_common",
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_visit",
     ],
 )
 
@@ -299,8 +328,10 @@ rust_library(
     ],
     crate_root = "artifacts/artifact.rs",
     edition = "2024",
+    proc_macro_deps = [":analysis_codec_derive"],
     deps = [
         ":analysis",
+        ":analysis_codec",
         ":graph_provenance",
         ":js_ast",
         ":output_layout",
@@ -362,7 +393,9 @@ rust_library(
     srcs = ["spec/spec.rs"],
     crate_root = "spec/spec.rs",
     edition = "2024",
+    proc_macro_deps = [":analysis_codec_derive"],
     deps = [
+        ":analysis_codec",
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
@@ -651,6 +684,7 @@ rust_library(
     compile_data = [":standard_globals_json"],
     crate_root = "lib.rs",
     edition = "2024",
+    proc_macro_deps = [":analysis_codec_derive"],
     rustc_env = {"STANDARD_GLOBALS_JSON": "$(execpath :standard_globals_json)"},
     deps = [
         ":analysis_codec",
@@ -988,6 +1022,7 @@ rust_library(
     srcs = glob(["staged_analysis/*.rs"]),
     crate_root = "staged_analysis/mod.rs",
     edition = "2024",
+    proc_macro_deps = [":analysis_codec_derive"],
     deps = [
         ":analysis",
         ":analysis_codec",

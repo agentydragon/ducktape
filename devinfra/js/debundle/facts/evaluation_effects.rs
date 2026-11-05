@@ -3,6 +3,7 @@
 //! This ledger covers static global-property accesses only. A recorded access
 //! is never a certificate of execution, purity, or complete domain coverage.
 
+use analysis_codec_derive::Artifact;
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,7 @@ use swc_common::Span;
 use crate::analysis_inputs::ProofDependencies;
 use crate::reports::schema::AssumedEffectReason;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum GlobalAccessKind {
     Read,
@@ -21,7 +22,7 @@ pub enum GlobalAccessKind {
 
 /// A physical source operation, independent of graph IDs and runtime replay.
 /// The containing chunk supplies the source-file scope.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Artifact)]
 pub struct GlobalAccessSite {
     pub lexical_owner: SourceUnitOrdinal,
     pub start: u32,
@@ -30,7 +31,7 @@ pub struct GlobalAccessSite {
     pub property: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Artifact)]
 pub struct GlobalAccessEvidence {
     pub dependencies: ProofDependencies,
     pub assumptions: Vec<AssumedEffectReason>,
@@ -67,7 +68,7 @@ impl GlobalAccessEvidence {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Artifact)]
 pub(crate) struct EvaluationEffects {
     pub global_accesses: BTreeMap<GlobalAccessSite, GlobalAccessEvidence>,
 }

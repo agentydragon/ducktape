@@ -7,6 +7,7 @@ use analysis::analysis_inputs::SourceDeclaration;
 use analysis::facts::ExportReentryPolicy;
 use analysis_artifact::{AnalysisArtifactBody, AnalysisArtifactHeader};
 use analysis_codec::ContextOrdinals;
+use analysis_codec_derive::Artifact;
 use anyhow::{Context, Result, bail, ensure};
 use artifact::paths::normalize_module_path;
 use artifact::reports::{StaticModuleRequest, StaticModuleRequestMode};
@@ -44,7 +45,7 @@ pub struct ResolvedMemberSite {
 /// Why the unknown-call fallback includes the chunk's export surface.
 /// The policy remains conservative whenever either blocker list is non-empty
 /// or the loader derivation does not permit the proof.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Artifact)]
 pub struct ExportReentryReport {
     /// The declared host behavior the policy was derived under, echoed as read.
     pub host_behavior: spec::HostBehavior,
@@ -59,7 +60,7 @@ pub struct ExportReentryReport {
     pub host_builtin_leaves: Vec<ExportReentryHostBuiltinLeaf>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Artifact)]
 pub struct ExportReentryHostBuiltinLeaf {
     pub source_chunk: String,
     pub specifier: String,
@@ -73,7 +74,7 @@ struct ExportReentryClosureInspection {
     host_builtin_leaves: Vec<ExportReentryHostBuiltinLeaf>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Artifact)]
 #[serde(tag = "reason", rename_all = "snake_case")]
 pub enum ExportReentryGlobalBlocker {
     IncompleteArtifact {
@@ -87,7 +88,7 @@ pub enum ExportReentryGlobalBlocker {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Artifact)]
 #[serde(tag = "reason", rename_all = "snake_case")]
 pub enum ExportReentryClosureBlocker {
     NonEsmChunk {
@@ -124,7 +125,7 @@ pub enum ExportReentryClosureBlocker {
     },
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 pub struct ExportReentryTarget {
     pub chunk: String,
     pub file: String,

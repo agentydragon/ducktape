@@ -1,10 +1,11 @@
 use super::*;
+use analysis_codec_derive::Artifact;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
 /// Controls only which of the source module's exports contribute synthetic
 /// execution roots and exposed capabilities to unknown-call fallback.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum ExportReentryPolicy {
     /// Every export.

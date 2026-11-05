@@ -3,6 +3,7 @@
 //! These are inputs to fact extraction, not inferred facts. Imported summaries
 //! can themselves depend on author contracts in their defining chunks.
 
+use analysis_codec_derive::Artifact;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -42,7 +43,7 @@ pub enum LocalEffectPolicy {
 /// Evidence for a bare imported callable's return-only callback-factory behavior.
 /// An assertion is an author contract; an inferred wrapper depends on the
 /// defining chunk's checked source shape.
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(tag = "origin", rename_all = "snake_case")]
 pub enum CallbackFactoryEvidence {
     AuthorAssertion {
@@ -61,7 +62,7 @@ pub enum CallbackFactoryEvidence {
 /// A source-derived successful-return capability. Deferred bodies may have
 /// arbitrary effects and exterior captures; consumers must activate the foreign
 /// capability pool when this record is read, invoked, or exposed.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct ReturnedRecordSummary {
     pub defining_module: String,
     pub export: String,
@@ -76,7 +77,7 @@ pub struct ReturnedRecordSummary {
     pub replacement_package: Option<String>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct DeferredRecordMember {
     pub name: String,
     pub source_location: Option<SourceLocation>,
@@ -87,7 +88,7 @@ pub struct DeferredRecordMember {
 
 /// Source-checked wrapping of one ordinary input. The returned capability
 /// retains the input graph; no purity, fresh identity or no-throw claim follows.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct NamespaceWrapperSummary {
     pub defining_module: String,
     pub export: String,
@@ -95,7 +96,7 @@ pub struct NamespaceWrapperSummary {
     pub source_location: Option<SourceLocation>,
     pub inference: crate::analysis_provenance::InferenceUse,
     /// Trusted provider judgment; deliberately absent from report JSON.
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) dependencies: ProofDependencies,
 }
 
@@ -104,7 +105,7 @@ pub struct NamespaceWrapperSummary {
 /// Consumer entry coverage additionally requires an anonymous inline callback
 /// unable to obtain its own identity. Callback-supplied values may still escape.
 /// Timing-only author assertions never supply this capability.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct CallbackObjectArguments {
     pub wrapper: CallbackFactoryEvidence,
     pub object_arguments: BTreeSet<usize>,
@@ -112,7 +113,7 @@ pub struct CallbackObjectArguments {
 
 /// Audited provider descriptor-copy behavior. The importer must separately
 /// prove an exact fresh literal at a single-execution call site.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct DescriptorCopyFactorySummary {
     pub defining_module: String,
     pub export: String,
@@ -122,7 +123,7 @@ pub struct DescriptorCopyFactorySummary {
 
 /// How the importer must invoke a derived foreign callable for its summary to
 /// apply: a class only through `new`, a function only through an ordinary call.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum ForeignInvocation {
     Call,
@@ -130,7 +131,7 @@ pub enum ForeignInvocation {
 }
 
 /// One possible result of a derived foreign call.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ForeignReturn {
     /// The argument value itself (`undefined` when not supplied).
@@ -148,7 +149,7 @@ pub enum ForeignReturn {
 /// call runs no code other than the provider body itself: no getter, coercion,
 /// argument, host or export callback. It writes only to its own allocations.
 /// Arguments outside `retained_arguments` and `Argument` returns are dropped.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct ForeignCallSummary {
     pub defining_module: String,
     pub export: String,
@@ -170,13 +171,13 @@ pub struct ForeignCallSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replacement_package: Option<String>,
     /// Trusted provider judgment; deliberately absent from report JSON.
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) dependencies: ProofDependencies,
 }
 
 /// Capabilities of one bare imported callable, keyed by the importer's local
 /// binding name. More than one proof can support the same capability.
-#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct CallableSummary {
     callback_factory_evidence: BTreeSet<CallbackFactoryEvidence>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -286,7 +287,7 @@ impl CallableSummary {
 }
 
 /// Intrinsic families whose visible writes constrain inferred native operations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeIntrinsic {
     GlobalObject,
@@ -398,14 +399,14 @@ impl NativeIntrinsic {
 }
 
 /// Stable reference to one exact author input in one provider chunk.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 pub struct ValueInputRef {
     pub defining_chunk: String,
     pub input_index: usize,
 }
 
 /// Exact authored provider contract consumed by a semantic certificate.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 pub struct DescriptorCopyAuthorRef {
     pub defining_module: String,
     pub export: String,
@@ -416,7 +417,9 @@ pub struct DescriptorCopyAuthorRef {
 /// Structural source evidence stays on the proof's existing source identity.
 /// Empty dependencies add no captured-value premise; the analysis's baseline
 /// native and host assumptions still apply independently.
-#[derive(Debug, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact,
+)]
 pub struct ProofDependencies {
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub value_inputs: BTreeSet<ValueInputRef>,
@@ -436,7 +439,7 @@ pub struct ProofDependencies {
 
 /// One `program_premises` assertion consumed by a proof (SPEC.md § Program
 /// premises).
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum ProgramPremiseKey {
     ProcessPrototypeChainAccessors,
@@ -446,7 +449,7 @@ pub enum ProgramPremiseKey {
 
 /// Global properties that hold only fresh ordinary objects created by
 /// analyzed code (SPEC.md § Bundle-owned globals).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Artifact)]
 pub struct BundleGlobalNames {
     pub names: BTreeSet<String>,
     /// Every property keyed by a `Symbol.for` symbol.
@@ -461,7 +464,7 @@ pub struct BundleGlobalNames {
 }
 
 /// Stable reference to one `no_accessor_install_callables` entry.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 pub struct NoAccessorInstallRef {
     pub defining_chunk: String,
     pub input_index: usize,
@@ -477,7 +480,7 @@ pub struct ResolvedNoAccessorInstall {
 /// One `host_behavior` assertion consumed by a proof (SPEC.md § Host behavior).
 /// The value is not repeated: a key enters a proof only with the one value its
 /// reader accepts, which the spec echo in the same report shows.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum HostBehaviorKey {
     LoaderResultForEvaluatingModule,
@@ -539,7 +542,7 @@ impl ProofDependencies {
 /// does not depend on where the spec or the inputs live. The fields marked
 /// report-only are `None` in analysis output and filled in by
 /// [`crate::reports::author_inputs::AuthorInputLocations`].
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct ValueInputEvidence {
     pub reference: ValueInputRef,
     /// `chunk_analysis_options.<chunk>.value_inputs[<i>]`; reports prefix the
@@ -563,7 +566,7 @@ pub struct ValueInputEvidence {
 /// Stable reference to one exact native author assertion. The index is in
 /// native-operation inputs followed by native-call-identity inputs for that
 /// defining chunk, so the two fields cannot collide.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 pub struct NativeOperationInputRef {
     pub defining_chunk: String,
     pub input_index: usize,
@@ -571,7 +574,7 @@ pub struct NativeOperationInputRef {
 
 /// Shared evidence discriminator for the two distinct authored native-input
 /// fields. Their spec enums cannot express each other's cases.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(untagged)]
 pub enum NativeInputKind {
     Operation(spec::NativeOperationKind),
@@ -591,7 +594,7 @@ impl NativeInputKind {
 
 /// Provenance retained for an author-certified native operation or call site.
 /// Spec-relative like [`ValueInputEvidence`].
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct NativeOperationInputEvidence {
     pub reference: NativeOperationInputRef,
     /// `chunk_analysis_options.<chunk>.native_{operation,call_identity}_inputs[<i>]`;
@@ -611,7 +614,7 @@ pub struct NativeOperationInputEvidence {
     pub note: Option<String>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeOperationSelectorProvenance {
     SourceMatch(SourceMatchClaim),
@@ -621,13 +624,13 @@ pub enum NativeOperationSelectorProvenance {
 }
 
 /// One original declaration in the provider's prepared module body.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct SourceDeclaration {
     pub binding: String,
     pub body_index: usize,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 pub struct ArgumentInputRef {
     pub defining_chunk: String,
     pub input_index: usize,
@@ -635,7 +638,7 @@ pub struct ArgumentInputRef {
 
 /// Spec-relative like [`ValueInputEvidence`]; reports render only its
 /// location (`InferenceUseReport::argument_input_spec_locations`).
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct ArgumentInputEvidence {
     pub reference: ArgumentInputRef,
     /// `chunk_analysis_options.<chunk>.argument_inputs[<i>]`.
@@ -649,7 +652,7 @@ pub struct ArgumentInputEvidence {
     pub declaration_location: Option<SourceLocation>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Artifact)]
 pub struct ResolvedArgumentInput {
     pub evidence: ArgumentInputEvidence,
     pub binding: Id,
@@ -658,7 +661,7 @@ pub struct ResolvedArgumentInput {
 
 /// Resolved author input for one canonical source binding. Spans and `Id` are
 /// session-local; serialized evidence uses the stable source locations above.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Artifact)]
 pub struct ResolvedBindingValueInput {
     pub evidence: ValueInputEvidence,
     pub binding: Id,
@@ -692,7 +695,7 @@ pub struct SelectedNativeOperationInput {
 
 /// Resolved author input for one exact native operation call. Spans and `Id`
 /// are session-local; serialized evidence uses stable source provenance.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Artifact)]
 pub struct ResolvedNativeOperationInput {
     pub evidence: NativeOperationInputEvidence,
     pub binding: Id,
@@ -758,7 +761,7 @@ pub struct ResolvedCommutingStatements {
 /// Source-certified Set spread. This is independent, one-way evidence for the
 /// shared value-flow solve, not a result inferred from that solve or from the
 /// eventual dependency graph.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Artifact)]
 pub struct StableSetIterableUse {
     pub source_span: Span,
     pub spread_token_span: Span,
@@ -770,7 +773,7 @@ pub struct StableSetIterableUse {
 
 /// A source-derived primitive Set operation whose full native protocol is
 /// proved before the canonical value-flow solve. This is not an author input.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Artifact)]
 pub struct InferredSetConstruction {
     pub binding: Id,
     pub operation: InferredSetOperation,
@@ -778,7 +781,7 @@ pub struct InferredSetConstruction {
     pub inference: crate::analysis_provenance::InferenceUse,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum InferredSetOperation {
     PrimitiveArray,
@@ -799,7 +802,7 @@ pub enum ProvenSetAllocation {
 /// Resolved whole-program native integrity, derived from source facts and any
 /// explicitly recorded author input dependencies. This is never a serialized
 /// spec assertion.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Artifact)]
 pub struct NativeIntegrity {
     pub mutated: BTreeSet<NativeIntrinsic>,
     pub prototype_mutations: Arc<Vec<crate::reports::schema::NativePrototypeMutation>>,

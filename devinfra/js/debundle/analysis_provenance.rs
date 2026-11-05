@@ -6,6 +6,7 @@
 
 use std::collections::BTreeSet;
 
+use analysis_codec_derive::Artifact;
 use serde::{Deserialize, Serialize};
 
 use crate::analysis_inputs::{
@@ -13,7 +14,7 @@ use crate::analysis_inputs::{
 };
 
 /// Positive rules participating in a consumed construction certificate.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum InferenceRule {
     NativeIntegrity,
@@ -42,7 +43,7 @@ pub enum InferenceRule {
 ///
 /// Internal derivations share typed premise identities; presentation layers
 /// may expand those identities into authored locations for human readers.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 pub struct InferenceUse {
     pub conclusion: InferenceRule,
     pub derivation_rules: BTreeSet<InferenceRule>,

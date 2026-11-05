@@ -17,6 +17,7 @@
 //! failures grow with it, so a target is closed only in the completed closure;
 //! no rule consumes an intermediate verdict.
 
+use analysis_codec_derive::Artifact;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -31,7 +32,7 @@ use crate::inference::{FactContext, IterativeInference, IterativeRules};
 
 /// Why a target is not loader-closed. A report keeps the first witness and the
 /// occurrence count per kind.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum LoaderClosureFailureKind {
     /// A loader key the derivation reads is omitted or `unknown`.
@@ -121,7 +122,7 @@ impl<W> ChunkLoaderSurface<W> {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum LoaderClosureWitness<W> {
     HostBehavior(HostBehaviorKey),

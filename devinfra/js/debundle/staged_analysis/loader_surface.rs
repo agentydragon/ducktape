@@ -1,6 +1,7 @@
 //! Source facts and report shapes for the loader-closed derivation of the
 //! export-reentry policy (SPEC.md § Host behavior).
 
+use analysis_codec_derive::Artifact;
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey};
@@ -20,7 +21,7 @@ use swc_common::Span;
 use super::{ExportReentryTarget, report_target};
 
 /// How the loader premise of the policy was derived for one target.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Artifact)]
 #[serde(tag = "rule", rename_all = "snake_case")]
 pub enum ExportReentryLoaderDerivation {
     /// `synchronous_module_loader: none`.
@@ -191,7 +192,7 @@ fn is_zero(count: &usize) -> bool {
 }
 
 /// Literal loader requests that resolved, aggregated per source and target.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Artifact)]
 pub struct ExportReentryLoaderRequest {
     pub source_chunk: String,
     pub specifier: String,
@@ -199,7 +200,7 @@ pub struct ExportReentryLoaderRequest {
     pub request_count: usize,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum LoaderRequestReportTarget {
     Builtin(spec::HostModule),
@@ -207,7 +208,7 @@ pub enum LoaderRequestReportTarget {
     Chunk(ExportReentryTarget),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Artifact)]
 pub struct ExportReentryLoaderFailure {
     pub reason: LoaderClosureFailureKind,
     pub occurrences: usize,
@@ -216,14 +217,14 @@ pub struct ExportReentryLoaderFailure {
 
 /// One source site that keeps a target open. Ordered by chunk name, then
 /// site, so the reported first witness is deterministic.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 pub struct LoaderSiteWitness {
     pub source_chunk: String,
     #[serde(flatten)]
     pub site: LoaderSite,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 #[serde(tag = "form", rename_all = "snake_case")]
 pub enum LoaderSite {
     /// A census site (SPEC.md § Static-import and host-loader queries).

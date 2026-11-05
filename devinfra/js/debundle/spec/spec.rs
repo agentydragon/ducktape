@@ -20,6 +20,7 @@
 //! All consumers see typed structs; nothing here returns
 //! `serde_json::Value` for a known field.
 
+use analysis_codec_derive::Artifact;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::PathBuf;
@@ -116,7 +117,7 @@ pub struct TransformSpec {
 /// with one engine reader; an omitted key takes its conservative value. The
 /// identity of the executable a behavior was audited against is provenance in
 /// `note` and the project's pinning doc, never an engine input.
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, Artifact)]
 #[serde(deny_unknown_fields)]
 pub struct HostBehavior {
     #[serde(default)]
@@ -160,7 +161,7 @@ pub struct HostBehavior {
 /// Author premises about the analyzed program itself, as opposed to its host.
 /// Each key is one assertion with one engine reader; an omitted key asserts
 /// nothing.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize, Artifact)]
 #[serde(deny_unknown_fields)]
 pub struct ProgramPremises {
     #[serde(
@@ -181,7 +182,7 @@ pub struct ProgramPremises {
 }
 
 /// `program_premises.intrinsics_never_written`.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Artifact)]
 #[serde(deny_unknown_fields)]
 pub struct IntrinsicsNeverWritten {
     pub families: IntrinsicFamilies,
@@ -191,21 +192,21 @@ pub struct IntrinsicsNeverWritten {
 }
 
 /// `all`, or a list of census families.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, Artifact)]
 #[serde(untagged)]
 pub enum IntrinsicFamilies {
     All(AllIntrinsicFamilies),
     Listed(BTreeSet<IntrinsicFamily>),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum AllIntrinsicFamilies {
     All,
 }
 
 /// A native census family, named by its global binding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize, Artifact)]
 pub enum IntrinsicFamily {
     Error,
     FinalizationRegistry,
@@ -250,7 +251,7 @@ impl IntrinsicFamilies {
 }
 
 /// Whether the program defines accessors on `process` or its prototype chain.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum ProcessPrototypeChainAccessors {
     /// No code in the program defines or redefines an accessor property on
@@ -267,7 +268,7 @@ impl ProcessPrototypeChainAccessors {
 }
 
 /// What a loader call with a non-literal argument can load.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum NonLiteralLoaderCalls {
     /// Every such call fails or loads a native addon, and no native addon's
@@ -284,7 +285,7 @@ impl NonLiteralLoaderCalls {
 }
 
 /// The global object's host-defined properties before the program runs.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum PredefinedGlobals {
     /// Any property, with any value.
@@ -306,7 +307,7 @@ impl PredefinedGlobals {
 
 /// Whether any host API can synchronously obtain a module namespace while that
 /// module is evaluating. `none` is what native browser ESM provides.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum SynchronousModuleLoader {
     None,
@@ -314,7 +315,7 @@ pub enum SynchronousModuleLoader {
     Present,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum LoaderResultForEvaluatingModule {
     Throws,
@@ -322,14 +323,14 @@ pub enum LoaderResultForEvaluatingModule {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum SynchronousLoadRunsAppCallbacks {
     Never,
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum SynchronousLoadDrainsMicrotasks {
     Never,
@@ -338,7 +339,7 @@ pub enum SynchronousLoadDrainsMicrotasks {
 
 /// Exact zero-argument host operations recognized by the synchronous-effect
 /// interpreter (SPEC.md § Host behavior).
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum ReentryFreeOperation {
     AsyncLocalStorageConstruct,
@@ -348,7 +349,7 @@ pub enum ReentryFreeOperation {
 /// Exact Node builtin module identities admissible in
 /// `reentry_free_builtin_modules`. Unknown bare packages are absent; Bun's
 /// package replacements are [`BunModule`]s.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum NodeBuiltinModule {
     Assert,
@@ -448,7 +449,7 @@ impl NodeBuiltinModule {
 /// Exact host-provided modules outside Node's builtin namespace admissible in
 /// `reentry_free_bun_modules`: Bun's own `bun:` modules and the packages Bun
 /// replaces with built-in implementations.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize, Artifact)]
 pub enum BunModule {
     #[serde(rename = "bun:ffi")]
     BunFfi,
@@ -471,7 +472,7 @@ impl BunModule {
 }
 
 /// A module the host provides itself, named in one of the closed lists.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize, Artifact)]
 #[serde(untagged)]
 pub enum HostModule {
     Node(NodeBuiltinModule),
@@ -650,7 +651,7 @@ pub struct ChunkExportPurity {
 
 /// Exact provider operations that can otherwise observe an input accessor at
 /// registration or run a setter while installing returned methods.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(deny_unknown_fields)]
 pub struct DescriptorCopyFactorySignature {
     pub argument_count: usize,
@@ -663,7 +664,7 @@ pub struct DescriptorCopyFactorySignature {
 /// syntactically inert primitives. The policy containing this signature
 /// determines whether callbacks stay in a fresh returned graph or become
 /// globally reachable after the call. No policy is implied by another.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Artifact)]
 pub struct RetainedCallbackSignature {
     pub argument_count: usize,
     pub callback_arguments: BTreeSet<usize>,
@@ -894,7 +895,7 @@ pub enum SourceUnitSelector {
 }
 
 /// A previously resolved logical member in this provider chunk.
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Artifact)]
 #[serde(deny_unknown_fields)]
 pub struct ResolvedMemberSelector {
     pub module: String,
@@ -1023,7 +1024,7 @@ pub struct NoAccessorInstallCallableContract {
 }
 
 /// Typed native callee models eligible for exact-site identity premises.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeCallIdentityKind {
     ObjectFreeze,
@@ -1031,7 +1032,7 @@ pub enum NativeCallIdentityKind {
 }
 
 /// Native operations admitted by `native_operation_inputs`.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeOperationKind {
     /// Direct zero-argument construction through the original global data binding.
@@ -1054,7 +1055,7 @@ pub struct CapturedValueContract {
     pub kind: CapturedValueKind,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum CapturedValueKind {
     OrdinaryObject,
@@ -1205,7 +1206,7 @@ impl BunLoader {
 }
 
 /// Embedded-file loaders admissible in `reentry_free_embedded_loaders`.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum EmbeddedLoader {
     /// The file's text, as a string.
@@ -1800,7 +1801,7 @@ pub struct BindingAnnotation {
     pub note: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Artifact)]
 #[serde(deny_unknown_fields)]
 pub struct SourceMatchClaim {
     /// Identifier matching mode for this source-backed claim. Omitted means
@@ -1833,7 +1834,7 @@ impl SourceMatchClaim {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Artifact)]
 #[serde(untagged)]
 pub enum SourceMatchBinding {
     Local(String),
@@ -1856,7 +1857,7 @@ impl SourceMatchBinding {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Artifact)]
 #[serde(deny_unknown_fields)]
 pub struct SourceMatchBindingDetail {
     pub local: String,
@@ -1899,7 +1900,7 @@ impl fmt::Display for AnonymousStatementSelectorError {
 
 impl std::error::Error for AnonymousStatementSelectorError {}
 
-#[derive(Debug, Clone, Serialize, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Serialize, Eq, PartialEq, Ord, PartialOrd, Artifact)]
 pub struct SourceMatch {
     #[serde(default, skip_serializing)]
     pub identifiers: SourceMatchIdentifierMode,
@@ -1973,7 +1974,9 @@ impl AnonymousStatementSelector {
     }
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(
+    Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq, Ord, PartialOrd, Artifact,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceMatchIdentifierMode {
     /// Internal exact identifier constraints for native lowering / solver tests.

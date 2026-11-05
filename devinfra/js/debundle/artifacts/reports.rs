@@ -1,5 +1,6 @@
 //! Serialized report models and the shared JSON writer for artifact output.
 
+use analysis_codec_derive::Artifact;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufWriter, Write};
@@ -298,7 +299,7 @@ pub struct NamespaceRequest {
     pub specifier: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum InteropUseKind {
     ImportMetaRequireLiteralCall,

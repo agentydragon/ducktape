@@ -1,82 +1,41 @@
-//! Process-independent MessagePack encoding of analysis output.
+//! Typed, process-independent analysis artifacts, separate from report Serde.
 //!
-//! SWC binding identity is `Id = (Atom, SyntaxContext)`, and a
-//! `SyntaxContext` is an index into the process-local hygiene table, which
-//! chunks parsed in parallel fill in no fixed order. The codec writes each
-//! context as its ordinal in [`ContextOrdinals`]: the order of first
-//! occurrence in a pre-order walk of the analyzed modules. The resolver's
-//! scope structure is deterministic for given source text, so a fresh parse
-//! of the same modules in any process numbers the same contexts the same way,
-//! and the decoder maps each ordinal back to that process's context. Inner
-//! scopes keep their own ordinal, so a closure-local `counter` never decodes
-//! as the top-level `counter`.
-//!
-//! An `Id` serializes as a 2-tuple of a string and a `u32`. The encoder writes
-//! the second element of every such tuple as `-(ordinal + 1)`; the decoder
-//! maps a negative integer back wherever a 2-tuple's second element is read
-//! as a `u32`. Analysis types therefore must not hold other `(string, u32)`
-//! tuples. A context outside the ordinal table fails the encode, and serde
-//! paths that buffer content (`flatten`, internally tagged and untagged
-//! enums) bypass the decoder and fail on the negative integer, so neither
-//! case can silently keep a process-local number.
-//!
-//! Spans need no mapping: every chunk is parsed into its own `SourceMap`, so a
-//! `BytePos` is already an offset from that chunk's file start.
-//!
-//! Fields kept out of JSON reports (`#[serde(skip)]` there: spans, purity
-//! causes, trusted dependencies) must still round-trip through the artifact.
-//! They use [`outside_artifact`] as their `skip_serializing_if`, which is true
-//! except while [`encode`] runs, and purity causes use [`shared_arc`], which
-//! writes each shared value once so the cause DAG keeps its sharing.
-//!
-//! Structs are encoded with field names (`rmp_serde`'s struct maps), which the
-//! existing `skip_serializing_if` and tagged-enum attributes require, then
-//! zstd-compressed.
+//! Records include all fields; only `SyntaxContext` maps through parser ordinals.
+//! An explicit context preserves shared `Arc` values within one artifact. Reports
+//! keep their own Serde attributes and never observe an artifact's context.
 
-use std::any::Any;
-use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::any::{Any, TypeId};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt;
+use std::hash::{BuildHasher, Hash};
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use serde::de::{self, Deserialize, DeserializeOwned, DeserializeSeed, Deserializer, Visitor};
-use serde::ser::{self, Serialize, Serializer};
+use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
+use serde::ser::{SerializeMap, SerializeSeq, SerializeTuple};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use swc_common::SyntaxContext;
 use swc_ecma_ast::Module;
 use swc_ecma_visit::{Visit, VisitWith};
 
-const ZSTD_LEVEL: i32 = 3;
-
-/// First-occurrence ordinals of the hygiene contexts in a list of modules.
-/// Ordinal 0 is the empty context.
+/// First-occurrence hygiene-context ordinals across the analyzed modules.
 pub struct ContextOrdinals {
     ordinals: HashMap<SyntaxContext, u32>,
     contexts: Vec<SyntaxContext>,
 }
 
 impl ContextOrdinals {
-    /// Numbers contexts across `modules` in the given order; callers pass the
-    /// same modules in the same order in every process.
     pub fn new<'m>(modules: impl IntoIterator<Item = &'m Module>) -> Self {
-        let mut collector = Self {
+        let mut result = Self {
             ordinals: HashMap::from([(SyntaxContext::empty(), 0)]),
             contexts: vec![SyntaxContext::empty()],
         };
         for module in modules {
-            module.visit_with(&mut collector);
+            module.visit_with(&mut result);
         }
-        collector
-    }
-
-    fn ordinal(&self, raw: u32) -> Option<u32> {
-        self.ordinals.get(&SyntaxContext::from_u32(raw)).copied()
-    }
-
-    fn context(&self, ordinal: u32) -> Option<u32> {
-        self.contexts
-            .get(ordinal as usize)
-            .map(|context| context.as_u32())
+        result
     }
 }
 
@@ -90,936 +49,501 @@ impl Visit for ContextOrdinals {
     }
 }
 
-/// zstd-compressed named MessagePack of `value`, contexts as ordinals.
-pub fn encode<T: Serialize>(value: &T, ordinals: &ContextOrdinals) -> Result<Vec<u8>> {
-    let _scope = ArtifactScope::enter();
-    let mut encoder = zstd::Encoder::new(Vec::new(), ZSTD_LEVEL)?;
-    let mut serializer = rmp_serde::Serializer::new(&mut encoder).with_struct_map();
-    value.serialize(Encoder {
-        inner: &mut serializer,
-        ordinals,
-        role: Role::Plain,
-    })?;
+pub struct ArtifactContext<'a> {
+    ordinals: &'a ContextOrdinals,
+    written: RefCell<HashMap<(TypeId, *const ()), u32>>,
+    read: RefCell<HashMap<u32, Arc<dyn Any + Send + Sync>>>,
+}
+
+impl<'a> ArtifactContext<'a> {
+    fn new(ordinals: &'a ContextOrdinals) -> Self {
+        Self {
+            ordinals,
+            written: RefCell::default(),
+            read: RefCell::default(),
+        }
+    }
+}
+
+/// Snapshot encoding requires explicit implementations for every stored type.
+/// The derive uses tuple records independent of report names, tags, and skips.
+pub trait Artifact: Sized {
+    fn encode<S: Serializer>(
+        &self,
+        serializer: S,
+        context: &ArtifactContext<'_>,
+    ) -> Result<S::Ok, S::Error>;
+    fn decode<'de, D: Deserializer<'de>>(
+        deserializer: D,
+        context: &ArtifactContext<'_>,
+    ) -> Result<Self, D::Error>;
+}
+
+/// Generated record fields; callers normally derive `Artifact` instead.
+pub trait ArtifactRecord: Sized {
+    fn tuple_len(&self) -> usize;
+    fn write_fields<S: SerializeTuple>(
+        &self,
+        tuple: &mut S,
+        context: &ArtifactContext<'_>,
+    ) -> Result<(), S::Error>;
+    fn read_fields<'de, A: SeqAccess<'de>>(
+        sequence: &mut A,
+        context: &ArtifactContext<'_>,
+    ) -> Result<Self, A::Error>;
+}
+
+pub struct Encoded<'a, 'o, T> {
+    value: &'a T,
+    context: &'a ArtifactContext<'o>,
+}
+
+impl<'a, 'o, T> Encoded<'a, 'o, T> {
+    pub fn new(value: &'a T, context: &'a ArtifactContext<'o>) -> Self {
+        Self { value, context }
+    }
+}
+
+impl<T: Artifact> Serialize for Encoded<'_, '_, T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.value.encode(serializer, self.context)
+    }
+}
+
+struct Seed<'a, 'o, T> {
+    context: &'a ArtifactContext<'o>,
+    marker: PhantomData<fn() -> T>,
+}
+
+impl<'a, 'o, T> Seed<'a, 'o, T> {
+    fn new(context: &'a ArtifactContext<'o>) -> Self {
+        Self {
+            context,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<'de, T: Artifact> DeserializeSeed<'de> for Seed<'_, '_, T> {
+    type Value = T;
+    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<T, D::Error> {
+        T::decode(deserializer, self.context)
+    }
+}
+
+pub fn encode<T: Artifact>(value: &T, ordinals: &ContextOrdinals) -> Result<Vec<u8>> {
+    let context = ArtifactContext::new(ordinals);
+    let mut encoder = zstd::Encoder::new(Vec::new(), 3)?;
+    value.encode(&mut rmp_serde::Serializer::new(&mut encoder), &context)?;
     Ok(encoder.finish()?)
 }
 
-/// Inverse of [`encode`], given the ordinals of the same modules parsed in
-/// this process.
-pub fn decode<T: DeserializeOwned>(bytes: &[u8], ordinals: &ContextOrdinals) -> Result<T> {
+pub fn decode<T: Artifact>(bytes: &[u8], ordinals: &ContextOrdinals) -> Result<T> {
+    let context = ArtifactContext::new(ordinals);
     let mut reader = zstd::Decoder::new(bytes).context("decompress analysis output")?;
-    let _scope = ArtifactScope::enter();
-    let value = {
-        let mut deserializer = rmp_serde::Deserializer::new(&mut reader);
-        T::deserialize(Decoder {
-            inner: &mut deserializer,
-            ordinals,
-            context_slot: false,
-        })?
-    };
-    // Deserializing one value may stop before the compressed frame's checksum
-    // or a later frame. Consume the remainder so corruption still fails.
+    let value = T::decode(&mut rmp_serde::Deserializer::new(&mut reader), &context)?;
+    // Reach the frame checksum even when the deserializer stops at its value.
     std::io::copy(&mut reader, &mut std::io::sink()).context("decompress analysis output")?;
     Ok(value)
 }
 
-/// Shared values written or read so far by the running [`encode`] or
-/// [`decode`]; `None` outside them.
-#[derive(Default)]
-struct SharedValues {
-    written: HashMap<*const (), u32>,
-    read: HashMap<u32, Arc<dyn Any + Send + Sync>>,
+pub fn encode_record<T: ArtifactRecord, S: Serializer>(
+    value: &T,
+    serializer: S,
+    context: &ArtifactContext<'_>,
+) -> Result<S::Ok, S::Error> {
+    let mut tuple = serializer.serialize_tuple(value.tuple_len())?;
+    value.write_fields(&mut tuple, context)?;
+    tuple.end()
 }
 
-thread_local! {
-    static ARTIFACT: RefCell<Option<SharedValues>> = const { RefCell::new(None) };
-}
-
-struct ArtifactScope;
-
-impl ArtifactScope {
-    fn enter() -> Self {
-        ARTIFACT.with(|artifact| {
-            let previous = artifact.replace(Some(SharedValues::default()));
-            assert!(previous.is_none(), "analysis codec calls do not nest");
-        });
-        Self
-    }
-}
-
-impl Drop for ArtifactScope {
-    fn drop(&mut self) {
-        ARTIFACT.with(|artifact| artifact.replace(None));
-    }
-}
-
-/// `skip_serializing_if` for a field JSON reports leave out but the artifact
-/// keeps; pair it with `default`.
-pub fn outside_artifact<T: ?Sized>(_: &T) -> bool {
-    ARTIFACT.with(|artifact| artifact.borrow().is_none())
-}
-
-/// `with` module for an `Option<Arc<T>>` whose sharing matters: each value
-/// is written once, at its first occurrence, and later occurrences name it
-/// by the order of that first occurrence. Only valid inside the artifact
-/// (see [`outside_artifact`]).
-pub mod shared_arc {
-    use super::*;
-
-    pub fn serialize<T: Serialize, S: Serializer>(
-        value: &Option<Arc<T>>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        let Some(value) = value else {
-            return serializer.serialize_none();
-        };
-        let (index, first) = ARTIFACT.with(|artifact| {
-            let mut artifact = artifact.borrow_mut();
-            let written = &mut artifact
-                .as_mut()
-                .expect("shared_arc serializes only inside the artifact")
-                .written;
-            let next = u32::try_from(written.len()).expect("fewer than 2^32 shared values");
-            let index = *written
-                .entry(Arc::as_ptr(value).cast::<()>())
-                .or_insert(next);
-            (index, index == next)
-        });
-        serializer.serialize_some(&(index, first.then_some(value.as_ref())))
-    }
-
-    pub fn deserialize<'de, T, D>(deserializer: D) -> Result<Option<Arc<T>>, D::Error>
-    where
-        T: Deserialize<'de> + Send + Sync + 'static,
-        D: Deserializer<'de>,
-    {
-        let Some((index, value)) = Option::<(u32, Option<T>)>::deserialize(deserializer)? else {
-            return Ok(None);
-        };
-        ARTIFACT.with(|artifact| {
-            let mut artifact = artifact.borrow_mut();
-            let read = &mut artifact
-                .as_mut()
-                .expect("shared_arc deserializes only inside the artifact")
-                .read;
-            let shared = match value {
-                Some(value) => {
-                    let shared = Arc::new(value);
-                    read.insert(index, shared.clone());
-                    shared
-                }
-                None => read
-                    .get(&index)
-                    .ok_or_else(|| {
-                        de::Error::custom(format!("shared value {index} read before written"))
-                    })?
-                    .clone()
-                    .downcast::<T>()
-                    .map_err(|_| {
-                        de::Error::custom(format!("shared value {index} has another type"))
-                    })?,
-            };
-            Ok(Some(shared))
-        })
-    }
-}
-
-fn encode_ordinal(ordinal: u32) -> i64 {
-    -i64::from(ordinal) - 1
-}
-
-fn decode_ordinal(value: i64) -> Option<u32> {
-    u32::try_from(-(value + 1)).ok()
-}
-
-// --- Encoder ---------------------------------------------------------------
-
-/// What the value being serialized is, as far as context mapping goes.
-#[derive(Clone, Copy)]
-enum Role<'r> {
-    Plain,
-    /// First element of a 2-tuple; records whether it was a string.
-    PairHead(&'r Cell<bool>),
-    /// Second element of a `(string, _)` 2-tuple: a `u32` is a context.
-    Context,
-}
-
-struct Encoder<'o, 'r, S> {
-    inner: S,
-    ordinals: &'o ContextOrdinals,
-    role: Role<'r>,
-}
-
-/// A value to serialize through an [`Encoder`] with `role`.
-struct Encoded<'v, 'o, 'r, T: ?Sized> {
-    value: &'v T,
-    ordinals: &'o ContextOrdinals,
-    role: Role<'r>,
-}
-
-impl<T: Serialize + ?Sized> Serialize for Encoded<'_, '_, '_, T> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.value.serialize(Encoder {
-            inner: serializer,
-            ordinals: self.ordinals,
-            role: self.role,
-        })
-    }
-}
-
-/// Compound serializer whose children are all plain values.
-struct Compound<'o, C> {
-    inner: C,
-    ordinals: &'o ContextOrdinals,
-}
-
-impl<'o, C> Compound<'o, C> {
-    fn plain<'v, T: ?Sized>(&self, value: &'v T) -> Encoded<'v, 'o, 'static, T> {
-        Encoded {
-            value,
-            ordinals: self.ordinals,
-            role: Role::Plain,
-        }
-    }
-}
-
-/// Tuple serializer; maps the second element of a `(string, u32)` pair.
-struct Tuple<'o, C> {
-    inner: C,
-    ordinals: &'o ContextOrdinals,
-    pair: bool,
+pub fn read_field<'de, T: Artifact, A: SeqAccess<'de>>(
+    sequence: &mut A,
+    context: &ArtifactContext<'_>,
     index: usize,
-    head_is_string: Cell<bool>,
+) -> Result<T, A::Error> {
+    sequence
+        .next_element_seed(Seed::new(context))?
+        .ok_or_else(|| de::Error::invalid_length(index, &"an artifact record"))
 }
 
-impl<'o, S: Serializer> Encoder<'o, '_, S> {
-    fn plain<'v, T: ?Sized>(&self, value: &'v T) -> Encoded<'v, 'o, 'static, T> {
-        Encoded {
-            value,
-            ordinals: self.ordinals,
-            role: Role::Plain,
+pub fn decode_record<'de, T: ArtifactRecord, D: Deserializer<'de>>(
+    deserializer: D,
+    context: &ArtifactContext<'_>,
+) -> Result<T, D::Error> {
+    struct Record<'a, 'o, T>(Seed<'a, 'o, T>);
+    impl<'de, T: ArtifactRecord> Visitor<'de> for Record<'_, '_, T> {
+        type Value = T;
+        fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+            formatter.write_str("an artifact record")
         }
-    }
-}
-
-macro_rules! forward_scalars {
-    ($($method:ident($ty:ty)),* $(,)?) => {
-        $(fn $method(self, value: $ty) -> Result<S::Ok, S::Error> {
-            self.inner.$method(value)
-        })*
-    };
-}
-
-impl<'o, 'r, S: Serializer> Serializer for Encoder<'o, 'r, S> {
-    type Ok = S::Ok;
-    type Error = S::Error;
-    type SerializeSeq = Compound<'o, S::SerializeSeq>;
-    type SerializeTuple = Tuple<'o, S::SerializeTuple>;
-    type SerializeTupleStruct = Compound<'o, S::SerializeTupleStruct>;
-    type SerializeTupleVariant = Compound<'o, S::SerializeTupleVariant>;
-    type SerializeMap = Compound<'o, S::SerializeMap>;
-    type SerializeStruct = Compound<'o, S::SerializeStruct>;
-    type SerializeStructVariant = Compound<'o, S::SerializeStructVariant>;
-
-    forward_scalars!(
-        serialize_bool(bool),
-        serialize_i8(i8),
-        serialize_i16(i16),
-        serialize_i32(i32),
-        serialize_i64(i64),
-        serialize_i128(i128),
-        serialize_u8(u8),
-        serialize_u16(u16),
-        serialize_u64(u64),
-        serialize_u128(u128),
-        serialize_f32(f32),
-        serialize_f64(f64),
-        serialize_char(char),
-        serialize_bytes(&[u8]),
-    );
-
-    fn serialize_u32(self, value: u32) -> Result<S::Ok, S::Error> {
-        match self.role {
-            Role::Context => {
-                let ordinal = self.ordinals.ordinal(value).ok_or_else(|| {
-                    ser::Error::custom(format!(
-                        "SyntaxContext {value} does not occur in the analyzed modules"
-                    ))
-                })?;
-                self.inner.serialize_i64(encode_ordinal(ordinal))
+        fn visit_seq<A: SeqAccess<'de>>(self, mut sequence: A) -> Result<T, A::Error> {
+            let value = T::read_fields(&mut sequence, self.0.context)?;
+            if sequence.next_element::<de::IgnoredAny>()?.is_some() {
+                return Err(de::Error::custom("extra artifact record fields"));
             }
-            Role::Plain | Role::PairHead(_) => self.inner.serialize_u32(value),
+            Ok(value)
         }
     }
+    deserializer.deserialize_seq(Record(Seed::new(context)))
+}
 
-    fn serialize_str(self, value: &str) -> Result<S::Ok, S::Error> {
-        if let Role::PairHead(head_is_string) = self.role {
-            head_is_string.set(true);
+/// Leaf types whose complete Serde representation has no process-local state.
+#[macro_export]
+macro_rules! plain_artifact {
+    ($($ty:ty),* $(,)?) => { $(
+        impl $crate::Artifact for $ty {
+            fn encode<S: ::serde::Serializer>(&self, serializer: S, _: &$crate::ArtifactContext<'_>) -> Result<S::Ok, S::Error> {
+                ::serde::Serialize::serialize(self, serializer)
+            }
+            fn decode<'de, D: ::serde::Deserializer<'de>>(deserializer: D, _: &$crate::ArtifactContext<'_>) -> Result<Self, D::Error> {
+                ::serde::Deserialize::deserialize(deserializer)
+            }
         }
-        self.inner.serialize_str(value)
-    }
+    )* };
+}
 
-    fn serialize_none(self) -> Result<S::Ok, S::Error> {
-        self.inner.serialize_none()
-    }
+plain_artifact!(
+    (),
+    bool,
+    char,
+    u8,
+    u16,
+    u32,
+    u64,
+    u128,
+    usize,
+    i8,
+    i16,
+    i32,
+    i64,
+    i128,
+    isize,
+    f32,
+    f64,
+    String,
+    std::path::PathBuf,
+    swc_atoms::Atom,
+    swc_common::Span,
+    source_identity::StatementId,
+    source_identity::SourceUnitId,
+    source_identity::SourceUnitOrdinal
+);
 
-    fn serialize_some<T: Serialize + ?Sized>(self, value: &T) -> Result<S::Ok, S::Error> {
-        let value = self.plain(value);
-        self.inner.serialize_some(&value)
-    }
-
-    fn serialize_unit(self) -> Result<S::Ok, S::Error> {
-        self.inner.serialize_unit()
-    }
-
-    fn serialize_unit_struct(self, name: &'static str) -> Result<S::Ok, S::Error> {
-        self.inner.serialize_unit_struct(name)
-    }
-
-    fn serialize_unit_variant(
-        self,
-        name: &'static str,
-        index: u32,
-        variant: &'static str,
+impl Artifact for SyntaxContext {
+    fn encode<S: Serializer>(
+        &self,
+        serializer: S,
+        context: &ArtifactContext<'_>,
     ) -> Result<S::Ok, S::Error> {
-        self.inner.serialize_unit_variant(name, index, variant)
+        let ordinal = context.ordinals.ordinals.get(self).ok_or_else(|| {
+            serde::ser::Error::custom("binding context is absent from the analyzed modules")
+        })?;
+        ordinal.serialize(serializer)
     }
-
-    fn serialize_newtype_struct<T: Serialize + ?Sized>(
-        self,
-        name: &'static str,
-        value: &T,
-    ) -> Result<S::Ok, S::Error> {
-        let value = self.plain(value);
-        self.inner.serialize_newtype_struct(name, &value)
-    }
-
-    fn serialize_newtype_variant<T: Serialize + ?Sized>(
-        self,
-        name: &'static str,
-        index: u32,
-        variant: &'static str,
-        value: &T,
-    ) -> Result<S::Ok, S::Error> {
-        let value = self.plain(value);
-        self.inner
-            .serialize_newtype_variant(name, index, variant, &value)
-    }
-
-    fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, S::Error> {
-        let ordinals = self.ordinals;
-        Ok(Compound {
-            inner: self.inner.serialize_seq(len)?,
-            ordinals,
-        })
-    }
-
-    fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, S::Error> {
-        Ok(Tuple {
-            ordinals: self.ordinals,
-            inner: self.inner.serialize_tuple(len)?,
-            pair: len == 2,
-            index: 0,
-            head_is_string: Cell::new(false),
-        })
-    }
-
-    fn serialize_tuple_struct(
-        self,
-        name: &'static str,
-        len: usize,
-    ) -> Result<Self::SerializeTupleStruct, S::Error> {
-        let ordinals = self.ordinals;
-        Ok(Compound {
-            inner: self.inner.serialize_tuple_struct(name, len)?,
-            ordinals,
-        })
-    }
-
-    fn serialize_tuple_variant(
-        self,
-        name: &'static str,
-        index: u32,
-        variant: &'static str,
-        len: usize,
-    ) -> Result<Self::SerializeTupleVariant, S::Error> {
-        let ordinals = self.ordinals;
-        Ok(Compound {
-            inner: self
-                .inner
-                .serialize_tuple_variant(name, index, variant, len)?,
-            ordinals,
-        })
-    }
-
-    fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, S::Error> {
-        let ordinals = self.ordinals;
-        Ok(Compound {
-            inner: self.inner.serialize_map(len)?,
-            ordinals,
-        })
-    }
-
-    fn serialize_struct(
-        self,
-        name: &'static str,
-        len: usize,
-    ) -> Result<Self::SerializeStruct, S::Error> {
-        let ordinals = self.ordinals;
-        Ok(Compound {
-            inner: self.inner.serialize_struct(name, len)?,
-            ordinals,
-        })
-    }
-
-    fn serialize_struct_variant(
-        self,
-        name: &'static str,
-        index: u32,
-        variant: &'static str,
-        len: usize,
-    ) -> Result<Self::SerializeStructVariant, S::Error> {
-        let ordinals = self.ordinals;
-        Ok(Compound {
-            inner: self
-                .inner
-                .serialize_struct_variant(name, index, variant, len)?,
-            ordinals,
-        })
-    }
-
-    fn is_human_readable(&self) -> bool {
-        self.inner.is_human_readable()
-    }
-}
-
-impl<C: ser::SerializeTuple> ser::SerializeTuple for Tuple<'_, C> {
-    type Ok = C::Ok;
-    type Error = C::Error;
-
-    fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), C::Error> {
-        let role = match (self.pair, self.index) {
-            (true, 0) => Role::PairHead(&self.head_is_string),
-            (true, 1) if self.head_is_string.get() => Role::Context,
-            _ => Role::Plain,
-        };
-        self.index += 1;
-        self.inner.serialize_element(&Encoded {
-            value,
-            ordinals: self.ordinals,
-            role,
-        })
-    }
-
-    fn end(self) -> Result<C::Ok, C::Error> {
-        self.inner.end()
-    }
-}
-
-impl<C: ser::SerializeSeq> ser::SerializeSeq for Compound<'_, C> {
-    type Ok = C::Ok;
-    type Error = C::Error;
-
-    fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), C::Error> {
-        let value = self.plain(value);
-        self.inner.serialize_element(&value)
-    }
-
-    fn end(self) -> Result<C::Ok, C::Error> {
-        self.inner.end()
-    }
-}
-
-impl<C: ser::SerializeTupleStruct> ser::SerializeTupleStruct for Compound<'_, C> {
-    type Ok = C::Ok;
-    type Error = C::Error;
-
-    fn serialize_field<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), C::Error> {
-        let value = self.plain(value);
-        self.inner.serialize_field(&value)
-    }
-
-    fn end(self) -> Result<C::Ok, C::Error> {
-        self.inner.end()
-    }
-}
-
-impl<C: ser::SerializeTupleVariant> ser::SerializeTupleVariant for Compound<'_, C> {
-    type Ok = C::Ok;
-    type Error = C::Error;
-
-    fn serialize_field<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), C::Error> {
-        let value = self.plain(value);
-        self.inner.serialize_field(&value)
-    }
-
-    fn end(self) -> Result<C::Ok, C::Error> {
-        self.inner.end()
-    }
-}
-
-impl<C: ser::SerializeMap> ser::SerializeMap for Compound<'_, C> {
-    type Ok = C::Ok;
-    type Error = C::Error;
-
-    fn serialize_key<T: Serialize + ?Sized>(&mut self, key: &T) -> Result<(), C::Error> {
-        let key = self.plain(key);
-        self.inner.serialize_key(&key)
-    }
-
-    fn serialize_value<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), C::Error> {
-        let value = self.plain(value);
-        self.inner.serialize_value(&value)
-    }
-
-    fn end(self) -> Result<C::Ok, C::Error> {
-        self.inner.end()
-    }
-}
-
-impl<C: ser::SerializeStruct> ser::SerializeStruct for Compound<'_, C> {
-    type Ok = C::Ok;
-    type Error = C::Error;
-
-    fn serialize_field<T: Serialize + ?Sized>(
-        &mut self,
-        key: &'static str,
-        value: &T,
-    ) -> Result<(), C::Error> {
-        let value = self.plain(value);
-        self.inner.serialize_field(key, &value)
-    }
-
-    fn skip_field(&mut self, key: &'static str) -> Result<(), C::Error> {
-        self.inner.skip_field(key)
-    }
-
-    fn end(self) -> Result<C::Ok, C::Error> {
-        self.inner.end()
-    }
-}
-
-impl<C: ser::SerializeStructVariant> ser::SerializeStructVariant for Compound<'_, C> {
-    type Ok = C::Ok;
-    type Error = C::Error;
-
-    fn serialize_field<T: Serialize + ?Sized>(
-        &mut self,
-        key: &'static str,
-        value: &T,
-    ) -> Result<(), C::Error> {
-        let value = self.plain(value);
-        self.inner.serialize_field(key, &value)
-    }
-
-    fn skip_field(&mut self, key: &'static str) -> Result<(), C::Error> {
-        self.inner.skip_field(key)
-    }
-
-    fn end(self) -> Result<C::Ok, C::Error> {
-        self.inner.end()
-    }
-}
-
-// --- Decoder ---------------------------------------------------------------
-
-struct Decoder<'o, D> {
-    inner: D,
-    ordinals: &'o ContextOrdinals,
-    /// The second element of a 2-tuple: a negative integer read as `u32` is
-    /// a context ordinal.
-    context_slot: bool,
-}
-
-/// A visitor forwarding to `inner`, decoding nested values through
-/// [`Decoder`].
-struct Visiting<'o, V> {
-    inner: V,
-    ordinals: &'o ContextOrdinals,
-    context_slot: bool,
-    pair: bool,
-}
-
-struct Seeded<'o, T> {
-    inner: T,
-    ordinals: &'o ContextOrdinals,
-    context_slot: bool,
-}
-
-struct Access<'o, A> {
-    inner: A,
-    ordinals: &'o ContextOrdinals,
-    pair: bool,
-    index: usize,
-}
-
-impl<'o, D> Decoder<'o, D> {
-    fn visiting<V>(&self, inner: V) -> Visiting<'o, V> {
-        Visiting {
-            inner,
-            ordinals: self.ordinals,
-            context_slot: false,
-            pair: false,
-        }
-    }
-}
-
-macro_rules! forward_deserialize {
-    ($($method:ident),* $(,)?) => {
-        $(fn $method<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, D::Error> {
-            let visitor = self.visiting(visitor);
-            self.inner.$method(visitor)
-        })*
-    };
-}
-
-impl<'de, D: Deserializer<'de>> Deserializer<'de> for Decoder<'_, D> {
-    type Error = D::Error;
-
-    forward_deserialize!(
-        deserialize_any,
-        deserialize_bool,
-        deserialize_i8,
-        deserialize_i16,
-        deserialize_i32,
-        deserialize_i64,
-        deserialize_i128,
-        deserialize_u8,
-        deserialize_u16,
-        deserialize_u64,
-        deserialize_u128,
-        deserialize_f32,
-        deserialize_f64,
-        deserialize_char,
-        deserialize_str,
-        deserialize_string,
-        deserialize_bytes,
-        deserialize_byte_buf,
-        deserialize_option,
-        deserialize_unit,
-        deserialize_seq,
-        deserialize_map,
-        deserialize_identifier,
-        deserialize_ignored_any,
-    );
-
-    fn deserialize_u32<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, D::Error> {
-        if self.context_slot {
-            self.inner.deserialize_any(Visiting {
-                inner: visitor,
-                ordinals: self.ordinals,
-                context_slot: true,
-                pair: false,
-            })
-        } else {
-            let visitor = self.visiting(visitor);
-            self.inner.deserialize_u32(visitor)
-        }
-    }
-
-    fn deserialize_unit_struct<V: Visitor<'de>>(
-        self,
-        name: &'static str,
-        visitor: V,
-    ) -> Result<V::Value, D::Error> {
-        let visitor = self.visiting(visitor);
-        self.inner.deserialize_unit_struct(name, visitor)
-    }
-
-    fn deserialize_newtype_struct<V: Visitor<'de>>(
-        self,
-        name: &'static str,
-        visitor: V,
-    ) -> Result<V::Value, D::Error> {
-        let visitor = self.visiting(visitor);
-        self.inner.deserialize_newtype_struct(name, visitor)
-    }
-
-    fn deserialize_tuple<V: Visitor<'de>>(
-        self,
-        len: usize,
-        visitor: V,
-    ) -> Result<V::Value, D::Error> {
-        self.inner.deserialize_tuple(
-            len,
-            Visiting {
-                inner: visitor,
-                ordinals: self.ordinals,
-                context_slot: false,
-                pair: len == 2,
-            },
-        )
-    }
-
-    fn deserialize_tuple_struct<V: Visitor<'de>>(
-        self,
-        name: &'static str,
-        len: usize,
-        visitor: V,
-    ) -> Result<V::Value, D::Error> {
-        let visitor = self.visiting(visitor);
-        self.inner.deserialize_tuple_struct(name, len, visitor)
-    }
-
-    fn deserialize_struct<V: Visitor<'de>>(
-        self,
-        name: &'static str,
-        fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, D::Error> {
-        let visitor = self.visiting(visitor);
-        self.inner.deserialize_struct(name, fields, visitor)
-    }
-
-    fn deserialize_enum<V: Visitor<'de>>(
-        self,
-        name: &'static str,
-        variants: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, D::Error> {
-        let visitor = self.visiting(visitor);
-        self.inner.deserialize_enum(name, variants, visitor)
-    }
-
-    fn is_human_readable(&self) -> bool {
-        self.inner.is_human_readable()
-    }
-}
-
-impl<'o, V> Visiting<'o, V> {
-    fn decoder<D>(&self, inner: D) -> Decoder<'o, D> {
-        Decoder {
-            inner,
-            ordinals: self.ordinals,
-            context_slot: false,
-        }
-    }
-
-    fn access<A>(&self, inner: A) -> Access<'o, A> {
-        Access {
-            inner,
-            ordinals: self.ordinals,
-            pair: self.pair,
-            index: 0,
-        }
-    }
-}
-
-macro_rules! forward_visit {
-    ($($method:ident($ty:ty)),* $(,)?) => {
-        $(fn $method<E: de::Error>(self, value: $ty) -> Result<V::Value, E> {
-            self.inner.$method(value)
-        })*
-    };
-}
-
-impl<'de, V: Visitor<'de>> Visitor<'de> for Visiting<'_, V> {
-    type Value = V::Value;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        self.inner.expecting(formatter)
-    }
-
-    forward_visit!(
-        visit_bool(bool),
-        visit_i128(i128),
-        visit_u8(u8),
-        visit_u16(u16),
-        visit_u32(u32),
-        visit_u64(u64),
-        visit_u128(u128),
-        visit_f32(f32),
-        visit_f64(f64),
-        visit_char(char),
-        visit_str(&str),
-        visit_borrowed_str(&'de str),
-        visit_string(String),
-        visit_bytes(&[u8]),
-        visit_borrowed_bytes(&'de [u8]),
-        visit_byte_buf(Vec<u8>),
-    );
-
-    fn visit_i8<E: de::Error>(self, value: i8) -> Result<V::Value, E> {
-        self.visit_i64(i64::from(value))
-    }
-
-    fn visit_i16<E: de::Error>(self, value: i16) -> Result<V::Value, E> {
-        self.visit_i64(i64::from(value))
-    }
-
-    fn visit_i32<E: de::Error>(self, value: i32) -> Result<V::Value, E> {
-        self.visit_i64(i64::from(value))
-    }
-
-    fn visit_i64<E: de::Error>(self, value: i64) -> Result<V::Value, E> {
-        if !self.context_slot || value >= 0 {
-            return self.inner.visit_i64(value);
-        }
-        let context = decode_ordinal(value)
-            .and_then(|ordinal| self.ordinals.context(ordinal))
-            .ok_or_else(|| {
-                E::custom(format!(
-                    "context ordinal {value} does not occur in the analyzed modules"
-                ))
-            })?;
-        self.inner.visit_u32(context)
-    }
-
-    fn visit_none<E: de::Error>(self) -> Result<V::Value, E> {
-        self.inner.visit_none()
-    }
-
-    fn visit_some<D: Deserializer<'de>>(self, deserializer: D) -> Result<V::Value, D::Error> {
-        let deserializer = self.decoder(deserializer);
-        self.inner.visit_some(deserializer)
-    }
-
-    fn visit_unit<E: de::Error>(self) -> Result<V::Value, E> {
-        self.inner.visit_unit()
-    }
-
-    fn visit_newtype_struct<D: Deserializer<'de>>(
-        self,
+    fn decode<'de, D: Deserializer<'de>>(
         deserializer: D,
-    ) -> Result<V::Value, D::Error> {
-        let deserializer = self.decoder(deserializer);
-        self.inner.visit_newtype_struct(deserializer)
-    }
-
-    fn visit_seq<A: de::SeqAccess<'de>>(self, seq: A) -> Result<V::Value, A::Error> {
-        let seq = self.access(seq);
-        self.inner.visit_seq(seq)
-    }
-
-    fn visit_map<A: de::MapAccess<'de>>(self, map: A) -> Result<V::Value, A::Error> {
-        let map = self.access(map);
-        self.inner.visit_map(map)
-    }
-
-    fn visit_enum<A: de::EnumAccess<'de>>(self, data: A) -> Result<V::Value, A::Error> {
-        let data = self.access(data);
-        self.inner.visit_enum(data)
+        context: &ArtifactContext<'_>,
+    ) -> Result<Self, D::Error> {
+        let ordinal = u32::deserialize(deserializer)?;
+        context
+            .ordinals
+            .contexts
+            .get(ordinal as usize)
+            .copied()
+            .ok_or_else(|| {
+                de::Error::custom("binding context ordinal is absent from the analyzed modules")
+            })
     }
 }
 
-impl<'de, T: DeserializeSeed<'de>> DeserializeSeed<'de> for Seeded<'_, T> {
-    type Value = T::Value;
-
-    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<T::Value, D::Error> {
-        self.inner.deserialize(Decoder {
-            inner: deserializer,
-            ordinals: self.ordinals,
-            context_slot: self.context_slot,
-        })
-    }
-}
-
-impl<'o, A> Access<'o, A> {
-    fn seeded<T>(&self, inner: T, context_slot: bool) -> Seeded<'o, T> {
-        Seeded {
-            inner,
-            ordinals: self.ordinals,
-            context_slot,
+impl<T: Artifact> Artifact for Option<T> {
+    fn encode<S: Serializer>(
+        &self,
+        serializer: S,
+        context: &ArtifactContext<'_>,
+    ) -> Result<S::Ok, S::Error> {
+        match self {
+            None => serializer.serialize_none(),
+            Some(value) => serializer.serialize_some(&Encoded::new(value, context)),
         }
     }
-}
-
-impl<'de, A: de::SeqAccess<'de>> de::SeqAccess<'de> for Access<'_, A> {
-    type Error = A::Error;
-
-    fn next_element_seed<T: DeserializeSeed<'de>>(
-        &mut self,
-        seed: T,
-    ) -> Result<Option<T::Value>, A::Error> {
-        let seed = self.seeded(seed, self.pair && self.index == 1);
-        self.index += 1;
-        self.inner.next_element_seed(seed)
-    }
-
-    fn size_hint(&self) -> Option<usize> {
-        self.inner.size_hint()
-    }
-}
-
-impl<'de, A: de::MapAccess<'de>> de::MapAccess<'de> for Access<'_, A> {
-    type Error = A::Error;
-
-    fn next_key_seed<K: DeserializeSeed<'de>>(
-        &mut self,
-        seed: K,
-    ) -> Result<Option<K::Value>, A::Error> {
-        let seed = self.seeded(seed, false);
-        self.inner.next_key_seed(seed)
-    }
-
-    fn next_value_seed<T: DeserializeSeed<'de>>(&mut self, seed: T) -> Result<T::Value, A::Error> {
-        let seed = self.seeded(seed, false);
-        self.inner.next_value_seed(seed)
-    }
-
-    fn size_hint(&self) -> Option<usize> {
-        self.inner.size_hint()
+    fn decode<'de, D: Deserializer<'de>>(
+        deserializer: D,
+        context: &ArtifactContext<'_>,
+    ) -> Result<Self, D::Error> {
+        struct Optional<'a, 'o, T>(Seed<'a, 'o, T>);
+        impl<'de, T: Artifact> Visitor<'de> for Optional<'_, '_, T> {
+            type Value = Option<T>;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("an optional artifact value")
+            }
+            fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+                Ok(None)
+            }
+            fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+                Ok(None)
+            }
+            fn visit_some<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
+                T::decode(d, self.0.context).map(Some)
+            }
+        }
+        deserializer.deserialize_option(Optional(Seed::new(context)))
     }
 }
 
-impl<'de, 'o, A: de::EnumAccess<'de>> de::EnumAccess<'de> for Access<'o, A> {
-    type Error = A::Error;
-    type Variant = Access<'o, A::Variant>;
-
-    fn variant_seed<T: DeserializeSeed<'de>>(
-        self,
-        seed: T,
-    ) -> Result<(T::Value, Self::Variant), A::Error> {
-        let seed = self.seeded(seed, false);
-        let (value, variant) = self.inner.variant_seed(seed)?;
-        Ok((
-            value,
-            Access {
-                inner: variant,
-                ordinals: self.ordinals,
-                pair: false,
-                index: 0,
-            },
-        ))
+impl<T: Artifact> Artifact for Vec<T> {
+    fn encode<S: Serializer>(
+        &self,
+        serializer: S,
+        context: &ArtifactContext<'_>,
+    ) -> Result<S::Ok, S::Error> {
+        encode_sequence(self.iter(), serializer, context)
+    }
+    fn decode<'de, D: Deserializer<'de>>(
+        deserializer: D,
+        context: &ArtifactContext<'_>,
+    ) -> Result<Self, D::Error> {
+        decode_sequence(deserializer, context)
     }
 }
 
-impl<'de, A: de::VariantAccess<'de>> de::VariantAccess<'de> for Access<'_, A> {
-    type Error = A::Error;
-
-    fn unit_variant(self) -> Result<(), A::Error> {
-        self.inner.unit_variant()
+fn decode_sequence<'de, T: Artifact, C: Default + Extend<T>, D: Deserializer<'de>>(
+    deserializer: D,
+    context: &ArtifactContext<'_>,
+) -> Result<C, D::Error> {
+    struct Sequence<'a, 'o, T, C>(Seed<'a, 'o, T>, PhantomData<C>);
+    impl<'de, T: Artifact, C: Default + Extend<T>> Visitor<'de> for Sequence<'_, '_, T, C> {
+        type Value = C;
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("an artifact sequence")
+        }
+        fn visit_seq<A: SeqAccess<'de>>(self, mut sequence: A) -> Result<C, A::Error> {
+            let mut result = C::default();
+            while let Some(value) = sequence.next_element_seed(Seed::new(self.0.context))? {
+                result.extend(std::iter::once(value));
+            }
+            Ok(result)
+        }
     }
+    deserializer.deserialize_seq(Sequence(Seed::<T>::new(context), PhantomData))
+}
 
-    fn newtype_variant_seed<T: DeserializeSeed<'de>>(self, seed: T) -> Result<T::Value, A::Error> {
-        let seed = self.seeded(seed, false);
-        self.inner.newtype_variant_seed(seed)
+fn encode_sequence<'a, T: Artifact + 'a, S: Serializer>(
+    values: impl ExactSizeIterator<Item = &'a T>,
+    serializer: S,
+    context: &ArtifactContext<'_>,
+) -> Result<S::Ok, S::Error> {
+    let mut sequence = serializer.serialize_seq(Some(values.len()))?;
+    for value in values {
+        sequence.serialize_element(&Encoded::new(value, context))?;
     }
+    sequence.end()
+}
 
-    fn tuple_variant<V: Visitor<'de>>(self, len: usize, visitor: V) -> Result<V::Value, A::Error> {
-        self.inner.tuple_variant(
-            len,
-            Visiting {
-                inner: visitor,
-                ordinals: self.ordinals,
-                context_slot: false,
-                pair: false,
-            },
-        )
+impl<T: Artifact + Ord> Artifact for BTreeSet<T> {
+    fn encode<S: Serializer>(
+        &self,
+        serializer: S,
+        context: &ArtifactContext<'_>,
+    ) -> Result<S::Ok, S::Error> {
+        encode_sequence(self.iter(), serializer, context)
     }
+    fn decode<'de, D: Deserializer<'de>>(
+        deserializer: D,
+        context: &ArtifactContext<'_>,
+    ) -> Result<Self, D::Error> {
+        decode_sequence(deserializer, context)
+    }
+}
 
-    fn struct_variant<V: Visitor<'de>>(
-        self,
-        fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, A::Error> {
-        self.inner.struct_variant(
-            fields,
-            Visiting {
-                inner: visitor,
-                ordinals: self.ordinals,
-                context_slot: false,
-                pair: false,
-            },
-        )
+impl<T: Artifact + Eq + Hash, H: BuildHasher + Default> Artifact for HashSet<T, H> {
+    fn encode<S: Serializer>(
+        &self,
+        serializer: S,
+        context: &ArtifactContext<'_>,
+    ) -> Result<S::Ok, S::Error> {
+        encode_sequence(self.iter(), serializer, context)
+    }
+    fn decode<'de, D: Deserializer<'de>>(
+        deserializer: D,
+        context: &ArtifactContext<'_>,
+    ) -> Result<Self, D::Error> {
+        decode_sequence(deserializer, context)
+    }
+}
+
+fn decode_map<'de, K: Artifact, V: Artifact, C: Default + Extend<(K, V)>, D: Deserializer<'de>>(
+    deserializer: D,
+    context: &ArtifactContext<'_>,
+) -> Result<C, D::Error> {
+    struct Map<'a, 'o, K, V, C>(Seed<'a, 'o, (K, V)>, PhantomData<C>);
+    impl<'de, K: Artifact, V: Artifact, C: Default + Extend<(K, V)>> Visitor<'de>
+        for Map<'_, '_, K, V, C>
+    {
+        type Value = C;
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("an artifact map")
+        }
+        fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<C, A::Error> {
+            let mut result = C::default();
+            while let Some(key) = map.next_key_seed(Seed::new(self.0.context))? {
+                let value = map.next_value_seed(Seed::new(self.0.context))?;
+                result.extend(std::iter::once((key, value)));
+            }
+            Ok(result)
+        }
+    }
+    deserializer.deserialize_map(Map(Seed::<(K, V)>::new(context), PhantomData))
+}
+
+fn encode_map<'a, K: Artifact + 'a, V: Artifact + 'a, S: Serializer>(
+    values: impl ExactSizeIterator<Item = (&'a K, &'a V)>,
+    serializer: S,
+    context: &ArtifactContext<'_>,
+) -> Result<S::Ok, S::Error> {
+    let mut map = serializer.serialize_map(Some(values.len()))?;
+    for (key, value) in values {
+        map.serialize_entry(&Encoded::new(key, context), &Encoded::new(value, context))?;
+    }
+    map.end()
+}
+
+impl<K: Artifact + Ord, V: Artifact> Artifact for BTreeMap<K, V> {
+    fn encode<S: Serializer>(
+        &self,
+        serializer: S,
+        context: &ArtifactContext<'_>,
+    ) -> Result<S::Ok, S::Error> {
+        encode_map(self.iter(), serializer, context)
+    }
+    fn decode<'de, D: Deserializer<'de>>(
+        deserializer: D,
+        context: &ArtifactContext<'_>,
+    ) -> Result<Self, D::Error> {
+        decode_map(deserializer, context)
+    }
+}
+
+impl<K: Artifact + Eq + Hash, V: Artifact, H: BuildHasher + Default> Artifact for HashMap<K, V, H> {
+    fn encode<S: Serializer>(
+        &self,
+        serializer: S,
+        context: &ArtifactContext<'_>,
+    ) -> Result<S::Ok, S::Error> {
+        encode_map(self.iter(), serializer, context)
+    }
+    fn decode<'de, D: Deserializer<'de>>(
+        deserializer: D,
+        context: &ArtifactContext<'_>,
+    ) -> Result<Self, D::Error> {
+        decode_map(deserializer, context)
+    }
+}
+
+impl<T: Artifact> Artifact for Box<T> {
+    fn encode<S: Serializer>(
+        &self,
+        serializer: S,
+        context: &ArtifactContext<'_>,
+    ) -> Result<S::Ok, S::Error> {
+        (**self).encode(serializer, context)
+    }
+    fn decode<'de, D: Deserializer<'de>>(
+        deserializer: D,
+        context: &ArtifactContext<'_>,
+    ) -> Result<Self, D::Error> {
+        T::decode(deserializer, context).map(Box::new)
+    }
+}
+
+impl<T: Artifact + Any + Send + Sync> Artifact for Arc<T> {
+    fn encode<S: Serializer>(
+        &self,
+        serializer: S,
+        context: &ArtifactContext<'_>,
+    ) -> Result<S::Ok, S::Error> {
+        let key = (TypeId::of::<T>(), Arc::as_ptr(self).cast::<()>());
+        let (index, first) = {
+            let mut written = context.written.borrow_mut();
+            match written.get(&key) {
+                Some(index) => (*index, false),
+                None => {
+                    let index = u32::try_from(written.len()).map_err(serde::ser::Error::custom)?;
+                    written.insert(key, index);
+                    (index, true)
+                }
+            }
+        };
+        let mut tuple = serializer.serialize_tuple(2)?;
+        tuple.serialize_element(&index)?;
+        tuple.serialize_element(&first.then(|| Encoded::new(self.as_ref(), context)))?;
+        tuple.end()
+    }
+    fn decode<'de, D: Deserializer<'de>>(
+        deserializer: D,
+        context: &ArtifactContext<'_>,
+    ) -> Result<Self, D::Error> {
+        let (index, value) = <(u32, Option<T>)>::decode(deserializer, context)?;
+        if let Some(value) = value {
+            let value = Arc::new(value);
+            if context
+                .read
+                .borrow_mut()
+                .insert(index, value.clone())
+                .is_some()
+            {
+                return Err(de::Error::custom("duplicate artifact shared-value index"));
+            }
+            return Ok(value);
+        }
+        context
+            .read
+            .borrow()
+            .get(&index)
+            .cloned()
+            .ok_or_else(|| de::Error::custom("artifact shared value precedes its definition"))?
+            .downcast::<T>()
+            .map_err(|_| de::Error::custom("artifact shared-value type mismatch"))
+    }
+}
+
+macro_rules! tuple_artifact {
+    ($($name:ident:$index:tt),+) => {
+        impl<$($name: Artifact),+> ArtifactRecord for ($($name,)+) {
+            fn tuple_len(&self) -> usize { [$(stringify!($name)),+].len() }
+            fn write_fields<S: SerializeTuple>(&self, tuple: &mut S, context: &ArtifactContext<'_>) -> Result<(), S::Error> {
+                $(tuple.serialize_element(&Encoded::new(&self.$index, context))?;)+
+                Ok(())
+            }
+            fn read_fields<'de, A: SeqAccess<'de>>(sequence: &mut A, context: &ArtifactContext<'_>) -> Result<Self, A::Error> { Ok(($(read_field::<$name, _>(sequence, context, $index)?,)+)) }
+        }
+        impl<$($name: Artifact),+> Artifact for ($($name,)+) {
+            fn encode<S: Serializer>(&self, serializer: S, context: &ArtifactContext<'_>) -> Result<S::Ok, S::Error> { encode_record(self, serializer, context) }
+            fn decode<'de, D: Deserializer<'de>>(deserializer: D, context: &ArtifactContext<'_>) -> Result<Self, D::Error> { decode_record(deserializer, context) }
+        }
+    };
+}
+
+tuple_artifact!(T0:0);
+tuple_artifact!(T0:0, T1:1);
+tuple_artifact!(T0:0, T1:1, T2:2);
+tuple_artifact!(T0:0, T1:1, T2:2, T3:3);
+
+impl<T: Artifact, const N: usize> Artifact for [T; N] {
+    fn encode<S: Serializer>(
+        &self,
+        serializer: S,
+        context: &ArtifactContext<'_>,
+    ) -> Result<S::Ok, S::Error> {
+        encode_sequence(self.iter(), serializer, context)
+    }
+    fn decode<'de, D: Deserializer<'de>>(
+        deserializer: D,
+        context: &ArtifactContext<'_>,
+    ) -> Result<Self, D::Error> {
+        Vec::<T>::decode(deserializer, context)?
+            .try_into()
+            .map_err(|_| de::Error::custom("artifact array length mismatch"))
     }
 }

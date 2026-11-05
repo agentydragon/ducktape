@@ -12,6 +12,7 @@
 //! instead would repeat the program-wide census per chunk (1.77 GB on the
 //! Claude CLI).
 
+use analysis_codec_derive::Artifact;
 use std::collections::BTreeMap;
 
 use analysis::facts::ChunkFactAnalysis;
@@ -34,7 +35,7 @@ pub struct AnalysisArtifactHeader {
     pub chunk_sources: BTreeMap<String, String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Artifact)]
 pub struct AnalysisArtifactBody {
     pub program_summary: ProgramSummary,
     pub export_reentry: BTreeMap<String, ExportReentryReport>,

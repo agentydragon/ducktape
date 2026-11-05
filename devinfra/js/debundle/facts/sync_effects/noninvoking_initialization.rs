@@ -7,6 +7,7 @@ use crate::analysis_inputs::ProofDependencies;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::item_views::{SplitDeclaratorProvenance, TopLevelItemView, var_decl_of_item};
+use analysis_codec_derive::Artifact;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
@@ -141,7 +142,7 @@ impl NativeConstructorCandidate {
 
 /// Terminal evidence for this source owner only. Never composed through a
 /// child ledger, generic Evaluate result, callee outcome or invocation memo.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Artifact)]
 pub(crate) struct CompletedInitialization {
     owner: SourceUnitOrdinal,
     dependencies: ProofDependencies,

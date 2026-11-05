@@ -5,11 +5,14 @@
 //! value set is a may-set: `Top` joins alongside the identities it does not
 //! replace, so a consumer still sees every known allocation a site can hold.
 
+use analysis_codec_derive::Artifact;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// One abstract value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Artifact,
+)]
 pub enum Value {
     /// The runtime object(s) one source allocation site creates, keyed by the
     /// site's start offset. Multiplicity is not tracked: one site may stand
@@ -27,7 +30,9 @@ pub enum Value {
 }
 
 /// Kind of an allocation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Artifact,
+)]
 pub enum Kind {
     /// A function, arrow or method body.
     Function,
@@ -80,7 +85,7 @@ impl Kind {
 
 /// A set of ECMAScript primitive types; primitive values join by union. The
 /// empty set is the result of an operation that always throws.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Artifact)]
 pub struct PrimKinds(u8);
 
 impl PrimKinds {

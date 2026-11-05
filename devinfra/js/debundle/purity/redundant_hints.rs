@@ -1,4 +1,5 @@
 use super::*;
+use analysis_codec_derive::Artifact;
 
 /// One author-declared `purity: pure` hint the analyzer determines
 /// would be inferred automatically — the binding's body classifies
@@ -7,21 +8,21 @@ use super::*;
 /// warning so spec authors can delete the load-free hint and keep
 /// only the genuinely-load-bearing ones (vendor-shape impurity
 /// overrides, etc.).
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct RedundantPurityHint {
     pub binding_name: String,
     pub reason: RedundantPurityReason,
     pub proof_basis: RedundantPurityProofBasis,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum RedundantPurityProofBasis {
     WithoutPurityHints,
     WithOtherPurityHints,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum RedundantPurityReason {
     /// Chunk-local function/arrow whose body classifies `Pure` by
@@ -40,14 +41,14 @@ pub enum RedundantPurityReason {
 /// without the spec hint (e.g. the receiver is `Array` and the
 /// property is `isArray`, whose builtin row admits any operands).
 /// Surfaced so spec authors can prune the redundant entry.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct RedundantPureMemberHint {
     pub binding_name: String,
     pub property: String,
     pub reason: RedundantPureMemberReason,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum RedundantPureMemberReason {
     /// `<binding>.<prop>` names an intrinsic whose builtin row admits

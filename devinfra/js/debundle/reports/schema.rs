@@ -1,3 +1,4 @@
+use analysis_codec_derive::Artifact;
 use serde::{Deserialize, Serialize};
 use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::BTreeSet;
@@ -11,7 +12,7 @@ use crate::ids::ModuleId;
 use crate::purity::Purity;
 use crate::{DepKind, SourceUnitClass, StatementKind};
 
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct SourceLocation {
     pub source_path: String,
     pub start_line: usize,
@@ -23,7 +24,7 @@ pub struct SourceLocation {
 /// Exact property lookup that made accessor execution possible. The owner is
 /// the source unit containing the lookup, and the span uses SWC byte positions
 /// in the analyzed source program.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 pub struct PossibleGetterLookupSite {
     /// `SourceUnitOrdinal` in the analyzed chunk, not a graph node ID.
     pub lexical_owner: SourceUnitOrdinal,
@@ -33,7 +34,7 @@ pub struct PossibleGetterLookupSite {
 }
 
 /// Source of the closure promoted by a possible getter read.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PossibleGetterPromotion {
     /// The lazy body of one source owner was promoted.
@@ -137,7 +138,7 @@ pub struct ProgramGraphReport {
 }
 
 /// One census witness `program_premises.intrinsics_never_written` overrides.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct NeverWrittenOverride {
     /// Index into `native_integrity_witnesses`.
     pub witness: usize,
@@ -151,7 +152,7 @@ pub struct NeverWrittenOverride {
 }
 
 /// How an overridden witness reaches a named family.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum NeverWrittenReach {
     /// The receiver may be any native object.
@@ -192,7 +193,7 @@ pub struct ImportedCallableSummaryReport {
     pub returned_record: Option<ReturnedRecordSummary>,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum CallbackFactoryUseKind {
     /// The checked call suppressed opaque callback promotion.
@@ -212,7 +213,7 @@ pub struct CallbackFactoryUseReport {
     pub source_location: Option<SourceLocation>,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum ReturnedRecordUseKind {
     CallTiming,
@@ -325,7 +326,7 @@ impl DependencyGraphReport {
 }
 
 /// A conservative source write census entry, including writes in deferred bodies.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct NativeMutationWitness {
     pub chunk_id: String,
     pub statement_ordinal: SourceUnitOrdinal,
@@ -359,14 +360,14 @@ pub struct NativeMutationWitness {
     /// its containing branch unreachable in every covered activation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unreachable_branch: Option<NativeUnreachableBranch>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) span: swc_common::Span,
 }
 
 /// A source-visible receiver path. Constructor/prototype paths identify the
 /// binding used by source; consumers still need native-identity evidence before
 /// treating that binding as the original intrinsic object.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeReceiverPath {
     GlobalObject,
@@ -378,7 +379,7 @@ pub enum NativeReceiverPath {
     Unknown,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum NativePropertyKey {
     String(String),
@@ -408,28 +409,28 @@ impl NativePropertyKey {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 pub struct NativeWriteSlot {
     pub receiver: NativeReceiverPath,
     pub key: NativePropertyKey,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct NativeUnreachableBranch {
     pub arguments: crate::analysis_inputs::CallbackObjectArguments,
     pub imported_local: String,
     pub wrapper_call_location: Option<SourceLocation>,
     pub callback_location: Option<SourceLocation>,
     pub guard_location: Option<SourceLocation>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) guard_span: swc_common::Span,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) wrapper_call_span: swc_common::Span,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) callback_span: swc_common::Span,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeMutationOperation {
     PropertyAssignment,
@@ -439,7 +440,7 @@ pub enum NativeMutationOperation {
     MutationCall,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeIntegrityGuard {
     OrdinaryObjectPrototype,
@@ -455,7 +456,7 @@ pub enum NativeIntegrityGuard {
     FrozenNamespace,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 pub struct NativeIntegrityCheck {
     pub guard: NativeIntegrityGuard,
     /// Every slot the guard required, as `%Array.prototype%`; absent from
@@ -467,7 +468,7 @@ pub struct NativeIntegrityCheck {
 }
 
 /// A source operation that can affect properties of the intrinsic Object prototype.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct NativePrototypeMutation {
     pub chunk_id: String,
     pub statement_ordinal: SourceUnitOrdinal,
@@ -477,11 +478,11 @@ pub struct NativePrototypeMutation {
     pub properties: Option<BTreeSet<String>>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub key_dependencies: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) span: swc_common::Span,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum NativePrototypeMutationKind {
     Write,
@@ -492,7 +493,7 @@ pub enum NativePrototypeMutationKind {
 }
 
 /// An evaluated property-specific absence obligation, including its source blockers.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct NativePrototypePropertyCheck {
     pub property: String,
     pub intact: bool,
@@ -501,7 +502,9 @@ pub struct NativePrototypePropertyCheck {
 
 /// Diagnostic effects activated before a modeled native premise. This does
 /// not certify the premise or impose an emitted-module ordering constraint.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Hash)]
+#[derive(
+    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Hash, Artifact,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum NativeProgramPointKind {
     Evaluate,
@@ -513,13 +516,13 @@ pub enum NativeProgramPointKind {
     Model,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct NativeProgramPointStep {
     pub kind: NativeProgramPointKind,
     pub ordinal: usize,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct NativePrefixObservation {
     pub guard: NativeIntegrityGuard,
     /// Runtime fact path within the source unit; the array position orders
@@ -534,7 +537,7 @@ pub struct NativePrefixObservation {
 
 /// A successful native guard whose conclusion depends on one or more
 /// author-conditioned receiver refinements in the whole-program census.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 pub struct NativeIntegrityUse {
     pub guard: NativeIntegrityGuard,
     pub value_input_refs: BTreeSet<crate::analysis_inputs::ValueInputRef>,
@@ -548,7 +551,7 @@ pub struct NativeIntegrityUse {
 ///
 /// Analysis owns the typed evidence. The report builder enriches it with
 /// rendered author-input locations while preserving the stable report shape.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 pub struct InferenceUseReport {
     pub conclusion: crate::analysis_provenance::InferenceRule,
     pub derivation_rules: BTreeSet<crate::analysis_provenance::InferenceRule>,
@@ -578,7 +581,7 @@ impl From<&crate::analysis_provenance::InferenceUse> for InferenceUseReport {
 
 /// A classifier-pure owner becoming impure at completion is an inference bug.
 /// The containing source-unit node supplies the exact source/chunk/site.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct PurityCompletionDisagreement {
     pub prepared: Purity,
     pub completed: Purity,
@@ -650,7 +653,7 @@ pub enum BindingEffectAuthorityReport {
     },
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct LexicalBindingEffectReceipt {
     pub owner: SourceUnitOrdinal,
     pub binding: String,
@@ -663,7 +666,7 @@ pub struct LexicalBindingEffectReceipt {
     pub calls: Vec<LexicalBindingEffectCall>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LexicalBindingEffectBody {
     RootInitializer {
@@ -676,7 +679,7 @@ pub enum LexicalBindingEffectBody {
     },
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct LexicalBindingEffectCall {
     pub caller: LexicalBindingEffectBody,
     pub call_span: swc_common::Span,
@@ -686,7 +689,7 @@ pub struct LexicalBindingEffectCall {
 
 /// An exact initializer's author-supplied lexical effect bound. The enclosing
 /// source unit supplies its location; this does not certify other effect domains.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum InitializerBindingEffectsUse {
     Applied {
@@ -703,29 +706,29 @@ pub enum InitializerBindingEffectsUse {
 }
 
 /// One exact call site that consumed a native-operation author premise.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct NativeOperationInputUse {
     pub evidence: crate::analysis_inputs::NativeOperationInputEvidence,
     pub source_location: Option<SourceLocation>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) span: swc_common::Span,
 }
 
 /// A consumed author assertion on a local unary record-retaining factory.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct LocalRecordFactoryUse {
     pub factory_binding: String,
     /// Named prototype premises supplied by the author, not inferred integrity.
     pub prototype_properties: Vec<String>,
     pub lexical_statement_ordinal: SourceUnitOrdinal,
     pub source_location: Option<SourceLocation>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) span: swc_common::Span,
 }
 
 /// A direct call of an annotated record factory whose argument is outside the
 /// admitted fresh-record shapes, so the author premise was not consulted.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct LocalRecordFactoryRejection {
     pub factory_binding: String,
     pub reason: RecordFactoryRejectionReason,
@@ -747,14 +750,14 @@ pub struct LocalRecordFactoryRejection {
     pub first_class_members_publication: Option<FirstClassMembersPublication>,
     pub lexical_statement_ordinal: SourceUnitOrdinal,
     pub source_location: Option<SourceLocation>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) span: swc_common::Span,
 }
 
 /// The first operation that inserted `ClassMembers(key)` into the escaped
 /// callback set. The top-level owner and source span are optional when the
 /// insertion path had no source-site context.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct FirstClassMembersPublication {
     pub writer: ClassMembersPublicationWriter,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -778,7 +781,7 @@ pub struct FirstClassMembersPublication {
     pub bounded_fallback_callsite: Option<BoundedInvocationFallbackCallSite>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct BoundedInvocationFallbackCallSite {
     pub top_level_owner: Option<SourceUnitOrdinal>,
     pub span_start: u32,
@@ -790,7 +793,7 @@ pub struct BoundedInvocationFallbackCallSite {
 /// A retained-input path followed by the bounded callback-pool fallback.
 /// Unknown is explicit when the shared callback walk found a class capability
 /// but could not preserve a rooted path for it.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BoundedInvocationFallbackInputPath {
     Retained {
@@ -806,7 +809,7 @@ pub enum BoundedInvocationFallbackInputPath {
 /// callback-value union. If a value occurs in several groups, the witness
 /// follows the first matching group in argument, captured-binding, escaped
 /// pool, export-callback order.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BoundedInvocationFallbackSeed {
     /// Position in an abstract input-argument vector, not proof of a runtime
@@ -830,7 +833,7 @@ pub enum BoundedInvocationFallbackSeed {
 /// array-literal storage remains an object-property edge. Collection indices
 /// and runtime allocation identities are omitted where the abstract value is
 /// a set.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BoundedInvocationFallbackPathEdge {
     ObjectProperty { property: String },
@@ -850,7 +853,7 @@ pub enum BoundedInvocationFallbackPathEdge {
     ClassMembersCapability,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum BoundedInvocationFallbackUnknownPathReason {
     SeedUnavailable,
@@ -858,7 +861,7 @@ pub enum BoundedInvocationFallbackUnknownPathReason {
 }
 
 /// The operation that first exposed class members to the opaque callback pool.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum ClassMembersPublicationWriter {
     GlobalOrIntrinsicMemberWrite,
@@ -877,7 +880,7 @@ pub enum ClassMembersPublicationWriter {
 /// Why an annotated record-factory call kept the conservative path. The
 /// first group refuses the argument's shape; the rest are checked-constructor
 /// proof conditions outside the record.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum RecordFactoryRejectionReason {
     /// The call does not pass exactly one direct object literal.
@@ -931,17 +934,17 @@ pub enum RecordFactoryRejectionReason {
 
 /// A successful timing refinement that consumed a `reentry_free_operations`
 /// entry (SPEC.md § Host behavior).
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct ReentryFreeOperationUse {
     pub operation: spec::ReentryFreeOperation,
     pub source_location: Option<SourceLocation>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) span: swc_common::Span,
 }
 
 /// The first failed condition in the ordered local own-data field guard.
 /// This is diagnostic evidence only and does not affect admission.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum OrderedFieldReadRefusal {
     ReceiverNotSingleton,
@@ -960,7 +963,7 @@ pub enum OrderedFieldReadRefusal {
 /// The first ordered call admission condition that rejected the evaluated
 /// target and receiver. This describes the refusal only; it does not change
 /// target classification or the conservative fallback.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum OrderedCallAdmissionRefusal {
     UnknownTarget,
@@ -969,7 +972,7 @@ pub enum OrderedCallAdmissionRefusal {
     UnsupportedReceiver,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 pub struct ExecutionPrecisionLoss {
     pub reason: ExecutionPrecisionLossReason,
     pub reach: HavocReach,
@@ -977,7 +980,7 @@ pub struct ExecutionPrecisionLoss {
     pub statement_ordinal: SourceUnitOrdinal,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) span: swc_common::Span,
 }
 
@@ -993,7 +996,7 @@ impl ExecutionPrecisionLoss {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(tag = "code", rename_all = "snake_case")]
 pub enum ExecutionPrecisionLossReason {
     UnknownCallTarget,
@@ -1029,7 +1032,7 @@ pub enum ExecutionPrecisionLossReason {
 /// What the code a precision loss may run can reach, classified per
 /// SPEC.md § Synchronous execution diagnostics. A report only: the conservative
 /// path promotes the same effects for both.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HavocReach {
     /// The unmodelled part is known source code: its callables and the
@@ -1041,7 +1044,7 @@ pub enum HavocReach {
 }
 
 /// The first collapse rule that made a reach `global`.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum GlobalReachCause {
     /// The code calls, directly or through the synchronous read closure, a
@@ -1067,7 +1070,7 @@ pub enum GlobalReachCause {
 }
 
 /// Why a local class construction kept the conservative path.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(tag = "check", rename_all = "snake_case")]
 pub enum ConstructionRejection {
     SpreadArguments,
@@ -1164,7 +1167,7 @@ impl std::fmt::Display for ExecutionPrecisionLossReason {
 /// it (SPEC.md § Commuting statements). Each path assumes some code may run
 /// (or reach the binding) at the statement; none follows an invocation the
 /// statement definitely makes.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(tag = "path", rename_all = "snake_case")]
 pub enum AssumedEffectReason {
     /// The statement's bounded fallback summary: having stopped expanding
@@ -1275,7 +1278,7 @@ impl AssumedEffectReason {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecutionOperation {
     MembershipProtocol,

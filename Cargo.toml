@@ -33,6 +33,10 @@ imbl = "^7.0.2"
 # debundle analysis artifact: named MessagePack, zstd-framed
 rmp-serde = "^1.3.0"
 zstd = "^0.13.3"
+# Typed analysis-artifact derives; use the already locked macro toolchain.
+proc-macro2 = "=1.0.106"
+quote = "=1.0.45"
+syn = { version = "=2.0.117", features = ["full"] }
 # debundle full graph reports: streaming gzip with the already locked Rust backend
 flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
 # debundle: derive enum -> wire-string (snake_case) so kind spellings aren't hand-rolled

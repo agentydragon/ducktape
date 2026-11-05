@@ -5,6 +5,7 @@
 //! (`analysis::cross_module_purity`). Its results feed each chunk's
 //! `AnalysisInputs`, including `imported_purities` for imported calls.
 
+use analysis_codec_derive::Artifact;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -164,7 +165,7 @@ pub struct ReparsedEntry {
 }
 
 /// Program-wide analysis summaries, keyed by source chunk name.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Artifact)]
 pub struct ProgramSummary {
     /// Per-chunk imported-binding verdicts (`AnalysisInputs::imported_purities`).
     pub bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,

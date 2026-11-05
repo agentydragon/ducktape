@@ -1,6 +1,7 @@
 use super::*;
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::abstract_domain::effect::{CoerceOperand, CoerceOperands};
+use analysis_codec_derive::Artifact;
 use std::sync::Arc;
 
 /// Two-state expression-level purity with structured reasons.
@@ -22,7 +23,7 @@ use std::sync::Arc;
 /// to a known impure function contributes one `ImpureFunctionCall`
 /// reason at its own call site; copying the callee's transitive list
 /// would duplicate reasons along branching call graphs.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Purity {
     Pure {
@@ -34,7 +35,7 @@ pub enum Purity {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Artifact)]
 pub struct PurityReason {
     pub rule: PurityRule,
     /// Resolved by `resolve_reason_locations` once the per-chunk
@@ -54,13 +55,9 @@ pub struct PurityReason {
     pub cause_ref: Option<String>,
     /// The immutable callee verdict, shared by every call site. Keeping it
     /// out of serde prevents transitive causes from expanding on the wire.
-    #[serde(
-        default,
-        skip_serializing_if = "analysis_codec::outside_artifact",
-        with = "analysis_codec::shared_arc"
-    )]
+    #[serde(skip)]
     pub cause: Option<Arc<Purity>>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub span: Span,
 }
 
@@ -89,7 +86,7 @@ impl PurityReason {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, Artifact)]
 #[serde(rename_all = "snake_case")]
 pub enum PurityRule {
     AssignOrUpdate,
