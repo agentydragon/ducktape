@@ -2,7 +2,7 @@ use source_identity::ChunkId;
 use source_identity::SourceUnitOrdinal;
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use swc_atoms::Atom;
 use swc_common::{Mark, SyntaxContext};
 use swc_ecma_ast::Id;
