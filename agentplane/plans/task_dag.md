@@ -1447,6 +1447,8 @@ flowchart LR
     AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render, section 5]
     ACTION_SURFACES_DESIGN --> AGENT_PERMISSION_REQUESTS
+    KUBERNETES_SA_DELEGATION_DESIGN[Decision, unscheduled: additional Kubernetes SA access]
+    KUBERNETES_SA_DELEGATION_DESIGN -. related permission workflow .-> AGENT_PERMISSION_REQUESTS
     SANDBOX_RBAC[Deferred: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Deferred: public-route security check]
     NETWORK_WORKLOAD_IDENTITY[Selected: SPIFFE workload authentication]
@@ -1487,6 +1489,28 @@ scope clear: every workload using that SA can acquire its grants. The same mecha
 existing EgressCredential through an egress PolicySet, including the shared GitHub bot credential.
 Provisioning a different Kubernetes SA and using it from an existing Environment is a separate
 identity/credential design, not an automatic consequence of granting PolicySets.
+
+### `KUBERNETES_SA_DELEGATION_DESIGN` — additional Kubernetes SA access
+
+**Decision, unscheduled.** Explore allowing an agent to use a second Kubernetes ServiceAccount for
+specific work while retaining its existing Session and Environment identity. Compare Kubernetes
+impersonation by the agent's current SA with an egress credential source or broker that obtains and
+substitutes a token for the second SA. Prefer evaluating impersonation first: it uses Kubernetes's
+own delegation and audit model and need not give egress authority to mint target-SA tokens. The
+alternative remains relevant for an Agentplane principal that is not a Kubernetes SA. This decision
+does not block Session–Environment decoupling or permission requests for the existing SA.
+
+Trace a request through the existing Kubernetes egress credential and test whether impersonation
+headers reach the API server. Check whether policy reconciliation can grant impersonation of a
+specific named SA, what groups and extras the resulting request has, and cluster support for any
+more narrowly constrained impersonation. Compare target and grant ownership, approval, audit
+attribution, revocation and deletion/recreation behavior, including existing watches. Document that
+the grant applies to all callers sharing the original SA, not an individual Session, and that the
+target SA's Kubernetes RBAC controls its effective permissions. For a token broker, also review
+who can authorize and issue target credentials, destination and audience restrictions, token
+lifetime and exposure. Record the chosen contract and evidence before creating implementation work.
+Coordinate with [`AGENT_PRINCIPAL_MODEL_DESIGN`](#agent_principal_model_design--agentplane-principals-and-external-identities)
+and [`SESSION_IDENTITY_CONTRACT`](#session_identity_contract--session-identity-and-shared-environment-admission).
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox
 
