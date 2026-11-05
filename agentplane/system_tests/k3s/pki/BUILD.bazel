@@ -1,18 +1,6 @@
-load("@image_pins//:pins.bzl", "CERT_MANAGER_CAINJECTOR_REFERENCE", "CERT_MANAGER_CONTROLLER_REFERENCE", "CERT_MANAGER_WEBHOOK_REFERENCE", "TRUST_MANAGER_REFERENCE")
-load("//devinfra/oci:defs.bzl", "oci_image_group")
+load("@image_pins//:pins.bzl", "TRUST_MANAGER_REFERENCE")
 
 package(default_testonly = True)
-
-oci_image_group(
-    name = "images",
-    images = {
-        "@cert_manager_controller_linux_amd64": CERT_MANAGER_CONTROLLER_REFERENCE,
-        "@cert_manager_webhook_linux_amd64": CERT_MANAGER_WEBHOOK_REFERENCE,
-        "@cert_manager_cainjector_linux_amd64": CERT_MANAGER_CAINJECTOR_REFERENCE,
-        "@trust_manager_linux_amd64": TRUST_MANAGER_REFERENCE,
-    },
-    visibility = ["//agentplane/system_tests:__subpackages__"],
-)
 
 genrule(
     name = "trust_manager_install_yaml",

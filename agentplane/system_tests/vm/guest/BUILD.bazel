@@ -2,7 +2,6 @@ load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/erofs:defs.bzl", "erofs_image")
-load("//devinfra/oci:defs.bzl", "oci_image_group")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # The k3s fixture's VM guest: a Debian cloud kernel booted directly by KubeVirt with a busybox
@@ -64,6 +63,10 @@ oci_image(
     architecture = "amd64",
     os = "linux",
     tars = [":boot_tar"],
+    visibility = [
+        "//agentplane/system_tests/suites:__pkg__",
+        "//agentplane/system_tests/vm:__subpackages__",
+    ],
 )
 
 py_binary(
@@ -347,6 +350,10 @@ oci_image(
     os = "linux",
     tars = [":root_disk"],
     user = "107:107",
+    visibility = [
+        "//agentplane/system_tests/suites:__pkg__",
+        "//agentplane/system_tests/vm:__subpackages__",
+    ],
 )
 
 pkg_tar(
@@ -363,24 +370,10 @@ oci_image(
     os = "linux",
     tars = [":root_profile_disk"],
     user = "107:107",
-)
-
-oci_image_group(
-    name = "vm_guest_boot_layout",
-    images = {":boot_image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot:unset"},
-    visibility = ["//agentplane/system_tests:__subpackages__"],
-)
-
-oci_image_group(
-    name = "vm_guest_root_layout",
-    images = {":root_image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"},
-    visibility = ["//agentplane/system_tests:__subpackages__"],
-)
-
-oci_image_group(
-    name = "vm_guest_root_profile_layout",
-    images = {":root_profile_image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root-profile:unset"},
-    visibility = ["//agentplane/system_tests:__subpackages__"],
+    visibility = [
+        "//agentplane/system_tests/suites:__pkg__",
+        "//agentplane/system_tests/vm:__subpackages__",
+    ],
 )
 
 py_library(
