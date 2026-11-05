@@ -3,6 +3,7 @@
 mod callback_arguments;
 mod prototype_properties;
 
+use super::callable_body_facts::CallableBodyFacts;
 use super::local_operations::{DeferredCallableCreation, LocalBinding, LocalBody};
 use super::namespace_wrapper::{self, NamespaceWrapperCandidate};
 use super::noninvoking_initialization::{InitializationSourceIdentity, OriginalInitializer};
@@ -1339,12 +1340,7 @@ struct Callable {
     /// projection. Keep them separate from `declared_locals`, whose consumers
     /// also include direct callback-factory and class-closure admission.
     pattern_locals: BTreeSet<Id>,
-    returns: Vec<ValueExpr>,
-    /// One source-ordered return covering the complete simple-parameter body.
-    /// Syntax coverage is retained during the same value lowering below.
-    direct_return_site: Option<CallSite>,
-    allocation_return: Option<ValueExpr>,
-    local_body: Option<LocalBody>,
+    body_facts: CallableBodyFacts,
     local_functions: BTreeMap<Id, u32>,
     literal_captures: BTreeSet<Id>,
     literal_exposures: BTreeSet<Id>,
@@ -1585,10 +1581,7 @@ impl Default for Callable {
             lexical_declarations: BTreeMap::new(),
             self_binding: None,
             pattern_locals: BTreeSet::new(),
-            returns: Vec::new(),
-            direct_return_site: None,
-            allocation_return: None,
-            local_body: None,
+            body_facts: CallableBodyFacts::default(),
             local_functions: BTreeMap::new(),
             literal_captures: BTreeSet::new(),
             literal_exposures: BTreeSet::new(),
@@ -3499,7 +3492,7 @@ impl IterativeRules for ReceiverFlowRules<'_> {
                 let Some(callable) = self.index.callables.get(function) else {
                     return;
                 };
-                let Some(value) = callable.returns.get(*site) else {
+                let Some(value) = callable.body_facts.value_flow().returns().get(*site) else {
                     return;
                 };
                 let evaluated = evaluate_receiver_value(value, context, self);
@@ -3564,10 +3557,10 @@ impl IterativeRules for ReceiverFlowRules<'_> {
                 let mut complete = true;
                 if callable.generator || self.index.async_callables.contains(function) {
                     outcomes.insert(CallableReturnOutcome::Unknown);
-                } else if callable.returns.is_empty() {
+                } else if callable.body_facts.value_flow().returns().is_empty() {
                     outcomes.insert(CallableReturnOutcome::Safe);
                 } else {
-                    for site in 0..callable.returns.len() {
+                    for site in 0..callable.body_facts.value_flow().returns().len() {
                         let Some(site_fact) =
                             context.read(ReceiverFlowKey::ReturnSite(*function, site))
                         else {
@@ -3666,7 +3659,8 @@ fn solve_receiver_flow(
     producers.extend(binding_rules);
     for (function, callable) in &index.callables {
         producers.extend(
-            (0..callable.returns.len()).map(|site| ReceiverFlowRule::ReturnSite(*function, site)),
+            (0..callable.body_facts.value_flow().returns().len())
+                .map(|site| ReceiverFlowRule::ReturnSite(*function, site)),
         );
         producers.push(ReceiverFlowRule::Callable(*function));
     }
@@ -3764,7 +3758,7 @@ fn close_receiver_flow(
             callable_dependencies.extend(fact.callable_dependencies.iter().copied());
             capture_dependencies.extend(fact.capture_dependencies.iter().cloned());
         }
-        for site in 0..callable.returns.len() {
+        for site in 0..callable.body_facts.value_flow().returns().len() {
             if let Some(site_fact) =
                 initial_facts.get(&ReceiverFlowKey::ReturnSite(*function, site))
             {
@@ -5362,7 +5356,7 @@ fn confined_prepublication_alias(
         || index.discarded_sync_iifes[owner.0] != Some(key)
         || callable.opaque
         || !callable.params.is_empty()
-        || !callable.returns.is_empty()
+        || !callable.body_facts.value_flow().returns().is_empty()
         || callable.reads.iter().any(|id| id.0 == "arguments")
         || callable.bare_reads.contains(alias)
         || callable.rebinds.contains(alias)
@@ -6361,7 +6355,7 @@ impl ExecutionIndex {
                     if self
                         .callables
                         .get(start)
-                        .is_some_and(|callable| callable.returns.iter().all(inert))))
+                        .is_some_and(|callable| callable.body_facts.value_flow().returns().iter().all(inert))))
     }
 
     fn bundle_assignments(&self) -> Vec<&(Id, ValueExpr)> {
@@ -9733,13 +9727,18 @@ impl ExecutionIndex {
                                 &namespace_value_facts,
                             )
                     })
-                    || callable.returns.iter().any(|value| {
-                        value.may_publish_namespace_in_factory_result(
-                            id,
-                            &aliases,
-                            &namespace_value_facts,
-                        )
-                    })
+                    || callable
+                        .body_facts
+                        .value_flow()
+                        .returns()
+                        .iter()
+                        .any(|value| {
+                            value.may_publish_namespace_in_factory_result(
+                                id,
+                                &aliases,
+                                &namespace_value_facts,
+                            )
+                        })
                     || callable.calls.iter().any(|call| {
                         call.args.iter().any(|value| {
                             value.may_publish_namespace(id, &aliases, &namespace_value_facts)
@@ -10357,7 +10356,9 @@ impl ExecutionIndex {
                             protected,
                         )
                 }) || callable
-                    .returns
+                    .body_facts
+                    .value_flow()
+                    .returns()
                     .iter()
                     .any(|value| exposes_global_receiver(value, &self.global_object_names))
                     || callable.calls.iter().any(|call| {
@@ -10495,13 +10496,13 @@ impl ExecutionIndex {
         visit(self);
         self.prototype_capture_stack.pop();
         let callable = self.callables.get_mut(&key).unwrap();
-        if let Some(body) = callable.local_body.take()
+        if let Some(body) = callable.body_facts.take_ordered_plan()
             // Defaults run outside the body var environment. Use the full
             // declaration census, including dead/nested var declarations.
             && ((callable.hoisted_vars.is_empty() && callable.local_functions.is_empty())
                 || body.parameters.iter().all(|parameter| parameter.default.is_none()))
         {
-            callable.local_body = Some(
+            callable.body_facts.set_ordered_plan(Some(
                 body.with_declarations(
                     callable.hoisted_vars.iter().cloned(),
                     callable
@@ -10512,7 +10513,7 @@ impl ExecutionIndex {
                             (binding.clone(), LocalBinding::HoistedFunction(*function))
                         })),
                 ),
-            );
+            ));
         }
         self.current = saved_current;
         self.variable_scope = saved_variable_scope;
@@ -11677,14 +11678,16 @@ impl Visit for ExecutionIndex {
                 .get_mut(&expression.function.span.lo.0)
                 .unwrap();
             callable.self_binding = Some(binding.to_id());
-            if let Some(body) = callable.local_body.take() {
-                callable.local_body = Some(body.with_declarations(
-                    std::iter::empty(),
-                    [(
-                        binding.to_id(),
-                        LocalBinding::NamedSelf(expression.function.span.lo.0),
-                    )],
-                ));
+            if let Some(body) = callable.body_facts.take_ordered_plan() {
+                callable
+                    .body_facts
+                    .set_ordered_plan(Some(body.with_declarations(
+                        std::iter::empty(),
+                        [(
+                            binding.to_id(),
+                            LocalBinding::NamedSelf(expression.function.span.lo.0),
+                        )],
+                    )));
             }
         }
     }
@@ -11737,40 +11740,46 @@ impl Visit for ExecutionIndex {
                 .callables
                 .get_mut(&function.span.lo.0)
                 .unwrap()
-                .local_body = (!function.is_async
-                && !function.is_generator
-                && function.decorators.is_empty()
-                && function.type_params.is_none()
-                && function.return_type.is_none()
-                && function
-                    .params
-                    .iter()
-                    .all(|param| param.decorators.is_empty()))
-            .then(|| {
-                LocalBody::lower(
-                    function.params.iter().map(|parameter| &parameter.pat),
-                    function.body.as_ref()?,
-                )
-            })
-            .flatten();
+                .body_facts
+                .set_ordered_plan(
+                    (!function.is_async
+                        && !function.is_generator
+                        && function.decorators.is_empty()
+                        && function.type_params.is_none()
+                        && function.return_type.is_none()
+                        && function
+                            .params
+                            .iter()
+                            .all(|param| param.decorators.is_empty()))
+                    .then(|| {
+                        LocalBody::lower(
+                            function.params.iter().map(|parameter| &parameter.pat),
+                            function.body.as_ref()?,
+                        )
+                    })
+                    .flatten(),
+                );
             index
                 .callables
                 .get_mut(&function.span.lo.0)
                 .unwrap()
-                .direct_return_site = (!function.is_async
-                && !function.is_generator
-                && function.decorators.is_empty()
-                && function.params.iter().all(|param| {
-                    param.decorators.is_empty() && matches!(param.pat, Pat::Ident(_))
-                }))
-            .then(|| {
-                function
-                    .body
-                    .as_ref()
-                    .and_then(sole_return_expression)
-                    .map(|expression| expression.span().into())
-            })
-            .flatten();
+                .body_facts
+                .set_direct_return_candidate(
+                    (!function.is_async
+                        && !function.is_generator
+                        && function.decorators.is_empty()
+                        && function.params.iter().all(|param| {
+                            param.decorators.is_empty() && matches!(param.pat, Pat::Ident(_))
+                        }))
+                    .then(|| {
+                        function
+                            .body
+                            .as_ref()
+                            .and_then(sole_return_expression)
+                            .map(|expression| expression.span().into())
+                    })
+                    .flatten(),
+                );
             index
                 .callables
                 .get_mut(&function.span.lo.0)
@@ -11808,36 +11817,42 @@ impl Visit for ExecutionIndex {
                 .callables
                 .get_mut(&arrow.span.lo.0)
                 .unwrap()
-                .local_body = (!arrow.is_async
-                && !arrow.is_generator
-                && arrow.type_params.is_none()
-                && arrow.return_type.is_none())
-            .then(|| match arrow.body.as_ref() {
-                ArrowFunctionBody::FunctionBody(body) => {
-                    LocalBody::lower(arrow.params.iter(), body)
-                }
-                ArrowFunctionBody::Expr(expression) => {
-                    LocalBody::lower_expression(arrow.params.iter(), expression)
-                }
-            })
-            .flatten();
+                .body_facts
+                .set_ordered_plan(
+                    (!arrow.is_async
+                        && !arrow.is_generator
+                        && arrow.type_params.is_none()
+                        && arrow.return_type.is_none())
+                    .then(|| match arrow.body.as_ref() {
+                        ArrowFunctionBody::FunctionBody(body) => {
+                            LocalBody::lower(arrow.params.iter(), body)
+                        }
+                        ArrowFunctionBody::Expr(expression) => {
+                            LocalBody::lower_expression(arrow.params.iter(), expression)
+                        }
+                    })
+                    .flatten(),
+                );
             index
                 .callables
                 .get_mut(&arrow.span.lo.0)
                 .unwrap()
-                .direct_return_site = (!arrow.is_async
-                && !arrow.is_generator
-                && arrow
-                    .params
-                    .iter()
-                    .all(|param| matches!(param, Pat::Ident(_))))
-            .then(|| match arrow.body.as_ref() {
-                ArrowFunctionBody::Expr(expression) => Some(expression.span().into()),
-                ArrowFunctionBody::FunctionBody(body) => {
-                    sole_return_expression(body).map(|expression| expression.span().into())
-                }
-            })
-            .flatten();
+                .body_facts
+                .set_direct_return_candidate(
+                    (!arrow.is_async
+                        && !arrow.is_generator
+                        && arrow
+                            .params
+                            .iter()
+                            .all(|param| matches!(param, Pat::Ident(_))))
+                    .then(|| match arrow.body.as_ref() {
+                        ArrowFunctionBody::Expr(expression) => Some(expression.span().into()),
+                        ArrowFunctionBody::FunctionBody(body) => {
+                            sole_return_expression(body).map(|expression| expression.span().into())
+                        }
+                    })
+                    .flatten(),
+                );
             for parameter in &arrow.params {
                 index.invalidate_property_key_pattern(parameter);
             }
@@ -11853,12 +11868,8 @@ impl Visit for ExecutionIndex {
             };
             arrow.visit_children_with(index);
             if let ArrowFunctionBody::Expr(expr) = arrow.body.as_ref() {
-                let (value, covered) = ValueExpr::from_expr_with_coverage(expr);
                 let callable = index.callables.get_mut(&arrow.span.lo.0).unwrap();
-                if covered && callable.direct_return_site == Some(expr.span().into()) {
-                    callable.allocation_return = Some(value.clone());
-                }
-                callable.returns.push(value);
+                callable.body_facts.record_return(expr);
             }
         });
     }
@@ -12678,23 +12689,15 @@ impl Visit for ExecutionIndex {
             self.callables
                 .get_mut(&key)
                 .unwrap()
-                .returns
-                .push(ValueExpr::Undefined);
+                .body_facts
+                .record_undefined_return();
         }
         if let (Some(key), Some(arg)) = (self.current, &ret.arg) {
-            let (value, covered) = ValueExpr::from_expr_with_coverage(arg);
-            if let ValueExpr::Binding(id) = &value {
-                self.callables
-                    .get_mut(&key)
-                    .unwrap()
-                    .escaped_bindings
-                    .insert(id.clone());
-            }
             let callable = self.callables.get_mut(&key).unwrap();
-            if covered && callable.direct_return_site == Some(arg.span().into()) {
-                callable.allocation_return = Some(value.clone());
+            let value = callable.body_facts.record_return(arg);
+            if let ValueExpr::Binding(id) = &value {
+                callable.escaped_bindings.insert(id.clone());
             }
-            callable.returns.push(value);
         }
     }
 
