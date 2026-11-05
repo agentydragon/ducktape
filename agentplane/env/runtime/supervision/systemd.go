@@ -215,7 +215,7 @@ func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 			}
 		case result := <-completion:
 			if result != "done" {
-				err = fmt.Errorf("native unit start job failed: %s", result)
+				err = fmt.Errorf("native unit start job failed: %s (%s)", result, b.diagnostics())
 			} else {
 				service, observeErr := ReadSystemdUnit(ctx, conn, b.name)
 				if observeErr != nil {
