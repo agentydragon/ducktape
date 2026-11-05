@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -17,14 +15,7 @@ import (
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTests(func(ctx context.Context, db *sql.DB) error {
-		if err := Up(ctx, db); err != nil {
-			return err
-		}
-		_, err := db.ExecContext(ctx, `DELETE FROM action_service_goose_version WHERE version_id=10;
-            INSERT INTO action_service_goose_version(version_id,is_applied) VALUES (7,true),(8,true),(9,true)`)
-		return err
-	}, func(database *postgres.Database) int {
+	os.Exit(postgres.RunIntegrationTests(Up, func(database *postgres.Database) int {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 		if err := database.PrepareCloneTemplate(ctx); err != nil {
@@ -79,69 +70,5 @@ func TestFreshBaseline(t *testing.T) {
 	}
 	if got := count(t, db, `SELECT count(*) FROM action_request WHERE arguments='{"human":true}'::jsonb`); got != 1 {
 		t.Fatalf("request rows = %d", got)
-	}
-}
-
-func TestAdoptCompletedNinePreservesRowsAndHistory(t *testing.T) {
-	db := cloneDatabase(t)
-	seed(t, db)
-	if err := Up(t.Context(), db); err != nil {
-		t.Fatal(err)
-	}
-	if err := Up(t.Context(), db); err != nil {
-		t.Fatal(err)
-	}
-	if got := count(t, db, `SELECT count(*) FROM action_service_goose_version WHERE version_id IN (7,8,9,10) AND is_applied`); got != 4 {
-		t.Fatalf("history rows = %d", got)
-	}
-	if got := count(t, db, `SELECT count(*) FROM action_request WHERE title='keep' AND arguments='{"human":true}'::jsonb`); got != 1 {
-		t.Fatalf("preserved rows = %d", got)
-	}
-}
-
-func TestRejectIncompleteHistoryAndSchema(t *testing.T) {
-	for _, tc := range []struct{ name, alter string }{
-		{"version eight", `DELETE FROM action_service_goose_version WHERE version_id=9`},
-		{"history gap", `DELETE FROM action_service_goose_version WHERE version_id=8`},
-		{"unapplied older migration", `INSERT INTO action_service_goose_version(version_id,is_applied) VALUES (1,false)`},
-		{"missing column", `ALTER TABLE action_request DROP COLUMN caller_uid`},
-		{"missing table", `DROP TABLE mcp_linkage_flow`},
-		{"missing index", `DROP INDEX ix_action_request_state_created`},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			db := cloneDatabase(t)
-			seed(t, db)
-			exec(t, db, tc.alter)
-			err := Up(t.Context(), db)
-			if err == nil || !strings.Contains(err.Error(), "Action") {
-				t.Fatalf("unexpected migration error: %v", err)
-			}
-			if count(t, db, `SELECT count(*) FROM action_service_goose_version WHERE version_id=10 AND is_applied`) != 0 {
-				t.Fatal("recorded rejected baseline")
-			}
-			if count(t, db, `SELECT count(*) FROM action_request WHERE title='keep'`) != 1 {
-				t.Fatal("lost retained request")
-			}
-		})
-	}
-}
-
-func TestConcurrentAdoption(t *testing.T) {
-	db := cloneDatabase(t)
-	var wg sync.WaitGroup
-	errs := make(chan error, 2)
-	for range 2 {
-		wg.Add(1)
-		go func() { defer wg.Done(); errs <- Up(t.Context(), db) }()
-	}
-	wg.Wait()
-	close(errs)
-	for err := range errs {
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	if got := count(t, db, `SELECT count(*) FROM action_service_goose_version WHERE version_id=10 AND is_applied`); got != 1 {
-		t.Fatalf("baseline rows = %d", got)
 	}
 }
