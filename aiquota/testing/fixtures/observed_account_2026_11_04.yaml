@@ -1,3 +1,9 @@
+# Observed /v1/quotas on 2026-11-04 at 16:56 Pacific (2026-11-05T00:56:28Z).
+# Each provider's last_output, before display filtering. Account/grant names and
+# identifiers replaced; observed name lengths, amounts, precision, nulls, list
+# order/cardinality, scopes and timestamps retained. Render at this fetched_at.
+# Includes both weekly subscription windows, 105 OpenAI grants (three active),
+# and Anthropic's ordinary grant plus a promo scoped to six broad API products.
 providers:
   - provider: claude
     last_output:
