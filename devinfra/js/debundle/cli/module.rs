@@ -245,6 +245,7 @@ impl DeleteSummary {
 pub fn run_merge(
     merge: MergeArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
 ) -> Result<()> {
     if merge.edit.no_verify {
         eprintln!(
@@ -287,7 +288,11 @@ pub fn run_merge(
                 .iter()
                 .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
                 .collect();
-            let assessment = context.assess(&merge.edit.modules_root, &candidate_modules)?;
+            let assessment = context.assess(
+                &merge.edit.modules_root,
+                &candidate_modules,
+                analysis_engine_sha256,
+            )?;
             (Some(docs), Some(assessment))
         } else {
             (None, None)
@@ -729,6 +734,7 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
 pub fn run_delete(
     args: DeleteArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
 ) -> Result<()> {
     if args.edit.no_verify {
         eprintln!(
@@ -793,7 +799,11 @@ pub fn run_delete(
                 .filter(|(module_path, _)| !delete_plan.module_paths.contains(*module_path))
                 .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
                 .collect();
-            let assessment = context.assess(&args.edit.modules_root, &candidate_modules)?;
+            let assessment = context.assess(
+                &args.edit.modules_root,
+                &candidate_modules,
+                analysis_engine_sha256,
+            )?;
             (
                 Some(docs),
                 Some(delete_plan.module_paths),

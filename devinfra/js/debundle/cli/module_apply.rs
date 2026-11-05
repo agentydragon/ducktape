@@ -120,6 +120,7 @@ struct ApplyOutcome {
 pub fn run_modules_apply(
     args: ModulesApplyArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
 ) -> Result<()> {
     let edit = GraphEditArgs {
         modules_root: args.modules_root.clone(),
@@ -432,7 +433,11 @@ pub fn run_modules_apply(
                 .iter()
                 .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
                 .collect();
-            context.assess(&args.modules_root, &candidate_modules)
+            context.assess(
+                &args.modules_root,
+                &candidate_modules,
+                analysis_engine_sha256,
+            )
         })
         .transpose()?;
     if let Some(assessment) = &effect_relocation_assessment {
