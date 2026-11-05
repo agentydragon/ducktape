@@ -82,7 +82,10 @@ go_test(
     name = "config_test",
     srcs = ["config_test.go"],
     embed = [":cmd"],
-    deps = ["//agentplane/workload_auth/auth"],
+    deps = [
+        "//agentplane/testing/configtest",
+        "//agentplane/workload_auth/auth",
+    ],
 )
 
 pkg_tar(

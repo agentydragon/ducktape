@@ -1,0 +1,13 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "configtest",
+    testonly = True,
+    srcs = ["configtest.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/testing/configtest",
+    visibility = [
+        "//agentplane/egress/cmd:__pkg__",
+        "//agentplane/llm_ingress:__pkg__",
+        "//agentplane/runner_gateway:__pkg__",
+    ],
+)
