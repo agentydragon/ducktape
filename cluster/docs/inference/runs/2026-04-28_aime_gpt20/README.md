@@ -9,10 +9,10 @@ the in-cluster Secret — no in-cluster Job needed.
 
 ## What ran
 
-- **Driver**: <run_aime.py> (uv hashbang script, sweeps `--efforts`).
+- **Driver**: <../aime/run_aime.py> (shared uv hashbang script, sweeps `--efforts`).
   Calls `inspect eval inspect_evals/aime2024 --model openai/gpt-oss:20b`
   once per effort level via the Inspect AI CLI.
-- **Re-grader**: <regrade.py> (uv hashbang). Reads each
+- **Re-grader**: <../aime/regrade.py> (shared uv hashbang script). Reads each
   `eval_logs/<effort>/*.eval`, applies a permissive answer extractor
   (handles `\boxed{N}`, `\(N\)`, `$N$`, `ANSWER: N`), writes
   <regrade.json>, prints a markdown summary.
@@ -119,7 +119,7 @@ appears to follow the format consistently.)
    `ANSWER:` and exact-matches an integer; it can't see `\boxed{N}` or
    `\(N\)` or `$N$`. For models that don't follow format perfectly this
    underestimates pass@1 by 0.0–0.5 (here, biggest gap on `medium`).
-   Worth filing upstream; in the meantime <regrade.py> documents the
+   Worth filing upstream; in the meantime <../aime/regrade.py> documents the
    workaround.
 6. **Wall time per sample is variance-dominated, not effort-dominated.**
    Hardest problems (2024-I-11) at low effort took 217s (29K tokens);
@@ -130,9 +130,9 @@ appears to follow the format consistently.)
 
 ```bash
 cd cluster/docs/inference/runs/2026-04-28_aime_gpt20
-./run_aime.py                        # full sweep low,medium,high × 10
-./regrade.py                         # re-grade existing eval_logs/
-./run_aime.py --efforts high --limit 5   # quick partial repro
+../aime/run_aime.py --run-dir . --limit 10                  # full sweep low,medium,high × 10
+../aime/regrade.py --run-dir .                             # re-grade existing eval_logs/
+../aime/run_aime.py --run-dir . --limit 5 --efforts high   # quick partial repro
 ```
 
 Requires: `kubectl` (for fetching the `ollama-direct-token` Secret) and

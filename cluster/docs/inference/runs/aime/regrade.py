@@ -11,7 +11,7 @@ exact integer match. gpt-oss:20b habitually wraps its final answer in
 "do not use \\boxed" instruction, so the scorer's exact match fails on
 responses that are mathematically correct.
 
-This script walks each `eval_logs/<effort>/*.eval` file and re-grades every
+This script walks each `<run-dir>/<logs-root>/<effort>/*.eval` file and re-grades every
 sample with a more permissive extractor (handling `\\boxed{N}`,
 `\\(N\\)`, `$N$`, plain `ANSWER: N`). Reports both numbers per effort and
 prints a markdown table suitable for the run README. The strict number is
@@ -134,10 +134,14 @@ def summarize_effort(samples: list[dict[str, Any]]) -> dict[str, Any]:
 
 def main() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--logs-root", default="eval_logs")
+    p.add_argument("--run-dir", type=Path, required=True, help="Run record directory for logs and regrade.json.")
+    p.add_argument("--logs-root", type=Path, default=Path("eval_logs"), help="Log directory relative to --run-dir.")
     args = p.parse_args()
 
-    root = Path(__file__).resolve().parent / args.logs_root
+    run_dir = args.run_dir.resolve(strict=True)
+    if not run_dir.is_dir():
+        raise NotADirectoryError(run_dir)
+    root = run_dir / args.logs_root
     if not root.exists():
         print(f"ERROR: {root} not found", file=sys.stderr)
         return 1
@@ -156,7 +160,7 @@ def main() -> int:
         per_effort[effort_dir.name] = {**regraded, "summary": summarize_effort(regraded["samples"])}
 
     output = {"efforts": per_effort}
-    out_path = Path(__file__).resolve().parent / "regrade.json"
+    out_path = run_dir / "regrade.json"
     out_path.write_text(json.dumps(output, indent=2) + "\n")
 
     # Print markdown summary table
