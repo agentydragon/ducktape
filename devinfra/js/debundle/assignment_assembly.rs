@@ -130,9 +130,16 @@ fn assemble_assignment_from_claims(
     }
     let mut conflicts = Vec::<AtomicGroupConflict>::new();
     for atomic_group in atomic_groups {
-        if let Some(conflict) =
-            detect_atomic_group_conflict(atomic_group, &claims, dependency_graph, entry_module_id)
-        {
+        if let Some(conflict) = detect_atomic_group_conflict(
+            atomic_group,
+            |source_unit| claims[source_unit.0].unwrap_or(entry_module_id),
+            |source_unit| {
+                dependency_graph
+                    .node(source_unit)
+                    .map(|node| node.declared.iter().map(|id| id.0.clone()).collect())
+                    .unwrap_or_default()
+            },
+        ) {
             conflicts.push(conflict);
         }
     }
@@ -163,64 +170,41 @@ fn compute_source_unit_binding_claims(
     claims
 }
 
-fn detect_atomic_group_conflict(
+/// Detect a split atomic group from its effective destinations and build the
+/// common conflict model. Callers retain ownership of destination resolution
+/// and binding labels, which come from different sources in the materializer
+/// and graph-backed edit gate.
+pub fn detect_atomic_group_conflict(
     atomic_group: &AtomicGroup,
-    claims: &[Option<ModuleId>],
-    dependency_graph: &DependencyGraph,
-    entry_module_id: ModuleId,
+    mut destination: impl FnMut(SourceUnitId) -> ModuleId,
+    mut binding_names: impl FnMut(SourceUnitId) -> Vec<Atom>,
 ) -> Option<AtomicGroupConflict> {
-    // Each member's effective destination: explicit claim or
-    // entry fallback. Two or more distinct destinations is
-    // unrealizable (covers the spec-claims-some-but-not-all case).
     let resolved: Vec<(SourceUnitId, ModuleId)> = atomic_group
         .members
         .iter()
-        .map(|source_unit| {
-            (
-                *source_unit,
-                claims[source_unit.0].unwrap_or(entry_module_id),
-            )
-        })
+        .map(|source_unit| (*source_unit, destination(*source_unit)))
         .collect();
-    let mut first: Option<ModuleId> = None;
-    let mut has_distinct = false;
-    for &(_, m) in &resolved {
-        match first {
-            None => first = Some(m),
-            Some(existing) if existing != m => {
-                has_distinct = true;
-                break;
-            }
-            _ => {}
-        }
-    }
-    if !has_distinct {
+
+    let (_, first_destination) = resolved.first()?;
+    if resolved
+        .iter()
+        .all(|(_, module)| module == first_destination)
+    {
         return None;
     }
 
-    let claims_report: Vec<ConflictingClaim> = resolved
+    let claims: Vec<ConflictingClaim> = resolved
         .into_iter()
-        .map(|(source_unit, module)| {
-            let binding_names = dependency_graph
-                .node(source_unit)
-                .map(|node| {
-                    node.declared
-                        .iter()
-                        .map(|id| id.0.clone())
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            ConflictingClaim {
-                source_unit,
-                binding_names,
-                module,
-            }
+        .map(|(source_unit, module)| ConflictingClaim {
+            source_unit,
+            binding_names: binding_names(source_unit),
+            module,
         })
         .collect();
 
     Some(AtomicGroupConflict {
         members: atomic_group.members.iter().copied().collect(),
-        claims: claims_report,
+        claims,
         causes: atomic_group.causes.clone(),
     })
 }

@@ -140,7 +140,38 @@ fn atom_split_reports_both_destinations_and_writes_the_same_artifact() {
         .collect();
     assert!(modules.contains(&"dogfood/split") && modules.contains(&"home/atom"));
     let artifact: Value = read_json(&fixture.graph.with_file_name("atomic_group_conflicts.json"));
-    assert_eq!(artifact.as_array().unwrap().len(), 1);
+    assert_eq!(conflicts, artifact.as_array().unwrap());
+    let labels: Vec<_> = conflicts[0]["claims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|claim| claim["binding_names"].as_array().unwrap())
+        .map(|name| name.as_str().unwrap())
+        .collect();
+    assert!(
+        labels.contains(&"alpha") && labels.contains(&"beta"),
+        "{conflicts:#?}"
+    );
+
+    let ordinary_run = GraphFixture::rejected(
+        "let alpha = 0;\nfunction beta() { alpha = 1; }\nconsole.log(alpha, typeof beta);\n",
+        &[
+            (
+                "dogfood/split.yaml",
+                "members: [{selector: {binding: {name: alpha}}}]\n",
+            ),
+            (
+                "home/atom.yaml",
+                "members: [{selector: {binding: {name: beta}}}]\n",
+            ),
+        ],
+    );
+    let ordinary_run_artifact: Value = read_json(
+        &ordinary_run
+            .graph
+            .with_file_name("atomic_group_conflicts.json"),
+    );
+    assert_eq!(artifact, ordinary_run_artifact);
 }
 
 #[test]
