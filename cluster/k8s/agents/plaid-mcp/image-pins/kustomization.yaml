@@ -6,4 +6,4 @@ images:
   - name: git.allegedly.works/ducktape-ci/plaid-mcp-sync
     newTag: devel-20261101045424-1e33eea # {"$imagepolicy": "flux-system:plaid-mcp-sync:tag"}
   - name: git.allegedly.works/ducktape-ci/plaid-spend
-    newTag: devel-20261104031931-5b865f8 # {"$imagepolicy": "flux-system:plaid-spend:tag"}
+    newTag: devel-20261105232811-bedd579 # {"$imagepolicy": "flux-system:plaid-spend:tag"}
