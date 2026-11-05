@@ -18,13 +18,12 @@ use source_identity::SourceUnitOrdinal;
 use swc_common::Span;
 
 use super::program_summary::ProgramSummary;
-use super::saved_purity::{PurityNodeId, PuritySnapshot, SavedPurityGraph};
+use analysis::purity::saved::{PurityNodeId, PuritySnapshot, RestoredPurities};
 
 type RetainedCallbackSignatures = BTreeMap<String, Vec<spec::RetainedCallbackSignature>>;
 
 #[derive(Serialize, Deserialize)]
 pub(super) struct SavedProgramSummary<'a> {
-    purity_graph: SavedPurityGraph,
     bindings: BTreeMap<String, BTreeMap<String, PurityNodeId>>,
     values: Cow<'a, BTreeMap<String, BTreeMap<String, Value>>>,
     members: Cow<'a, BTreeMap<String, BTreeMap<String, BTreeSet<String>>>>,
@@ -59,8 +58,8 @@ impl<'a> SavedProgramSummary<'a> {
     pub(super) fn snapshot(
         summary: &'a ProgramSummary,
         ordinals: &ContextOrdinals,
+        purities: &mut PuritySnapshot<'a>,
     ) -> Result<Self> {
-        let mut purities = PuritySnapshot::default();
         let bindings = summary
             .bindings
             .iter()
@@ -88,7 +87,6 @@ impl<'a> SavedProgramSummary<'a> {
             })
             .collect::<Result<_>>()?;
         Ok(Self {
-            purity_graph: purities.finish(),
             bindings,
             value_inputs,
             values: Cow::Borrowed(&summary.values),
@@ -117,8 +115,11 @@ impl<'a> SavedProgramSummary<'a> {
         })
     }
 
-    pub(super) fn restore(self, ordinals: &ContextOrdinals) -> Result<ProgramSummary> {
-        let purities = self.purity_graph.restore()?;
+    pub(super) fn restore(
+        self,
+        ordinals: &ContextOrdinals,
+        purities: &RestoredPurities,
+    ) -> Result<ProgramSummary> {
         let bindings = self
             .bindings
             .into_iter()

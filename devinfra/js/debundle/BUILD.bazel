@@ -615,6 +615,7 @@ rust_library(
         "facts/local_effects.rs",
         "facts/mod.rs",
         "facts/purity_classification.rs",
+        "facts/saved.rs",
         "facts/semantic_inference.rs",
         "facts/set_iterables.rs",
         "facts/source_unit_read_closure.rs",
@@ -671,6 +672,7 @@ rust_library(
         "purity/purity_type.rs",
         "purity/redundant_hints.rs",
         "purity/redundant_hints_tests.rs",
+        "purity/saved.rs",
         "purity/ts_enum_iife.rs",
         "reports/author_inputs.rs",
         "reports/mod.rs",
@@ -712,6 +714,7 @@ rust_test(
     edition = "2024",
     deps = [
         ":raw_js_test_support",
+        "@crates//:rmp-serde",
         "@crates//:swc_ecma_parser",
     ],
 )

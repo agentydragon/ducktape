@@ -23,21 +23,18 @@
 //! Spans need no mapping: every chunk is parsed into its own `SourceMap`, so a
 //! `BytePos` is already an offset from that chunk's file start.
 //!
-//! Fields kept out of JSON reports (`#[serde(skip)]` there: spans, purity
-//! causes, trusted dependencies) must still round-trip through the artifact.
-//! They use [`outside_artifact`] as their `skip_serializing_if`, which is true
-//! except while [`encode`] runs, and purity causes use [`shared_arc`], which
-//! writes each shared value once so the cause DAG keeps its sharing.
+//! Legacy report-only spans and trusted dependencies still use
+//! [`outside_artifact`] as their `skip_serializing_if`, which is true except
+//! while [`encode`] runs. Purity causes and spans use explicit saved data in
+//! `analysis::purity::saved`; this codec does not manage their sharing.
 //!
 //! Structs are encoded with field names (`rmp_serde`'s struct maps), which the
 //! existing `skip_serializing_if` and tagged-enum attributes require, then
 //! zstd-compressed.
 
-use std::any::Any;
-use std::cell::{Cell, RefCell};
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use serde::de::{self, DeserializeOwned, DeserializeSeed, Deserializer, Visitor};
@@ -149,16 +146,10 @@ pub fn decode<T: DeserializeOwned>(bytes: &[u8], ordinals: &ContextOrdinals) -> 
     Ok(value)
 }
 
-/// Shared values written or read so far by the running [`encode`] or
-/// [`decode`]; `None` outside them.
-#[derive(Default)]
-struct SharedValues {
-    written: HashMap<*const (), u32>,
-    read: HashMap<u32, Arc<dyn Any + Send + Sync>>,
-}
-
+// Remaining legacy report-field selection. Shared runtime identities belong
+// to explicit snapshot/restore state rather than this serialization scope.
 thread_local! {
-    static ARTIFACT: RefCell<Option<SharedValues>> = const { RefCell::new(None) };
+    static ARTIFACT: Cell<bool> = const { Cell::new(false) };
 }
 
 struct ArtifactScope;
@@ -166,8 +157,8 @@ struct ArtifactScope;
 impl ArtifactScope {
     fn enter() -> Self {
         ARTIFACT.with(|artifact| {
-            let previous = artifact.replace(Some(SharedValues::default()));
-            assert!(previous.is_none(), "analysis codec calls do not nest");
+            let previous = artifact.replace(true);
+            assert!(!previous, "analysis codec calls do not nest");
         });
         Self
     }
@@ -175,79 +166,14 @@ impl ArtifactScope {
 
 impl Drop for ArtifactScope {
     fn drop(&mut self) {
-        ARTIFACT.with(|artifact| artifact.replace(None));
+        ARTIFACT.with(|artifact| artifact.set(false));
     }
 }
 
 /// `skip_serializing_if` for a field JSON reports leave out but the artifact
 /// keeps; pair it with `default`.
 pub fn outside_artifact<T: ?Sized>(_: &T) -> bool {
-    ARTIFACT.with(|artifact| artifact.borrow().is_none())
-}
-
-/// `with` module for an `Option<Arc<T>>` whose sharing matters: each value
-/// is written once, at its first occurrence, and later occurrences name it
-/// by the order of that first occurrence. Only valid inside the artifact
-/// (see [`outside_artifact`]).
-pub mod shared_arc {
-    use super::*;
-
-    pub fn serialize<T: Serialize, S: Serializer>(
-        value: &Option<Arc<T>>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        let Some(value) = value else {
-            return serializer.serialize_none();
-        };
-        let (index, first) = ARTIFACT.with(|artifact| {
-            let mut artifact = artifact.borrow_mut();
-            let written = &mut artifact
-                .as_mut()
-                .expect("shared_arc serializes only inside the artifact")
-                .written;
-            let next = u32::try_from(written.len()).expect("fewer than 2^32 shared values");
-            let index = *written
-                .entry(Arc::as_ptr(value).cast::<()>())
-                .or_insert(next);
-            (index, index == next)
-        });
-        serializer.serialize_some(&(index, first.then_some(value.as_ref())))
-    }
-
-    pub fn deserialize<'de, T, D>(deserializer: D) -> Result<Option<Arc<T>>, D::Error>
-    where
-        T: Deserialize<'de> + Send + Sync + 'static,
-        D: Deserializer<'de>,
-    {
-        let Some((index, value)) = Option::<(u32, Option<T>)>::deserialize(deserializer)? else {
-            return Ok(None);
-        };
-        ARTIFACT.with(|artifact| {
-            let mut artifact = artifact.borrow_mut();
-            let read = &mut artifact
-                .as_mut()
-                .expect("shared_arc deserializes only inside the artifact")
-                .read;
-            let shared = match value {
-                Some(value) => {
-                    let shared = Arc::new(value);
-                    read.insert(index, shared.clone());
-                    shared
-                }
-                None => read
-                    .get(&index)
-                    .ok_or_else(|| {
-                        de::Error::custom(format!("shared value {index} read before written"))
-                    })?
-                    .clone()
-                    .downcast::<T>()
-                    .map_err(|_| {
-                        de::Error::custom(format!("shared value {index} has another type"))
-                    })?,
-            };
-            Ok(Some(shared))
-        })
-    }
+    ARTIFACT.with(|artifact| !artifact.get())
 }
 
 fn encode_ordinal(ordinal: u32) -> i64 {

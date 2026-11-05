@@ -53,15 +53,11 @@ pub struct PurityReason {
     /// report is assembled; older reports without this field still load.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub cause_ref: Option<String>,
-    /// The immutable callee verdict, shared by every call site. Keeping it
-    /// out of serde prevents transitive causes from expanding on the wire.
-    #[serde(
-        default,
-        skip_serializing_if = "analysis_codec::outside_artifact",
-        with = "analysis_codec::shared_arc"
-    )]
+    /// The immutable callee verdict, shared by every call site. Reports use
+    /// `cause_ref`; the saved representation keeps this edge explicitly.
+    #[serde(skip)]
     pub cause: Option<Arc<Purity>>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub span: Span,
 }
 
