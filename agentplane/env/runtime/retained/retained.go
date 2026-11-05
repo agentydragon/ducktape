@@ -62,7 +62,7 @@ func EnsureDirectory(path string) error {
 func syncDirectory(path string) error {
 	file, err := os.Open(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("open directory %s for sync: %w", path, err)
 	}
 	defer file.Close()
 	return file.Sync()
