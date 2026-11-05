@@ -2130,6 +2130,7 @@ beyond the transport track nodes the operator dispatched.
 flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: delivery ownership and service topology]
     SESSION_DATA_OWNERSHIP_DESIGN[Later decision: Session data and service boundaries]
+    KUBERNETES_UID_CHECK_AUDIT[Unscheduled: audit Kubernetes name and UID checks]
     SESSION_IDENTITY_CONTRACT[Decision: Session identity and shared-Environment admission]
     ENVIRONMENT_IDENTITY_BINDING_DESIGN[Decision: Environment SA binding and Session creation order]
     SESSION_MANAGED_IDENTITY[Blocked: Session-managed SA provisioning]
@@ -2241,6 +2242,31 @@ prerequisite for unrelated safe native-first work. See the
 
 **Exit:** an evidence-backed inventory and comparison, a reviewed ownership and database direction,
 and appropriately scoped follow-up work. This node authorizes no service move or data migration.
+
+### `KUBERNETES_UID_CHECK_AUDIT` — audit Kubernetes names and exact-object checks
+
+**Unscheduled review; operator, 2026-11-04.** Inventory Agentplane checks and stored references
+that require a Kubernetes object UID or reject a same-name replacement. Kubernetes RoleBindings
+grant ServiceAccounts by namespace and name, and Flux similarly uses names for ordinary resource
+references; an exact-object check does not automatically improve that authorization boundary.
+Trace representative checks end to end across SA principals, policy and RBAC, Session/History
+ownership, delegated callers, Environment/Pod/VM identity, controller ownership and deletion.
+
+For each check state its intended identity, actual authority and replacement behavior, what breaks
+if it changes, and whether Kubernetes or another enforcement point can enforce the same distinction.
+Compare stable name-based references with exact-object checks backed by a concrete need: token and
+caller authentication, stale-work or Environment-incarnation fences, owner/deletion preconditions,
+and historical attribution. Include the consequences of SA and role-binding recreation, who may
+create Pods or issue tokens under an SA, and revocation/convergence windows. Consider whether a
+check is redundant, mismatched with name-based RBAC, or an essential guard; do not presume either
+that UIDs are always safer or that all references should follow names.
+
+**Exit:** a source-linked inventory with specific keep/change recommendations and independently
+reviewable follow-up slices. For each chosen behavior, explain why its name or UID semantics are
+correct for the real authority and lifecycle, what failure or replacement case they protect, and
+why the plausible alternative is unnecessary or insufficient; identify tradeoffs and uncertainty.
+Preserve current checks until their replacement contract and migration are reviewed. This audit does
+not block the focused Session identity work or authorize a blanket security change.
 
 ### `SESSION_IDENTITY_CONTRACT` — Session identity and shared-Environment admission
 
