@@ -18,7 +18,6 @@ from more_itertools import one
 from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.mcp_edge import connection_service_pb2
-from agentplane.policy_sets import POLICY_BINDINGS_PLURAL
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.system_tests.deployment.stack import Stack
 from agentplane.system_tests.driver import egress_decisions
@@ -76,28 +75,6 @@ async def _wait_app(cluster: Cluster, *, replicas: int) -> None:
             if replicas > 0 and status.get("availableReplicas", 0) >= replicas:
                 return
             await asyncio.sleep(0.5)
-
-
-async def _wait_basic_policy(
-    cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor, policy_objects: mcp.PolicyObjects
-) -> None:
-    inventory = json.loads(await cluster.kubectl("get", POLICY_BINDINGS_PLURAL, "-o", "json"))
-    subject = view.execution_account.account
-    bindings = [
-        binding
-        for binding in inventory["items"]
-        if binding.get("spec", {}).get("subject", {}).get("namespace") == subject.namespace
-        and binding.get("spec", {}).get("subject", {}).get("name") == subject.name
-        and "basic" in binding.get("spec", {}).get("policySets", [])
-    ]
-    if not bindings:
-        name = await policy_objects.create_binding(
-            f"{view.target.name}-delegation-basic", sandbox=view, policy_sets=["basic"]
-        )
-        await policy_objects.wait_actions_ready(name)
-        return
-    for binding in bindings:
-        await policy_objects.wait_actions_ready(binding["metadata"]["name"])
 
 
 async def _cleanup_sandbox(cluster: Cluster, token: str, name: str, uid: str) -> None:
@@ -301,7 +278,7 @@ async def test_external_connection_delegates_without_the_integration_app(
     try:
         view = await wait_until_running(client, created)
         assert view.kubernetes_diagnostics.HasField("pod")
-        await _wait_basic_policy(cluster, view, policy_objects)
+        await policy_objects.ensure_basic_binding(view)
 
         response = await operator_bff.get("/upstream/connections/v1/operator/caller-service-accounts")
         assert response.status_code == 200

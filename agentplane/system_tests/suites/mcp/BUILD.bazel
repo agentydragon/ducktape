@@ -79,7 +79,6 @@ k3s_suite(
     deps = [
         ":conftest",
         "//:conftest",
-        "//agentplane:policy_sets",
         "//agentplane/app/testing:client",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/mcp_edge:connection_service_pb2",
@@ -114,10 +113,8 @@ k3s_suite(
     deps = [
         ":conftest",
         "//:conftest",
-        "//agentplane:policy_sets",
         "//agentplane/action_service:action_service_pb2",
         "//agentplane/app/testing:client",
-        "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests:conftest",
