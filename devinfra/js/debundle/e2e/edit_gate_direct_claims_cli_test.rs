@@ -1,5 +1,6 @@
 //! Direct binding claim mismatches are rejected by pre-write edit gates.
 
+use analysis::DepKind;
 use debundle_e2e_support::GraphFixture;
 use std::fs;
 
@@ -129,6 +130,63 @@ fn mixed_untyped_local_and_typed_import_claims_use_direct_source_gate() {
 
     let report = fixture.json(MERGE);
     assert_eq!(report["gate"], "passed", "{report}");
+}
+
+#[test]
+fn repeated_declarations_require_connected_co_declaration_evidence_for_the_same_binding() {
+    let fixture = GraphFixture::new(
+        "var counter = 1;\nvar counter;\nvar counter = counter + 1;\nconsole.log(counter);\n",
+        &[
+            (
+                "alpha.yaml",
+                "members: [{selector: {binding: {name: counter}}}]\n",
+            ),
+            EMPTY,
+        ],
+    );
+    let original = fixture.dependency_graph();
+    let representative = &original
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding.as_ref() == "counter")
+        })
+        .unwrap()
+        .id;
+
+    // Retain only edges directed toward the representative: claim identity is
+    // an undirected equality even though the dependency graph is directed.
+    let mut incoming_only = original.clone();
+    incoming_only
+        .edges
+        .retain(|edge| edge.edge_kind != DepKind::CoDeclaration || edge.source != *representative);
+    report_io::write_json_gzip(&fixture.graph, &incoming_only).unwrap();
+    assert_valid_merge_gate(&fixture);
+
+    // A dependency of another kind, another binding's equality, and an
+    // unlabelled equality cannot connect this binding's declaration sites.
+    for (kind, binding) in [
+        (DepKind::LazyUse, Some("counter")),
+        (DepKind::CoDeclaration, Some("other")),
+        (DepKind::CoDeclaration, None),
+    ] {
+        let mut graph = incoming_only.clone();
+        for edge in &mut graph.edges {
+            if edge.edge_kind == DepKind::CoDeclaration {
+                edge.edge_kind = kind;
+                edge.binding = binding.map(Into::into);
+            }
+        }
+        report_io::write_json_gzip(&fixture.graph, &graph).unwrap();
+        fixture.assert_rejected_unchanged(MERGE, &["ambiguous declaration source units"]);
+    }
+
+    report_io::write_json_gzip(&fixture.graph, &original).unwrap();
+    let report = fixture.json(MERGE);
+    assert_eq!(report["gate"], "passed", "{report}");
+    fixture.assert_runs("2\n");
 }
 
 #[test]

@@ -431,53 +431,28 @@ pub struct SourceUnitClaimProjection {
 }
 
 /// Per-projection index for mapping local binding spellings to declaration
-/// source units. The report is scanned once; claim resolution then visits only
-/// source units and co-declaration edges for the requested spelling.
-struct LocalBindingIndex {
+/// source units. Connectivity is read from the canonical graph; report metadata
+/// supplies the declaration and edge binding names.
+struct LocalBindingIndex<'a> {
+    input: &'a DependencyGraphInput,
     source_units_by_binding: BTreeMap<String, BTreeSet<SourceUnitId>>,
-    co_declaration_neighbors: BTreeMap<String, BTreeMap<SourceUnitId, BTreeSet<SourceUnitId>>>,
 }
 
-impl LocalBindingIndex {
-    fn from_report(report: &DependencyGraphReport) -> Self {
+impl<'a> LocalBindingIndex<'a> {
+    fn new(input: &'a DependencyGraphInput) -> Self {
         let mut source_units_by_binding = BTreeMap::<String, BTreeSet<SourceUnitId>>::new();
-        let mut source_unit_by_report_id = HashMap::<&str, SourceUnitId>::new();
-        for (index, node) in report.nodes.iter().enumerate() {
-            let source_unit = SourceUnitId(index);
-            source_unit_by_report_id.insert(node.id.as_str(), source_unit);
-            for binding in &node.declared_bindings {
+        for node in input.graph().iter_nodes() {
+            for binding in &input.source_unit_report(node.id).declared_bindings {
                 source_units_by_binding
                     .entry(binding.binding.to_string())
                     .or_default()
-                    .insert(source_unit);
+                    .insert(node.id);
             }
-        }
-
-        let mut co_declaration_neighbors =
-            BTreeMap::<String, BTreeMap<SourceUnitId, BTreeSet<SourceUnitId>>>::new();
-        for edge in &report.edges {
-            if edge.edge_kind != DepKind::CoDeclaration {
-                continue;
-            }
-            let Some(binding) = edge.binding.as_ref() else {
-                continue;
-            };
-            let (Some(&source), Some(&target)) = (
-                source_unit_by_report_id.get(edge.source.as_str()),
-                source_unit_by_report_id.get(edge.target.as_str()),
-            ) else {
-                continue;
-            };
-            let neighbors = co_declaration_neighbors
-                .entry(binding.to_string())
-                .or_default();
-            neighbors.entry(source).or_default().insert(target);
-            neighbors.entry(target).or_default().insert(source);
         }
 
         Self {
+            input,
             source_units_by_binding,
-            co_declaration_neighbors,
         }
     }
 
@@ -497,16 +472,28 @@ impl LocalBindingIndex {
         let start = *candidates.first().expect("multiple candidates exist");
         reached.insert(start);
         let mut pending = vec![start];
-        if let Some(neighbors_by_source_unit) = self.co_declaration_neighbors.get(binding_name) {
-            while let Some(source_unit) = pending.pop() {
-                for next in neighbors_by_source_unit
-                    .get(&source_unit)
-                    .into_iter()
-                    .flatten()
+        let graph = self.input.graph();
+        while let Some(source_unit) = pending.pop() {
+            // Co-declaration is an equality relation, including when the saved
+            // report retains only one direction of an edge.
+            for edge_id in graph
+                .out_edges_of(source_unit)
+                .iter()
+                .chain(graph.in_edges_of(source_unit))
+            {
+                let edge = graph.edge(*edge_id);
+                if edge.reason.kind != DepKind::CoDeclaration
+                    || self.input.edge_report(*edge_id).binding.as_deref() != Some(binding_name)
                 {
-                    if candidates.contains(next) && reached.insert(*next) {
-                        pending.push(*next);
-                    }
+                    continue;
+                }
+                let next = if edge.from == source_unit {
+                    edge.to
+                } else {
+                    edge.from
+                };
+                if candidates.contains(&next) && reached.insert(next) {
+                    pending.push(next);
                 }
             }
         }
@@ -537,7 +524,7 @@ pub fn source_claim_sets_from_post_spec(post_spec: &PostEditSpec) -> Vec<SourceC
 /// distinct from local declarations, and repeated local declarations are
 /// joined only when `dependency_graph.json.gz` carries matching `CoDeclaration` edges.
 pub fn project_source_unit_claims(
-    dependency_graph_report: &DependencyGraphReport,
+    input: &DependencyGraphInput,
     post_spec: &PostEditSpec,
     resolved_claims: &[ResolvedSourceClaims],
 ) -> Result<SourceUnitClaimProjection> {
@@ -545,7 +532,7 @@ pub fn project_source_unit_claims(
         post_spec.modules.len() == resolved_claims.len(),
         "resolved selector results do not match the post-edit module list"
     );
-    let binding_index = LocalBindingIndex::from_report(dependency_graph_report);
+    let binding_index = LocalBindingIndex::new(input);
     let mut projection = SourceUnitClaimProjection::default();
     for (module, resolved) in post_spec.modules.iter().zip(resolved_claims) {
         let mut module_projection = ModuleClaimProjection::default();
@@ -871,8 +858,7 @@ fn gate_post_edit_assignment_with_expected(
         source_lookup.verified,
         &claim_sets,
     )?;
-    let claim_projection =
-        project_source_unit_claims(dependency_graph_report, post_spec, &resolved_claims)?;
+    let claim_projection = project_source_unit_claims(input, post_spec, &resolved_claims)?;
     reject_unresolved_projected_claims(&claim_projection)?;
     match expected {
         ExpectedPostEditClaims::SourceUnits {
