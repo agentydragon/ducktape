@@ -337,6 +337,7 @@ debundle_e2e_test(
         ":graph_support",
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
+        "//devinfra/js/debundle:spec",
     ],
 )
 

@@ -1059,12 +1059,13 @@ fn emit_heap_content_order(
     let mut events = Vec::new();
     for stmt in facts {
         let own = &stmt.heap_contents;
+        let own_heap = stmt.own_heap_content_summary();
         let mut allocations = own.allocations.clone();
         let mut effects = heap_content_cells(&own.reads, &own.writes);
         // Every disjunct that holds is retained as a `HeapBarrierCause`
         // on the edges the barrier emits.
         let mut opaque_causes = BTreeSet::new();
-        if own.opaque {
+        if own_heap.opaque {
             opaque_causes.insert(HeapBarrierCause::ArrayContentEffects);
         }
         if !stmt.dataflow_summarizable() && !stmt.purity.is_pure() {

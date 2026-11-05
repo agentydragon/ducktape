@@ -835,8 +835,20 @@ globalThis`) marks the bindings it flows into (transitively,
   callee, argument evaluation, or unrelated operations in that statement.
   Deferred methods, callbacks and getters retain their later-use obligations.
 
-  The bit is `dataflow_summarizable` in `facts/statement_facts.rs`. Only the
-  bailing statements pay the conservative cost, so the mode is safe
+  The legacy own-syntax opacity bit can also be omitted when the statement
+  carries a `CompletedInitialization` receipt for that exact source owner. The
+  shared interpreter creates this receipt only for the matching root
+  initializer after normal completion and covered `GeneralHeap`, global
+  property, and host-effect domains. `StatementFacts::own_heap_content_summary`
+  supplies the same receipt and own-opacity projection to the initialization
+  effect and heap-frontier consumers. It preserves explicit heap-cell reads,
+  writes, allocations, and receipt dependencies; callee heap opacity and
+  incomplete synchronous execution continue to emit their own barriers.
+  Purity and synchronous-call completeness alone do not discharge the bit.
+
+  The lexical dataflow bit is `dataflow_summarizable` in
+  `facts/statement_facts.rs`. Only the bailing statements pay the conservative
+  cost, so the mode is safe
   on chunks mixing audited and unaudited code, but call-heavy
   top-level code gains little: every statement with an unproven call
   is chained.

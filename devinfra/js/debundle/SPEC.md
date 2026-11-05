@@ -2216,6 +2216,13 @@ expressions, not a general return or cross-module alias analysis. A write
 through a descendant therefore retains the usual global/native barrier, and
 recognized native writes elsewhere in the analyzed program remain effective.
 
+Legacy own-syntax heap opacity is also omitted for an initializer carrying an
+exact same-owner `CompletedInitialization` receipt. The shared interpreter
+issues this receipt only after normal root completion with covered general
+heap, global-property and host-effect domains. This removes only the own
+syntax-opacity bit: explicit heap cells and allocations, receipt dependencies,
+callee heap opacity and incomplete-execution barriers remain.
+
 The census records each input reference actually consumed by a receiver
 refinement. Those dependencies flow into successful native guards, native-call
 identity uses, inferred imported returned-record certificates and uses, and
