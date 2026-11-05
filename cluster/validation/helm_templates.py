@@ -26,7 +26,7 @@ def _get_values_files() -> list[Path]:
         from python.runfiles import Runfiles  # noqa: PLC0415 — not available outside Bazel
 
         root = Runfiles.CreateOrRaise().root()
-        paths = [root / rloc for rloc in _CILIUM_VALUES_RLOCATIONS]
+        paths = [Path(str(root / rloc)) for rloc in _CILIUM_VALUES_RLOCATIONS]
         if all(path.exists() for path in paths):
             return paths
     except ImportError, RuntimeError:
