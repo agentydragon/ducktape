@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
-use clap::Args as ClapArgs;
+use clap::{ArgMatches, Args as ClapArgs, parser::ValueSource};
 use package_args::{collect_package_roots, parse_package_root_kv};
 use pipeline::{RunOutput, TransformRequest, TransformSpecSource, project_analysis};
 use spec_tree::CompileSpecTreeOptions;
@@ -180,4 +180,149 @@ fn required_tree_arg(name: &str, value: &Option<PathBuf>) -> Result<PathBuf> {
     value
         .clone()
         .with_context(|| format!("{name} is required with --tree-config"))
+}
+
+const TREE_INPUT_FLAGS: &[(&str, &str)] = &[
+    ("tree_config", "--tree-config"),
+    ("tree_modules", "--tree-modules"),
+    ("tree_vendor_marks", "--tree-vendor-marks"),
+    ("tree_source_root", "--tree-source-root"),
+    ("out_root", "--out-root"),
+];
+
+fn is_flat_context(matches: &ArgMatches) -> bool {
+    let context_group = <TransformContextArgs as clap::Args>::group_id()
+        .expect("transform context has a Clap argument group");
+    matches.try_contains_id(context_group.as_str()).is_ok()
+        && matches
+            .try_get_one::<PathBuf>("spec")
+            .ok()
+            .flatten()
+            .is_some()
+}
+
+// `run --reports-only` consumes `--out-root` in both input modes and
+// separately checks that the two output roots agree before any work starts.
+fn is_flat_reports_output(matches: &ArgMatches, id: &str) -> bool {
+    id == "out_root"
+        && matches
+            .try_get_one::<PathBuf>("reports_only")
+            .ok()
+            .flatten()
+            .is_some()
+}
+
+/// Validate explicit mode conflicts while Clap retains value origins. Keep
+/// inherited defaults available to tree mode; recurse only into the selected
+/// command. Both executable entry points call this before dispatch.
+pub fn validate_transform_arg_matches(matches: &ArgMatches) -> Result<()> {
+    if is_flat_context(matches) {
+        for &(id, flag) in TREE_INPUT_FLAGS {
+            if !is_flat_reports_output(matches, id)
+                && matches.try_contains_id(id).is_ok()
+                && matches.value_source(id) == Some(ValueSource::CommandLine)
+            {
+                bail!("{flag} cannot be used with --spec; use --tree-config for tree inputs");
+            }
+        }
+    }
+    if let Some((_, selected)) = matches.subcommand() {
+        validate_transform_arg_matches(selected)?;
+    }
+    Ok(())
+}
+
+/// Inactive defaults are omitted from invocation projections. Rendering them
+/// as explicit replay flags would conflict with the selected flat mode.
+pub fn is_inactive_transform_default(matches: &ArgMatches, id: &str) -> bool {
+    is_flat_context(matches)
+        && !is_flat_reports_output(matches, id)
+        && TREE_INPUT_FLAGS.iter().any(|&(input, _)| input == id)
+        && matches.value_source(id) != Some(ValueSource::CommandLine)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::{CommandFactory, FromArgMatches, Parser};
+
+    #[derive(Parser)]
+    struct Args {
+        #[command(flatten)]
+        context: TransformContextArgs,
+    }
+
+    fn resolve(argv: &[&str]) -> Result<TransformRequest> {
+        // Inherited values have a different origin from explicit flags, as do
+        // the existing environment-backed defaults on the real command.
+        let matches = Args::command()
+            .mut_arg("out_root", |arg| {
+                arg.env(None::<&str>).default_value("inherited-output")
+            })
+            .mut_arg("tree_source_root", |arg| {
+                arg.env(None::<&str>).default_value("inherited-source")
+            })
+            .try_get_matches_from(argv)?;
+        validate_transform_arg_matches(&matches)?;
+        Args::from_arg_matches(&matches)?.context.resolve()
+    }
+
+    #[test]
+    fn flat_mode_refuses_every_explicit_tree_input() {
+        for flag in [
+            "--tree-config",
+            "--tree-modules",
+            "--tree-vendor-marks",
+            "--tree-source-root",
+            "--out-root",
+        ] {
+            let error =
+                resolve(&["debundle", "--spec", "flat.yaml", flag, "explicit"]).unwrap_err();
+            assert!(error.to_string().contains(flag), "{error:#}");
+        }
+    }
+
+    #[test]
+    fn flat_mode_keeps_shared_package_inputs_and_ignores_inherited_tree_defaults() {
+        let request = resolve(&[
+            "debundle",
+            "--spec",
+            "flat.yaml",
+            "--package-root",
+            "pkg=package-source",
+            "--packages-root",
+            "all-packages",
+        ])
+        .unwrap();
+        assert_eq!(
+            request.spec_source,
+            TransformSpecSource::Flat {
+                path: "flat.yaml".into()
+            }
+        );
+        assert_eq!(
+            request.package_roots.get("pkg"),
+            Some(&PathBuf::from("package-source"))
+        );
+        assert_eq!(request.packages_root, Some("all-packages".into()));
+    }
+
+    #[test]
+    fn tree_mode_keeps_inherited_source_and_output_defaults() {
+        let request = resolve(&[
+            "debundle",
+            "--tree-config",
+            "tree.yaml",
+            "--tree-modules",
+            "modules",
+            "--tree-vendor-marks",
+            "vendors.yaml",
+        ])
+        .unwrap();
+        let TransformSpecSource::Tree(tree) = request.spec_source else {
+            panic!("expected tree inputs")
+        };
+        assert_eq!(tree.out_root, PathBuf::from("inherited-output"));
+        assert_eq!(tree.source_root, Some("inherited-source".into()));
+    }
 }

@@ -1201,6 +1201,12 @@ rust_library(
     ],
 )
 
+rust_test(
+    name = "transform_command_test",
+    crate = ":transform_command",
+    edition = "2024",
+)
+
 rust_library(
     name = "pipeline",
     srcs = ["pipeline.rs"],
@@ -1637,6 +1643,7 @@ rust_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":transform_command",
+        "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:swc_common",
     ],
