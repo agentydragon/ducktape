@@ -40,11 +40,10 @@ def _wire_database_url(database_url: str) -> str:
     return render_postgresql_url(database_url, "postgresql", query={"sslmode": "disable"})
 
 
-def _migrate(database_url: str, log_path: Path) -> None:
-    migrator = Runfiles.CreateOrRaise().root() / _GATEWAY_BINARY
+def _migrate(binary: Path, database_url: str, log_path: Path) -> None:
     try:
         result = subprocess.run(
-            [migrator, "--migrate-only"],
+            [binary, "--migrate-only"],
             env={"AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": _wire_database_url(database_url)},
             capture_output=True,
             text=True,
@@ -217,10 +216,10 @@ async def run_gateway(
     runner applies the schema before the server starts. Platform gRPC and HTTP use the public
     listeners; Runner connections use each active Sandbox's direct mTLS gRPC server.
     """
-    migration_log = undeclared_outputs_dir() / f"go-runner-gateway-migration-{uuid4().hex}.log"
-    await asyncio.to_thread(_migrate, database_url, migration_log)
-
     binary = Runfiles.CreateOrRaise().root() / _GATEWAY_BINARY
+    migration_log = undeclared_outputs_dir() / f"go-runner-gateway-migration-{uuid4().hex}.log"
+    await asyncio.to_thread(_migrate, binary, database_url, migration_log)
+
     log_path = undeclared_outputs_dir() / f"go-runner-gateway-{uuid4().hex}.log"
     # The database URL and Pod fields stay out of the file, as in deployment, where they come from
     # runtime sources. The explicit empty wake list exercises the authoring schema and Go loader contract.
