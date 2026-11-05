@@ -25,6 +25,14 @@ Source inference already recognizes some private callback containers and local
 constructor results. Check [synchronous analysis limits](../../SPEC.md#synchronous-analysis-limits)
 before adding an assertion for behavior the analyzer already proves.
 
+Before an expensive analysis refresh, identify the effect domain and proof
+consumer behind the rejecting constraint. A source-justified assertion still
+needs a causal path to changing that constraint. In particular, purity and
+lexical-binding assertions do not establish heap locality: an incomplete
+execution remains a heap barrier without the corresponding heap proof. Check
+[the heap-effect rules](../../SPEC.md#dependency-graph-array-ordering) before predicting
+that a purity edit will remove such a frontier.
+
 ## Choose the contract for the established fact
 
 This table routes to the relevant audit. [SPEC](../../SPEC.md) owns the complete
