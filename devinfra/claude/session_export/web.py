@@ -108,11 +108,11 @@ def _health_route(app: FastAPI) -> None:
 def _frontend(app: FastAPI, frontend_dir: Path | None) -> None:
     if frontend_dir is None:
         # Only the server binary packages the SPA; the library is also imported without it, by its own tests.
-        index = Runfiles.CreateOrRaise().root() / _FRONTEND_INDEX
-        if not index.is_file():
+        runfiles_index = Runfiles.CreateOrRaise().root() / _FRONTEND_INDEX
+        if not runfiles_index.is_file():
             logger.warning("the frontend bundle is not present in runfiles")
         else:
-            frontend_dir = Path(str(index)).parent
+            frontend_dir = Path(str(runfiles_index)).parent
     if frontend_dir is not None:
         index = frontend_dir / "index.html"
         if index.is_file():

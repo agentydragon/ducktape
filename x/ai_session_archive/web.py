@@ -145,9 +145,9 @@ def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | No
         ),
     )
     if frontend_dir is None:
-        index = Runfiles.CreateOrRaise().root() / _FRONTEND_INDEX
-        if index.is_file():
-            frontend_dir = Path(str(index)).parent
+        runfiles_index = Runfiles.CreateOrRaise().root() / _FRONTEND_INDEX
+        if runfiles_index.is_file():
+            frontend_dir = Path(str(runfiles_index)).parent
     if frontend_dir is not None:
         index = frontend_dir / "index.html"
 
