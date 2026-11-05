@@ -8,40 +8,112 @@
       "priority": "High",
       "category": "Ownership",
       "title": "Move Augur’s application model contracts out of x/",
-      "refresh_status": "present_at_refresh",
-      "deployment_note": "Cluster documentation at 5c8d1938be says Augur is parked; a live deployment was not verified."
+      "refresh_status": "present_at_current_source_review",
+      "deployment_note": "Current cluster documentation at https://github.com/agentydragon/ducktape/blob/79a2524e7fc9878299c9589312c0ba25df2b50ac/cluster/docs/agent_rbac.md#L523 says Augur is parked; a live deployment was not verified."
     },
     {
       "id": "B",
       "priority": "High",
       "category": "Ownership",
       "title": "Decouple Haku’s schema build from an experimental service implementation",
-      "status": "deferred"
+      "status": "deferred_at_owner_request_as_of_2026-11-02",
+      "refresh_status": "dependency_present_at_current_source_review"
     },
     {
       "id": "J",
       "priority": "Medium",
       "category": "Lint wiring",
       "title": "Untangle checker-only provider dependencies from runtime libraries",
-      "refresh_status": "present_at_refresh",
+      "refresh_status": "partially_addressed_by_open_pull_request",
       "related_pull_request": 11497,
-      "related_pull_request_status": "open_rebased_checks_running",
+      "related_pull_request_status": "open_checks_successful",
       "related_pull_request_scope": "Python and mypy rules plus Props targets; eval-infra and Haku remain follow-up.",
-      "related_pull_request_head": "8476362b721d38a150c681f0df2965b2977ebaca"
+      "related_pull_request_head": "f0f596e8e20e6a6eaa5d842a63b862608fce17fa",
+      "related_pull_request_checked_utc": "2026-11-05T03:20:43Z",
+      "related_pull_request_checks": [
+        {
+          "name": "PR visual review",
+          "status": "completed",
+          "conclusion": "success",
+          "completed_at": "2026-11-04T02:09:21Z"
+        },
+        {
+          "name": "PR visual diffs",
+          "status": "completed",
+          "conclusion": "success",
+          "completed_at": "2026-11-04T02:09:16Z"
+        },
+        {
+          "name": "release",
+          "status": "completed",
+          "conclusion": "skipped",
+          "completed_at": "2026-11-04T01:59:54Z"
+        },
+        {
+          "name": "push-images",
+          "status": "completed",
+          "conclusion": "skipped",
+          "completed_at": "2026-11-04T01:59:54Z"
+        },
+        {
+          "name": "bazel-ci / Test & Build",
+          "status": "completed",
+          "conclusion": "success",
+          "completed_at": "2026-11-04T01:59:54Z"
+        },
+        {
+          "name": "Build artifacts + imports check",
+          "status": "completed",
+          "conclusion": "success",
+          "completed_at": "2026-11-04T01:49:15Z"
+        },
+        {
+          "name": "Pre-commit checks",
+          "status": "completed",
+          "conclusion": "success",
+          "completed_at": "2026-11-04T01:49:41Z"
+        },
+        {
+          "name": "github.event.pull_request.head.repo.full_name != github.repository &&\n    'Build artifacts + imports check' ||\n    'Fork Nix check not applicable'",
+          "status": "completed",
+          "conclusion": "skipped",
+          "completed_at": "2026-11-04T01:47:08Z"
+        },
+        {
+          "name": "nix-wheel-check",
+          "status": "completed",
+          "conclusion": "skipped",
+          "completed_at": "2026-11-04T01:47:08Z"
+        },
+        {
+          "name": "bazel-ci",
+          "status": "completed",
+          "conclusion": "skipped",
+          "completed_at": "2026-11-04T01:47:08Z"
+        },
+        {
+          "name": "fork-context / Resolve fork PR context",
+          "status": "completed",
+          "conclusion": "skipped",
+          "completed_at": "2026-11-04T01:47:08Z"
+        }
+      ]
     },
     {
       "id": "K",
       "priority": "Medium",
       "category": "Lint wiring",
       "title": "Make whole-program ESLint inputs auditable across package boundaries",
-      "refresh_status": "present_at_refresh"
+      "refresh_status": "present_at_current_source_review",
+      "current_manual_child_group_count": 12,
+      "previous_manual_child_group_count_at_2026_11_02": 11
     },
     {
       "id": "M",
       "priority": "Low",
       "category": "Dead target candidate",
       "title": "Review the frozen benchmark filegroup as an entry point",
-      "refresh_status": "present_at_refresh"
+      "refresh_status": "wrapper_present; latest_no_edge_query_at_2026-11-02"
     }
   ],
   "filegroup_query": {
@@ -99,5 +171,18 @@
       ]
     },
     "note": "The original top-level source_commit and query evidence remain tied to the original snapshot."
+  },
+  "current_source_review": {
+    "source_commit": "79a2524e7fc9878299c9589312c0ba25df2b50ac",
+    "checked_utc": "2026-11-05T03:20:43Z",
+    "scope": "Rechecked findings A, B, J, K and M against current source and inspected PR 11497.",
+    "bazel_queries_rerun": false,
+    "findings": {
+      "A": "Experimental model imports and BUILD dependencies remain.",
+      "B": "Experimental schema exporter dependencies remain; owner status was last recorded as deferred on 2026-11-02.",
+      "J": "Partially addressed; PR 11497 remains open and its relevant hosted checks succeeded.",
+      "K": "Manual whole-program ESLint roster remains and now lists 12 child groups.",
+      "M": "Wrapper remains; latest no-incoming-edge query is the dated 2026-11-02 result."
+    }
   }
 }
