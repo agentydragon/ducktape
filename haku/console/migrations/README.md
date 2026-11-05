@@ -19,9 +19,10 @@ Dumps are independent verification artifacts, not executable migration code.
 The original chain at `b78b07ffce` ran in disposable PostgreSQL CI:
 
 - BuildBuddy invocation `f6cf5575-0d05-56d2-9cd4-868341e766f4`.
-- Target `//haku/console:test_schema_baseline`.
+- Historical target `//haku/console:test_schema_baseline` (now consolidated into
+  `//haku/console:test_agent_authority_schema`).
 - Artifact `test.outputs/haku_console_schema.sql`.
 
 That capture verified `0135` when it landed; later migrations are ordinary children. Current-schema
-tests: `test_agent_authority_schema.py` (ORM, row preservation) and `test_schema_baseline.py`
-(upgrade-at-head leaves the schema and object OIDs untouched).
+checks live in `test_agent_authority_schema.py`: ORM agreement, row preservation, enum values, and
+head reapplication preserving the schema dump, public relation OIDs, migration stamp and seeded row.
