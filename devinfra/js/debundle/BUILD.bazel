@@ -586,6 +586,7 @@ rust_library(
     name = "analysis",
     srcs = [
         "analysis_inputs.rs",
+        "analysis_inputs/saved.rs",
         "analysis_provenance.rs",
         "assignment_assembly.rs",
         "atomic_groups.rs",
@@ -677,6 +678,7 @@ rust_library(
         "purity/ts_enum_iife.rs",
         "reports/author_inputs.rs",
         "reports/mod.rs",
+        "reports/saved.rs",
         "reports/schema.rs",
         "swc_parallel.rs",
     ],
