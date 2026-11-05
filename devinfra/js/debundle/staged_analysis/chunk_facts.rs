@@ -48,7 +48,7 @@ pub fn analyze_logical_chunk(
     file: Option<&str>,
     export_reentry_policies: &BTreeMap<ChunkId, ExportReentryPolicy>,
     projection: &AnalysisProjection<'_>,
-    cross_module_purities: &super::cross_module::CrossModulePurities,
+    program_summary: &super::program_summary::ProgramSummary,
 ) -> Result<ChunkFactAnalysis> {
     let chunk_id_interned = artifact
         .chunk_table
@@ -79,14 +79,14 @@ pub fn analyze_logical_chunk(
         },
         ChunkFacts::Compute(structural_analysis),
         projection,
-        cross_module_purities,
+        program_summary,
     )?;
     emit_debundle_progress(chunk_id, "compute_chunk_analysis", "end");
     Ok(facts)
 }
 
 /// What a chunk's fact analysis reads besides the projection and the
-/// cross-module summaries: the chunk's source and where its dynamic imports
+/// program summary: the chunk's source and where its dynamic imports
 /// land. It never sees the chunk's plan builder or assignment.
 pub struct ChunkFactsContext<'a> {
     pub artifact: &'a ChunkBundle,
@@ -108,14 +108,14 @@ pub enum ChunkFacts<'a> {
 }
 
 /// Analyze one chunk's facts from its source, its spec projection and the
-/// cross-module summaries, or check facts loaded for it. Also returns the
+/// program summary, or check facts loaded for it. Also returns the
 /// imported callable summaries the analysis consumed, which the chunk report
 /// records.
 pub fn compute_logical_chunk_facts(
     context: ChunkFactsContext<'_>,
     facts: ChunkFacts<'_>,
     projection: &AnalysisProjection<'_>,
-    cross_module_purities: &super::cross_module::CrossModulePurities,
+    program_summary: &super::program_summary::ProgramSummary,
 ) -> Result<(ChunkFactAnalysis, BTreeMap<String, CallableSummary>)> {
     let ChunkFactsContext {
         artifact,
@@ -159,44 +159,44 @@ pub fn compute_logical_chunk_facts(
                 .get(chunk_id)
                 .cloned()
                 .unwrap_or_default(),
-            native_integrity: cross_module_purities.native_integrity.clone(),
+            native_integrity: program_summary.native_integrity.clone(),
             current_chunk_id: Some(chunk_id.to_string()),
             ..AnalysisInputs::default()
         };
-        inputs.assumptions.captured_value_inputs = cross_module_purities
+        inputs.assumptions.captured_value_inputs = program_summary
             .value_inputs
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
-        inputs.assumptions.native_operation_inputs = cross_module_purities
+        inputs.assumptions.native_operation_inputs = program_summary
             .native_operation_inputs
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
-        inputs.inferred_set_constructions = cross_module_purities
+        inputs.inferred_set_constructions = program_summary
             .inferred_set_constructions
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
-        inputs.stable_set_spreads = cross_module_purities
+        inputs.stable_set_spreads = program_summary
             .stable_set_spreads
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
-        inputs.assumptions.argument_inputs = cross_module_purities
+        inputs.assumptions.argument_inputs = program_summary
             .argument_inputs
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
         inputs.assumptions.reentry_free_operations = host_behavior.reentry_free_operations.clone();
         inputs.assumptions.predefined_globals = host_behavior.predefined_globals;
-        inputs.assumptions.bundle_globals = cross_module_purities.bundle_globals.clone();
-        inputs.imported_purities = cross_module_purities
+        inputs.assumptions.bundle_globals = program_summary.bundle_globals.clone();
+        inputs.imported_purities = program_summary
             .bindings
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
-        inputs.imported_values = cross_module_purities
+        inputs.imported_values = program_summary
             .values
             .get(chunk_id)
             .cloned()
@@ -204,7 +204,7 @@ pub fn compute_logical_chunk_facts(
         // Definition-side `pure_members` assertions projected onto this
         // chunk's local import bindings; merged (not overwritten) so spec
         // member annotations and cross-module assertions coexist.
-        if let Some(member_sets) = cross_module_purities.members.get(chunk_id) {
+        if let Some(member_sets) = program_summary.members.get(chunk_id) {
             for (binding, members) in member_sets {
                 inputs
                     .assumptions
@@ -216,49 +216,40 @@ pub fn compute_logical_chunk_facts(
         }
         // Definition-side `fluent_exports` assertions projected onto this
         // chunk's local import bindings (deep-purity chain roots).
-        if let Some(fluent) = cross_module_purities.fluent.get(chunk_id) {
+        if let Some(fluent) = program_summary.fluent.get(chunk_id) {
             inputs
                 .assumptions
                 .fluent_bindings
                 .extend(fluent.iter().cloned());
         }
-        if let Some(constructors) = cross_module_purities.constructors.get(chunk_id) {
+        if let Some(constructors) = program_summary.constructors.get(chunk_id) {
             inputs
                 .assumptions
                 .declared_pure_new
                 .extend(constructors.iter().cloned());
         }
-        if let Some(callables) = cross_module_purities.imported_callables.get(chunk_id) {
+        if let Some(callables) = program_summary.imported_callables.get(chunk_id) {
             inputs.merge_imported_callables(callables.clone());
         }
-        if let Some(factories) = cross_module_purities
-            .retained_callback_factories
-            .get(chunk_id)
-        {
+        if let Some(factories) = program_summary.retained_callback_factories.get(chunk_id) {
             inputs
                 .assumptions
                 .retained_callback_factories
                 .extend(factories.clone());
         }
-        if let Some(callbacks) = cross_module_purities
-            .no_reentry_callback_exports
-            .get(chunk_id)
-        {
+        if let Some(callbacks) = program_summary.no_reentry_callback_exports.get(chunk_id) {
             inputs
                 .assumptions
                 .no_reentry_callback_exports
                 .extend(callbacks.clone());
         }
-        if let Some(constructors) = cross_module_purities
-            .retained_callback_constructors
-            .get(chunk_id)
-        {
+        if let Some(constructors) = program_summary.retained_callback_constructors.get(chunk_id) {
             inputs
                 .assumptions
                 .retained_callback_constructors
                 .extend(constructors.clone());
         }
-        if let Some(members) = cross_module_purities
+        if let Some(members) = program_summary
             .retained_callback_factory_members
             .get(chunk_id)
         {
@@ -267,46 +258,37 @@ pub fn compute_logical_chunk_facts(
                 .retained_callback_factory_members
                 .extend(members.clone());
         }
-        if let Some(factories) = cross_module_purities
-            .inline_callback_factories
-            .get(chunk_id)
-        {
+        if let Some(factories) = program_summary.inline_callback_factories.get(chunk_id) {
             inputs
                 .assumptions
                 .inline_callback_factories
                 .extend(factories.iter().cloned());
         }
-        if let Some(members) = cross_module_purities
-            .namespace_independent_members
-            .get(chunk_id)
-        {
+        if let Some(members) = program_summary.namespace_independent_members.get(chunk_id) {
             inputs
                 .assumptions
                 .namespace_independent_members
                 .extend(members.clone());
         }
-        if let Some(members) = cross_module_purities.callback_factory_members.get(chunk_id) {
+        if let Some(members) = program_summary.callback_factory_members.get(chunk_id) {
             inputs
                 .assumptions
                 .callback_factory_members
                 .extend(members.clone());
         }
-        if let Some(members) = cross_module_purities.no_reentry_members.get(chunk_id) {
+        if let Some(members) = program_summary.no_reentry_members.get(chunk_id) {
             inputs
                 .assumptions
                 .no_reentry_members
                 .extend(members.clone());
         }
-        if let Some(members) = cross_module_purities
-            .no_reentry_record_members
-            .get(chunk_id)
-        {
+        if let Some(members) = program_summary.no_reentry_record_members.get(chunk_id) {
             inputs
                 .assumptions
                 .no_reentry_record_members
                 .extend(members.clone());
         }
-        if let Some(bindings) = cross_module_purities.no_reentry_exports.get(chunk_id) {
+        if let Some(bindings) = program_summary.no_reentry_exports.get(chunk_id) {
             inputs
                 .assumptions
                 .no_reentry_exports
@@ -336,16 +318,16 @@ pub fn compute_logical_chunk_facts(
         ChunkFacts::Compute(structural_analysis) => {
             let structural_analysis = analysis::facts::complete_chunk_structural_with_inputs(
                 structural_analysis,
-                cross_module_purities
+                program_summary
                     .native_operation_inputs
                     .get(chunk_id)
                     .map(Vec::as_slice)
                     .unwrap_or_default(),
-                cross_module_purities
+                program_summary
                     .stable_set_spreads
                     .get(chunk_id)
                     .unwrap_or(&BTreeMap::new()),
-                cross_module_purities
+                program_summary
                     .inferred_set_constructions
                     .get(chunk_id)
                     .unwrap_or(&BTreeMap::new()),

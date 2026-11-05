@@ -405,7 +405,7 @@ pub(super) struct GraphConstructionContext<'a> {
 pub(super) fn finish_logical_chunk(
     claimed: ClaimedLogicalChunk<'_>,
     projection: &AnalysisProjection<'_>,
-    cross_module_purities: &super::cross_module::CrossModulePurities,
+    program_summary: &super::program_summary::ProgramSummary,
     loaded_facts: Option<ChunkFactAnalysis>,
     program_graph: &ProgramGraphOutput<'_>,
     graph_context: GraphConstructionContext<'_>,
@@ -493,7 +493,7 @@ pub(super) fn finish_logical_chunk(
             None => ChunkFacts::Compute(structural_analysis),
         },
         projection,
-        cross_module_purities,
+        program_summary,
     )?;
     analysis.apply_initializer_binding_effects(&source_only_initializer_bindings);
     analysis
@@ -658,7 +658,7 @@ pub(super) fn finish_logical_chunk(
         coarsening_rounds += 1;
     };
     let redundant_purity_hints = analysis.redundant_purity_hints;
-    let stable_set_intervals = cross_module_purities
+    let stable_set_intervals = program_summary
         .stable_set_spreads
         .get(chunk_id)
         .map(|intervals| intervals.values().cloned().collect::<Vec<_>>())

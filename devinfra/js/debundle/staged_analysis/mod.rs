@@ -22,9 +22,9 @@ pub mod analysis_artifact;
 pub mod analysis_projection;
 pub mod chunk_facts;
 mod command;
-pub mod cross_module;
 pub mod export_policies;
 pub mod loader_surface;
+pub mod program_summary;
 pub mod progress;
 pub use analysis_projection::AnalysisSpec;
 pub use command::{AnalyzeArgs, analyze_cli, collect_package_roots, parse_package_root_kv};
@@ -153,7 +153,7 @@ fn context_ordinals(
     artifact: &ChunkBundle,
     analysed_chunk_ids: &[String],
     file: Option<&str>,
-    reparsed: &BTreeMap<ChunkId, cross_module::ReparsedEntry>,
+    reparsed: &BTreeMap<ChunkId, program_summary::ReparsedEntry>,
 ) -> Result<ContextOrdinals> {
     let mut modules = Vec::new();
     for chunk_id in analysed_chunk_ids {
@@ -193,7 +193,7 @@ pub fn load_analysis(
     artifact: &ChunkBundle,
     analysed_chunk_ids: &[String],
     file: Option<&str>,
-    reparsed: &BTreeMap<ChunkId, cross_module::ReparsedEntry>,
+    reparsed: &BTreeMap<ChunkId, program_summary::ReparsedEntry>,
     provenance: Option<&GraphProvenance>,
     analysis_engine_sha256: &str,
 ) -> Result<(AnalysisArtifactHeader, AnalysisArtifactBody)> {
@@ -276,23 +276,25 @@ pub fn analyze_program(
         .iter()
         .map(|(chunk_id, report)| (*chunk_id, report.policy.clone()))
         .collect();
-    let cross_module_chunk_closure = cross_module::selected_static_import_closure(
+    let program_summary_chunk_closure = program_summary::selected_static_import_closure(
         &artifact,
         &artifact_indexes,
         &selected_chunk_ids,
     )?;
     let projection = spec.projection(resolved_export_purity.as_ref());
-    let reparsed =
-        cross_module::reparse_unretained_entries(&artifact, Some(&cross_module_chunk_closure));
-    let cross_module = cross_module::collect_cross_module_imported_purities(
+    let reparsed = program_summary::reparse_unretained_entries(
+        &artifact,
+        Some(&program_summary_chunk_closure),
+    );
+    let program_summary = program_summary::collect_program_summary(
         &artifact,
         &artifact_indexes,
         &projection,
-        cross_module::CrossModuleAnalysisOptions {
+        program_summary::ProgramSummaryOptions {
             graph_provenance: Some(graph_provenance),
             replacement_packages: &vendor_plan.replacement_packages(),
         },
-        Some(&cross_module_chunk_closure),
+        Some(&program_summary_chunk_closure),
         &reparsed,
     )?;
     // Reparsed entries are no longer needed once cross-module analysis and
@@ -318,7 +320,7 @@ pub fn analyze_program(
                             spec.entry_file.as_deref(),
                             &export_reentry_policies,
                             &projection,
-                            &cross_module,
+                            &program_summary,
                         )
                         .map(|facts| (chunk_id.clone(), facts))
                     })
@@ -333,7 +335,7 @@ pub fn analyze_program(
         chunk_sources: chunk_source_digests(graph_provenance),
     };
     let body = AnalysisArtifactBody {
-        cross_module,
+        program_summary,
         export_reentry: export_reentry_reports
             .into_iter()
             .map(|(chunk_id, report)| (artifact.chunk_table.name(chunk_id).to_string(), report))
