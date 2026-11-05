@@ -323,6 +323,7 @@ fn run_bindings_rename_cmd(args: BindingsRenameArgs) -> Result<()> {
 fn run_bindings_assign_cmd(
     args: BindingsAssignArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
 ) -> Result<()> {
     use std::io::Read;
     let mut moves: Vec<Move> = Vec::new();
@@ -353,7 +354,7 @@ fn run_bindings_assign_cmd(
                 transform: &context.transform,
                 analysis: AnalysisArtifactInput {
                     path: &context.analysis_path,
-                    analysis_engine_sha256: analysis_identity::ANALYSIS_ENGINE_SHA256,
+                    analysis_engine_sha256,
                 },
                 graph_source: context.graph_source,
             });
@@ -377,6 +378,7 @@ fn run_bindings_assign_cmd(
 fn run_bindings_unassign_cmd(
     args: BindingsUnassignArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
 ) -> Result<()> {
     let candidate_context = args.effect_assessment.resolve(&args.edit, source_context)?;
     let effect_assessment =
@@ -386,7 +388,7 @@ fn run_bindings_unassign_cmd(
                 transform: &context.transform,
                 analysis: AnalysisArtifactInput {
                     path: &context.analysis_path,
-                    analysis_engine_sha256: analysis_identity::ANALYSIS_ENGINE_SHA256,
+                    analysis_engine_sha256,
                 },
                 graph_source: context.graph_source,
             });
@@ -443,12 +445,17 @@ fn print_assign_outcome(out: &AssignOutcome, format: OutputFormat) -> Result<()>
 pub(super) fn run(
     args: BindingsNs,
     source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
 ) -> Result<()> {
     match args.command {
         BindingsNsCommand::Comment(c) => run_binding_comment_cmd(c),
         BindingsNsCommand::List(l) => run_bindings_list_cmd(l),
         BindingsNsCommand::Rename(r) => run_bindings_rename_cmd(r),
-        BindingsNsCommand::Assign(a) => run_bindings_assign_cmd(*a, source_context),
-        BindingsNsCommand::Unassign(u) => run_bindings_unassign_cmd(*u, source_context),
+        BindingsNsCommand::Assign(a) => {
+            run_bindings_assign_cmd(*a, source_context, analysis_engine_sha256)
+        }
+        BindingsNsCommand::Unassign(u) => {
+            run_bindings_unassign_cmd(*u, source_context, analysis_engine_sha256)
+        }
     }
 }

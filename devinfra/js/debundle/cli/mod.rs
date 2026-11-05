@@ -466,7 +466,7 @@ fn cli_command() -> clap::Command {
 
 /// Parse the current process arguments with Clap metadata available for
 /// resolving environment values and defaults, then dispatch the command.
-pub fn run_debundle_cli_from_process() -> ExitCode {
+pub fn run_debundle_cli_from_process(analysis_engine_sha256: &'static str) -> ExitCode {
     let raw_argv = std::env::args_os().collect::<Vec<_>>();
     let command = cli_command();
     let matches = command.clone().get_matches_from(raw_argv.clone());
@@ -491,7 +491,7 @@ pub fn run_debundle_cli_from_process() -> ExitCode {
         } else {
             None
         };
-        run_debundle_cli(args, invocation)
+        run_debundle_cli(args, invocation, analysis_engine_sha256)
     })();
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -513,7 +513,11 @@ pub fn run_debundle_cli_from_process() -> ExitCode {
     }
 }
 
-fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) -> Result<()> {
+fn run_debundle_cli(
+    args: DebundleArgs,
+    invocation: Option<ResolvedInvocation>,
+    analysis_engine_sha256: &'static str,
+) -> Result<()> {
     if let Some(record) = invocation {
         if let Some(path) = &args.invocation.invocation_out {
             let mut bytes = serde_json::to_vec_pretty(&record)?;
@@ -605,7 +609,7 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
                     .as_deref()
                     .map(|path| pipeline::AnalysisArtifactInput {
                         path,
-                        analysis_engine_sha256: analysis_identity::ANALYSIS_ENGINE_SHA256,
+                        analysis_engine_sha256,
                     }),
             )?;
             if output == RunOutput::DryRun {
@@ -613,9 +617,13 @@ fn run_debundle_cli(args: DebundleArgs, invocation: Option<ResolvedInvocation>) 
             }
             Ok(())
         }
-        DebundleCommand::Analyze(args) => args.run(analysis_identity::ANALYSIS_ENGINE_SHA256),
-        DebundleCommand::Bindings(args) => bindings_commands::run(args, source_context.as_ref()),
-        DebundleCommand::Modules(args) => modules_commands::run(args, source_context.as_ref()),
+        DebundleCommand::Analyze(args) => args.run(analysis_engine_sha256),
+        DebundleCommand::Bindings(args) => {
+            bindings_commands::run(args, source_context.as_ref(), analysis_engine_sha256)
+        }
+        DebundleCommand::Modules(args) => {
+            modules_commands::run(args, source_context.as_ref(), analysis_engine_sha256)
+        }
         DebundleCommand::Atoms(args) => inspection_commands::run_atoms(args),
         DebundleCommand::Coverage(args) => {
             inspection_commands::run_coverage(args, source_context.as_ref())

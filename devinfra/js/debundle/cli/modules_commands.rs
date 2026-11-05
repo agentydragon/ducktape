@@ -11,7 +11,6 @@ use crate::emit_report;
 use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use crate::module_apply::{ModulesApplyArgs, run_modules_apply};
 use crate::outcome::{emit_gate_rejection_json, print_outcome_json};
-use analysis_identity::ANALYSIS_ENGINE_SHA256;
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Subcommand};
 use graph_provenance::VerifiedGraphSourceContext;
@@ -660,6 +659,7 @@ fn run_module_decompose(
 fn run_modules_refine(
     args: ModulesRefineArgs,
     source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
 ) -> Result<()> {
     let text = if args.batch == "-" {
         let mut text = String::new();
@@ -688,7 +688,7 @@ fn run_modules_refine(
                 transform: &context.transform,
                 analysis: pipeline::AnalysisArtifactInput {
                     path: &context.analysis_path,
-                    analysis_engine_sha256: ANALYSIS_ENGINE_SHA256,
+                    analysis_engine_sha256,
                 },
                 graph_source: context.graph_source,
             });
@@ -762,11 +762,12 @@ fn render_plan_work_text(report: &peel::PlanWorkReport, out: &mut String) {
 pub(super) fn run(
     args: ModulesNs,
     source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
 ) -> Result<()> {
     match args.command {
         ModulesNsCommand::Comment(c) => run_module_comment_cmd(c),
-        ModulesNsCommand::Merge(m) => run_merge(*m, source_context),
-        ModulesNsCommand::Delete(d) => run_delete(*d, source_context),
+        ModulesNsCommand::Merge(m) => run_merge(*m, source_context, analysis_engine_sha256),
+        ModulesNsCommand::Delete(d) => run_delete(*d, source_context, analysis_engine_sha256),
         ModulesNsCommand::Propose(p) => {
             let report = run_plan_work_report(&p, source_context)?;
             emit_report(
@@ -777,8 +778,12 @@ pub(super) fn run(
             )
         }
         ModulesNsCommand::Decompose(args) => run_module_decompose(args, source_context),
-        ModulesNsCommand::Apply(args) => run_modules_apply(args, source_context),
-        ModulesNsCommand::Refine(args) => run_modules_refine(args, source_context),
+        ModulesNsCommand::Apply(args) => {
+            run_modules_apply(args, source_context, analysis_engine_sha256)
+        }
+        ModulesNsCommand::Refine(args) => {
+            run_modules_refine(args, source_context, analysis_engine_sha256)
+        }
         ModulesNsCommand::List(args) => run_modules_list(args),
     }
 }
