@@ -2135,12 +2135,16 @@ pub struct Member {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub name: Option<String>,
-    pub selector: MemberSelector,
+    /// Raw authored selector syntax. Keep this permissive so invalid YAML can
+    /// still be listed and repaired; semantic code validates it before use.
+    pub selector: RawMemberSelector,
 }
 
+/// The permissive selector shape stored in module YAML. It preserves missing
+/// and conflicting selector keys for validation diagnostics and repair tools.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct MemberSelector {
+pub struct RawMemberSelector {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binding: Option<BindingSelector>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2178,7 +2182,7 @@ pub struct CrossRefSelector {
     pub kind: Option<BindingSourceKind>,
 }
 
-/// The validated cross-reference target (`MemberSelector::selected` resolves the
+/// The validated cross-reference target (`RawMemberSelector::validate` resolves the
 /// `references`/`aliases` one-of into this).
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct CrossRefTarget {
@@ -2244,7 +2248,7 @@ pub struct ReadsMemberSelector {
     pub kind: Option<BindingSourceKind>,
 }
 
-/// The validated `reads_member` target (`MemberSelector::selected` resolves the
+/// The validated `reads_member` target (`RawMemberSelector::validate` resolves the
 /// selector into this). `member` is always present; `object`/`kind` narrow it.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ReadsMemberTarget {
@@ -2291,7 +2295,7 @@ pub struct MemberOfModuleSelector {
     pub kind: Option<BindingSourceKind>,
 }
 
-/// The validated `member_of_module` target (`MemberSelector::selected` resolves
+/// The validated `member_of_module` target (`RawMemberSelector::validate` resolves
 /// the selector into this). `module`/`member` are always present; `kind` narrows.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct MemberOfModuleTarget {
@@ -2351,7 +2355,7 @@ pub struct PassedToCallSelector {
     pub kind: Option<BindingSourceKind>,
 }
 
-/// The validated `passed_to_call` target (`MemberSelector::selected` resolves the
+/// The validated `passed_to_call` target (`RawMemberSelector::validate` resolves the
 /// selector into this). `callee_member` is always present; `object`/`arg_index`/
 /// `kind` narrow it.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -2402,7 +2406,7 @@ pub struct MakesDecorateCallSelector {
     pub kind: Option<BindingSourceKind>,
 }
 
-/// The validated `makes_decorate_call` target (`MemberSelector::selected` resolves
+/// The validated `makes_decorate_call` target (`RawMemberSelector::validate` resolves
 /// the selector into this). `class` is always present; `member`/`kind` narrow it.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct MakesDecorateCallTarget {
@@ -2450,7 +2454,7 @@ pub struct IntrinsicAliasSelector {
     pub referenced_by: String,
 }
 
-/// The validated `intrinsic_alias` target (`MemberSelector::selected` resolves the
+/// The validated `intrinsic_alias` target (`RawMemberSelector::validate` resolves the
 /// selector into this). Both fields are always present.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct IntrinsicAliasTarget {
@@ -2476,8 +2480,12 @@ pub struct BindingSelector {
     pub kind: Option<BindingSourceKind>,
 }
 
-impl MemberSelector {
-    pub fn selected(&self) -> std::result::Result<MemberSelectorSpec, MemberSelectorError> {
+impl RawMemberSelector {
+    /// Normalize authored selector syntax into the existing semantic union.
+    /// This is intentionally fallible: callers that edit specs can retain the
+    /// raw value after reporting the error, while semantic consumers require
+    /// the returned `MemberSelectorSpec`.
+    pub fn validate(&self) -> std::result::Result<MemberSelectorSpec, MemberSelectorError> {
         match (
             &self.binding,
             &self.cross_ref,
@@ -2674,24 +2682,24 @@ mod tests {
 
     #[test]
     fn cross_ref_requires_exactly_one_relation() {
-        let both: MemberSelector =
+        let both: RawMemberSelector =
             serde_json::from_str(r#"{ "cross_ref": { "references": "A", "aliases": "B" } }"#)
                 .unwrap();
-        assert!(both.selected().is_err(), "both relations must be rejected");
+        assert!(both.validate().is_err(), "both relations must be rejected");
 
-        let neither: MemberSelector =
+        let neither: RawMemberSelector =
             serde_json::from_str(r#"{ "cross_ref": { "kind": "class_declaration" } }"#).unwrap();
-        assert!(neither.selected().is_err(), "no relation must be rejected");
+        assert!(neither.validate().is_err(), "no relation must be rejected");
     }
 
     #[test]
     fn cross_ref_conflicts_with_other_selector_kinds() {
-        let selector: MemberSelector = serde_json::from_str(
+        let selector: RawMemberSelector = serde_json::from_str(
             r#"{ "binding": { "name": "x" }, "cross_ref": { "references": "A" } }"#,
         )
         .unwrap();
         assert!(
-            selector.selected().is_err(),
+            selector.validate().is_err(),
             "a member must use exactly one selector kind",
         );
     }

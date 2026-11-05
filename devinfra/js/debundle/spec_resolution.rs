@@ -246,7 +246,7 @@ pub fn build_members(
     let mut requests = members
         .iter()
         .map(|m| {
-            let selected = m.selector.selected()?;
+            let selected = m.selector.validate()?;
             let kind_label = selected.selector_kind_label();
             // A solver-resolved member's public export name can't default to a
             // binding name — the binding isn't known until the selector resolves

@@ -197,7 +197,7 @@ fn binding_matches_in_doc(
         })
     };
     for (member_index, member) in doc.members.iter().enumerate() {
-        let identity = match member.selector.selected() {
+        let identity = match member.selector.validate() {
             Ok(MemberSelectorSpec::Binding(binding)) => {
                 BindingIdentity::DirectBindingIdentifier { name: binding.name }
             }

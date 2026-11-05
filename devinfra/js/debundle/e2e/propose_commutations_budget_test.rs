@@ -5,7 +5,7 @@
 
 use debundle_e2e_support::*;
 use serde_json::Value;
-use spec::{BindingSelector, Member as SpecMember, MemberSelector};
+use spec::{BindingSelector, Member as SpecMember, RawMemberSelector};
 use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
@@ -33,7 +33,7 @@ fn many_pairs_beside_many_unrelated_edges_fit_the_budget() {
         let name = format!("step{step}");
         modules[step % 2].1.members.push(SpecMember {
             name: Some(name.clone()),
-            selector: MemberSelector {
+            selector: RawMemberSelector {
                 binding: Some(BindingSelector { name, kind: None }),
                 ..Default::default()
             },

@@ -48,6 +48,43 @@ fn module_readers_agree_on_invalid_yaml() {
 }
 
 #[test]
+fn malformed_member_selector_remains_listable_and_renamable() {
+    let fixture = GraphFixture::rejected(
+        "const value = 1; console.log(value);",
+        &[(
+            "value.yaml",
+            "members: [{name: OldName, selector: {binding: {name: value}, cross_ref: {references: Anchor}}}]",
+        )],
+    );
+
+    let listed = fixture.json(&["bindings", "list"]);
+    assert_eq!(
+        listed["bindings"][0]["identity"]["kind"],
+        "direct_binding_identifier"
+    );
+    assert_eq!(listed["bindings"][0]["identity"]["name"], "value");
+    assert_eq!(listed["bindings"][0]["readable_name"], "OldName");
+
+    let renamed = fixture.json(&["bindings", "rename", "value", "NewName", "--no-verify"]);
+    assert_eq!(renamed["identity"]["name"], "value");
+    let doc = module(&fixture, "value.yaml");
+    assert_eq!(doc["members"][0]["name"], "NewName");
+    assert_eq!(doc["members"][0]["selector"]["binding"]["name"], "value");
+    assert_eq!(
+        doc["members"][0]["selector"]["cross_ref"]["references"],
+        "Anchor"
+    );
+
+    let validation = fixture.command(&["spec", "selector-debt"]);
+    let stderr = String::from_utf8_lossy(&validation.stderr);
+    assert!(
+        !validation.status.success(),
+        "accepted conflicting selector"
+    );
+    assert!(stderr.contains("exactly one of"), "{stderr}");
+}
+
+#[test]
 fn list_filters_cover_members_and_source_match_bindings() {
     let fixture = GraphFixture::new(
         "const rawValue = 1; const rawOther = 2; const finalValue = 3; console.log(rawValue + rawOther + finalValue);",

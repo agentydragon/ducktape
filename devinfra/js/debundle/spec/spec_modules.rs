@@ -174,7 +174,7 @@ fn read_binding_patches_file(path: &Path) -> Result<BindingPatchesFile> {
 pub fn module_claims(module: ModuleFile) -> Result<ModuleClaims> {
     let mut claims = ModuleClaims::default();
     for member in module.members {
-        let selector = member.selector.selected()?;
+        let selector = member.selector.validate()?;
         let name = match (&member.name, &selector) {
             (Some(name), _) => name.clone(),
             (None, MemberSelectorSpec::Binding(binding)) => binding.name.clone(),
@@ -210,7 +210,7 @@ pub fn load_binding_patch_members(modules_root: &Path) -> Result<Vec<Member>> {
     }
     let members = read_binding_patches_file(&path)?.members;
     for (index, member) in members.iter().enumerate() {
-        let selector = member.selector.selected().with_context(|| {
+        let selector = member.selector.validate().with_context(|| {
             format!(
                 "{}: member {index} requires exactly one binding selector",
                 path.display()
