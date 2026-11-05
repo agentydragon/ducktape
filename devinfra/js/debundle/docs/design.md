@@ -837,9 +837,14 @@ globalThis`) marks the bindings it flows into (transitively,
 
   The legacy own-syntax opacity bit can also be omitted when the statement
   carries a `CompletedInitialization` receipt for that exact source owner. The
-  shared interpreter creates this receipt only for the matching root
-  initializer after normal completion and covered `GeneralHeap`, global
-  property, and host-effect domains. `StatementFacts::own_heap_content_summary`
+  shared interpreter creates this receipt for the matching root initializer
+  through either its restricted non-invoking source proof or normal completion
+  with covered `GeneralHeap`, global-property and host-effect domains. The source
+  proof admits checked allocation-only expressions, lazy functions, inert classes,
+  RegExp literals and exact supported native constructor forms. It also requires
+  complete execution without unknown calls, precision losses or uninitialized
+  reads; neither a generic value nor an empty ledger supplies this proof.
+  `StatementFacts::own_heap_content_summary`
   supplies the same receipt and own-opacity projection to the initialization
   effect and heap-frontier consumers. It preserves explicit heap-cell reads,
   writes, allocations, and receipt dependencies; callee heap opacity and
