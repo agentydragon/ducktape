@@ -463,6 +463,7 @@ def build_chart(
         registry_secret_name=None,
         container_env=database_env,
         memory_limit=None,
+        tls_passthrough_services=[history_service.workload_service(env.namespace)],
     )
     sandbox_pod.add_tool_config(chart, env)
     app_caller = {

@@ -32,6 +32,9 @@ const GatewayURI = "spiffe://agentplane/runner-gateway"
 // forward-proxy listener.
 const EgressProxyURI = "spiffe://agentplane/egress-proxy"
 
+// HistoryIngressURI is the History Service workload journal listener.
+const HistoryIngressURI = "spiffe://agentplane/history-ingress"
+
 var trustDomain = spiffeid.RequireTrustDomainFromString("agentplane")
 
 // Config names either the projected certificate, private key, and trust roots,
@@ -157,15 +160,15 @@ func (c Config) ServerCredentials(expectedPeerURI string) (credentials.Transport
 	return credentials.NewTLS(tlsconfig.MTLSServerConfig(source, source, authorize(expected, x509.ExtKeyUsageClientAuth))), nil
 }
 
-// ClientTLSConfig creates HTTPS proxy credentials pinned to the egress proxy's
+// ClientTLSConfig creates client credentials pinned to a first-party service's
 // fixed SPIFFE identity. The file source reloads projected certificate, key,
 // and CA bundle replacements while keeping the client identity pinned.
 func (c Config) ClientTLSConfig(expectedPeerURI string) (*tls.Config, error) {
-	if expectedPeerURI != EgressProxyURI {
-		return nil, fmt.Errorf("expected peer URI must be %q", EgressProxyURI)
+	if expectedPeerURI != EgressProxyURI && expectedPeerURI != HistoryIngressURI {
+		return nil, errors.New("expected peer URI must name a supported first-party service")
 	}
 	if c.WorkloadAPISocket != "" {
-		return nil, errors.New("file-backed TLS configuration is required for the egress proxy")
+		return nil, errors.New("file-backed TLS configuration is required for this listener")
 	}
 	if err := c.Validate(); err != nil {
 		return nil, err
@@ -181,15 +184,15 @@ func (c Config) ClientTLSConfig(expectedPeerURI string) (*tls.Config, error) {
 	return tlsconfig.MTLSClientConfig(source, source, authorize(expected, x509.ExtKeyUsageServerAuth)), nil
 }
 
-// WorkloadServerTLSConfig creates mTLS server credentials for the egress
+// WorkloadServerTLSConfig creates mTLS credentials for a first-party workload
 // listener. It accepts only a current EnvironmentRuntime identity with an
 // explicit clientAuth EKU; callers resolve the URI to live Sandbox state.
 func (c Config) WorkloadServerTLSConfig(localURI string) (*tls.Config, error) {
-	if localURI != EgressProxyURI {
-		return nil, fmt.Errorf("local URI must be %q", EgressProxyURI)
+	if localURI != EgressProxyURI && localURI != HistoryIngressURI {
+		return nil, errors.New("local URI must name a supported first-party service")
 	}
 	if c.WorkloadAPISocket != "" {
-		return nil, errors.New("file-backed TLS configuration is required for the egress proxy")
+		return nil, errors.New("file-backed TLS configuration is required for this listener")
 	}
 	if err := c.Validate(); err != nil {
 		return nil, err
@@ -437,11 +440,11 @@ func requireEKU(certificate *x509.Certificate, usage x509.ExtKeyUsage) error {
 	return fmt.Errorf("certificate must explicitly allow extended key usage %s", usage)
 }
 
-// parseIdentity accepts only GatewayURI or a canonical EnvironmentRuntimeURI.
+// parseIdentity accepts first-party service identities or a canonical EnvironmentRuntimeURI.
 func parseIdentity(identity string) (spiffeid.ID, error) {
-	if identity != GatewayURI && identity != EgressProxyURI {
+	if identity != GatewayURI && identity != EgressProxyURI && identity != HistoryIngressURI {
 		if _, _, _, err := ParseEnvironmentRuntimeURI(identity); err != nil {
-			return spiffeid.ID{}, fmt.Errorf("identity must be GatewayURI or a valid EnvironmentRuntimeURI: %w", err)
+			return spiffeid.ID{}, fmt.Errorf("identity must name a first-party service or a valid EnvironmentRuntimeURI: %w", err)
 		}
 	}
 	return spiffeid.FromString(identity)

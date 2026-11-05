@@ -124,11 +124,12 @@ flowchart LR
     relay -->|OTLP/gRPC| alloy
     gw -->|mTLS Runner and Executor gRPC| runtime
     gw -->|mTLS Runner and Executor gRPC| vmruntime
-    runner -.->|dials SessionJournalIngress.Push| sidecar
-    sidecar -.->|outbound ingress route| hs
+    runner -.->|History mTLS through CONNECT| sidecar
+    sidecar -.->|opaque History TLS| egress
+    egress -.->|opaque SessionJournalIngress.Push TLS| hs
     agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| sidecar
-    guest -.->|dials SessionJournalIngress.Push| relay
-    relay -.->|outbound ingress route| hs
+    guest -.->|History mTLS through CONNECT| relay
+    relay -.->|opaque History TLS| egress
     guest_agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| relay
     egress -.->|allowlisted gRPC methods, substituted Sandbox bearer| gw
 
@@ -176,7 +177,8 @@ embeds files through an embedding endpoint and owns its own PostgreSQL database
 - **Runner control uses native gRPC.** The Gateway dials each runner's private server using mTLS.
   It validates the certificate against the active Sandbox/workload and retains `<sandbox>-control`
   routing and `<sandbox>-runner` observation Leases. History push and ordinary Sandbox egress retain
-  their sidecar or VM relay paths ([runner control](runner_control.md)).
+  their sidecar or VM relay paths; History terminates and verifies the Runtime SVID itself
+  ([runner control](runner_control.md)).
 - **Telemetry uses Alloy as its collector.** SDK-instrumented services export OTLP/gRPC to Alloy.
   Browser spans post to the same-origin App relay, which forwards OTLP/HTTP to Alloy. Runner spans use
   the sidecar's local telemetry route; VM guest spans use the launcher relay's guest gateway route.

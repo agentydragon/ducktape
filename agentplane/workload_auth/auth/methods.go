@@ -228,6 +228,9 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 	authorization := md.Get("authorization")
 	delegations := md.Get(DelegationMetadataKey)
 	if len(delegations) > 0 || delegatedAttempt(authorization) {
+		if rule.resolver.usesSVID(reviewContext) {
+			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
+		}
 		if rule.delegation == nil {
 			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 		}

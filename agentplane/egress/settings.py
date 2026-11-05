@@ -61,6 +61,9 @@ class Settings(BaseModel):
         "public hosts only.",
     )
     token_audience: str = Field(min_length=1, description="Audience of the sidecars' projected tokens.")
+    tls_passthrough_targets: tuple[str, ...] = Field(
+        default=(), description="Exact host:port destinations whose services verify workload SVIDs inside CONNECT."
+    )
     projected_token_audiences: frozenset[str] = Field(
         default=frozenset(),
         description="Every audience a rule may substitute a sidecar's projected token for, the API server's "

@@ -16,8 +16,7 @@ from cdk8s import ApiObjectMetadata
 from constructs import Construct
 
 from agentplane.egress.platform_routes import PlatformRoute
-from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
-from cluster.cdk8s.agentplane import history_service, sandbox_pod, telemetry
+from cluster.cdk8s.agentplane import sandbox_pod, telemetry
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 
@@ -35,21 +34,13 @@ class Route:
         return f"127.0.0.1:{self.listen_port}"
 
 
-# Each route replaces `authorization` with its own token, so a runner presents this placeholder.
-ROUTE_BEARER = "platform-route"
-
-
-def ingress(namespace: str) -> Route:
-    return Route("ingress", history_service.ingress_service(namespace), RUNNER_INGRESS_AUDIENCE, 3131)
-
-
 def telemetry_route() -> Route:
     """The runner's local, unauthenticated gRPC hop to Alloy; the runner never dials Alloy directly."""
     return Route("telemetry", telemetry.ALLOY_OTLP_GRPC, None, 3132)
 
 
 def routes(namespace: str) -> tuple[Route, ...]:
-    return ingress(namespace), telemetry_route()
+    return (telemetry_route(),)
 
 
 def sidecar_routes(namespace: str, *, listen_host: str = "127.0.0.1") -> dict[str, PlatformRoute]:

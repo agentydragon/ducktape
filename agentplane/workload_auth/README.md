@@ -10,6 +10,15 @@ ServiceAccount UID, and the Pod name and UID. The API server's TokenReview check
 accepted review results are cached for up to 30 seconds by default, so revocation or Pod deletion
 may take that long to affect a cached token. Rejections and review failures are not cached.
 
+`SVIDResolver` accepts a leaf already verified by the shared workload TLS listener, requires its
+validity and explicit clientAuth EKU, and resolves its namespace, Sandbox UID and credential
+ID through live Sandbox status. It returns the same `Principal`: the Sandbox's own ServiceAccount
+with its canonical UID and the status-bound Pod name/UID. There is no identity reference or caller
+header. Services need Sandbox get/list and ServiceAccount get in their allowed namespaces.
+`Resolver.WithSVID` selects this path for TLS peers while retaining backend TokenReview and delegated
+callers on their existing listener. A TLS peer cannot replace its certificate with a bearer or a
+delegation envelope. Stream revalidation repeats the live lookup and leaf validity checks.
+
 `ResolveServiceAccountToken` returns a `ServiceAccountPrincipal` for destinations whose authority
 belongs to the account alone. It requires a ServiceAccount UID and accepts either no Pod binding
 claims or one complete Pod name and UID pair. Partial or repeated claims are rejected. The Action

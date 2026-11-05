@@ -8,6 +8,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/stream"
 	ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/session_ingresspb"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 // SupervisorConfig supplies the Runtime-owned Session inventory and observation
@@ -15,6 +17,8 @@ import (
 type SupervisorConfig struct {
 	Target            string
 	Bearer            string
+	Transport         credentials.TransportCredentials
+	ProxyAddress      string
 	Store             *retained.Store
 	Inventory         func() []Source
 	InventoryChanges  func() <-chan struct{}
@@ -40,7 +44,13 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	if s == nil || s.config.Store == nil || s.config.Inventory == nil || s.config.InventoryChanges == nil || s.config.OnWorkerFailure == nil {
 		return errors.New("ingress supervisor requires a store, inventory, change source, and worker failure handler")
 	}
-	conn, err := stream.NewConnection(s.config.Target)
+	var conn *grpc.ClientConn
+	var err error
+	if s.config.Transport != nil {
+		conn, err = stream.NewTunneledConnection(s.config.Target, s.config.ProxyAddress, s.config.Transport)
+	} else {
+		conn, err = stream.NewConnection(s.config.Target)
+	}
 	if err != nil {
 		return err
 	}
@@ -48,7 +58,10 @@ func (s *Supervisor) Run(ctx context.Context) error {
 
 	client := NewClient(ingresspb.NewSessionJournalIngressClient(conn), s.config.Store, s.config.OnAcknowledgement)
 	return s.supervise(ctx, func(ctx context.Context, source Source) error {
-		return client.Deliver(stream.Authenticated(ctx, s.config.Bearer), source)
+		if s.config.Transport == nil {
+			ctx = stream.Authenticated(ctx, s.config.Bearer)
+		}
+		return client.Deliver(ctx, source)
 	})
 }
 
