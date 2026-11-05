@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 from playwright.async_api import Response, async_playwright, expect
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.monitoring.dashboards import piraeus_metrics
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.output_writer import BoundTestOutputs
 from grafana.visual_tests.visual_browser import capture_dashboard
 from grafana.visual_tests.visual_harness import grafana_dashboard, record_stage
@@ -24,7 +24,9 @@ pytest_plugins = ("devinfra.testing.pytest_outputs",)
 @pytest.mark.asyncio
 async def test_piraeus_dashboard_visual(tmp_path: Path, test_outputs: BoundTestOutputs) -> None:
     with grafana_dashboard(
-        tmp_path, get_required_path(os.environ["GRAFANA_DASHBOARD_RLOCATION"]), piraeus_metrics.samples()
+        tmp_path,
+        (Runfiles.CreateOrRaise().root() / os.environ["GRAFANA_DASHBOARD_RLOCATION"]),
+        piraeus_metrics.samples(),
     ) as base_url:
         async with async_playwright() as playwright:
             async with deterministic_browser_context(

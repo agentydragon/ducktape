@@ -5,9 +5,9 @@ py_library(
     srcs = ["manifest.py"],
     data = ["//devinfra/claude/web_env:exclusions.yaml"],
     deps = [
-        "//devinfra/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 

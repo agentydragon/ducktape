@@ -25,6 +25,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgrade,
     HelmReleaseSpecUpgradeCrds,
 )
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import flux, terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -32,7 +33,6 @@ from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.image_automation import newest_ci_tag_policy
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.flux.image_repository import ImageRepository
-from devinfra.bazel.runfiles import get_required_path
 
 NAME = "tofu-controller"
 NAMESPACE = "flux-system"
@@ -67,7 +67,7 @@ def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     # Bazel runfiles expose data files through symlinks, while cdk8s's local-file loader checks
     # lstat() and therefore treats those paths as empty. Resolve the runfile to its real file first.
-    crd = Include(chart, "terraform-crd", url=str(get_required_path(_CRD).resolve()))
+    crd = Include(chart, "terraform-crd", url=str((Runfiles.CreateOrRaise().root() / _CRD).resolve()))
     for obj in crd.api_objects:
         # Pruning the CRD would delete every Terraform with it.
         obj.metadata.add_annotation("kustomize.toolkit.fluxcd.io/prune", "disabled")

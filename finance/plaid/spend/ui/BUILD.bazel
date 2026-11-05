@@ -278,7 +278,6 @@ py_test(
     tags = ["visual"],
     deps = [
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//devinfra/testing:output_writer",
         "//finance/plaid/spend:allowance",
         "//finance/plaid/spend:conftest",
@@ -296,6 +295,7 @@ py_test(
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

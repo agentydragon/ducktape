@@ -166,7 +166,6 @@ py_test(
         ":custom_handler",
         ":provider",
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//util/testing:asgi",
         "@pypi//anthropic",
         "@pypi//pytest",
@@ -174,6 +173,7 @@ py_test(
         "@pypi_tana_litellm_proxy//httpx",
         "@pypi_tana_litellm_proxy//litellm",
         "@pypi_tana_litellm_proxy//openai",
+        "@rules_python//python/runfiles",
     ],
 )
 

@@ -149,7 +149,7 @@ py_library(
         ":models",
         "//aiquota/providers:base",
         "//aiquota/render:view_model_lib",
-        "//devinfra/bazel:runfiles",
+        "@rules_python//python/runfiles",
         "@pypi//authlib",
         # keep: the pinned Gazelle parser does not accept api.py's Python 3.14 syntax.
         "@pypi//anyio",
@@ -172,9 +172,9 @@ py_library(
     data = ["schema.sql"],
     deps = [
         ":models",
-        "//devinfra/bazel:runfiles",
         "@pypi//httpx",
         "@pypi//sqlparse",
+        "@rules_python//python/runfiles",
     ],
 )
 

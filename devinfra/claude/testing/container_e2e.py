@@ -15,13 +15,13 @@ from typing import cast
 import docker
 import docker.models.containers
 import pytest
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.claude.claude_hook.container_e2e import e2e_container_descriptor
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
-_RUST_BINARY_RLOC = "_main/devinfra/claude/claude_hook/claude_hook"
+_RUST_BINARY_RLOC = "ducktape/devinfra/claude/claude_hook/claude_hook"
 
 
 @dataclass
@@ -85,7 +85,7 @@ class E2EContainer:
         )
 
     def install_rust(self) -> None:
-        rust_binary = get_required_path(_RUST_BINARY_RLOC)
+        rust_binary = Runfiles.CreateOrRaise().root() / _RUST_BINARY_RLOC
         self.cp(str(rust_binary), "/usr/local/bin/claude-hook")
 
     def send_hook(self, payload: dict) -> dict:

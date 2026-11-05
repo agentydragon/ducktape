@@ -6,10 +6,10 @@ py_library(
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = [
         "//agent_core:events",
-        "//devinfra/bazel:runfiles",
         "//openai_utils:client_factory",
         "//openai_utils:model",
         "@pypi//pydantic",
+        "@rules_python//python/runfiles",
     ],
 )
 

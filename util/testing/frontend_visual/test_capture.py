@@ -10,8 +10,8 @@ from typing import cast
 import pytest
 import pytest_bazel
 from playwright.async_api import BrowserContext, Page, Playwright, expect
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from devinfra.testing.output_records import output_key
 from devinfra.testing.output_writer import BoundTestOutputs
 from util.testing.frontend_visual.capture import (
@@ -290,8 +290,9 @@ async def test_concurrent_traces_claim_identity_once(tmp_path: Path, monkeypatch
 
 async def test_capture_diagnostics_cover_viewport_and_crop_without_page_text(harness: VisualHarness) -> None:
     async with harness.open(viewport=Viewport(width=300, height=200, device_scale_factor=2)) as view:
-        fixture = get_required_path(
-            own_repo_rlocation("util/testing/frontend_visual/assets/capture_diagnostics_fixture.js")
+        fixture = (
+            Runfiles.CreateOrRaise().root()
+            / "ducktape/util/testing/frontend_visual/assets/capture_diagnostics_fixture.js"
         ).read_text(encoding="utf-8")
         await view.page.evaluate(fixture)
         await view.capture("viewport", scale="css")

@@ -23,8 +23,8 @@ and how the inference config holds up under it.
 
 Docs hub for LLM inference on the cluster. Notes that should outlive any
 one deployment go here; reusable service scripts live with the workload
-(`cluster/cdk8s/ollama/`, `x/local_llm/`), while exact experimental drivers live
-with their dated run records.
+(`cluster/cdk8s/ollama/`, `x/local_llm/`), shared experiment tools under
+`runs/`, and run-specific evidence with its dated record.
 
 ## What's here
 

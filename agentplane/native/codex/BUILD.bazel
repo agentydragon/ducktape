@@ -56,8 +56,8 @@ py_library(
     deps = [
         "//agentplane/native/codex/testing:harness",
         "//agentplane/native/codex/testing:responses",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )
 

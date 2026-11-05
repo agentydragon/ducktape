@@ -8,13 +8,14 @@ from contextlib import ExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from python.runfiles import Runfiles
+
 from agentplane.egress.settings import Settings
 from agentplane.testing.go_process import GoProcess, go_process
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.db_url import render_postgresql_url
 from util.net import Listener, listen_tcp
 
-_PROXY = get_required_path(own_repo_rlocation("agentplane/egress/cmd/egress-proxy_/egress-proxy"))
+_PROXY = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/egress/cmd/egress-proxy_/egress-proxy"
 _GRACE_SECONDS = 55
 
 

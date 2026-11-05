@@ -13,7 +13,8 @@ from pathlib import Path
 from types import FrameType
 from typing import cast, get_args
 
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
+from python.runfiles import Runfiles
+
 from finance.augur.api.catalog import build_catalog
 from finance.augur.api.config import Config, load_augur_config
 from finance.augur.api.portfolio_sources import resolve_portfolio_sources
@@ -22,7 +23,7 @@ from finance.augur.product.scenarios import locations_by_id, resolve_primary_age
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import MetricName, ProjectionSamplingRequest, ScenarioKey, SpendIndex
 
-DEFAULT_CONFIG_RUNFILE = own_repo_rlocation("finance/augur/api/testdata/config.yaml")
+DEFAULT_CONFIG_RUNFILE = "ducktape/finance/augur/api/testdata/config.yaml"
 DEFAULT_HORIZON_MONTHS = 100
 DEFAULT_ROLLOUT_COUNT = 50
 DEFAULT_MONTHLY_SPEND_USD = 7000.0
@@ -112,7 +113,7 @@ def _arg_parser() -> argparse.ArgumentParser:
 
 
 def _config_path(config: str | None) -> Path:
-    return Path(config) if config is not None else get_required_path(DEFAULT_CONFIG_RUNFILE)
+    return Path(config) if config is not None else (Runfiles.CreateOrRaise().root() / DEFAULT_CONFIG_RUNFILE)
 
 
 def _profile_models(config: Config) -> dict[str, Sampler]:

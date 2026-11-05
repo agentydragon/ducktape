@@ -17,6 +17,7 @@ from uuid import uuid4
 import grpc.aio
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from agentplane.env.e2e.testing import events, launches
 from agentplane.env.e2e.testing.config import RunnerTestConfig
@@ -32,7 +33,6 @@ from agentplane.env.runtime.execution.testing.codex_exec_server_container import
 )
 from agentplane.proto import event_pb2, identity_pb2, session_pb2
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.oci.oci import load_oci_image
 from third_party.containers import debian_slim
 from util.testing.container_logs import LoggedContainer
@@ -290,7 +290,7 @@ async def test_codex_exec_server_container_recovers_without_restarting_app_serve
 
 async def test_executor_exit_does_not_join_escaped_output_readers(harness: session_pb2.Harness, tmp_path: Path) -> None:
     debian_image = load_oci_image(debian_slim.LAYOUT_RLOCATION)
-    execution_binary = get_required_path(launches.EXECUTION_BINARY).resolve()
+    execution_binary = (Runfiles.CreateOrRaise().root() / launches.EXECUTION_BINARY).resolve()
     socket_path = tmp_path / "executor.sock"
     ready_path = tmp_path / "server-ready"
     exit_path = tmp_path / "server-exit"

@@ -8,8 +8,8 @@ import pytest
 import pytest_bazel
 from playwright.async_api import expect
 from pydantic import BaseModel, ConfigDict, TypeAdapter
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from util.testing.frontend_visual.capture import VisualHarness
 from util.testing.frontend_visual.viewports import Viewport
 
@@ -29,7 +29,9 @@ class Fixture(BaseModel):
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     if "fixture" not in metafunc.fixturenames:
         return
-    fixtures = TypeAdapter(list[Fixture]).validate_json(get_required_path(os.environ["FIXTURE_CATALOG"]).read_bytes())
+    fixtures = TypeAdapter(list[Fixture]).validate_json(
+        (Runfiles.CreateOrRaise().root() / os.environ["FIXTURE_CATALOG"]).read_bytes()
+    )
     if not fixtures:
         raise ValueError("the preview fixture catalog is empty")
     metafunc.parametrize("fixture", fixtures, ids=[fixture.slug for fixture in fixtures])

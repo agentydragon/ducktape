@@ -14,7 +14,7 @@ py_library(
     srcs = ["profile.py"],
     deps = [
         ":cookies",
-        "//devinfra/bazel:runfiles",
+        "@rules_python//python/runfiles",
     ],
 )
 

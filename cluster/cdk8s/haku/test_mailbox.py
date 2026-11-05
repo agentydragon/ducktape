@@ -8,9 +8,9 @@ from cdk8s import (
     Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
 )
 from more_itertools import one
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.haku import mailbox
-from devinfra.bazel.runfiles import get_required_path
 
 
 def test_mailbox_initialization_is_serialized_and_init_only(scratch_app: App) -> None:
@@ -32,7 +32,7 @@ def test_smtp_ingress_config_targets_the_model_service_with_proxy_protocol(scrat
         if obj["kind"] == "Service" and obj["metadata"]["name"] == "smtp"
     )
     smtp_service_port = one(smtp_service["spec"]["ports"])
-    ingress_config = get_required_path("_main/cluster/k8s/haku/mailbox/nginx.conf").read_text()
+    ingress_config = (Runfiles.CreateOrRaise().root() / "ducktape/cluster/k8s/haku/mailbox/nginx.conf").read_text()
 
     assert "proxy_protocol on;" in ingress_config
     assert (

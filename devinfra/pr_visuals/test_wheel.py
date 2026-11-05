@@ -10,19 +10,18 @@ import zipfile
 from pathlib import Path
 
 import pytest_bazel
-
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
+from python.runfiles import Runfiles
 
 # gazelle:include_dep //devinfra/pr_visuals:publisher
-WHEEL = get_required_path(own_repo_rlocation("devinfra/pr_visuals/pr_visuals-0.1.0-py3-none-any.whl"))
 EXPECTED_ENTRY_POINTS = {
     "pr-visuals-announce": "devinfra.pr_visuals.check_run:main",
     "pr-visuals-publish": "devinfra.pr_visuals.publisher:main",
 }
 
 
-def test_wheel_contains_import_closure_templates_and_runnable_entry_points(tmp_path: Path) -> None:
-    with zipfile.ZipFile(WHEEL) as wheel:
+def test_wheel_contains_import_closure_templates_and_runnable_entry_points(runfiles: Runfiles, tmp_path: Path) -> None:
+    root = runfiles.root()
+    with zipfile.ZipFile(root / os.environ["PR_VISUALS_WHEEL_RLOCATION"]) as wheel:
         files = set(wheel.namelist())
         assert {
             "devinfra/pr_visuals/check_run.py",
@@ -102,10 +101,10 @@ def test_wheel_contains_import_closure_templates_and_runnable_entry_points(tmp_p
             sys.executable,
             "-S",
             "-P",
-            str(get_required_path("_main/devinfra/pr_visuals/wheel_render_probe.py")),
-            str(install_root),
-            str(tmp_path / "fixture"),
-            str(tmp_path / "site"),
+            root / "ducktape/devinfra/pr_visuals/wheel_render_probe.py",
+            install_root,
+            tmp_path / "fixture",
+            tmp_path / "site",
         ],
         cwd=tmp_path,
         env=child_env,

@@ -28,7 +28,6 @@ py_library(
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "//cluster/cdk8s/providers/volsync:replication_source",
         "//cluster/cdk8s/providers/volsync:replicationsource",
-        "//devinfra/bazel:runfiles",
         "//homeassistant/provisioner:endpoint",
         "//homeassistant/provisioner/components:settings",
         "//homeassistant/provisioner/onboarding:settings",
@@ -39,6 +38,7 @@ py_library(
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
         "@pypi//pydantic",
+        "@rules_python//python/runfiles",
     ],
 )
 

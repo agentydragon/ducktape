@@ -9,9 +9,9 @@ from cdk8s import (
     App,
     Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
 )
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.kyverno import policies, proxy_injection
-from devinfra.bazel.runfiles import get_required_path
 
 _POLICY_BUILDERS = {
     "default-vpa-requests-only": policies.default_vpa_requests_only_chart,
@@ -24,7 +24,7 @@ _POLICY_BUILDERS = {
 
 def manifest(name: str) -> Path:
     """An input resource from this package's testdata directory."""
-    return get_required_path(f"_main/cluster/cdk8s/kyverno/testdata/{name}")
+    return Runfiles.CreateOrRaise().root() / f"ducktape/cluster/cdk8s/kyverno/testdata/{name}"
 
 
 def policy(app: App, name: str, directory: Path) -> Path:

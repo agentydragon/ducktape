@@ -1,6 +1,6 @@
 //! Saved purity verdicts. Runtime `Arc`s become references into a postorder
 //! table; the ordinary Serde representation includes proof metadata and spans
-//! without consulting the report serializer or an ambient artifact scope.
+//! without consulting the report serializer or ambient serialization state.
 
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -172,7 +172,7 @@ mod tests {
         let cause_id = snapshot.snapshot(&cause);
         let saved = snapshot.finish();
         assert_eq!(saved.nodes.len(), 2);
-        // Neither call enters analysis_codec's artifact scope.
+        // Both conversions use ordinary Serde with explicit saved data.
         let bytes = rmp_serde::to_vec_named(&saved).expect("ordinary encode");
         let saved: SavedPurityGraph = rmp_serde::from_slice(&bytes).expect("ordinary decode");
         let restored = saved.restore().expect("valid graph");

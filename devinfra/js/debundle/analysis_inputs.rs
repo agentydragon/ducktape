@@ -15,6 +15,8 @@ use crate::purity::Purity;
 use crate::reports::schema::SourceLocation;
 use spec::{BuiltinGlobalRoot, CapturedValueKind, ResolvedMemberSelector, SourceMatchClaim};
 
+pub mod saved;
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 pub enum KnownEffect {
     TypescriptDecorateHelper,
@@ -95,7 +97,7 @@ pub struct NamespaceWrapperSummary {
     pub source_location: Option<SourceLocation>,
     pub inference: crate::analysis_provenance::InferenceUse,
     /// Trusted provider judgment; deliberately absent from report JSON.
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) dependencies: ProofDependencies,
 }
 
@@ -170,7 +172,7 @@ pub struct ForeignCallSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replacement_package: Option<String>,
     /// Trusted provider judgment; deliberately absent from report JSON.
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) dependencies: ProofDependencies,
 }
 

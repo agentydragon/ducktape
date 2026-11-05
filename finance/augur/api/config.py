@@ -264,9 +264,11 @@ def load_augur_config(path: Path) -> Config:
     directory — useful for ConfigMap mounts where the yaml and adjacent data live
     side-by-side (e.g. `/etc/augur/{config.yaml,properties.json}`)."""
     config = Config.model_validate(yaml.load(path.read_text(encoding="utf-8"), Loader=DecimalSafeLoader))
-    config = _anchor_property_source_paths(config, base_dir=path.parent)
-    config = _anchor_model_paths(config, base_dir=path.parent)
-    return _anchor_calibration_catalog_paths(config, base_dir=path.parent)
+    # Anchor deployment paths to the resolved config file, including when it is a Bazel runfile.
+    base_dir = Path(str(path)).parent
+    config = _anchor_property_source_paths(config, base_dir=base_dir)
+    config = _anchor_model_paths(config, base_dir=base_dir)
+    return _anchor_calibration_catalog_paths(config, base_dir=base_dir)
 
 
 def _anchor_calibration_catalog_paths(config: Config, *, base_dir: Path) -> Config:

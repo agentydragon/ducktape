@@ -15,8 +15,8 @@ import uvicorn
 from agent_framework import Agent, AgentSession, InMemoryHistoryProvider, MCPStreamableHTTPTool, Message
 from agent_framework.anthropic import AnthropicClient
 from agent_framework.openai import OpenAIChatCompletionClient
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.eval.cases import EvalCase
 from grocy_mcp.eval.prompts import POSTMORTEM_PROMPT, SYSTEM_PROMPT
@@ -186,7 +186,7 @@ async def run_grocy_eval(
     # `initialize.instructions`, but `agent_framework` currently discards the
     # InitializeResult (see _mcp.py session.initialize()). Prepend the
     # markdown to the system prompt ourselves so the model sees it.
-    server_instructions = get_required_path("_main/grocy_mcp/server_instructions.md").read_text()
+    server_instructions = (Runfiles.CreateOrRaise().root() / "ducktape/grocy_mcp/server_instructions.md").read_text()
     combined_instructions = f"{SYSTEM_PROMPT}\n\n{server_instructions}"
 
     async with _serve_mcp(grocy_base_url) as mcp_url:

@@ -12,8 +12,8 @@ from typing import Any, cast
 import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from finance.augur.testing.server import run_server
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
@@ -27,7 +27,7 @@ def _usd_quanta(value: float | int) -> str:
 @pytest.fixture(scope="module")
 def server_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     with run_server(
-        binary=get_required_path("_main/finance/augur/api/server_bin"),
+        binary=Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/api/server_bin",
         tmp_path=tmp_path_factory.mktemp("augur_server"),
         args=("--api-only",),
         env={

@@ -17,6 +17,7 @@ from pathlib import Path
 from uuid import UUID
 
 import grpc
+from python.runfiles import Runfiles
 
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service import history_service_pb2, session_ingress_pb2, session_ingress_pb2_grpc
@@ -25,14 +26,13 @@ from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.go_process import GoProcess, go_process
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.db_url import render_postgresql_url
 from util.net import listen_tcp
 from util.testing.postgres import PostgresDatabaseTemplate
 
 # gazelle:include_dep @pypi//protobuf
 
-_SERVICE = get_required_path(own_repo_rlocation("agentplane/history_service/history-service_/history-service"))
+_SERVICE = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/history_service/history-service_/history-service"
 _DATABASE_URL_ENV = "AGENTPLANE_HISTORY_SERVICE_DATABASE_URL"
 _CONFIG_FILE_ENV = "AGENTPLANE_HISTORY_SERVICE_CONFIG_FILE"
 _GRACE_SECONDS = 10

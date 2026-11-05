@@ -18,9 +18,9 @@ py_test(
     srcs = ["test_image_descriptor.py"],
     deps = [
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//third_party/containers:debian_slim",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

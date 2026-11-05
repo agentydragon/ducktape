@@ -201,25 +201,21 @@ pub struct CallbackFactoryWriteWitness {
     pub property: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct SynchronousCalls {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initializer_binding_effects:
         Option<Box<crate::reports::schema::InitializerBindingEffectsUse>>,
     /// Whole-original-owner coverage, sealed after its checked root evaluation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) completed_initialization:
         Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>,
     /// Report-only reason the original owner's whole-initialization proof was
     /// refused. This never changes the conservative effect projection.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) initialization_coverage_refusal:
         Option<crate::facts::OwnerInitializationCoverageRefusalReason>,
     /// Report-only, source-site may-accesses; never a legacy graph input.
     pub(crate) evaluation_effects: super::evaluation_effects::EvaluationEffects,
     // SavedSynchronousCalls transports both verdicts through the artifact's
     // shared purity graph; the report projects this runtime field separately.
-    #[serde(skip)]
     pub purity_disagreement: Option<crate::reports::schema::PurityCompletionDisagreement>,
     pub local_record_factory_uses: Vec<crate::reports::schema::LocalRecordFactoryUse>,
     pub local_record_factory_rejections: Vec<crate::reports::schema::LocalRecordFactoryRejection>,
@@ -240,9 +236,9 @@ pub(crate) struct SynchronousCalls {
     pub fallback_only: FallbackOnlyEffects,
     pub complete: bool,
     /// Engine-owned authority transported with staged `ChunkFactAnalysis`.
-    /// This field intentionally has no serde default: a cache missing its
-    /// typed authority is rejected rather than regaining `.complete` as
-    /// legacy authority. Public report DTOs are separate diagnostics.
+    /// Its saved representation requires this field so a cache missing typed
+    /// authority cannot regain `.complete` as legacy authority. Public report
+    /// DTOs are separate diagnostics.
     pub(crate) binding_effect_coverage: super::sync_effects::BindingEffectCoverage,
     /// What each plain-array binding the statement reads holds at its program
     /// point, when its elements are known.
@@ -812,7 +808,7 @@ impl StructuralStatementFacts {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct ConstructorFacts {
     pub reads: BTreeSet<Id>,
     pub rebinds: BTreeSet<Id>,

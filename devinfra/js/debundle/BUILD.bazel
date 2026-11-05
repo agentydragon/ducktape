@@ -102,6 +102,7 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:rmp-serde",
         "@crates//:serde",
+        "@crates//:swc_atoms",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
@@ -585,6 +586,7 @@ rust_library(
     name = "analysis",
     srcs = [
         "analysis_inputs.rs",
+        "analysis_inputs/saved.rs",
         "analysis_provenance.rs",
         "assignment_assembly.rs",
         "atomic_groups.rs",
@@ -676,6 +678,7 @@ rust_library(
         "purity/ts_enum_iife.rs",
         "reports/author_inputs.rs",
         "reports/mod.rs",
+        "reports/saved.rs",
         "reports/schema.rs",
         "swc_parallel.rs",
     ],

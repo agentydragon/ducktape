@@ -10,11 +10,11 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from python.runfiles import Runfiles
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 
-from devinfra.bazel.runfiles import get_required_path
 from openai_utils.model_metadata import MODEL_METADATA
 from props.config import CustomModelConfig, PropsConfig, UpstreamConfig
 from props.db.config import DatabaseConfig
@@ -127,12 +127,13 @@ def _sync_test_fixtures(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
     """Sync test fixtures to the current database using bundle workflow."""
     fixture_slugs = ["test-fixtures/test1", "test-fixtures/train1", "test-fixtures/valid1", "test-fixtures/valid2"]
 
+    runfiles_root = Runfiles.CreateOrRaise().root()
     with db.session() as session:
         sync_model_metadata_with_session(session, _test_model_config())
         for slug in fixture_slugs:
             base_path = f"props/testing/fixtures/testdata/specimens/{slug}"
-            code_tar = get_required_path(f"_main/{base_path}/specimen_code.tar")
-            data_yaml = get_required_path(f"_main/{base_path}/specimen_data.yaml")
+            code_tar = runfiles_root / f"ducktape/{base_path}/specimen_code.tar"
+            data_yaml = runfiles_root / f"ducktape/{base_path}/specimen_data.yaml"
             bundle = SpecimenBundle.from_paths(code_tar, data_yaml)
             sync_specimen(session, bundle)
         session.commit()

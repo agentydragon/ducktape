@@ -75,15 +75,6 @@ py_package(
         "util",
         "util.exec",
     ],
-    # `devinfra.bazel.runfiles` is intentionally not shipped: it calls into
-    # `rules_python.runfiles`, which fails when imported from a path that
-    # isn't under a Bazel-built binary's runfiles tree. Shipping it in a
-    # Nix-installed wheel just shadows the Bazel-runfiles version with a
-    # broken copy — `Rlocation()` calls `CurrentRepository(frame=...)` on
-    # the caller, sees the /nix/store path, and raises "does not lie under
-    # the runfiles root". `devinfra.bazel.{subprocess,workspace}` work fine
-    # outside Bazel and are needed by Nix-shipped wheels (Claude statusline,
-    # ducktape-git-hooks).
     deps = [
         ":net",
         ":otel",

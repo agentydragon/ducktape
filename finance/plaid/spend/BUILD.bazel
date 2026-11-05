@@ -123,11 +123,11 @@ py_test(
         ":models",
         ":reconciliation_views",
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//finance/plaid/spend/testing:transaction",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

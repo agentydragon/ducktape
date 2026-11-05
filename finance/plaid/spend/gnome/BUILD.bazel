@@ -53,7 +53,6 @@ py_test(
     tags = ["visual"],
     deps = [
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//devinfra/oci",
         "//devinfra/testing:output_writer",
         "//finance/plaid/spend:allowance",
@@ -65,5 +64,6 @@ py_test(
         "//gnome/testing:session",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )

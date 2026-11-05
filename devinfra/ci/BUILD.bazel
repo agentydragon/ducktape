@@ -281,9 +281,9 @@ py_test(
     ],
     deps = [
         ":bazel_ci",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

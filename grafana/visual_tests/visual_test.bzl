@@ -28,7 +28,7 @@ def grafana_dashboard_visual_test(name, dashboard, src = "//grafana/visual_tests
             "//grafana/visual_tests:recorded",
             "//grafana/visual_tests:visual_browser",
             "//grafana/visual_tests:visual_harness",
-            "//devinfra/bazel:runfiles",
+            "@rules_python//python/runfiles",
             "//util/testing/frontend_visual:context",
             "//devinfra/testing:output_writer",
             "//devinfra/testing:undeclared_outputs",

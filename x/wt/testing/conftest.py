@@ -13,9 +13,9 @@ from unittest.mock import Mock
 
 import pygit2
 import pytest
+from python.runfiles import Runfiles
 from typer.testing import CliRunner
 
-from devinfra.bazel.runfiles import get_required_path
 from x.wt.server import github_client
 from x.wt.server.git_manager import GitManager
 from x.wt.server.worktree_service import WorktreeService
@@ -470,7 +470,9 @@ def shell_command(request, tmp_path_factory):
     if request.param == "bash":
         return ["/bin/bash", "--noprofile", "--norc"]
     root = tmp_path_factory.mktemp("zsh")
-    subprocess.run(["tar", "-xf", get_required_path(os.environ["ZSH_CLOSURE"]), "-C", root], check=True)
+    subprocess.run(
+        ["tar", "-xf", (Runfiles.CreateOrRaise().root() / os.environ["ZSH_CLOSURE"]), "-C", root], check=True
+    )
     libdir = root / "usr/lib/x86_64-linux-gnu"
     return [str(libdir / "ld-linux-x86-64.so.2"), "--library-path", str(libdir), str(root / "usr/bin/zsh"), "-f"]
 

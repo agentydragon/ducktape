@@ -31,11 +31,11 @@ py_test(
     requires_docker = True,
     deps = [
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//util/testing:postgres_fixtures",
         "@pypi//psycopg",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+        "@rules_python//python/runfiles",
     ],
 )
 

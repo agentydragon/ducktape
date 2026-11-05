@@ -9,10 +9,9 @@ from typing import Any
 
 import pytest
 import yaml
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
-
-VERIFY_DASHBOARD = runpy.run_path(str(get_required_path("_main/grafana/skill/verify_dashboard.py")))
+VERIFY_DASHBOARD = runpy.run_path(str(Runfiles.CreateOrRaise().root() / "ducktape/grafana/skill/verify_dashboard.py"))
 
 
 def test_monitoring_dashboard_datasources_come_from_generator_source() -> None:

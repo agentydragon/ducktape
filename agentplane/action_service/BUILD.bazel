@@ -49,11 +49,11 @@ py_test(
         ":conftest",
         "//:conftest",
         "//agentplane/action_service/session_delegation:binding",
-        "//devinfra/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 

@@ -36,8 +36,8 @@ from pathlib import Path
 
 from agent_framework import Agent, AgentSession, FunctionTool, Message
 from pydantic import BaseModel, Field
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.skills.reverse_engineer.reverse_engineer_skill_spec import SPEC as REVERSE_ENGINEER_SKILL_SPEC
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from skills.eval_infra.af_chat_client import build_model_client
@@ -56,7 +56,7 @@ _DEFAULT_MAX_STEPS = 1000
 _DEFAULT_WALL_TIMEOUT_SECONDS = 600
 
 _TARGET_BINARY_RLOCATION = (
-    "_main/devinfra/skills/reverse_engineer/evals/tasks/go_crypto_server/go_crypto_server_garbled.bin"
+    "ducktape/devinfra/skills/reverse_engineer/evals/tasks/go_crypto_server/go_crypto_server_garbled.bin"
 )
 
 # Maps the --skill CLI value to a SkillSpec. The "off" arm uses an empty
@@ -153,7 +153,7 @@ async def _async_main(args: argparse.Namespace) -> None:
     # rollouts don't collide.
     inputs_dir = out_dir / f"inputs_{suffix}"
     inputs_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy(get_required_path(_TARGET_BINARY_RLOCATION), inputs_dir / "target")
+    shutil.copy(Runfiles.CreateOrRaise().root() / _TARGET_BINARY_RLOCATION, inputs_dir / "target")
 
     staged = stage_skill(_SKILL_BY_ARM[args.skill], out_dir / f"skill_extract_{suffix}")
     system_prompt = compose_system_prompt(skill_md=staged.md_text)

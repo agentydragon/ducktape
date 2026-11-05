@@ -8,8 +8,10 @@ load(
     "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES",
 )
 load("//devinfra/cpio:defs.bzl", "cpio_archive")
-load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# gazelle:resolve py agentplane.x.runner_layering.tools_rootfs //agentplane/x/runner_layering:tools_rootfs
 
 package(default_visibility = ["//visibility:public"])
 
@@ -63,16 +65,16 @@ oci_image(
     ],
 )
 
-oci_layout_rloc(
+oci_layout_py(
     name = "tools_rootfs",
     image = ":workload_tools_image",
 )
 
 py_binary(
     name = "local_vm_probe",
+    args = ["--kernel-rlocation=$(rlocationpath @firecracker_vmlinux_6_1_128//file)"],
     data = [
         ":base_initramfs",
-        ":tools_rootfs",
         "//devinfra/firecracker:firecracker_layer",
         "@agentplane_codex_cli_linux_x64//:codex_binary",
         "@agentplane_codex_cli_linux_x64//:codex_bwrap",
@@ -89,8 +91,9 @@ py_library(
     name = "local_vm",
     srcs = ["local_vm.py"],
     deps = [
-        "//devinfra/bazel:runfiles",
+        "//agentplane/x/runner_layering:tools_rootfs",
         "@pypi//httpx",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -100,7 +103,6 @@ py_test(
     srcs = ["test_sparse_root.py"],
     data = [
         ":child_exec",  # keep: the sparse-root Codex process fence
-        ":tools_rootfs",  # keep: independent tools image for sparse-root probe
         "//agentplane/env/runtime/cmd:agentplane-environment-runtime",  # keep: the environment Runtime as its own process
         "@agentplane_codex_cli_linux_x64//:files",  # keep: pinned Codex and bwrap
     ],
@@ -113,6 +115,7 @@ py_test(
     ],
     deps = [
         ":conftest",
+        ":local_vm",
         "//:conftest",
         "//agentplane/env/e2e/testing:driver",
         "//agentplane/env/e2e/testing:events",
@@ -121,10 +124,11 @@ py_test(
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/testing:scripted_model",
-        "//devinfra/bazel:runfiles",
+        "//agentplane/x/runner_layering:tools_rootfs",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

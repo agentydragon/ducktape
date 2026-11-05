@@ -19,6 +19,7 @@ from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 from pydantic import BaseModel
+from python.runfiles import Runfiles
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecRestic,
     ReplicationSourceSpecResticCacheCapacity,
@@ -51,7 +52,6 @@ from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import HostNetworkServiceRef, Pods, Port
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 # Aliased: each provisioner names its model `Settings`, in a module named `settings`.
 from homeassistant.provisioner.components import settings as components
@@ -634,21 +634,18 @@ def chart(app: App) -> Chart:
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)
     _metrics_token(chart)
     # Fixed names preserve Reloader updates for these mounted files.
+    config_dir = Runfiles.CreateOrRaise().root() / "ducktape" / _OUTPUT_DIR
     configuration = ConfigMap(
         chart,
         "configuration",
         metadata=ApiObjectMetadata(name="home-assistant-configuration", namespace=_NAMESPACE),
-        data={
-            "configuration.yaml": get_required_path(
-                own_repo_rlocation(f"{_OUTPUT_DIR}/configuration.yaml.conf")
-            ).read_text()
-        },
+        data={"configuration.yaml": (config_dir / "configuration.yaml.conf").read_text()},
     )
     caddy_config = ConfigMap(
         chart,
         "caddy-config",
         metadata=ApiObjectMetadata(name="home-assistant-caddy", namespace=_NAMESPACE),
-        data={"Caddyfile": get_required_path(own_repo_rlocation(f"{_OUTPUT_DIR}/Caddyfile")).read_text()},
+        data={"Caddyfile": (config_dir / "Caddyfile").read_text()},
     )
     _deployment(chart, configuration, caddy_config)
     _onboarding_job(chart)

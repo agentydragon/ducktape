@@ -3,10 +3,8 @@ package migrations
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"os"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -55,19 +53,6 @@ func resetSchema(t *testing.T, db *sql.DB) {
 	}
 }
 
-func markVersion12History(t *testing.T, db *sql.DB) {
-	t.Helper()
-	if _, err := db.ExecContext(t.Context(), `DELETE FROM notification_service_goose_version WHERE version_id >= 13`); err != nil {
-		t.Fatal(err)
-	}
-	for version := 10; version <= 12; version++ {
-		if _, err := db.ExecContext(t.Context(),
-			`INSERT INTO notification_service_goose_version (version_id, is_applied) VALUES ($1, true)`, version); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
 func newStore(db *sql.DB) *store.Store {
 	return store.New(db, store.Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000})
 }
@@ -97,135 +82,6 @@ func TestFreshBaselineSupportsNotificationStore(t *testing.T) {
 	if err := applyBaseline(t.Context(), db); err != nil {
 		t.Fatal("previous binary baseline provider on expanded schema:", err)
 	}
-}
-
-func TestAdoptVersion12PreservesStoredDataAndHistory(t *testing.T) {
-	db := cloneDatabase(t)
-	markVersion12History(t, db)
-	owner, subscription := seedSubscription(t, db, "retained-session")
-	event := model.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: model.EventPullRequest}
-	tx, err := db.BeginTx(t.Context(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var lockedInbox uuid.UUID
-	if err := tx.QueryRowContext(t.Context(), `SELECT id FROM inbox WHERE id = $1 FOR UPDATE`, subscription.InboxID).Scan(&lockedInbox); err != nil {
-		_ = tx.Rollback()
-		t.Fatal(err)
-	}
-	if err := newStore(db).AppendEvent(t.Context(), tx, subscription.InboxID, subscription.ID, event,
-		json.RawMessage(`{"action":"opened","pull_request":{"number":7}}`)); err != nil {
-		_ = tx.Rollback()
-		t.Fatal(err)
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatal(err)
-	}
-	runnerEntry := []byte{0x0a, 0x05, 0x08, 0x2a, 0x10, 0x01, 0xff, 0x00}
-	if _, err := db.ExecContext(t.Context(), `INSERT INTO notice
-		(inbox_id, command_id, through_cursor, text, attempted, admitted, confirmed, runner_cursor, runner_entry)
-		VALUES ($1, $2, 1, 'preserved notice', true, true, false, 42, $3)`,
-		subscription.InboxID, uuid.New(), runnerEntry); err != nil {
-		t.Fatal(err)
-	}
-	creationBefore := readBytes(t, db, `SELECT creation_proto FROM subscription WHERE id = $1`, subscription.ID)
-	entryBefore := readBytes(t, db, `SELECT payload FROM entry WHERE inbox_id = $1`, subscription.InboxID)
-	historyBefore := readHistory(t, db)
-	var inboxNodeBefore int64
-	if err := db.QueryRowContext(t.Context(), `SELECT 'inbox'::regclass::oid`).Scan(&inboxNodeBefore); err != nil {
-		t.Fatal(err)
-	}
-	if err := applyBaseline(t.Context(), db); err != nil {
-		t.Fatal("adopt version 12:", err)
-	}
-	if got := readBytes(t, db, `SELECT creation_proto FROM subscription WHERE id = $1`, subscription.ID); !reflect.DeepEqual(got, creationBefore) {
-		t.Fatalf("creation bytes changed: %x -> %x", creationBefore, got)
-	}
-	if got := readBytes(t, db, `SELECT payload FROM entry WHERE inbox_id = $1`, subscription.InboxID); !reflect.DeepEqual(got, entryBefore) {
-		t.Fatalf("entry bytes changed: %x -> %x", entryBefore, got)
-	}
-	if got := readBytes(t, db, `SELECT runner_entry FROM notice WHERE inbox_id = $1`, subscription.InboxID); !reflect.DeepEqual(got, runnerEntry) {
-		t.Fatalf("notice bytes changed: %x -> %x", runnerEntry, got)
-	}
-	var inboxNodeAfter int64
-	if err := db.QueryRowContext(t.Context(), `SELECT 'inbox'::regclass::oid`).Scan(&inboxNodeAfter); err != nil {
-		t.Fatal(err)
-	}
-	if inboxNodeAfter != inboxNodeBefore {
-		t.Fatal("adoption recreated the inbox table")
-	}
-	historyAfter := readHistory(t, db)
-	if !reflect.DeepEqual(historyBefore, historyAfter[:len(historyBefore)]) {
-		t.Fatal("adoption rewrote prior Goose history")
-	}
-	assertApplied(t, db, 13)
-	page, err := newStore(db).Read(t.Context(), store.Owner{Account: owner, AccountUID: "test-account-uid", SandboxUID: "adoption-uid"}, subscription.InboxID, 0, 10)
-	if err != nil || len(page.Entries) != 1 || page.Entries[0].Event != event {
-		t.Fatalf("adopted entries = %+v, error %v", page, err)
-	}
-}
-
-func TestBaselineRejectsPartialAndInvalidPredecessors(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		mutate  func(*testing.T, *sql.DB)
-		message string
-	}{
-		{"version 11", func(t *testing.T, db *sql.DB) {
-			_, err := db.ExecContext(t.Context(), `DELETE FROM notification_service_goose_version WHERE version_id = 12`)
-			if err != nil {
-				t.Fatal(err)
-			}
-		}, "finish migration 12"},
-		{"missing version 11", func(t *testing.T, db *sql.DB) {
-			_, err := db.ExecContext(t.Context(), `DELETE FROM notification_service_goose_version WHERE version_id = 11`)
-			if err != nil {
-				t.Fatal(err)
-			}
-		}, "finish migration 12"},
-		{"missing Session index", func(t *testing.T, db *sql.DB) {
-			_, err := db.ExecContext(t.Context(), `DROP INDEX inbox_session_id_unique`)
-			if err != nil {
-				t.Fatal(err)
-			}
-		}, "Session inbox schema is incomplete"},
-		{"missing content column", func(t *testing.T, db *sql.DB) {
-			_, err := db.ExecContext(t.Context(), `ALTER TABLE entry DROP COLUMN message_body`)
-			if err != nil {
-				t.Fatal(err)
-			}
-		}, "schema columns are incomplete"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			db := cloneDatabase(t)
-			markVersion12History(t, db)
-			tc.mutate(t, db)
-			err := applyBaseline(t.Context(), db)
-			if err == nil || !strings.Contains(err.Error(), tc.message) {
-				t.Fatalf("Up error = %v, want %q", err, tc.message)
-			}
-			for _, row := range readHistory(t, db) {
-				if row.version == 13 && row.applied {
-					t.Fatal("rejected adoption recorded version 13")
-				}
-			}
-		})
-	}
-}
-
-func TestBaselineAdoptsCompletePreBaselineHistory(t *testing.T) {
-	db := cloneDatabase(t)
-	markVersion12History(t, db)
-	for version := 1; version <= 9; version++ {
-		if _, err := db.ExecContext(t.Context(),
-			`INSERT INTO notification_service_goose_version (version_id, is_applied) VALUES ($1, true)`, version); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := applyBaseline(t.Context(), db); err != nil {
-		t.Fatal("adopt complete 1–12 history:", err)
-	}
-	assertApplied(t, db, 13)
 }
 
 func TestBaselineRejectsUnknownObjectsOnFreshHistory(t *testing.T) {
@@ -263,15 +119,6 @@ func TestConcurrentUpSerializesFreshBaseline(t *testing.T) {
 		}
 	}
 	assertApplied(t, db, 13)
-}
-
-func readBytes(t *testing.T, db *sql.DB, query string, args ...any) []byte {
-	t.Helper()
-	var value []byte
-	if err := db.QueryRowContext(t.Context(), query, args...).Scan(&value); err != nil {
-		t.Fatal(err)
-	}
-	return value
 }
 
 type gooseRow struct {

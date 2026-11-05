@@ -20,6 +20,7 @@ from opentofu_workspace_crds.io.upbound.opentofu import (
     WorkspaceSpecForProviderVars,
     WorkspaceSpecProviderConfigRef,
 )
+from python.runfiles import Runfiles
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import flux, terraform
@@ -31,7 +32,6 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
 )
 from cluster.cdk8s.secret_ref import SecretKey
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAMESPACE = "crossplane-system"
 RUNTIME_SERVICE_ACCOUNT = "crossplane-opentofu"
@@ -54,7 +54,7 @@ def inline_module(directory: str) -> str:
 
     This does not package local modules, auxiliary files, JSON, or override semantics.
     """
-    sources = sorted(get_required_path(own_repo_rlocation(directory)).glob("*.tf"))
+    sources = sorted((Runfiles.CreateOrRaise().root() / f"ducktape/{directory}").glob("*.tf"))
     if not sources:
         raise ValueError(f"No Terraform source files in {directory}")
     return "\n".join(source.read_text() for source in sources)

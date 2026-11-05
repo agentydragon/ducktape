@@ -422,12 +422,12 @@ py_library(
         ":models",
         ":queries",
         ":web_settings",
-        "//devinfra/bazel:runfiles",
         "//util:oidc_login",
         "@pypi//fastapi",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
+        "@rules_python//python/runfiles",
     ],
 )
 

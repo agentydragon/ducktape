@@ -63,12 +63,12 @@ impl<'a> SavedAnalysisBody<'a> {
             .chunks
             .iter()
             .map(|(name, chunk)| {
-                (
+                Ok((
                     name.clone(),
-                    SavedChunkFactAnalysis::snapshot(chunk, &mut purities),
-                )
+                    SavedChunkFactAnalysis::snapshot(chunk, ordinals, &mut purities)?,
+                ))
             })
-            .collect();
+            .collect::<Result<_>>()?;
         Ok(Self {
             purity_graph: purities.finish(),
             program_summary,
@@ -85,7 +85,7 @@ impl<'a> SavedAnalysisBody<'a> {
             chunks: self
                 .chunks
                 .into_iter()
-                .map(|(name, chunk)| Ok((name, chunk.restore(&purities)?)))
+                .map(|(name, chunk)| Ok((name, chunk.restore(ordinals, &purities)?)))
                 .collect::<Result<_>>()?,
         })
     }
@@ -100,7 +100,7 @@ pub fn write_artifact(
 ) -> Result<Vec<u8>> {
     let header = rmp_serde::to_vec_named(header)?;
     let saved = SavedAnalysisBody::snapshot(body, ordinals)?;
-    let body = analysis_codec::encode(&saved, ordinals)?;
+    let body = analysis_codec::encode(&saved)?;
     let mut bytes = Vec::with_capacity(4 + header.len() + body.len());
     bytes.extend_from_slice(&u32::try_from(header.len())?.to_le_bytes());
     bytes.extend_from_slice(&header);
@@ -124,7 +124,7 @@ pub fn read_header(bytes: &[u8]) -> Result<(AnalysisArtifactHeader, &[u8])> {
 }
 
 pub fn read_body(body: &[u8], ordinals: &ContextOrdinals) -> Result<AnalysisArtifactBody> {
-    let saved: SavedAnalysisBody<'_> = analysis_codec::decode(body, ordinals)?;
+    let saved: SavedAnalysisBody<'_> = analysis_codec::decode(body)?;
     saved.restore(ordinals)
 }
 

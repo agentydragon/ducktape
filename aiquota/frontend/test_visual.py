@@ -10,15 +10,15 @@ import pytest
 import pytest_asyncio
 import pytest_bazel
 from playwright.async_api import expect
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from util.testing.frontend_visual.capture import VisualHarness, VisualPage
 from util.testing.frontend_visual.viewports import Viewport
 
 pytest_plugins = ("util.testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
-_FIXTURES = json.loads(get_required_path(os.environ["FIXTURE_CATALOG"]).read_bytes())
+_FIXTURES = json.loads((Runfiles.CreateOrRaise().root() / os.environ["FIXTURE_CATALOG"]).read_bytes())
 _SCENES = tuple(_FIXTURES)
 if not _SCENES:
     raise ValueError("the dashboard fixture catalog is empty")

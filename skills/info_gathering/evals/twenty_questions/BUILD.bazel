@@ -29,8 +29,8 @@ py_library(
     ],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = [
-        "//devinfra/bazel:runfiles",
         "//skills/eval_infra:eval_prompt",
+        "@rules_python//python/runfiles",
     ],
 )
 

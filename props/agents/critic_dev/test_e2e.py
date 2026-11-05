@@ -62,7 +62,7 @@ pytest_plugins = (
 logger = logging.getLogger(__name__)
 
 _CRITIC_REGISTRY_PROBE_IMAGE = BazelImage(
-    repo_name="critic", image_rlocation="_main/props/agents/critic_dev/critic_registry_probe_image"
+    repo_name="critic", image_rlocation="ducktape/props/agents/critic_dev/critic_registry_probe_image"
 )
 
 

@@ -29,6 +29,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import yaml
+from python.runfiles import Runfiles
 
 from agentplane.system_tests.deployment import certificates, process_traces, rendered_fixture
 from agentplane.system_tests.deployment.virtualization import Virtualization, VirtualizationFactory
@@ -38,7 +39,6 @@ from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.k3s import baseline, pki_infrastructure
 from agentplane.system_tests.k3s.baseline import K3s, run
 from agentplane.testing import tls
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
@@ -351,7 +351,7 @@ def running_stack(
     virtualization_factory: VirtualizationFactory | None,
 ) -> Iterator[Stack]:
     """Create fresh fixtures; retain infrastructure only with the executor's lifecycle permission."""
-    crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
+    crds = sorted((Runfiles.CreateOrRaise().root() / "ducktape/agentplane/crds/manifests").glob("crd-*.yaml"))
     fixture = inputs.fixture
     uses_virtualization = fixture.vm_sandboxes or fixture.firecracker_sandboxes
     if fixture.firecracker_sandboxes and os.environ.get("AGENTPLANE_K3S_REQUIRE_KVM") != "1":

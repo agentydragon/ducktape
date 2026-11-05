@@ -6,16 +6,19 @@ import pytest
 import pytest_bazel
 import yaml
 from pydantic import TypeAdapter, ValidationError
+from python.runfiles import Runfiles
 
 from agentplane.action_service.catalog import ActionGroup, Key, McpExecutorBinding
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
-from devinfra.bazel.runfiles import get_required_path
 
 
 def _configured_groups() -> dict[str, ActionGroup]:
     return TypeAdapter(dict[Key, ActionGroup]).validate_python(
         yaml.safe_load(
-            get_required_path("_main/agentplane/action_service/testdata/configured_action_groups.yaml").read_text()
+            (
+                Runfiles.CreateOrRaise().root()
+                / "ducktape/agentplane/action_service/testdata/configured_action_groups.yaml"
+            ).read_text()
         )
     )
 

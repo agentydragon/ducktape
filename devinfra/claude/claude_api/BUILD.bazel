@@ -71,12 +71,12 @@ py_test(
     deps = [
         ":json_schema",
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api/hooks:output",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

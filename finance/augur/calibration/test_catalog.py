@@ -6,8 +6,8 @@ from datetime import date
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from finance.augur.calibration.catalog import (
     CatalogMetadata,
     CorrelateMarket,
@@ -125,7 +125,9 @@ def test_platform_ref_discriminated_union() -> None:
 
 def test_shipped_example_catalog_parses() -> None:
     """The worked-example catalog YAML validates against the discriminated union."""
-    catalog = MarketCatalog.from_yaml(get_required_path("_main/finance/augur/calibration/example_openai_catalog.yaml"))
+    catalog = MarketCatalog.from_yaml(
+        Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/calibration/example_openai_catalog.yaml"
+    )
     assert {type(m) for m in catalog.markets} == {ExactMarket, CorrelateMarket, UnmappableMarket}
     assert catalog.exact_markets()  # at least one scored market
     assert catalog.surfaced_markets()  # and at least one surfaced market
