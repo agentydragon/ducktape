@@ -1,6 +1,6 @@
 # wyrm2 KVM worker validation
 
-The manual `wyrm2-kvm-vm` pool runs Docker actions inside a static Ubuntu KubeVirt VM.
+The manual `kvm-vm` pool runs Docker actions inside a static Ubuntu KubeVirt VM.
 The VM is the boundary from the main cluster; actions in this trusted-code pool can
 control the persistent guest. The existing hosted lane runs actions inside BuildBuddy
 Firecracker guests. Both use the same K3s fixture and VM scenarios.

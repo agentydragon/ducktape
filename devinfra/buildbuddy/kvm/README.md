@@ -1,6 +1,8 @@
 # BuildBuddy KVM executors
 
-The `buildbuddy-executor` HelmRelease advertises pool `wyrm2-kvm`; OCI actions
+The `buildbuddy-executor` HelmRelease configures pool `wyrm2-kvm`, disabled with
+zero replicas. Helm reconciliation remains enabled so the replica count is applied;
+suspending the HelmRelease alone would leave the executor running. When enabled, OCI actions
 receive `/dev/kvm` through BuildBuddy's OCI device configuration. Its
 `child_cgroups_enabled` setting keeps action processes in a child cgroup of the
 Kubernetes container's resource-limited cgroup. The pinned executor image
@@ -30,7 +32,7 @@ KVM API version 12, and creates a VM and vCPU. It logs `CapEff` from
 `/proc/self/status` for executor diagnostics. It does not run guest code or
 verify Firecracker.
 
-From the repository root, run it after the `wyrm2-kvm` executor is deployed:
+From the repository root, run it after enabling the `wyrm2-kvm` executor:
 
 ```bash
 bbr test //devinfra/buildbuddy/kvm:kvm_test --nocache_test_results
@@ -45,7 +47,7 @@ final cleanup after over ten minutes of execution. See the
 for the measured phases and remaining adoption requirements.
 
 The manual `kvm_vm_test` target runs the same `/dev/kvm` smoke check on pool
-`wyrm2-kvm-vm`, using Docker workload isolation. After that pool is deployed,
+`kvm-vm`, using Docker workload isolation. After that pool is deployed,
 `//agentplane/system_tests/suites:test_vm_kvm` runs the existing `test_vm.py`
 scenarios with KubeVirt hardware acceleration (`useEmulation: false`). Both
 targets inherit the repository's pinned Ubuntu RBE action image and set
