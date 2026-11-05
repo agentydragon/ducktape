@@ -15,7 +15,7 @@ test -w .
 test "$HOME" = /state/home
 test "$(stat -c '%u:%g' "$HOME")" = 107:107
 test "$(stat -c '%a' "$HOME")" = 700
-test "$(getent passwd agent | cut -d: -f6)" = /state/home
+test "$(awk -F: '$1 == "agent" {print $6}' /etc/passwd)" = /state/home
 home_proof="$HOME/agentplane-home-supervision"
 printf 'home-write-check\n' > "$home_proof"
 test "$(cat "$home_proof")" = home-write-check
