@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
-use clap::{ArgMatches, Args as ClapArgs, parser::ValueSource};
+use clap::Args as ClapArgs;
 use package_args::{collect_package_roots, parse_package_root_kv};
 use pipeline::{RunOutput, TransformRequest, TransformSpecSource, project_analysis};
 use spec_tree::CompileSpecTreeOptions;
