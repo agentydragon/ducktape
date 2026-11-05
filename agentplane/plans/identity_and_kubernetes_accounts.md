@@ -282,6 +282,12 @@ watch and "View grants" disclosure re-anchored on the identity instead of a Serv
   with a link to its page. Permissions are a property of the identity: bindings are additive, so a
   launch cannot narrow them per environment, and widening a standing identity is a deliberate grant
   with its own expiry on the identity's page, never a side effect of starting a session.
+  The same form chooses placement (operator, 2026-11-05: one form rather than environment-then-
+  session, either acceptable): a new environment from a template, an existing environment, or none
+  for a central Session that attaches one later. The two choices constrain each other through the
+  same-environment invariant: an existing environment fixes the identity to its own, read-only; a
+  new or absent environment leaves the identity free. One submit makes the two backend calls,
+  `CreateEnvironment` then `CreateSession`, or just the second.
 
 ## Lifetimes
 
