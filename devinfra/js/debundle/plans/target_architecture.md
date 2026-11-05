@@ -44,7 +44,7 @@ source, analysis projection and engine (`staged_analysis/analysis_projection.rs`
   not separate analyses.
 
 - **Cross-module summaries** for imported callables, including vendor bodies
-  under the swap promise (`cross_module_purity.rs`, `staged_analysis/cross_module.rs`).
+  under the swap promise (`cross_module_purity.rs`, `staged_analysis/program_summary.rs`).
 - **Premises are axioms**: `host_behavior`, `program_premises`,
   `chunk_export_purity`, the `chunk_analysis_options` premise lists and member
   annotations. The engine generates an audit list for each premise: the sites

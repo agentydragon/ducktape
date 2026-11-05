@@ -46,8 +46,9 @@ use crate::facts::{ChunkValueFlow, TopLevelItemView, top_level_item_views};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::purity::{ChunkCodeGraph, Purity, PurityEffectRules, PurityMode};
 
-/// Stable key identifying a module in the program (the chunk name).
-pub type ModuleKey = String;
+/// Source chunk name used as a key in program-summary maps; report
+/// [`crate::reports::schema::ModuleKey`] identifies a destination module.
+pub type SourceModuleKey = String;
 
 /// An import of a single named/default binding, already resolved to the
 /// module that defines it and the export read. Namespace imports
@@ -57,7 +58,7 @@ pub type ModuleKey = String;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedImport {
     /// The module that defines the imported binding.
-    pub module: ModuleKey,
+    pub module: SourceModuleKey,
     /// The export name read from that module.
     pub export: String,
 }
@@ -88,8 +89,8 @@ pub struct ExportValueSource {
 /// seed and stay unknown. The closure neither interprets values nor certifies
 /// that evaluating an initializer is pure.
 pub fn resolve_export_values(
-    sources: BTreeMap<(ModuleKey, String), ExportValueSource>,
-) -> BTreeMap<(ModuleKey, String), Value> {
+    sources: BTreeMap<(SourceModuleKey, String), ExportValueSource>,
+) -> BTreeMap<(SourceModuleKey, String), Value> {
     let rules = ExportValueRules(sources.into_iter().collect());
     let count = rules.0.len();
     IterativeInference::new(rules)
@@ -99,10 +100,10 @@ pub fn resolve_export_values(
         .collect()
 }
 
-struct ExportValueRules(Vec<((ModuleKey, String), ExportValueSource)>);
+struct ExportValueRules(Vec<((SourceModuleKey, String), ExportValueSource)>);
 
 impl IterativeRules for ExportValueRules {
-    type Key = (ModuleKey, String);
+    type Key = (SourceModuleKey, String);
     type Fact = PrimKinds;
     type Rule = usize;
 
@@ -261,7 +262,7 @@ impl<'a> ModulePurityFacts<'a> {
     /// Each local import's value under the program-wide export values.
     pub fn imported_values(
         &self,
-        export_values: &BTreeMap<(ModuleKey, String), Value>,
+        export_values: &BTreeMap<(SourceModuleKey, String), Value>,
     ) -> BTreeMap<String, Value> {
         self.imports
             .iter()
@@ -274,7 +275,7 @@ impl<'a> ModulePurityFacts<'a> {
 
     fn imported_purities(
         &self,
-        export_purity: &BTreeMap<(ModuleKey, String), Arc<Purity>>,
+        export_purity: &BTreeMap<(SourceModuleKey, String), Arc<Purity>>,
     ) -> BTreeMap<String, Arc<Purity>> {
         self.imports
             .iter()
@@ -299,10 +300,10 @@ impl<'a> ModulePurityFacts<'a> {
 /// naming a module or export the program doesn't have is reported to stderr
 /// as a dangling assertion (likely a typo or a stale entry) and ignored.
 pub fn resolve_imported_purities(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    asserted_pure: &BTreeMap<ModuleKey, BTreeSet<String>>,
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted_pure: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
     callable_summaries: &mut ResolvedCallableSummaries,
-) -> BTreeMap<ModuleKey, BTreeMap<String, Arc<Purity>>> {
+) -> BTreeMap<SourceModuleKey, BTreeMap<String, Arc<Purity>>> {
     // Only exported verdicts read by a named/default import can affect the
     // returned maps or another module's closure. Namespace member calls are
     // intentionally outside this oracle.
@@ -312,8 +313,8 @@ pub fn resolve_imported_purities(
         .map(|target| (target.module.clone(), target.export.clone()))
         .collect();
     // Author-asserted axioms stay pinned Pure, even when no source body exists.
-    let mut pinned: BTreeSet<(ModuleKey, String)> = BTreeSet::new();
-    let mut export_purity: BTreeMap<(ModuleKey, String), Arc<Purity>> = BTreeMap::new();
+    let mut pinned: BTreeSet<(SourceModuleKey, String)> = BTreeSet::new();
+    let mut export_purity: BTreeMap<(SourceModuleKey, String), Arc<Purity>> = BTreeMap::new();
     for (module, export_names) in asserted_pure {
         for export_name in export_names {
             let known_export = modules
@@ -515,32 +516,33 @@ pub fn resolve_imported_purities(
 /// from author assertions. Missing exports and unsupported bodies stay opaque.
 #[derive(Default)]
 pub struct ResolvedCallableSummaries {
-    pub imported_callables: BTreeMap<ModuleKey, BTreeMap<String, CallableSummary>>,
+    pub imported_callables: BTreeMap<SourceModuleKey, BTreeMap<String, CallableSummary>>,
     pub native_integrity: Option<NativeIntegrity>,
-    pub value_inputs: BTreeMap<ModuleKey, Vec<ResolvedBindingValueInput>>,
-    pub native_operation_inputs: BTreeMap<ModuleKey, Vec<ResolvedNativeOperationInput>>,
+    pub value_inputs: BTreeMap<SourceModuleKey, Vec<ResolvedBindingValueInput>>,
+    pub native_operation_inputs: BTreeMap<SourceModuleKey, Vec<ResolvedNativeOperationInput>>,
     pub stable_set_spreads:
-        BTreeMap<ModuleKey, BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>>,
+        BTreeMap<SourceModuleKey, BTreeMap<u32, crate::analysis_inputs::StableSetIterableUse>>,
     pub inferred_set_constructions:
-        BTreeMap<ModuleKey, BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>>,
-    pub argument_inputs: BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
+        BTreeMap<SourceModuleKey, BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>>,
+    pub argument_inputs:
+        BTreeMap<SourceModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
     /// The whole-program bundle-owned globals the census used.
     pub bundle_globals: BundleGlobalNames,
     /// Structural value flows already solved while deriving summaries, which
     /// the purity oracle's census of the same body takes instead of solving
     /// again.
-    pub(crate) structural_flows: BTreeMap<ModuleKey, ChunkValueFlow>,
+    pub(crate) structural_flows: BTreeMap<SourceModuleKey, ChunkValueFlow>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct CallableExportKey {
-    module: ModuleKey,
+    module: SourceModuleKey,
     export: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct CallableImportKey {
-    module: ModuleKey,
+    module: SourceModuleKey,
     local: String,
 }
 
@@ -583,7 +585,7 @@ struct CallableProjectionRules {
 impl CallableProjectionRules {
     fn new(
         exports: BTreeMap<CallableExportKey, CallableExportProof>,
-        modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+        modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
     ) -> Self {
         let imports = modules
             .iter()
@@ -656,9 +658,9 @@ impl IterativeRules for CallableProjectionRules {
 }
 
 fn solve_callable_import_projections(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
     exports: BTreeMap<CallableExportKey, CallableExportProof>,
-) -> BTreeMap<ModuleKey, BTreeMap<String, CallableSummary>> {
+) -> BTreeMap<SourceModuleKey, BTreeMap<String, CallableSummary>> {
     let rules = CallableProjectionRules::new(exports, modules);
     let producers = rules.producers();
     let solved = IterativeInference::new(rules).solve(producers);
@@ -686,23 +688,23 @@ fn solve_callable_import_projections(
 /// The author inputs and host claims `resolve_imported_callable_summaries`
 /// checks the providers against.
 pub struct CallableSummaryInputs<'a> {
-    pub selected_value_inputs: &'a BTreeMap<ModuleKey, Vec<SelectedBindingValueInput>>,
+    pub selected_value_inputs: &'a BTreeMap<SourceModuleKey, Vec<SelectedBindingValueInput>>,
     pub selected_native_operation_inputs:
-        &'a BTreeMap<ModuleKey, Vec<SelectedNativeOperationInput>>,
+        &'a BTreeMap<SourceModuleKey, Vec<SelectedNativeOperationInput>>,
     pub argument_inputs:
-        &'a BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
+        &'a BTreeMap<SourceModuleKey, Vec<crate::analysis_inputs::ResolvedArgumentInput>>,
     pub predefined_globals: spec::PredefinedGlobals,
     pub no_accessor_install_callables:
-        &'a BTreeMap<ModuleKey, Vec<crate::analysis_inputs::ResolvedNoAccessorInstall>>,
+        &'a BTreeMap<SourceModuleKey, Vec<crate::analysis_inputs::ResolvedNoAccessorInstall>>,
     /// `program_premises.intrinsics_never_written` families.
     pub intrinsics_never_written: BTreeSet<NativeIntrinsic>,
 }
 
 pub fn resolve_imported_callable_summaries(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
     descriptor_copy_asserted: &BTreeMap<
-        ModuleKey,
+        SourceModuleKey,
         BTreeMap<String, Vec<spec::DescriptorCopyFactorySignature>>,
     >,
     inputs: CallableSummaryInputs<'_>,
@@ -1100,11 +1102,11 @@ pub fn resolve_imported_callable_summaries(
 
     // At most one structural flow per module, solved on first need and kept
     // for the purity oracle (`ModulePurityFacts::prepare`).
-    let structural_flows: BTreeMap<&ModuleKey, OnceCell<ChunkValueFlow>> = modules
+    let structural_flows: BTreeMap<&SourceModuleKey, OnceCell<ChunkValueFlow>> = modules
         .keys()
         .map(|module| (module, OnceCell::new()))
         .collect();
-    let structural_flow = |module: &ModuleKey, views: &[TopLevelItemView<'_>]| {
+    let structural_flow = |module: &SourceModuleKey, views: &[TopLevelItemView<'_>]| {
         structural_flows[module].get_or_init(|| {
             crate::facts::structural_value_flow(
                 views,
@@ -1525,9 +1527,9 @@ pub fn resolve_imported_callable_summaries(
 /// import identities as the broader callback-factory contract. No local
 /// wrapper inference grants this narrower assertion implicitly.
 pub fn resolve_asserted_inline_callback_factories(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
-) -> BTreeMap<ModuleKey, BTreeSet<String>> {
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
+) -> BTreeMap<SourceModuleKey, BTreeSet<String>> {
     let mut factories = BTreeSet::new();
     for (module, exports) in asserted {
         for export in exports {
@@ -1567,85 +1569,88 @@ pub fn resolve_asserted_inline_callback_factories(
 /// member-call trust arm (`declared_pure_members`). Assertions naming a module
 /// or export the program doesn't have warn to stderr and are ignored.
 pub fn resolve_asserted_member_purities(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>>,
-) -> BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>> {
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted_members: &BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>>,
+) -> BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>> {
     resolve_asserted_members(modules, asserted_members, "pure_members")
 }
 
 pub fn resolve_asserted_callback_factory_members(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>>,
-) -> BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>> {
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted_members: &BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>>,
+) -> BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>> {
     resolve_asserted_members(modules, asserted_members, "callback_factory_members")
 }
 
 pub fn resolve_asserted_no_reentry_members(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>>,
-) -> BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>> {
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted_members: &BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>>,
+) -> BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>> {
     resolve_asserted_members(modules, asserted_members, "no_reentry_members")
 }
 
 pub fn resolve_asserted_no_reentry_record_members(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>>,
-) -> BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>> {
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted_members: &BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>>,
+) -> BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>> {
     resolve_asserted_members(modules, asserted_members, "no_reentry_record_members")
 }
 
 /// Project direct-export call-timing assertions through resolved import
 /// identities, without inferring purity or wrapper behavior.
 pub fn resolve_asserted_no_reentry_bindings(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
-) -> BTreeMap<ModuleKey, BTreeSet<String>> {
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
+) -> BTreeMap<SourceModuleKey, BTreeSet<String>> {
     resolve_asserted_export_bindings(modules, asserted, "no_reentry_exports")
 }
 
 pub fn resolve_asserted_namespace_independent_members(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>>,
-) -> BTreeMap<ModuleKey, BTreeMap<String, BTreeSet<String>>> {
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted_members: &BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>>,
+) -> BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>> {
     resolve_asserted_members(modules, asserted_members, "namespace_independent_members")
 }
 
 pub fn resolve_asserted_retained_callback_factories(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    asserted: &BTreeMap<ModuleKey, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
-) -> BTreeMap<ModuleKey, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>> {
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted: &BTreeMap<SourceModuleKey, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
+) -> BTreeMap<SourceModuleKey, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>> {
     resolve_asserted_members(modules, asserted, "retained_callback_factory_exports")
 }
 
 pub fn resolve_asserted_retained_callback_constructors(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    asserted: &BTreeMap<ModuleKey, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
-) -> BTreeMap<ModuleKey, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>> {
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted: &BTreeMap<SourceModuleKey, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
+) -> BTreeMap<SourceModuleKey, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>> {
     resolve_asserted_members(modules, asserted, "retained_callback_constructor_exports")
 }
 
 pub fn resolve_asserted_no_reentry_callbacks(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    asserted: &BTreeMap<ModuleKey, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
-) -> BTreeMap<ModuleKey, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>> {
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted: &BTreeMap<SourceModuleKey, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
+) -> BTreeMap<SourceModuleKey, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>> {
     resolve_asserted_members(modules, asserted, "no_reentry_callback_exports")
 }
 
 pub fn resolve_asserted_retained_callback_factory_members(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
     asserted: &BTreeMap<
-        ModuleKey,
+        SourceModuleKey,
         BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
     >,
-) -> BTreeMap<ModuleKey, BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>> {
+) -> BTreeMap<
+    SourceModuleKey,
+    BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>,
+> {
     resolve_asserted_members(modules, asserted, "retained_callback_factory_members")
 }
 
 fn resolve_asserted_members<T: Clone>(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    asserted_members: &BTreeMap<ModuleKey, BTreeMap<String, T>>,
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted_members: &BTreeMap<SourceModuleKey, BTreeMap<String, T>>,
     contract: &str,
-) -> BTreeMap<ModuleKey, BTreeMap<String, T>> {
+) -> BTreeMap<SourceModuleKey, BTreeMap<String, T>> {
     for (module, by_export) in asserted_members {
         for export_name in by_export.keys() {
             let known_export = modules
@@ -1694,9 +1699,9 @@ fn resolve_asserted_members<T: Clone>(
 /// (`ChunkCodeGraph::fluent_bindings`). Assertions naming a module or
 /// export the program doesn't have warn to stderr and are ignored.
 pub fn resolve_asserted_fluent_bindings(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    asserted_fluent: &BTreeMap<ModuleKey, BTreeSet<String>>,
-) -> BTreeMap<ModuleKey, BTreeSet<String>> {
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted_fluent: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
+) -> BTreeMap<SourceModuleKey, BTreeSet<String>> {
     resolve_asserted_export_bindings(modules, asserted_fluent, "fluent_exports")
 }
 
@@ -1704,17 +1709,17 @@ pub fn resolve_asserted_fluent_bindings(
 /// The result feeds `declared_pure_new`, so only `new local(...)` is admitted;
 /// plain calls and argument expressions retain their normal classification.
 pub fn resolve_asserted_pure_new_bindings(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    asserted_pure_new: &BTreeMap<ModuleKey, BTreeSet<String>>,
-) -> BTreeMap<ModuleKey, BTreeSet<String>> {
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted_pure_new: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
+) -> BTreeMap<SourceModuleKey, BTreeSet<String>> {
     resolve_asserted_export_bindings(modules, asserted_pure_new, "pure_new_exports")
 }
 
 fn resolve_asserted_export_bindings(
-    modules: &BTreeMap<ModuleKey, ModulePurityFacts<'_>>,
-    asserted: &BTreeMap<ModuleKey, BTreeSet<String>>,
+    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    asserted: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
     field: &str,
-) -> BTreeMap<ModuleKey, BTreeSet<String>> {
+) -> BTreeMap<SourceModuleKey, BTreeSet<String>> {
     for (module, export_names) in asserted {
         for export_name in export_names {
             let known_export = modules

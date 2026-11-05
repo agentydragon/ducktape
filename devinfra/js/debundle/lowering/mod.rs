@@ -60,8 +60,8 @@ use materialize::{
 use spec_resolution::solve_projected_chunks;
 use staged_analysis::analysis_projection::{self, AnalysisProjection};
 use staged_analysis::{
-    AnalysisSpec, ExportReentryReport, cross_module, export_policies, export_reentry_reports,
-    load_analysis, loader_surface, normalized_chunk_ids, prune_artifact_to_chunk_ids,
+    AnalysisSpec, ExportReentryReport, export_policies, export_reentry_reports, load_analysis,
+    loader_surface, normalized_chunk_ids, program_summary, prune_artifact_to_chunk_ids,
 };
 
 use util::normalize_optional_relative_dir;
@@ -362,7 +362,7 @@ pub fn materialize_logical_modules(
     // function bindings, consumed per chunk via
     // `AnalysisInputs::imported_purities`. Vendor-swapped providers take part
     // through their bundled bodies (SPEC.md § Vendor swap equivalence).
-    let cross_module_chunk_closure = cross_module::selected_static_import_closure(
+    let program_summary_chunk_closure = program_summary::selected_static_import_closure(
         &artifact,
         &artifact_indexes,
         &selected_chunk_ids,
@@ -370,7 +370,10 @@ pub fn materialize_logical_modules(
     let reparsed = match &options.analysis {
         AnalysisMode::Project(_) => BTreeMap::new(),
         AnalysisMode::Compute | AnalysisMode::Load { .. } => {
-            cross_module::reparse_unretained_entries(&artifact, Some(&cross_module_chunk_closure))
+            program_summary::reparse_unretained_entries(
+                &artifact,
+                Some(&program_summary_chunk_closure),
+            )
         }
     };
     let mut loaded = match &options.analysis {
@@ -528,7 +531,7 @@ pub fn materialize_logical_modules(
             projection.native_operation_inputs.clone(),
         )
     };
-    let (cross_module_purities, mut loaded_chunks) = match (&options.analysis, loaded) {
+    let (program_summary, mut loaded_chunks) = match (&options.analysis, loaded) {
         (AnalysisMode::Project(base), _) => return Ok(Materialized::Projected(completed(base)?)),
         (AnalysisMode::Load { base, .. }, Some((header, body))) => {
             let completed = completed(base)?;
@@ -540,18 +543,18 @@ pub fn materialize_logical_modules(
                     differences.join(", ")
                 );
             }
-            (body.cross_module, Some(body.chunks))
+            (body.program_summary, Some(body.chunks))
         }
         _ => (
-            cross_module::collect_cross_module_imported_purities(
+            program_summary::collect_program_summary(
                 &artifact,
                 &artifact_indexes,
                 &projection,
-                cross_module::CrossModuleAnalysisOptions {
+                program_summary::ProgramSummaryOptions {
                     graph_provenance: options.graph_provenance.as_ref(),
                     replacement_packages: &vendor_plan.replacement_packages(),
                 },
-                Some(&cross_module_chunk_closure),
+                Some(&program_summary_chunk_closure),
                 &reparsed,
             )?,
             None,
@@ -576,7 +579,7 @@ pub fn materialize_logical_modules(
         .collect::<Result<Vec<_>>>()?;
     let program_graph = ProgramGraphOutput::new(
         options.graph_provenance.as_ref(),
-        cross_module_purities.native_integrity.as_ref(),
+        program_summary.native_integrity.as_ref(),
         AuthorInputLocations::new(options.graph_provenance.as_ref(), chunk_analysis_options)?,
     );
     let chunk_results = GLOBALS
@@ -588,7 +591,7 @@ pub fn materialize_logical_modules(
                         finish_logical_chunk(
                             chunk,
                             &projection,
-                            &cross_module_purities,
+                            &program_summary,
                             facts,
                             &program_graph,
                             GraphConstructionContext {

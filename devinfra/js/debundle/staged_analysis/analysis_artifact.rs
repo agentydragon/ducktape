@@ -7,7 +7,7 @@
 //! reads without parsing any chunk, so a run stage can check it before it
 //! re-parses the sources the body's contexts refer to.
 //!
-//! The artifact holds `CrossModulePurities` once. Each chunk's
+//! The artifact holds the `ProgramSummary` once. Each chunk's
 //! `AnalysisInputs` derive from it and the source-analysis projection; storing them
 //! instead would repeat the program-wide census per chunk (1.77 GB on the
 //! Claude CLI).
@@ -20,7 +20,7 @@ use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 
 use super::ExportReentryReport;
-use super::cross_module::CrossModulePurities;
+use super::program_summary::ProgramSummary;
 
 /// What an artifact was computed from; a reader recomputes it and refuses an
 /// artifact whose header differs.
@@ -36,7 +36,7 @@ pub struct AnalysisArtifactHeader {
 
 #[derive(Serialize, Deserialize)]
 pub struct AnalysisArtifactBody {
-    pub cross_module: CrossModulePurities,
+    pub program_summary: ProgramSummary,
     pub export_reentry: BTreeMap<String, ExportReentryReport>,
     pub chunks: BTreeMap<String, ChunkFactAnalysis>,
 }
@@ -80,9 +80,8 @@ pub fn read_body(body: &[u8], ordinals: &ContextOrdinals) -> Result<AnalysisArti
 mod tests {
     use super::*;
     use crate::analysis_projection::AnalysisProjection;
-    use crate::cross_module::{
-        CrossModuleAnalysisOptions, collect_cross_module_imported_purities,
-        reparse_unretained_entries,
+    use crate::program_summary::{
+        ProgramSummaryOptions, collect_program_summary, reparse_unretained_entries,
     };
     use analysis::AnalysisInputs;
     use artifact::reports::{ChunkAnalysisReport, ChunkFileRecord};
@@ -195,7 +194,7 @@ mod tests {
         let indexes = ArtifactIndexes::build(artifact).expect("build indexes");
         let no_options = BTreeMap::new();
         let host_behavior = spec::HostBehavior::default();
-        let cross_module = collect_cross_module_imported_purities(
+        let program_summary = collect_program_summary(
             artifact,
             &indexes,
             &AnalysisProjection::new(
@@ -207,14 +206,14 @@ mod tests {
                 &BTreeMap::new(),
             )
             .expect("empty projection is valid"),
-            CrossModuleAnalysisOptions {
+            ProgramSummaryOptions {
                 graph_provenance: None,
                 replacement_packages: &BTreeMap::new(),
             },
             None,
             &reparse_unretained_entries(artifact, None),
         )
-        .expect("cross-module analysis succeeds");
+        .expect("program summary analysis succeeds");
         let chunks = artifact
             .chunks
             .iter()
@@ -222,7 +221,7 @@ mod tests {
             .map(|(chunk, module)| {
                 let name = artifact.chunk_table.name(chunk.chunk_id).to_string();
                 let inputs = AnalysisInputs {
-                    imported_purities: cross_module
+                    imported_purities: program_summary
                         .bindings
                         .get(&name)
                         .cloned()
@@ -234,7 +233,7 @@ mod tests {
             })
             .collect();
         AnalysisArtifactBody {
-            cross_module,
+            program_summary,
             export_reentry: BTreeMap::new(),
             chunks,
         }

@@ -18,7 +18,7 @@ use source_identity::{SourceUnitOrdinal, StatementId};
 use spec::{CommutingStatementsContract, ResolvedMemberSelector, SourceUnitSelector};
 use swc_ecma_ast::{Module, ModuleItem};
 
-use super::cross_module::select_one_declared_binding;
+use super::program_summary::select_one_declared_binding;
 use staged_analysis::ResolvedMemberSite;
 
 /// Resolve every `commuting_statements` pair of `chunk_name` to two distinct

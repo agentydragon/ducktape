@@ -1,8 +1,9 @@
-//! Program-level cross-module purity pass: resolve every chunk's imports
-//! against the artifact and run the purity fixpoint
-//! (`analysis::cross_module_purity`). Output feeds each chunk's
-//! `AnalysisInputs::imported_purities` so the per-chunk classifier can see
-//! through calls to imported functions instead of bailing `unknown_call`.
+//! Program-wide summaries consumed by per-chunk source analysis.
+//!
+//! This stage resolves each chunk's imports against the artifact, gathers
+//! source-resolved inputs, and calls the cross-module purity analysis
+//! (`analysis::cross_module_purity`). Its results feed each chunk's
+//! `AnalysisInputs`, including `imported_purities` for imported calls.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -152,8 +153,8 @@ fn exported_decl_names(decl: &Decl) -> Vec<String> {
 }
 
 /// Parsed entry + import/export records for a chunk whose entry the artifact
-/// kept as raw source (non-selected chunks). The oracle parses these itself —
-/// every listed chunk participates in cross-module purity, not just the
+/// kept as raw source (non-selected chunks). The program-summary pass parses
+/// these itself so every listed chunk participates in analysis, not just the
 /// selected ones.
 pub struct ReparsedEntry {
     pub parsed: ParsedJsModule,
@@ -162,9 +163,9 @@ pub struct ReparsedEntry {
     stable_export_values: BTreeMap<String, StableExportValue>,
 }
 
-/// Output of the program-level purity pass, keyed by chunk name.
+/// Program-wide analysis summaries, keyed by source chunk name.
 #[derive(Serialize, Deserialize)]
-pub struct CrossModulePurities {
+pub struct ProgramSummary {
     /// Per-chunk imported-binding verdicts (`AnalysisInputs::imported_purities`).
     pub bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,
     /// Per-chunk imported-binding values (`AnalysisInputs::imported_values`).
@@ -269,15 +270,8 @@ fn resolved_target_is_entry(
         .is_some_and(|chunk| chunk.analysis.entry_file == target.target_file)
 }
 
-/// Per-chunk-name imported-binding purity maps for the whole artifact.
-/// A chunk whose entry can neither be reused (retained AST) nor re-parsed
-/// stays opaque: its exports get no verdicts and imports of it stay
-/// unresolved (`unknown_call`), exactly as before this pass existed.
-///
-/// A vendor-swapped provider (full, partial or bundled partial) is analyzed
-/// from its bundled body: the swap promises the replacement behaves like it
-/// (SPEC.md § Vendor swap equivalence).
-pub struct CrossModuleAnalysisOptions<'a> {
+/// Inputs that affect program-summary construction.
+pub struct ProgramSummaryOptions<'a> {
     pub graph_provenance: Option<&'a GraphProvenance>,
     /// Export name → replacement package of every vendor-swapped export, by
     /// defining chunk; summaries derived from those bodies name the package.
@@ -285,10 +279,10 @@ pub struct CrossModuleAnalysisOptions<'a> {
 }
 
 /// Re-parse the entries stored as raw source so every chunk's body is
-/// analyzable by the cross-module pass. Parse failures only warn: the pass is
-/// an analysis refinement, and an unparseable chunk degrades to conservative
-/// behavior rather than failing the build. The caller keeps the parses until
-/// it has numbered the hygiene contexts they introduce in an analysis artifact.
+/// analyzable by the program-summary pass. Parse failures only warn: an
+/// unparseable chunk degrades to conservative behavior rather than failing the
+/// build. The caller keeps the parses until it has numbered the hygiene
+/// contexts they introduce in an analysis artifact.
 pub fn reparse_unretained_entries(
     artifact: &ChunkBundle,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
@@ -334,15 +328,15 @@ pub fn reparse_unretained_entries(
     reparsed
 }
 
-pub fn collect_cross_module_imported_purities(
+pub fn collect_program_summary(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
     projection: &AnalysisProjection<'_>,
-    options: CrossModuleAnalysisOptions<'_>,
+    options: ProgramSummaryOptions<'_>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
     reparsed: &BTreeMap<ChunkId, ReparsedEntry>,
-) -> Result<CrossModulePurities> {
-    let CrossModuleAnalysisOptions {
+) -> Result<ProgramSummary> {
+    let ProgramSummaryOptions {
         graph_provenance,
         replacement_packages,
     } = options;
@@ -667,7 +661,7 @@ pub fn collect_cross_module_imported_purities(
                 .unwrap_or_default(),
         },
     )?;
-    Ok(CrossModulePurities {
+    Ok(ProgramSummary {
         no_reentry_callback_exports: resolve_asserted_no_reentry_callbacks(
             &modules,
             &chunk_export_purity
@@ -1480,7 +1474,7 @@ mod tests {
             let no_options = BTreeMap::new();
             let no_export_purity = BTreeMap::new();
             let host_behavior = spec::HostBehavior::default();
-            let facts = collect_cross_module_imported_purities(
+            let facts = collect_program_summary(
                 &artifact,
                 &indexes,
                 &AnalysisProjection::new(
@@ -1492,14 +1486,14 @@ mod tests {
                     &BTreeMap::new(),
                 )
                 .expect("empty projection is valid"),
-                CrossModuleAnalysisOptions {
+                ProgramSummaryOptions {
                     graph_provenance: None,
                     replacement_packages: &BTreeMap::new(),
                 },
                 None,
                 &reparse_unretained_entries(&artifact, None),
             )
-            .expect("cross-module analysis succeeds");
+            .expect("program summary analysis succeeds");
 
             let app_values = facts
                 .values
@@ -1543,7 +1537,7 @@ mod tests {
             let indexes = ArtifactIndexes::build(&artifact).expect("build indexes");
             let no_options = BTreeMap::new();
             let host_behavior = spec::HostBehavior::default();
-            let facts = collect_cross_module_imported_purities(
+            let facts = collect_program_summary(
                 &artifact,
                 &indexes,
                 &AnalysisProjection::new(
@@ -1555,14 +1549,14 @@ mod tests {
                     &BTreeMap::new(),
                 )
                 .expect("empty projection is valid"),
-                CrossModuleAnalysisOptions {
+                ProgramSummaryOptions {
                     graph_provenance: None,
                     replacement_packages: &BTreeMap::new(),
                 },
                 None,
                 &reparse_unretained_entries(&artifact, None),
             )
-            .expect("cross-module analysis succeeds");
+            .expect("program summary analysis succeeds");
 
             assert!(
                 facts
