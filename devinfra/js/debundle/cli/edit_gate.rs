@@ -47,9 +47,10 @@ use ::gate::{
     BlockingSccEntry, render_atomic_group_conflict_summary, render_cycle_summary,
     validate_assignment,
 };
+use analysis::assignment_assembly::detect_atomic_group_conflict;
 use analysis::{
-    AtomicGroup, AtomicGroupConflict, AtomicGroupConflictReport, ConflictingClaim, DepKind,
-    DependencyGraph, DependencyGraphReport, ModuleAssignment, ModuleId, compute_atomic_groups,
+    AtomicGroupConflictReport, DepKind, DependencyGraph, DependencyGraphReport, ModuleAssignment,
+    ModuleId, compute_atomic_groups,
 };
 use anonymous_resolution::{
     DirectBindingSourceCheck, DirectBindingSourceResolution, ResolvedSourceClaims, SourceClaimSet,
@@ -89,7 +90,6 @@ pub struct GraphEditArgs {
     #[arg(long, value_enum)]
     pub format: Option<peel::OutputFormat>,
 }
-
 impl GraphEditArgs {
     pub fn gate<'a>(
         &'a self,
@@ -963,8 +963,27 @@ fn gate_post_edit_assignment_with_expected(
     // Atom splits remain the primary diagnosis; the shared validation below
     // supplies any co-occurring cycle report as secondary evidence.
     let atomic_groups = compute_atomic_groups(&dependency_graph);
-    let atomic_conflicts =
-        detect_atomic_group_conflicts(&atomic_groups, &assignment, &dependency_graph_report);
+    let atomic_conflicts = atomic_groups
+        .iter()
+        .filter_map(|atomic_group| {
+            detect_atomic_group_conflict(
+                atomic_group,
+                |source_unit| assignment.of(source_unit),
+                |source_unit| {
+                    dependency_graph_report
+                        .nodes
+                        .get(source_unit.0)
+                        .map(|node| {
+                            node.declared_bindings
+                                .iter()
+                                .map(|binding| binding.binding.clone())
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                },
+            )
+        })
+        .collect::<Vec<_>>();
     let report = validate_assignment(&dependency_graph, &assignment, &module_path);
 
     // Replace artifacts only after this candidate's assignment and shared
@@ -1076,74 +1095,4 @@ fn reject_unresolved_projected_claims(projection: &SourceUnitClaimProjection) ->
         "post-edit binding claims are unresolved or do not match source:\n{}",
         mismatches.join("\n")
     )
-}
-
-/// Per-group atom-split detection over the post-edit assignment.
-///
-/// Mirrors `assignment_assembly::detect_atomic_group_conflict` but operates on
-/// `ModuleAssignment::of` rather than the explicit `claims` array
-/// `assemble_assignment` builds — the CLI gate's assignment already
-/// encodes "claim or fall back to residual" via
-/// `ModuleAssignment::from_assignments`, so this is structurally equivalent
-/// (each member's `ModuleAssignment::of` value IS the effective claim).
-///
-/// `report` supplies the wire-shape `declared_bindings` used to label
-/// each conflicting claim. The resulting `AtomicGroupConflict` mirrors
-/// the materializer's diagnostic shape exactly so spec authors see the
-/// same evidence regardless of whether the rejection came from
-/// `debundle run` or a CLI edit verb.
-fn detect_atomic_group_conflicts(
-    atomic_groups: &[AtomicGroup],
-    assignment: &ModuleAssignment,
-    report: &DependencyGraphReport,
-) -> Vec<AtomicGroupConflict> {
-    let mut conflicts = Vec::new();
-    for atomic_group in atomic_groups {
-        let resolved: Vec<(SourceUnitId, ModuleId)> = atomic_group
-            .members
-            .iter()
-            .map(|o| (*o, assignment.of(*o)))
-            .collect();
-        let mut first: Option<ModuleId> = None;
-        let mut split = false;
-        for &(_, m) in &resolved {
-            match first {
-                None => first = Some(m),
-                Some(existing) if existing != m => {
-                    split = true;
-                    break;
-                }
-                _ => {}
-            }
-        }
-        if !split {
-            continue;
-        }
-        let claims: Vec<ConflictingClaim> = resolved
-            .into_iter()
-            .map(|(source_unit, module)| {
-                let binding_names: Vec<swc_atoms::Atom> = report
-                    .nodes
-                    .get(source_unit.0)
-                    .map(|n| {
-                        n.declared_bindings
-                            .iter()
-                            .map(|b| b.binding.clone())
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                ConflictingClaim {
-                    source_unit,
-                    binding_names,
-                    module,
-                }
-            })
-            .collect();
-        conflicts.push(AtomicGroupConflict {
-            members: atomic_group.members.iter().copied().collect(),
-            claims,
-            causes: atomic_group.causes.clone(),
-        });
-    }
-    conflicts
 }
