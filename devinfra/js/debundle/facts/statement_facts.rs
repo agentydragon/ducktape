@@ -261,7 +261,7 @@ pub(crate) struct SynchronousCalls {
     pub native_prefix_observations: Vec<crate::reports::schema::NativePrefixObservation>,
     pub native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
     pub native_operation_input_uses: Vec<crate::reports::schema::NativeOperationInputUse>,
-    pub inference_uses: Vec<crate::reports::schema::InferenceUse>,
+    pub inference_uses: Vec<crate::analysis_provenance::InferenceUse>,
     pub callback_factory_uses: Vec<CallbackFactoryUseFact>,
     pub returned_record_uses: Vec<ReturnedRecordUseFact>,
     pub author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
@@ -843,7 +843,7 @@ pub struct StructuralChunkAnalysis<'a> {
     pub(crate) stable_var_number_candidates: BTreeSet<Id>,
     pub(crate) plain_data_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
     pub(crate) plain_data_inference_uses:
-        BTreeMap<String, BTreeSet<crate::reports::schema::InferenceUse>>,
+        BTreeMap<String, BTreeSet<crate::analysis_provenance::InferenceUse>>,
     pub(crate) source_semantic_facts:
         Option<std::sync::Arc<super::semantic_inference::SemanticFacts>>,
     pub shadowed: BTreeSet<&'static str>,

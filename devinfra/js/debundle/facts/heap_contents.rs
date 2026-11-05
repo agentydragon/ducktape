@@ -26,7 +26,7 @@ pub(crate) struct ChunkHeapContents {
     /// execution index's callables (the body's span start).
     pub callables: BTreeMap<u32, HeapContentCells>,
     pub native_read_uses: Vec<(
-        Vec<crate::reports::schema::InferenceUse>,
+        Vec<crate::analysis_provenance::InferenceUse>,
         Vec<crate::reports::schema::NativeOperationInputUse>,
     )>,
 }
@@ -183,7 +183,7 @@ struct ArrayContentCollector<'a> {
     /// enclosing body although its entry is already pushed.
     bodies: Vec<(Option<u32>, u32)>,
     heap_native_integrity_uses: BTreeSet<crate::reports::schema::NativeIntegrityUse>,
-    native_read_inferences: BTreeMap<u32, crate::reports::schema::InferenceUse>,
+    native_read_inferences: BTreeMap<u32, crate::analysis_provenance::InferenceUse>,
     native_read_inputs: BTreeMap<u32, crate::reports::schema::NativeOperationInputUse>,
     lazy_depth: u32,
     past_await: bool,

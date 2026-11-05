@@ -165,7 +165,7 @@ impl LocalClassConstructionProof {
     pub(crate) fn inference_use_for_class(
         &self,
         class: u32,
-    ) -> Option<crate::reports::schema::InferenceUse> {
+    ) -> Option<crate::analysis_provenance::InferenceUse> {
         self.facts.inference_use(&SemanticKey::LocalClass(class))
     }
 

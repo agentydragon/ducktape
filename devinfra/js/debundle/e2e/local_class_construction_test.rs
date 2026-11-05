@@ -3,8 +3,9 @@
 
 use analysis::Purity;
 use analysis::analysis_inputs::{ProofDependencies, ValueInputRef};
+use analysis::analysis_provenance::InferenceRule;
 use analysis::reports::schema::{
-    DependencyGraphReport, InferenceRule, InferenceUse, NativeIntegrityGuard, NativeIntegrityUse,
+    DependencyGraphReport, InferenceUseReport, NativeIntegrityGuard, NativeIntegrityUse,
     SourceUnitReport,
 };
 use debundle_e2e_support::*;
@@ -554,7 +555,7 @@ fn source_unit<'a>(graph: &'a DependencyGraphReport, binding: &str) -> &'a Sourc
         .unwrap_or_else(|| panic!("source unit for {binding} missing"))
 }
 
-fn inference_use(node: &SourceUnitReport, conclusion: InferenceRule) -> &InferenceUse {
+fn inference_use(node: &SourceUnitReport, conclusion: InferenceRule) -> &InferenceUseReport {
     node.synchronous_execution
         .as_ref()
         .expect("synchronous execution report")
@@ -605,7 +606,7 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
     let primitive_set = inference_use(unique, InferenceRule::PrimitiveSetIteration);
     assert_eq!(
         primitive_set,
-        &InferenceUse {
+        &InferenceUseReport {
             conclusion: InferenceRule::PrimitiveSetIteration,
             derivation_rules: BTreeSet::from([
                 InferenceRule::NativeIntegrity,
@@ -641,7 +642,7 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
     let local_class = inference_use(registry, InferenceRule::LocalClassConstruction);
     assert_eq!(
         local_class,
-        &InferenceUse {
+        &InferenceUseReport {
             conclusion: InferenceRule::LocalClassConstruction,
             derivation_rules: BTreeSet::from([
                 InferenceRule::NativeIntegrity,
@@ -671,7 +672,7 @@ fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
     let plain_class = inference_use(plain, InferenceRule::LocalClassConstruction);
     assert_eq!(
         plain_class,
-        &InferenceUse {
+        &InferenceUseReport {
             conclusion: InferenceRule::LocalClassConstruction,
             derivation_rules: BTreeSet::from([InferenceRule::LocalClassConstruction]),
             value_input_refs: BTreeSet::new(),

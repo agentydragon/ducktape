@@ -16,7 +16,9 @@ use spec::{DependencyGraphOptions, SourceUnitSelector};
 use crate::analysis_inputs::{
     NativeOperationInputEvidence, NativeOperationSelectorProvenance, ValueInputEvidence,
 };
-use crate::reports::schema::{InferenceUse, NativeMutationWitness, SynchronousExecutionReport};
+use crate::reports::schema::{
+    InferenceUseReport, NativeMutationWitness, SynchronousExecutionReport,
+};
 
 pub struct AuthorInputLocations<'a> {
     /// `None` when no chunk declares a value, native or argument input.
@@ -127,7 +129,7 @@ impl<'a> AuthorInputLocations<'a> {
         evidence.spec_location = self.spec_location(&evidence.spec_location);
     }
 
-    pub fn render_inference_use(&self, inference_use: &mut InferenceUse) {
+    pub fn render_inference_use(&self, inference_use: &mut InferenceUseReport) {
         inference_use.argument_input_spec_locations = inference_use
             .argument_input_refs
             .iter()

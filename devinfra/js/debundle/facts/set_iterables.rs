@@ -441,7 +441,7 @@ impl SetIterableProof {
     pub(crate) fn inference_use_for_constructor(
         &self,
         span: Span,
-    ) -> Option<crate::reports::schema::InferenceUse> {
+    ) -> Option<crate::analysis_provenance::InferenceUse> {
         self.source_constructions
             .get(&span.lo.0)
             .map(|proof| proof.inference.clone())
@@ -467,7 +467,7 @@ impl SetIterableProof {
     pub(crate) fn stable_array_spread_inference_use(
         &self,
         token: Span,
-    ) -> Option<crate::reports::schema::InferenceUse> {
+    ) -> Option<crate::analysis_provenance::InferenceUse> {
         let initializer = self.array_spreads.by_site.get(&token.lo.0)?;
         self.facts
             .inference_use(&SemanticKey::StablePrimitiveArraySpread(*initializer))

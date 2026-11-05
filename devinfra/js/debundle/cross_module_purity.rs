@@ -149,7 +149,7 @@ struct PreparedModulePurityFacts<'a> {
     local_class_construction_proof: crate::facts::LocalClassConstructionProof,
     plain_data_bindings: Vec<String>,
     plain_data_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
-    plain_data_inference_uses: BTreeMap<String, BTreeSet<crate::reports::schema::InferenceUse>>,
+    plain_data_inference_uses: BTreeMap<String, BTreeSet<crate::analysis_provenance::InferenceUse>>,
     plain_array_bindings: BTreeSet<String>,
 }
 
@@ -1850,15 +1850,14 @@ mod tests {
             local: "build".to_string(),
             source_location: None,
             members: Vec::new(),
-            inference: crate::reports::schema::InferenceUse {
-                conclusion: crate::reports::schema::InferenceRule::ReturnedRecord,
+            inference: crate::analysis_provenance::InferenceUse {
+                conclusion: crate::analysis_provenance::InferenceRule::ReturnedRecord,
                 derivation_rules: BTreeSet::from([
-                    crate::reports::schema::InferenceRule::ReturnedRecord,
+                    crate::analysis_provenance::InferenceRule::ReturnedRecord,
                 ]),
                 value_input_refs: BTreeSet::from([reported_dependencies]),
                 descriptor_copy_author_refs: Default::default(),
                 argument_input_refs: BTreeSet::new(),
-                argument_input_spec_locations: BTreeSet::new(),
                 native_operation_input_refs: BTreeSet::new(),
             },
             replacement_package: None,

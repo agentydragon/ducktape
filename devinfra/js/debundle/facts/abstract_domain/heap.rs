@@ -22,6 +22,7 @@ use super::builtins::{self, ArgSel, Invocation};
 use super::primitive::{BindingPrims, evaluate};
 use super::value::{Kind, Value};
 use crate::analysis_inputs::ProofDependencies;
+use crate::analysis_provenance::InferenceUse;
 use crate::facts::{
     ArgumentNoEscapeFacts, CandidateObjectIndex, ChunkValueFlow, TopLevelItemView,
     close_const_aliases, collect_declared_names, primitive_literal_property_keys,
@@ -31,7 +32,6 @@ use crate::purity::{
     is_ts_enum_iife_call_for_binding, is_ts_enum_iife_init_for_binding, only_inspects_operand,
     static_member, ts_enum_iife_argument_binding,
 };
-use crate::reports::schema::InferenceUse;
 
 /// A write a builtin row performs. Writes to the fresh allocation are its
 /// initial contents; the row's `allocates` names that allocation's kind.
