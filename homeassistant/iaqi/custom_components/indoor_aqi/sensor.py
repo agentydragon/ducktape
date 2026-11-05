@@ -13,43 +13,16 @@ from homeassistant.helpers.entity import EntityCategory
 _LOGGER = logging.getLogger(__name__)
 
 # Indoor AQI borrowed from: https://atmotube.com/atmocube-support/indoor-air-quality-index-iaqi
-# For each pollutant, linearly interpolate between breakpoints to get its IAQI
-# subindex. They recommend using 1-minute averages.
-#
-# Breakpoint tables: sorted list of (concentration, IAQI).
-# 100 = best (clean), 0 = worst (very polluted).
+# Interpolate each pollutant's IAQI from ascending (concentration, IAQI) breakpoints;
+# Atmotube recommends using 1-minute averages. 100 = clean, 0 = polluted.
 
 
 @dataclass(frozen=True)
 class PollutantInfo:
-    """Metadata for a pollutant recognised by this integration.
-
-    Attributes
-    ----------
-    name
-        Human-readable name, e.g. "CO₂".
-    unit
-        Unit of measurement that is expected from the underlying sensor.
-    breakpoints
-        List of pairs ``(concentration, iaqi)`` used to linearly interpolate
-        the sub-index for this pollutant.  The points **must** be ordered by
-        concentration ascending.  An IAQI of 100 represents perfectly clean
-        air for that pollutant, 0 represents extremely polluted.
-    """
-
     name: str
     unit: str
     breakpoints: list[tuple[float, int]]
 
-
-# ---------------------------------------------------------------------------
-# Pollutant definitions
-# ---------------------------------------------------------------------------
-
-# The breakpoint tables were previously stored in a separate global mapping.
-# They have now been integrated directly into the PollutantInfo dataclass for
-# better cohesion - every relevant bit of information about a pollutant is now
-# located in a single place.
 
 POLLUTANTS: dict[str, PollutantInfo] = {
     "co2": PollutantInfo(
@@ -136,9 +109,6 @@ def parse_timedelta(value) -> timedelta:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
-    """
-    Build sensors from the configuration stored on the config entry.
-    """
     yaml_cfg = entry.data
 
     # The user might define "monitors" as a list:
@@ -176,23 +146,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 
 class IndoorAQISensor(SensorEntity):
-    """
-    Each IndoorAQISensor references one set of pollutant sensors,
-    calculates a single IAQI (0..100) = min(subindices),
-    sets textual labels, etc.
-
-    This sensor provides:
-    1. Overall IAQI as the state (minimum of all pollutant indices)
-    2. Individual IAQI components for each pollutant (as attributes with iaqi_ prefix)
-    3. Raw pollutant values for reference (as attributes with raw_ prefix)
-    4. Bottleneck pollutants - components with lowest IAQI values, ordered from worst to less bad
-
-    This allows building dashboards that show not just the overall air quality,
-    but also which specific pollutants are causing problems.
-
-    'suggested_object_id' is optional
-    """
-
     def __init__(self, hass, name, unique_id, sensor_map, stale_time: timedelta):
         self._hass = hass
         self._attr_name = name
