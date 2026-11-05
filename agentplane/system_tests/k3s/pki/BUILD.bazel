@@ -1,9 +1,9 @@
 load("@image_pins//:pins.bzl", "CERT_MANAGER_CAINJECTOR_REFERENCE", "CERT_MANAGER_CONTROLLER_REFERENCE", "CERT_MANAGER_WEBHOOK_REFERENCE", "TRUST_MANAGER_REFERENCE")
-load("//devinfra/oci:defs.bzl", "oci_image_manifest")
+load("//devinfra/oci:defs.bzl", "oci_image_group")
 
 package(default_testonly = True)
 
-oci_image_manifest(
+oci_image_group(
     name = "images",
     images = {
         "@cert_manager_controller_linux_amd64": CERT_MANAGER_CONTROLLER_REFERENCE,

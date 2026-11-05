@@ -2,6 +2,7 @@
 
 load("@artifact_pins//:pins.bzl", "CERT_MANAGER_V1_21_2_RELEASE_SHA256", "HELM_3_20_2_LINUX_AMD64_SHA256", "K3S_LINUX_AMD64_SHA256", "KUBEVIRT_OPERATOR_BUNDLE_SHA256", "KYVERNO_INSTALL_SHA256", "TRUST_MANAGER_CHART_V0_25_0_SHA256")
 load("@image_pins//:pins.bzl", "CERT_MANAGER_CAINJECTOR_DIGEST", "CERT_MANAGER_CONTROLLER_DIGEST", "CERT_MANAGER_WEBHOOK_DIGEST", "KUBEVIRT_VIRT_API_DIGEST", "KUBEVIRT_VIRT_CONTROLLER_DIGEST", "KUBEVIRT_VIRT_HANDLER_DIGEST", "KUBEVIRT_VIRT_LAUNCHER_DIGEST", "KUBEVIRT_VIRT_OPERATOR_DIGEST", "KYVERNO_KYVERNOPRE_DIGEST", "KYVERNO_KYVERNO_DIGEST", "TRUST_MANAGER_DIGEST")
+load("//devinfra/oci:defs.bzl", "OciImageGroupInfo")
 load("//devinfra/python:defs.bzl", "py_test")
 
 K3S_EXEC_PROPERTIES = {
@@ -88,6 +89,28 @@ _STACKS = {
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = [_HARNESSES_LAYOUT]),
 }
 
+def _image_manifest_impl(ctx):
+    groups = {}
+    runfiles = ctx.runfiles()
+    for name in ["fixture", "pki", "vm", "guest"]:
+        references = {}
+        for group in getattr(ctx.attr, name):
+            for reference, location in group[OciImageGroupInfo].references.items():
+                if reference in references:
+                    fail("duplicate image reference in %s: %s" % (name, reference))
+                references[reference] = location
+            runfiles = runfiles.merge(group[DefaultInfo].default_runfiles)
+        groups[name] = references
+    out = ctx.actions.declare_file(ctx.label.name + ".json")
+    ctx.actions.write(out, json.encode(groups))
+    return [DefaultInfo(files = depset([out]), runfiles = runfiles.merge(ctx.runfiles([out])))]
+
+image_manifest = rule(
+    implementation = _image_manifest_impl,
+    attrs = {name: attr.label_list(providers = [OciImageGroupInfo]) for name in ["fixture", "pki", "vm", "guest"]},
+    doc = "Combine image groups into a single grouped OCI layout manifest and runfiles closure.",
+)
+
 def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, require_kvm = False, main = None):
     """Run one suite with fresh fixture state and the selected executor lifecycle."""
     if stack not in _STACKS:
@@ -135,11 +158,10 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
             "K3S_PROFILE_GUEST_ROOT": "1" if profile_guest else "0",
         }
 
-    env["K3S_IMAGE_MANIFESTS"] = json.encode({
-        group: ["$(rlocationpath " + label + ")" for label in manifests]
-        for group, manifests in images.items()
-    })
-    data += [label for manifests in images.values() for label in manifests]
+    manifest = name + "_image_manifest"
+    image_manifest(name = manifest, testonly = True, **images)
+    env["K3S_IMAGE_MANIFEST_RLOCATION"] = "$(rlocationpath :" + manifest + ")"
+    data.append(":" + manifest)
 
     if config.real_model:
         properties["test.env-secrets"] = "OPENAI_API_KEY"

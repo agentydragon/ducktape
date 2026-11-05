@@ -9,7 +9,7 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/oci:defs.bzl", "oci_image_manifest")
+load("//devinfra/oci:defs.bzl", "oci_image_group")
 
 package(
     default_testonly = True,
@@ -115,13 +115,13 @@ oci_image(
     user = "1000:1000",
 )
 
-oci_image_manifest(
+oci_image_group(
     name = "harnesses/environment_tools_layout",
     images = {":environment_tools_harnesses_image": "git.allegedly.works/ducktape-ci/environment-tools:unset"},
     visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
-oci_image_manifest(
+oci_image_group(
     name = "service_images",
     images = {
         "//agentplane/action_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
@@ -140,13 +140,13 @@ oci_image_manifest(
     visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
-oci_image_manifest(
+oci_image_group(
     name = "runner_disk_image",
     images = {"//agentplane/env/images:disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"},
     visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
-oci_image_manifest(
+oci_image_group(
     name = "mcp_images",
     images = {
         "//agentplane/central_sampler/cmd:service_image": "git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset",
@@ -591,7 +591,7 @@ oci_image(
     user = "107:107",
 )
 
-oci_image_manifest(
+oci_image_group(
     name = "deletion_test_disk",
     images = {":deletion_test_disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"},
     visibility = ["//agentplane/system_tests:__subpackages__"],

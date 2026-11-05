@@ -3,10 +3,11 @@
 load("@aspect_bazel_lib//lib:paths.bzl", "to_rlocation_path")
 load("//devinfra/python:defs.bzl", "py_library")
 
-def _oci_image_manifest_impl(ctx):
-    out = ctx.actions.declare_file(ctx.label.name + ".json")
+OciImageGroupInfo = provider(fields = {"references": "Image references mapped to OCI layout runfiles paths."})
+
+def _oci_image_group_impl(ctx):
     references = {}
-    runfiles = ctx.runfiles([out])
+    runfiles = ctx.runfiles()
     for image, reference in ctx.attr.images.items():
         files = image[DefaultInfo].files.to_list()
         if len(files) != 1:
@@ -16,15 +17,14 @@ def _oci_image_manifest_impl(ctx):
         references[reference] = to_rlocation_path(ctx, files[0])
         runfiles = runfiles.merge(ctx.runfiles(transitive_files = image[DefaultInfo].files))
         runfiles = runfiles.merge(image[DefaultInfo].default_runfiles)
-    ctx.actions.write(out, json.encode(references))
-    return [DefaultInfo(files = depset([out]), runfiles = runfiles)]
+    return [OciImageGroupInfo(references = references), DefaultInfo(files = depset(), runfiles = runfiles)]
 
-oci_image_manifest = rule(
-    implementation = _oci_image_manifest_impl,
+oci_image_group = rule(
+    implementation = _oci_image_group_impl,
     attrs = {
         "images": attr.label_keyed_string_dict(mandatory = True, allow_files = True),
     },
-    doc = "An image-reference to OCI-layout runfiles map, carrying the layouts in its runfiles.",
+    doc = "An analysis-time image-reference to OCI-layout map, carrying the layouts in its runfiles.",
 )
 
 def _oci_layout_rloc_impl(ctx):

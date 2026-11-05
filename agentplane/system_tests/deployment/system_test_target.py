@@ -29,27 +29,21 @@ def scripted_listener() -> Iterator[Listener]:
 
 
 def load_stack_inputs(runfiles: Runfiles, k3s_binary: Path) -> StackInputs:
-    manifests = json.loads(os.environ["K3S_IMAGE_MANIFESTS"])
     runfiles_root = runfiles.root()
+    images = json.loads((runfiles_root / os.environ["K3S_IMAGE_MANIFEST_RLOCATION"]).read_text())
     return StackInputs(
         fixture=rendered_fixture.read(runfiles_root / os.environ["K3S_FIXTURE_RLOCATION"]),
         binary=k3s_binary,
-        image_layouts=_image_layouts(runfiles, manifests["fixture"]),
-        pki_image_layouts=_image_layouts(runfiles, manifests["pki"]),
-        vm_image_layouts=_image_layouts(runfiles, manifests["vm"]),
-        guest_image_layouts=_image_layouts(runfiles, manifests["guest"]),
+        image_layouts=_image_layouts(runfiles, images["fixture"]),
+        pki_image_layouts=_image_layouts(runfiles, images["pki"]),
+        vm_image_layouts=_image_layouts(runfiles, images["vm"]),
+        guest_image_layouts=_image_layouts(runfiles, images["guest"]),
     )
 
 
-def _image_layouts(runfiles: Runfiles, manifests: list[str]) -> dict[str, Path]:
-    images = {}
+def _image_layouts(runfiles: Runfiles, images: dict[str, str]) -> dict[str, Path]:
     runfiles_root = runfiles.root()
-    for manifest in manifests:
-        for reference, location in json.loads((runfiles_root / manifest).read_text()).items():
-            if reference in images:
-                raise ValueError(f"duplicate image reference: {reference}")
-            images[reference] = runfiles_root / location
-    return images
+    return {reference: runfiles_root / location for reference, location in images.items()}
 
 
 def _models(inputs: StackInputs, listener: Listener) -> rendered_fixture.Models:
