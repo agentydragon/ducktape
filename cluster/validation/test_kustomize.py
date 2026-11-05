@@ -64,8 +64,10 @@ def test_stage_artifact_copies_reject_unsafe_or_missing_paths(tmp_path: Path) ->
         stage_artifact_copies(repo_root, tmp_path / "artifact", [("@repo/missing.yaml", "@artifact/a.yaml")])
 
 
-def test_environment_tools_image_pin_reaches_every_sandbox_template_container(tmp_path: Path) -> None:
-    image_pins = Runfiles.CreateOrRaise().root() / "ducktape/cluster/k8s/agentplane-staging/image-pins"
+def test_environment_tools_image_pin_reaches_every_sandbox_template_container(
+    runfiles: Runfiles, tmp_path: Path
+) -> None:
+    image_pins = runfiles.root() / "ducktape/cluster/k8s/agentplane-staging/image-pins"
     shutil.copytree(image_pins, tmp_path / "image-pins")
     pins = yaml.safe_load((tmp_path / "image-pins/kustomization.yaml").read_text())
     environment_tools_image = "git.allegedly.works/ducktape-ci/environment-tools"
@@ -101,8 +103,8 @@ def test_environment_tools_image_pin_reaches_every_sandbox_template_container(tm
     assert images == [f"{environment_tools_image}:{environment_tools_pin['newTag']}"] * 2
 
 
-def test_egress_sidecar_image_pin_reaches_launcher_relay_template(tmp_path: Path) -> None:
-    image_pins = Runfiles.CreateOrRaise().root() / "ducktape/cluster/k8s/agentplane-staging/image-pins"
+def test_egress_sidecar_image_pin_reaches_launcher_relay_template(runfiles: Runfiles, tmp_path: Path) -> None:
+    image_pins = runfiles.root() / "ducktape/cluster/k8s/agentplane-staging/image-pins"
     shutil.copytree(image_pins, tmp_path / "image-pins")
     pins = yaml.safe_load((tmp_path / "image-pins/kustomization.yaml").read_text())
     sidecar_image = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"

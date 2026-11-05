@@ -367,11 +367,13 @@ def test_cpi_indexed_tables_carry_the_law_years_brackets_to_each_windows_price_l
         pytest.param(("--taxes", "none", "--tax-law", "cpi-indexed"), id="untaxed-with"),
     ],
 )
-def test_cli_requires_a_tax_law_exactly_when_taxed(tmp_path: Path, panel_path: Path, taxes: tuple[str, ...]) -> None:
+def test_cli_requires_a_tax_law_exactly_when_taxed(
+    runfiles: Runfiles, tmp_path: Path, panel_path: Path, taxes: tuple[str, ...]
+) -> None:
     with pytest.raises(subprocess.CalledProcessError) as failure:
         subprocess.run(
             [
-                (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/study/guyton_klinger/run_bin"),
+                (runfiles.root() / "ducktape/finance/augur/study/guyton_klinger/run_bin"),
                 *("--panel", panel_path, "--years", "2", "--initial-wealth", "100", "--initial-rate", "0.1"),
                 *("--output-dir", tmp_path / "unwritten"),
                 *taxes,

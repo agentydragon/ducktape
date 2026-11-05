@@ -150,6 +150,7 @@ py_library(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_timeout",
+        "@rules_python//python/runfiles",
     ],
 )
 

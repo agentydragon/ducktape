@@ -30,14 +30,14 @@ _DEBUG_MAX_DIFF = 0.05
 
 
 @pytest.fixture(scope="module")
-def debug_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_run, freecad_gui) -> Path:
+def debug_outputs(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory, freecad_run, freecad_gui) -> Path:
     """Build bearing block, add TechDraw, run debug renderers."""
     out_dir = tmp_path_factory.mktemp("debug-renderers")
     uo = undeclared_outputs_dir() / "debug-renderers"
     uo.mkdir(parents=True, exist_ok=True)
 
     # Build the Part Design model (pure freecadcmd, no GUI)
-    runfiles_root = Runfiles.CreateOrRaise().root()
+    runfiles_root = runfiles.root()
     result = freecad_run((runfiles_root / _BUILD_SCRIPT), outdir=out_dir)
     assert_run_ok(result, "build_bearing_block.py", uo, "build")
 
@@ -61,7 +61,7 @@ def debug_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_run, freecad
     return out_dir
 
 
-def test_debug_edges_produces_png(debug_outputs: Path) -> None:
+def test_debug_edges_produces_png(runfiles: Runfiles, debug_outputs: Path) -> None:
     """Debug edge renderer produces a non-trivial PNG with colored edges."""
     actual = debug_outputs / "FrontView_debug_edges.png"
     assert actual.exists(), "FrontView debug edges PNG not generated"
@@ -73,10 +73,10 @@ def test_debug_edges_produces_png(debug_outputs: Path) -> None:
         1 for i in range(0, len(pixels), 3) if pixels[i] != 255 or pixels[i + 1] != 255 or pixels[i + 2] != 255
     )
     assert non_white > 100, "Debug edges PNG appears blank (no colored edges)"
-    assert_png_equal(actual, (Runfiles.CreateOrRaise().root() / _GOLDEN_EDGES_FRONT), max_diff_fraction=_DEBUG_MAX_DIFF)
+    assert_png_equal(actual, (runfiles.root() / _GOLDEN_EDGES_FRONT), max_diff_fraction=_DEBUG_MAX_DIFF)
 
 
-def test_debug_faces_produces_png(debug_outputs: Path) -> None:
+def test_debug_faces_produces_png(runfiles: Runfiles, debug_outputs: Path) -> None:
     """Debug face renderer produces a non-trivial PNG with colored faces."""
     actual = debug_outputs / "debug_faces.png"
     assert actual.exists(), "Debug faces PNG not generated"
@@ -87,7 +87,7 @@ def test_debug_faces_produces_png(debug_outputs: Path) -> None:
     assert colors is not None, "Could not count colors"
     # A properly colored face render should have many colors (>50 distinct RGB values)
     assert len(colors) > 50, f"Only {len(colors)} distinct colors — faces may not be colored"
-    assert_png_equal(actual, (Runfiles.CreateOrRaise().root() / _GOLDEN_FACES), max_diff_fraction=_DEBUG_MAX_DIFF)
+    assert_png_equal(actual, (runfiles.root() / _GOLDEN_FACES), max_diff_fraction=_DEBUG_MAX_DIFF)
 
 
 if __name__ == "__main__":

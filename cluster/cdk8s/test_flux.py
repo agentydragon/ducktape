@@ -215,7 +215,7 @@ def test_config_map_data_serializes_to_kustomize_literals() -> None:
     assert entry.data == data
 
 
-def test_config_map_data_preserves_values_through_kustomize(tmp_path: Path) -> None:
+def test_config_map_data_preserves_values_through_kustomize(runfiles: Runfiles, tmp_path: Path) -> None:
     data = {
         "config.yaml": "credentials: user=token==\nnext: true\n",
         "empty": "",
@@ -236,7 +236,7 @@ def test_config_map_data_preserves_values_through_kustomize(tmp_path: Path) -> N
     )
 
     result = subprocess.run(
-        [str(Runfiles.CreateOrRaise().root() / "multitool/tools/kustomize/kustomize"), "build", str(tmp_path)],
+        [str(runfiles.root() / "multitool/tools/kustomize/kustomize"), "build", str(tmp_path)],
         capture_output=True,
         check=False,
     )
@@ -252,7 +252,9 @@ def test_file_backed_config_map_omits_literals() -> None:
     assert rendered["configMapGenerator"] == [{"name": "test-config", "namespace": "test-ns", "files": ["file.conf"]}]
 
 
-def test_secret_generator_builds_encrypted_payload_for_flux_post_build_decryption(tmp_path: Path) -> None:
+def test_secret_generator_builds_encrypted_payload_for_flux_post_build_decryption(
+    runfiles: Runfiles, tmp_path: Path
+) -> None:
     # This synthetic payload stands in for the encrypted YAML at the exact path the
     # ArtifactGenerator copy places in the archive artifact. Kustomize packages it into Secret
     # data unchanged; the generated Flux Kustomization then decrypts that value after build.
@@ -304,7 +306,7 @@ def test_secret_generator_builds_encrypted_payload_for_flux_post_build_decryptio
     )
 
     result = subprocess.run(
-        [str(Runfiles.CreateOrRaise().root() / "multitool/tools/kustomize/kustomize"), "build", str(tmp_path)],
+        [str(runfiles.root() / "multitool/tools/kustomize/kustomize"), "build", str(tmp_path)],
         capture_output=True,
         check=False,
     )

@@ -175,6 +175,7 @@ py_test(
     deps = [
         ":kustomize",
         ":tool_resolve",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

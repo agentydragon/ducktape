@@ -22,13 +22,13 @@ _GOLDEN_PDF = "ducktape/skills/freecad/examples/bracket/drawing.pdf"
 
 
 @pytest.fixture(scope="module")
-def export_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_gui) -> Path:
+def export_outputs(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory, freecad_gui) -> Path:
     """Run parametric_sketch.py then export_page.py and return the output directory."""
     out_dir = tmp_path_factory.mktemp("parametric-sketch")
     uo = undeclared_outputs_dir() / "parametric-sketch"
     uo.mkdir(parents=True, exist_ok=True)
 
-    runfiles_root = Runfiles.CreateOrRaise().root()
+    runfiles_root = runfiles.root()
     result = freecad_gui((runfiles_root / _PARAMETRIC_SKETCH), outdir=out_dir)
     assert_run_ok(result, "parametric_sketch.py", uo, "parametric_sketch")
 
@@ -43,16 +43,16 @@ def export_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_gui) -> Pat
     return out_dir
 
 
-def test_dxf_golden(export_outputs: Path) -> None:
-    assert_dxf_equal(export_outputs / "bracket.dxf", (Runfiles.CreateOrRaise().root() / _GOLDEN_DXF))
+def test_dxf_golden(runfiles: Runfiles, export_outputs: Path) -> None:
+    assert_dxf_equal(export_outputs / "bracket.dxf", (runfiles.root() / _GOLDEN_DXF))
 
 
-def test_svg_golden(export_outputs: Path) -> None:
-    assert_svg_equal(export_outputs / "bracket.svg", (Runfiles.CreateOrRaise().root() / _GOLDEN_SVG))
+def test_svg_golden(runfiles: Runfiles, export_outputs: Path) -> None:
+    assert_svg_equal(export_outputs / "bracket.svg", (runfiles.root() / _GOLDEN_SVG))
 
 
-def test_pdf_golden(export_outputs: Path) -> None:
-    assert_pdf_equal(export_outputs / "bracket.pdf", (Runfiles.CreateOrRaise().root() / _GOLDEN_PDF))
+def test_pdf_golden(runfiles: Runfiles, export_outputs: Path) -> None:
+    assert_pdf_equal(export_outputs / "bracket.pdf", (runfiles.root() / _GOLDEN_PDF))
 
 
 if __name__ == "__main__":

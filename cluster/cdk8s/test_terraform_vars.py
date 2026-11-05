@@ -26,10 +26,8 @@ from cluster.cdk8s.route53_domain_delegation import Route53DomainDelegationVars
         (HomeSwitchVars, "home-switch"),
     ],
 )
-def test_vars_model_matches_module(model: type[BaseModel], module: str) -> None:
-    declared = pygohcl.loads(
-        (Runfiles.CreateOrRaise().root() / f"ducktape/tf/gitops/{module}/variables.tf").read_text()
-    )["variable"]
+def test_vars_model_matches_module(runfiles: Runfiles, model: type[BaseModel], module: str) -> None:
+    declared = pygohcl.loads((runfiles.root() / f"ducktape/tf/gitops/{module}/variables.tf").read_text())["variable"]
     assert (
         {name for name, spec in declared.items() if "default" not in spec} <= set(model.model_fields) <= set(declared)
     )

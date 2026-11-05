@@ -31,14 +31,16 @@ _GOLDEN_BACK_LEFT = "ducktape/skills/freecad/examples/bearing_block/back_left.pn
 
 
 @pytest.fixture(scope="module")
-def bearing_block_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_run, freecad_gui) -> Path:
+def bearing_block_outputs(
+    runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory, freecad_run, freecad_gui
+) -> Path:
     """Build bearing block, export TechDraw, render perspectives."""
     out_dir = tmp_path_factory.mktemp("bearing-block")
     uo = undeclared_outputs_dir() / "bearing-block"
     uo.mkdir(parents=True, exist_ok=True)
 
     # Stage 1: Build the Part Design model (pure freecadcmd, no GUI)
-    runfiles_root = Runfiles.CreateOrRaise().root()
+    runfiles_root = runfiles.root()
     result = freecad_run((runfiles_root / _BUILD_SCRIPT), outdir=out_dir)
     assert_run_ok(result, "build_bearing_block.py", uo, "build")
 
@@ -62,31 +64,27 @@ def bearing_block_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_run,
     return out_dir
 
 
-def test_techdraw_dxf_golden(bearing_block_outputs: Path) -> None:
-    assert_dxf_equal(bearing_block_outputs / "bearing_block.dxf", (Runfiles.CreateOrRaise().root() / _GOLDEN_DXF))
+def test_techdraw_dxf_golden(runfiles: Runfiles, bearing_block_outputs: Path) -> None:
+    assert_dxf_equal(bearing_block_outputs / "bearing_block.dxf", (runfiles.root() / _GOLDEN_DXF))
 
 
-def test_techdraw_svg_golden(bearing_block_outputs: Path) -> None:
-    assert_svg_equal(bearing_block_outputs / "bearing_block.svg", (Runfiles.CreateOrRaise().root() / _GOLDEN_SVG))
+def test_techdraw_svg_golden(runfiles: Runfiles, bearing_block_outputs: Path) -> None:
+    assert_svg_equal(bearing_block_outputs / "bearing_block.svg", (runfiles.root() / _GOLDEN_SVG))
 
 
-def test_techdraw_pdf_golden(bearing_block_outputs: Path) -> None:
-    assert_pdf_equal(bearing_block_outputs / "bearing_block.pdf", (Runfiles.CreateOrRaise().root() / _GOLDEN_PDF))
+def test_techdraw_pdf_golden(runfiles: Runfiles, bearing_block_outputs: Path) -> None:
+    assert_pdf_equal(bearing_block_outputs / "bearing_block.pdf", (runfiles.root() / _GOLDEN_PDF))
 
 
-def test_render_front_right(bearing_block_outputs: Path) -> None:
-    assert_png_equal(
-        bearing_block_outputs / "bearing_block_front_right.png", (Runfiles.CreateOrRaise().root() / _GOLDEN_FRONT_RIGHT)
-    )
+def test_render_front_right(runfiles: Runfiles, bearing_block_outputs: Path) -> None:
+    assert_png_equal(bearing_block_outputs / "bearing_block_front_right.png", (runfiles.root() / _GOLDEN_FRONT_RIGHT))
 
 
-def test_render_back_left(bearing_block_outputs: Path) -> None:
-    assert_png_equal(
-        bearing_block_outputs / "bearing_block_back_left.png", (Runfiles.CreateOrRaise().root() / _GOLDEN_BACK_LEFT)
-    )
+def test_render_back_left(runfiles: Runfiles, bearing_block_outputs: Path) -> None:
+    assert_png_equal(bearing_block_outputs / "bearing_block_back_left.png", (runfiles.root() / _GOLDEN_BACK_LEFT))
 
 
-def test_fcstd_round_trip(bearing_block_outputs: Path, freecad_run) -> None:
+def test_fcstd_round_trip(runfiles: Runfiles, bearing_block_outputs: Path, freecad_run) -> None:
     """Verify the FCStd reloads cleanly in a fresh FreeCAD instance."""
     fcstd = bearing_block_outputs / "bearing_block.FCStd"
     assert fcstd.exists()
@@ -96,9 +94,7 @@ def test_fcstd_round_trip(bearing_block_outputs: Path, freecad_run) -> None:
     reload_dir = bearing_block_outputs / "reload"
     reload_dir.mkdir(exist_ok=True)
 
-    result = freecad_run(
-        (Runfiles.CreateOrRaise().root() / _VERIFY_SCRIPT), outdir=reload_dir, env={"INPUT": str(fcstd)}
-    )
+    result = freecad_run((runfiles.root() / _VERIFY_SCRIPT), outdir=reload_dir, env={"INPUT": str(fcstd)})
     assert_run_ok(result, "verify_fcstd_load.py", uo, "reload")
 
 

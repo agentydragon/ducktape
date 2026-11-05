@@ -40,6 +40,7 @@ def _extract_oci_rootfs(rloc_file: str, destination: Path) -> None:
 
 @pytest.mark.parametrize("harness", [session_pb2.HARNESS_CODEX], ids=["codex"])
 async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
+    runfiles: Runfiles,
     harness: session_pb2.Harness,
     model: ScriptedModel,
     spec: session_pb2.SessionSpec,
@@ -52,12 +53,13 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     child_spec.CopyFrom(spec)
     child_spec.cwd = "/workspace"
     child_root = tmp_path / "child-root"
-    codex = Runfiles.CreateOrRaise().root() / launches.CODEX_BINARY
+    runfiles_root = runfiles.root()
+    codex = runfiles_root / launches.CODEX_BINARY
     binary_dir = child_root / "opt/bin"
     binary_dir.mkdir(parents=True)
     shutil.copyfile(codex, binary_dir / "codex")
     (binary_dir / "codex").chmod(0o555)
-    codex_bwrap = Runfiles.CreateOrRaise().root() / "agentplane_codex_cli_linux_x64/codex-resources/bwrap"
+    codex_bwrap = runfiles_root / "agentplane_codex_cli_linux_x64/codex-resources/bwrap"
     resources_dir = child_root / "opt/codex-resources"
     resources_dir.mkdir()
     shutil.copyfile(codex_bwrap, resources_dir / "bwrap")
@@ -71,7 +73,7 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     private_sentinel.write_text("runner-owned\n")
     workload_proof = Path(spec.cwd) / "workload-image-proof.txt"
     assert not workload_proof.exists()
-    child_exec = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/x/runner_layering/child_exec_/child_exec"
+    child_exec = runfiles_root / "ducktape/agentplane/x/runner_layering/child_exec_/child_exec"
     first_runner = await start_runner(
         codex_binary=child_exec,
         allow_user_namespaces=True,  # The sparse-root experiment creates its own user and mount namespaces.

@@ -387,8 +387,8 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations() -> None:
     }
 
 
-def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling() -> None:
-    runfiles_root = Runfiles.CreateOrRaise().root()
+def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling(runfiles: Runfiles) -> None:
+    runfiles_root = runfiles.root()
     fixture = rendered_fixture.read(runfiles_root / os.environ["K3S_VM_FIXTURE_RLOCATION"])
     selected = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
     other = _resource(fixture.objects, "SandboxTemplate", "environment-vm")
@@ -428,8 +428,8 @@ def test_kubevirt_baseline_selects_emulation_from_the_explicit_kvm_mode(monkeypa
     assert kvm["useEmulation"] is False
 
 
-def test_vm_boot_evidence_selects_only_oom_guest_at_runtime() -> None:
-    fixture = rendered_fixture.read(Runfiles.CreateOrRaise().root() / os.environ["K3S_VM_FIXTURE_RLOCATION"])
+def test_vm_boot_evidence_selects_only_oom_guest_at_runtime(runfiles: Runfiles) -> None:
+    fixture = rendered_fixture.read(runfiles.root() / os.environ["K3S_VM_FIXTURE_RLOCATION"])
     selected = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
     other = _resource(fixture.objects, "SandboxTemplate", "environment-vm")
     original_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
@@ -442,8 +442,8 @@ def test_vm_boot_evidence_selects_only_oom_guest_at_runtime() -> None:
     assert "agentplane.boot-evidence=1" not in other_args
 
 
-def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
-    fixture = rendered_fixture.read(Runfiles.CreateOrRaise().root() / os.environ["K3S_VM_FIXTURE_RLOCATION"])
+def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(runfiles: Runfiles) -> None:
+    fixture = rendered_fixture.read(runfiles.root() / os.environ["K3S_VM_FIXTURE_RLOCATION"])
     template = _resource(fixture.objects, "SandboxTemplate", "environment-vm")["spec"]
     state = template["stateVolume"]
     workspace = template["workspaceVolume"]

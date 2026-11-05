@@ -183,11 +183,11 @@ def test_raising_withdrawals_never_improves_a_synthetic_window() -> None:
 
 
 @pytest.mark.parametrize("share", [0.0, 0.5, 1.0])
-def test_offline_cli_replays_selected_original_windows(tmp_path: Path, share: float) -> None:
+def test_offline_cli_replays_selected_original_windows(runfiles: Runfiles, tmp_path: Path, share: float) -> None:
     output = tmp_path / "study"
     subprocess.run(
         [
-            (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/study/trinity/replay_bin"),
+            (runfiles.root() / "ducktape/finance/augur/study/trinity/replay_bin"),
             "--synthetic",
             "--equity-share",
             str(share),

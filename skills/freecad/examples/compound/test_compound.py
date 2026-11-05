@@ -22,13 +22,13 @@ _GOLDEN_PDF = "ducktape/skills/freecad/examples/compound/drawing.pdf"
 
 
 @pytest.fixture(scope="module")
-def compound_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_gui) -> Path:
+def compound_outputs(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory, freecad_gui) -> Path:
     """Build compound shape and export all formats."""
     out_dir = tmp_path_factory.mktemp("compound")
     uo = undeclared_outputs_dir() / "compound"
     uo.mkdir(parents=True, exist_ok=True)
 
-    runfiles_root = Runfiles.CreateOrRaise().root()
+    runfiles_root = runfiles.root()
     result = freecad_gui((runfiles_root / _BUILD_SCRIPT), outdir=out_dir)
     assert_run_ok(result, "build_compound.py", uo, "build_compound")
 
@@ -43,16 +43,16 @@ def compound_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_gui) -> P
     return out_dir
 
 
-def test_dxf_golden(compound_outputs: Path) -> None:
-    assert_dxf_equal(compound_outputs / "compound.dxf", (Runfiles.CreateOrRaise().root() / _GOLDEN_DXF))
+def test_dxf_golden(runfiles: Runfiles, compound_outputs: Path) -> None:
+    assert_dxf_equal(compound_outputs / "compound.dxf", (runfiles.root() / _GOLDEN_DXF))
 
 
-def test_svg_golden(compound_outputs: Path) -> None:
-    assert_svg_equal(compound_outputs / "compound.svg", (Runfiles.CreateOrRaise().root() / _GOLDEN_SVG))
+def test_svg_golden(runfiles: Runfiles, compound_outputs: Path) -> None:
+    assert_svg_equal(compound_outputs / "compound.svg", (runfiles.root() / _GOLDEN_SVG))
 
 
-def test_pdf_golden(compound_outputs: Path) -> None:
-    assert_pdf_equal(compound_outputs / "compound.pdf", (Runfiles.CreateOrRaise().root() / _GOLDEN_PDF))
+def test_pdf_golden(runfiles: Runfiles, compound_outputs: Path) -> None:
+    assert_pdf_equal(compound_outputs / "compound.pdf", (runfiles.root() / _GOLDEN_PDF))
 
 
 if __name__ == "__main__":

@@ -101,6 +101,7 @@ py_test(
         ":artifact_generators",
         ":conftest",
         ":flux",
+        "//:conftest",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
@@ -1902,6 +1903,7 @@ py_test(
     deps = [
         ":generate_manifests_lib",
         ":manifest_roots",
+        "//:conftest",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

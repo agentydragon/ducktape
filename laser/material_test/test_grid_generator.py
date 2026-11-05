@@ -220,17 +220,17 @@ def test_generate_auto_subtitle_omits_varied_params():
     assert {CutParam.Z_OFFSET_MM, CutParam.KERF_MM} <= set(constant)
 
 
-def test_example_config_parses():
+def test_example_config_parses(runfiles: Runfiles):
     """example_config.toml must parse without error and produce a valid GridConfig."""
-    path = Runfiles.CreateOrRaise().root() / "ducktape/laser/material_test/example_config.toml"
+    path = runfiles.root() / "ducktape/laser/material_test/example_config.toml"
     with path.open("rb") as f:
         data = tomllib.load(f)
     GridConfig.model_validate(data)
 
 
-def test_example_config_3d_parses():
+def test_example_config_3d_parses(runfiles: Runfiles):
     """example_config_3d.toml must parse and remain a three-dimensional example."""
-    path = Runfiles.CreateOrRaise().root() / "ducktape/laser/material_test/example_config_3d.toml"
+    path = runfiles.root() / "ducktape/laser/material_test/example_config_3d.toml"
     with path.open("rb") as f:
         data = tomllib.load(f)
     cfg = GridConfig.model_validate(data)

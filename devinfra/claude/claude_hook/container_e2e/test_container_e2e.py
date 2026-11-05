@@ -69,11 +69,11 @@ def _exec_under_env(
 
 
 @pytest.fixture
-def staged_project(tmp_path: Path) -> Path:
+def staged_project(runfiles: Runfiles, tmp_path: Path) -> Path:
     project = tmp_path / "project"
     project.mkdir()
 
-    runfiles_root = Runfiles.CreateOrRaise().root()
+    runfiles_root = runfiles.root()
     test_workspace = Path(str(runfiles_root / _TEST_WORKSPACE_MODULE)).parent
     for src in test_workspace.iterdir():
         if src.name == "profile.yaml":
@@ -98,8 +98,8 @@ def staged_project(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def test_age_key() -> str:
-    raw = (Runfiles.CreateOrRaise().root() / _SECRETS_DIR_MARKER).read_text()
+def test_age_key(runfiles: Runfiles) -> str:
+    raw = (runfiles.root() / _SECRETS_DIR_MARKER).read_text()
     return next(line.strip() for line in raw.splitlines() if line.startswith("AGE-SECRET-KEY-"))
 
 

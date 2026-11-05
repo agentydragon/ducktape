@@ -39,9 +39,9 @@ _FAKE_DBUS_PATH = "/works/allegedly/PlaidSpendFake"
 _FAKE_DBUS_SERVICE = "ducktape/finance/plaid/spend/gnome/fake-daemon.js"
 
 
-def test_extension_metadata_supports_gnome_50() -> None:
+def test_extension_metadata_supports_gnome_50(runfiles: Runfiles) -> None:
     """Keep the distributed ZIP loadable by the GNOME Shell version on Rugged."""
-    with zipfile.ZipFile(Runfiles.CreateOrRaise().root() / _EXTENSION_ZIP) as extension_zip:
+    with zipfile.ZipFile(runfiles.root() / _EXTENSION_ZIP) as extension_zip:
         metadata = json.loads(extension_zip.read("metadata.json"))
 
     assert "50" in metadata["shell-version"]
@@ -53,9 +53,9 @@ def gnome_shell_test_image() -> str:
 
 
 @pytest.fixture(scope="module")
-def extension_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+def extension_dir(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory) -> Path:
     dest = tmp_path_factory.mktemp("plaid-spend-extension")
-    with zipfile.ZipFile(Runfiles.CreateOrRaise().root() / _EXTENSION_ZIP) as extension_zip:
+    with zipfile.ZipFile(runfiles.root() / _EXTENSION_ZIP) as extension_zip:
         extension_zip.extractall(dest)
     return dest
 
@@ -77,9 +77,11 @@ def allowance_scenarios() -> dict[str, SpendView]:
 
 
 @pytest.fixture(scope="module")
-def fixture_json_dir(tmp_path_factory: pytest.TempPathFactory, allowance_scenarios: dict[str, SpendView]) -> Path:
+def fixture_json_dir(
+    runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory, allowance_scenarios: dict[str, SpendView]
+) -> Path:
     dest = tmp_path_factory.mktemp("plaid-spend-fixtures")
-    runfiles_root = Runfiles.CreateOrRaise().root()
+    runfiles_root = runfiles.root()
     for fixture_name in _FIXTURE_NAMES:
         source = runfiles_root / f"{_FIXTURE_DIR}/{fixture_name}.json"
         (dest / f"{fixture_name}.json").write_bytes(source.read_bytes())
@@ -91,14 +93,18 @@ def fixture_json_dir(tmp_path_factory: pytest.TempPathFactory, allowance_scenari
 
 @pytest.fixture(scope="module")
 def session(
-    gnome_shell_test_image: str, extension_dir: Path, fixture_json_dir: Path, tmp_path_factory: pytest.TempPathFactory
+    runfiles: Runfiles,
+    gnome_shell_test_image: str,
+    extension_dir: Path,
+    fixture_json_dir: Path,
+    tmp_path_factory: pytest.TempPathFactory,
 ) -> Iterator[GnomeSession]:
     with gnome_session(
         gnome_shell_test_image,
         extension_dir=extension_dir,
         extension=_EXTENSION_UUID,
         fixture_dir=fixture_json_dir,
-        fake_daemon_script=(Runfiles.CreateOrRaise().root() / _FAKE_DBUS_SERVICE),
+        fake_daemon_script=(runfiles.root() / _FAKE_DBUS_SERVICE),
         screenshot_dir=tmp_path_factory.mktemp("gnome-renders"),
         destination=_TEST_DBUS_DEST,
         object_path=_TEST_DBUS_PATH,

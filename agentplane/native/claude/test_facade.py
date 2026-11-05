@@ -15,12 +15,12 @@ from agentplane.native.testing.async_process import AsyncNativeProcess, NativePr
 
 
 @pytest.mark.parametrize("outcome", ["success", "error", "eof"])
-async def test_initialize_requires_its_control_reply(tmp_path: Path, outcome: str) -> None:
+async def test_initialize_requires_its_control_reply(runfiles: Runfiles, tmp_path: Path, outcome: str) -> None:
     async with AsyncNativeProcess(
         tmp_path,
         [
             sys.executable,
-            str(Runfiles.CreateOrRaise().root() / "ducktape/agentplane/native/claude/testing/control_reply_peer.py"),
+            str(runfiles.root() / "ducktape/agentplane/native/claude/testing/control_reply_peer.py"),
             outcome,
         ],
         cwd=tmp_path,

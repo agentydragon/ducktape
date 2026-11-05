@@ -100,7 +100,7 @@ async def drive_child(
 
 
 @pytest.mark.parametrize("scenario", ["single", "child", "reconnect", "completed-child-crash", "active-child-crash"])
-async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
+async def test_remote_io_round_trip(runfiles: Runfiles, tmp_path: Path, scenario: str) -> None:
     subagent = scenario in {"child", "completed-child-crash", "active-child-crash"}
     active_crash = scenario == "active-child-crash"
     reconnect = scenario == "reconnect"
@@ -134,7 +134,7 @@ async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
                 "CLAUDE_CODE_WORKER_EPOCH": "1",
             }
             command = [
-                str(Runfiles.CreateOrRaise().root() / "claude_remote_io_cli_linux_x64/claude"),
+                str(runfiles.root() / "claude_remote_io_cli_linux_x64/claude"),
                 "--sdk-url",
                 f"https://{HOST}{SESSION_PATH}",
                 "--session-id",

@@ -24,12 +24,12 @@ from agentplane.crds.generate import (
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
-def _committed(relative: Path) -> str:
-    return (Runfiles.CreateOrRaise().root() / f"ducktape/{relative}").read_text()
+def _committed(relative: Path, runfiles: Runfiles) -> str:
+    return (runfiles.root() / f"ducktape/{relative}").read_text()
 
 
-def test_committed_files_are_generated() -> None:
-    runfiles_root = Runfiles.CreateOrRaise().root()
+def test_committed_files_are_generated(runfiles: Runfiles) -> None:
+    runfiles_root = runfiles.root()
     sandbox_generated = runfiles_root / SANDBOX_GENERATED_CRDS
     egress_generated = runfiles_root / EGRESS_GENERATED_CRDS
     sandbox_crds = {name: (sandbox_generated / source).read_text() for name, source in SANDBOX_CRDS.items()}
@@ -37,14 +37,14 @@ def test_committed_files_are_generated() -> None:
     policy_generated = runfiles_root / POLICY_GENERATED_CRDS
     policy_crds = {name: (policy_generated / source).read_text() for name, source in POLICY_CRDS.items()}
     for relative, content in generated_files(
-        {name: _committed(CRDS_DIR / name) for name in CRD_FILES}, sandbox_crds, egress_crds, policy_crds
+        {name: _committed(CRDS_DIR / name, runfiles) for name in CRD_FILES}, sandbox_crds, egress_crds, policy_crds
     ):
         (undeclared_outputs_dir() / relative.name).write_text(content)
-        assert content == _committed(relative), f"{relative} is stale"
+        assert content == _committed(relative, runfiles), f"{relative} is stale"
 
 
-def test_policybinding_schema_preserves_validation_and_condition_ownership() -> None:
-    crd = yaml.safe_load(_committed(CRDS_DIR / "crd-policybindings.yaml"))
+def test_policybinding_schema_preserves_validation_and_condition_ownership(runfiles: Runfiles) -> None:
+    crd = yaml.safe_load(_committed(CRDS_DIR / "crd-policybindings.yaml", runfiles))
     version = crd["spec"]["versions"][0]
     assert version["subresources"] == {"status": {}}
     properties = version["schema"]["openAPIV3Schema"]["properties"]
@@ -66,8 +66,8 @@ def test_policybinding_schema_preserves_validation_and_condition_ownership() -> 
         assert not validator.is_valid(invalid), invalid
 
 
-def test_credential_schema_preserves_source_and_target_constraints() -> None:
-    crd = yaml.safe_load(_committed(CRDS_DIR / "crd-egresscredentials.yaml"))
+def test_credential_schema_preserves_source_and_target_constraints(runfiles: Runfiles) -> None:
+    crd = yaml.safe_load(_committed(CRDS_DIR / "crd-egresscredentials.yaml", runfiles))
     for version in crd["spec"]["versions"]:
         spec = version["schema"]["openAPIV3Schema"]["properties"]["spec"]
         assert set(spec["required"]) == {"description", "source", "targets"}

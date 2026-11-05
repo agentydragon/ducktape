@@ -23,15 +23,10 @@ from finance.augur.x.monthly_actions.run import compose, run_example, situation
 
 
 @pytest.fixture(scope="module")
-def example(tmp_path_factory: pytest.TempPathFactory) -> Finished:
+def example(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory) -> Finished:
     output = tmp_path_factory.mktemp("monthly-actions") / "results"
     subprocess.run(
-        [
-            (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/x/monthly_actions/run_bin"),
-            "--output-dir",
-            output,
-        ],
-        check=True,
+        [(runfiles.root() / "ducktape/finance/augur/x/monthly_actions/run_bin"), "--output-dir", output], check=True
     )
     return Finished.model_validate_json((output / "outcomes.json").read_text())
 
@@ -99,12 +94,12 @@ def test_original_path_identity_survives_reordering_and_selected_replay(example:
 
 @pytest.mark.parametrize("capture", ["summary", "dense"])
 def test_actual_cli_capture_agrees_with_selected_forensic_results(
-    example: Finished, tmp_path: Path, capture: str
+    runfiles: Runfiles, example: Finished, tmp_path: Path, capture: str
 ) -> None:
     output = tmp_path / capture
     subprocess.run(
         [
-            (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/x/monthly_actions/run_bin"),
+            (runfiles.root() / "ducktape/finance/augur/x/monthly_actions/run_bin"),
             "--output-dir",
             output,
             "--capture",
@@ -144,11 +139,11 @@ def test_actual_cli_capture_agrees_with_selected_forensic_results(
     assert stopped.unpaid_claims[0].amount_due == 15_000
 
 
-def test_cash_only_cli_buys_unheld_asset_then_sells_and_pays_tax(tmp_path: Path) -> None:
+def test_cash_only_cli_buys_unheld_asset_then_sells_and_pays_tax(runfiles: Runfiles, tmp_path: Path) -> None:
     output_dir = tmp_path / "cash-only"
     subprocess.run(
         [
-            (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/x/monthly_actions/run_bin"),
+            (runfiles.root() / "ducktape/finance/augur/x/monthly_actions/run_bin"),
             "--output-dir",
             output_dir,
             "--cash-only-start",
@@ -191,9 +186,9 @@ def test_cash_only_cli_buys_unheld_asset_then_sells_and_pays_tax(tmp_path: Path)
         assert holding.values[:3] == [0, 24_000, 0]
 
 
-def test_profile_entrypoint_compares_matching_capture_workloads(tmp_path: Path) -> None:
+def test_profile_entrypoint_compares_matching_capture_workloads(runfiles: Runfiles, tmp_path: Path) -> None:
     reports = []
-    runfiles_root = Runfiles.CreateOrRaise().root()
+    runfiles_root = runfiles.root()
     for capture in ("summary", "forensic"):
         output = tmp_path / capture
         subprocess.run(
@@ -220,11 +215,11 @@ def test_profile_entrypoint_compares_matching_capture_workloads(tmp_path: Path) 
     assert compact["output_bytes"] < detailed["output_bytes"]
 
 
-def test_population_cli_keeps_original_ids_for_selected_replay(tmp_path: Path) -> None:
+def test_population_cli_keeps_original_ids_for_selected_replay(runfiles: Runfiles, tmp_path: Path) -> None:
     output = tmp_path / "population"
     subprocess.run(
         [
-            (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/x/monthly_actions/run_bin"),
+            (runfiles.root() / "ducktape/finance/augur/x/monthly_actions/run_bin"),
             "--output-dir",
             output,
             "--rollouts",

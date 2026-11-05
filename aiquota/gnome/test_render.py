@@ -54,9 +54,9 @@ _FAKE_DBUS_PATH = "/works/allegedly/AiQuotaFake"
 _FAKE_DBUS_SERVICE = "ducktape/aiquota/gnome/fake-daemon.js"
 
 
-def test_extension_metadata_supports_gnome_50() -> None:
+def test_extension_metadata_supports_gnome_50(runfiles: Runfiles) -> None:
     """Keep the distributed zip loadable by wyrm2's GNOME Shell generation."""
-    with zipfile.ZipFile(Runfiles.CreateOrRaise().root() / _EXTENSION_ZIP) as extension_zip:
+    with zipfile.ZipFile(runfiles.root() / _EXTENSION_ZIP) as extension_zip:
         metadata = json.loads(extension_zip.read("metadata.json"))
 
     assert "50" in metadata["shell-version"]
@@ -68,19 +68,19 @@ def gnome_shell_test_image() -> str:
 
 
 @pytest.fixture(scope="module")
-def extension_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+def extension_dir(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Unzip the distribution zip into a single dir for bind-mounting."""
     dest = tmp_path_factory.mktemp("claude-quota-ext")
-    with zipfile.ZipFile(Runfiles.CreateOrRaise().root() / _EXTENSION_ZIP) as z:
+    with zipfile.ZipFile(runfiles.root() / _EXTENSION_ZIP) as z:
         z.extractall(dest)
     return dest
 
 
 @pytest.fixture(scope="module")
-def fixture_json_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+def fixture_json_dir(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Materialize the normal API view payload for the GNOME JS test hook."""
     dest = tmp_path_factory.mktemp("ai-quota-fixtures")
-    runfiles_root = Runfiles.CreateOrRaise().root()
+    runfiles_root = runfiles.root()
     for fixture_name in FIXTURE_NAMES:
         src = runfiles_root / f"ducktape/aiquota/testing/fixtures/{fixture_name}.yaml"
         data = load_quota_view_fixture(src)
@@ -90,14 +90,18 @@ def fixture_json_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="module")
 def session(
-    gnome_shell_test_image: str, extension_dir: Path, fixture_json_dir: Path, tmp_path_factory: pytest.TempPathFactory
+    runfiles: Runfiles,
+    gnome_shell_test_image: str,
+    extension_dir: Path,
+    fixture_json_dir: Path,
+    tmp_path_factory: pytest.TempPathFactory,
 ) -> Iterator[GnomeSession]:
     with gnome_session(
         gnome_shell_test_image,
         extension_dir=extension_dir,
         extension=_EXTENSION_UUID,
         fixture_dir=fixture_json_dir,
-        fake_daemon_script=(Runfiles.CreateOrRaise().root() / _FAKE_DBUS_SERVICE),
+        fake_daemon_script=(runfiles.root() / _FAKE_DBUS_SERVICE),
         screenshot_dir=tmp_path_factory.mktemp("gnome-renders"),
         destination=_TEST_DBUS_DEST,
         object_path=_TEST_DBUS_PATH,

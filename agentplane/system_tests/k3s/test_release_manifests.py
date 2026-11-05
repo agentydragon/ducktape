@@ -18,8 +18,8 @@ _PINNED_MANIFESTS = (
 
 
 @pytest.mark.parametrize("variable", _PINNED_MANIFESTS)
-def test_release_manifest_matches_safe_loader(variable: str) -> None:
-    path = Runfiles.CreateOrRaise().root() / os.environ[variable]
+def test_release_manifest_matches_safe_loader(runfiles: Runfiles, variable: str) -> None:
+    path = runfiles.root() / os.environ[variable]
     expected = [doc for doc in yaml.safe_load_all(path.read_text(encoding="utf-8")) if doc]
 
     assert load_release_manifest(path, variable) == expected

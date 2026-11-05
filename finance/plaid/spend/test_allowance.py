@@ -858,8 +858,8 @@ def test_one_off_scope_is_validated_from_its_condition():
         AllowancePolicy.model_validate(unconfigured)
 
 
-def test_configuration_preserves_financial_yaml_decimal_tokens(tmp_path: Path) -> None:
-    example = Runfiles.CreateOrRaise().root() / "ducktape/finance/plaid/spend/one-off-configuration.yaml"
+def test_configuration_preserves_financial_yaml_decimal_tokens(runfiles: Runfiles, tmp_path: Path) -> None:
+    example = runfiles.root() / "ducktape/finance/plaid/spend/one-off-configuration.yaml"
     policy = tmp_path / "policy.yaml"
     policy.write_text(
         example.read_text()
@@ -887,8 +887,8 @@ sustainability:
     assert correction.value_multiplier == Decimal("1.00000000000000000000000000001")
 
 
-def test_one_off_yaml_round_trip_and_configuration_view():
-    path = Runfiles.CreateOrRaise().root() / "ducktape/finance/plaid/spend/one-off-configuration.yaml"
+def test_one_off_yaml_round_trip_and_configuration_view(runfiles: Runfiles):
+    path = runfiles.root() / "ducktape/finance/plaid/spend/one-off-configuration.yaml"
     loaded = load_configuration(path)
     parsed = loaded.allowance
     assert parsed is not None

@@ -108,11 +108,10 @@ async def acknowledging_history() -> AsyncIterator[str]:
 
 
 @pytest.mark.parametrize("mode", ["native-exit", "term", "escalate", "crash"])
-async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str) -> None:
+async def test_pid1_container_fence_and_replacement(runfiles: Runfiles, tmp_path: Path, mode: str) -> None:
     debian_image = _load_images()
     binary = (
-        Runfiles.CreateOrRaise().root()
-        / "ducktape/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
+        runfiles.root() / "ducktape/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
     ).resolve()
     container = (
         LoggedContainer(debian_image, test_name=f"runner-pid1-{mode}")
@@ -148,9 +147,11 @@ async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str) -
 
 
 @pytest.mark.parametrize("abrupt", [False, True], ids=["term", "crash"])
-async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, abrupt: bool) -> None:
+async def test_production_runner_selects_pid1(
+    runfiles: Runfiles, tmp_path: Path, gateway: Gateway, abrupt: bool
+) -> None:
     debian_image = _load_images()
-    runfiles_root = Runfiles.CreateOrRaise().root()
+    runfiles_root = runfiles.root()
     runner = (runfiles_root / launches.RUNTIME_BINARY).resolve()
     fixture = (
         runfiles_root / "ducktape/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
@@ -211,11 +212,11 @@ async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, 
 
 
 async def test_production_pid1_embedded_host_reaps_setup(
-    tmp_path: Path, gateway: Gateway, acknowledging_history: str
+    runfiles: Runfiles, tmp_path: Path, gateway: Gateway, acknowledging_history: str
 ) -> None:
     """A Host-owned setup child must use Runtime's PID1 reaper and join its process group."""
     debian_image = _load_images()
-    runfiles_root = Runfiles.CreateOrRaise().root()
+    runfiles_root = runfiles.root()
     runner = (runfiles_root / launches.RUNTIME_BINARY).resolve()
     fixture = (
         runfiles_root / "ducktape/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"

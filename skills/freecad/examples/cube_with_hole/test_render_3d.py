@@ -21,13 +21,13 @@ _GOLDEN = "ducktape/skills/freecad/examples/cube_with_hole/render.png"
 
 
 @pytest.fixture(scope="module")
-def render_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_run, freecad_gui) -> Path:
+def render_outputs(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory, freecad_run, freecad_gui) -> Path:
     """Build FCStd with freecadcmd, render PNG with freecad GUI binary."""
     out_dir = tmp_path_factory.mktemp("render-3d")
     uo = undeclared_outputs_dir() / "render-3d"
     uo.mkdir(parents=True, exist_ok=True)
 
-    runfiles_root = Runfiles.CreateOrRaise().root()
+    runfiles_root = runfiles.root()
     result = freecad_run((runfiles_root / _BUILD_SCRIPT), outdir=out_dir)
     assert_run_ok(result, "build_cube_with_hole.py", uo, "build")
 
@@ -43,8 +43,8 @@ def render_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_run, freeca
     return out_dir
 
 
-def test_render_3d_golden(render_outputs: Path) -> None:
-    assert_png_equal(render_outputs / "cube_with_hole.png", (Runfiles.CreateOrRaise().root() / _GOLDEN))
+def test_render_3d_golden(runfiles: Runfiles, render_outputs: Path) -> None:
+    assert_png_equal(render_outputs / "cube_with_hole.png", (runfiles.root() / _GOLDEN))
 
 
 if __name__ == "__main__":

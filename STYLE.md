@@ -132,7 +132,7 @@ Build `.ts`/`.tsx` with one `ts_library` (`//devinfra/js:ts_library.bzl`) per mo
 
 For Python runfiles, use `rules_python`'s `Runfiles` API directly. For this repository's own data, resolve `ducktape/<repository-relative-path>` in the caller's context; `_main` names the root module of the build, which can be a different repository. Pass Bazel-generated `$(rlocationpath ...)` values unchanged to the resolver. Convert a runfiles path with `Path(str(path))` before using the resolved file's parent or performing ordinary filesystem-relative path operations: `Runfiles.root()` returns a runfiles-aware path, not a plain filesystem path.
 
-Reuse a `Runfiles` instance for related lookups within an operation: `CreateOrRaise()` creates a new instance and can reread the runfiles manifest. Introduce shared caching only when evidence warrants it.
+Reuse a `Runfiles` instance for related lookups within an operation: `CreateOrRaise()` creates a new instance and can reread the runfiles manifest. Introduce shared caching only when evidence warrants it. In pytest suites with repeated lookups, use the session-scoped `runfiles` fixture from `//:conftest` and call `.root()` in the consuming test module.
 
 ### System CA certificates in distroless images
 
