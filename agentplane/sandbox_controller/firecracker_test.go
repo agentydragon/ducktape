@@ -97,7 +97,33 @@ func TestFirecrackerSuspendResumeKeepsPodAndChecksSupervisorUID(t *testing.T) {
 	if err != nil || blocked == nil || blocked.stage != sandboxapi.StopStageStopped {
 		t.Fatalf("matching checkpoint not accepted: %v, %v", blocked, err)
 	}
-	status.err = errors.New("proxy unavailable")
+	for _, tc := range []struct {
+		name   string
+		state  FirecrackerState
+		err    error
+		reason string
+	}{
+		{name: "running", state: FirecrackerState{PodUID: string(pod.UID), Phase: "running"}, reason: "FirecrackerPending"},
+		{name: "suspending", state: FirecrackerState{PodUID: string(pod.UID), Phase: "suspending"}, reason: "FirecrackerPending"},
+		{name: "unavailable", err: errors.New("proxy unavailable"), reason: "FirecrackerStatusUnavailable"},
+		{name: "wrong pod", state: FirecrackerState{PodUID: "wrong", Phase: "suspended"}, reason: "FirecrackerStatusMismatch"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			status.state, status.err = tc.state, tc.err
+			blocked, err := r.convergeFirecracker(context.Background(), sandbox, &current, true)
+			if err != nil || blocked == nil || blocked.reason != tc.reason {
+				t.Fatalf("pending suspension = %v, %v", blocked, err)
+			}
+			if err := c.Get(context.Background(), client.ObjectKeyFromObject(pod), &current); err != nil {
+				t.Fatal(err)
+			}
+			if current.Annotations[FirecrackerRunningAnnotation] != "false" {
+				t.Fatal("resume cancelled an unacknowledged suspension")
+			}
+		})
+	}
+	status.state = FirecrackerState{PodUID: string(pod.UID), Phase: "suspended"}
+	status.err = nil
 	blocked, err = r.convergeFirecracker(context.Background(), sandbox, &current, true)
 	if err != nil || blocked == nil || blocked.reason != "FirecrackerPending" {
 		t.Fatalf("resume intent = %v, %v", blocked, err)
@@ -105,11 +131,9 @@ func TestFirecrackerSuspendResumeKeepsPodAndChecksSupervisorUID(t *testing.T) {
 	if err := c.Get(context.Background(), client.ObjectKeyFromObject(pod), &current); err != nil {
 		t.Fatal(err)
 	}
-	blocked, err = r.convergeFirecracker(context.Background(), sandbox, &current, true)
-	if err != nil || blocked == nil || blocked.reason != "FirecrackerStatusUnavailable" {
-		t.Fatalf("proxy outage accepted as running: %v, %v", blocked, err)
+	if current.Annotations[FirecrackerRunningAnnotation] != "true" || current.UID != pod.UID {
+		t.Fatal("acknowledged suspension did not resume the same Pod")
 	}
-	status.err = nil
 	status.state.Phase = "running"
 	blocked, err = r.convergeFirecracker(context.Background(), sandbox, &current, true)
 	if err != nil || blocked != nil {

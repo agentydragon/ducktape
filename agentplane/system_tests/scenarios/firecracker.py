@@ -27,7 +27,6 @@ from agentplane.system_tests.driver.agent import (
 )
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.offered_models import models_offered_for
-from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.sandbox import VM_WORKING_DIRECTORY, Sandboxes, wait_until_running
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -88,7 +87,7 @@ def _probe(*, start: bool) -> str:
     return f"python3 -c {shlex.quote(script)}"
 
 
-async def _renew_credentials(cluster: Cluster, secret_name: str) -> dict[str, str]:
+async def _renew_credentials(cluster: Cluster, secret_name: str) -> tuple[str, str]:
     original = json.loads(await cluster.kubectl("get", "secret", secret_name, "-o", "json"))
     # cert-manager remains the issuer. Deleting this disposable test Secret
     # exercises real reissuance, kubelet projection and live Workload API updates.
@@ -102,49 +101,43 @@ async def _renew_credentials(cluster: Cluster, secret_name: str) -> dict[str, st
             replacement = json.loads(encoded)
             assert replacement["metadata"]["uid"] != original["metadata"]["uid"]
             assert replacement["data"]["tls.crt"] != original["data"]["tls.crt"]
-    return replacement["data"]
+    return replacement["data"]["tls.crt"], replacement["data"]["ca.crt"]
 
 
-async def _wait_for_served_certificate(cluster: Cluster, pod_name: str, credential: dict[str, str]) -> None:
+async def _wait_for_served_certificate(cluster: Cluster, pod_name: str, credential: tuple[str, str]) -> None:
     gateway = json.loads(await cluster.kubectl("get", "secret", "agentplane-runner-gateway-tls", "-o", "json"))["data"]
-    expected = x509.load_pem_x509_certificate(base64.b64decode(credential["tls.crt"]))
-    forward = PortForward(
-        cluster.command("port-forward"),
-        resource=f"pod/{pod_name}",
-        local_address="127.0.0.1",
-        local_port=None,
-        remote_port=9090,
-    )
+    cert_pem, ca_pem = credential
+    expected = x509.load_pem_x509_certificate(base64.b64decode(cert_pem))
+    pod = json.loads(await cluster.kubectl("get", "pod", pod_name, "-o", "json"))
+    # Firecracker forwards inbound Pod-IP traffic to the guest. Kubernetes
+    # port-forward connects to loopback inside the Pod and bypasses that DNAT.
+    address = pod["status"]["podIP"]
     with tempfile.TemporaryDirectory() as directory:
         cert, key = Path(directory) / "cert.pem", Path(directory) / "key.pem"
         cert.write_bytes(base64.b64decode(gateway["tls.crt"]))
         key.write_bytes(base64.b64decode(gateway["tls.key"]))
         trust = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        # The authenticated identity is the exact expected SPIFFE certificate,
-        # checked below; these certificates have URI SANs rather than DNS SANs.
+        # URI-SAN identity is checked against the exact expected certificate
+        # below; chain verification remains enabled.
         trust.check_hostname = False
-        trust.load_verify_locations(cadata=base64.b64decode(credential["ca.crt"]).decode())
+        trust.load_verify_locations(cadata=base64.b64decode(ca_pem).decode())
         trust.load_cert_chain(cert, key)
         trust.set_alpn_protocols(["h2"])
-        async with async_port_forward(forward) as target:
-            host, port = target.rsplit(":", 1)
-            async for attempt in AsyncRetrying(
-                stop=stop_after_delay(90),
-                wait=wait_fixed(1),
-                retry=retry_if_exception_type((AssertionError, OSError)),
-                reraise=True,
-            ):
-                with attempt:
-                    _, writer = await asyncio.wait_for(
-                        asyncio.open_connection(
-                            host, int(port), ssl=trust, server_hostname="", ssl_handshake_timeout=5
-                        ),
-                        timeout=6,
-                    )
-                    actual = writer.get_extra_info("ssl_object").getpeercert(binary_form=True)
-                    writer.close()
-                    await writer.wait_closed()
-                    assert actual == expected.public_bytes(Encoding.DER), "Runtime still serves its old certificate"
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(90),
+            wait=wait_fixed(1),
+            retry=retry_if_exception_type((AssertionError, OSError)),
+            reraise=True,
+        ):
+            with attempt:
+                _, writer = await asyncio.wait_for(
+                    asyncio.open_connection(address, 9090, ssl=trust, server_hostname="", ssl_handshake_timeout=5),
+                    timeout=6,
+                )
+                actual = writer.get_extra_info("ssl_object").getpeercert(binary_form=True)
+                writer.close()
+                await writer.wait_closed()
+                assert actual == expected.public_bytes(Encoding.DER), "Runtime still serves its old certificate"
 
 
 async def preserves_live_guest(

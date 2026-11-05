@@ -150,6 +150,17 @@ func (r *Reconciler) convergeFirecracker(ctx context.Context, sandbox *sandboxap
 		return &unready{reason: "FirecrackerLauncherLost", message: "launcher Pod ended; preserving checkpoint and credential identity"}, nil
 	}
 	want := strconv.FormatBool(running)
+	if running && pod.Annotations[FirecrackerRunningAnnotation] == "false" {
+		state, blocked := r.firecrackerState(ctx, pod)
+		if blocked != nil {
+			return blocked, nil
+		}
+		// DownwardAPI projections can coalesce intent changes. Complete the checkpoint
+		// before resuming so the recorded connection epoch always requires a real reconnect.
+		if state.Phase != "suspended" {
+			return &unready{reason: "FirecrackerPending", message: "waiting for the pending suspension before resuming", retryAfter: 2 * time.Second}, nil
+		}
+	}
 	if pod.Annotations[FirecrackerRunningAnnotation] != want || (!running && pod.Annotations[FirecrackerSuspendEpochAnnotation] == "") {
 		updated := pod.DeepCopy()
 		if updated.Annotations == nil {
@@ -168,18 +179,9 @@ func (r *Reconciler) convergeFirecracker(ctx context.Context, sandbox *sandboxap
 		}
 		return &unready{reason: "FirecrackerPending", message: "waiting for launcher to observe desired state", retryAfter: 2 * time.Second}, nil
 	}
-	if r.FirecrackerStatus == nil {
-		return &unready{reason: "FirecrackerStatusUnavailable", message: "no supervisor status reader configured", retryAfter: 5 * time.Second}, nil
-	}
-	state, err := r.FirecrackerStatus.Read(ctx, pod)
-	if err != nil {
-		return &unready{reason: "FirecrackerStatusUnavailable", message: err.Error(), retryAfter: 5 * time.Second}, nil
-	}
-	if state.PodUID != string(pod.UID) {
-		return &unready{reason: "FirecrackerStatusMismatch", message: "supervisor status has a different Pod UID", retryAfter: 5 * time.Second}, nil
-	}
-	if state.Phase == "failed" {
-		return &unready{reason: "FirecrackerFailed", message: state.Error, retryAfter: 5 * time.Second}, nil
+	state, blocked := r.firecrackerState(ctx, pod)
+	if blocked != nil {
+		return blocked, nil
 	}
 	if running && state.Phase == "running" {
 		return nil, nil
@@ -188,4 +190,21 @@ func (r *Reconciler) convergeFirecracker(ctx context.Context, sandbox *sandboxap
 		return &unready{reason: "Stopped", message: "Firecracker memory is checkpointed in the retained launcher Pod", stage: sandboxapi.StopStageStopped}, nil
 	}
 	return &unready{reason: "FirecrackerPending", message: fmt.Sprintf("launcher reports %s while desired running=%s", state.Phase, want), retryAfter: 2 * time.Second}, nil
+}
+
+func (r *Reconciler) firecrackerState(ctx context.Context, pod *corev1.Pod) (FirecrackerState, *unready) {
+	if r.FirecrackerStatus == nil {
+		return FirecrackerState{}, &unready{reason: "FirecrackerStatusUnavailable", message: "no supervisor status reader configured", retryAfter: 5 * time.Second}
+	}
+	state, err := r.FirecrackerStatus.Read(ctx, pod)
+	if err != nil {
+		return state, &unready{reason: "FirecrackerStatusUnavailable", message: err.Error(), retryAfter: 5 * time.Second}
+	}
+	if state.PodUID != string(pod.UID) {
+		return state, &unready{reason: "FirecrackerStatusMismatch", message: "supervisor status has a different Pod UID", retryAfter: 5 * time.Second}
+	}
+	if state.Phase == "failed" {
+		return state, &unready{reason: "FirecrackerFailed", message: state.Error, retryAfter: 5 * time.Second}
+	}
+	return state, nil
 }
