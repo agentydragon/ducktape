@@ -167,6 +167,16 @@ pub fn read_field<'de, T: Artifact, A: SeqAccess<'de>>(
         .ok_or_else(|| de::Error::invalid_length(index, &"an artifact record"))
 }
 
+pub fn read_named_field<'de, T: Artifact, A: SeqAccess<'de>>(
+    sequence: &mut A,
+    context: &ArtifactContext<'_>,
+    index: usize,
+    name: &str,
+) -> Result<T, A::Error> {
+    sequence
+        .next_element_seed(Seed::new(context))?
+        .ok_or_else(|| de::Error::custom(format!("missing artifact field {name} at index {index}")))
+}
 pub fn decode_record<'de, T: ArtifactRecord, D: Deserializer<'de>>(
     deserializer: D,
     context: &ArtifactContext<'_>,

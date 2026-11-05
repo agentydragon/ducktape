@@ -552,6 +552,47 @@ mod tests {
     use crate::facts::statement_facts::SynchronousCalls;
     use swc_common::BytePos;
 
+    #[derive(analysis_codec_derive::Artifact)]
+    struct SynchronousCallsPrefix {
+        initializer_binding_effects:
+            Option<Box<crate::reports::schema::InitializerBindingEffectsUse>>,
+        completed_initialization:
+            Option<crate::facts::sync_effects::noninvoking_initialization::CompletedInitialization>,
+        initialization_coverage_refusal:
+            Option<crate::facts::OwnerInitializationCoverageRefusalReason>,
+        evaluation_effects: crate::facts::evaluation_effects::EvaluationEffects,
+        purity_disagreement: Option<crate::reports::schema::PurityCompletionDisagreement>,
+        local_record_factory_uses: Vec<crate::reports::schema::LocalRecordFactoryUse>,
+        local_record_factory_rejections: Vec<crate::reports::schema::LocalRecordFactoryRejection>,
+        local_record_factory_purity:
+            Option<crate::facts::statement_facts::LocalRecordFactoryPurityCertificate>,
+        reads: std::collections::BTreeSet<(Id, SourceUnitOrdinal)>,
+        rebinds: std::collections::BTreeSet<(Id, SourceUnitOrdinal)>,
+        uninitialized_reads: std::collections::BTreeSet<Id>,
+        fallback_only: crate::facts::statement_facts::FallbackOnlyEffects,
+        complete: bool,
+    }
+
+    impl SynchronousCallsPrefix {
+        fn from_calls(calls: &SynchronousCalls) -> Self {
+            Self {
+                initializer_binding_effects: calls.initializer_binding_effects.clone(),
+                completed_initialization: calls.completed_initialization.clone(),
+                initialization_coverage_refusal: calls.initialization_coverage_refusal,
+                evaluation_effects: calls.evaluation_effects.clone(),
+                purity_disagreement: calls.purity_disagreement.clone(),
+                local_record_factory_uses: calls.local_record_factory_uses.clone(),
+                local_record_factory_rejections: calls.local_record_factory_rejections.clone(),
+                local_record_factory_purity: calls.local_record_factory_purity.clone(),
+                reads: calls.reads.clone(),
+                rebinds: calls.rebinds.clone(),
+                uninitialized_reads: calls.uninitialized_reads.clone(),
+                fallback_only: calls.fallback_only.clone(),
+                complete: calls.complete,
+            }
+        }
+    }
+
     fn test_callable(key: u32, owner: usize) -> LocalBodyIdentity {
         LocalBodyIdentity::Callable {
             key,
@@ -586,22 +627,32 @@ mod tests {
 
     #[test]
     fn missing_staged_binding_effect_authority_is_rejected_and_default_is_unknown() {
-        let mut encoded = serde_json::to_value(SynchronousCalls::default())
-            .expect("default synchronous facts serialize");
+        let calls = SynchronousCalls::default();
+        let mut encoded =
+            serde_json::to_value(&calls).expect("default synchronous facts serialize");
         serde_json::from_value::<SynchronousCalls>(encoded.clone())
             .expect("complete synchronous facts deserialize");
         encoded
             .as_object_mut()
             .expect("synchronous facts are a struct")
             .remove("binding_effect_coverage");
+        let report_error = serde_json::from_value::<SynchronousCalls>(encoded)
+            .expect_err("report-shaped facts without typed authority must fail to deserialize");
+        assert!(
+            format!("{report_error:#}").contains("binding_effect_coverage"),
+            "Serde failure should name the missing authority field: {report_error:#}"
+        );
+
         let ordinals =
             analysis_codec::ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>());
-        let bytes = analysis_codec::encode(&encoded, &ordinals).expect("encode missing-field row");
+        let prefix = SynchronousCallsPrefix::from_calls(&calls);
+        let bytes = analysis_codec::encode(&prefix, &ordinals)
+            .expect("encode typed fields preceding binding-effect authority");
         let error = analysis_codec::decode::<SynchronousCalls>(&bytes, &ordinals)
-            .expect_err("staged facts without typed authority must fail to decode");
+            .expect_err("staged facts missing binding-effect authority must fail to decode");
         assert!(
             format!("{error:#}").contains("binding_effect_coverage"),
-            "failure should name the missing authority field, not an unrelated decode error: {error:#}"
+            "failure should identify the missing authority field after decoding its valid prefix: {error:#}"
         );
         assert_eq!(
             BindingEffectCoverage::default().authority(true, false),

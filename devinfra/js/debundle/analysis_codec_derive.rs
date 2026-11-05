@@ -141,7 +141,11 @@ fn read_fields(fields: &Fields, offset: usize) -> Tokens {
         let name = format_ident!("__field_{index}");
         let ty = &field.ty;
         let position = index + offset;
-        quote!(let #name: #ty = ::analysis_codec::read_field(sequence, context, #position)?;)
+        let field_name = field
+            .ident
+            .as_ref()
+            .map_or_else(|| index.to_string(), ToString::to_string);
+        quote!(let #name: #ty = ::analysis_codec::read_named_field(sequence, context, #position, #field_name)?;)
     });
     quote!(#(#fields)*)
 }
