@@ -379,7 +379,9 @@ def test_broad_api_promo_scope_is_detail_while_model_and_product_restrictions_re
     result = FetchSuccess(
         anthropic_platform_credits=AnthropicPlatformCredits(
             organizations=[
-                AnthropicPlatformOrganization(uuid="test-org", name="Broad promo scope", promo_tranches=[tranche])
+                AnthropicPlatformOrganization(
+                    uuid="test-org", name="Broad promo scope", balance=amount, promo_tranches=[tranche]
+                )
             ]
         )
     )

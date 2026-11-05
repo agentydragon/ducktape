@@ -27,6 +27,7 @@ fixture opens its menu and screenshots successfully.
 from __future__ import annotations
 
 import json
+import re
 import zipfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -242,6 +243,9 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
             assert len(string_reply(session.call("GetGrantText", "openai_platform")).splitlines()) == 3
             grants = string_reply(session.call("GetGrantText", "anthropic_platform"))
             assert len(grants.splitlines()) == 2
+            assert re.findall(r"expires ([^·\n]+)", grants) == ["Jul 1, 2027", "Nov 25"]
+            openai_grants = string_reply(session.call("GetGrantText", "openai_platform"))
+            assert re.findall(r"expires ([^·\n]+)", openai_grants) == ["Dec 1", "Jan 1, 2027", "Feb 1, 2027"]
             assert "scope:" not in grants
             assert "managed-agents-onprem" in string_reply(session.call("GetDetailsText", "anthropic_platform"))
         geometry = session.open_menu()
