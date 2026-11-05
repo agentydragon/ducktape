@@ -58,6 +58,11 @@ def _probe(*, start: bool) -> str:
     script = textwrap.dedent(
         f"""\
         import json, os, pathlib, subprocess, sys, time
+        home = pathlib.Path.home()
+        assert home == pathlib.Path('/state/home')
+        assert home.stat().st_uid == os.getuid()
+        assert home.stat().st_mode & 0o777 == 0o700
+        (home / 'firecracker-home-proof').touch()
         path = pathlib.Path({_PROCESS_FILE!r})
         if {start!r}:
             subprocess.Popen([sys.executable, '-c', {_CHILD!r}, str(path)],

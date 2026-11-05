@@ -33,9 +33,17 @@ Map process ownership and choose a minimal guest agent and gRPC/vsock boundary; 
 parts of Codex exec-server can move given its current ownership of native sessions and processes.
 Preserve RAM-resumable guest processes, host/guest state coordination, identity fencing and no
 replay, with explicit session parking, reattachment and terminal cleanup.
+Probe thaw without reattachment for longer than Codex's 30-second detached-session grace;
+define parking and durable terminal release before promising indefinite process retention.
 
 ## Simplify Environment Runtime reconciliation and coordination
 
+- Map lifecycle transitions and mutation ownership across Sandbox Controller, Gateway, launcher,
+  Runtime and native executor: admission, checkpoint/thaw, connection replacement and terminal
+  cleanup. Include `PrepareSuspend`/`ResumeAdmission` generations, lost replies, controller restart,
+  concurrent wake and deletion. Then simplify one coordination path under the race tests,
+  preserving identity fencing, cleanup ownership and no replay. Use this map to evaluate the
+  control-services-outside-Firecracker proposal above.
 - Systemd observations are typed; process start, exit and stop still use a revision wakeup and
   process-owned result slots. A start-fact prototype retained the live worker slot and required
   additional reads to reconcile COSI observations with completion and teardown. Revisit when a
