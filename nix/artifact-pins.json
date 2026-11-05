@@ -53,16 +53,16 @@
       "sha256": "4eBO7BRYjX1X/+02uRxQ0ihH9aoK9X0cTxw2qIA9PWY="
     },
     "aiquota-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-f9c8cc0af91c/aiquota.zip",
-      "sha256": "B8BCloq/WOyjCwf/9jnrwSiGkR+j22/BgzcM7EMEv70="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-65f933794a78/aiquota.zip",
+      "sha256": "xuLrMsvQoEzmc76HYSdxeTkUqdskWtHaaW6k9QjIx+s="
     },
     "aiquota": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-f9c8cc0af91c/aiquota-0.1.0-py3-none-any.whl",
-      "sha256": "0HfK0i1vsyw+czgUqDPXqeMOu628G+nXUNyA80PvQzw="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-65f933794a78/aiquota-0.1.0-py3-none-any.whl",
+      "sha256": "bxw7wbetAvngxNy41rEiuYm4JIlxQLdV+lXuQqqxzBs="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-b33b8f244359/debundle",
-      "sha256": "szuPJENZiTZByoVROnAg3mOTVqK4ERKmPVdCrDn4Xi8="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-50e46a009399/debundle",
+      "sha256": "UORqAJOZ3S64RhhUQWLlL6bK7zDBqy9ux+oRJPCCkbA="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-fe760eac7e67/cluster_health.skill",
