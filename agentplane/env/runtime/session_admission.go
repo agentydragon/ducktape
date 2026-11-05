@@ -250,7 +250,7 @@ func rpcError(err error) error {
 }
 
 func (r *Runtime) acceptingLocked() bool {
-	return r.admissionOpen && !r.closing && !r.failed && r.startupComplete && r.desired.Mode == lifecycle.Running
+	return r.admissionOpen && !r.suspendPrepared && !r.closing && !r.failed && r.startupComplete && r.desired.Mode == lifecycle.Running
 }
 
 func (r *Runtime) authorizeSession(ctx context.Context, running bool) (lifecycle.EnvironmentDesired, error) {
@@ -278,6 +278,9 @@ func (r *Runtime) withSessionAdmission(ctx context.Context, running bool, expect
 func (r *Runtime) authorizeSessionEpochLocked(epoch *runtimecontrol.Epoch, running bool) error {
 	if r.closing || r.failed || !r.startupComplete {
 		return status.Error(codes.Unavailable, "environment Runtime is unavailable")
+	}
+	if r.suspendPrepared {
+		return status.Error(codes.Unavailable, "environment Runtime is preparing to suspend")
 	}
 	if running && !r.acceptingLocked() {
 		return status.Error(codes.Aborted, "this Sandbox is quiesced")

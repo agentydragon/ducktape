@@ -14,6 +14,9 @@ func sandboxRunning(s *sandboxapi.Sandbox) bool {
 }
 
 func sandboxOperatingMode(s *sandboxapi.Sandbox) sandboxapi.OperatingMode {
+	if firecrackerSuspending(s) {
+		return sandboxapi.OperatingModeSuspended
+	}
 	if sandboxRunning(s) {
 		return sandboxapi.OperatingModeRunning
 	}

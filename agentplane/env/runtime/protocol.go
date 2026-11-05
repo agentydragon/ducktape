@@ -24,11 +24,12 @@ func (r *Runtime) admitLifecycleEffect(ctx context.Context, expected lifecycle.E
 		r.mu.Unlock()
 		return err
 	}
-	if r.closing || r.failed || !r.admissionOpen || r.desired != expected || expected.Mode != lifecycle.Running {
+	if r.closing || r.failed || !r.admissionOpen || r.suspendPrepared || r.desired != expected || expected.Mode != lifecycle.Running {
 		r.mu.Unlock()
 		return nil
 	}
 	err := r.changeAdmissionsLocked(1)
+	r.idleSince = nil
 	r.mu.Unlock()
 	if err != nil {
 		return err
@@ -44,10 +45,15 @@ func (r *Runtime) admitLifecycleEffect(ctx context.Context, expected lifecycle.E
 func (r *Runtime) admitCodexRequest(ctx context.Context, effect func(context.Context) error) (resultErr error) {
 	r.mu.Lock()
 	if !r.acceptingLocked() {
+		suspending := r.suspendPrepared
 		r.mu.Unlock()
+		if suspending {
+			return status.Error(codes.Unavailable, "environment Runtime is preparing to suspend")
+		}
 		return status.Error(codes.Aborted, "this Sandbox is quiesced")
 	}
 	err := r.changeAdmissionsLocked(1)
+	r.idleSince = nil
 	r.mu.Unlock()
 	if err != nil {
 		return err

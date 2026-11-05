@@ -28,6 +28,7 @@ const (
 	firecrackerBootVolume             = "agentplane-firecracker-boot"
 	firecrackerRunnerVolume           = "agentplane-firecracker-runner"
 	firecrackerStatusPort             = "9092"
+	firecrackerStatusReadTimeout      = 5 * time.Second
 )
 
 type FirecrackerState struct {
@@ -46,8 +47,10 @@ type PodProxyFirecrackerStatusReader struct{ Client kubernetes.Interface }
 
 func (r PodProxyFirecrackerStatusReader) Read(ctx context.Context, pod *corev1.Pod) (FirecrackerState, error) {
 	var state FirecrackerState
+	readCtx, cancel := context.WithTimeout(ctx, firecrackerStatusReadTimeout)
+	defer cancel()
 	data, err := r.Client.CoreV1().RESTClient().Get().Namespace(pod.Namespace).
-		Resource("pods").Name(pod.Name + ":" + firecrackerStatusPort).SubResource("proxy").Suffix("state").DoRaw(ctx)
+		Resource("pods").Name(pod.Name + ":" + firecrackerStatusPort).SubResource("proxy").Suffix("state").DoRaw(readCtx)
 	if err != nil {
 		return state, err
 	}
@@ -143,6 +146,13 @@ func withFirecracker(sandbox *sandboxapi.Sandbox, template *sandboxapi.SandboxTe
 // convergeFirecracker keeps the same Pod and credential identity across suspend and resume.
 // Supervisor observations never authorize a cold boot or Pod replacement.
 func (r *Reconciler) convergeFirecracker(ctx context.Context, sandbox *sandboxapi.Sandbox, pod *corev1.Pod, running bool) (*unready, error) {
+	if sandbox.DeletionTimestamp.IsZero() && firecrackerSuspending(sandbox) {
+		return r.convergeFirecrackerSuspension(ctx, sandbox, pod)
+	}
+	return r.convergeFirecrackerIntent(ctx, sandbox, pod, running)
+}
+
+func (r *Reconciler) convergeFirecrackerIntent(ctx context.Context, sandbox *sandboxapi.Sandbox, pod *corev1.Pod, running bool) (*unready, error) {
 	if pod.UID == "" {
 		return &unready{reason: "FirecrackerPending", message: "launcher Pod has no UID", retryAfter: 2 * time.Second}, nil
 	}

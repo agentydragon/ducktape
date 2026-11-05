@@ -27,7 +27,9 @@ exactly one of `pod`, `vm`, or `firecracker`.
 - `status.operatingMode` (`Running` or `Suspended`) is whether the controller runs the Sandbox, and what
   the rest of this section calls running: `spec.running`, unless the controller suspended the Sandbox
   for idleness (`status.suspendedBy: Idle`) and `spec.wakeGeneration` still equals
-  `status.suspendedAtWakeGeneration`. Readers of `spec.running` read the mode instead.
+  `status.suspendedAtWakeGeneration`. A pending `status.firecrackerSuspension` also keeps the mode
+  Suspended through admission preparation, checkpoint and thaw, even if a wake arrives. Readers of
+  `spec.running` read the mode instead.
 - `status.suspendedBy` says why a Sandbox is suspended and is absent while it runs: `Requested` when
   `spec.running` is clear, `Idle` when the controller suspended it for idleness. A requester that
   clears `spec.running` of an idle-suspended Sandbox replaces `Idle` with `Requested`.
@@ -49,9 +51,16 @@ exactly one of `pod`, `vm`, or `firecracker`.
 - Optional `spec.idleSuspendAfter`, a duration of at least one minute, suspends an idle Sandbox. Unset,
   the controller never suspends it for idleness. Once the runner has been idle that long, timed on
   the controller's clock from when it first saw that idle period, the controller asks the runner to
-  quiesce only if it is still idle since then for Pod and VM templates. A Firecracker Sandbox commits
-  the idle suspension from the observed idle Lease and asks its launcher to checkpoint RAM without
-  quiescing. A Pod or VM runner that is busy again, or idle since another instant, refuses, and the wait
+  quiesce only if it is still idle since then for Pod and VM templates. A Firecracker Sandbox first
+  persists a `Preparing` attempt with a monotonically increasing generation and the observed idle
+  timestamp. This fences Gateway dispatch before `PrepareSuspend` atomically checks Runtime idleness
+  and closes new admission without sealing Sessions. A busy Runtime refuses; `ResumeAdmission`
+  invalidates the attempt before dispatch reopens. An acknowledged attempt progresses through
+  `Checkpointing` and `Resuming`, retaining its identity across lost replies and controller restarts.
+  Even a concurrent wake waits for an actual checkpoint before thaw. Only after the launcher reports
+  running does `ResumeAdmission` release the Runtime gate and the controller mark the attempt
+  `Released`; the generation remains to distinguish delayed calls from the next attempt.
+  A runner that is busy again, or idle since another instant, refuses, and the wait
   starts over; a controller restart also restarts it. Terminals and background processes do not
   count as work. Idleness never deletes a Sandbox.
 - `status.idleSuspendAt` reports the next suspension attempt time while this controller has seen an

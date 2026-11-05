@@ -215,7 +215,11 @@ async def preserves_live_guest(
     (session,) = [row for row in initial.sessions if row.session_id == str(agent.thread_id)]
     assert session.HasField("process_id")
     assert initial.environment_runtime_boot_id
-    await client.suspend_sandbox(view.target)
+    # Exercise the conditional idle admission barrier as well as the VM primitive.
+    # The live background child remains eligible for RAM-preserving autosuspend.
+    await cluster.kubectl(
+        "patch", "sandbox", view.target.name, "--type=merge", "-p", json.dumps({"spec": {"idleSuspendAfter": "1m"}})
+    )
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(300), wait=wait_fixed(1), retry=retry_if_exception_type(AssertionError), reraise=True
     ):
@@ -231,14 +235,22 @@ async def preserves_live_guest(
         )
     )
     assert status["phase"] == "suspended", status
+    stopped = json.loads(await cluster.kubectl("get", "sandbox", view.target.name, "-o", "json"))
+    assert stopped["status"]["suspendedBy"] == "Idle", stopped["status"]
+    assert stopped["status"]["firecrackerSuspension"]["phase"] == "Checkpointing", stopped["status"]
     pod_json = json.loads(await cluster.kubectl("get", "pod", pod.name, "-o", "json"))
     assert pod_json["metadata"]["uid"] == pod.uid
     assert all(row.get("restartCount", 0) == 0 for row in pod_json["status"]["containerStatuses"])
     thaw_credential = await _renew_credentials(cluster, secret_name)
+    await cluster.kubectl(
+        "patch", "sandbox", view.target.name, "--type=merge", "-p", json.dumps({"spec": {"idleSuspendAfter": None}})
+    )
     await client.resume_sandbox(view.target)
     resumed = await wait_until_running(client, view.target)
     await _wait_for_served_certificate(cluster, pod.name, thaw_credential)
     assert resumed.kubernetes_diagnostics.pod.uid == pod.uid
+    resumed_sandbox = json.loads(await cluster.kubectl("get", "sandbox", view.target.name, "-o", "json"))
+    assert resumed_sandbox["status"]["firecrackerSuspension"]["phase"] == "Released", resumed_sandbox["status"]
     async for attempt in environment_runtime_startup_retries():
         with attempt:
             restored = await client.runner_status(view.target.name, view.target.uid)

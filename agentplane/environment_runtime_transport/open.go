@@ -38,8 +38,8 @@ type OpenedSecurity struct {
 }
 
 // Open validates security configuration and opens its local credential source.
-// For Workload API security the initial stream update is bounded, while the
-// source remains attached to ctx until Close or ctx cancellation.
+// For Workload API security ctx bounds the initial stream update; Close stops
+// the ongoing watch.
 func (s Security) Open(ctx context.Context) (*OpenedSecurity, error) {
 	if err := s.Validate(); err != nil {
 		return nil, err
@@ -231,44 +231,14 @@ func validateLocalSVID(source credentialSource, identity spiffeid.ID, usage x509
 }
 
 func newWorkloadAPISource(ctx context.Context, socket string) (credentialSource, func() error, error) {
-	type result struct {
-		source *workloadapi.X509Source
-		err    error
+	startupCtx, cancel := context.WithTimeout(ctx, workloadAPISourceStartupTimeout)
+	defer cancel()
+	address, _ := parseWorkloadAPISocket(socket)
+	source, err := workloadapi.NewX509Source(startupCtx, workloadapi.WithClientOptions(workloadapi.WithAddr(address)))
+	if err != nil {
+		return nil, nil, fmt.Errorf("open Workload API source: %w", err)
 	}
-	sourceCtx, cancel := context.WithCancel(ctx)
-	resultCh := make(chan result, 1)
-	go func() {
-		address, _ := parseWorkloadAPISocket(socket)
-		source, err := workloadapi.NewX509Source(sourceCtx, workloadapi.WithClientOptions(workloadapi.WithAddr(address)))
-		resultCh <- result{source: source, err: err}
-	}()
-	timer := time.NewTimer(workloadAPISourceStartupTimeout)
-	defer timer.Stop()
-	select {
-	case result := <-resultCh:
-		if result.err != nil {
-			if result.source != nil {
-				_ = result.source.Close()
-			}
-			cancel()
-			return nil, nil, fmt.Errorf("open Workload API source: %w", result.err)
-		}
-		return result.source, result.source.Close, nil
-	case <-ctx.Done():
-		cancel()
-		result := <-resultCh
-		if result.source != nil {
-			_ = result.source.Close()
-		}
-		return nil, nil, fmt.Errorf("open Workload API source: %w", ctx.Err())
-	case <-timer.C:
-		cancel()
-		result := <-resultCh
-		if result.source != nil {
-			_ = result.source.Close()
-		}
-		return nil, nil, fmt.Errorf("open Workload API source: no initial X.509 context within %s", workloadAPISourceStartupTimeout)
-	}
+	return source, source.Close, nil
 }
 
 var _ credentialSource = (*workloadapi.X509Source)(nil)

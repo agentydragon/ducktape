@@ -74,6 +74,8 @@ type Reconciler struct {
 	Now func() time.Time
 	// FirecrackerStatus reads the launcher supervisor through the Kubernetes Pod proxy.
 	FirecrackerStatus FirecrackerStatusReader
+	// Suspender closes Runtime admission without sealing RAM-preserved Sessions.
+	Suspender RuntimeSuspender
 
 	idle idleTimers
 }

@@ -246,6 +246,9 @@ func ValidateAutosuspendBlockers(blockers []AutosuspendBlocker) error {
 type SandboxStatus struct {
 	Volumes     *SandboxVolumes `json:"volumes,omitempty"`
 	Incarnation *Incarnation    `json:"incarnation,omitempty"`
+	// FirecrackerSuspension retains the admission barrier across controller retries,
+	// checkpoint and thaw. Released keeps the generation for the next attempt.
+	FirecrackerSuspension *FirecrackerSuspension `json:"firecrackerSuspension,omitempty"`
 	// IdleSuspendAt is the controller's next attempt to suspend an idle Sandbox, when one is scheduled.
 	IdleSuspendAt *metav1.Time `json:"idleSuspendAt,omitempty"`
 	// IdleSuspendBlockers are the live runner facts keeping autosuspend from suspending this Sandbox.
@@ -273,6 +276,23 @@ type SandboxStatus struct {
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
+
+type FirecrackerSuspension struct {
+	// +kubebuilder:validation:Minimum=1
+	Generation int64                      `json:"generation"`
+	IdleSince  metav1.MicroTime           `json:"idleSince"`
+	Phase      FirecrackerSuspensionPhase `json:"phase"`
+}
+
+// +kubebuilder:validation:Enum=Preparing;Checkpointing;Resuming;Released
+type FirecrackerSuspensionPhase string
+
+const (
+	FirecrackerSuspendPreparing     FirecrackerSuspensionPhase = "Preparing"
+	FirecrackerSuspendCheckpointing FirecrackerSuspensionPhase = "Checkpointing"
+	FirecrackerSuspendResuming      FirecrackerSuspensionPhase = "Resuming"
+	FirecrackerSuspendReleased      FirecrackerSuspensionPhase = "Released"
+)
 
 // WorkspaceBinding projects the creation record and pins the claim's identity.
 type WorkspaceBinding struct {

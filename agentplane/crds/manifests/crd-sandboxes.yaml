@@ -211,6 +211,32 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              firecrackerSuspension:
+                description: 'FirecrackerSuspension retains the admission barrier
+                  across controller retries,
+
+                  checkpoint and thaw. Released keeps the generation for the next
+                  attempt.'
+                properties:
+                  generation:
+                    format: int64
+                    minimum: 1
+                    type: integer
+                  idleSince:
+                    format: date-time
+                    type: string
+                  phase:
+                    enum:
+                    - Preparing
+                    - Checkpointing
+                    - Resuming
+                    - Released
+                    type: string
+                required:
+                - generation
+                - idleSince
+                - phase
+                type: object
               idleSuspendAt:
                 description: IdleSuspendAt is the controller's next attempt to suspend
                   an idle Sandbox, when one is scheduled.

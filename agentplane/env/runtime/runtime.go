@@ -123,6 +123,11 @@ type Runtime struct {
 	bootID                 string
 	supervisor             *supervision.Supervisor
 	admissionOpen          bool
+	// A RAM-preserved Firecracker checkpoint closes new work without sealing Sessions.
+	// Its generation is also the tombstone for late PrepareSuspend calls after resume.
+	suspendGeneration      int64
+	suspendIdleSinceMicros int64
+	suspendPrepared        bool
 	executorProxy          executorpb.ExecutorServer
 	executionOwner         *executionLifetime
 	activeAdmissions       uint64
