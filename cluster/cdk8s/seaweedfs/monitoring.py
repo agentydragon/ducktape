@@ -15,18 +15,25 @@ from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Promethe
 from cluster.cdk8s.seaweedfs import cluster, namespace, public_s3
 
 NAME = "seaweedfs-monitoring"
-_RUNFILES_ROOT = Runfiles.CreateOrRaise().root()
+_PROMQL_DIR = Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/seaweedfs"
 _S3_GATEWAY_SERVICES = (f"{cluster.NAME}-s3", public_s3.NAME)
 _S3_GATEWAY_SERVICE_MATCHER = "|".join(_S3_GATEWAY_SERVICES)
+
+
+def _s3_promql(filename: str, *, service: str = _S3_GATEWAY_SERVICE_MATCHER) -> str:
+    return (
+        (_PROMQL_DIR / filename)
+        .read_text()
+        .replace("@NAMESPACE@", namespace.NAME)
+        .replace("@GATEWAY_SERVICES@", _S3_GATEWAY_SERVICE_MATCHER)
+        .replace("@SERVICE@", service)
+    )
 
 
 _S3_GATEWAY_REQUEST_ERRORS = [
     Rule.alert(
         "SeaweedS3RequestErrorsHigh",
-        (_RUNFILES_ROOT / "ducktape/cluster/cdk8s/seaweedfs/s3-request-errors-high.promql")
-        .read_text()
-        .replace("@NAMESPACE@", namespace.NAME)
-        .replace("@GATEWAY_SERVICES@", _S3_GATEWAY_SERVICE_MATCHER),
+        _s3_promql("s3-request-errors-high.promql"),
         for_="10m",
         labels={"severity": "warning"},
         summary="SeaweedFS S3 {{ $labels.service }} {{ $labels.type }} requests are returning 5xx",
@@ -50,10 +57,7 @@ _S3_GATEWAY_REQUEST_ERRORS = [
 _S3_GATEWAY_LATENCY = [
     Rule.alert(
         "SeaweedS3GatewayLatencyHigh",
-        (_RUNFILES_ROOT / "ducktape/cluster/cdk8s/seaweedfs/s3-gateway-latency-high.promql")
-        .read_text()
-        .replace("@NAMESPACE@", namespace.NAME)
-        .replace("@GATEWAY_SERVICES@", _S3_GATEWAY_SERVICE_MATCHER),
+        _s3_promql("s3-gateway-latency-high.promql"),
         for_="15m",
         labels={"severity": "warning"},
         summary="SeaweedFS S3 {{ $labels.service }} {{ $labels.type }} latency is high",
@@ -85,10 +89,7 @@ _S3_GATEWAY_TARGETS_MISSING = [
 _S3_GATEWAY_TARGET_COUNT_LOW = [
     Rule.alert(
         "SeaweedS3GatewayTargetCountLow",
-        (_RUNFILES_ROOT / "ducktape/cluster/cdk8s/seaweedfs/s3-gateway-target-count-low.promql")
-        .read_text()
-        .replace("@NAMESPACE@", namespace.NAME)
-        .replace("@SERVICE@", service),
+        _s3_promql("s3-gateway-target-count-low.promql", service=service),
         for_="10m",
         labels={"severity": "warning"},
         summary="SeaweedFS S3 metrics targets for {{ $labels.service }} are below desired replicas",
@@ -104,10 +105,7 @@ _S3_GATEWAY_TARGET_COUNT_LOW = [
 _S3_GATEWAY_METRICS_MISSING = [
     Rule.alert(
         "SeaweedS3GatewayMetricsMissing",
-        (_RUNFILES_ROOT / "ducktape/cluster/cdk8s/seaweedfs/s3-gateway-metrics-missing.promql")
-        .read_text()
-        .replace("@NAMESPACE@", namespace.NAME)
-        .replace("@SERVICE@", service),
+        _s3_promql("s3-gateway-metrics-missing.promql", service=service),
         for_="5m",
         labels={"severity": "warning"},
         summary="SeaweedFS S3 gauge metrics are missing from {{ $labels.service }} pod {{ $labels.pod }}",

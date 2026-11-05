@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import signal
-import tarfile
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
@@ -19,23 +17,10 @@ from agentplane.env.e2e.testing.driver import RunnerDriver
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
+from agentplane.x.runner_layering import tools_rootfs
+from agentplane.x.runner_layering.local_vm import extract_oci_rootfs
 
 # gazelle:include_dep @pypi//protobuf
-
-
-def _extract_oci_rootfs(runfiles: Runfiles, rloc_file: str, destination: Path) -> None:
-    """Expand the layers from a Bazel OCI layout into a disposable child root."""
-    runfiles_root = runfiles.root()
-    reference = runfiles_root / f"ducktape/{rloc_file}"
-    layout = runfiles_root / reference.read_text().strip()
-    index = json.loads((layout / "index.json").read_text())
-    (descriptor,) = index["manifests"]
-    manifest_path = layout / "blobs" / descriptor["digest"].replace(":", "/")
-    manifest = json.loads(manifest_path.read_text())
-    for layer in manifest["layers"]:
-        layer_path = layout / "blobs" / layer["digest"].replace(":", "/")
-        with tarfile.open(layer_path, "r:*") as archive:
-            archive.extractall(destination, filter="data")
 
 
 @pytest.mark.parametrize("harness", [session_pb2.HARNESS_CODEX], ids=["codex"])
@@ -64,7 +49,7 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     resources_dir.mkdir()
     shutil.copyfile(codex_bwrap, resources_dir / "bwrap")
     (resources_dir / "bwrap").chmod(0o555)
-    _extract_oci_rootfs(runfiles, "agentplane/x/runner_layering/tools_rootfs.rloc", child_root)
+    extract_oci_rootfs(runfiles_root / tools_rootfs.LAYOUT_RLOCATION, child_root)
     assert (child_root / "usr/local/bin/workload-tool").is_file()
 
     state_dir = tmp_path / "state"

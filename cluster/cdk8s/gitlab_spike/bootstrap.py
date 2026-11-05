@@ -38,15 +38,11 @@ def namespace_chart(app: App) -> Chart:
         )
     for name, key in (("gitlab-root-password", "password"), ("gitlab-bootstrap-token", "token")):
         mint_bearer_secret(chart, name, name=name, namespace=NAMESPACE, key=key)
+    bootstrap_script = (
+        Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/gitlab_spike/bootstrap.rb"
+    ).read_text()
     ConfigMap(
-        chart,
-        "ruby",
-        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        data={
-            "main.rb": (
-                Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/gitlab_spike/bootstrap.rb"
-            ).read_text()
-        },
+        chart, "ruby", metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE), data={"main.rb": bootstrap_script}
     )
     return chart
 

@@ -9,18 +9,16 @@ from python.runfiles import Runfiles
 
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
-_K8S_ROOT_KUSTOMIZATION = "ducktape/cluster/k8s/kustomization.yaml"
+
+@pytest.fixture(scope="session")
+def repo_root() -> Path:
+    """The materialized runfiles checkout, anchored by its root MODULE.bazel."""
+    return Path(str(Runfiles.CreateOrRaise().root() / "ducktape/MODULE.bazel")).parent
 
 
 @pytest.fixture(scope="session")
-def k8s_dir() -> Path:
-    return Path(str(Runfiles.CreateOrRaise().root() / _K8S_ROOT_KUSTOMIZATION)).parent
-
-
-@pytest.fixture(scope="session")
-def repo_root(k8s_dir: Path) -> Path:
-    """The runfiles checkout all Flux manifest roots sit in (cluster/cdk8s/manifest_roots.py)."""
-    return k8s_dir.parents[1]
+def k8s_dir(repo_root: Path) -> Path:
+    return repo_root / "cluster/k8s"
 
 
 @pytest.fixture(scope="session")

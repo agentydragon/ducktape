@@ -12,9 +12,9 @@ from pathlib import Path, PurePosixPath
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
+from python.runfiles import Runfiles
 
 from cluster.validation.k8s import K8sResource, parse_k8s_resources
-from cluster.validation.tool_resolve import resolve_tool
 
 KUSTOMIZATION_FILE_NAMES = ("kustomization.yaml", "kustomization.yml", "Kustomization")
 
@@ -200,7 +200,7 @@ def _kustomize_build_args(kust: KustomizeFile, scratch: Path) -> list[str | Path
 
 async def run_kustomize_build(kust: KustomizeFile) -> KustomizeBuildResult:
     """Run kustomize build and parse the output. Raises KustomizeBuildError on failure."""
-    kustomize_bin = resolve_tool("kustomize", "multitool/tools/kustomize/kustomize")
+    kustomize_bin = Runfiles.CreateOrRaise().root() / "multitool/tools/kustomize/kustomize"
     with tempfile.TemporaryDirectory() as scratch:
         proc = await asyncio.create_subprocess_exec(
             kustomize_bin,

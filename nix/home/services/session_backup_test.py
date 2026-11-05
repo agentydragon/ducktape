@@ -23,7 +23,7 @@ class Harness:
 
     def restic(self, *arguments: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [(self.runfiles.root() / "ducktape/third_party/restic/restic_bin"), *arguments],
+            [self.runfiles.root() / "ducktape/third_party/restic/restic_bin", *arguments],
             env=self.environment,
             check=True,
             capture_output=True,

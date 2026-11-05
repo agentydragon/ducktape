@@ -17,6 +17,8 @@ from typing import TextIO
 import httpx
 from python.runfiles import Runfiles
 
+from agentplane.x.runner_layering import tools_rootfs
+
 
 def _put(client: httpx.Client, path: str, body: dict[str, object], output: list[str]) -> None:
     response = client.put(path, json=body)
@@ -34,11 +36,8 @@ def _read_console(stream: TextIO, output: list[str], lines: queue.Queue[str]) ->
         lines.put(line)
 
 
-def _extract_oci_rootfs(rloc_file: str, destination: Path) -> None:
+def extract_oci_rootfs(layout: Path, destination: Path) -> None:
     """Expand the layers from a Bazel OCI layout into a temporary filesystem tree."""
-    runfiles_root = Runfiles.CreateOrRaise().root()
-    reference = runfiles_root / f"ducktape/{rloc_file}"
-    layout = runfiles_root / reference.read_text().strip()
     index = json.loads((layout / "index.json").read_text())
     (descriptor,) = index["manifests"]
     manifest_path = layout / "blobs" / descriptor["digest"].replace(":", "/")
@@ -88,10 +87,13 @@ def _probe_claude_on_host(claude_binary: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--kernel", type=Path)
+    parser.add_argument("--kernel-rlocation", help=argparse.SUPPRESS)
     parser.add_argument("--timeout-seconds", type=float, default=20)
     args = parser.parse_args()
     runfiles_root = Runfiles.CreateOrRaise().root()
-    kernel = args.kernel or (runfiles_root / "firecracker_vmlinux_6_1_128/file/vmlinux-6.1.128")
+    if args.kernel is None and args.kernel_rlocation is None:
+        parser.error("provide --kernel or run this probe with Bazel")
+    kernel = args.kernel or runfiles_root / args.kernel_rlocation
     if not kernel.is_file():
         raise SystemExit(f"kernel image is not available: {kernel}")
 
@@ -104,7 +106,7 @@ def main() -> None:
         harness_root = root / "harness-root"
         tools_root.mkdir()
         harness_root.mkdir()
-        _extract_oci_rootfs("agentplane/x/runner_layering/tools_rootfs.rloc", tools_root)
+        extract_oci_rootfs(runfiles_root / tools_rootfs.LAYOUT_RLOCATION, tools_root)
         for relative in ("opt", "home/agent/.codex", "home/agent/.claude", "workspace", "tmp", "proc"):
             (tools_root / relative).mkdir(parents=True, exist_ok=True)
 
@@ -116,7 +118,7 @@ def main() -> None:
         for runfile, relative in harness_files:
             destination = harness_root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile((runfiles_root / runfile), destination)
+            shutil.copyfile(runfiles_root / runfile, destination)
             destination.chmod(0o555)
             if runfile == "claude_code_cli_linux_x64/claude":
                 _probe_claude_on_host(destination)

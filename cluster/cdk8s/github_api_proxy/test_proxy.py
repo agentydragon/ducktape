@@ -15,20 +15,18 @@ from python.runfiles import Runfiles
 from cluster.cdk8s.github_api_proxy import proxy
 
 
-def test_github_proxy_rules(scratch_app: App, tmp_path: Path) -> None:
+def test_github_proxy_rules(runfiles: Runfiles, promtool: Path, scratch_app: App, tmp_path: Path) -> None:
     manifest = one(
         manifest
         for manifest in Cdk8sTesting.synth(proxy.app_chart(scratch_app))
         if manifest["kind"] == "PrometheusRule"
     )
     (tmp_path / "github-proxy.yaml").write_text(yaml.safe_dump(manifest["spec"]))
-    runfiles_root = Runfiles.CreateOrRaise().root()
+    runfiles_root = runfiles.root()
     (tmp_path / "tests.yaml").write_text(
         (runfiles_root / "ducktape/cluster/cdk8s/github_api_proxy/testdata/github_proxy_rules.yaml").read_text()
     )
-    subprocess.run(
-        [(runfiles_root / "multitool/tools/promtool/promtool"), "test", "rules", "tests.yaml"], cwd=tmp_path, check=True
-    )
+    subprocess.run([promtool, "test", "rules", "tests.yaml"], cwd=tmp_path, check=True)
 
 
 if __name__ == "__main__":

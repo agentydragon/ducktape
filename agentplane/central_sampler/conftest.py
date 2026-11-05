@@ -28,7 +28,7 @@ async def execution_target(executor_server: ExecutorServer) -> AsyncIterator[str
     )
     with (undeclared_outputs_dir() / "sampler-execution-adapter.log").open("wb") as log:
         process = await asyncio.create_subprocess_exec(
-            str(adapter),
+            adapter,
             "--listen",
             "127.0.0.1:0",
             "--executor-url",

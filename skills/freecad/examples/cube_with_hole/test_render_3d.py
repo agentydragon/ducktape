@@ -28,23 +28,23 @@ def render_outputs(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory,
     uo.mkdir(parents=True, exist_ok=True)
 
     runfiles_root = runfiles.root()
-    result = freecad_run((runfiles_root / _BUILD_SCRIPT), outdir=out_dir)
+    result = freecad_run(runfiles_root / _BUILD_SCRIPT, outdir=out_dir)
     assert_run_ok(result, "build_cube_with_hole.py", uo, "build")
 
     fcstd = out_dir / "cube_with_hole.FCStd"
     assert fcstd.exists(), "FCStd not generated — see build.stderr in test outputs"
 
-    result2 = freecad_gui((runfiles_root / _RENDER_SCRIPT), outdir=out_dir, env={"INPUT": str(fcstd)})
+    result2 = freecad_gui(runfiles_root / _RENDER_SCRIPT, outdir=out_dir, env={"INPUT": str(fcstd)})
     assert_run_ok(result2, "render_fcstd.py", uo, "render")
 
     assert (out_dir / "cube_with_hole.png").exists(), "PNG not generated — see render.stderr in test outputs"
     copy_outputs(out_dir, uo)
-    shutil.copy2((runfiles_root / _GOLDEN), uo / "golden.png")
+    shutil.copy2(runfiles_root / _GOLDEN, uo / "golden.png")
     return out_dir
 
 
 def test_render_3d_golden(runfiles: Runfiles, render_outputs: Path) -> None:
-    assert_png_equal(render_outputs / "cube_with_hole.png", (runfiles.root() / _GOLDEN))
+    assert_png_equal(render_outputs / "cube_with_hole.png", runfiles.root() / _GOLDEN)
 
 
 if __name__ == "__main__":

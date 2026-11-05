@@ -28,7 +28,6 @@ from cdk8s import (
     Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
 )
 from more_itertools import one
-from python.runfiles import Runfiles
 
 from cluster.cdk8s import node_feature_discovery
 from cluster.cdk8s.monitoring import loki
@@ -57,9 +56,8 @@ def release_manifests(scratch_app_factory: Callable[[], App]) -> list[dict]:
 
 
 @pytest.fixture(scope="module")
-def roaming_node_count() -> int:
-    mesh = nebula_mesh.load(Runfiles.CreateOrRaise().root() / "ducktape/nebula-mesh.json")
-    return sum(1 for host in mesh.hosts.values() if host.role == _ROAMING_ROLE)
+def roaming_node_count(nebula_roster: nebula_mesh.Mesh) -> int:
+    return sum(1 for host in nebula_roster.hosts.values() if host.role == _ROAMING_ROLE)
 
 
 def test_roaming_nodes_exist(roaming_node_count: int) -> None:

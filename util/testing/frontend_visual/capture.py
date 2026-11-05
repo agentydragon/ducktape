@@ -155,7 +155,7 @@ class HarnessConfig:
         """What `py_visual_test` sets: runfiles paths (`rlocationpath`) of harness assets and capture metadata."""
         runfiles_root = Runfiles.CreateOrRaise().root()
         return cls(
-            harness_path=(runfiles_root / os.environ["HARNESS_PATH"]),
+            harness_path=runfiles_root / os.environ["HARNESS_PATH"],
             title=os.environ["VISUAL_TITLE"],
             expected_font_family=os.environ.get("EXPECTED_FONT_FAMILY"),
             inline_page=InlinePage.from_env() if os.environ.get("INLINE_PAGE") else None,

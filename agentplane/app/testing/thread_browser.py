@@ -93,7 +93,7 @@ async def page(
         if capture_geometry:
             await context.add_init_script(path=history_probe.script_path())
         await context.add_init_script(
-            path=(Runfiles.CreateOrRaise().root() / "ducktape/agentplane/app/testing/thread_page.js")
+            path=Runfiles.CreateOrRaise().root() / "ducktape/agentplane/app/testing/thread_page.js"
         )
         await context.tracing.start(screenshots=True, snapshots=True, sources=True)
         opened = await context.new_page()

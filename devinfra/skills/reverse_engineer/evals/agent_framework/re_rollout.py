@@ -153,7 +153,7 @@ async def _async_main(args: argparse.Namespace) -> None:
     # rollouts don't collide.
     inputs_dir = out_dir / f"inputs_{suffix}"
     inputs_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy((Runfiles.CreateOrRaise().root() / _TARGET_BINARY_RLOCATION), inputs_dir / "target")
+    shutil.copy(Runfiles.CreateOrRaise().root() / _TARGET_BINARY_RLOCATION, inputs_dir / "target")
 
     staged = stage_skill(_SKILL_BY_ARM[args.skill], out_dir / f"skill_extract_{suffix}")
     system_prompt = compose_system_prompt(skill_md=staged.md_text)

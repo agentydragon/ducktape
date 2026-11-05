@@ -13,18 +13,12 @@ def test_root_run_is_the_fixture_symlink_in_all_images() -> None:
         image = runfiles_root / os.environ[image_key]
 
         inode = subprocess.run(
-            [str(tool), str(closure), "dump.erofs", "--path=/var/run", str(image)],
-            check=True,
-            capture_output=True,
-            text=True,
+            [tool, closure, "dump.erofs", "--path=/var/run", image], check=True, capture_output=True, text=True
         ).stdout
         assert "symlink file" in inode, f"{image_key}: {inode}"
 
         target = subprocess.run(
-            [str(tool), str(closure), "dump.erofs", "--cat", "--path=/var/run", str(image)],
-            check=True,
-            capture_output=True,
-            text=True,
+            [tool, closure, "dump.erofs", "--cat", "--path=/var/run", image], check=True, capture_output=True, text=True
         ).stdout
         assert target == "/run", f"{image_key}: {target}"
 

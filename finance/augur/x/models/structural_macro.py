@@ -157,11 +157,11 @@ class StructuralMacroFittedDefaults(FrozenModel):
 
 
 # Repository-relative location of the checked-in fit — see `StructuralMacroFittedDefaults`.
-_BUNDLED_STRUCTURAL_MACRO_RUNFILE = "finance/augur/x/models/calibrated/trained_structural_macro.yaml"
+_BUNDLED_STRUCTURAL_MACRO_RUNFILE = "ducktape/finance/augur/x/models/calibrated/trained_structural_macro.yaml"
 
 
 def _fitted_defaults() -> StructuralMacroFittedDefaults:
-    path = Runfiles.CreateOrRaise().root() / f"ducktape/{_BUNDLED_STRUCTURAL_MACRO_RUNFILE}"
+    path = Runfiles.CreateOrRaise().root() / _BUNDLED_STRUCTURAL_MACRO_RUNFILE
     return StructuralMacroFittedDefaults.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
 
 

@@ -164,8 +164,8 @@ async def _archive_runner_data(
     # A separate process lets timeout/cancellation stop SQLite backup and filesystem traversal
     # before cleanup removes their sources; cancelling a worker thread would leave them running.
     process = await asyncio.create_subprocess_exec(
-        str(Runfiles.CreateOrRaise().root() / "ducktape/agentplane/system_tests/driver/runner_data_archive_bin"),
-        str(plan_path),
+        Runfiles.CreateOrRaise().root() / "ducktape/agentplane/system_tests/driver/runner_data_archive_bin",
+        plan_path,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )

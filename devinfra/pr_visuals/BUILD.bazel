@@ -293,6 +293,7 @@ py_test(
         "wheel_render_probe.py",
         ":wheel",
     ],
+    env = {"PR_VISUALS_WHEEL_RLOCATION": "$(rlocationpath :wheel)"},
     deps = [
         "//:conftest",
         "//devinfra/pr_visuals:publisher",

@@ -31,18 +31,13 @@ _WORKER = "ovh-ns102453"
 
 def _scripts(chart: Chart) -> None:
     runfiles_root = Runfiles.CreateOrRaise().root()
+    gitlab_bench = (runfiles_root / "ducktape/cluster/debug/gitlab_gitaly_storage_bench/gitlab-bench.sh").read_text()
+    forgejo_bench = (runfiles_root / "ducktape/cluster/debug/piraeus_migration/benchmarks/forgejo-bench.sh").read_text()
     ConfigMap(
         chart,
         "scripts",
         metadata=ApiObjectMetadata(name=_SCRIPTS, namespace=app.NAMESPACE),
-        data={
-            "gitlab-bench.sh": (
-                runfiles_root / "ducktape/cluster/debug/gitlab_gitaly_storage_bench/gitlab-bench.sh"
-            ).read_text(),
-            "forgejo-bench.sh": (
-                runfiles_root / "ducktape/cluster/debug/piraeus_migration/benchmarks/forgejo-bench.sh"
-            ).read_text(),
-        },
+        data={"gitlab-bench.sh": gitlab_bench, "forgejo-bench.sh": forgejo_bench},
     )
 
 

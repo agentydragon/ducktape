@@ -38,22 +38,22 @@ def debug_outputs(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory, 
 
     # Build the Part Design model (pure freecadcmd, no GUI)
     runfiles_root = runfiles.root()
-    result = freecad_run((runfiles_root / _BUILD_SCRIPT), outdir=out_dir)
+    result = freecad_run(runfiles_root / _BUILD_SCRIPT, outdir=out_dir)
     assert_run_ok(result, "build_bearing_block.py", uo, "build")
 
     fcstd = out_dir / "bearing_block.FCStd"
     assert fcstd.exists(), "FCStd not generated — see build.stderr in test outputs"
 
     # Add TechDraw views (needed for debug edges)
-    result = freecad_gui((runfiles_root / _TECHDRAW_SCRIPT), outdir=out_dir, env={"INPUT": str(fcstd)})
+    result = freecad_gui(runfiles_root / _TECHDRAW_SCRIPT, outdir=out_dir, env={"INPUT": str(fcstd)})
     assert_run_ok(result, "build_bearing_block_techdraw.py", uo, "techdraw")
 
     # Render debug edges (all views)
-    result = freecad_gui((runfiles_root / _DEBUG_EDGES_SCRIPT), outdir=out_dir, env={"INPUT": str(fcstd)})
+    result = freecad_gui(runfiles_root / _DEBUG_EDGES_SCRIPT, outdir=out_dir, env={"INPUT": str(fcstd)})
     assert_run_ok(result, "render_debug_edges.py", uo, "debug_edges")
 
     # Render debug faces
-    result = freecad_gui((runfiles_root / _DEBUG_FACES_SCRIPT), outdir=out_dir, env={"INPUT": str(fcstd)})
+    result = freecad_gui(runfiles_root / _DEBUG_FACES_SCRIPT, outdir=out_dir, env={"INPUT": str(fcstd)})
     assert_run_ok(result, "render_debug_faces.py", uo, "debug_faces")
 
     copy_outputs(out_dir, uo)
@@ -73,7 +73,7 @@ def test_debug_edges_produces_png(runfiles: Runfiles, debug_outputs: Path) -> No
         1 for i in range(0, len(pixels), 3) if pixels[i] != 255 or pixels[i + 1] != 255 or pixels[i + 2] != 255
     )
     assert non_white > 100, "Debug edges PNG appears blank (no colored edges)"
-    assert_png_equal(actual, (runfiles.root() / _GOLDEN_EDGES_FRONT), max_diff_fraction=_DEBUG_MAX_DIFF)
+    assert_png_equal(actual, runfiles.root() / _GOLDEN_EDGES_FRONT, max_diff_fraction=_DEBUG_MAX_DIFF)
 
 
 def test_debug_faces_produces_png(runfiles: Runfiles, debug_outputs: Path) -> None:
@@ -87,7 +87,7 @@ def test_debug_faces_produces_png(runfiles: Runfiles, debug_outputs: Path) -> No
     assert colors is not None, "Could not count colors"
     # A properly colored face render should have many colors (>50 distinct RGB values)
     assert len(colors) > 50, f"Only {len(colors)} distinct colors — faces may not be colored"
-    assert_png_equal(actual, (runfiles.root() / _GOLDEN_FACES), max_diff_fraction=_DEBUG_MAX_DIFF)
+    assert_png_equal(actual, runfiles.root() / _GOLDEN_FACES, max_diff_fraction=_DEBUG_MAX_DIFF)
 
 
 if __name__ == "__main__":

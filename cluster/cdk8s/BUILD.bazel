@@ -71,7 +71,12 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = ["//cluster/cdk8s/testing:scratch"],
+    deps = [
+        "//cluster/cdk8s/testing:scratch",
+        "//cluster/scripts:nebula_mesh_fixtures",
+        "@pypi//pytest",
+        "@rules_python//python/runfiles",
+    ],
 )
 
 py_library(
@@ -96,7 +101,10 @@ py_test(
         "@multitool//tools/kustomize",
         "@nodejs_linux_amd64//:bin/node",
     ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    env = {
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "KUSTOMIZE_RLOCATION": "$(rlocationpath @multitool//tools/kustomize)",
+    },
     deps = [
         ":artifact_generators",
         ":conftest",
@@ -108,7 +116,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1888,6 +1895,7 @@ py_test(
     # the whole generated root, which the test holds closed. cluster_all_files' glob stops at
     # sub-package boundaries.
     data = [
+        "//:MODULE.bazel",
         "//:session_backup_sops_source",
         "//agentplane/crds:manifests",
         "//cluster:generated_manifests",

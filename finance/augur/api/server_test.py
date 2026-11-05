@@ -27,7 +27,7 @@ def _usd_quanta(value: float | int) -> str:
 @pytest.fixture(scope="module")
 def server_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     with run_server(
-        binary=(Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/api/server_bin"),
+        binary=Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/api/server_bin",
         tmp_path=tmp_path_factory.mktemp("augur_server"),
         args=("--api-only",),
         env={

@@ -137,7 +137,7 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
 @pytest.fixture(scope="module")
 def checkout(runfiles: Runfiles) -> Path:
     """The runfiles tree, which holds each committed file the data deps package at its repo path."""
-    return Path(str(runfiles.root() / f"ducktape/{GENERATED_ROOT}")).parents[1]
+    return Path(str(runfiles.root() / "ducktape/MODULE.bazel")).parent
 
 
 def test_generated_tree_matches_committed_snapshot(generated: Path, checkout: Path) -> None:

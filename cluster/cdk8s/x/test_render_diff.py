@@ -1,10 +1,10 @@
 import subprocess
 import textwrap
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 import pytest_bazel
-from python.runfiles import Runfiles
 
 from cluster.cdk8s.x.render_diff import (
     Blob,
@@ -103,23 +103,29 @@ def base_files() -> dict[str, str]:
     }
 
 
-def _graph(runfiles: Runfiles, repo: Path, rev: str, cache: Path) -> Graph:
+@pytest.fixture
+def render_graph(kustomize: Path, tmp_path: Path) -> Callable[[Path, str], Graph]:
+    cache = tmp_path / "cache"
     store = BlobStore(cache / "blobs")
-    renderer = Renderer(cache, store, str(runfiles.root() / "multitool/tools/kustomize/kustomize"))
-    return reconcile(Revision(repo, rev, git_tree(repo, rev), cache / "upstream", store), renderer, jobs=2)
+    renderer = Renderer(cache, store, str(kustomize))
+
+    def render(repo: Path, rev: str) -> Graph:
+        return reconcile(Revision(repo, rev, git_tree(repo, rev), cache / "upstream", store), renderer, jobs=2)
+
+    return render
 
 
 def test_identical_revisions_compare_clean(
-    runfiles: Runfiles, repo: Path, base_files: dict[str, str], tmp_path: Path
+    render_graph: Callable[[Path, str], Graph], repo: Path, base_files: dict[str, str]
 ) -> None:
     rev = _commit(repo, base_files)
-    graph = _graph(runfiles, repo, rev, tmp_path / "cache")
+    graph = render_graph(repo, rev)
     assert set(graph.results) == {("flux-system", n) for n in ("flux-system", "generators", "app")}
-    assert compare(graph, _graph(runfiles, repo, rev, tmp_path / "cache")) == []
+    assert compare(graph, render_graph(repo, rev)) == []
 
 
 def test_reports_changed_field_and_removed_object(
-    runfiles: Runfiles, repo: Path, base_files: dict[str, str], tmp_path: Path
+    render_graph: Callable[[Path, str], Graph], repo: Path, base_files: dict[str, str]
 ) -> None:
     base = _commit(repo, base_files)
     head = _commit(
@@ -130,7 +136,7 @@ def test_reports_changed_field_and_removed_object(
             "cluster/k8s/app/README.md": "changes nothing Flux applies",
         },
     )
-    report = compare(_graph(runfiles, repo, base, tmp_path / "cache"), _graph(runfiles, repo, head, tmp_path / "cache"))
+    report = compare(render_graph(repo, base), render_graph(repo, head))
     assert report == [
         "== flux-system/app ==",
         '~ ConfigMap app/app\n    data.key: "one" -> "two"',
@@ -139,23 +145,23 @@ def test_reports_changed_field_and_removed_object(
 
 
 def test_build_failure_is_a_difference(
-    runfiles: Runfiles, repo: Path, base_files: dict[str, str], tmp_path: Path
+    render_graph: Callable[[Path, str], Graph], repo: Path, base_files: dict[str, str]
 ) -> None:
     base = _commit(repo, base_files)
     head = _commit(repo, {"cluster/k8s/app/kustomization.yaml": "resources: [missing.yaml]\n"})
-    head_graph = _graph(runfiles, repo, head, tmp_path / "cache")
+    head_graph = render_graph(repo, head)
     assert isinstance(head_graph.results[("flux-system", "app")], Failed)
-    assert compare(_graph(runfiles, repo, base, tmp_path / "cache"), head_graph)[0] == "== flux-system/app =="
+    assert compare(render_graph(repo, base), head_graph)[0] == "== flux-system/app =="
 
 
 def test_kustomization_object_change_is_reported_once(
-    runfiles: Runfiles, repo: Path, base_files: dict[str, str], tmp_path: Path
+    render_graph: Callable[[Path, str], Graph], repo: Path, base_files: dict[str, str]
 ) -> None:
     base = _commit(repo, base_files)
     head = _commit(
         repo, {"cluster/k8s/flux/kustomizations.yaml": _FLUX.replace("targetNamespace: app", "targetNamespace: app2")}
     )
-    report = compare(_graph(runfiles, repo, base, tmp_path / "cache"), _graph(runfiles, repo, head, tmp_path / "cache"))
+    report = compare(render_graph(repo, base), render_graph(repo, head))
     assert report[:2] == [
         "== Flux Kustomization objects ==",
         '~ flux-system/app\n    spec.targetNamespace: "app" -> "app2"',

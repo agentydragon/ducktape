@@ -24,11 +24,11 @@ def run_server(
         (undeclared_outputs_dir() / "augur-server.log").open("w") as server_log,
         subprocess.Popen(
             [
-                str(binary),
+                binary,
                 "--fd",
                 str(listener.socket.fileno()),
                 "--config",
-                str(Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/api/testdata/config.yaml"),
+                Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/api/testdata/config.yaml",
                 *args,
             ],
             env={

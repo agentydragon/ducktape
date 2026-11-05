@@ -28,22 +28,22 @@ def scripted_listener() -> Iterator[Listener]:
         yield listener
 
 
-def load_stack_inputs() -> StackInputs:
+def load_stack_inputs(runfiles: Runfiles, k3s_binary: Path) -> StackInputs:
     manifests = json.loads(os.environ["K3S_IMAGE_MANIFESTS"])
-    runfiles_root = Runfiles.CreateOrRaise().root()
+    runfiles_root = runfiles.root()
     return StackInputs(
         fixture=rendered_fixture.read(runfiles_root / os.environ["K3S_FIXTURE_RLOCATION"]),
-        binary=(runfiles_root / os.environ["K3S_BINARY_RLOCATION"]),
-        image_layouts=_image_layouts(manifests["fixture"]),
-        pki_image_layouts=_image_layouts(manifests["pki"]),
-        vm_image_layouts=_image_layouts(manifests["vm"]),
-        guest_image_layouts=_image_layouts(manifests["guest"]),
+        binary=k3s_binary,
+        image_layouts=_image_layouts(runfiles, manifests["fixture"]),
+        pki_image_layouts=_image_layouts(runfiles, manifests["pki"]),
+        vm_image_layouts=_image_layouts(runfiles, manifests["vm"]),
+        guest_image_layouts=_image_layouts(runfiles, manifests["guest"]),
     )
 
 
-def _image_layouts(manifests: list[str]) -> dict[str, Path]:
+def _image_layouts(runfiles: Runfiles, manifests: list[str]) -> dict[str, Path]:
     images = {}
-    runfiles_root = Runfiles.CreateOrRaise().root()
+    runfiles_root = runfiles.root()
     for manifest in manifests:
         for reference, location in json.loads((runfiles_root / manifest).read_text()).items():
             if reference in images:
@@ -67,9 +67,13 @@ def virtualization_factory() -> VirtualizationFactory | None:
 
 @pytest.fixture(scope="session", autouse=True)
 def deployment(
-    request: pytest.FixtureRequest, scripted_listener: Listener, virtualization_factory: VirtualizationFactory | None
+    request: pytest.FixtureRequest,
+    scripted_listener: Listener,
+    virtualization_factory: VirtualizationFactory | None,
+    runfiles: Runfiles,
+    k3s_binary: Path,
 ) -> Iterator[Stack]:
-    inputs = load_stack_inputs()
+    inputs = load_stack_inputs(runfiles, k3s_binary)
     required_backend = "scripted_model" if inputs.fixture.backend is Backend.LOCAL_MODEL else "real_model"
     incompatible = "real_model" if required_backend == "scripted_model" else "scripted_model"
     for item in request.session.items:

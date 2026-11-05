@@ -693,11 +693,11 @@ def create_app(
         # Only the server binaries package the SPA. The API library is also imported without
         # it — by its own tests, and by the OpenAPI exporter the frontend's types come from,
         # which cannot depend on the bundle it generates types for.
-        index = Runfiles.CreateOrRaise().root() / _FRONTEND_INDEX
+        index = Path(str(Runfiles.CreateOrRaise().root() / _FRONTEND_INDEX))
         if not index.is_file():
             logger.warning("aiquota frontend bundle is not present in runfiles")
         else:
-            frontend_dir = Path(str(index)).parent
+            frontend_dir = index.parent
     if frontend_dir is not None:
         app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 

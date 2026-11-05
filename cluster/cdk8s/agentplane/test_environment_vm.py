@@ -61,7 +61,8 @@ def _environment_vm_manifests(
     }
 
 
-def _vm_guest_contract(runfiles: Runfiles) -> dict[str, Any]:
+@pytest.fixture(scope="module")
+def vm_guest_contract(runfiles: Runfiles) -> dict[str, Any]:
     return cast(
         dict[str, Any],
         json.loads(
@@ -70,7 +71,8 @@ def _vm_guest_contract(runfiles: Runfiles) -> dict[str, Any]:
     )
 
 
-def _runtime_service_unit(runfiles: Runfiles) -> dict[str, str]:
+@pytest.fixture(scope="module")
+def runtime_service_unit(runfiles: Runfiles) -> dict[str, str]:
     contents = (
         runfiles.root() / "ducktape/agentplane/env/images/systemd/agentplane-environment-runtime.service"
     ).read_text(encoding="utf-8")
@@ -213,9 +215,9 @@ def test_vm_template_renders_mtls_server_listener(scratch_app: App) -> None:
     assert {"port": 9090} in interface["ports"]
 
 
-def test_vm_template_matches_the_guest_disk_and_runtime_file_contract(runfiles: Runfiles, scratch_app: App) -> None:
-    contract = _vm_guest_contract(runfiles)
-    unit = _runtime_service_unit(runfiles)
+def test_vm_template_matches_the_guest_disk_and_runtime_file_contract(
+    vm_guest_contract: dict[str, Any], runtime_service_unit: dict[str, str], scratch_app: App
+) -> None:
     rendered = _environment_vm_manifests(app=scratch_app, console_autologin=False)
     config_map = rendered["config_map"]
     runtime_config = rendered["environment_runtime"]
@@ -224,48 +226,51 @@ def test_vm_template_matches_the_guest_disk_and_runtime_file_contract(runfiles: 
 
     disk_names_by_serial = {disk["serial"]: disk["name"] for disk in domain["devices"]["disks"] if "serial" in disk}
     for disk_name in ("runtime", "config", "egress_trust", "workspace"):
-        disk = contract["disks"][disk_name]
+        disk = vm_guest_contract["disks"][disk_name]
         assert disk_names_by_serial[disk["serial"]] == disk["volume_name"]
     volumes_by_name = {volume["name"]: volume for volume in vm["template"]["spec"]["volumes"]}
     assert (
-        volumes_by_name[contract["disks"]["config"]["volume_name"]]["configMap"]["name"] == rendered["config_map_name"]
+        volumes_by_name[vm_guest_contract["disks"]["config"]["volume_name"]]["configMap"]["name"]
+        == rendered["config_map_name"]
     )
 
-    assert runtime_config["state_dir"] == contract["state"]["mount"]
+    assert runtime_config["state_dir"] == vm_guest_contract["state"]["mount"]
     assert runtime_config["control"]["security"]["tls"]["cert_file"] == (
-        f"{contract['environment_runtime_tls']['runtime_path']}/tls.crt"
+        f"{vm_guest_contract['environment_runtime_tls']['runtime_path']}/tls.crt"
     )
     assert runtime_config["control"]["security"]["tls"]["key_file"] == (
-        f"{contract['environment_runtime_tls']['runtime_path']}/tls.key"
+        f"{vm_guest_contract['environment_runtime_tls']['runtime_path']}/tls.key"
     )
     assert runtime_config["control"]["security"]["tls"]["ca_file"] == (
-        f"{contract['environment_runtime_trust']['mount']}/{contract['environment_runtime_trust']['key']}"
+        f"{vm_guest_contract['environment_runtime_trust']['mount']}/{vm_guest_contract['environment_runtime_trust']['key']}"
     )
     assert runtime_config["harness_environment"]["values"]["PATH"].endswith(
-        f"{contract['disks']['runtime']['mount']}/bin"
+        f"{vm_guest_contract['disks']['runtime']['mount']}/bin"
     )
-    assert runtime_config["environment"]["block_devices"] == [contract["disks"]["workspace"]["device"]]
-    assert contract["files"]["runtime_config"] in config_map
-    assert contract["files"]["runtime_environment"] in config_map
+    assert runtime_config["environment"]["block_devices"] == [vm_guest_contract["disks"]["workspace"]["device"]]
+    assert vm_guest_contract["files"]["runtime_config"] in config_map
+    assert vm_guest_contract["files"]["runtime_environment"] in config_map
 
-    config_mount = contract["disks"]["config"]["mount"]
-    launch_mount = contract["disks"]["launch"]["mount"]
-    runtime_mount = contract["disks"]["runtime"]["mount"]
-    assert unit["EnvironmentFile"] == f"{config_mount}/{contract['files']['runtime_environment']}"
-    assert unit["ExecStart"] == (
-        f"{runtime_mount}/bin/agentplane-environment-runtime"
-        f" --config {config_mount}/{contract['files']['runtime_config']}"
-        f" --launch-file {launch_mount}/{contract['files']['launch']}"
+    config_mount = vm_guest_contract["disks"]["config"]["mount"]
+    launch_mount = vm_guest_contract["disks"]["launch"]["mount"]
+    runtime_mount = vm_guest_contract["disks"]["runtime"]["mount"]
+    assert (
+        runtime_service_unit["EnvironmentFile"] == f"{config_mount}/{vm_guest_contract['files']['runtime_environment']}"
     )
-    assert set(unit["RequiresMountsFor"].split()) == {
-        contract["state"]["mount"],
-        contract["disks"]["workspace"]["mount"],
+    assert runtime_service_unit["ExecStart"] == (
+        f"{runtime_mount}/bin/agentplane-environment-runtime"
+        f" --config {config_mount}/{vm_guest_contract['files']['runtime_config']}"
+        f" --launch-file {launch_mount}/{vm_guest_contract['files']['launch']}"
+    )
+    assert set(runtime_service_unit["RequiresMountsFor"].split()) == {
+        vm_guest_contract["state"]["mount"],
+        vm_guest_contract["disks"]["workspace"]["mount"],
         runtime_mount,
         config_mount,
         launch_mount,
-        contract["disks"]["egress_trust"]["mount"],
-        contract["environment_runtime_tls"]["private_mount"],
-        contract["environment_runtime_trust"]["mount"],
+        vm_guest_contract["disks"]["egress_trust"]["mount"],
+        vm_guest_contract["environment_runtime_tls"]["private_mount"],
+        vm_guest_contract["environment_runtime_trust"]["mount"],
     }
 
 

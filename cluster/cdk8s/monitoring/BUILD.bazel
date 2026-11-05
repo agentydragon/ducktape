@@ -310,7 +310,6 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -324,12 +323,16 @@ py_test(
         "@multitool//tools/promtool",
         "@nodejs_linux_amd64//:bin/node",
     ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    env = {
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
+    },
     deps = [
         ":rules",
         "//:conftest",
         "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
@@ -344,7 +347,10 @@ py_test(
         "@multitool//tools/promtool",
         "@nodejs_linux_amd64//:bin/node",
     ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    env = {
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
+    },
     deps = [
         ":gateway_probe",
         "//:conftest",
@@ -504,7 +510,10 @@ py_test(
         "@multitool//tools/promtool",
         "@nodejs_linux_amd64//:bin/node",
     ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    env = {
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
+    },
     deps = [
         "//:conftest",
         "//cluster/cdk8s:conftest",

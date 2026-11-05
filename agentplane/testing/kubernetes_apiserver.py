@@ -86,7 +86,8 @@ def control_plane() -> Iterator[Path]:
     """
     runfiles_root = Runfiles.CreateOrRaise().root()
     binary = runfiles_root / "ducktape/agentplane/testing/envtest/server_/server"
-    assets = Path(str(runfiles_root / "envtest_kubernetes_linux_amd64/kube-apiserver")).parent
+    api_server = Path(str(runfiles_root / "envtest_kubernetes_linux_amd64/kube-apiserver"))
+    assets = api_server.parent
     crds = runfiles_root / "ducktape/agentplane/crds/manifests"
     log_path = undeclared_outputs_dir() / f"kubernetes-apiserver-{uuid4().hex}.log"
     with tempfile.TemporaryDirectory(prefix="agentplane-apiserver-") as work, log_path.open("wb") as log:

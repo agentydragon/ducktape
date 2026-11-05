@@ -11,7 +11,6 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
-from python.runfiles import Runfiles
 
 from agentplane.system_tests.k3s.iptables_rule import IptablesCommandError, ensure_rule
 
@@ -56,15 +55,14 @@ def test_only_a_missing_rule_is_appended(
 
 
 @pytest.fixture(scope="module")
-def iptables_binary(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
+def iptables_binary(k3s_binary: Path, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
     work = tmp_path_factory.mktemp("k3s-iptables")
     data_dir = work / "data"
     log_path = work / "k3s.log"
-    binary = Runfiles.CreateOrRaise().root() / os.environ["K3S_BINARY_RLOCATION"]
     iptables = data_dir / "data/current/bin/aux/iptables"
     with log_path.open("wb") as log:
         process = subprocess.Popen(
-            [str(binary), "server", "--data-dir", str(data_dir), "--disable-agent", "--flannel-backend=none"],
+            [k3s_binary, "server", "--data-dir", data_dir, "--disable-agent", "--flannel-backend=none"],
             stdout=log,
             stderr=subprocess.STDOUT,
         )

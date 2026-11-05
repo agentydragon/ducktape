@@ -55,9 +55,10 @@ py_binary(
         "//finance/augur/api:public_fixture_properties",
         "//finance/augur/calibration:example_openai_catalog",
         "//finance/augur/frontend:bundle_base",
+        "//finance/augur/frontend:bundle_index_html",
     ],
     env = {
-        "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/finance/augur/frontend/dist/index.html",
+        "AUGUR_BUNDLE_INDEX_RUNFILE": "$(rlocationpath //finance/augur/frontend:bundle_index_html)",
         "AUGUR_CONFIG_PATH": "$(location //finance/augur/api:public_fixture_config)",
     },
     main_module = "finance.augur.dev_server",
@@ -73,9 +74,10 @@ py_test(
         "//finance/augur/api:public_fixture_config",
         "//finance/augur/api:public_fixture_properties",
         "//finance/augur/calibration:example_openai_catalog",
+        "//finance/augur/frontend:bundle_index_html",
     ],
     env = {
-        "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/finance/augur/frontend/dist/index.html",
+        "AUGUR_BUNDLE_INDEX_RUNFILE": "$(rlocationpath //finance/augur/frontend:bundle_index_html)",
     },
     deps = [
         ":conftest",
@@ -106,9 +108,10 @@ py_test(
         "//finance/augur/api:public_fixture_properties",
         "//finance/augur/calibration:example_openai_catalog",
         "//finance/augur/frontend:bundle_base",
+        "//finance/augur/frontend:bundle_index_html",
     ],
     env = {
-        "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/finance/augur/frontend/dist/index.html",
+        "AUGUR_BUNDLE_INDEX_RUNFILE": "$(rlocationpath //finance/augur/frontend:bundle_index_html)",
     },
     tags = ["visual"],
     deps = [

@@ -91,11 +91,11 @@ def config(
 
 
 def claude_launch(endpoint: str) -> NativeLaunch:
-    return NativeLaunch(binary=(Runfiles.CreateOrRaise().root() / CLAUDE_BINARY), base_url=endpoint, token=TOKEN)
+    return NativeLaunch(binary=Runfiles.CreateOrRaise().root() / CLAUDE_BINARY, base_url=endpoint, token=TOKEN)
 
 
 def codex_launch(endpoint: str) -> NativeLaunch:
-    return NativeLaunch(binary=(Runfiles.CreateOrRaise().root() / CODEX_BINARY), base_url=f"{endpoint}/v1", token=TOKEN)
+    return NativeLaunch(binary=Runfiles.CreateOrRaise().root() / CODEX_BINARY, base_url=f"{endpoint}/v1", token=TOKEN)
 
 
 def runner_command(

@@ -26,21 +26,12 @@ holds the hand-written ones, which live in the other manifest roots.
 
 from pathlib import Path
 
-import pytest
 import pytest_bazel
 import yaml
-from python.runfiles import Runfiles
 
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, manifest_files
 
-_K8S_ROOT_KUSTOMIZATION = "ducktape/cluster/k8s/kustomization.yaml"
-
 GENERATOR_FIELDS = ("configMapGenerator", "secretGenerator")
-
-
-@pytest.fixture(scope="session")
-def repo_root() -> Path:
-    return Path(str(Runfiles.CreateOrRaise().root() / _K8S_ROOT_KUSTOMIZATION)).parents[2]
 
 
 def _flux_target_namespaces(repo_root: Path) -> dict[str, str | None]:

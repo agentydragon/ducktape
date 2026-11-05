@@ -29,13 +29,13 @@ def compound_outputs(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactor
     uo.mkdir(parents=True, exist_ok=True)
 
     runfiles_root = runfiles.root()
-    result = freecad_gui((runfiles_root / _BUILD_SCRIPT), outdir=out_dir)
+    result = freecad_gui(runfiles_root / _BUILD_SCRIPT, outdir=out_dir)
     assert_run_ok(result, "build_compound.py", uo, "build_compound")
 
     fcstd = out_dir / "compound.FCStd"
     assert fcstd.exists(), "compound.FCStd not produced — see build_compound.stderr in test outputs"
 
-    result2 = freecad_gui((runfiles_root / _EXPORT_SCRIPT), outdir=out_dir, env={"INPUT": str(fcstd)})
+    result2 = freecad_gui(runfiles_root / _EXPORT_SCRIPT, outdir=out_dir, env={"INPUT": str(fcstd)})
     assert_run_ok(result2, "export_page.py", uo, "export_page")
 
     copy_outputs(out_dir, uo)
@@ -44,15 +44,15 @@ def compound_outputs(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactor
 
 
 def test_dxf_golden(runfiles: Runfiles, compound_outputs: Path) -> None:
-    assert_dxf_equal(compound_outputs / "compound.dxf", (runfiles.root() / _GOLDEN_DXF))
+    assert_dxf_equal(compound_outputs / "compound.dxf", runfiles.root() / _GOLDEN_DXF)
 
 
 def test_svg_golden(runfiles: Runfiles, compound_outputs: Path) -> None:
-    assert_svg_equal(compound_outputs / "compound.svg", (runfiles.root() / _GOLDEN_SVG))
+    assert_svg_equal(compound_outputs / "compound.svg", runfiles.root() / _GOLDEN_SVG)
 
 
 def test_pdf_golden(runfiles: Runfiles, compound_outputs: Path) -> None:
-    assert_pdf_equal(compound_outputs / "compound.pdf", (runfiles.root() / _GOLDEN_PDF))
+    assert_pdf_equal(compound_outputs / "compound.pdf", runfiles.root() / _GOLDEN_PDF)
 
 
 if __name__ == "__main__":

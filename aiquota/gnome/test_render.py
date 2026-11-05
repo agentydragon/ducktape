@@ -54,10 +54,9 @@ _FAKE_DBUS_PATH = "/works/allegedly/AiQuotaFake"
 _FAKE_DBUS_SERVICE = "ducktape/aiquota/gnome/fake-daemon.js"
 
 
-def test_extension_metadata_supports_gnome_50(runfiles: Runfiles) -> None:
+def test_extension_metadata_supports_gnome_50(extension_dir: Path) -> None:
     """Keep the distributed zip loadable by wyrm2's GNOME Shell generation."""
-    with zipfile.ZipFile(runfiles.root() / _EXTENSION_ZIP) as extension_zip:
-        metadata = json.loads(extension_zip.read("metadata.json"))
+    metadata = json.loads((extension_dir / "metadata.json").read_text())
 
     assert "50" in metadata["shell-version"]
 
@@ -101,7 +100,7 @@ def session(
         extension_dir=extension_dir,
         extension=_EXTENSION_UUID,
         fixture_dir=fixture_json_dir,
-        fake_daemon_script=(runfiles.root() / _FAKE_DBUS_SERVICE),
+        fake_daemon_script=runfiles.root() / _FAKE_DBUS_SERVICE,
         screenshot_dir=tmp_path_factory.mktemp("gnome-renders"),
         destination=_TEST_DBUS_DEST,
         object_path=_TEST_DBUS_PATH,

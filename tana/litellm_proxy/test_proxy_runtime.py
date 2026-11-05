@@ -62,7 +62,7 @@ async def test_litellm_proxy_config_registers_custom_provider_before_router_buil
     runfiles_root = runfiles.root()
     handler_path = tmp_path / "tana/litellm_proxy/custom_handler.py"
     handler_path.parent.mkdir(parents=True)
-    shutil.copy((runfiles_root / "ducktape/tana/litellm_proxy/custom_handler.py"), handler_path)
+    shutil.copy(runfiles_root / "ducktape/tana/litellm_proxy/custom_handler.py", handler_path)
     config_path = tmp_path / "config.yaml"
     config_path.write_text((runfiles_root / "ducktape/tana/litellm_proxy/testdata/custom_provider.yaml").read_text())
 

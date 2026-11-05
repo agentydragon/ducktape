@@ -30,20 +30,18 @@ _MESH = Mesh(
 )
 
 
-def test_gateway_probe_rules(scratch_app: App, tmp_path: Path) -> None:
+def test_gateway_probe_rules(runfiles: Runfiles, promtool: Path, scratch_app: App, tmp_path: Path) -> None:
     manifest = one(
         manifest
         for manifest in Cdk8sTesting.synth(gateway_probe.chart(scratch_app, _MESH))
         if manifest["kind"] == "PrometheusRule"
     )
     (tmp_path / "gateway-probe.yaml").write_text(yaml.safe_dump(manifest["spec"]))
-    runfiles_root = Runfiles.CreateOrRaise().root()
+    runfiles_root = runfiles.root()
     (tmp_path / "tests.yaml").write_text(
         (runfiles_root / "ducktape/cluster/cdk8s/monitoring/testdata/gateway_probe_rules.yaml").read_text()
     )
-    subprocess.run(
-        [(runfiles_root / "multitool/tools/promtool/promtool"), "test", "rules", "tests.yaml"], cwd=tmp_path, check=True
-    )
+    subprocess.run([promtool, "test", "rules", "tests.yaml"], cwd=tmp_path, check=True)
 
 
 if __name__ == "__main__":

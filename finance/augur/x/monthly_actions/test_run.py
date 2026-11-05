@@ -23,11 +23,14 @@ from finance.augur.x.monthly_actions.run import compose, run_example, situation
 
 
 @pytest.fixture(scope="module")
-def example(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory) -> Finished:
+def run_bin(runfiles: Runfiles) -> Path:
+    return runfiles.root() / "ducktape/finance/augur/x/monthly_actions/run_bin"
+
+
+@pytest.fixture(scope="module")
+def example(run_bin: Path, tmp_path_factory: pytest.TempPathFactory) -> Finished:
     output = tmp_path_factory.mktemp("monthly-actions") / "results"
-    subprocess.run(
-        [(runfiles.root() / "ducktape/finance/augur/x/monthly_actions/run_bin"), "--output-dir", output], check=True
-    )
+    subprocess.run([run_bin, "--output-dir", output], check=True)
     return Finished.model_validate_json((output / "outcomes.json").read_text())
 
 
@@ -94,22 +97,11 @@ def test_original_path_identity_survives_reordering_and_selected_replay(example:
 
 @pytest.mark.parametrize("capture", ["summary", "dense"])
 def test_actual_cli_capture_agrees_with_selected_forensic_results(
-    runfiles: Runfiles, example: Finished, tmp_path: Path, capture: str
+    run_bin: Path, example: Finished, tmp_path: Path, capture: str
 ) -> None:
     output = tmp_path / capture
     subprocess.run(
-        [
-            (runfiles.root() / "ducktape/finance/augur/x/monthly_actions/run_bin"),
-            "--output-dir",
-            output,
-            "--capture",
-            capture,
-            "--rollout",
-            "1",
-            "--rollout",
-            "0",
-        ],
-        check=True,
+        [run_bin, "--output-dir", output, "--capture", capture, "--rollout", "1", "--rollout", "0"], check=True
     )
     document = Finished.model_validate_json((output / "outcomes.json").read_text())
     expected = {row.rollout_id: row for row in example.rollouts}
@@ -139,17 +131,9 @@ def test_actual_cli_capture_agrees_with_selected_forensic_results(
     assert stopped.unpaid_claims[0].amount_due == 15_000
 
 
-def test_cash_only_cli_buys_unheld_asset_then_sells_and_pays_tax(runfiles: Runfiles, tmp_path: Path) -> None:
+def test_cash_only_cli_buys_unheld_asset_then_sells_and_pays_tax(run_bin: Path, tmp_path: Path) -> None:
     output_dir = tmp_path / "cash-only"
-    subprocess.run(
-        [
-            (runfiles.root() / "ducktape/finance/augur/x/monthly_actions/run_bin"),
-            "--output-dir",
-            output_dir,
-            "--cash-only-start",
-        ],
-        check=True,
-    )
+    subprocess.run([run_bin, "--output-dir", output_dir, "--cash-only-start"], check=True)
     composed = compose(situation(cash_only_start=True), 0)
     assert not composed.holdings.lots
     assert [(pool.agent_id, pool.account_id, pool.asset_id) for pool in composed.holdings.pools] == [
@@ -193,7 +177,7 @@ def test_profile_entrypoint_compares_matching_capture_workloads(runfiles: Runfil
         output = tmp_path / capture
         subprocess.run(
             [
-                (runfiles_root / "ducktape/finance/augur/x/monthly_actions/profile_bin"),
+                runfiles_root / "ducktape/finance/augur/x/monthly_actions/profile_bin",
                 "--output-dir",
                 output,
                 "--rollouts",
@@ -215,20 +199,10 @@ def test_profile_entrypoint_compares_matching_capture_workloads(runfiles: Runfil
     assert compact["output_bytes"] < detailed["output_bytes"]
 
 
-def test_population_cli_keeps_original_ids_for_selected_replay(runfiles: Runfiles, tmp_path: Path) -> None:
+def test_population_cli_keeps_original_ids_for_selected_replay(run_bin: Path, tmp_path: Path) -> None:
     output = tmp_path / "population"
     subprocess.run(
-        [
-            (runfiles.root() / "ducktape/finance/augur/x/monthly_actions/run_bin"),
-            "--output-dir",
-            output,
-            "--rollouts",
-            "6",
-            "--horizon-months",
-            "24",
-            "--capture",
-            "summary",
-        ],
+        [run_bin, "--output-dir", output, "--rollouts", "6", "--horizon-months", "24", "--capture", "summary"],
         check=True,
     )
     population = Finished.model_validate_json((output / "outcomes.json").read_text()).rollouts

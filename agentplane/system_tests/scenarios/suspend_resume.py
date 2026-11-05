@@ -139,12 +139,7 @@ async def _wait_until_idle_suspended_without_pod(
 async def _run_cli(environment: dict[str, str], *arguments: str) -> dict[str, object]:
     binary = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/cli/agentplane_/agentplane"
     process = await asyncio.create_subprocess_exec(
-        str(binary),
-        "--json",
-        *arguments,
-        env=environment,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        binary, "--json", *arguments, env=environment, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     try:
         async with asyncio.timeout(45):

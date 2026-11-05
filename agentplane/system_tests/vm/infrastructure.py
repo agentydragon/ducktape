@@ -69,7 +69,7 @@ def _assert_kvm_usable() -> None:
 
 
 def _manifest(variable: str) -> list[dict[str, Any]]:
-    return load_release_manifest((Runfiles.CreateOrRaise().root() / os.environ[variable]), variable)
+    return load_release_manifest(Runfiles.CreateOrRaise().root() / os.environ[variable], variable)
 
 
 def _kubevirt_operator() -> list[dict[str, Any]]:

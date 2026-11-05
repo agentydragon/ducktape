@@ -62,9 +62,7 @@ def page_errors(page: Page) -> list[str]:
 
 @pytest.fixture
 def augur_server(tmp_path: Path) -> Iterator[str]:
-    with run_server(
-        binary=(Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/dev"), tmp_path=tmp_path
-    ) as origin:
+    with run_server(binary=Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/dev", tmp_path=tmp_path) as origin:
         yield origin
 
 

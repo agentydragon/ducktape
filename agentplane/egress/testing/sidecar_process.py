@@ -74,7 +74,7 @@ class SidecarProcess:
             pass_fds = tuple(listener.socket.fileno() for listener in listeners)
             spawn = asyncio.create_task(
                 asyncio.create_subprocess_exec(
-                    str(_BINARY),
+                    _BINARY,
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.PIPE,
                     env=env,

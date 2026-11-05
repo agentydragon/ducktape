@@ -33,7 +33,7 @@ from util.settings_contract import env_name
 # gazelle:include_dep @pypi//protobuf
 
 
-_GATEWAY_BINARY = "agentplane/runner_gateway/runner-gateway_/runner-gateway"
+_GATEWAY_BINARY = "ducktape/agentplane/runner_gateway/runner-gateway_/runner-gateway"
 
 
 def _wire_database_url(database_url: str) -> str:
@@ -41,10 +41,10 @@ def _wire_database_url(database_url: str) -> str:
 
 
 def _migrate(database_url: str, log_path: Path) -> None:
-    migrator = Runfiles.CreateOrRaise().root() / f"ducktape/{_GATEWAY_BINARY}"
+    migrator = Runfiles.CreateOrRaise().root() / _GATEWAY_BINARY
     try:
         result = subprocess.run(
-            [str(migrator), "--migrate-only"],
+            [migrator, "--migrate-only"],
             env={"AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": _wire_database_url(database_url)},
             capture_output=True,
             text=True,
@@ -220,7 +220,7 @@ async def run_gateway(
     migration_log = undeclared_outputs_dir() / f"go-runner-gateway-migration-{uuid4().hex}.log"
     await asyncio.to_thread(_migrate, database_url, migration_log)
 
-    binary = Runfiles.CreateOrRaise().root() / f"ducktape/{_GATEWAY_BINARY}"
+    binary = Runfiles.CreateOrRaise().root() / _GATEWAY_BINARY
     log_path = undeclared_outputs_dir() / f"go-runner-gateway-{uuid4().hex}.log"
     # The database URL and Pod fields stay out of the file, as in deployment, where they come from
     # runtime sources. The explicit empty wake list exercises the authoring schema and Go loader contract.
@@ -296,7 +296,7 @@ async def run_gateway(
             pass_fds = [grpc_listener.socket.fileno(), http_listener.socket.fileno()]
             spawn = asyncio.create_task(
                 asyncio.create_subprocess_exec(
-                    str(binary), env=environment, stdout=log_file, stderr=subprocess.STDOUT, pass_fds=pass_fds
+                    binary, env=environment, stdout=log_file, stderr=subprocess.STDOUT, pass_fds=pass_fds
                 )
             )
             try:

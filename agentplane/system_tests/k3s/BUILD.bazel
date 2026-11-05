@@ -108,7 +108,6 @@ py_test(
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@rules_python//python/runfiles",
     ],
 )
 

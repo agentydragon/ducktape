@@ -13,7 +13,6 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
-from python.runfiles import Runfiles
 from source_watcher_crds.io.fluxcd.extensions.source import (
     ArtifactGeneratorSpecArtifacts,
     ArtifactGeneratorSpecArtifactsCopy,
@@ -215,7 +214,7 @@ def test_config_map_data_serializes_to_kustomize_literals() -> None:
     assert entry.data == data
 
 
-def test_config_map_data_preserves_values_through_kustomize(runfiles: Runfiles, tmp_path: Path) -> None:
+def test_config_map_data_preserves_values_through_kustomize(kustomize: Path, tmp_path: Path) -> None:
     data = {
         "config.yaml": "credentials: user=token==\nnext: true\n",
         "empty": "",
@@ -235,11 +234,7 @@ def test_config_map_data_preserves_values_through_kustomize(runfiles: Runfiles, 
         yaml.safe_dump(kustomize_kustomization(resources=[], config_map_generator=[entry]))
     )
 
-    result = subprocess.run(
-        [str(runfiles.root() / "multitool/tools/kustomize/kustomize"), "build", str(tmp_path)],
-        capture_output=True,
-        check=False,
-    )
+    result = subprocess.run([kustomize, "build", tmp_path], capture_output=True, check=False)
     assert result.returncode == 0, result.stderr.decode()
     [rendered] = yaml.safe_load_all(result.stdout)
     assert rendered["data"] == {**data, "file.conf": "file-backed content\n"}
@@ -253,7 +248,7 @@ def test_file_backed_config_map_omits_literals() -> None:
 
 
 def test_secret_generator_builds_encrypted_payload_for_flux_post_build_decryption(
-    runfiles: Runfiles, tmp_path: Path
+    kustomize: Path, tmp_path: Path
 ) -> None:
     # This synthetic payload stands in for the encrypted YAML at the exact path the
     # ArtifactGenerator copy places in the archive artifact. Kustomize packages it into Secret
@@ -305,11 +300,7 @@ def test_secret_generator_builds_encrypted_payload_for_flux_post_build_decryptio
         )
     )
 
-    result = subprocess.run(
-        [str(runfiles.root() / "multitool/tools/kustomize/kustomize"), "build", str(tmp_path)],
-        capture_output=True,
-        check=False,
-    )
+    result = subprocess.run([kustomize, "build", tmp_path], capture_output=True, check=False)
     assert result.returncode == 0, result.stderr.decode()
     documents = {document["kind"]: document for document in yaml.safe_load_all(result.stdout)}
     secret = documents["Secret"]

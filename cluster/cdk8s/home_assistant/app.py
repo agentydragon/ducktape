@@ -634,18 +634,18 @@ def chart(app: App) -> Chart:
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)
     _metrics_token(chart)
     # Fixed names preserve Reloader updates for these mounted files.
-    runfiles_root = Runfiles.CreateOrRaise().root()
+    config_dir = Runfiles.CreateOrRaise().root() / "ducktape" / _OUTPUT_DIR
     configuration = ConfigMap(
         chart,
         "configuration",
         metadata=ApiObjectMetadata(name="home-assistant-configuration", namespace=_NAMESPACE),
-        data={"configuration.yaml": (runfiles_root / f"ducktape/{_OUTPUT_DIR}/configuration.yaml.conf").read_text()},
+        data={"configuration.yaml": (config_dir / "configuration.yaml.conf").read_text()},
     )
     caddy_config = ConfigMap(
         chart,
         "caddy-config",
         metadata=ApiObjectMetadata(name="home-assistant-caddy", namespace=_NAMESPACE),
-        data={"Caddyfile": (runfiles_root / f"ducktape/{_OUTPUT_DIR}/Caddyfile").read_text()},
+        data={"Caddyfile": (config_dir / "Caddyfile").read_text()},
     )
     _deployment(chart, configuration, caddy_config)
     _onboarding_job(chart)

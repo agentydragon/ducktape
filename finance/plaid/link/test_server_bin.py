@@ -23,7 +23,7 @@ def test_container_entrypoint_imports_and_reaches_settings() -> None:
     reach after module-level import succeeded. An import-time failure looks entirely different and
     is the regression this guards."""
     result = subprocess.run(
-        [str(Runfiles.CreateOrRaise().root() / SERVER_BIN)],
+        [Runfiles.CreateOrRaise().root() / SERVER_BIN],
         capture_output=True,
         check=False,
         text=True,

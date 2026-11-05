@@ -84,9 +84,9 @@ def staged_project(runfiles: Runfiles, tmp_path: Path) -> Path:
     for rel in _STAGED_FILES:
         dest = project / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2((runfiles_root / f"ducktape/{rel}"), dest)
+        shutil.copy2(runfiles_root / f"ducktape/{rel}", dest)
 
-    shutil.copy2((runfiles_root / _TEST_PROFILE), project / "profile.yaml")
+    shutil.copy2(runfiles_root / _TEST_PROFILE, project / "profile.yaml")
     secrets_fixtures = Path(str(runfiles_root / _SECRETS_DIR_MARKER)).parent
     for fixture_name, rel_dest in _TEST_SECRET_FILES.items():
         target = project / rel_dest
