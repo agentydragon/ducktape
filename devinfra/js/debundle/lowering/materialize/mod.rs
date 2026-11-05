@@ -49,8 +49,8 @@ use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, Selecte
 use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileRole, JsFile};
 use chunk_analysis::build_chunk_graph;
 use gate::{
-    AssignmentAnalysis, CandidateAssessmentSelection, RejectedAssignment, SccRejection,
-    ValidatedAssignment, render_atomic_group_conflict_summary, render_cycle_summary,
+    AssignmentAnalysis, RejectedAssignment, SccRejection, ValidatedAssignment,
+    render_atomic_group_conflict_summary, render_cycle_summary,
 };
 use graph_provenance::GraphProvenance;
 use js_ast::{ParsedJsModule, format_comment_block_lines};
@@ -688,7 +688,6 @@ pub(super) fn finish_logical_chunk(
             report_emission: &no_reports,
             graph_reports: GraphReportSelection::None,
             policy: gate_rejection_policy,
-            assessment_policy: CandidateAssessmentPolicy::Always,
             effect_conflicts_jsonl: false,
             full_translation_validation: false,
             full_export_reentry: false,
@@ -699,10 +698,7 @@ pub(super) fn finish_logical_chunk(
             &analysis.facts,
             &placement_projection,
         )?;
-        let assessment = evaluation
-            .candidate_assessment()
-            .expect("assessment-only evaluation always selects candidate assessment")
-            .report();
+        let assessment = evaluation.candidate_assessment().report();
         return Ok(FinishedLogicalChunk::Assessed {
             chunk_id: chunk_id.to_string(),
             assessment,
@@ -718,7 +714,6 @@ pub(super) fn finish_logical_chunk(
         report_emission,
         graph_reports,
         policy: gate_rejection_policy,
-        assessment_policy: CandidateAssessmentPolicy::WhenReportsAreSelected,
         effect_conflicts_jsonl,
         full_export_reentry: full_reports.contains(&super::FullReportKind::ExportReentry)
             && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
@@ -1509,7 +1504,6 @@ struct ChunkReportContext<'a> {
     report_emission: &'a ReportEmission,
     graph_reports: GraphReportSelection,
     policy: GateRejectionPolicy,
-    assessment_policy: CandidateAssessmentPolicy,
     effect_conflicts_jsonl: bool,
     full_translation_validation: bool,
     full_export_reentry: bool,
@@ -1532,27 +1526,8 @@ struct GraphSummary<'a> {
     full_graphs: bool,
 }
 
-#[derive(Clone, Copy)]
-enum CandidateAssessmentPolicy {
-    Always,
-    WhenReportsAreSelected,
-}
-
-impl CandidateAssessmentPolicy {
-    fn selection(self, report_out_dir: Option<&std::path::Path>) -> CandidateAssessmentSelection {
-        match self {
-            Self::Always => CandidateAssessmentSelection::Include,
-            Self::WhenReportsAreSelected if report_out_dir.is_some() => {
-                CandidateAssessmentSelection::Include
-            }
-            Self::WhenReportsAreSelected => CandidateAssessmentSelection::Omit,
-        }
-    }
-}
-
-/// Validate and evaluate one assignment, with assessment work selected by
-/// the caller's explicit policy and report mode. Optional evidence sinks do
-/// not decide whether the candidate assessment itself runs.
+/// Evaluate the gate and both diagnostic projections for one assignment.
+/// Report policy selects only output locations and full-detail evidence sinks.
 fn evaluate_chunk_candidate<'a, 'b>(
     context: ChunkReportContext<'b>,
     assignment_analysis: &'a AssignmentAnalysis,
@@ -1562,7 +1537,6 @@ fn evaluate_chunk_candidate<'a, 'b>(
     let ChunkReportContext {
         chunk_id,
         report_emission,
-        assessment_policy,
         full_translation_validation,
         effect_conflicts_jsonl,
         graph_reports,
@@ -1623,7 +1597,6 @@ fn evaluate_chunk_candidate<'a, 'b>(
             validation,
             facts,
             placement_projection,
-            assessment_policy.selection(report_out_dir),
             full_translation_validation.then_some(&mut write_tv),
             effect_conflicts_jsonl.then_some(&mut write_effect),
         )?
@@ -1676,8 +1649,8 @@ fn emit_reports_and_resolve_gate<'a>(
     let rejected = evaluation.is_rejected();
     let translation_validation = evaluation.translation_validation();
     // Report timing and full graph serialization are separate output choices.
-    // Mandatory gate and translation checks are complete; the optional
-    // candidate assessment reflects the explicit selection used by evaluation.
+    // Gate, translation checks and candidate assessment are complete,
+    // independently of whether this caller writes their diagnostic reports.
     if let Some(report_out_dir) = report_out_dir {
         let graph = assignment_analysis.inputs().dependency_graph();
         let mut edge_kinds = std::collections::BTreeMap::new();
@@ -1702,9 +1675,7 @@ fn emit_reports_and_resolve_gate<'a>(
                 full_graphs: graph_reports.enabled(),
             },
         )?;
-        let candidate_assessment = evaluation
-            .candidate_assessment()
-            .expect("report output selects candidate assessment");
+        let candidate_assessment = evaluation.candidate_assessment();
         write_chunk_report_json(
             report_out_dir,
             chunk_id,

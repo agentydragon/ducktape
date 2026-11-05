@@ -129,22 +129,15 @@ impl RejectedAssignment<'_> {
     }
 }
 
-/// Whether the caller selected the optional structural/effect assessment for
-/// this candidate. Mandatory gate and translation validation still run when
-/// the selection omits it.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum CandidateAssessmentSelection {
-    Omit,
-    Include,
-}
-
-/// The gate, legacy translation evidence, and optional same-assignment
-/// candidate assessment, retained from one evaluation of an assignment.
+/// The authoritative assignment gate and both diagnostic projections of the
+/// same concrete candidate. Assessment always runs; report selection controls
+/// only serialization. Effect coverage remains diagnostic until all required
+/// owner domains can discharge the relocation obligations.
 #[derive(Debug)]
 pub struct CandidateEvaluation<'a> {
     validation: Result<ValidatedAssignment<'a>, RejectedAssignment<'a>>,
     translation_validation: TranslationValidationResult,
-    candidate_assessment: Option<CandidateRelocationAssessment>,
+    candidate_assessment: CandidateRelocationAssessment,
 }
 
 impl<'a> CandidateEvaluation<'a> {
@@ -174,23 +167,21 @@ impl<'a> CandidateEvaluation<'a> {
         &self.translation_validation
     }
 
-    pub fn candidate_assessment(&self) -> Option<&CandidateRelocationAssessment> {
-        self.candidate_assessment.as_ref()
+    pub fn candidate_assessment(&self) -> &CandidateRelocationAssessment {
+        &self.candidate_assessment
     }
 
     pub fn into_validation(self) -> Result<ValidatedAssignment<'a>, RejectedAssignment<'a>> {
         self.validation
     }
 
-    /// Evaluate legacy translation validation and, when explicitly selected,
-    /// candidate effects/placement against the same accepted or rejected
-    /// assignment. The visitors stream complete evidence without retaining a
-    /// second copy of its rows.
+    /// Evaluate legacy translation validation and candidate effects/placement
+    /// against the same accepted or rejected assignment. The visitors stream
+    /// complete evidence without retaining a second copy of its rows.
     pub fn evaluate<E>(
         validation: Result<ValidatedAssignment<'a>, RejectedAssignment<'a>>,
         facts: &[analysis::facts::StatementFacts],
         projection: &analysis::PlacementProjection<'_>,
-        selection: CandidateAssessmentSelection,
         translation_validation_visitor: Option<
             &mut impl FnMut(&TranslationValidationEvidenceReport) -> Result<(), E>,
         >,
@@ -210,19 +201,14 @@ impl<'a> CandidateEvaluation<'a> {
             &emitted_order,
             translation_validation_visitor,
         )?;
-        let candidate_assessment = match selection {
-            CandidateAssessmentSelection::Omit => None,
-            CandidateAssessmentSelection::Include => {
-                Some(assignment_analysis.candidate_relocation_assessment(
-                    assignment_validation,
-                    facts,
-                    &translation_validation,
-                    &emitted_order,
-                    projection,
-                    effect_visitor,
-                )?)
-            }
-        };
+        let candidate_assessment = assignment_analysis.candidate_relocation_assessment(
+            assignment_validation,
+            facts,
+            &translation_validation,
+            &emitted_order,
+            projection,
+            effect_visitor,
+        )?;
         Ok(Self {
             validation,
             translation_validation,

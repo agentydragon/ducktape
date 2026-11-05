@@ -379,6 +379,14 @@ accepted-dry-run, typed gate rejection and final-program checks remain intact.
 Bazel `full_reports` and `full_report_chunks` attrs forward the same selection
 only to the final Pipeline action; analysis artifacts/projections are unchanged.
 
+Every final candidate is assessed against its exact emitted order and structural
+placement, including runs that suppress reports. Report selection controls the
+serialization and full-detail sinks, not which assessment is computed. The
+ordinary assignment gate remains the acceptance authority; effect coverage is
+report-only while whole-owner coverage is incomplete. A future authority cutover
+must preserve structural and rebinding obligations, reject uncovered crossings,
+and retain existing accepted-behavior controls through sound coverage producers.
+
 Full per-chunk report emission also writes
 `effect_translation_validation.json`: report-only effect conflicts for the
 emitter's exact statement order, derived from staged facts. It leaves the
