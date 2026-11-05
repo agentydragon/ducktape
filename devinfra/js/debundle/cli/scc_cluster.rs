@@ -154,7 +154,7 @@ pub fn run_scc(args: SccArgs) -> Result<()> {
     // Uses the shared `resolve_binding_source_units` helper so minified and
     // readable name forms both resolve.
     let restrict_to_module: Option<analysis::ModuleKey> = if let Some(sym) = &args.binding {
-        let source_unit = resolve_one_binding_source_unit(&graph, sym)?;
+        let source_unit = resolve_one_binding_source_unit(graph, sym)?;
         Some(source_unit.destination.clone())
     } else {
         None
@@ -239,7 +239,7 @@ pub fn run_cluster(args: ClusterArgs) -> Result<()> {
     // Use the shared `resolve_binding_source_units` helper (same code path
     // `describe` / `inspect-source --id` / `scc --binding` use), so minified
     // and readable names both work.
-    let source_unit = resolve_one_binding_source_unit(&graph, sym)?;
+    let source_unit = resolve_one_binding_source_unit(graph, sym)?;
     let home_key = &source_unit.destination;
     // Dedup + sort by interned id; carry the path label alongside.
     let mut incoming: std::collections::BTreeMap<String, ModuleRef> =
@@ -259,14 +259,14 @@ pub fn run_cluster(args: ClusterArgs) -> Result<()> {
             && &edge.target == home_key
             && &edge.source != home_key
         {
-            let module_ref = resolve_module_ref(&graph, &edge.source);
+            let module_ref = resolve_module_ref(graph, &edge.source);
             incoming.insert(module_ref.id.clone(), module_ref);
         }
         if args.direction != ExplainDirection::Incoming
             && &edge.source == home_key
             && &edge.target != home_key
         {
-            let module_ref = resolve_module_ref(&graph, &edge.target);
+            let module_ref = resolve_module_ref(graph, &edge.target);
             outgoing.insert(module_ref.id.clone(), module_ref);
         }
     }
@@ -287,7 +287,7 @@ pub fn run_cluster(args: ClusterArgs) -> Result<()> {
     );
     let report = ClusterReport {
         binding: sym.to_string(),
-        home_module: resolve_module_ref(&graph, home_key),
+        home_module: resolve_module_ref(graph, home_key),
         incoming_modules,
         outgoing_modules,
         limits: LimitReport { limit, sections },
