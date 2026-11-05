@@ -15,10 +15,10 @@
 set -euo pipefail
 
 cd "$TEST_TMPDIR"
-cp "$TEST_SRCDIR/$V2_GARBLED" garbled
+cp "$(rlocation "$V2_GARBLED")" garbled
 chmod +w garbled
 
-"$TEST_SRCDIR/$INLINE_STRINGS" garbled /dev/null >out.txt
+"$(rlocation "$INLINE_STRINGS")" garbled /dev/null >out.txt
 
 total=$(wc -l <out.txt)
 echo "== recovered $total inline strings =="

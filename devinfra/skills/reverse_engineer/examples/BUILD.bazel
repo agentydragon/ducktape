@@ -48,6 +48,7 @@ sh_test(
         "INLINE_STRINGS": "$(rlocationpath :inline_strings)",
         "V2_GARBLED": "$(rlocationpath :build_v2_garbled)",
     },
+    use_bash_launcher = True,
 )
 
 go_binary(
@@ -67,6 +68,7 @@ sh_test(
         "GOTYPES": "$(rlocationpath :gotypes)",
         "V2_GARBLED": "$(rlocationpath :build_v2_garbled)",
     },
+    use_bash_launcher = True,
 )
 
 go_binary(
@@ -88,8 +90,10 @@ sh_test(
     env = {
         "GO": "$(rlocationpath @io_bazel_rules_go//go:go)",
         "GOSYMTAB": "$(rlocationpath :gosymtab)",
+        "GO_MOD": "$(rlocationpath //third_party:go.mod)",
         "V2_GARBLED": "$(rlocationpath :build_v2_garbled)",
     },
+    use_bash_launcher = True,
 )
 
 sh_test(
@@ -113,7 +117,10 @@ sh_test(
         "PCLNTOOL": "$(rlocationpath :pclntool)",
         "RECIPE": "$(rlocationpath garble_re_recipe.sh)",
         "REDRESS": "$(rlocationpath @com_github_goretk_redress//:redress)",
+        "GO_MOD": "$(rlocationpath //third_party:go.mod)",
+        "VICTIM_MAIN": "$(rlocationpath //devinfra/skills/reverse_engineer/cmd/garble_target:srcs)",
     },
+    use_bash_launcher = True,
 )
 
 # Build v1_plain (plain go build, symbols intact) as a cached Bazel artifact.
@@ -150,5 +157,7 @@ sh_test(
         "RECIPE": "$(rlocationpath binary_diff_recipe.sh)",
         "V1_PLAIN": "$(rlocationpath :build_v1_plain)",
         "V2_GARBLED": "$(rlocationpath :build_v2_garbled)",
+        "GO_MOD": "$(rlocationpath //third_party:go.mod)",
     },
+    use_bash_launcher = True,
 )

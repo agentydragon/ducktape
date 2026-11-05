@@ -14,7 +14,10 @@ sh_test(
     name = "external_proto_import_test",
     srcs = ["run_external_proto_import_probe.sh"],
     args = ["$(rlocationpath :external_proto_import_probe)"],
-    data = [":external_proto_import_probe"],
+    data = [
+        ":external_proto_import_probe",
+    ],
+    use_bash_launcher = True,
 )
 
 py_library(

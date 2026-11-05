@@ -9,20 +9,21 @@
 #   PCLNTOOL  — rlocation path to the compiled pclntool binary
 #   RECIPE    — rlocation path to garble_re_recipe.sh
 #   REDRESS   — rlocation path to the redress go_binary
+#   GO_MOD    — rlocation path to third_party/go.mod
+#   VICTIM_MAIN — rlocation path to the garble target source
 set -euo pipefail
 
 # ── 1. Resolve GOROOT via go_bin_runner ──────────────────────────────────────
 # go_bin_runner needs third_party/go.mod to locate GOROOT.
-# In bzlmod runfiles the workspace root is at $TEST_SRCDIR/_main, where
-# _main/third_party/go.mod exists (declared as data dep).
 mkdir -p "$TEST_TMPDIR/bin"
-ln -s "$TEST_SRCDIR/$GO" "$TEST_TMPDIR/bin/go_bin_runner"
-ln -s "$TEST_SRCDIR/$PCLNTOOL" "$TEST_TMPDIR/bin/pclntool"
-ln -s "$TEST_SRCDIR/$REDRESS" "$TEST_TMPDIR/bin/redress"
-ln -s "$TEST_SRCDIR/$GORESYM" "$TEST_TMPDIR/bin/GoReSym"
+ln -s "$(rlocation "$GO")" "$TEST_TMPDIR/bin/go_bin_runner"
+ln -s "$(rlocation "$PCLNTOOL")" "$TEST_TMPDIR/bin/pclntool"
+ln -s "$(rlocation "$REDRESS")" "$TEST_TMPDIR/bin/redress"
+ln -s "$(rlocation "$GORESYM")" "$TEST_TMPDIR/bin/GoReSym"
 
 export GOROOT
-GOROOT=$(cd "$TEST_SRCDIR/_main" && "$TEST_TMPDIR/bin/go_bin_runner" env GOROOT)
+workspace_root="$(dirname "$(dirname "$(rlocation "$GO_MOD")")")"
+GOROOT=$(cd "$workspace_root" && "$TEST_TMPDIR/bin/go_bin_runner" env GOROOT)
 
 # Symlink the real go binary (not go_bin_runner) so garble and go tool work
 # without needing workspace context.
@@ -34,10 +35,7 @@ SRCDIR="$TEST_TMPDIR/src"
 mkdir -p "$SRCDIR"
 
 # Copy victim source files (filegroup srcs) from bzlmod runfiles layout.
-VICTIM_DIR="$TEST_SRCDIR/_main/devinfra/skills/reverse_engineer/cmd/garble_target"
-for f in "$VICTIM_DIR"/*.go; do
-  cp "$f" "$SRCDIR/"
-done
+cp "$(rlocation "$VICTIM_MAIN")" "$SRCDIR/main.go"
 printf 'module garble_target\ngo 1.26.0\n' >"$SRCDIR/go.mod"
 
 export GOCACHE="$TEST_TMPDIR/.gocache"
@@ -51,9 +49,9 @@ mkdir -p "$XDG_CACHE_HOME"
 # binaries have a short "redacted" build ID — garble is patched to pad it to
 # 15 bytes instead of panicking. Use -seed=random for non-deterministic output
 # that exercises the full obfuscation path.
-GARBLE_BIN="$TEST_SRCDIR/$GARBLE"
+GARBLE_BIN="$(rlocation "$GARBLE")"
 (cd "$SRCDIR" && "$GARBLE_BIN" -seed=random build -o "$TEST_TMPDIR/garbled-binary" .)
 
 # ── 3. Run the recipe in TEST_TMPDIR where 'garbled-binary' lives ────────────
 cd "$TEST_TMPDIR"
-exec bash "$TEST_SRCDIR/$RECIPE"
+exec bash "$(rlocation "$RECIPE")"
