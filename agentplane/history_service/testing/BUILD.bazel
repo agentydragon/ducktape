@@ -1,8 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(
     default_testonly = True,
     default_visibility = ["//agentplane:__subpackages__"],
+)
+
+go_library(
+    name = "integration_migrations",
+    srcs = ["integration_migrations.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/history_service/testing",
+    deps = [
+        "//agentplane/history_service/migrations",
+        "//agentplane/testing/postgres",
+    ],
 )
 
 py_library(

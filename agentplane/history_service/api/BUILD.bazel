@@ -39,10 +39,10 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/history_service:history_service_go_proto",
-        "//agentplane/history_service/migrations",
         "//agentplane/history_service/projection",
         "//agentplane/history_service/reads",
         "//agentplane/history_service/storage",
+        "//agentplane/history_service/testing:integration_migrations",
         "//agentplane/history_service/testing/spans",
         "//agentplane/postgres/wakeups",
         "//agentplane/proto:delegation_go_proto",
