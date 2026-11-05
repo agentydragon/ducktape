@@ -1004,7 +1004,6 @@ rust_library(
         ":spec_resolution",
         ":vendor",
         "@crates//:anyhow",
-        "@crates//:clap",
         "@crates//:rayon",
         "@crates//:rmp-serde",
         "@crates//:serde",
@@ -1171,6 +1170,38 @@ rust_library(
 )
 
 rust_library(
+    name = "package_args",
+    srcs = ["package_args.rs"],
+    edition = "2024",
+    deps = ["@crates//:anyhow"],
+)
+
+rust_library(
+    name = "analyze_command",
+    srcs = ["analyze_command.rs"],
+    edition = "2024",
+    deps = [
+        ":package_args",
+        ":staged_analysis",
+        "@crates//:anyhow",
+        "@crates//:clap",
+    ],
+)
+
+rust_library(
+    name = "transform_command",
+    srcs = ["transform_command.rs"],
+    edition = "2024",
+    deps = [
+        ":package_args",
+        ":pipeline",
+        ":spec_tree",
+        "@crates//:anyhow",
+        "@crates//:clap",
+    ],
+)
+
+rust_library(
     name = "pipeline",
     srcs = ["pipeline.rs"],
     crate_root = "pipeline.rs",
@@ -1193,7 +1224,6 @@ rust_library(
         ":vendor",
         ":write_tree",
         "@crates//:anyhow",
-        "@crates//:clap",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
     ],
@@ -1242,6 +1272,7 @@ rust_library(
     deps = [
         ":analysis",
         ":analysis_identity",
+        ":analyze_command",
         ":anonymous_resolution",
         ":artifact",
         ":gate",
@@ -1249,6 +1280,7 @@ rust_library(
         ":js_ast",
         ":lowering",
         ":output_layout",
+        ":package_args",
         ":peel",
         ":pipeline",
         ":prepare_chunks",
@@ -1266,6 +1298,7 @@ rust_library(
         ":spec_stats",
         ":spec_tree",
         ":staged_analysis",
+        ":transform_command",
         ":yaml_edit",
         "@crates//:anyhow",
         "@crates//:clap",
@@ -1590,7 +1623,7 @@ rust_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":analysis_identity",
-        ":staged_analysis",
+        ":analyze_command",
         "@crates//:clap",
         "@crates//:swc_common",
     ],
@@ -1603,7 +1636,7 @@ rust_binary(
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
-        ":pipeline",
+        ":transform_command",
         "@crates//:clap",
         "@crates//:swc_common",
     ],

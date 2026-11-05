@@ -54,7 +54,7 @@ the `:analyzer` label flag or the rule's `analyzer` attribute. It accepts the
 `analyze` command's options directly. `DebundleProjectAnalysis` uses the small
 `:debundle_project_analysis` executable, selected by the `:projector` label flag
 or the rule's `projector` attribute. It accepts the transform inputs and
-`--out` directly, and calls the same `pipeline::project_analysis_cli` function
+`--out` directly, and calls the same `pipeline::project_analysis` function
 as `debundle spec project-analysis`. Only the Pipeline and optional graph-export
 actions use the full CLI.
 The analyzer depends on `:staged_analysis`, independently of `:pipeline`,

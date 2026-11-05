@@ -21,17 +21,17 @@ use swc_common::GLOBALS;
 pub mod analysis_artifact;
 pub mod analysis_projection;
 pub mod chunk_facts;
-mod command;
 pub mod export_policies;
 pub mod loader_surface;
 pub mod program_summary;
 pub mod progress;
+mod request;
 pub use analysis_projection::AnalysisSpec;
-pub use command::{AnalyzeArgs, analyze_cli, collect_package_roots, parse_package_root_kv};
 pub use loader_surface::{
     ExportReentryLoaderDerivation, ExportReentryLoaderFailure, ExportReentryLoaderRequest,
     LoaderRequestReportTarget, LoaderSite, LoaderSiteWitness,
 };
+pub use request::{AnalyzeRequest, analyze_from_projection};
 
 #[derive(Debug, Clone)]
 pub struct ResolvedMemberSite {

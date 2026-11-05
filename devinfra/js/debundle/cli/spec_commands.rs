@@ -7,7 +7,8 @@ use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Subcommand};
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::{OutputFormat, print_report};
-use pipeline::ProjectAnalysisArgs;
+use transform_command::ProjectAnalysisArgs;
+
 use selector_codemod::match_selector::{
     MatchSelectorConfig, render_match_selector_text, run_match_selector,
 };

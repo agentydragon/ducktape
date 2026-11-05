@@ -1,13 +1,14 @@
 //! Source-only reachability through original, ordinary static ESM requests.
 
 use std::collections::{BTreeSet, VecDeque};
+use transform_command::TransformArgs;
 
 use anyhow::{Context, Result};
 use artifact::reports::{InteropUseKind, StaticModuleRequestMode};
 use artifact::{ChunkBundle, ChunkId, ImportReferenceKind};
 use clap::Args;
 use peel::OutputFormat;
-use pipeline::{TransformArgs, load_transform_spec_source};
+use pipeline::load_transform_spec_source;
 use prepare_chunks::prepare_js_chunks;
 use serde::Serialize;
 
