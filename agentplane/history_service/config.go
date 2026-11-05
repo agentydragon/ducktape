@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
@@ -55,7 +56,9 @@ type delegationConfig struct {
 // ingressConfig is the runners' listener, apart from the read API so the network fence can admit the egress proxy
 // to it and nothing else.
 type ingressConfig struct {
-	TokenAudience string `mapstructure:"token_audience"`
+	TokenAudience         string                                `mapstructure:"token_audience"`
+	WorkloadTLS           *environment_runtime_transport.Config `mapstructure:"workload_tls"`
+	WorkloadListenAddress string                                `mapstructure:"workload_listen_address"`
 	// WriterNamespaces are the namespaces whose ServiceAccounts may push: the ones Sandboxes run in.
 	WriterNamespaces []string `mapstructure:"writer_namespaces"`
 	// Only these service identities may announce centrally hosted Sessions. Empty disables the mode.
@@ -115,6 +118,14 @@ func (c *config) validate() error {
 	if c.Delegation != nil && (c.Delegation.Actor.Namespace == "" || c.Delegation.Actor.Name == "" ||
 		len(c.Delegation.CallerNamespaces) == 0 || len(c.Delegation.Methods) == 0) {
 		return errors.New("delegation requires an actor, caller namespaces and methods")
+	}
+	if (c.Ingress.WorkloadTLS == nil) != (c.Ingress.WorkloadListenAddress == "") {
+		return errors.New("ingress workload_tls and workload_listen_address must be configured together")
+	}
+	if c.Ingress.WorkloadTLS != nil {
+		if err := c.Ingress.WorkloadTLS.Validate(); err != nil {
+			return err
+		}
 	}
 	if len(c.Ingress.WriterNamespaces) == 0 {
 		return errors.New("ingress.writer_namespaces must list at least one namespace")

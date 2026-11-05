@@ -152,10 +152,13 @@ Session behind one flow-control window, so a catch-up would delay every live Ses
 runner would have to schedule fairly itself; and its writer binding and acknowledgement would be
 per frame instead of per call.
 
-**Writer binding.** The ingress authenticates every call's bearer for its own audience with a
-TokenReview through `workload_auth/auth.Resolver`
-([workload authentication](workload_authentication.md)), and resolves no Sandbox. The first accepted announcement binds the Session to its writer's ServiceAccount, by namespace, name
-and the UID TokenReview returns, in the transaction that records the Session, so of two concurrent
+**Writer binding.** History's workload listener verifies the Runtime's SVID with the shared
+transport and resolves the live Sandbox and accepted credential generation through
+`workload_auth/auth.SVIDResolver`. Its subject is the Sandbox's own controller-owned ServiceAccount,
+including the account's current UID. Deleted or replaced Sandboxes, stale credentials and incomplete
+Pod bindings fail before the ingress handler. The central sampler keeps its separate token and
+delegation path ([workload authentication](workload_authentication.md)). The first accepted announcement binds the Session to its writer's ServiceAccount, by namespace, name
+and the canonical account UID, in the transaction that records the Session, so of two concurrent
 first writers one is refused. A call for the Session from any other ServiceAccount fails with
 `PERMISSION_DENIED`. Every Sandbox runs as a ServiceAccount named for it, so this ties the Session to its
 Sandbox, and the History Service reads the Sandbox off the writer's namespace and name without
@@ -178,11 +181,13 @@ since only an operator resolves them; a refused Session holds up no other. Unack
 bounded only by the state volume, and a Sandbox cannot finish teardown while any is left.
 
 **Endpoint and authentication.** The SandboxTemplate sets the runner's ingress endpoint and private
-control listener: one ingress for every Sandbox (the History Service, or a historyless deployment's own sink). A create request cannot choose either; an ingress per Sandbox is not built. The runner reaches the ingress over its
-egress sidecar's platform route: the sidecar
-attaches the Pod's projected token for that ingress's own audience, `agentplane-runner-ingress` for
-the History Service, and an audience of its own for a historyless client. No other recipient
-can replay a token the ingress saw, and an ingress token opens no control connection.
+control listener: one ingress for every Sandbox. A create request cannot choose either. History's
+endpoint uses `svid.server_uri = spiffe://agentplane/history-ingress` and a local sidecar or guest
+relay `proxy_address`. Runtime opens HTTP CONNECT through that local relay and then mTLS directly
+to History. The central proxy carries opaque TLS to an exact deployment-configured authority;
+History verifies the leaf and chooses the caller itself. No History audience token is projected
+into Sandboxes. Historyless deployments may still configure an explicit bearer endpoint; an SVID
+endpoint cannot also specify a bearer or run without Runtime's mTLS credentials.
 
 **Sealing.** `Quiesce` closes admission and starts draining and sealing every journal, returning the
 current quiesce stage. The runner publishes subsequent stages through
@@ -330,6 +335,7 @@ command admission or native execution. Losing it does not establish that admitte
 
 ## Path through the egress proxy
 
-History ingress and other platform routes retain their bearer-substituting egress paths. Runner
-control uses the Gateway's direct mTLS connection and never sends its private key or control
-credentials through an HTTP interception proxy.
+History ingress uses end-to-end workload mTLS through the sidecar and the central proxy's opaque
+CONNECT passthrough. Other platform routes retain their bearer substitution until their own
+service migration. Runner control uses the Gateway's direct mTLS connection. Private keys remain
+with Runtime and the sidecar or relay; no destination trusts a proxy-asserted caller.

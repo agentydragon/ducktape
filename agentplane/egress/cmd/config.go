@@ -34,6 +34,7 @@ type config struct {
 	CAKey                           string            `mapstructure:"ca_key"`
 	UpstreamCAFile                  string            `mapstructure:"upstream_ca_file"`
 	TokenAudience                   string            `mapstructure:"token_audience"`
+	TLSPassthroughTargets           []string          `mapstructure:"tls_passthrough_targets"`
 	ProjectedTokenAudiences         []string          `mapstructure:"projected_token_audiences"`
 	Kubeconfig                      string            `mapstructure:"kubeconfig"`
 	LogLevels                       map[string]string `mapstructure:"log_levels"`

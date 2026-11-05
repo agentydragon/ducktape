@@ -22,6 +22,15 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - Every request reviews its hop bearer with the API server, including requests inside an existing
   tunnel; an earlier successful review does not authorize a later request.
 
+## Service TLS passthrough
+
+Deployment-configured exact `tls_passthrough_targets` authorities bypass HTTP interception and
+rule evaluation only for an authenticated CONNECT. The proxy pins the destination address, strips
+its outer authentication headers, and copies opaque bytes. It supplies no caller metadata inside
+the connection. The destination terminates mTLS, verifies the Runtime SVID and owns authorization.
+An unconfigured authority follows ordinary interception and policy; failure never retries as plaintext.
+History journal ingress uses this path. Its projected-token audience is no longer accepted.
+
 ## Decision
 
 - A subject's egress rules come from `PolicyBinding`s. A `PolicyBinding` names one namespaced

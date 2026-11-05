@@ -188,7 +188,16 @@ func (p *Proxy) record(req *http.Request, client *connection, host string, port 
 	switch d := result.decision.(type) {
 	case policy.Allowed:
 		address := result.pin.Address.String()
-		record.Outcome, record.Binding, record.Policy, record.Rule = decision.Allow, &d.Binding, &d.Policy, &d.Rule
+		record.Outcome = decision.Allow
+		if d.Binding != "" {
+			record.Binding = &d.Binding
+		}
+		if d.Policy != "" {
+			record.Policy = &d.Policy
+		}
+		if d.Policy != "" {
+			record.Rule = &d.Rule
+		}
 		record.Substituted = len(d.Rewrites) > 0 || d.BodyRewrite != nil
 		record.Address = &address
 	case policy.Denied:

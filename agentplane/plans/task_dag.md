@@ -2941,7 +2941,7 @@ flowchart LR
     IDENTITY_KINDS --> SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
     IDENTITY_KINDS --> IDENTITY_CATALOG[Blocked: catalog and RBAC in cdk8s]
     IDENTITY_KINDS --> APP_IDENTITIES_UI[Blocked: identities in the app]
-    SVID_EGRESS_HOP --> SVID_PLATFORM_ROUTES[Blocked: services verify SVIDs]
+    SVID_EGRESS_HOP --> SVID_PLATFORM_ROUTES[In flight: services verify SVIDs]
     SVID_PLATFORM_ROUTES --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS
     EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS
@@ -2976,15 +2976,17 @@ certificate for a deleted or replaced Sandbox, and refuses a name in any header 
 
 ### `SVID_PLATFORM_ROUTES` — first-party services verify SVIDs themselves
 
-**Blocked on `SVID_EGRESS_HOP`.** Decided 2026-11-05: the proxy tunnels the TLS connection through
-and each of Notification, Dispatcher, runner ingress, the Action Service and LLM ingress verifies
-the client certificate with the shared transport package and resolves the identity through the
-live Sandbox; the proxy never asserts an identity. Each service drops its Pod-bound projected-token
-path for sandbox callers and keeps its own authorization as the whole gate; `authenticatedWorkloadToken`
-and the per-audience `projectedWorkloadToken` entries go. The central sampler's zero-environment
-path stays on delegation with an identity reference (`SERVICES_IDENTITY_PRINCIPAL`). **Exit:** one
-platform route per service authenticates an SVID end to end in the k3s stack, and a forged or
-expired leaf is refused before any handler runs.
+**In flight, Codex, 2026-11-05.** The operator split SVID authentication from the identity cutover:
+services resolve the verified leaf through the live Sandbox and accepted runner credential to its
+own ServiceAccount, with the same principal result and authorization as today. History runner
+ingress is the first implementation slice; Notification, Dispatcher, Action and LLM remain.
+The proxy tunnels opaque TLS and never asserts a caller. Each service removes its projected-token
+audience from Sandbox templates and the proxy in its own change. Remove `authenticatedWorkloadToken`
+and per-audience `projectedWorkloadToken` sources as their consumers disappear. The sampler retains
+its existing delegated path. Service migrations may proceed on the optional SVID hop before the
+HTTP hop removal; that flip stays draft pending a separate non-SVID authentication design for
+command boxes and external OpenClaw callers. **Exit:** each service's route authenticates an SVID
+end to end in k3s, preserves its authorization, and rejects forged or expired leaves before a handler.
 
 ### `POLICY_GRANTS` — grants, role sets and managed ServiceAccounts
 

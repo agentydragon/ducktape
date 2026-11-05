@@ -24,7 +24,6 @@ from agentplane.egress import sidecar_config
 from agentplane.egress.platform_routes import PlatformRoute
 from agentplane.egress.resources import placeholder_of
 from agentplane.env.config import CA_BUNDLE, JAVA_TRUST_STORE, KUBECONFIG
-from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s.agentplane import egress, notifications, session_dispatcher, telemetry
@@ -45,7 +44,6 @@ _SUBSTITUTABLE_AUDIENCE_FILES = {
     egress.KUBERNETES_AUDIENCE: "kubernetes-token",
     notifications.TOKEN_AUDIENCE: "notifications-token",
     session_dispatcher.TOKEN_AUDIENCE: "session-dispatcher-token",
-    RUNNER_INGRESS_AUDIENCE: "runner-ingress-token",
 }
 SIDECAR_LISTEN_PORT = 3128
 # The sidecar's settings file: a ConfigMap per Pod template, mounted on the sidecar alone.

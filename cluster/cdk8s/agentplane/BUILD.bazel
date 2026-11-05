@@ -185,8 +185,10 @@ py_library(
         ":egress",
         ":environment",
         ":service_workload",
+        ":workload_tls",
         "//agentplane:subjects",
         "//agentplane/history_service:settings",
+        "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:probes",
@@ -419,6 +421,7 @@ py_library(
         ":environment",
         ":environment_firecracker",
         ":environment_vm",
+        ":history_service",
         ":launcher_relay",
         ":llm_ingress",
         ":platform_instructions",
@@ -1407,6 +1410,7 @@ py_library(
     srcs = ["environment_guest.py"],
     deps = [
         ":environment",
+        ":history_service",
         ":llm_ingress",
         ":platform_routes",
         ":sandbox_pod",
@@ -1459,5 +1463,21 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "workload_tls",
+    srcs = ["workload_tls.py"],
+    deps = [
+        ":environment",
+        ":runner_gateway",
+        ":service_workload",
+        "//agentplane/environment_runtime_transport:config",
+        "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
+        "//cluster/cdk8s/providers/cert_manager:certificate",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
     ],
 )
