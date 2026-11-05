@@ -20,6 +20,8 @@ use swc_common::Span;
 use super::program_summary::ProgramSummary;
 use super::saved_purity::{PurityNodeId, PuritySnapshot, SavedPurityGraph};
 
+type RetainedCallbackSignatures = BTreeMap<String, Vec<spec::RetainedCallbackSignature>>;
+
 #[derive(Serialize, Deserialize)]
 pub(super) struct SavedProgramSummary<'a> {
     purity_graph: SavedPurityGraph,
@@ -42,17 +44,12 @@ pub(super) struct SavedProgramSummary<'a> {
     argument_inputs: Cow<'a, BTreeMap<String, Vec<ResolvedArgumentInput>>>,
     inline_callback_factories: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
     callback_factory_members: Cow<'a, BTreeMap<String, BTreeMap<String, BTreeSet<String>>>>,
-    retained_callback_factories:
-        Cow<'a, BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>>,
-    retained_callback_factory_members: Cow<
-        'a,
-        BTreeMap<String, BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>>,
-    >,
-    retained_callback_constructors:
-        Cow<'a, BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>>,
+    retained_callback_factories: Cow<'a, BTreeMap<String, RetainedCallbackSignatures>>,
+    retained_callback_factory_members:
+        Cow<'a, BTreeMap<String, BTreeMap<String, RetainedCallbackSignatures>>>,
+    retained_callback_constructors: Cow<'a, BTreeMap<String, RetainedCallbackSignatures>>,
     no_reentry_exports: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
-    no_reentry_callback_exports:
-        Cow<'a, BTreeMap<String, BTreeMap<String, Vec<spec::RetainedCallbackSignature>>>>,
+    no_reentry_callback_exports: Cow<'a, BTreeMap<String, RetainedCallbackSignatures>>,
     no_reentry_members: Cow<'a, BTreeMap<String, BTreeMap<String, BTreeSet<String>>>>,
     no_reentry_record_members: Cow<'a, BTreeMap<String, BTreeMap<String, BTreeSet<String>>>>,
     namespace_independent_members: Cow<'a, BTreeMap<String, BTreeMap<String, BTreeSet<String>>>>,
