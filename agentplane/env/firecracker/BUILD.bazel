@@ -15,6 +15,7 @@ go_library(
         ":management_go_proto",
         "//agentplane/firecracker/vsock",
         "//agentplane/firecracker/workloadidentity",
+        "@com_github_coreos_go_systemd_v22//daemon",
         "@com_github_mdlayher_vsock//:vsock",
         "@com_github_spiffe_go_spiffe_v2//proto/spiffe/workload",
         "@com_github_spiffe_go_spiffe_v2//workloadapi",

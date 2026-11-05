@@ -15,6 +15,7 @@ import (
 	managementpb "github.com/agentydragon/ducktape/agentplane/env/firecracker/managementpb"
 	"github.com/agentydragon/ducktape/agentplane/firecracker/vsock"
 	"github.com/agentydragon/ducktape/agentplane/firecracker/workloadidentity"
+	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/spiffe/go-spiffe/v2/proto/spiffe/workload"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"google.golang.org/grpc"
@@ -67,17 +68,14 @@ func (server *managementServer) Synchronize(ctx context.Context, request *manage
 }
 
 func notifySystemdReady() error {
-	address := os.Getenv("NOTIFY_SOCKET")
-	if address == "" {
+	sent, err := daemon.SdNotify(false, daemon.SdNotifyReady+"\nSTATUS=host synchronization accepted; Runtime may start\n")
+	if err != nil {
+		return err
+	}
+	if !sent {
 		return errors.New("NOTIFY_SOCKET is unset")
 	}
-	connection, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: address, Net: "unixgram"})
-	if err != nil {
-		return fmt.Errorf("connect to systemd notify socket: %w", err)
-	}
-	defer connection.Close()
-	_, err = connection.Write([]byte("READY=1\nSTATUS=host synchronization accepted; Runtime may start\n"))
-	return err
+	return nil
 }
 
 func Run(ctx context.Context) error {
