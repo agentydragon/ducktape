@@ -37,8 +37,8 @@ from fastmcp.server.providers.openapi import (
 )
 from fastmcp.utilities.openapi import HTTPRoute
 from prometheus_client import Gauge, start_http_server
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from grocy_mcp.batch_tools import register_batch_tools
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
@@ -64,7 +64,7 @@ def _load_openapi_spec() -> dict[str, object]:
     entity path parameters) that are fixed at build time by the
     :grocy_openapi_fixed genrule. See <fix_openapi_spec.py>.
     """
-    spec_path = get_required_path(own_repo_rlocation("grocy_mcp/grocy.openapi.fixed.json"))
+    spec_path = Runfiles.CreateOrRaise().root() / "ducktape/grocy_mcp/grocy.openapi.fixed.json"
     result: dict[str, object] = json.loads(spec_path.read_text())
     return result
 
@@ -76,7 +76,7 @@ def _load_server_instructions() -> str:
     <server_instructions.md> for the content; the file is data-dep'd into
     the server target.
     """
-    return get_required_path(own_repo_rlocation("grocy_mcp/server_instructions.md")).read_text()
+    return (Runfiles.CreateOrRaise().root() / "ducktape/grocy_mcp/server_instructions.md").read_text()
 
 
 def _authentik_client_provider(
