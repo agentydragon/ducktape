@@ -39,7 +39,6 @@ from cluster.cdk8s.agentplane import (
     llm_ingress,
     runner_gateway,
 )
-from devinfra.bazel.runfiles import get_required_path
 from util.settings_contract import env_name
 
 _MCP = McpInputs(
@@ -623,8 +622,8 @@ def test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wir
     assert {"namespace": NAMESPACE, "name": central_sampler.NAME} in history_config["ingress"]["sampler_accounts"]
 
 
-def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary() -> None:
-    fixture = rendered_fixture.read(get_required_path(os.environ["K3S_FIRECRACKER_FIXTURE_RLOCATION"]))
+def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary(runfiles: Runfiles) -> None:
+    fixture = rendered_fixture.read(runfiles.root() / os.environ["K3S_FIRECRACKER_FIXTURE_RLOCATION"])
     assert fixture.firecracker_sandboxes
     assert not fixture.vm_sandboxes
     assert not any(doc["kind"] == "CiliumNetworkPolicy" for doc in fixture.objects)
