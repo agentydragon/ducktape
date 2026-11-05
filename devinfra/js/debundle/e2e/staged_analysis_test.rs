@@ -826,7 +826,7 @@ fn projection_rejects_unresolved_and_duplicate_selectors_before_writing() {
                 result.stderr
             );
             assert!(
-                result.stderr.contains(&format!("[error: {outcome}]")),
+                result.stderr.contains(&format!("[{outcome}]")),
                 "{label} lost its selector diagnostic with dedicated={dedicated}: {}",
                 result.stderr
             );
