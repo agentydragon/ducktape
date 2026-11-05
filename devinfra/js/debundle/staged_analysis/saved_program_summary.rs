@@ -1,14 +1,16 @@
-//! The saved program-summary boundary. Runtime verdicts and resolved value
-//! bindings have explicit artifact representations. The other summary fields
-//! are borrowed on write and owned on read; their existing codec behavior is
-//! retained until their own artifact slices migrate them.
+//! The saved program-summary boundary. Runtime verdicts and fields containing
+//! SWC bindings have explicit artifact representations. Other summary fields
+//! are borrowed on write and owned on read; Id-free data keeps its existing
+//! codec representation.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::analysis_inputs::{
-    CallableSummary, NativeIntegrity, ResolvedArgumentInput, ResolvedBindingValueInput,
-    ResolvedNativeOperationInput, ValueInputEvidence,
+    ArgumentInputEvidence, CallableSummary, InferredSetConstruction, InferredSetOperation,
+    NativeIntegrity, NativeOperationInputEvidence, ResolvedArgumentInput,
+    ResolvedBindingValueInput, ResolvedNativeOperationInput, StableSetIterableUse,
+    ValueInputEvidence,
 };
 use analysis::facts::abstract_domain::value::Value;
 use analysis_codec::{ContextOrdinals, SavedBinding};
@@ -33,14 +35,10 @@ pub(super) struct SavedProgramSummary<'a> {
     native_integrity: Cow<'a, Option<NativeIntegrity>>,
     bundle_globals: Cow<'a, analysis::analysis_inputs::BundleGlobalNames>,
     value_inputs: BTreeMap<String, Vec<SavedValueInput>>,
-    native_operation_inputs: Cow<'a, BTreeMap<String, Vec<ResolvedNativeOperationInput>>>,
-    stable_set_spreads:
-        Cow<'a, BTreeMap<String, BTreeMap<u32, analysis::analysis_inputs::StableSetIterableUse>>>,
-    inferred_set_constructions: Cow<
-        'a,
-        BTreeMap<String, BTreeMap<u32, analysis::analysis_inputs::InferredSetConstruction>>,
-    >,
-    argument_inputs: Cow<'a, BTreeMap<String, Vec<ResolvedArgumentInput>>>,
+    native_operation_inputs: BTreeMap<String, Vec<SavedNativeOperationInput>>,
+    stable_set_spreads: BTreeMap<String, BTreeMap<u32, SavedStableSetIterableUse>>,
+    inferred_set_constructions: BTreeMap<String, BTreeMap<u32, SavedInferredSetConstruction>>,
+    argument_inputs: BTreeMap<String, Vec<SavedArgumentInput>>,
     inline_callback_factories: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
     callback_factory_members: Cow<'a, BTreeMap<String, BTreeMap<String, BTreeSet<String>>>>,
     retained_callback_factories: Cow<'a, BTreeMap<String, RetainedCallbackSignatures>>,
@@ -86,6 +84,68 @@ impl<'a> SavedProgramSummary<'a> {
                 ))
             })
             .collect::<Result<_>>()?;
+        let native_operation_inputs = summary
+            .native_operation_inputs
+            .iter()
+            .map(|(chunk, inputs)| {
+                Ok((
+                    chunk.clone(),
+                    inputs
+                        .iter()
+                        .map(|input| SavedNativeOperationInput::snapshot(input, ordinals))
+                        .collect::<Result<_>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?;
+        let stable_set_spreads = summary
+            .stable_set_spreads
+            .iter()
+            .map(|(chunk, spreads)| {
+                Ok((
+                    chunk.clone(),
+                    spreads
+                        .iter()
+                        .map(|(site, spread)| {
+                            Ok((
+                                *site,
+                                SavedStableSetIterableUse::snapshot(spread, ordinals)?,
+                            ))
+                        })
+                        .collect::<Result<_>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?;
+        let inferred_set_constructions = summary
+            .inferred_set_constructions
+            .iter()
+            .map(|(chunk, constructions)| {
+                Ok((
+                    chunk.clone(),
+                    constructions
+                        .iter()
+                        .map(|(site, construction)| {
+                            Ok((
+                                *site,
+                                SavedInferredSetConstruction::snapshot(construction, ordinals)?,
+                            ))
+                        })
+                        .collect::<Result<_>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?;
+        let argument_inputs = summary
+            .argument_inputs
+            .iter()
+            .map(|(chunk, inputs)| {
+                Ok((
+                    chunk.clone(),
+                    inputs
+                        .iter()
+                        .map(|input| SavedArgumentInput::snapshot(input, ordinals))
+                        .collect::<Result<_>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?;
         Ok(Self {
             bindings,
             value_inputs,
@@ -96,10 +156,10 @@ impl<'a> SavedProgramSummary<'a> {
             imported_callables: Cow::Borrowed(&summary.imported_callables),
             native_integrity: Cow::Borrowed(&summary.native_integrity),
             bundle_globals: Cow::Borrowed(&summary.bundle_globals),
-            native_operation_inputs: Cow::Borrowed(&summary.native_operation_inputs),
-            stable_set_spreads: Cow::Borrowed(&summary.stable_set_spreads),
-            inferred_set_constructions: Cow::Borrowed(&summary.inferred_set_constructions),
-            argument_inputs: Cow::Borrowed(&summary.argument_inputs),
+            native_operation_inputs,
+            stable_set_spreads,
+            inferred_set_constructions,
+            argument_inputs,
             inline_callback_factories: Cow::Borrowed(&summary.inline_callback_factories),
             callback_factory_members: Cow::Borrowed(&summary.callback_factory_members),
             retained_callback_factories: Cow::Borrowed(&summary.retained_callback_factories),
@@ -146,6 +206,58 @@ impl<'a> SavedProgramSummary<'a> {
                 ))
             })
             .collect::<Result<_>>()?;
+        let native_operation_inputs = self
+            .native_operation_inputs
+            .into_iter()
+            .map(|(chunk, inputs)| {
+                Ok((
+                    chunk,
+                    inputs
+                        .into_iter()
+                        .map(|input| input.restore(ordinals))
+                        .collect::<Result<_>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?;
+        let stable_set_spreads = self
+            .stable_set_spreads
+            .into_iter()
+            .map(|(chunk, spreads)| {
+                Ok((
+                    chunk,
+                    spreads
+                        .into_iter()
+                        .map(|(site, spread)| Ok((site, spread.restore(ordinals)?)))
+                        .collect::<Result<_>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?;
+        let inferred_set_constructions = self
+            .inferred_set_constructions
+            .into_iter()
+            .map(|(chunk, constructions)| {
+                Ok((
+                    chunk,
+                    constructions
+                        .into_iter()
+                        .map(|(site, construction)| Ok((site, construction.restore(ordinals)?)))
+                        .collect::<Result<_>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?;
+        let argument_inputs = self
+            .argument_inputs
+            .into_iter()
+            .map(|(chunk, inputs)| {
+                Ok((
+                    chunk,
+                    inputs
+                        .into_iter()
+                        .map(|input| input.restore(ordinals))
+                        .collect::<Result<_>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?;
         Ok(ProgramSummary {
             bindings,
             value_inputs,
@@ -156,10 +268,10 @@ impl<'a> SavedProgramSummary<'a> {
             imported_callables: self.imported_callables.into_owned(),
             native_integrity: self.native_integrity.into_owned(),
             bundle_globals: self.bundle_globals.into_owned(),
-            native_operation_inputs: self.native_operation_inputs.into_owned(),
-            stable_set_spreads: self.stable_set_spreads.into_owned(),
-            inferred_set_constructions: self.inferred_set_constructions.into_owned(),
-            argument_inputs: self.argument_inputs.into_owned(),
+            native_operation_inputs,
+            stable_set_spreads,
+            inferred_set_constructions,
+            argument_inputs,
             inline_callback_factories: self.inline_callback_factories.into_owned(),
             callback_factory_members: self.callback_factory_members.into_owned(),
             retained_callback_factories: self.retained_callback_factories.into_owned(),
@@ -201,6 +313,183 @@ impl SavedValueInput {
             declaration_span: self.declaration_span,
             initializer_span: self.initializer_span,
             initializer_ordinal: self.initializer_ordinal,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct SavedArgumentInput {
+    evidence: ArgumentInputEvidence,
+    binding: SavedBinding,
+    function_start: u32,
+}
+
+impl SavedArgumentInput {
+    fn snapshot(input: &ResolvedArgumentInput, ordinals: &ContextOrdinals) -> Result<Self> {
+        Ok(Self {
+            evidence: input.evidence.clone(),
+            binding: ordinals.snapshot_binding(&input.binding)?,
+            function_start: input.function_start,
+        })
+    }
+
+    fn restore(self, ordinals: &ContextOrdinals) -> Result<ResolvedArgumentInput> {
+        Ok(ResolvedArgumentInput {
+            evidence: self.evidence,
+            binding: ordinals.restore_binding(self.binding)?,
+            function_start: self.function_start,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct SavedNativeOperationInput {
+    evidence: NativeOperationInputEvidence,
+    binding: SavedBinding,
+    selected_statement_span: Span,
+    declaration_span: Span,
+    initializer_span: Span,
+    call_span: Span,
+    initializer_ordinal: SourceUnitOrdinal,
+    spread_source: Option<SavedBinding>,
+    spread_source_span: Option<Span>,
+    spread_token_span: Option<Span>,
+}
+
+impl SavedNativeOperationInput {
+    fn snapshot(input: &ResolvedNativeOperationInput, ordinals: &ContextOrdinals) -> Result<Self> {
+        Ok(Self {
+            evidence: input.evidence.clone(),
+            binding: ordinals.snapshot_binding(&input.binding)?,
+            selected_statement_span: input.selected_statement_span,
+            declaration_span: input.declaration_span,
+            initializer_span: input.initializer_span,
+            call_span: input.call_span,
+            initializer_ordinal: input.initializer_ordinal,
+            spread_source: input
+                .spread_source
+                .as_ref()
+                .map(|binding| ordinals.snapshot_binding(binding))
+                .transpose()?,
+            spread_source_span: input.spread_source_span,
+            spread_token_span: input.spread_token_span,
+        })
+    }
+
+    fn restore(self, ordinals: &ContextOrdinals) -> Result<ResolvedNativeOperationInput> {
+        Ok(ResolvedNativeOperationInput {
+            evidence: self.evidence,
+            binding: ordinals.restore_binding(self.binding)?,
+            selected_statement_span: self.selected_statement_span,
+            declaration_span: self.declaration_span,
+            initializer_span: self.initializer_span,
+            call_span: self.call_span,
+            initializer_ordinal: self.initializer_ordinal,
+            spread_source: self
+                .spread_source
+                .map(|binding| ordinals.restore_binding(binding))
+                .transpose()?,
+            spread_source_span: self.spread_source_span,
+            spread_token_span: self.spread_token_span,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct SavedStableSetIterableUse {
+    source_span: Span,
+    spread_token_span: Span,
+    interval_bindings: Vec<SavedBinding>,
+    dependencies: analysis::analysis_inputs::ProofDependencies,
+}
+
+impl SavedStableSetIterableUse {
+    fn snapshot(use_fact: &StableSetIterableUse, ordinals: &ContextOrdinals) -> Result<Self> {
+        Ok(Self {
+            source_span: use_fact.source_span,
+            spread_token_span: use_fact.spread_token_span,
+            interval_bindings: use_fact
+                .interval_bindings
+                .iter()
+                .map(|binding| ordinals.snapshot_binding(binding))
+                .collect::<Result<_>>()?,
+            dependencies: use_fact.dependencies.clone(),
+        })
+    }
+
+    fn restore(self, ordinals: &ContextOrdinals) -> Result<StableSetIterableUse> {
+        Ok(StableSetIterableUse {
+            source_span: self.source_span,
+            spread_token_span: self.spread_token_span,
+            interval_bindings: self
+                .interval_bindings
+                .into_iter()
+                .map(|binding| ordinals.restore_binding(binding))
+                .collect::<Result<_>>()?,
+            dependencies: self.dependencies,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct SavedInferredSetConstruction {
+    binding: SavedBinding,
+    operation: SavedInferredSetOperation,
+    dependencies: analysis::analysis_inputs::ProofDependencies,
+    inference: analysis::analysis_provenance::InferenceUse,
+}
+
+impl SavedInferredSetConstruction {
+    fn snapshot(
+        construction: &InferredSetConstruction,
+        ordinals: &ContextOrdinals,
+    ) -> Result<Self> {
+        Ok(Self {
+            binding: ordinals.snapshot_binding(&construction.binding)?,
+            operation: SavedInferredSetOperation::snapshot(&construction.operation, ordinals)?,
+            dependencies: construction.dependencies.clone(),
+            inference: construction.inference.clone(),
+        })
+    }
+
+    fn restore(self, ordinals: &ContextOrdinals) -> Result<InferredSetConstruction> {
+        Ok(InferredSetConstruction {
+            binding: ordinals.restore_binding(self.binding)?,
+            operation: self.operation.restore(ordinals)?,
+            dependencies: self.dependencies,
+            inference: self.inference,
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum SavedInferredSetOperation {
+    PrimitiveArray,
+    ProtectedSpread {
+        source: SavedBinding,
+        interval: Box<SavedStableSetIterableUse>,
+    },
+}
+
+impl SavedInferredSetOperation {
+    fn snapshot(operation: &InferredSetOperation, ordinals: &ContextOrdinals) -> Result<Self> {
+        Ok(match operation {
+            InferredSetOperation::PrimitiveArray => Self::PrimitiveArray,
+            InferredSetOperation::ProtectedSpread { source, interval } => Self::ProtectedSpread {
+                source: ordinals.snapshot_binding(source)?,
+                interval: Box::new(SavedStableSetIterableUse::snapshot(interval, ordinals)?),
+            },
+        })
+    }
+
+    fn restore(self, ordinals: &ContextOrdinals) -> Result<InferredSetOperation> {
+        Ok(match self {
+            Self::PrimitiveArray => InferredSetOperation::PrimitiveArray,
+            Self::ProtectedSpread { source, interval } => InferredSetOperation::ProtectedSpread {
+                source: ordinals.restore_binding(source)?,
+                interval: Box::new(interval.restore(ordinals)?),
+            },
         })
     }
 }

@@ -2794,10 +2794,13 @@ solve, so it can also run in another process:
   and top-level `await` checks and prints the same warnings, so its output,
   reports and exit code equal a run that computes the analysis.
 
-Facts cross the process boundary through `analysis_codec`, which writes
-hygiene contexts as first-occurrence ordinals of the re-parsed modules; see
-`docs/lessons_learned/cross_process_stage_b.md` for why simpler encodings
-are wrong.
+Facts cross the process boundary through explicit saved representations and
+`analysis_codec`. Each saved binding contains its symbol and a
+first-occurrence ordinal for its hygiene context in the re-parsed modules; the
+reader restores it against its own SWC `Globals`. The codec itself writes
+ordinary named MessagePack and zstd, with no tuple or integer identity
+heuristics. See `docs/lessons_learned/cross_process_stage_b.md` for why simpler
+binding encodings are wrong.
 
 The runtime `ProgramSummary`, `AnalysisArtifactBody`, `ChunkFactAnalysis` and
 `StatementFacts` do not implement Serde. `SavedAnalysisBody::snapshot` selects the
@@ -2811,13 +2814,16 @@ its cause references, preserving spans and proof dependencies. By-value
 statement verdicts stay inline; shared `Arc` verdicts occupy the node table.
 These saved types use ordinary Serde. Runtime purity Serde always emits the
 report view, omitting causes and raw spans; no serialization scope changes it.
-Resolved value-input bindings use named symbol/context-ordinal fields.
+All saved SWC bindings, including statement sets, nested execution effects,
+effect-coverage receipts, and program-summary inputs, use named
+symbol/context-ordinal fields.
 
-Unchanged facts and summary fields are borrowed during writing rather than
-cloned. They still pass through the existing codec, including its remaining
-contextual report-field handling; moving those fields to explicit saved types is
-subsequent work. There is no compatibility reader: the compiled engine digest
-already invalidates artifacts produced by another implementation.
+Unchanged Id-free facts and summary fields are borrowed during writing rather
+than cloned. They still pass through the existing codec, including its
+remaining contextual report-field handling; moving those fields to explicit
+saved types is subsequent work. There is no compatibility reader: the compiled
+engine digest already invalidates artifacts produced by another
+implementation.
 
 The reason to call this out: every diagnostic in §"Two classes of
 atom" lives in materialization (it depends on the spec's quotient), but
