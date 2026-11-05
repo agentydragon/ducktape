@@ -28,6 +28,10 @@ import (
 // control mutual-TLS trust domain.
 const GatewayURI = "spiffe://agentplane/runner-gateway"
 
+// EgressProxyURI is the fixed identity of the optional workload-authenticated
+// forward-proxy listener.
+const EgressProxyURI = "spiffe://agentplane/egress-proxy"
+
 var trustDomain = spiffeid.RequireTrustDomainFromString("agentplane")
 
 // Config names either the projected certificate, private key, and trust roots,
@@ -153,6 +157,65 @@ func (c Config) ServerCredentials(expectedPeerURI string) (credentials.Transport
 	return credentials.NewTLS(tlsconfig.MTLSServerConfig(source, source, authorize(expected, x509.ExtKeyUsageClientAuth))), nil
 }
 
+// ClientTLSConfig creates HTTPS proxy credentials pinned to the egress proxy's
+// fixed SPIFFE identity. The file source reloads projected certificate, key,
+// and CA bundle replacements while keeping the client identity pinned.
+func (c Config) ClientTLSConfig(expectedPeerURI string) (*tls.Config, error) {
+	if expectedPeerURI != EgressProxyURI {
+		return nil, fmt.Errorf("expected peer URI must be %q", EgressProxyURI)
+	}
+	if c.WorkloadAPISocket != "" {
+		return nil, errors.New("file-backed TLS configuration is required for the egress proxy")
+	}
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	source, err := newFileSource(c, x509.ExtKeyUsageClientAuth)
+	if err != nil {
+		return nil, err
+	}
+	expected, err := spiffeid.FromString(expectedPeerURI)
+	if err != nil {
+		return nil, fmt.Errorf("invalid expected peer URI: %w", err)
+	}
+	return tlsconfig.MTLSClientConfig(source, source, authorize(expected, x509.ExtKeyUsageServerAuth)), nil
+}
+
+// WorkloadServerTLSConfig creates mTLS server credentials for the egress
+// listener. It accepts only a current EnvironmentRuntime identity with an
+// explicit clientAuth EKU; callers resolve the URI to live Sandbox state.
+func (c Config) WorkloadServerTLSConfig(localURI string) (*tls.Config, error) {
+	if localURI != EgressProxyURI {
+		return nil, fmt.Errorf("local URI must be %q", EgressProxyURI)
+	}
+	if c.WorkloadAPISocket != "" {
+		return nil, errors.New("file-backed TLS configuration is required for the egress proxy")
+	}
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	source, err := newFileSource(c, x509.ExtKeyUsageServerAuth)
+	if err != nil {
+		return nil, err
+	}
+	if source.identity.String() != localURI {
+		return nil, fmt.Errorf("local certificate identity %q does not match expected identity %q", source.identity, localURI)
+	}
+	authorizeRuntime := func(id spiffeid.ID, verifiedChains [][]*x509.Certificate) error {
+		if _, _, _, err := ParseEnvironmentRuntimeURI(id.String()); err != nil {
+			return fmt.Errorf("client identity must be a valid EnvironmentRuntimeURI: %w", err)
+		}
+		if len(verifiedChains) == 0 || len(verifiedChains[0]) == 0 {
+			return errors.New("client certificate chain is not verified")
+		}
+		if err := requireEKU(verifiedChains[0][0], x509.ExtKeyUsageClientAuth); err != nil {
+			return fmt.Errorf("peer certificate: %w", err)
+		}
+		return nil
+	}
+	return tlsconfig.MTLSServerConfig(source, source, authorizeRuntime), nil
+}
+
 // LocalIdentity returns the certificate URI after validating its chain and the
 // caller's required authentication usage.
 func (c Config) LocalIdentity(usage x509.ExtKeyUsage) (string, error) {
@@ -183,17 +246,39 @@ func PeerIdentity(ctx context.Context) (string, error) {
 	if !ok || len(info.State.PeerCertificates) == 0 {
 		return "", errors.New("gRPC peer is not authenticated with TLS")
 	}
-	leaf := info.State.PeerCertificates[0]
+	return peerIdentityFromTLSState(info.State, nil)
+}
+
+// PeerIdentityFromTLSState extracts an authenticated SPIFFE peer identity
+// from a TLS connection and requires the peer certificate to explicitly allow
+// the requested EKU. The caller must use the state from a TLS configuration
+// that verified the peer chain.
+func PeerIdentityFromTLSState(state tls.ConnectionState, usage x509.ExtKeyUsage) (string, error) {
+	return peerIdentityFromTLSState(state, &usage)
+}
+
+func peerIdentityFromTLSState(state tls.ConnectionState, usage *x509.ExtKeyUsage) (string, error) {
+	if len(state.PeerCertificates) == 0 {
+		return "", errors.New("TLS peer certificate is missing")
+	}
+	leaf := state.PeerCertificates[0]
 	now := time.Now()
 	if now.Before(leaf.NotBefore) || now.After(leaf.NotAfter) {
-		return "", errors.New("gRPC peer TLS certificate is outside its validity period")
+		return "", errors.New("TLS peer certificate is outside its validity period")
+	}
+	if usage != nil {
+		if err := requireEKU(leaf, *usage); err != nil {
+			return "", fmt.Errorf("TLS peer certificate: %w", err)
+		}
 	}
 	id, err := x509svid.IDFromCert(leaf)
 	if err != nil {
-		return "", fmt.Errorf("gRPC peer identity: %w", err)
+		return "", fmt.Errorf("TLS peer identity: %w", err)
 	}
 	if _, err := parseIdentity(id.String()); err != nil {
-		return "", fmt.Errorf("gRPC peer has an unsupported identity: %w", err)
+		if id.String() != EgressProxyURI {
+			return "", fmt.Errorf("TLS peer has an unsupported identity: %w", err)
+		}
 	}
 	return id.String(), nil
 }
@@ -354,7 +439,7 @@ func requireEKU(certificate *x509.Certificate, usage x509.ExtKeyUsage) error {
 
 // parseIdentity accepts only GatewayURI or a canonical EnvironmentRuntimeURI.
 func parseIdentity(identity string) (spiffeid.ID, error) {
-	if identity != GatewayURI {
+	if identity != GatewayURI && identity != EgressProxyURI {
 		if _, _, _, err := ParseEnvironmentRuntimeURI(identity); err != nil {
 			return spiffeid.ID{}, fmt.Errorf("identity must be GatewayURI or a valid EnvironmentRuntimeURI: %w", err)
 		}
