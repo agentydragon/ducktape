@@ -199,55 +199,29 @@ def test_bar_proportionality():
     )
     diff_tree = make_diff_tree(changes, config=config)
 
+    bar_count_bounds = {"file1.py": ((7, 9), (4, 6)), "file2.py": ((1, 1), (4, 6)), "file3.py": ((1, 3), (0, 0))}
+
     # Render and extract plain text (no ANSI codes needed)
     lines = render_to_string(diff_tree, width=80, force_terminal=False, color_system=None).splitlines()
 
     file_lines = {}
     for line in lines:
-        for file_path in ["file1.py", "file2.py", "file3.py"]:
+        for file_path in bar_count_bounds:
             if file_path in line:
                 file_lines[file_path] = line
                 break
 
-    # Count '+' for additions and '-' for deletions
-    file1_plus = file_lines["file1.py"].count("+")
-    file1_minus = file_lines["file1.py"].count("-")
-    file2_plus = file_lines["file2.py"].count("+")
-    file2_minus = file_lines["file2.py"].count("-")
-    file3_plus = file_lines["file3.py"].count("+")
-    file3_minus = file_lines["file3.py"].count("-")
+    bar_counts = {file_path: (line.count("+"), line.count("-")) for file_path, line in file_lines.items()}
+    for file_path, (plus_bounds, minus_bounds) in bar_count_bounds.items():
+        plus_count, minus_count = bar_counts[file_path]
+        assert plus_bounds[0] <= plus_count <= plus_bounds[1], (
+            f"{file_path} '+' count outside {plus_bounds}: {plus_count}"
+        )
+        assert minus_bounds[0] <= minus_count <= minus_bounds[1], (
+            f"{file_path} '-' count outside {minus_bounds}: {minus_count}"
+        )
 
-    # The bars are scaled to max values across all files:
-    # max_additions = 50 + 1 + 10 = 61 (including root aggregation)
-    # max_deletions = 10 + 10 + 0 = 20 (including root aggregation)
-
-    # File1: +50 -10
-    # Expected green bar: 50/61 ≈ 82% of 10 blocks ≈ 8 blocks
-    # Expected red bar: 10/20 = 50% of 10 blocks = 5 blocks
-    assert file1_plus >= 7, f"file1.py should have at least 7 '+', got {file1_plus}"
-    assert file1_plus <= 9, f"file1.py should have at most 9 '+', got {file1_plus}"
-    assert file1_minus >= 4, f"file1.py should have at least 4 '-', got {file1_minus}"
-    assert file1_minus <= 6, f"file1.py should have at most 6 '-', got {file1_minus}"
-
-    # File2: +1 -10
-    # Expected green bar: 1/61 ≈ 1.6% ≈ minimal sliver (1 char)
-    # Expected red bar: 10/20 = 50% = 5 blocks
-    assert file2_plus == 1, f"file2.py should have exactly 1 '+' (minimal sliver), got {file2_plus}"
-    assert file2_minus >= 4, f"file2.py should have at least 4 '-', got {file2_minus}"
-    assert file2_minus <= 6, f"file2.py should have at most 6 '-', got {file2_minus}"
-
-    # File2 and file1 should have same '-' count (both have 10 deletions at same scale)
-    assert abs(file2_minus - file1_minus) <= 1, (
-        f"file2.py and file1.py both have 10 deletions, should have similar '-' counts: "
-        f"file1={file1_minus}, file2={file2_minus}"
-    )
-
-    # File3: +10 -0
-    # Expected green bar: 10/61 ≈ 16.4% ≈ 1.6 blocks
-    # Expected red bar: 0/20 = 0% = 0 blocks
-    assert file3_plus >= 1, f"file3.py should have at least 1 '+', got {file3_plus}"
-    assert file3_plus <= 3, f"file3.py should have at most 3 '+', got {file3_plus}"
-    assert file3_minus == 0, f"file3.py should have no '-', got {file3_minus}"
+    assert abs(bar_counts["file2.py"][1] - bar_counts["file1.py"][1]) <= 1
 
 
 def test_percentage_calculation():
