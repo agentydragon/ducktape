@@ -22,7 +22,18 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 REPORTS = ("latency",)
 VIEWPORTS = (("desktop", 1280, 900), ("mobile", 390, 844))
-TARGET_SECTIONS = {"latency": ("current-feedback", "bottlenecks", "selection", "interventions", "continuity", "method")}
+TARGET_SECTIONS = {
+    "latency": (
+        "followup",
+        "capacity",
+        "current-feedback",
+        "bottlenecks",
+        "selection",
+        "interventions",
+        "continuity",
+        "method",
+    )
+}
 
 
 def _console_error_handler(errors: list[str]) -> Callable[[ConsoleMessage], None]:
