@@ -6,13 +6,11 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 # gazelle:resolve py cert_manager_clusterissuer_crds //cluster/cdk8s/providers/cert_manager:clusterissuer
 # gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
 
-load("@image_pins//:pins.bzl", "KUBEVIRT_VIRT_API_REFERENCE", "KUBEVIRT_VIRT_CONTROLLER_REFERENCE", "KUBEVIRT_VIRT_HANDLER_REFERENCE", "KUBEVIRT_VIRT_LAUNCHER_REFERENCE", "KUBEVIRT_VIRT_OPERATOR_REFERENCE", "KYVERNO_KYVERNOPRE_REFERENCE", "KYVERNO_KYVERNO_REFERENCE")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//agentplane/system_tests/k3s:defs.bzl", "K3S_EXEC_PROPERTIES")
 load("//devinfra/erofs:defs.bzl", "erofs_image")
-load("//devinfra/oci:defs.bzl", "oci_image_group")
 
 package(
     default_testonly = True,
@@ -86,26 +84,6 @@ oci_image(
         ":test_runner_disk_img",
     ],
     user = "107:107",
-)
-
-oci_image_group(
-    name = "vm_runner_disk_image",
-    images = {":test_runner_disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"},
-    visibility = ["//agentplane/system_tests:__subpackages__"],
-)
-
-oci_image_group(
-    name = "vm_images",
-    images = {
-        "@kubevirt_virt_api_linux_amd64": KUBEVIRT_VIRT_API_REFERENCE,
-        "@kubevirt_virt_controller_linux_amd64": KUBEVIRT_VIRT_CONTROLLER_REFERENCE,
-        "@kubevirt_virt_handler_linux_amd64": KUBEVIRT_VIRT_HANDLER_REFERENCE,
-        "@kubevirt_virt_launcher_linux_amd64": KUBEVIRT_VIRT_LAUNCHER_REFERENCE,
-        "@kubevirt_virt_operator_linux_amd64": KUBEVIRT_VIRT_OPERATOR_REFERENCE,
-        "@kyverno_kyverno_linux_amd64": KYVERNO_KYVERNO_REFERENCE,
-        "@kyverno_kyvernopre_linux_amd64": KYVERNO_KYVERNOPRE_REFERENCE,
-    },
-    visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
 py_library(
