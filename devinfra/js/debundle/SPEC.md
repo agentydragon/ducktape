@@ -182,6 +182,15 @@ selection to the post-edit assignment and replace prior rejection artifacts
 after graph, assignment and shared validation complete. A preflight error leaves
 the last completed gate result intact.
 
+Each atomic conflict report includes a deterministic witness between the first
+claim and the first later claim assigned to a different module. It records a
+path in each direction using the same `G_atomic` projection as the gate. Every
+step embeds the dependency-edge report plus its projection and orientation, so
+a reversed traversal is identified as a symmetric co-location constraint;
+directed initialization dependencies are never reversed. Each path keeps its
+first twelve steps and reports the complete `total_step_count` and `truncated`
+flag. This is bounded evidence for the selected pair, not a minimum repair set.
+
 `--reports-only <OUT_ROOT>` requires `--analysis` and writes reports without
 program/browser/vendor output. It follows the same canonical materializer and
 final validator; it cannot turn a rejected program into success. It conflicts

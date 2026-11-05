@@ -179,6 +179,14 @@ debundle_e2e_test(
 debundle_e2e_test(name = "rejection_fixture_report_test")
 
 debundle_e2e_test(
+    name = "atomic_group_conflict_witness_test",
+    deps = [
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
     name = "contract_audit_cli_test",
     deps = [
         "@crates//:serde_json",

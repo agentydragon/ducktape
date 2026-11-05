@@ -998,6 +998,7 @@ fn gate_post_edit_assignment_with_expected(
             &atomic_conflicts,
             &module_path,
             dependency_graph,
+            &|id| input.edge_report(id).clone(),
         );
         write_rejection_artifact(
             dependency_graph_path,
