@@ -72,6 +72,7 @@ class GrantView(BaseModel):
     original: str
     expires_at: datetime | None
     scope: str | None = None
+    scope_detail: str | None = None
     status: str | None = None
     group: str | None = None
 
@@ -165,6 +166,9 @@ _PROVIDER_LABELS = {
 # Two collector intervals avoid a stale warning during the normal five-minute poll boundary.
 _STALE_AFTER = timedelta(minutes=10)
 _PRODUCT_LABELS = {"claude_api": "Claude API", "claude_code": "Claude Code"}
+# The broad API promo scope in the observed account fixture. Unknown products or
+# model-specific qualifiers remain visible restrictions, never inferred as universal.
+_BROAD_API_PRODUCTS = {"agent_sdk", "api", "batch", "console", "managed-agents", "managed-agents-onprem"}
 
 
 def _provider_view(
@@ -390,6 +394,14 @@ def _credit_rows(
                     scope = ", ".join(products) or (
                         tranche.scope.kind if tranche.scope.kind not in {"unrestricted", "unscoped"} else None
                     )
+                    broad_scope = (
+                        tranche.scope.kind == "scoped"
+                        and {item.product for item in tranche.scope.applies_to} == _BROAD_API_PRODUCTS
+                        and all(
+                            item.model_family is None and item.model_version is None
+                            for item in tranche.scope.applies_to
+                        )
+                    )
                     grants.append(
                         GrantView(
                             label=label,
@@ -398,7 +410,8 @@ def _credit_rows(
                             ),
                             original=format_minor_currency(original.amount_minor, original.exponent, tranche.currency),
                             expires_at=tranche.expires_at,
-                            scope=scope,
+                            scope=None if broad_scope else scope,
+                            scope_detail=scope if broad_scope else None,
                             group=org.name,
                         )
                     )

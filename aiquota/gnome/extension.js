@@ -3,6 +3,7 @@ import GObject from "gi://GObject";
 import Gio from "gi://Gio";
 import St from "gi://St";
 import Clutter from "gi://Clutter";
+import Pango from "gi://Pango";
 
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
@@ -127,9 +128,16 @@ function formatGrant(grant, details = false) {
   parts.push(`${grant.label}: ${grant.remaining}`);
   parts.push(formatExpiry(grant.expires_at, details));
   if (details) parts.push(`original ${grant.original}`);
-  if (grant.scope) parts.push(`scope: ${grant.scope}`);
+  const scope = details ? (grant.scope_detail ?? grant.scope) : grant.scope;
+  if (scope) parts.push(`scope: ${scope}`);
   if (grant.status) parts.push(grant.status);
   return parts.join(" · ");
+}
+
+function headerBalance(state) {
+  if (state.balances.length !== 1) return null;
+  const balance = state.balances[0];
+  return balance.group || balance.stale_since || balance.error ? null : balance;
 }
 
 // Peak-burn formatting. The policy (is it peak, which windows are next) is
@@ -291,6 +299,8 @@ const QuotaIndicator = GObject.registerClass(
           '<method name="GetStatusText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetResetText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetPanelText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
+          '<method name="GetPanelProviders"><arg type="s" direction="out" name="providers"/></method>' +
+          '<method name="SetDetailsOpen"><arg type="s" direction="in" name="provider"/><arg type="b" direction="in" name="open"/></method>' +
           '<method name="GetDetailsText"><arg type="s" direction="in" name="provider"/><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetConnectionDetails"><arg type="s" direction="out" name="text"/></method>' +
           '<method name="GetEmptyLabelText"><arg type="s" direction="out" name="text"/></method>' +
@@ -313,8 +323,10 @@ const QuotaIndicator = GObject.registerClass(
             this._loadFixtureView(decodeBytes(bytes));
           },
           SetStreamStatus: (status, error) => this._setStreamState(status, error),
-          GetBalanceText: (provider) =>
-            this._providers.find(({ id }) => id === provider)?.balanceRow?._summaryLabel.get_text() ?? "",
+          GetBalanceText: (provider) => {
+            const row = this._providers.find(({ id }) => id === provider)?.balanceRow;
+            return row?.visible ? row._summaryLabel.get_text() : "";
+          },
           GetGrantText: (provider) =>
             this._providers.find(({ id }) => id === provider)?.grantRow?._summaryLabel.get_text() ?? "",
           GetStatusText: (provider) =>
@@ -322,6 +334,13 @@ const QuotaIndicator = GObject.registerClass(
           GetResetText: (provider) =>
             this._providers.find(({ id }) => id === provider)?.resetRow?._summaryLabel.get_text() ?? "",
           GetPanelText: (provider) => this._providers.find(({ id }) => id === provider)?.paceLabel?.get_text() ?? "",
+          GetPanelProviders: () =>
+            JSON.stringify(this._providers.filter((provider) => provider.icon).map(({ id }) => id)),
+          SetDetailsOpen: (provider, open) => {
+            const menu = this._providers.find(({ id }) => id === provider)?.detailsItem.menu;
+            if (open) menu.open(false);
+            else menu.close(false);
+          },
           GetDetailsText: (provider) =>
             this._providers
               .find(({ id }) => id === provider)
@@ -591,6 +610,7 @@ const QuotaIndicator = GObject.registerClass(
 
     _buildPopup() {
       this.menu.removeAll();
+      this.menu.box.add_style_class_name("quota-popup-content");
       this._statusRow = this._makeTextRow();
       this._statusRow._summaryLabel.add_style_class_name("quota-stream-status");
       this._statusRow._summaryLabel.clutter_text.line_wrap = true;
@@ -646,6 +666,7 @@ const QuotaIndicator = GObject.registerClass(
       item._detailRows = next.map((detail) => {
         const row = new PopupMenu.PopupMenuItem(detail, { reactive: false, can_focus: false });
         row.label.clutter_text.line_wrap = true;
+        row.label.clutter_text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
         row.label.clutter_text.ellipsize = 0;
         item.menu.addMenuItem(row);
         return row;
@@ -658,6 +679,7 @@ const QuotaIndicator = GObject.registerClass(
       item.add_style_class_name("quota-popup-bar-item");
       item._summaryLabel = new St.Label({ text: "", style_class: "quota-popup-row", x_expand: true });
       item._summaryLabel.clutter_text.line_wrap = true;
+      item._summaryLabel.clutter_text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
       item._summaryLabel.clutter_text.ellipsize = 0;
       item.add_child(item._summaryLabel);
       return item;
@@ -677,6 +699,9 @@ const QuotaIndicator = GObject.registerClass(
         style_class: "quota-popup-row",
         x_expand: true,
       });
+      item._summaryLabel.clutter_text.line_wrap = true;
+      item._summaryLabel.clutter_text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
+      item._summaryLabel.clutter_text.ellipsize = 0;
       item._bars = new St.BoxLayout({
         style_class: "quota-bar-container",
         orientation: Clutter.Orientation.VERTICAL,
@@ -916,7 +941,7 @@ const QuotaIndicator = GObject.registerClass(
     _renderPopup() {
       this._renderStreamStatus();
       for (const p of this._providers) {
-        this._renderProviderHeader(p.header, p.state.label || p.label);
+        this._renderProviderHeader(p.header, p.state.label || p.label, p.state);
         this._renderBalanceRow(p.balanceRow, p.state);
         this._renderGrantRow(p.grantRow, p.state);
         this._renderResetRow(p.resetRow, p.state);
@@ -929,8 +954,9 @@ const QuotaIndicator = GObject.registerClass(
       }
     }
 
-    _renderProviderHeader(item, title) {
-      item.label.set_text(title);
+    _renderProviderHeader(item, title, state) {
+      const balance = headerBalance(state);
+      item.label.set_text(balance ? `${title} — ${balance.label}: ${balance.value}` : title);
     }
 
     _renderBalanceRow(item, state) {
@@ -940,7 +966,7 @@ const QuotaIndicator = GObject.registerClass(
         const stale = staleSince == null ? "" : ` · stale ${formatAge(Math.max(0, (nowMs() - staleSince) / 1000))} ago`;
         return `${group}${balance.label}: ${balance.value}${stale}`;
       });
-      item.visible = lines.length > 0;
+      item.visible = lines.length > 0 && headerBalance(state) === null;
       item._summaryLabel.set_text(lines.join("\n"));
     }
 

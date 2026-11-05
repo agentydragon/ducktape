@@ -138,7 +138,7 @@
     Wide-scope promo org
       Available balance: $219.70
       Grant: $21.75 remaining · expires Jul 1, 2027
-      Promo grant: $197.93 remaining · expires Nov 25 · scope: agent_sdk, api, batch, console, managed-agents, managed-agents-onprem
+      Promo grant: $197.93 remaining · expires Nov 25
   '''
 # ---
 # name: test_renders_shared_fixture[openai_platform_credits]

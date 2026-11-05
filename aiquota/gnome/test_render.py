@@ -27,6 +27,7 @@ fixture opens its menu and screenshots successfully.
 from __future__ import annotations
 
 import json
+import re
 import zipfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -126,13 +127,13 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
         if fixture_name == "claude_prepaid_balance":
             header = string_reply(session.call("GetHeaderText", "claude"))
             balances = string_reply(session.call("GetBalanceText", "claude"))
-            assert header == "Claude"
-            assert "Prepaid balance: $123.45" in balances
+            assert header == "Claude — Prepaid balance: $123.45"
+            assert not balances
         elif fixture_name == "claude_prepaid_balance_unavailable":
             header = string_reply(session.call("GetHeaderText", "claude"))
             balances = string_reply(session.call("GetBalanceText", "claude"))
-            assert header == "Claude"
-            assert "Prepaid balance: unavailable" in balances
+            assert header == "Claude — Prepaid balance: unavailable"
+            assert not balances
         elif fixture_name == "claude_prepaid_balance_stale":
             balances = string_reply(session.call("GetBalanceText", "claude"))
             assert "Prepaid balance: $123.45" in balances
@@ -141,18 +142,15 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
             header = string_reply(session.call("GetHeaderText", "claude"))
             status = string_reply(session.call("GetStatusText", "claude"))
             details = string_reply(session.call("GetDetailsText", "claude"))
-            assert header == "Claude"
-            assert "Prepaid balance: $123.45" in string_reply(session.call("GetBalanceText", "claude"))
+            assert "Prepaid balance: $123.45" in header
             assert "Refresh failed" in status
             assert "Stale · observation" in status
             assert "HTTP 503 Service Unavailable" in details
         elif fixture_name == "openai_platform_credits":
             header = string_reply(session.call("GetHeaderText", "openai_platform"))
-            balances = string_reply(session.call("GetBalanceText", "openai_platform"))
             grants = string_reply(session.call("GetGrantText", "openai_platform"))
             details = string_reply(session.call("GetDetailsText", "openai_platform"))
-            assert header == "OpenAI API"
-            assert "Available balance: $125.75" in balances
+            assert header == "OpenAI API — Available balance: $125.75"
             assert "Grant: $100.00" in grants
             assert "Grant: $25.75" in grants
             assert "expires" in grants
@@ -168,8 +166,7 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
             assert "scope: unscoped" not in grants
             assert "Expired grant" not in grants
         elif fixture_name == "platform_credits_with_subscription_resets":
-            claude_balances = string_reply(session.call("GetBalanceText", "claude"))
-            assert "Prepaid balance: $25.75" in claude_balances
+            assert "Prepaid balance: $25.75" in string_reply(session.call("GetHeaderText", "claude"))
             assert len(json.loads(string_reply(session.call("GetWindowRows", "claude")))) == 2
 
             codex_resets = string_reply(session.call("GetResetText", "codex"))
@@ -179,7 +176,7 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
             assert "known expiries" in codex_details
             assert len(json.loads(string_reply(session.call("GetWindowRows", "codex")))) == 2
 
-            openai_balance = string_reply(session.call("GetBalanceText", "openai_platform"))
+            openai_balance = string_reply(session.call("GetHeaderText", "openai_platform"))
             openai_grants = string_reply(session.call("GetGrantText", "openai_platform"))
             assert "Available balance: $60.00" in openai_balance
             assert "Grant: $60.00" in openai_grants
@@ -229,23 +226,39 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
             assert "cached view retained" in string_reply(session.call("GetConnectionDetails"))
         elif fixture_name == "paid_credits":
             rows = json.loads(string_reply(session.call("GetWindowRows", "codex")))
-            balances = string_reply(session.call("GetBalanceText", "codex"))
+            header = string_reply(session.call("GetHeaderText", "codex"))
             resets = string_reply(session.call("GetResetText", "codex"))
             assert len(rows) == 2
-            assert "Paid credits:" in balances
+            assert "Codex — Paid credits:" in header
             assert "Banked resets: 0" in resets
             assert "⚡" in string_reply(session.call("GetPanelText", "codex"))
         elif fixture_name == "observed_account_2026_11_04":
             assert len(json.loads(string_reply(session.call("GetWindowRows", "claude")))) == 1
             assert len(json.loads(string_reply(session.call("GetWindowRows", "codex")))) == 1
-            assert "Paid credits:" in string_reply(session.call("GetBalanceText", "codex"))
+            assert "Claude — Prepaid balance:" in string_reply(session.call("GetHeaderText", "claude"))
+            assert "Codex — Paid credits:" in string_reply(session.call("GetHeaderText", "codex"))
+            assert not string_reply(session.call("GetBalanceText", "claude"))
+            assert not string_reply(session.call("GetBalanceText", "codex"))
+            assert json.loads(string_reply(session.call("GetPanelProviders"))) == ["claude", "codex"]
             assert len(string_reply(session.call("GetGrantText", "openai_platform")).splitlines()) == 3
             grants = string_reply(session.call("GetGrantText", "anthropic_platform"))
             assert len(grants.splitlines()) == 2
-            assert "managed-agents-onprem" in grants
+            assert re.findall(r"expires ([^·\n]+)", grants) == ["Jul 1, 2027", "Nov 25"]
+            openai_grants = string_reply(session.call("GetGrantText", "openai_platform"))
+            assert re.findall(r"expires ([^·\n]+)", openai_grants) == ["Dec 1", "Jan 1, 2027", "Feb 1, 2027"]
+            assert "scope:" not in grants
+            assert "managed-agents-onprem" in string_reply(session.call("GetDetailsText", "anthropic_platform"))
         geometry = session.open_menu()
         try:
+            if fixture_name == "observed_account_2026_11_04":
+                assert geometry[2] <= 480, f"account popup exceeds compact width: {geometry}"
             capture_menu.capture(geometry, label=fixture_name.replace("_", " "))
+            if fixture_name == "observed_account_2026_11_04":
+                session.call("SetDetailsOpen", "anthropic_platform", "true")
+                expanded = session.open_menu()
+                assert expanded[2] <= 480, f"expanded scope widens account popup: {expanded}"
+                capture_menu.capture(expanded, label="Observed account promo details", checkpoint="promo-details")
+                session.call("SetDetailsOpen", "anthropic_platform", "false")
         finally:
             session.close_menu()
     except (TimeoutError, RuntimeError) as e:

@@ -62,6 +62,18 @@ def test_details_show_grant_originals_full_deadlines_pace_and_peak_schedule() ->
     assert "$100.00 granted" in credits
 
 
+def test_observed_account_has_compact_expiries_and_broad_promo_scope_only_in_details() -> None:
+    quotas = _fixture("observed_account_2026_11_04")
+    default = human.render(quotas, now=quotas.fetched_at, tz=UTC)
+    detailed = human.render(quotas, now=quotas.fetched_at, tz=UTC, details=True)
+
+    assert "Promo grant:" in default
+    assert "scope:" not in default
+    assert "managed-agents-onprem" in detailed
+    for date in ("Nov 25", "Dec 1", "Jan 1, 2027", "Feb 1, 2027", "Jul 1, 2027"):
+        assert any(line.endswith(f"expires {date}") for line in default.splitlines())
+
+
 def test_paid_mode_keeps_each_window_row_and_marks_actionable_state() -> None:
     rendered = human.render(_fixture("paid_credits"), now=_NOW, tz=UTC)
 

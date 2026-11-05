@@ -9,6 +9,7 @@ from aiquota.models import (
     AnthropicPlatformCredits,
     AnthropicPlatformCreditValue,
     AnthropicPlatformOrganization,
+    AnthropicPlatformProduct,
     AnthropicPlatformScope,
     AnthropicPlatformTranche,
     ExtraSpend,
@@ -361,6 +362,49 @@ def test_normalized_prepaid_balances_preserve_exact_minor_units_and_currency() -
         provider = ProviderQuota(provider="claude", last_output=ProviderFetch(fetched_at=_NOW, result=result))
         row = to_view(AllQuotas(providers=[provider], fetched_at=_NOW), _NOW).providers[0].balances[0]
         assert row.value == expected
+
+
+def test_broad_api_promo_scope_is_detail_while_model_and_product_restrictions_remain_visible() -> None:
+    amount = AnthropicPlatformCreditValue(credits=AnthropicPlatformCreditAmount(amount_minor=2500, exponent=2))
+    scope = AnthropicPlatformScope(
+        kind="scoped",
+        applies_to=[
+            AnthropicPlatformProduct(product=product)
+            for product in ("agent_sdk", "api", "batch", "console", "managed-agents", "managed-agents-onprem")
+        ],
+    )
+    tranche = AnthropicPlatformTranche(
+        id="broad-api-promo", currency="USD", granted_at=_NOW, granted=amount, remaining=amount, scope=scope
+    )
+    result = FetchSuccess(
+        anthropic_platform_credits=AnthropicPlatformCredits(
+            organizations=[
+                AnthropicPlatformOrganization(
+                    uuid="test-org", name="Broad promo scope", balance=amount, promo_tranches=[tranche]
+                )
+            ]
+        )
+    )
+    quotas = AllQuotas(
+        fetched_at=_NOW,
+        providers=[
+            ProviderQuota(provider="anthropic_platform", last_output=ProviderFetch(fetched_at=_NOW, result=result))
+        ],
+    )
+    broad = to_view(quotas, _NOW).providers[0].grants[0]
+    assert broad.scope is None
+    assert broad.scope_detail is not None
+    assert "managed-agents-onprem" in broad.scope_detail
+
+    scope.applies_to[1].model_family = "sonnet"
+    restricted = to_view(quotas, _NOW).providers[0].grants[0]
+    assert restricted.scope is not None
+    assert "api (Sonnet)" in restricted.scope
+    assert restricted.scope_detail is None
+
+    scope.applies_to[1].model_family = None
+    scope.applies_to.pop()
+    assert to_view(quotas, _NOW).providers[0].grants[0].scope is not None
 
 
 def test_unexhausted_usage_never_rounds_up_to_an_exhausted_display() -> None:
