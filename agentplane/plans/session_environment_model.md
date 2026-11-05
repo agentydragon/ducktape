@@ -464,8 +464,9 @@ Initial direction: the Session uses a namespaced SA name as its durable principa
 Kubernetes RBAC and name-based PolicyBindings. A replacement object of the same name is the same
 named principal with a new UID. Authenticate and record the current UID for provenance and fence
 old Pod credentials, observations and already accepted operations; the name alone is not proof.
-A Session-managed SA can be provisioned
-by Dispatcher, or the caller can select an authorized existing SA without transferring ownership.
+A Session initially selects an authorized existing SA without transferring ownership. The operator
+is comfortable deferring Session-managed SA creation and deletion; if selected later, Dispatcher is
+the proposed owner.
 An Agentplane-owned principal mapped to external accounts remains a separate future option.
 Cardinalities, reassignment and the exact implementation remain open.
 
@@ -499,12 +500,13 @@ Equality is an _admission rule_, not a complete authorization design or an isola
 The operator clarified that each Sandbox gets a separate ServiceAccount so PolicyBinding CRs can attach and detach permission sets for that individual agent at the Sandbox level. An account is not just a way to authenticate a Pod: it is currently the subject at which per-agent egress, Actions, inbox and Kubernetes grants are assigned.
 
 **Operator direction, 2026-11-04:** use SAs as agent identities first, while leaving a later
-Agentplane-owned principal and Kubernetes account adapter open. Preserve automatic creation of a
-new SA for a new Session and the web form's editable, preset PolicySets. Also allow a caller to
-select an authorized existing SA that the Session does not manage. A central-sampler Session may
-need its identity and permissions without an Environment. Dispatcher owns Session-managed SA
-provisioning; creation, deletion, bindings, credentials, sharing and attachment lifetimes still need
-a complete contract. See [`SESSION_MANAGED_IDENTITY`](task_dag.md#session_managed_identity--provision-a-session-managed-sa).
+Agentplane-owned principal and Kubernetes account adapter open. A caller can select an authorized
+existing SA that the Session does not manage. Automatic creation and deletion of a separate SA
+for every Session is desirable later but not required now. A central-sampler Session may need its
+identity and permissions without an Environment. If Session-managed SA provisioning is selected
+later, Dispatcher is its proposed owner; creation, deletion, bindings, credentials, sharing and
+attachment lifetimes still need a contract. See
+[`SESSION_MANAGED_IDENTITY`](task_dag.md#session_managed_identity--provision-a-session-managed-sa).
 
 **Candidate Session spec:** the operator suggests putting the agent ServiceAccount in the Session's
 spec. This could make the Session's intended identity explicit at creation and keep it independent
@@ -528,16 +530,28 @@ lifetime; whether its identity association can change remains a separate decisio
 
 **Shared-SA tradeoff:** PolicyBindings name a ServiceAccount subject, and matching grants combine additively. If two environments use the same SA, their bindings’ grants can combine for that subject, so a grant intended for one can apply to the other. A shared SA therefore changes the current per-Sandbox permission granularity unless policy is redesigned with additional trustworthy scope. Sharing may be right for environments intentionally in the same privilege domain; it is not automatically equivalent to today’s per-agent permission assignment.
 
+An agent that needs additional permissions can request an approved PolicyBinding for its existing
+SA; this can grant Kubernetes roles, Agentplane Actions or scoped egress credential substitution.
+The current [temporary-grant guidance](../action_service/docs/agents/kubernetes.md#request-a-temporary-policybinding)
+uses a Kubernetes admin Action, and [`AGENT_PERMISSION_REQUESTS`](task_dag.md#agent_permission_requests--an-action-type-and-approval-view-for-permission-requests)
+tracks a dedicated request and approval view. A grant applies to the SA and therefore to every
+workload or Session able to use it; it is not per-Session isolation. A separate SA for extra
+Kubernetes permissions is a possible future credential/provisioning feature. Creating one by itself
+does not change an already running Environment's Pod-bound egress identity or authorize it to use
+that SA. The GitHub bot case can instead use an existing EgressCredential, a matching host/method/path
+egress rule and a PolicyBinding for the effective caller; external GitHub permissions and those of
+any shared SA remain shared rather than becoming a unique external account for each Session.
+
 ### Session-managed SA and native creation order
 
 Today the form selects PolicySets for a new Sandbox, whose controller creates and owns its SA and
-binding; Sessions created in that Sandbox share it. The intended Session form instead defaults to
-creating a Session-managed SA with preset, editable PolicySets, and also offers an authorized existing
-SA without taking ownership or changing its grants. Dispatcher records the Session identity intent,
-reconciles its managed SA and binding, observes the object UID and reports provisioning progress.
-It acts as the Session owner in the existing Runner Gateway binary; no new identity service is
-selected. Actual delegation for central-sampler calls must prove both actor and effective caller;
-an SA reference alone cannot authenticate or authorize a call.
+binding; Sessions created in that Sandbox share it. Initially a Session may use an authorized
+existing SA without taking ownership or changing its grants. Preserve the web's preset and editable
+PolicySets where it creates an Environment or an explicit grant, and show when the chosen SA is
+shared. Creating a new Session-managed SA and letting Dispatcher reconcile its identity intent,
+binding, observed UID and status remains a later option, not a prerequisite. No new identity
+service is selected. Actual delegation for central-sampler calls must prove both actor and effective
+caller; an SA reference alone cannot authenticate or authorize a call.
 
 An environment-hosted Session spec currently requires an already existing exact Environment UID;
 central sampler V1 also requires one fixed executor Environment. One candidate resolves the ordering:
@@ -545,7 +559,8 @@ create an **unbound, non-running Environment resource**, persist the Session wit
 managed-SA intent, provision the SA, bind the exact Environment to that SA, then start its workload
 and materialize the Session. The Session could instead use an authorized existing SA already bound to
 an Environment. Pre-provisioning an SA and other reservation approaches remain alternatives; this
-sequence is not yet a chosen API or implemented behavior.
+sequence is not yet a chosen API or implemented behavior. Using an already bound Environment and
+its existing SA does not require a Session-managed SA or an unbound-Environment creation API.
 
 The review must settle who may claim and bind an Environment, how competing claims are serialized,
 who cleans up abandoned unbound Environments or partially provisioned SAs, and how retries and
@@ -567,7 +582,8 @@ selecting the workload identity; changing the SA of an already-running Pod needs
 separately designed credential mechanism. See
 [`ENVIRONMENT_IDENTITY_BINDING_DESIGN`](task_dag.md#environment_identity_binding_design--environment-sa-binding-and-session-creation-order).
 
-**Open: materialization cost.** A distinct live SA, PolicyBinding and possibly native RBAC objects
+**Later option: materialization cost.** Per-Session SA management is not required initially. A
+distinct live SA, PolicyBinding and possibly native RBAC objects
 for every retained Session could accumulate in Kubernetes. Compare eager creation with reserving
 the Session's SA name and materializing it only when an authorized operation needs it. The operator
 expects fewer than 10,000 Sessions in existence at present and considers eager SAs likely acceptable;
