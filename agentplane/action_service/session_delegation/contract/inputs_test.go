@@ -2,7 +2,9 @@ package contract
 
 import (
 	"encoding/json"
+	"maps"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -16,10 +18,10 @@ func TestInputsUseApprovedActionNamesAndSchemas(t *testing.T) {
 	}
 	environments := inputs.EnvironmentActions()
 	sessions := inputs.SessionActions()
-	if got, want := sortedKeys(environments), []string{"get", "list", "resume"}; !reflect.DeepEqual(got, want) {
+	if got, want := slices.Sorted(maps.Keys(environments)), []string{"get", "list", "resume"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("environment actions = %v, want %v", got, want)
 	}
-	if got, want := sortedKeys(sessions), []string{"cancel_input", "create", "get", "interrupt_turn", "observe_input", "read_turns", "submit_input"}; !reflect.DeepEqual(got, want) {
+	if got, want := slices.Sorted(maps.Keys(sessions)), []string{"cancel_input", "create", "get", "interrupt_turn", "observe_input", "read_turns", "submit_input"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("session actions = %v, want %v", got, want)
 	}
 	assertProperties(t, inputs.ListEnvironments.Definition().InputSchema, []string{"after", "limit"}, []string{"limit"})
@@ -113,33 +115,17 @@ func assertProperties(t *testing.T, schema json.RawMessage, wantProperties, want
 	if err := json.Unmarshal(schema, &object); err != nil {
 		t.Fatalf("unmarshal schema: %v", err)
 	}
-	if got := sortedKeys(object.Properties); !reflect.DeepEqual(got, wantProperties) {
+	if got := slices.Sorted(maps.Keys(object.Properties)); !reflect.DeepEqual(got, wantProperties) {
 		t.Errorf("schema properties = %v, want %v", got, wantProperties)
 	}
-	if got := sortStrings(append([]string(nil), object.Required...)); !reflect.DeepEqual(got, sortStrings(append([]string(nil), wantRequired...))) {
-		t.Errorf("schema required = %v, want %v", got, wantRequired)
+	gotRequired := append([]string(nil), object.Required...)
+	wantRequiredSorted := append([]string(nil), wantRequired...)
+	slices.Sort(gotRequired)
+	slices.Sort(wantRequiredSorted)
+	if !reflect.DeepEqual(gotRequired, wantRequiredSorted) {
+		t.Errorf("schema required = %v, want %v", gotRequired, wantRequired)
 	}
 	if object.Additional == nil || *object.Additional {
 		t.Errorf("schema additionalProperties = %v, want false", object.Additional)
 	}
-}
-
-func sortedKeys[V any](values map[string]V) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	// The expected keys are small fixed lists, so sorting here keeps the assertion dependency-free.
-	return sortStrings(keys)
-}
-
-func sortStrings(values []string) []string {
-	for i := range values {
-		for j := i + 1; j < len(values); j++ {
-			if values[j] < values[i] {
-				values[i], values[j] = values[j], values[i]
-			}
-		}
-	}
-	return values
 }
