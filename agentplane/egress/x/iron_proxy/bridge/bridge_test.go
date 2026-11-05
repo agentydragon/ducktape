@@ -33,6 +33,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+var ironProxyBinaryRlocation, ironProxyPatchedBinaryRlocation string
+
 const (
 	testAudience = "iron-bridge-test"
 	testToken    = "hop-token-plain-test-value"
@@ -264,9 +266,9 @@ func startConfiguredIronProxy(t *testing.T, transformAddress string, settings ir
 	var binaryRlocation string
 	switch settings.binary {
 	case "binary":
-		binaryRlocation = os.Getenv("IRON_PROXY_BINARY_RLOCATION")
+		binaryRlocation = ironProxyBinaryRlocation
 	case "patched_binary":
-		binaryRlocation = os.Getenv("IRON_PROXY_PATCHED_BINARY_RLOCATION")
+		binaryRlocation = ironProxyPatchedBinaryRlocation
 	default:
 		t.Fatalf("unknown iron proxy binary %q", settings.binary)
 	}

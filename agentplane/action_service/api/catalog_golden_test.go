@@ -11,6 +11,8 @@ import (
 	"github.com/bazelbuild/rules_go/go/runfiles"
 )
 
+var catalogGoldenRlocation string
+
 // executorKindNames are the stable values used in the catalog view contract.
 var executorKindNames = map[action_servicepb.ExecutorKind]string{
 	action_servicepb.ExecutorKind_EXECUTOR_KIND_MCP:                "mcp",
@@ -21,7 +23,7 @@ var executorKindNames = map[action_servicepb.ExecutorKind]string{
 
 // The explicit view expectations cover settings accepted by both catalog construction and the API projection.
 func TestCatalogViewsMatchTheirContractFixtures(t *testing.T) {
-	path, err := runfiles.Rlocation(os.Getenv("ACTION_SERVICE_CATALOG_GOLDEN_RLOCATION"))
+	path, err := runfiles.Rlocation(catalogGoldenRlocation)
 	if err != nil {
 		t.Fatal(err)
 	}

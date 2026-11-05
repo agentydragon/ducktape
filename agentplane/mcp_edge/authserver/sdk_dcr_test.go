@@ -3,7 +3,6 @@ package authserver
 import (
 	"context"
 	"net/http"
-	"os"
 	"os/exec"
 	"testing"
 	"time"
@@ -13,6 +12,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/mcpserver"
 )
 
+var sdkDCRClientRlocation string
+
 func TestPythonSDKRegistersAgainstProductionHandlers(t *testing.T) {
 	h := startWithResource(t, func(server *Server) http.Handler {
 		// Registration stops before authorization. The production auth middleware
@@ -21,7 +22,7 @@ func TestPythonSDKRegistersAgainstProductionHandlers(t *testing.T) {
 			ResourceMetadataURL: server.ResourceMetadataURL(),
 		})
 	})
-	binary, err := runfiles.Rlocation(os.Getenv("SDK_DCR_CLIENT_RLOCATION"))
+	binary, err := runfiles.Rlocation(sdkDCRClientRlocation)
 	if err != nil {
 		t.Fatal(err)
 	}

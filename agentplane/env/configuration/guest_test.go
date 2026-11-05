@@ -11,10 +11,12 @@ import (
 	"github.com/bazelbuild/rules_go/go/runfiles"
 )
 
+var environmentRuntimeRlocation string
+
 func TestGuestResourcePropertiesModeValidatesSeedBeforeOutput(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	writeJSONFixture(t, configPath, validGuestConfiguration(t))
-	binary, err := runfiles.Rlocation(os.Getenv("ENVIRONMENT_RUNTIME_RLOCATION"))
+	binary, err := runfiles.Rlocation(environmentRuntimeRlocation)
 	if err != nil {
 		t.Fatal(err)
 	}

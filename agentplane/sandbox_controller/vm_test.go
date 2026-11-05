@@ -20,6 +20,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+var vmGuestContractRlocation string
+
 const workspaceVolume = "workspace"
 
 type vmGuestContract struct {
@@ -48,7 +50,7 @@ type vmGuestContract struct {
 
 func readVMGuestContract(t *testing.T) vmGuestContract {
 	t.Helper()
-	path, err := runfiles.Rlocation(os.Getenv("VM_GUEST_CONTRACT_RLOCATION"))
+	path, err := runfiles.Rlocation(vmGuestContractRlocation)
 	if err != nil {
 		t.Fatal(err)
 	}
