@@ -977,14 +977,21 @@ paused and is not a prerequisite; `LOCAL_BAZEL` independently proves the VM-base
 
 ### `AGENT_PRINCIPAL_MODEL_DESIGN` — Agentplane principals and external identities
 
-**Decision, unscheduled; SA-first direction, 2026-11-04.** Evaluate making the agent's
-permission subject an Agentplane-owned principal, independent of a Kubernetes ServiceAccount.
-PolicyBindings could attach PolicySets to that principal; Kubernetes would be one external system
-where an adapter provisions an account and reconciles its RoleBindings, like another provider's
-account and roles. Initial Session/Environment separation uses Kubernetes SAs as the identity and
-permission subject; this wider identity migration is not its prerequisite. Decide
-the relationships and lifetimes of principals, Sessions and environments, who may act as a
-principal, whether associations can change, and how a central Session keeps its identity without
+**Decision, unscheduled; operator direction 2026-11-05: Agentplane-owned identity, no automatic
+ServiceAccount.** An agent's permission subject is an Agentplane identity, not a Kubernetes
+ServiceAccount, and an agent workload gets no ServiceAccount unless a binding grants it Kubernetes
+access; `NETWORK_WORKLOAD_IDENTITY` supplies the workload authentication this needs. Kubernetes is
+a downstream system: PolicyBindings attach PolicySets to the identity, the Policy Controller
+provisions the account and its RoleBindings while such a binding is live and removes them when
+none is, and the egress proxy substitutes a short-lived token for that account under the existing
+kubeconfig placeholder. The SA-first direction of 2026-11-04 is the migration adapter, not the
+identity: Session/Environment separation still proceeds on SAs, and this cutover is not its
+prerequisite, but no new SA-keyed contract should land that the cutover would undo. The object
+shapes, lifetimes and UX proposed on 2026-11-05 are in the
+[Session/environment model log](session_environment_model.md#discussion); they are a proposal
+until this node's exit. Decide
+the relationships and lifetimes of identities, Sessions and environments, who may act as an
+identity, whether associations can change, and how a central Session keeps its identity without
 an environment. The [Session/environment model](session_environment_model.md) records the
 related lifecycle discussion and selected direction. `SESSION_IDENTITY_CONTRACT` tracks the focused
 identity and same-Environment admission decisions needed for Session separation; coordinate those
@@ -1441,7 +1448,7 @@ flowchart LR
     ACTION_SURFACES_DESIGN --> AGENT_PERMISSION_REQUESTS
     SANDBOX_RBAC[Deferred: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Deferred: public-route security check]
-    NETWORK_WORKLOAD_IDENTITY[Unscheduled: network-level workload identity]
+    NETWORK_WORKLOAD_IDENTITY[Selected: SPIFFE workload authentication]
     PC_KUBERNETES_POLICY_SET[Unscheduled: public-coder's Kubernetes access as one PolicySet]
 ```
 
@@ -1507,14 +1514,24 @@ cover invalid signatures. Close the remaining route-wiring uncertainty with an u
 request and a private-API request through the public hostname: both must be refused, without
 creating subscriptions or inbox entries. Record the result once; no exhaustive provider matrix.
 
-### `NETWORK_WORKLOAD_IDENTITY` — network-level workload identity
+### `NETWORK_WORKLOAD_IDENTITY` — SPIFFE as the one way agent workloads authenticate
 
-**Unscheduled; operator, 2026-10-12 PDT: consider later.** Sandboxes and other workloads prove
-their identity to Agentplane services at the network layer, with Cilium mutual authentication
-(SPIFFE/SPIRE) or a service mesh, instead of a projected token plus an egress proxy hop; services
-authorize by SPIFFE ID or workload label. Costs: SPIRE or a mesh to install, Cilium mutual
-authentication still in beta, and a second authentication scheme in every service beside projected
-tokens.
+**Selected direction; operator, 2026-11-05.** Agent workloads present SPIFFE X.509 SVIDs to the
+Runner Gateway and to the central egress proxy, not Kubernetes ServiceAccount tokens. The SVIDs are
+the cert-manager certificates the Sandbox Controller already requests per incarnation
+(`spiffe://agentplane/environment-runtime/<ns>/<sandbox-uid>/<credential-id>`), which Environment
+Runtime already presents on the control connection and the Firecracker launcher serves over the
+Workload API; no SPIRE install, Cilium mutual authentication or mesh is implied. The egress sidecar
+or relay presents the same SVID on its hop in place of the projected proxy-audience token, and the
+proxy resolves the caller from the verified SPIFFE ID with the transport package the Gateway uses.
+Platform routes that substitute per-audience projected tokens today (Notification, Dispatcher,
+runner ingress) need a replacement the destination verifies itself, never a proxy-asserted caller;
+design that before removing the projected tokens. Consequence for `AGENT_PRINCIPAL_MODEL_DESIGN`:
+the Pod's ServiceAccount stops being what authenticates an agent, and no agent is provisioned one by
+default. Costs that stand: a second authentication scheme in each agent-facing service during the
+migration, and the projected-token path kept for non-SVID workloads the proxy fronts (the public
+coder's OpenClaw). **Exit:** the egress hop and one platform route authenticate an SVID end to end
+in the system tests; the Gateway path is already covered.
 
 ## 7. Our own Sandbox resource: Sessions that outlive their Pod
 
@@ -2281,9 +2298,11 @@ not block the focused Session identity work or authorize a blanket security chan
 
 ### `SESSION_IDENTITY_CONTRACT` — Session identity and shared-Environment admission
 
-**Decision; operator direction updated 2026-11-04.** Use Kubernetes ServiceAccounts as agent
-identities initially; Session/Environment separation does not wait for an Agentplane-owned identity
-layer. A Session's durable SA principal is its namespace and name, consistent with Kubernetes RBAC;
+**Decision; operator direction updated 2026-11-04, scoped 2026-11-05.** Use Kubernetes
+ServiceAccounts as agent identities initially; Session/Environment separation does not wait for an
+Agentplane-owned identity layer. Since 2026-11-05 this SA-based identity is the migration adapter
+for `AGENT_PRINCIPAL_MODEL_DESIGN` and `NETWORK_WORKLOAD_IDENTITY`: keep the UID fencing, and add no
+new SA-keyed contract the identity cutover would have to undo. A Session's durable SA principal is its namespace and name, consistent with Kubernetes RBAC;
 multiple Sessions may share one account. A same-name replacement is the same named principal but a
 different object incarnation. Retain and verify SA UIDs for authentication, attribution and fencing
 stale in-flight work; do not let a replacement inherit a token or an accepted operation's old fence.

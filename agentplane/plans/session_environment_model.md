@@ -99,9 +99,9 @@ tracks these prerequisites and the later data-preserving migration.
 Decisions still needed include the Session/environment principal and privilege relationship;
 attachment authorization, revision and History publication; inbox and History behavior after
 Environment deletion; explicit Session-deletion and command-receipt retention; and which component
-wakes a suspended environment under which authorization. In particular, an Agentplane principal and external identity
-provisioning are directions to evaluate, not a decision to use any particular identity provider or
-share a Kubernetes ServiceAccount. The related
+wakes a suspended environment under which authorization. Since 2026-11-05 an Agentplane-owned identity with SPIFFE
+workload authentication is the selected direction ([log](#discussion)); provisioning details and
+any identity-provider choice remain open, and nothing selects sharing a Kubernetes ServiceAccount. The related
 [Agentplane principal decision](task_dag.md#agent_principal_model_design--agentplane-principals-and-external-identities)
 covers identity provisioning and trust boundaries.
 
@@ -1434,6 +1434,21 @@ settled to failed or unknown according to its prior state, while accepted and te
 preserved. A same-name replacement cannot inherit work. The change does not make central V1
 environment-independent or retain Notification inboxes and command receipts after cleanup; those
 lifetimes and explicit Session deletion remain open.
+
+**2026-11-05 · SPIFFE authentication and no default ServiceAccount**
+
+The operator is confident that agent workloads should present SPIFFE certificates to the Gateway
+and the central egress proxy rather than Kubernetes ServiceAccount tokens, and that an agent should
+not automatically be provisioned a ServiceAccount: Agentplane owns the identity, and a Kubernetes
+account exists only while a binding grants that identity Kubernetes access. Policy objects stay in
+Kubernetes. The assistant proposed one `Identity` kind as the binding subject; a ServiceAccount per
+identity and apiserver that the Policy Controller creates with the first live Kubernetes grant and
+deletes with the last; TokenRequests bound to a controller-owned Secret, so removing the last grant
+invalidates outstanding tokens at the apiserver; and an `identityKubernetesToken` egress credential
+source replacing `projectedWorkloadToken` for `kubectl`. Temporary bindings keep `expiresAt`;
+identity deletion cascades through ownerReferences with no finalizer. Recorded in
+`NETWORK_WORKLOAD_IDENTITY` and `AGENT_PRINCIPAL_MODEL_DESIGN`; the object shapes are a proposal,
+not a decision, and the SA-first direction of 2026-11-04 becomes the migration adapter.
 
 **Still open**
 
