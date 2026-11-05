@@ -5,34 +5,11 @@ from dataclasses import replace
 
 import pytest
 import pytest_bazel
-from rich.console import Console
-from rich.segment import Segment
-from rich.text import Text
 
 from difftree.config import DEFAULT_CONFIG, Column, RenderConfig
 from difftree.conftest import make_diff_tree, render_to_string
-from difftree.diff_tree import DiffTree
 from difftree.parser import FileChange
 from difftree.progress_bar import BlockChars
-
-
-def _render_to_text_lines(diff_tree: DiffTree, width: int = 80) -> list[Text]:
-    """Render tree and return lines as Rich Text objects."""
-    console = Console(record=True, width=width)
-    console.print(diff_tree)
-
-    segments = console._record_buffer
-    lines = list(Segment.split_lines(segments))
-
-    text_lines = []
-    for line_segments in lines:
-        text = Text()
-        for seg in line_segments:
-            if not seg.is_control:
-                text.append(seg.text, style=seg.style)
-        text_lines.append(text)
-
-    return text_lines
 
 
 def _find_line_with(lines: list[str], substring: str) -> str:
@@ -223,14 +200,13 @@ def test_bar_proportionality():
     diff_tree = make_diff_tree(changes, config=config)
 
     # Render and extract plain text (no ANSI codes needed)
-    lines = _render_to_text_lines(diff_tree, width=80)
+    lines = render_to_string(diff_tree, width=80, force_terminal=False, color_system=None).splitlines()
 
     file_lines = {}
     for line in lines:
-        plain = line.plain
         for file_path in ["file1.py", "file2.py", "file3.py"]:
-            if file_path in plain:
-                file_lines[file_path] = plain
+            if file_path in line:
+                file_lines[file_path] = line
                 break
 
     # Count '+' for additions and '-' for deletions
@@ -324,14 +300,10 @@ def test_deletion_bar_alignment():
     diff_tree = make_diff_tree(changes, config=config)
 
     # Render and extract plain text
-    lines = _render_to_text_lines(diff_tree, width=120)
+    lines = render_to_string(diff_tree, width=120, force_terminal=False, color_system=None).splitlines()
 
     # Get file lines (skip root which is first)
-    file_lines = []
-    for line in lines:
-        plain = line.plain
-        if any(f in plain for f in ["file1.py", "file2.py", "file3.py"]):
-            file_lines.append(plain)
+    file_lines = [line for line in lines if any(f in line for f in ["file1.py", "file2.py", "file3.py"])]
 
     # Expecting 3 file lines
     assert len(file_lines) == 3, f"Expected 3 file lines, got {len(file_lines)}"

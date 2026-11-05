@@ -129,13 +129,11 @@ py_test(
     deps = [
         ":config",
         ":conftest",
-        ":diff_tree",
         ":parser",
         ":progress_bar",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//rich",
     ],
 )
 
