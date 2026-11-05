@@ -1449,7 +1449,9 @@ account so Flux and runtime writers can share one. The resulting proposal, `Iden
 TokenRequest at the proxy, lifetimes, migration and open questions, is in
 [identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md).
 Recorded in `NETWORK_WORKLOAD_IDENTITY` and `AGENT_PRINCIPAL_MODEL_DESIGN`; the object shapes are a
-proposal, not a decision, and the SA-first direction of 2026-11-04 becomes the migration adapter.
+proposal, not a decision, and the SA-first direction of 2026-11-04 stands until the cutover. The
+operator later accepted a single incompatible cutover with downtime until images converge, so the
+plan has no staged migration and no `serviceAccount` binding subject.
 
 **Still open**
 

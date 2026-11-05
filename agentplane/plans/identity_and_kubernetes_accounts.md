@@ -47,7 +47,7 @@ spec:
 status:
   workloadCredentials: # what authenticates as this identity; controller-written, never caller-supplied
     - spiffeID: spiffe://agentplane/environment-runtime/agentplane-staging/<sandbox-uid>/<credential-id>
-    - serviceAccount: { namespace: agentplane-staging, name: openclaw } # non-SVID workloads and migration
+    - serviceAccount: { namespace: agentplane-staging, name: openclaw } # workloads with no SVID only
 ```
 
 Who creates it decides its lifetime: the Sandbox Controller for a Sandbox-created agent (owned by the
@@ -81,9 +81,9 @@ status:
 
 ### `PolicyBinding` subject kinds
 
-`spec.subject` becomes a oneof: `identity`, `kubernetesAccount`, and `serviceAccount` for the
-migration only. The rest of the binding, its sets, `expiresAt` and ownership, is unchanged, so one
-expiry mechanism and one admission surface cover every grant.
+`spec.subject` becomes a oneof of `identity` and `kubernetesAccount`; the ServiceAccount subject
+goes with the cutover. The rest of the binding, its sets, `expiresAt` and ownership, is unchanged,
+so one expiry mechanism and one admission surface cover every grant.
 
 ```yaml
 kind: PolicyBinding # Flux: standing roles on the shared account
@@ -181,20 +181,36 @@ Nothing inside the sandbox ever holds a real token.
 | Widening a shared account for an hour | unchanged          | unchanged                                     | One expiring binding on the account        |
 | Identity deleted                      | gone               | Owned accounts garbage-collected              | Owned bindings garbage-collected           |
 
-## Migration
+## Cutover
 
-Expand, migrate, contract ([STYLE](../../STYLE.md) § General):
+One incompatible cutover, not a staged migration (operator, 2026-11-05: downtime in existing
+services until images converge is acceptable; [`AGENTS.md`](../AGENTS.md) § Deployed state is
+disposable). No dual readers, no `serviceAccount` binding subject, no tolerant decoding of SA-keyed
+rows. The change set lands together, and the PR states the rollback: revert the Flux pins and
+delete the objects of the new kinds.
 
-1. Add `Identity` and `KubernetesAccount`, the two new binding subject kinds and the credential
-   source. The Sandbox Controller creates an `Identity` per Sandbox and lists the Sandbox's SA under
-   `workloadCredentials`; readers resolve either subject kind. Nothing observable changes.
-2. The egress sidecar and the Firecracker relay present the SVID on the hop; the proxy accepts SVID
-   or projected token and resolves both to an identity. Rules move to identity subjects.
-3. Flux-authored accounts replace the static agent SAs (`claude-ai`, `haku-agent`); the `basic` set
-   binds every identity to `shared-diagnostics`; the kubeconfig gains contexts; `projectedWorkloadToken`
-   for the Kubernetes audience is removed.
-4. History, Dispatcher, Notification and the central sampler record and delegate as identities; the
-   Sandbox's SA stops being created once nothing authenticates by it.
+- **CRDs and catalog:** `Identity`, `KubernetesAccount`, the new `PolicyBinding` subject oneof and
+  the `kubernetesAccount` credential source; Flux-rendered identities and accounts for the static
+  agents (`claude-ai`, `haku-agent`) in place of their ServiceAccounts, `shared-diagnostics` with
+  its roles binding, every identity binding rewritten from its SA subject, and the `basic` set
+  carrying the use binding for the shared account.
+- **Controllers:** the Sandbox Controller writes an `Identity` and its binding per Sandbox and no
+  ServiceAccount, and records the SPIFFE ID on the identity; the Policy Controller reconciles
+  accounts and identity subjects and nothing else.
+- **Data plane:** the egress sidecar and the Firecracker relay present the SVID on the hop; the
+  proxy accepts SVIDs, resolves identities, and drops the proxy-audience and Kubernetes-audience
+  projected tokens; the kubeconfig carries a context per account.
+- **Services:** History, Dispatcher, Notification, the Action Service, LLM ingress and the central
+  sampler authenticate, authorize and record by identity. Rows that pin an SA UID are rewritten by
+  the migration where the identity is known and marked historical where it is not, as History's
+  migration 8 did for harness provenance; same-principal reads of historical rows stay unavailable
+  and operator access covers them.
+
+What stops during convergence: every running Sandbox loses egress and platform routes from the
+moment the proxy drops projected tokens until its sidecar image carries the SVID hop, and `kubectl`
+until the kubeconfig and the shared account exist. The Gateway path is unaffected, since it
+verifies SVIDs already. Running Sandboxes are replaced rather than patched: a Pod's ServiceAccount
+cannot change in place, and the new launch writes the identity.
 
 ## Open questions and tricky bits
 
@@ -221,10 +237,10 @@ Expand, migrate, contract ([STYLE](../../STYLE.md) § General):
    instructions to add a context, or a single placeholder with the account chosen another way.
 6. **Central sampler as an identity.** Delegation today carries an SA UID as the effective caller;
    it must carry an identity reference, and the sampler's own account must never become the agent's.
-7. **Stored principals.** History's `execution_principal` and Dispatcher rows pin SA UIDs. Under
-   Agentplane's disposable-staging rule the shape can change, but the preservation exception for
-   service extractions applies to retained Sessions; decide whether old rows get an identity or stay
-   `historical`.
+7. **Stored principals.** History's `execution_principal` and Dispatcher rows pin SA UIDs. The
+   cutover migration rewrites rows whose Sandbox still exists to its identity and marks the rest
+   historical; confirm that is enough for the retained Sessions the operator wants readable, since
+   same-principal reads of historical rows are unavailable.
 8. **Same-environment invariant** ([identity contract](task_dag.md#session_identity_contract--session-identity-and-shared-environment-admission))
    becomes "same identity"; co-resident Sessions share one SVID, so it holds by construction, and
    admission must still refuse a Session whose identity differs.

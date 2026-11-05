@@ -984,9 +984,10 @@ access; `NETWORK_WORKLOAD_IDENTITY` supplies the workload authentication this ne
 a downstream system: PolicyBindings attach PolicySets to the identity, the Policy Controller
 provisions the account and its RoleBindings while such a binding is live and removes them when
 none is, and the egress proxy substitutes a short-lived token for that account under the existing
-kubeconfig placeholder. The SA-first direction of 2026-11-04 is the migration adapter, not the
-identity: Session/Environment separation still proceeds on SAs, and this cutover is not its
-prerequisite, but no new SA-keyed contract should land that the cutover would undo. The object
+kubeconfig placeholder. The SA-first direction of 2026-11-04 is what exists until the cutover, not
+the identity: Session/Environment separation still proceeds on SAs, and this cutover is not its
+prerequisite, but no new SA-keyed contract should land that the cutover would undo. The cutover is
+one incompatible change with accepted downtime, not a staged migration (operator, 2026-11-05). The object
 shapes, lifetimes, flows and open questions proposed on 2026-11-05 are in
 [identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md);
 they are a proposal until this node's exit. Decide
@@ -2300,9 +2301,9 @@ not block the focused Session identity work or authorize a blanket security chan
 
 **Decision; operator direction updated 2026-11-04, scoped 2026-11-05.** Use Kubernetes
 ServiceAccounts as agent identities initially; Session/Environment separation does not wait for an
-Agentplane-owned identity layer. Since 2026-11-05 this SA-based identity is the migration adapter
-for `AGENT_PRINCIPAL_MODEL_DESIGN` and `NETWORK_WORKLOAD_IDENTITY`: keep the UID fencing, and add no
-new SA-keyed contract the identity cutover would have to undo. A Session's durable SA principal is its namespace and name, consistent with Kubernetes RBAC;
+Agentplane-owned identity layer. Since 2026-11-05 this SA-based identity lasts until the one-shot
+cutover under `AGENT_PRINCIPAL_MODEL_DESIGN` and `NETWORK_WORKLOAD_IDENTITY`: keep the UID fencing,
+and add no new SA-keyed contract that cutover would have to undo. A Session's durable SA principal is its namespace and name, consistent with Kubernetes RBAC;
 multiple Sessions may share one account. A same-name replacement is the same named principal but a
 different object incarnation. Retain and verify SA UIDs for authentication, attribution and fencing
 stale in-flight work; do not let a replacement inherit a token or an accepted operation's old fence.
