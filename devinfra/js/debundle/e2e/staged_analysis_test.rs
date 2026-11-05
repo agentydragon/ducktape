@@ -773,6 +773,68 @@ fn staged(opts: FixtureOpts<'_>) -> (Staged, ValidateFixture) {
     (staged, fixture)
 }
 
+#[test]
+fn projection_rejects_unresolved_and_duplicate_selectors_before_writing() {
+    let source = "function first() { return 'same'; }\nfunction second() { return 'same'; }\n";
+    for (label, modules, outcome) in [
+        (
+            "missing",
+            vec![logical_module(
+                "selected",
+                &[Member::source_alpha(
+                    "Missing",
+                    "function selected() { return 'absent'; }",
+                )],
+            )],
+            "no_match",
+        ),
+        (
+            "ambiguous",
+            vec![logical_module(
+                "selected",
+                &[Member::source_alpha(
+                    "Ambiguous",
+                    "function selected() { return 'same'; }",
+                )],
+            )],
+            "ambiguous",
+        ),
+        (
+            "duplicate",
+            vec![
+                logical_module("left", &[Member::renamed("Left", "first")]),
+                logical_module("right", &[Member::renamed("Right", "first")]),
+            ],
+            "duplicate_claim",
+        ),
+    ] {
+        let fixture = write_validate_fixture_spec(FixtureOpts::new(source, modules));
+        let root = fixture.spec_path.parent().unwrap();
+        for dedicated in [false, true] {
+            let out = root.join(format!("{label}-{dedicated}.projection"));
+            let args = ["--spec", path(&fixture.spec_path), "--out", path(&out)];
+            let result = if dedicated {
+                command_with(&projector_path(), &args)
+            } else {
+                let mut full_args = vec!["spec", "project-analysis"];
+                full_args.extend(args);
+                command(&full_args)
+            };
+            assert!(
+                !result.status.success(),
+                "{label} selector accepted by dedicated={dedicated}: {}",
+                result.stderr
+            );
+            assert!(
+                result.stderr.contains(&format!("[error: {outcome}]")),
+                "{label} lost its selector diagnostic with dedicated={dedicated}: {}",
+                result.stderr
+            );
+            assert!(!out.exists(), "{label} wrote a rejected projection");
+        }
+    }
+}
+
 fn assert_projector_matches_flat(staged: &Staged, label: &str) {
     let output = staged.root().join(format!("{label}.projector"));
     let args = ["--spec", path(&staged.spec), "--out", path(&output)];
