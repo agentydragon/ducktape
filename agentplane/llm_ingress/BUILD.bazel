@@ -91,6 +91,7 @@ go_test(
     data = [":server"],
     embed = [":server_lib"],
     deps = [
+        "//agentplane/testing/configtest",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/workload_auth/auth",
         "@io_bazel_rules_go//go/runfiles",
