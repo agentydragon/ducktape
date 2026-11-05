@@ -59,7 +59,7 @@ env -u PYTHONPATH uvx --from inspect-ai inspect view start --log-dir eval_logs
 ```
 
 `uvx` resolves Inspect into a one-shot venv. The `env -u PYTHONPATH`
-prefix is the same NixOS dodge `cluster/docs/inference/runs/.../run_aime.py`
+prefix is the same NixOS dodge the shared <cluster/docs/inference/runs/aime/run_aime.py>
 uses — without it the Nix-store `pydantic` leaks into the uv venv and
 clashes with the venv's `pydantic_core`. If `inspect-ai` is installed
 globally (`uv tool install inspect-ai`), `inspect view start --log-dir …`
