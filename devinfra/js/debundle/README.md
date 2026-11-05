@@ -101,13 +101,9 @@ chunk_renames:
   `logical_modules` is keyed by chunk ID.
 - `chunk_renames` uses the canonical flat-spec shape, keyed by input chunk ID.
   It applies in-place readable names to bindings left in that chunk's entry
-  (residual) body; it creates no module and does not change ownership. Each key
+  (residual) body; it creates no module and does not change ownership. This is
+  the sole rename source for every chunk, including the main chunk. Each key
   must have an `unassigned_mode`, as required by flat-spec validation.
-- The main chunk's renames may come from the existing `binding_patches.yaml`,
-  which applies to `main_chunk_id` only, or from `chunk_renames`. A main-chunk
-  entry in `chunk_renames` combined with a nonempty `binding_patches.yaml` is
-  rejected. `chunk_renames` entries for other chunks can coexist with the
-  existing file.
 - Graph queries derive module scope and binding homes from `module_roots` and
   module YAML. They report source bindings and module ownership, so
   `chunk_renames` does not add a graph owner. The `bindings` listing and editing

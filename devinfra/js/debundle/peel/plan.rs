@@ -28,8 +28,7 @@ use analysis::{
 };
 use graph_provenance::VerifiedGraphSourceContext;
 use spec_modules::{
-    collect_module_files, default_binding_patches_path, load_binding_patch_members,
-    module_path_from_file, read_module_claims, read_module_file,
+    collect_module_files, module_path_from_file, read_module_claims, read_module_file,
 };
 use spec_tree::ModuleTreeScope;
 
@@ -415,7 +414,6 @@ pub struct BindingHomeReport {
 #[serde(rename_all = "snake_case")]
 pub enum BindingHomeSourceKind {
     Module,
-    BindingPatch,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -719,7 +717,6 @@ pub struct ExplainSession {
     common: CommonArgs,
     tree_config: Option<PathBuf>,
     module_files: Vec<PathBuf>,
-    includes_binding_patches: bool,
     source_root: Option<PathBuf>,
     source_context: Option<VerifiedGraphSourceContext>,
     size_cap_lines: usize,
@@ -754,7 +751,7 @@ impl ExplainSession {
         }
         let graph = load_graph(&common.dependency_graph_path)?;
         let report = graph.report();
-        let (module_files, includes_binding_patches) = if let Some(config) = &tree_config {
+        let module_files = if let Some(config) = &tree_config {
             let scope = ModuleTreeScope::from_config(config, &report.chunk_id)?;
             let mut module_files = Vec::new();
             for root in scope.roots() {
@@ -764,9 +761,9 @@ impl ExplainSession {
                 }
             }
             module_files.sort();
-            (module_files, scope.includes_binding_patches())
+            module_files
         } else {
-            (collect_module_files(&common.modules_root)?, true)
+            collect_module_files(&common.modules_root)?
         };
         Ok(Self {
             program_graph: load_program_graph(&common.dependency_graph_path, report)?,
@@ -774,7 +771,6 @@ impl ExplainSession {
             common,
             tree_config,
             module_files,
-            includes_binding_patches,
             source_root,
             source_context,
             size_cap_lines,
@@ -799,7 +795,6 @@ impl ExplainSession {
             self.binding_homes = Some(binding_homes(
                 &self.common.modules_root,
                 &self.module_files,
-                self.includes_binding_patches,
             )?);
         }
         let needs_proposals = args.include_proposals
@@ -1589,21 +1584,6 @@ struct PatchSet {
 
 fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
     let mut sets = Vec::<PatchSet>::new();
-    let binding_patches_path = default_binding_patches_path(modules_root);
-    let patch_bindings: BTreeSet<String> = load_binding_patch_members(modules_root)?
-        .into_iter()
-        .filter_map(|member| member.selector.binding.map(|binding| binding.name))
-        .collect();
-    if !patch_bindings.is_empty() {
-        sets.push(PatchSet {
-            path: "binding_patches".to_string(),
-            file: binding_patches_path,
-            bindings: patch_bindings,
-            member_selectors: Vec::new(),
-            anonymous_selectors: BTreeSet::new(),
-            source_matches: Vec::new(),
-        });
-    }
     for file in collect_module_files(modules_root)? {
         let claims = read_module_claims(&file)?;
         if claims.is_empty() {
@@ -1977,11 +1957,7 @@ fn source_unit_ids_for_diagnostic(
         .map(|diagnostic| diagnostic.source_unit_ids.clone())
 }
 
-fn binding_homes(
-    modules_root: &Path,
-    module_files: &[PathBuf],
-    includes_binding_patches: bool,
-) -> Result<Vec<BindingHomeReport>> {
+fn binding_homes(modules_root: &Path, module_files: &[PathBuf]) -> Result<Vec<BindingHomeReport>> {
     let mut homes = BTreeSet::new();
     for path in module_files {
         let module_path = module_path_from_file(path, modules_root);
@@ -1995,21 +1971,6 @@ fn binding_homes(
                 name: member.name.unwrap_or_default(),
                 source_kind: BindingHomeSourceKind::Module,
                 path: module_path.clone(),
-            });
-        }
-    }
-    if includes_binding_patches {
-        let patches_path = default_binding_patches_path(modules_root);
-        for member in load_binding_patch_members(modules_root)? {
-            let Some(binding_selector) = member.selector.binding else {
-                continue;
-            };
-            let binding = binding_selector.name;
-            homes.insert(BindingHomeReport {
-                binding,
-                name: member.name.unwrap_or_default(),
-                source_kind: BindingHomeSourceKind::BindingPatch,
-                path: patches_path.display().to_string(),
             });
         }
     }

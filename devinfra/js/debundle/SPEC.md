@@ -918,12 +918,11 @@ scoped to; several trees may name the same chunk, and their modules then share
 it as if authored in one tree.
 
 Tree specs also accept per-chunk `chunk_renames` with the flat-spec semantics;
-see the [tree authoring guide](README.md#getting-started) for its schema and
-source precedence. These names apply to bindings left in the chunk entry after
-module claims, without claiming or moving them. They do not change module-tree
-selector scope or graph-reported ownership. The main chunk's names may come
-from `chunk_renames` or the existing `binding_patches.yaml`; the compiler
-rejects both sources when the patch file has members.
+see the [tree authoring guide](README.md#getting-started) for its schema.
+These names apply to bindings left in the chunk entry after module claims,
+without claiming or moving them. They do not change module-tree selector scope
+or graph-reported ownership. `chunk_renames` is the sole source for these names
+in every chunk, including the main chunk.
 
 `selector.binding.kind: import_specifier` names an imported local. Source checks
 recognize named, default, and namespace imports. Logical-module member

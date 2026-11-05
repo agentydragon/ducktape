@@ -4,8 +4,6 @@
 //!
 //! * Enumerate emitted-module `*.yaml` files under a spec's
 //!   `modules/` root.
-//! * Deserialize the spec-root `binding_patches.yaml` stream for
-//!   non-emitting binding edits.
 //! * Deserialize each file's body via the canonical `ModuleFile`
 //!   shape (members + anonymous statements).
 //! * Deserialize flat transform specs through their canonical typed schema.
@@ -21,10 +19,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
 
 use spec::{
-    AnonymousStatementSelector, BindingSourceKind, Member, MemberSelectorSpec, ModulePath,
+    AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec, ModulePath,
     SourceMatchClaim, TransformSpec, is_residual_namespace_path,
 };
 
@@ -70,13 +67,6 @@ pub fn coalesce_source_match_claims(module: &mut ModuleFile) {
         }
     }
     module.source_matches = grouped;
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct BindingPatchesFile {
-    #[serde(default)]
-    pub members: Vec<Member>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -126,13 +116,6 @@ pub fn module_path_from_file(path: &Path, root: &Path) -> String {
         .to_string()
 }
 
-pub fn default_binding_patches_path(modules_root: &Path) -> PathBuf {
-    modules_root
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("binding_patches.yaml")
-}
-
 pub fn collect_module_files(root: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
     collect_module_files_into(root, &mut out)?;
@@ -163,11 +146,6 @@ pub fn read_module_file(path: &Path) -> Result<ModuleFile> {
 /// Read a flat transform spec with the same typed schema used by the pipeline.
 pub fn read_flat_transform_spec(path: &Path) -> Result<TransformSpec> {
     serde_yaml::from_slice(&graph_provenance::read_bytes(path)?)
-        .with_context(|| format!("parsing {}", path.display()))
-}
-
-fn read_binding_patches_file(path: &Path) -> Result<BindingPatchesFile> {
-    serde_yaml::from_str(&graph_provenance::read_to_string(path)?)
         .with_context(|| format!("parsing {}", path.display()))
 }
 
@@ -202,33 +180,9 @@ pub fn read_module_claims(path: &Path) -> Result<ModuleClaims> {
     module_claims(read_module_file(path)?)
 }
 
-pub fn load_binding_patch_members(modules_root: &Path) -> Result<Vec<Member>> {
-    let path = default_binding_patches_path(modules_root);
-    if !path.exists() {
-        graph_provenance::record_absent(&path)?;
-        return Ok(Vec::new());
-    }
-    let members = read_binding_patches_file(&path)?.members;
-    for (index, member) in members.iter().enumerate() {
-        let selector = member.selector.validate().with_context(|| {
-            format!(
-                "{}: member {index} requires exactly one binding selector",
-                path.display()
-            )
-        })?;
-        anyhow::ensure!(
-            matches!(selector, MemberSelectorSpec::Binding(_)),
-            "{}: member {index} requires a binding selector",
-            path.display(),
-        );
-    }
-    Ok(members)
-}
-
 /// Every chunk-top binding name claimed by an emitted `*.yaml`
 /// file's `selector.binding.name`, mapped to the module path that
-/// owns it. Binding patches are not included because they don't
-/// materialize as modules.
+/// owns it.
 ///
 /// Excludes:
 ///

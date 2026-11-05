@@ -700,32 +700,3 @@ fn misspelled_unassigned_mode_field_is_rejected() {
     assert!(!out.status.success(), "{}", out.stdout);
     assert!(out.stderr.contains("target_path"), "{}", out.stderr);
 }
-
-#[test]
-fn binding_patches_refuse_non_binding_selectors() {
-    let run = debundle_e2e_support::run_tree_fixture(
-        &debundle_e2e_support::TreeFixture {
-            chunks: &[("main", "const a = 1;")],
-            module_roots: &[("main", "main")],
-            modules: &[
-                ("main/empty.yaml", "members: []\n"),
-                (
-                    "../binding_patches.yaml",
-                    "members:\n  - name: renamed\n    selector:\n      cross_ref: { references: a }\n",
-                ),
-            ],
-        },
-        &[],
-    );
-    assert!(!run.result.status.success(), "{}", run.result.stdout);
-    assert!(
-        run.result.stderr.contains("binding_patches"),
-        "{}",
-        run.result.stderr
-    );
-    assert!(
-        run.result.stderr.contains("binding selector"),
-        "{}",
-        run.result.stderr
-    );
-}
