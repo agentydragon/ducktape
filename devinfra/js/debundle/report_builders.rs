@@ -9,7 +9,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use rayon::prelude::*;
 use swc_ecma_ast::Id;
 
-use analysis::graph::EdgeRole;
 use analysis::reports::author_inputs::AuthorInputLocations;
 use analysis::reports::schema::{
     CallbackFactoryCallbackSourceReport, CallbackFactoryUseReport, CommutingStatementsReport,
@@ -21,7 +20,7 @@ use analysis::{
     BindingReport, CallbackFactoryBarrierRejection, CallbackFactoryBarrierReport,
     CallbackFactoryCallArgumentWitnessReport, CallbackFactoryContractReport,
     CallbackFactoryRejectionReport, CallbackFactoryWriteWitnessReport, DependencyEdgeReport,
-    DependencyGraphReport, EdgeRoleReport, ModuleDestinationKind, ModuleEntry, ModuleId, ModuleKey,
+    DependencyGraphReport, ModuleDestinationKind, ModuleEntry, ModuleId, ModuleKey,
     ModuleQuotientReport, ModuleRole, Purity, PurityCauseReport, QuotientEdgeReport,
     QuotientSccReport, SourceUnitClass, SourceUnitReport,
 };
@@ -316,19 +315,7 @@ fn build_source_unit_nodes_and_edges(
         .collect();
     let edges = dependency_graph
         .iter_edges()
-        .map(|edge| DependencyEdgeReport {
-            id: edge.id.report_key(),
-            source: source_unit_key(edge.from),
-            target: source_unit_key(edge.to),
-            edge_kind: edge.reason.kind,
-            binding: edge.reason.binding.as_ref().map(|id| id.0.clone()),
-            statement_ordinal: edge.reason.statement_ordinal,
-            constrains_init_order: edge.reason.constrains_init_order(),
-            role: edge_role_report(edge.reason.role()),
-            sequenced_cause: edge.reason.sequenced_cause().cloned(),
-            commuting_premise: edge.reason.commuting_premise().cloned(),
-            premise_verdict: edge.reason.premise_verdict().cloned(),
-        })
+        .map(DependencyEdgeReport::from_edge)
         .collect();
     (nodes, edges)
 }
@@ -704,19 +691,6 @@ fn destination_kind(
     {
         ModuleRole::Specified => ModuleDestinationKind::Specified,
         ModuleRole::Unassigned => ModuleDestinationKind::Unassigned,
-    }
-}
-
-/// Map a typed [`EdgeRole`] to its wire-format projection. `None`
-/// is shorthand for `EdgeRole::Direct` (skipped from the JSON wire
-/// shape via `skip_serializing_if = Option::is_none`); promoted
-/// edges round-trip through [`EdgeRoleReport::PromotedAtInit`].
-fn edge_role_report(role: EdgeRole) -> Option<EdgeRoleReport> {
-    match role {
-        EdgeRole::Direct => None,
-        EdgeRole::PromotedAtInit { callee_source_unit } => Some(EdgeRoleReport::PromotedAtInit {
-            callee_source_unit: source_unit_key(callee_source_unit),
-        }),
     }
 }
 

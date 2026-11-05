@@ -38,14 +38,15 @@ use source_identity::SourceUnitId;
 use crate::analysis_inputs::ResolvedCommutingStatements;
 use crate::facts::StatementFacts;
 use crate::graph::{
-    DependencyGraph, DependencyGraphBuildError, GraphOptions, build_dependency_graph_with,
+    DependencyEdge, DependencyGraph, DependencyGraphBuildError, GraphOptions,
+    build_dependency_graph_with,
 };
 
 /// One atomic factor group: a set of source units that any valid
-/// factorization must keep co-located, plus the `DepKind`s of the
-/// constraining edges *inside* the group (everything except
-/// `LazyUse` and `HoistedUse`) — used by [`crate::assignment_assembly`] to explain *why*
-/// the group is forced together when its claims conflict.
+/// factorization must keep co-located, plus the `DepKind`s of edges that
+/// contribute arcs to `G_atomic` inside the group — used by
+/// [`crate::assignment_assembly`] to explain *why* the group is forced
+/// together when its claims conflict.
 ///
 /// `causes` is a `BTreeSet<DepKind>` so iteration order is the
 /// `DepKind` `Ord` order — consumers that serialise the field can
@@ -64,6 +65,88 @@ pub struct AtomicGroup {
 pub struct DependencyGraphAndAtomicGroups {
     pub dependency_graph: DependencyGraph,
     pub atomic_groups: Vec<AtomicGroup>,
+}
+
+/// How one dependency edge contributes to the atomic-group path projection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AtomicGroupPathProjection {
+    /// A directed at-init read or sequencing constraint.
+    DirectedInitOrder,
+    /// A two-way ownership constraint, such as a rebind or co-location edge.
+    SymmetricColocation,
+}
+
+/// How a witness path traverses the dependency edge's original endpoints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AtomicGroupPathOrientation {
+    /// The path follows `edge.from → edge.to`.
+    Forward,
+    /// The path follows `edge.to → edge.from`; valid only for a symmetric
+    /// co-location projection.
+    Reverse,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct AtomicConstraintArc {
+    pub from: SourceUnitId,
+    pub to: SourceUnitId,
+    pub projection: AtomicGroupPathProjection,
+    pub orientation: AtomicGroupPathOrientation,
+}
+
+/// Project a dependency edge into the exact directed arcs used by `G_atomic`.
+/// Both SCC construction and conflict-witness traversal consume this helper so
+/// inert and non-forcing edge kinds cannot enter one projection but not the
+/// other.
+pub(crate) fn atomic_constraint_arcs(
+    edge: &DependencyEdge,
+) -> impl Iterator<Item = AtomicConstraintArc> {
+    let none = [None, None];
+    if edge.from == edge.to {
+        return none.into_iter().flatten();
+    }
+    let forward = |projection, orientation| {
+        Some(AtomicConstraintArc {
+            from: edge.from,
+            to: edge.to,
+            projection,
+            orientation,
+        })
+    };
+    let reverse = |projection| {
+        Some(AtomicConstraintArc {
+            from: edge.to,
+            to: edge.from,
+            projection,
+            orientation: AtomicGroupPathOrientation::Reverse,
+        })
+    };
+    match edge.reason.kind {
+        DepKind::EagerUse | DepKind::Sequenced if edge.reason.constrains_init_order() => [
+            forward(
+                AtomicGroupPathProjection::DirectedInitOrder,
+                AtomicGroupPathOrientation::Forward,
+            ),
+            None,
+        ],
+        DepKind::EagerUse | DepKind::Sequenced | DepKind::LazyUse | DepKind::HoistedUse => none,
+        DepKind::EagerRebind
+        | DepKind::LazyRebind
+        | DepKind::DeferredRebind
+        | DepKind::LocalEffect
+        | DepKind::CoDeclaration
+        | DepKind::CoLocation => {
+            let projection = AtomicGroupPathProjection::SymmetricColocation;
+            [
+                forward(projection, AtomicGroupPathOrientation::Forward),
+                reverse(projection),
+            ]
+        }
+    }
+    .into_iter()
+    .flatten()
 }
 
 /// Build a dependency graph from chunk facts under the per-chunk
@@ -91,26 +174,8 @@ pub fn compute_atomic_groups(dependency_graph: &DependencyGraph) -> Vec<AtomicGr
         g_atomic.add_node(node.id);
     }
     for edge in dependency_graph.iter_edges() {
-        if edge.from == edge.to {
-            continue;
-        }
-        match edge.reason.kind {
-            // A `Sequenced` edge an author `commuting_statements` premise
-            // made inert constrains nothing, so it must not close a group.
-            DepKind::EagerUse | DepKind::Sequenced if edge.reason.constrains_init_order() => {
-                g_atomic.add_edge(edge.from, edge.to, ());
-            }
-            DepKind::EagerUse | DepKind::Sequenced => {}
-            DepKind::LazyUse | DepKind::HoistedUse => {}
-            DepKind::EagerRebind
-            | DepKind::LazyRebind
-            | DepKind::DeferredRebind
-            | DepKind::LocalEffect
-            | DepKind::CoDeclaration
-            | DepKind::CoLocation => {
-                g_atomic.add_edge(edge.from, edge.to, ());
-                g_atomic.add_edge(edge.to, edge.from, ());
-            }
+        for arc in atomic_constraint_arcs(edge) {
+            g_atomic.add_edge(arc.from, arc.to, ());
         }
     }
     let sccs = tarjan_scc(&g_atomic);
@@ -130,9 +195,7 @@ pub fn compute_atomic_groups(dependency_graph: &DependencyGraph) -> Vec<AtomicGr
         })
         .collect();
     for edge in dependency_graph.iter_edges() {
-        if edge.from == edge.to
-            || matches!(edge.reason.kind, DepKind::LazyUse | DepKind::HoistedUse)
-        {
+        if atomic_constraint_arcs(edge).next().is_none() {
             continue;
         }
         let (Some(from_group), Some(to_group)) =
@@ -145,4 +208,71 @@ pub fn compute_atomic_groups(dependency_graph: &DependencyGraph) -> Vec<AtomicGr
         }
     }
     atomic_groups
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analysis_inputs::CommutingStatementsRef;
+    use crate::graph::{DependencyEdgeId, EdgeReason, EdgeRole};
+    use source_identity::SourceUnitOrdinal;
+
+    fn edge(kind: DepKind, inert: bool) -> DependencyEdge {
+        let reason = EdgeReason::synthetic(kind, SourceUnitOrdinal(0), EdgeRole::Direct);
+        let reason = if inert {
+            reason.with_commuting_premise(Some(CommutingStatementsRef {
+                defining_chunk: "static/app".to_owned(),
+                input_index: 0,
+            }))
+        } else {
+            reason
+        };
+        DependencyEdge {
+            id: DependencyEdgeId(0),
+            from: SourceUnitId(0),
+            to: SourceUnitId(1),
+            reason,
+        }
+    }
+
+    #[test]
+    fn atomic_projection_emits_only_the_canonical_forcing_arcs() {
+        for kind in [DepKind::LazyUse, DepKind::HoistedUse] {
+            assert_eq!(atomic_constraint_arcs(&edge(kind, false)).count(), 0);
+        }
+        assert_eq!(
+            atomic_constraint_arcs(&edge(DepKind::Sequenced, true)).count(),
+            0,
+            "an inert sequenced edge contributes no forcing evidence"
+        );
+
+        for kind in [DepKind::EagerUse, DepKind::Sequenced] {
+            let arcs = atomic_constraint_arcs(&edge(kind, false)).collect::<Vec<_>>();
+            assert_eq!(arcs.len(), 1, "{kind:?}");
+            assert_eq!(
+                arcs[0].projection,
+                AtomicGroupPathProjection::DirectedInitOrder
+            );
+            assert_eq!(arcs[0].orientation, AtomicGroupPathOrientation::Forward);
+        }
+
+        for kind in [
+            DepKind::EagerRebind,
+            DepKind::LazyRebind,
+            DepKind::DeferredRebind,
+            DepKind::LocalEffect,
+            DepKind::CoDeclaration,
+            DepKind::CoLocation,
+        ] {
+            let arcs = atomic_constraint_arcs(&edge(kind, false)).collect::<Vec<_>>();
+            assert_eq!(arcs.len(), 2, "{kind:?}");
+            assert!(
+                arcs.iter()
+                    .all(|arc| arc.projection == AtomicGroupPathProjection::SymmetricColocation),
+                "{kind:?}: {arcs:?}"
+            );
+            assert_eq!(arcs[0].orientation, AtomicGroupPathOrientation::Forward);
+            assert_eq!(arcs[1].orientation, AtomicGroupPathOrientation::Reverse);
+        }
+    }
 }

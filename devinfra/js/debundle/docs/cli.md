@@ -1451,6 +1451,13 @@ what's wrong:
 **Atom split** (refused by the realizability gate). Lists each split atom:
 which source units it covers, which modules its members would land in, and the
 `DepKind` causes from the group (same data shape as `AtomicGroupConflict`).
+The structured conflict report also includes a deterministic claim pair with
+different destinations and shortest paths between them in both directions.
+Path steps carry the dependency edge, its `G_atomic` projection, and whether
+the path follows or traverses against that edge. A reverse step is permitted
+only for a symmetric co-location constraint; it does not reverse a directed
+initialization dependency. Each path reports its complete step count and keeps
+at most twelve leading steps, with an explicit truncation flag.
 When a sequenced side-effect edge is involved, the existing conflict/cycle
 records also include each impure initializer source unit, its binding name, source
 path and 1-based line/column, plus the `PurityRule`, optional detail, and any
@@ -1469,9 +1476,9 @@ and the callee's source before choosing an audited initialization contract.
 Purity assertions supply no missing call result, instance shape or heap
 identity. Use the [contract chooser](../skills/shared/initialization_contracts.md#choose-the-contract-for-the-established-fact)
 after establishing the required source fact.
-The diagnostic does **not** auto-compute the minimal extra-moves completion
-— it names the source units and destinations so the author can read the
-completion off the printed atom membership.
+The diagnostic does **not** auto-compute a minimal extra-moves completion —
+it names the source units, destinations and one connecting witness so the author
+can inspect how the selected claims are tied together.
 
 **Name collision** (refused by `bindings rename` or by `bindings assign`
 when a `:readable` field collides). Lists each collision: the existing

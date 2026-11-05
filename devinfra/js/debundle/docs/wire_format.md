@@ -52,7 +52,7 @@ strings), **not** as SWC `Id = (Atom, SyntaxContext)`. The
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `dependency_graph.json.gz`    | `nodes[].declared_bindings[].binding: Atom`, `edges[].binding: Option<Atom>`, `edges[].sequenced_cause` binding/cell names                                                                                                                   |
 | `cycles.json`                 | `cut[].binding: Option<Atom>`, `cut[].from_binding: Option<Atom>`, `cut[].explanation` binding/cell names (evidence is recomputed on demand by `debundle gate describe`); `rejection` names the pass (SPEC § Realizability cut explanations) |
-| `atomic_group_conflicts.json` | `claims[].binding_names: Vec<Atom>`                                                                                                                                                                                                          |
+| `atomic_group_conflicts.json` | `claims[].binding_names: Vec<Atom>`, `witness.paths[].steps[].edge.binding: Option<Atom>`                                                                                                                                                    |
 
 `Atom` serializes as a plain JSON string via `swc_atoms`'s own
 `Serialize` impl. That impl writes the **string content** — interned
@@ -110,6 +110,13 @@ requested source units cover complete groups or split them.
 Conflicts during `run` are written to `atomic_group_conflicts.json`. The
 analysis and CLI report fields name the groups explicitly, so each row can be
 joined directly to `dependency_graph.json.gz.atomic_graph.nodes[].id`.
+Each row also has `witness.claim_pair` and two `witness.paths`. The paths use
+the same `G_atomic` projection as SCC construction, embed full dependency-edge
+rows, and label each row's projection (`directed_init_order` or
+`symmetric_colocation`) and orientation (`forward` or `reverse`). A reverse
+orientation is only emitted for a symmetric co-location constraint. Paths keep
+at most twelve leading steps and report their complete `total_step_count` and
+whether those steps were truncated.
 
 ### Export-reentry diagnostics
 

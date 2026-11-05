@@ -40,7 +40,8 @@ pub use assignment_assembly::{
     AssemblyOutcome, AtomicGroupConflict, ConflictingClaim, assemble_assignment,
 };
 pub use atomic_groups::{
-    AtomicGroup, DependencyGraphAndAtomicGroups, compute_atomic_groups,
+    AtomicGroup, AtomicGroupPathOrientation, AtomicGroupPathProjection,
+    DependencyGraphAndAtomicGroups, compute_atomic_groups,
     compute_dependency_graph_and_atomic_groups_with,
 };
 pub use facts::{
@@ -78,11 +79,13 @@ pub use purity::{
     RedundantPurityHint, RedundantPurityReason,
 };
 pub use reports::schema::{
-    AtomicGraphReport, AtomicGroupConflictReport, AtomicGroupEdgeReport, AtomicGroupReport,
-    BindingReport, CallbackFactoryBarrierReport, CallbackFactoryCallArgumentWitnessReport,
-    CallbackFactoryContractReport, CallbackFactoryRejectionReport,
-    CallbackFactoryWriteWitnessReport, ConflictingClaimReport, DependencyEdgeReport,
-    DependencyGraphReport, EdgeRoleReport, LineRange, ModuleDestinationKind, ModuleEntry,
-    ModuleKey, ModuleQuotientReport, ProgramGraphReport, PurityCauseReport, QuotientEdgeReport,
-    QuotientSccReport, SequencedSourceUnitCause, SourceLocation, SourceUnitReport,
+    AtomicGraphReport, AtomicGroupConflictReport, AtomicGroupConflictWitness,
+    AtomicGroupEdgeReport, AtomicGroupReport, AtomicGroupWitnessClaim, AtomicGroupWitnessPath,
+    AtomicGroupWitnessStep, BindingReport, CallbackFactoryBarrierReport,
+    CallbackFactoryCallArgumentWitnessReport, CallbackFactoryContractReport,
+    CallbackFactoryRejectionReport, CallbackFactoryWriteWitnessReport, ConflictingClaimReport,
+    DependencyEdgeReport, DependencyGraphReport, EdgeRoleReport, LineRange, ModuleDestinationKind,
+    ModuleEntry, ModuleKey, ModuleQuotientReport, ProgramGraphReport, PurityCauseReport,
+    QuotientEdgeReport, QuotientSccReport, SequencedSourceUnitCause, SourceLocation,
+    SourceUnitReport,
 };

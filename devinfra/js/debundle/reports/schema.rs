@@ -1,13 +1,17 @@
 use analysis_model::DepKind;
 use serde::{Deserialize, Serialize};
 use source_identity::{SourceUnitId, SourceUnitOrdinal};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use swc_atoms::Atom;
 
 use crate::analysis_inputs::{
     CallbackFactoryEvidence, CommutingStatementsRef, ReturnedRecordSummary,
 };
 use crate::assignment_assembly::AtomicGroupConflict;
+use crate::atomic_groups::{
+    AtomicGroupPathOrientation, AtomicGroupPathProjection, atomic_constraint_arcs,
+};
+use crate::graph::{DependencyEdge, DependencyEdgeId, EdgeRole};
 use crate::ids::ModuleId;
 use crate::purity::Purity;
 use crate::{SourceUnitClass, StatementKind};
@@ -1412,6 +1416,35 @@ impl EdgeRoleReport {
             }
         }
     }
+
+    fn from_role(role: EdgeRole) -> Option<Self> {
+        match role {
+            EdgeRole::Direct => None,
+            EdgeRole::PromotedAtInit { callee_source_unit } => Some(Self::PromotedAtInit {
+                callee_source_unit: crate::reports::source_unit_key(callee_source_unit),
+            }),
+        }
+    }
+}
+
+impl DependencyEdgeReport {
+    /// Project one graph edge onto the canonical wire representation used by
+    /// `dependency_graph.json.gz` and atomic-group conflict witnesses.
+    pub fn from_edge(edge: &DependencyEdge) -> Self {
+        Self {
+            id: edge.id.report_key(),
+            source: crate::reports::source_unit_key(edge.from),
+            target: crate::reports::source_unit_key(edge.to),
+            edge_kind: edge.reason.kind,
+            binding: edge.reason.binding.as_ref().map(|id| id.0.clone()),
+            statement_ordinal: edge.reason.statement_ordinal,
+            constrains_init_order: edge.reason.constrains_init_order(),
+            role: EdgeRoleReport::from_role(edge.reason.role()),
+            sequenced_cause: edge.reason.sequenced_cause().cloned(),
+            commuting_premise: edge.reason.commuting_premise().cloned(),
+            premise_verdict: edge.reason.premise_verdict().cloned(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1504,6 +1537,42 @@ pub struct AtomicGroupEdgeReport {
     pub constrains_init_order: bool,
 }
 
+/// A deterministic pair of differently assigned claims connected both ways
+/// through the atomic group's constraining projection.
+#[derive(Debug, Clone, Serialize)]
+pub struct AtomicGroupConflictWitness {
+    pub claim_pair: [AtomicGroupWitnessClaim; 2],
+    pub paths: [AtomicGroupWitnessPath; 2],
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AtomicGroupWitnessClaim {
+    pub source_unit: String,
+    pub module: spec::ModulePath,
+}
+
+/// One shortest path direction between the selected claim pair. `steps` keeps
+/// the first twelve edges; `total_step_count` and `truncated` describe the
+/// complete path when its detail exceeds that bound.
+#[derive(Debug, Clone, Serialize)]
+pub struct AtomicGroupWitnessPath {
+    pub from_source_unit: String,
+    pub to_source_unit: String,
+    pub total_step_count: usize,
+    pub truncated: bool,
+    pub steps: Vec<AtomicGroupWitnessStep>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AtomicGroupWitnessStep {
+    /// Full canonical edge evidence, joinable to the dependency graph export.
+    pub edge: DependencyEdgeReport,
+    /// The relation this edge contributes to `G_atomic`.
+    pub projection: AtomicGroupPathProjection,
+    /// Whether the path follows or traverses against the original edge.
+    pub orientation: AtomicGroupPathOrientation,
+}
+
 /// Wire shape for `atomic_group_conflicts.json` (one entry per
 /// conflicting atomic group). Projects the in-memory
 /// [`AtomicGroupConflict`] onto the shared entity-key formats: owners
@@ -1516,6 +1585,7 @@ pub struct AtomicGroupConflictReport {
     /// Members as `"unit:N"` keys, sorted by source-unit ID.
     pub members: Vec<String>,
     pub claims: Vec<ConflictingClaimReport>,
+    pub witness: AtomicGroupConflictWitness,
     pub causes: Vec<DepKind>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sequenced_source_units: Vec<SequencedSourceUnitCause>,
@@ -1531,6 +1601,134 @@ pub struct ConflictingClaimReport {
     pub module: spec::ModulePath,
 }
 
+const ATOMIC_GROUP_WITNESS_STEP_LIMIT: usize = 12;
+
+#[derive(Debug, Clone, Copy)]
+struct AtomicGroupPathParent {
+    previous: SourceUnitId,
+    edge_id: DependencyEdgeId,
+    projection: AtomicGroupPathProjection,
+    orientation: AtomicGroupPathOrientation,
+}
+
+fn atomic_group_conflict_witness(
+    conflict: &AtomicGroupConflict,
+    module_path: &dyn Fn(ModuleId) -> spec::ModulePath,
+    dependency_graph: &crate::DependencyGraph,
+) -> AtomicGroupConflictWitness {
+    let first = conflict
+        .claims
+        .first()
+        .expect("an atomic conflict has at least one claimed source unit");
+    let second = conflict
+        .claims
+        .iter()
+        .find(|claim| claim.module != first.module)
+        .expect("an atomic conflict has claims in distinct modules");
+    let members = conflict.members.iter().copied().collect::<BTreeSet<_>>();
+    AtomicGroupConflictWitness {
+        claim_pair: [
+            AtomicGroupWitnessClaim {
+                source_unit: crate::reports::source_unit_key(first.source_unit),
+                module: module_path(first.module),
+            },
+            AtomicGroupWitnessClaim {
+                source_unit: crate::reports::source_unit_key(second.source_unit),
+                module: module_path(second.module),
+            },
+        ],
+        paths: [
+            atomic_group_witness_path(
+                dependency_graph,
+                &members,
+                first.source_unit,
+                second.source_unit,
+            ),
+            atomic_group_witness_path(
+                dependency_graph,
+                &members,
+                second.source_unit,
+                first.source_unit,
+            ),
+        ],
+    }
+}
+
+fn atomic_group_witness_path(
+    dependency_graph: &crate::DependencyGraph,
+    members: &BTreeSet<SourceUnitId>,
+    from: SourceUnitId,
+    to: SourceUnitId,
+) -> AtomicGroupWitnessPath {
+    let mut parents =
+        HashMap::<SourceUnitId, Option<AtomicGroupPathParent>>::with_capacity(members.len());
+    parents.insert(from, None);
+    let mut queue = VecDeque::from([from]);
+    while let Some(current) = queue.pop_front() {
+        if current == to {
+            break;
+        }
+        for edge_id in dependency_graph
+            .out_edges_of(current)
+            .iter()
+            .chain(dependency_graph.in_edges_of(current))
+        {
+            let edge = dependency_graph.edge(*edge_id);
+            for arc in atomic_constraint_arcs(edge) {
+                if arc.from != current
+                    || !members.contains(&arc.to)
+                    || parents.contains_key(&arc.to)
+                {
+                    continue;
+                }
+                parents.insert(
+                    arc.to,
+                    Some(AtomicGroupPathParent {
+                        previous: current,
+                        edge_id: edge.id,
+                        projection: arc.projection,
+                        orientation: arc.orientation,
+                    }),
+                );
+                queue.push_back(arc.to);
+            }
+        }
+    }
+    assert!(
+        parents.contains_key(&to),
+        "atomic-group membership and witness projection must agree"
+    );
+
+    let mut path = Vec::new();
+    let mut current = to;
+    while current != from {
+        let parent = parents[&current].expect("every non-start path node has a predecessor");
+        path.push((parent.edge_id, parent.projection, parent.orientation));
+        current = parent.previous;
+    }
+    path.reverse();
+    let total_step_count = path.len();
+    let truncated = total_step_count > ATOMIC_GROUP_WITNESS_STEP_LIMIT;
+    let steps = path
+        .into_iter()
+        .take(ATOMIC_GROUP_WITNESS_STEP_LIMIT)
+        .map(
+            |(edge_id, projection, orientation)| AtomicGroupWitnessStep {
+                edge: DependencyEdgeReport::from_edge(dependency_graph.edge(edge_id)),
+                projection,
+                orientation,
+            },
+        )
+        .collect();
+    AtomicGroupWitnessPath {
+        from_source_unit: crate::reports::source_unit_key(from),
+        to_source_unit: crate::reports::source_unit_key(to),
+        total_step_count,
+        truncated,
+        steps,
+    }
+}
+
 pub fn sequenced_source_unit_causes(
     dependency_graph: &crate::DependencyGraph,
     members: &[SourceUnitId],
@@ -1543,7 +1741,9 @@ pub fn sequenced_source_unit_causes(
                 .out_edges_of(source_unit)
                 .iter()
                 .map(|id| dependency_graph.edge(*id))
-                .find(|edge| edge.reason.kind == DepKind::Sequenced)
+                .find(|edge| {
+                    edge.reason.kind == DepKind::Sequenced && edge.reason.constrains_init_order()
+                })
                 .and_then(|edge| sequenced_edge_cause(dependency_graph, edge))
         })
         .collect()
@@ -1608,6 +1808,7 @@ impl AtomicGroupConflictReport {
                         module: module_path(claim.module),
                     })
                     .collect(),
+                witness: atomic_group_conflict_witness(conflict, module_path, dependency_graph),
                 causes: conflict.causes.iter().copied().collect(),
                 sequenced_source_units: sequenced_source_unit_causes(
                     dependency_graph,
