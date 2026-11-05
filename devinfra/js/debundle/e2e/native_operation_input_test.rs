@@ -672,6 +672,75 @@ fn primitive_set_owner_keeps_its_effect_coverage_dependency() {
 }
 
 #[test]
+fn weak_map_empty_input_is_site_local_and_keeps_later_behavior_opaque() {
+    const SOURCE: &str = "function publish(key, value) { globalThis[key] = value; }\nconst key = {};\nconst cache = new WeakMap();\nlet other = new WeakMap();\nconst present = cache.has(key);\nconsole.log(present, Boolean(other));\n";
+    let opts = || FixtureOpts::new(SOURCE, vec![]);
+
+    let fallback = run_fixture(opts());
+    assert_preserved_entry_output(&fallback, "false true\n");
+    let fallback_graph = serde_json::to_value(fallback.dependency_graph()).unwrap();
+    assert!(has_unknown_call_target(node_for_binding(
+        &fallback_graph,
+        "cache"
+    )));
+
+    let fixture = run_fixture(opts().with_native_operation_inputs(
+        "static/app",
+        vec![selected_native_input(
+            SOURCE,
+            "const cache = new WeakMap();",
+            "cache",
+            NativeOperationKind::WeakMapEmpty,
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "false true\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    assert!(
+        !has_unknown_call_target(node_for_binding(&graph, "cache")),
+        "the selected empty constructor should consume its exact-site input: {graph}"
+    );
+    assert!(
+        has_unknown_call_target(node_for_binding(&graph, "other")),
+        "the input must not establish program-wide WeakMap integrity: {graph}"
+    );
+    assert!(
+        has_unknown_call_target(node_for_binding(&graph, "present")),
+        "empty construction must not certify later WeakMap methods: {graph}"
+    );
+    let uses = native_input_uses(&graph);
+    assert_eq!(
+        uses.len(),
+        1,
+        "only the selected constructor uses the input: {graph}"
+    );
+    assert_eq!(uses[0]["evidence"]["operation"], "weak_map_empty");
+    assert_eq!(uses[0]["evidence"]["selected_binding"], "cache");
+}
+
+#[test]
+fn weak_map_empty_input_rejects_known_sibling_chunk_writes() {
+    const SOURCE: &str =
+        "import './mutation.js';\nconst collection = new WeakMap();\nexport { collection };\n";
+    for mutation in [
+        "WeakMap = function replacement() {};\n",
+        "globalThis.WeakMap = function replacement() {};\n",
+    ] {
+        let input = selected_native_input(
+            SOURCE,
+            "const collection = new WeakMap();",
+            "collection",
+            NativeOperationKind::WeakMapEmpty,
+        );
+        expect_rejection_containing_all(
+            FixtureOpts::new(SOURCE, vec![])
+                .with_extra_chunks(&[("static/mutation", mutation)])
+                .with_native_operation_inputs("static/app", vec![input]),
+            &["global WeakMap replacement", "static/mutation"],
+        );
+    }
+}
+
+#[test]
 fn source_known_set_construction_protocol_writes_reject_the_input() {
     for mutation in [
         "globalThis.Set = function replacement() {};",
@@ -1581,19 +1650,39 @@ fn empty_collection_inputs_reject_arguments_wrappers_and_wrong_identity() {
         ("new Map([])", NativeOperationKind::MapEmpty),
         ("new Map(undefined)", NativeOperationKind::MapEmpty),
         ("new Map(...[])", NativeOperationKind::MapEmpty),
+        ("new WeakMap([])", NativeOperationKind::WeakMapEmpty),
+        ("new WeakMap(undefined)", NativeOperationKind::WeakMapEmpty),
+        ("new WeakMap(...[])", NativeOperationKind::WeakMapEmpty),
         ("new Set([])", NativeOperationKind::SetEmpty),
         ("new Set(undefined)", NativeOperationKind::SetEmpty),
         ("new Set(...[])", NativeOperationKind::SetEmpty),
         ("new globalThis.Map()", NativeOperationKind::MapEmpty),
+        (
+            "new globalThis.WeakMap()",
+            NativeOperationKind::WeakMapEmpty,
+        ),
         ("new globalThis.Set()", NativeOperationKind::SetEmpty),
         ("new Alias()", NativeOperationKind::MapEmpty),
+        ("new Alias()", NativeOperationKind::WeakMapEmpty),
         ("new (0, Map)()", NativeOperationKind::MapEmpty),
+        ("new (0, WeakMap)()", NativeOperationKind::WeakMapEmpty),
         ("(sideEffect(), new Map())", NativeOperationKind::MapEmpty),
+        (
+            "(sideEffect(), new WeakMap())",
+            NativeOperationKind::WeakMapEmpty,
+        ),
         (
             "(globalThis.result = new Set())",
             NativeOperationKind::SetEmpty,
         ),
+        (
+            "(globalThis.result = new WeakMap())",
+            NativeOperationKind::WeakMapEmpty,
+        ),
         ("new Map()", NativeOperationKind::SetEmpty),
+        ("new Map()", NativeOperationKind::WeakMapEmpty),
+        ("new WeakMap()", NativeOperationKind::MapEmpty),
+        ("new WeakMap()", NativeOperationKind::SetEmpty),
         ("new Set()", NativeOperationKind::MapEmpty),
     ] {
         let declaration = format!("const collection = {initializer};");
@@ -1624,6 +1713,11 @@ fn empty_collection_inputs_reject_arguments_wrappers_and_wrong_identity() {
             "const collection = new Set();",
         ),
         (
+            "class WeakMap {}\nconst collection = new WeakMap();\n",
+            NativeOperationKind::WeakMapEmpty,
+            "const collection = new WeakMap();",
+        ),
+        (
             "const Alias = Map;\nconst collection = new Alias();\n",
             NativeOperationKind::MapEmpty,
             "const collection = new Alias();",
@@ -1631,6 +1725,11 @@ fn empty_collection_inputs_reject_arguments_wrappers_and_wrong_identity() {
         (
             "const Alias = Set;\nconst collection = new Alias();\n",
             NativeOperationKind::SetEmpty,
+            "const collection = new Alias();",
+        ),
+        (
+            "const Alias = WeakMap;\nconst collection = new Alias();\n",
+            NativeOperationKind::WeakMapEmpty,
             "const collection = new Alias();",
         ),
         (
@@ -1672,6 +1771,12 @@ fn empty_collection_inputs_reject_arguments_wrappers_and_wrong_identity() {
             "Set",
         ),
         (
+            "const collection = new WeakMap();\nWeakMap = replacement;\n",
+            NativeOperationKind::WeakMapEmpty,
+            "const collection = new WeakMap();",
+            "WeakMap",
+        ),
+        (
             "const collection = new Map();\nglobalThis.Map = replacement;\n",
             NativeOperationKind::MapEmpty,
             "const collection = new Map();",
@@ -1682,6 +1787,12 @@ fn empty_collection_inputs_reject_arguments_wrappers_and_wrong_identity() {
             NativeOperationKind::SetEmpty,
             "const collection = new Set();",
             "Set",
+        ),
+        (
+            "const collection = new WeakMap();\nglobalThis.WeakMap = replacement;\n",
+            NativeOperationKind::WeakMapEmpty,
+            "const collection = new WeakMap();",
+            "WeakMap",
         ),
     ] {
         expect_rejection_containing_all(

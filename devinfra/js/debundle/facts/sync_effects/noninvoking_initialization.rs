@@ -44,7 +44,7 @@ enum Leaf {
     Class(u32),
     RegExp(u32),
     /// Exact direct source form; only a checked operation receipt may cover it.
-    MapOperation {
+    KeyedCollectionOperation {
         callee: Id,
         call_site: CallSite,
     },
@@ -524,9 +524,9 @@ impl OriginalInitializer {
         let leaf = match initializer.unwrap_parens() {
             Expr::New(_) => {
                 if let Some((callee, call_site)) = empty_direct_constructor(initializer)
-                    && callee.0.as_ref() == "Map"
+                    && matches!(callee.0.as_ref(), "Map" | "WeakMap")
                 {
-                    Leaf::MapOperation { callee, call_site }
+                    Leaf::KeyedCollectionOperation { callee, call_site }
                 } else if let Some((callee, call_site, kind)) =
                     empty_native_constructor(initializer)
                 {
@@ -604,7 +604,7 @@ impl OriginalInitializer {
         &self,
         expression: &ValueExpr,
     ) -> Option<&InitializationSourceIdentity> {
-        let Leaf::MapOperation {
+        let Leaf::KeyedCollectionOperation {
             callee: expected,
             call_site,
         } = &self.leaf

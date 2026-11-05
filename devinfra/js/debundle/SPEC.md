@@ -755,23 +755,23 @@ load rather than reconstructed from completion. The public
 `synchronous_execution.binding_effect_authority` report is a separate
 diagnostic DTO and is never an analysis input.
 
-An original simple variable declarator may also close those
-coverage domains for a direct bare `new Map()` or `new Set()` with exactly zero
+An original simple variable declarator may also close those coverage domains
+for direct bare `new Map()`, `new WeakMap()`, or `new Set()` with exactly zero
 arguments. The original AST and lowered `New` site must identify the same
-constructor. For Map, the checked shared zero-argument collection operation
-returns normal global-property, general-heap and host-effect coverage; only the
-root source owner can seal it after its binding is initialized. Set retains its
-dedicated root transfer. Both require the matching native Construct/Fresh/Never
-row with no present coercions, writes or invocations. Their exact identity
-premise comes from the existing intact
-intrinsic census or an accepted exact-site `map_empty` / `set_empty` input.
-The transfer result stays `Top`: it proves successful initialization of this
-owner, not a Map or Set identity, contents, prototype, or method behavior. The
-global constructor read and lexical binding write remain projected. The
-constructor's internal fresh allocation has no separately modeled effect cell;
-its identity becomes available only at the binding write, and later
-observations remain opaque or need their own existing proof. Existing direct-
-NewTarget and fixed-prototype boundaries still apply.
+constructor. Map and WeakMap use the checked shared zero-argument collection
+operation to return normal global-property, general-heap and host-effect
+coverage; only the root source owner can seal it after its binding is
+initialized. Set retains its dedicated root transfer. Each requires the
+matching native Construct/Fresh/Never row with no present coercions, writes or
+invocations. Their exact identity premise comes from the existing intact
+intrinsic census or an accepted exact-site `map_empty`, `weak_map_empty`, or
+`set_empty` input. The transfer result stays `Top`: it proves successful
+initialization of this owner, not a Map, WeakMap, or Set identity, contents,
+prototype, or method behavior. The global constructor read and lexical binding
+write remain projected. The constructor's internal fresh allocation has no
+separately modeled effect cell; its identity becomes available only at the
+binding write, and later observations remain opaque or need their own existing
+proof. Existing direct-NewTarget and fixed-prototype boundaries still apply.
 
 The same root-owner certificate admits a direct zero-argument
 `new TextEncoder()` when its exact Construct/Unknown/Never row is selected with
@@ -796,7 +796,7 @@ identifier elements, nested values, spreads, wrapped array arguments,
 call/sequence/assignment wrappers, and other iterables remain outside this
 initializer form and retain conservative fallback.
 
-The `map_empty`, `set_empty`, and `text_encoder_empty` forms accept only
+The `map_empty`, `weak_map_empty`, `set_empty`, and `text_encoder_empty` forms accept only
 zero-argument constructors. A present argument (including `[]` or `undefined`),
 spread, aliases, qualified constructors, sequence/assignment wrappers, shadowed
 or replaced globals, and other shapes remain outside those forms; use another
@@ -2377,6 +2377,7 @@ the facts came from a saved artifact.
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | `text_encoder_empty`                 | Top-level simple binding initialized by direct bare zero-argument `new TextEncoder()`                                                                                      | Original global `TextEncoder` data binding                                  |
 | `map_empty`                          | Top-level simple binding initialized by direct bare zero-argument `new Map()`                                                                                              | Original global `Map` data binding                                          |
+| `weak_map_empty`                     | Top-level simple binding initialized by direct bare zero-argument `new WeakMap()`                                                                                          | Original global `WeakMap` data binding                                      |
 | `set_empty`                          | Top-level simple binding initialized by direct bare zero-argument `new Set()`                                                                                              | Original global `Set` data binding                                          |
 | `symbol`                             | Top-level simple binding initialized by a direct `Symbol(...)` call with zero or one syntactically primitive argument                                                      | `%Symbol%`                                                                  |
 | `symbol_for`                         | The same with `Symbol.for(...)`                                                                                                                                            | `%Symbol%`, `%Symbol.for%`                                                  |
@@ -2454,15 +2455,17 @@ to the native write census, but is outside `program_premises`'
 exact-site input and records its dependency; an unannotated construction keeps
 conservative purity even when the ordinary census proves its callback timing.
 
-`map_empty` and `set_empty` use the same exact direct-constructor shape and
-global data-binding assertion for `Map` and `Set`. A known write to the selected
-global constructor binding in any analyzed chunk rejects the input. Zero-argument
-standard construction returns its fresh empty collection before looking up an
-adder or iterator; its existing builtin row supplies timing and purity. The
-input does not certify later collection methods, property reads, iteration,
-callback retention or mutations. Aliases, shadowing, arguments, spreads,
-qualified callees and sequence or assignment wrappers remain unsupported.
-Each selected declarator carries its own assertion, including comma declarations.
+`map_empty`, `weak_map_empty`, and `set_empty` use the same exact direct-
+constructor shape and global data-binding assertion for `Map`, `WeakMap`, and
+`Set`. A known write to the selected global constructor binding in any analyzed
+chunk rejects the input. Zero-argument standard construction returns its fresh
+empty collection before looking up an adder or iterator; its existing builtin
+row supplies operation timing. The exact-site identity input does not certify
+later collection methods, property reads, iteration, callback retention or
+mutations, and does not grant purity or integrity to another site. Aliases,
+shadowing, arguments, spreads, qualified callees and sequence or assignment
+wrappers remain unsupported. Each selected declarator carries its own
+assertion, including comma declarations.
 
 ### Bundle-owned globals
 

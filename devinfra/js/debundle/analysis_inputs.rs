@@ -585,6 +585,7 @@ impl NativeInputKind {
         match self {
             Self::Operation(spec::NativeOperationKind::TextEncoderEmpty) => Some("TextEncoder"),
             Self::Operation(spec::NativeOperationKind::MapEmpty) => Some("Map"),
+            Self::Operation(spec::NativeOperationKind::WeakMapEmpty) => Some("WeakMap"),
             Self::Operation(spec::NativeOperationKind::SetEmpty) => Some("Set"),
             _ => None,
         }
