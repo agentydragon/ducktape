@@ -1,0 +1,783 @@
+# Observed /v1/quotas on 2026-11-04 at 16:56 Pacific (2026-11-05T00:56:28Z).
+# Each provider's last_output, before display filtering. Account/grant names and
+# identifiers replaced; observed name lengths, amounts, precision, nulls, list
+# order/cardinality, scopes and timestamps retained. Render at this fetched_at.
+# Includes both weekly subscription windows, 105 OpenAI grants (three active),
+# and Anthropic's ordinary grant plus a promo scoped to six broad API products.
+providers:
+  - provider: claude
+    last_output:
+      fetched_at: "2026-11-05T00:56:23.044054Z"
+      result:
+        kind: success
+        windows:
+          - name: null
+            display: true
+            used_percent: 96.0
+            reset_seconds: 140615.3799688816
+            window_seconds: 604800.0
+            reset_at: "2026-11-06T16:00:00.433920Z"
+        extra_spend: null
+        paid_credits: null
+        openai_platform_credits: null
+        anthropic_platform_credits: null
+        prepaid_balance:
+          kind: available
+          amount_minor: 0
+          exponent: 2
+          currency: USD
+        available_reset_credits: null
+        available_reset_credit_expiries: []
+        reset_credit_expiry_lookup_failed: false
+  - provider: codex
+    last_output:
+      fetched_at: "2026-11-05T00:56:23.047193Z"
+      result:
+        kind: success
+        windows:
+          - name: null
+            display: true
+            used_percent: 4.0
+            reset_seconds: 587995.0
+            window_seconds: 604800.0
+            reset_at: "2026-11-11T20:16:18.511641Z"
+        extra_spend: null
+        paid_credits:
+          balance: "45191.1270020000"
+          unlimited: false
+        openai_platform_credits: null
+        anthropic_platform_credits: null
+        prepaid_balance: null
+        available_reset_credits: 2
+        available_reset_credit_expiries:
+          - "2026-11-30T19:51:51.517140Z"
+          - "2026-12-01T22:26:29.290129Z"
+        reset_credit_expiry_lookup_failed: false
+  - provider: openai_platform
+    last_output:
+      fetched_at: "2026-11-05T00:56:23.052059Z"
+      result:
+        kind: success
+        windows: []
+        extra_spend: null
+        paid_credits: null
+        openai_platform_credits:
+          total_available_usd: "557.4240511"
+          total_paid_available_usd: "67.4240511"
+          grants:
+            - granted_usd: "490"
+              used_usd: "0"
+              effective_at: "2026-11-02T11:39:26.904203Z"
+              expires_at: "2026-12-01T21:09:36Z"
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "50.35"
+              used_usd: "33.1859489"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: "2027-01-01T00:00:00Z"
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "50.26"
+              used_usd: "-1.9895196601282807E-15"
+              effective_at: "2026-01-01T00:00:00Z"
+              expires_at: "2027-02-01T00:00:00Z"
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "58.83"
+              used_usd: "58.83"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "50.42"
+              used_usd: "50.42"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "62.98"
+              used_usd: "62.98"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "68.53"
+              used_usd: "68.53"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "65.98"
+              used_usd: "65.98"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "51.55"
+              used_usd: "51.55"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "50.17"
+              used_usd: "50.17"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "53.49"
+              used_usd: "53.49"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "50.4"
+              used_usd: "50.4"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "54.8"
+              used_usd: "54.8"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "65.6"
+              used_usd: "65.6"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "52.15"
+              used_usd: "52.15"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "57.94"
+              used_usd: "57.94"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "56.71"
+              used_usd: "56.71"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "56.77"
+              used_usd: "56.77"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "65.14"
+              used_usd: "65.14"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "51.65"
+              used_usd: "51.65"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "51.07"
+              used_usd: "51.07"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "59.97"
+              used_usd: "59.97"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "51.55"
+              used_usd: "51.55"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "66.7"
+              used_usd: "66.7"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "53.43"
+              used_usd: "53.43"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "82.69"
+              used_usd: "82.69"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "54.9"
+              used_usd: "54.9"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "55"
+              used_usd: "55"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "55.83"
+              used_usd: "55.83"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "50.91"
+              used_usd: "50.91"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "75.71"
+              used_usd: "75.71"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "64.77"
+              used_usd: "64.77"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "65.15"
+              used_usd: "65.15"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "54.93"
+              used_usd: "54.93"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "55.84"
+              used_usd: "55.84"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "54.01"
+              used_usd: "54.01"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "59.99"
+              used_usd: "59.99"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "59.63"
+              used_usd: "59.63"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "53.51"
+              used_usd: "53.51"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "77.15"
+              used_usd: "77.15"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "54.55"
+              used_usd: "54.55"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "58.75"
+              used_usd: "58.75"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "55.48"
+              used_usd: "55.48"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "53.35"
+              used_usd: "53.35"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "54.5"
+              used_usd: "54.5"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "51.03"
+              used_usd: "51.03"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "59.66"
+              used_usd: "59.66"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "50.39"
+              used_usd: "50.39"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "53.02"
+              used_usd: "53.02"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "69.65"
+              used_usd: "69.65"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "51.29"
+              used_usd: "51.29"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "50.95"
+              used_usd: "50.95"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "51.41"
+              used_usd: "51.41"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "51.44"
+              used_usd: "51.44"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "81.76"
+              used_usd: "81.76"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "60.46"
+              used_usd: "60.46"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "73.81"
+              used_usd: "73.81"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "56.38"
+              used_usd: "56.38"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "73.39"
+              used_usd: "73.39"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "75.62"
+              used_usd: "75.62"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "57.19"
+              used_usd: "57.19"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "57.46"
+              used_usd: "57.46"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "69.89"
+              used_usd: "69.89"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "52.41"
+              used_usd: "52.41"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "56.23"
+              used_usd: "56.23"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "50.48"
+              used_usd: "50.48"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "60.13"
+              used_usd: "60.13"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "59.28"
+              used_usd: "59.28"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "51.44"
+              used_usd: "51.44"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "54.14"
+              used_usd: "54.14"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "51.57"
+              used_usd: "51.57"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "50.36"
+              used_usd: "50.36"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "51.37"
+              used_usd: "51.37"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "59.79"
+              used_usd: "59.79"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "51.32"
+              used_usd: "51.32"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "69.52"
+              used_usd: "69.52"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "65.03"
+              used_usd: "65.03"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "64.08"
+              used_usd: "64.08"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "60.39"
+              used_usd: "60.39"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "52.19"
+              used_usd: "52.19"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "52.08"
+              used_usd: "52.08"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "65.62"
+              used_usd: "65.62"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "61.4"
+              used_usd: "61.4"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "55.84"
+              used_usd: "55.84"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "60.8"
+              used_usd: "60.8"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "58.88"
+              used_usd: "58.88"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "74.17"
+              used_usd: "74.17"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "59.58"
+              used_usd: "59.58"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "51.99"
+              used_usd: "51.99"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "69.6"
+              used_usd: "69.6"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "50.8"
+              used_usd: "50.8"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "57.01"
+              used_usd: "57.01"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "54.88"
+              used_usd: "54.88"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "52.83"
+              used_usd: "52.83"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "53.11"
+              used_usd: "53.11"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "55.37"
+              used_usd: "55.37"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "64.36"
+              used_usd: "64.36"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "57.2"
+              used_usd: "57.2"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "50.66"
+              used_usd: "50.66"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "52.18"
+              used_usd: "52.18"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "51.21"
+              used_usd: "51.21"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "55.66"
+              used_usd: "55.66"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "50.4"
+              used_usd: "50.4"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "58.99"
+              used_usd: "58.99"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+            - granted_usd: "50.47"
+              used_usd: "50.47"
+              effective_at: "2025-12-01T00:00:00Z"
+              expires_at: null
+              is_scheduled: false
+              is_held_for_prepaid_transition: false
+        anthropic_platform_credits: null
+        prepaid_balance: null
+        available_reset_credits: null
+        available_reset_credit_expiries: []
+        reset_credit_expiry_lookup_failed: false
+  - provider: anthropic_platform
+    last_output:
+      fetched_at: "2026-11-05T00:56:23.056556Z"
+      result:
+        kind: success
+        windows: []
+        extra_spend: null
+        paid_credits: null
+        openai_platform_credits: null
+        anthropic_platform_credits:
+          organizations:
+            - uuid: 00000000-0000-0000-0000-000000000001
+              name: Wide-scope promo org
+              currency: USD
+              balance:
+                credits:
+                  amount_minor: 21970
+                  exponent: 2
+                money: null
+              tranches:
+                - id: 00000000-0000-0000-0000-000000000002
+                  name: null
+                  currency: USD
+                  granted_at: "2026-06-28T09:40:18.830000Z"
+                  expires_at: "2027-07-01T00:00:00Z"
+                  granted:
+                    credits:
+                      amount_minor: 9193
+                      exponent: 2
+                    money: null
+                  remaining:
+                    credits:
+                      amount_minor: 2175
+                      exponent: 2
+                    money: null
+                  scope:
+                    kind: unscoped
+                    applies_to: []
+              promo_tranches:
+                - id: 00000000-0000-0000-0000-000000000003
+                  name: Wide-scope credits
+                  currency: USD
+                  granted_at: "2026-10-29T00:15:08.487000Z"
+                  expires_at: "2026-11-25T00:00:00Z"
+                  granted:
+                    credits:
+                      amount_minor: 20000
+                      exponent: 2
+                    money: null
+                  remaining:
+                    credits:
+                      amount_minor: 19793
+                      exponent: 2
+                    money: null
+                  scope:
+                    kind: scoped
+                    applies_to:
+                      - product: agent_sdk
+                        model_family: null
+                        model_version: null
+                      - product: api
+                        model_family: null
+                        model_version: null
+                      - product: batch
+                        model_family: null
+                        model_version: null
+                      - product: console
+                        model_family: null
+                        model_version: null
+                      - product: managed-agents
+                        model_family: null
+                        model_version: null
+                      - product: managed-agents-onprem
+                        model_family: null
+                        model_version: null
+              error: null
+        prepaid_balance: null
+        available_reset_credits: null
+        available_reset_credit_expiries: []
+        reset_credit_expiry_lookup_failed: false
+fetched_at: "2026-11-05T00:56:28.375613Z"
