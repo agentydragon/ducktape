@@ -613,7 +613,7 @@ fn rename_batch_names_only_verdict_does_not_validate_template_references() {
 
 #[test]
 fn assign_moves_source_match_claim_and_annotation() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         "const a = 1; const b = 2; console.log(a + b);",
         &[(
             "src.yaml",
@@ -622,13 +622,17 @@ fn assign_moves_source_match_claim_and_annotation() {
     );
     let before = fs::read(fixture.modules.join("src.yaml")).unwrap();
     let args = ["bindings", "assign", "Alpha:dest:Foo"];
+    let assessment = fixture.stage_analysis();
     assert_eq!(
         fixture.json(&["bindings", "assign", "Alpha:dest:Foo", "--dry-run"])["action"],
         "dry-run"
     );
     assert_eq!(fs::read(fixture.modules.join("src.yaml")).unwrap(), before);
     assert!(!fixture.modules.join("dest.yaml").exists());
-    assert_eq!(fixture.json(&args)["moves_applied"], 1);
+    assert_eq!(
+        fixture.json_with_assessment(&args, &assessment)["moves_applied"],
+        1
+    );
     let source = module(&fixture, "src.yaml");
     assert_eq!(source["source_matches"].as_sequence().unwrap().len(), 1);
     assert_eq!(source["source_matches"][0]["bindings"][0], "b");
@@ -641,15 +645,16 @@ fn assign_moves_source_match_claim_and_annotation() {
 
 #[test]
 fn assign_splits_source_match_claim_for_independent_bindings() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         "const a = 1; const b = 2; console.log(a + b);",
         &[(
             "src.yaml",
             "source_matches: [{match: 'console.log(a + b);', bindings: [{local: a, name: Alpha}, {local: b, name: Beta}], note: shared pattern}]\nannotations: {Alpha: {note: first}, Beta: {note: second}}\n",
         )],
     );
+    let assessment = fixture.stage_analysis();
     assert_eq!(
-        fixture.json(&["bindings", "assign", "Alpha:dest"])["moves_applied"],
+        fixture.json_with_assessment(&["bindings", "assign", "Alpha:dest"], &assessment)["moves_applied"],
         1
     );
     let source = module(&fixture, "src.yaml");
@@ -665,19 +670,28 @@ fn assign_splits_source_match_claim_for_independent_bindings() {
 
 #[test]
 fn assign_moves_atomic_source_match_group_in_one_batch() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         "let a = 0; function b() { a = 1; } console.log(a, typeof b);",
         &[(
             "src.yaml",
             "source_matches: [{match: 'function b() { a = 1; }', bindings: [{local: a, name: Alpha}, {local: b, name: Beta}]}]",
         )],
     );
-    fixture.assert_rejected_unchanged(
+    let assessment = fixture.stage_analysis();
+    let rejected = fixture.assert_rejected_unchanged_with_assessment(
         &["bindings", "assign", "Alpha:dest"],
-        &["splits one or more atomic groups"],
+        &assessment,
+        &[],
     );
     assert_eq!(
-        fixture.json(&["bindings", "assign", "Alpha:dest", "Beta:dest"])["moves_applied"],
+        rejected["chunks"]["main"]["placement"]["status"], "blocked",
+        "{rejected}"
+    );
+    assert_eq!(
+        fixture.json_with_assessment(
+            &["bindings", "assign", "Alpha:dest", "Beta:dest"],
+            &assessment
+        )["moves_applied"],
         2
     );
     assert!(!fixture.modules.join("src.yaml").exists());
@@ -745,7 +759,7 @@ fn rename_and_assign_refuse_collisions_with_all_binding_forms() {
 #[test]
 fn positional_and_json_batches_create_one_canonical_destination() {
     for batch_json in [false, true] {
-        let fixture = GraphFixture::new(
+        let fixture = GraphFixture::new_full_tree(
             "const a = 1; const b = 2; console.log(a + b);",
             &[
                 ("src/a.yaml", "members: [{selector: {binding: {name: a}}}]"),
@@ -762,6 +776,7 @@ fn positional_and_json_batches_create_one_canonical_destination() {
         } else {
             vec!["bindings", "assign", "a:UI/Widgets:Alpha", "b:ui/widgets"]
         };
+        let assessment = fixture.stage_analysis();
         let before: Vec<_> = ["src/a.yaml", "src/b.yaml"]
             .into_iter()
             .map(|path| (path, fs::read(fixture.modules.join(path)).unwrap()))
@@ -773,7 +788,10 @@ fn positional_and_json_batches_create_one_canonical_destination() {
             assert_eq!(fs::read(fixture.modules.join(path)).unwrap(), bytes);
         }
         assert!(!fixture.modules.join("ui").exists());
-        assert_eq!(fixture.json(&args)["moves_applied"], 2);
+        assert_eq!(
+            fixture.json_with_assessment(&args, &assessment)["moves_applied"],
+            2
+        );
         for path in ["src/a.yaml", "src/b.yaml", "UI"] {
             assert!(!fixture.modules.join(path).exists());
         }
@@ -800,11 +818,15 @@ fn move_and_unassign_annotations_preserve_only_intentionally_retained_modules() 
         let yaml = format!(
             "{comment}members: [{{selector: {{binding: {{name: a}}}}}}]\nannotations: {{a: {{note: selector debt}}}}\n"
         );
-        let fixture = GraphFixture::new(
+        let fixture = GraphFixture::new_full_tree(
             "const a = 1; console.log(a);",
             &[("src.yaml", &yaml), ("unrelated.yaml", "members: []")],
         );
-        fixture.json(&["bindings", "assign", "a:dest:Readable"]);
+        let assign_assessment = fixture.stage_analysis();
+        fixture.json_with_assessment(
+            &["bindings", "assign", "a:dest:Readable"],
+            &assign_assessment,
+        );
         assert_eq!(
             fixture.modules.join("src.yaml").exists(),
             !comment.is_empty()
@@ -814,7 +836,8 @@ fn move_and_unassign_annotations_preserve_only_intentionally_retained_modules() 
         assert!(doc["annotations"]["a"].is_null());
         assert_eq!(doc["annotations"]["Readable"]["note"], "selector debt");
         fixture.refresh_graph();
-        fixture.json(&["bindings", "unassign", "Readable"]);
+        let unassign_assessment = fixture.stage_analysis();
+        fixture.json_with_assessment(&["bindings", "unassign", "Readable"], &unassign_assessment);
         assert!(
             !fixture.modules.join("dest.yaml").exists(),
             "removed annotation must not keep drained module alive"
@@ -832,7 +855,7 @@ fn positional_readable_name_cannot_contain_a_colon() {
 
 #[test]
 fn batch_extraction_keeps_unmoved_members_and_does_not_rewrite_default_only_modules() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         "const a = 1; const b = 2; const c = 3; const d = 4; const e = 5; console.log(a + b + c + d + e);",
         &[
             (
@@ -846,9 +869,13 @@ fn batch_extraction_keeps_unmoved_members_and_does_not_rewrite_default_only_modu
             ),
         ],
     );
+    let assign_assessment = fixture.stage_analysis();
     let empty = fixture.modules.join("empty.yaml");
     let before = fs::read(&empty).unwrap();
-    fixture.json(&["bindings", "assign", "a:dest", "c:dest"]);
+    fixture.json_with_assessment(
+        &["bindings", "assign", "a:dest", "c:dest"],
+        &assign_assessment,
+    );
     fixture.refresh_graph();
     for (path, names) in [
         ("home.yaml", vec!["b", "d"]),
@@ -861,7 +888,8 @@ fn batch_extraction_keeps_unmoved_members_and_does_not_rewrite_default_only_modu
             assert_eq!(member["selector"]["binding"]["name"], name);
         }
     }
-    fixture.json(&["bindings", "unassign", "b"]);
+    let unassign_assessment = fixture.stage_analysis();
+    fixture.json_with_assessment(&["bindings", "unassign", "b"], &unassign_assessment);
     let doc = module(&fixture, "home.yaml");
     assert_eq!(doc["members"].as_sequence().unwrap().len(), 1);
     assert_eq!(doc["members"][0]["selector"]["binding"]["name"], "d");
@@ -895,7 +923,8 @@ fn automatic_cleanup_preserves_module_notes_but_explicit_delete_can_remove_them(
         for note in ["keep selector investigation", ""] {
             let yaml =
                 format!("note: {note:?}\nmembers: [{{selector: {{binding: {{name: a}}}}}}]\n");
-            let fixture = GraphFixture::new("const a = 1; console.log(a);", &[("src.yaml", &yaml)]);
+            let fixture =
+                GraphFixture::new_full_tree("const a = 1; console.log(a);", &[("src.yaml", &yaml)]);
             let mut preview = edit.clone();
             preview.push("--dry-run");
             let report = fixture.json(&preview);
@@ -905,7 +934,8 @@ fn automatic_cleanup_preserves_module_notes_but_explicit_delete_can_remove_them(
                 yaml
             );
             assert!(!fixture.modules.join("dest.yaml").exists());
-            let report = fixture.json(&edit);
+            let assessment = fixture.stage_analysis();
+            let report = fixture.json_with_assessment(&edit, &assessment);
             assert!(report["files_deleted"].as_array().unwrap().is_empty());
             assert_eq!(module(&fixture, "src.yaml")["note"], note);
             let empty = fixture.json(&["modules", "list", "--empty"]);
@@ -920,7 +950,9 @@ fn automatic_cleanup_preserves_module_notes_but_explicit_delete_can_remove_them(
             assert!(sweep["modules"].as_array().unwrap().is_empty());
             fixture.assert_runs("1\n");
             fixture.refresh_graph();
-            fixture.assert_success(&["modules", "delete", "src"]);
+            let delete_assessment = fixture.stage_analysis();
+            fixture
+                .assert_success_with_assessment(&["modules", "delete", "src"], &delete_assessment);
             assert!(!fixture.modules.join("src.yaml").exists());
             fixture.assert_runs("1\n");
         }

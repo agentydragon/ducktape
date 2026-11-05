@@ -48,7 +48,7 @@ fn merge_and_refine_coalesce_exact_templates_without_losing_aliases_or_metadata(
         );
         let beta = claim("middle", "Beta", "shared selector note");
         let gamma = claim("right", "Gamma", "different selector note");
-        let fixture = GraphFixture::new(
+        let fixture = GraphFixture::new_full_tree(
             SOURCE,
             &[
                 ("owner.yaml", &target),
@@ -74,6 +74,7 @@ fn merge_and_refine_coalesce_exact_templates_without_losing_aliases_or_metadata(
         } else {
             vec!["modules", "refine", "--batch", batch.to_str().unwrap()]
         };
+        let assessment = fixture.stage_analysis();
         let before = fs::read(fixture.modules.join("owner.yaml")).unwrap();
         let mut preview = args.clone();
         preview.push("--dry-run");
@@ -82,7 +83,7 @@ fn merge_and_refine_coalesce_exact_templates_without_losing_aliases_or_metadata(
             fs::read(fixture.modules.join("owner.yaml")).unwrap(),
             before
         );
-        fixture.assert_success(&args);
+        fixture.assert_success_with_assessment(&args, &assessment);
         let doc: Value =
             serde_yaml::from_slice(&fs::read(fixture.modules.join("owner.yaml")).unwrap()).unwrap();
         assert_grouped(&doc);
@@ -107,7 +108,7 @@ fn unchanged_owner_refine_normalizes_only_requested_modules_and_preserves_emitte
         .unwrap()
         .extend(second["annotations"].as_mapping().unwrap().clone());
     let yaml = serde_yaml::to_string(&first).unwrap();
-    let fixture = GraphFixture::new(SOURCE, &[("owner.yaml", &yaml)]);
+    let fixture = GraphFixture::new_full_tree(SOURCE, &[("owner.yaml", &yaml)]);
     let batch = fixture.modules.join("reviewed.json");
     let unit = fixture
         .dependency_graph()
@@ -126,6 +127,7 @@ fn unchanged_owner_refine_normalizes_only_requested_modules_and_preserves_emitte
     )
     .unwrap();
     let args = ["modules", "refine", "--batch", batch.to_str().unwrap()];
+    let assessment = fixture.stage_analysis();
     let mut preview = args.to_vec();
     preview.push("--dry-run");
     assert_eq!(fixture.json(&preview)["action"], "dry-run");
@@ -133,7 +135,7 @@ fn unchanged_owner_refine_normalizes_only_requested_modules_and_preserves_emitte
         fs::read_to_string(fixture.modules.join("owner.yaml")).unwrap(),
         yaml
     );
-    let result = fixture.json(&args);
+    let result = fixture.json_with_assessment(&args, &assessment);
     assert_eq!(result["action"], "applied");
     assert_eq!(result["source_units_reassigned"], 0);
     fixture.refresh_graph();

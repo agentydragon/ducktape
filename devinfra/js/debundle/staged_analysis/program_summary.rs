@@ -745,6 +745,15 @@ pub fn collect_program_summary(
             )
         })
         .collect();
+    let source_callable_members = chunk_export_purity.iter()
+        .filter(|(_, assertion)| !assertion.source_callable_members.is_empty())
+        .map(|(chunk, assertion)| {
+            for (export, members) in &assertion.source_callable_members {
+                ensure!(assertion.namespace_independent_members.get(export).is_some_and(|audited| members.is_subset(audited)),
+                    "source_callable_members {chunk}:{export} requires the same namespace_independent_members entries");
+            }
+            Ok((chunk.clone(), assertion.source_callable_members.clone()))
+        }).collect::<Result<BTreeMap<_, _>>>()?;
     let mut asserted_pure_new: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
         .iter()
         .filter(|(_, assertion)| !assertion.pure_new_exports.is_empty())
@@ -780,6 +789,7 @@ pub fn collect_program_summary(
             })
             .collect(),
         CallableSummaryInputs {
+            source_callable_members: &source_callable_members,
             selected_value_inputs: &value_inputs,
             selected_native_operation_inputs: &native_operation_inputs,
             argument_inputs: &argument_inputs,

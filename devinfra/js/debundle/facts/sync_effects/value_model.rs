@@ -328,6 +328,9 @@ impl ProviderScopeId {
 pub(super) enum ProviderInput {
     Argument(usize),
     Capture(usize),
+    Property { argument: usize, property: usize },
+    Getter { argument: usize, property: usize },
+    Setter { argument: usize, property: usize },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -635,6 +638,9 @@ pub(super) enum ValueExpr {
     /// value-kind fact, not a purity claim: keep operands so calls and
     /// unavailable reads inside them still flow through the evaluator.
     Primitive(Arc<[Self]>),
+    /// Retain the actual operator for primitive result and abrupt-completion
+    /// semantics. Operands remain ordered; object coercions require fallback.
+    Binary(BinaryOp, Arc<Self>, Arc<Self>),
     /// Both strict equality operators produce an unknown Boolean without coercion.
     StrictEquality(Arc<Self>, Arc<Self>),
     Sequence(Arc<[Self]>),
@@ -786,6 +792,21 @@ fn set_iterator_prototype_expression(call: &CallExpr) -> bool {
                 && matches!(&symbol.prop, MemberProp::Ident(id) if id.sym == "iterator")))
 }
 
+/// Operations whose operand evaluation is strict and whose primitive semantics
+/// are shared with purity. Membership and instanceof retain protocol handling.
+pub(super) fn modeled_binary_operator(operator: BinaryOp) -> bool {
+    !matches!(
+        operator,
+        BinaryOp::LogicalAnd
+            | BinaryOp::LogicalOr
+            | BinaryOp::NullishCoalescing
+            | BinaryOp::In
+            | BinaryOp::InstanceOf
+            | BinaryOp::EqEqEq
+            | BinaryOp::NotEqEq
+    )
+}
+
 impl ValueExpr {
     /// Possible returned values; the conditional test is evaluated separately.
     pub(super) fn result_alternatives(&self) -> Option<&[Self]> {
@@ -827,7 +848,8 @@ impl ValueExpr {
                         | Lit::Regex(_)
                 )
         ) && !matches!(expr.unwrap_parens(), Expr::Bin(bin)
-            if matches!(bin.op, BinaryOp::EqEqEq | BinaryOp::NotEqEq))
+            if matches!(bin.op, BinaryOp::EqEqEq | BinaryOp::NotEqEq)
+                || modeled_binary_operator(bin.op))
             && !matches!(expr.unwrap_parens(), Expr::Unary(unary)
                 if matches!(unary.op, UnaryOp::Void | UnaryOp::Bang))
         {
@@ -1050,6 +1072,11 @@ impl ValueExpr {
                     .into(),
                 )
             }
+            Expr::Bin(bin) if modeled_binary_operator(bin.op) => Self::Binary(
+                bin.op,
+                Arc::new(Self::lower(&bin.left, covered)),
+                Arc::new(Self::lower(&bin.right, covered)),
+            ),
             Expr::Bin(bin) => Self::Primitive(
                 [
                     Self::lower(&bin.left, covered),
@@ -1105,7 +1132,7 @@ impl ValueExpr {
             | Self::SetIteratorPrototype(expression)
             | Self::LogicalNot(expression)
             | Self::Void(expression) => expression.bindings(result),
-            Self::StrictEquality(left, right) => {
+            Self::StrictEquality(left, right) | Self::Binary(_, left, right) => {
                 left.bindings(result);
                 right.bindings(result);
             }
@@ -1154,9 +1181,11 @@ impl ValueExpr {
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),
-            Self::Primitive(_) | Self::StrictEquality(..) | Self::LogicalNot(_) | Self::Void(_) => {
-                false
-            }
+            Self::Primitive(_)
+            | Self::Binary(..)
+            | Self::StrictEquality(..)
+            | Self::LogicalNot(_)
+            | Self::Void(_) => false,
             Self::Alternatives(_) | Self::Conditional { .. } | Self::Sequence(_) => self
                 .result_alternatives()
                 .expect("alternative expression")
@@ -1282,9 +1311,11 @@ impl ValueExpr {
                     visiting_classes,
                 )
             }
-            Self::Primitive(_) | Self::StrictEquality(..) | Self::LogicalNot(_) | Self::Void(_) => {
-                false
-            }
+            Self::Primitive(_)
+            | Self::Binary(..)
+            | Self::StrictEquality(..)
+            | Self::LogicalNot(_)
+            | Self::Void(_) => false,
             Self::ObjectLiteral(_, properties) => properties.iter().any(|(_, value)| {
                 value.may_publish_namespace_inner(
                     id,
@@ -1440,9 +1471,11 @@ impl ValueExpr {
                     facts,
                 )
             }
-            Self::Primitive(_) | Self::StrictEquality(..) | Self::LogicalNot(_) | Self::Void(_) => {
-                false
-            }
+            Self::Primitive(_)
+            | Self::Binary(..)
+            | Self::StrictEquality(..)
+            | Self::LogicalNot(_)
+            | Self::Void(_) => false,
             Self::ObjectLiteral(_, properties) => properties
                 .iter()
                 .any(|(_, value)| value.carries_namespace(id, aliases)),

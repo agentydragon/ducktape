@@ -1,7 +1,7 @@
 //! Whole-source-unit coverage for a small, non-invoking initializer subset.
 
 use super::allocation_transfer::AllocationJudgment;
-use super::effect_coverage::EffectCoverageFragment;
+use super::effect_coverage::{EffectCoverageFragment, RootEffectIdentity};
 use super::value_model::{AbstractValue, CallSite, ValueExpr, Values};
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::OwnerInitializationCoverageRefusalReason;
@@ -148,17 +148,19 @@ pub(crate) struct CompletedInitialization {
 }
 
 impl CompletedInitialization {
-    /// Seal only the exact normally completed root initializer. Child
+    /// Seal only the exact normally completed source root. Child
     /// operations and invocation memos carry fragments, never this evidence.
     pub(super) fn from_root_effects(
-        source: &InitializationSourceIdentity,
+        source: &RootEffectIdentity,
         owner: SourceUnitOrdinal,
-        binding: &Id,
-        initializer_span: Span,
         initialized: &BTreeSet<Id>,
         effects: &EffectCoverageFragment,
     ) -> Option<Self> {
-        if !source.matches(owner, binding, initializer_span) || !initialized.contains(binding) {
+        if source.owner != owner
+            || source
+                .binding_initializer()
+                .is_some_and(|(binding, _)| !initialized.contains(binding))
+        {
             return None;
         }
         Some(Self {

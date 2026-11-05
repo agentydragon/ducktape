@@ -364,6 +364,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":artifact",
+        ":gate",
         ":output_layout",
         ":source_identity",
         ":spec",
@@ -637,11 +638,13 @@ rust_library(
         "facts/sync_effects/allocation_transfer.rs",
         "facts/sync_effects/array_transfer.rs",
         "facts/sync_effects/callable_body_facts.rs",
+        "facts/sync_effects/descriptor_transfer.rs",
         "facts/sync_effects/effect_coverage.rs",
         "facts/sync_effects/execution_index.rs",
         "facts/sync_effects/execution_index/callback_arguments.rs",
         "facts/sync_effects/execution_index/prototype_properties.rs",
         "facts/sync_effects/interpreter.rs",
+        "facts/sync_effects/interpreter/retained_effects.rs",
         "facts/sync_effects/local_operations.rs",
         "facts/sync_effects/local_transfer.rs",
         "facts/sync_effects/namespace_wrapper.rs",
@@ -1144,7 +1147,6 @@ rust_library(
         "lowering/ownership_subset.rs",
         "lowering/placement.rs",
         "lowering/plans.rs",
-        "lowering/rebind_fold.rs",
         "lowering/reentry_report.rs",
         "lowering/rename_ledger.rs",
         "lowering/rename_ledger_proptest.rs",
@@ -1187,6 +1189,7 @@ rust_library(
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
+        "@crates//:tempfile",
     ],
 )
 
@@ -1769,8 +1772,8 @@ rust_binary(
     ],
 )
 
-# Snapshot e2e cases copy and hash the engine. Keep symbols on the normal CLI,
-# but omit them from the test executable to avoid repeating that byte work.
+# Snapshot and shipped-recipe e2e cases copy and hash the engine. Keep symbols
+# on the normal CLI, but omit them from their shared test executable.
 rust_binary(
     name = "debundle_e2e",
     testonly = True,
@@ -1779,7 +1782,10 @@ rust_binary(
     crate_root = "main.rs",
     edition = "2024",
     rustc_flags = ["-Cstrip=symbols"],
-    visibility = ["//devinfra/js/debundle/e2e:__pkg__"],
+    visibility = [
+        "//devinfra/js/debundle/e2e:__pkg__",
+        "//devinfra/js/debundle/skills/shared/examples:__pkg__",
+    ],
     deps = [
         ":analysis_identity",
         ":cli",

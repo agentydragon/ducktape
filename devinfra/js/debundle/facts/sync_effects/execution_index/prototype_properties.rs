@@ -193,6 +193,7 @@ fn contained_root_bindings(value: &ValueExpr, index: &ExecutionIndex, bindings: 
         }
         ValueExpr::Binding(_)
         | ValueExpr::Primitive(_)
+        | ValueExpr::Binary(..)
         | ValueExpr::StrictEquality(..)
         | ValueExpr::LogicalNot(_)
         | ValueExpr::Void(_)

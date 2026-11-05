@@ -1,7 +1,7 @@
 use analysis::ProgramGraphReport;
 use analysis::analysis_inputs::NativeIntegrity;
 use analysis::reports::author_inputs::AuthorInputLocations;
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use graph_provenance::GraphProvenance;
 use output_layout::{DEPENDENCY_GRAPH_REPORT, PROGRAM_GRAPH_REPORT};
 use serde::Serialize;
@@ -41,31 +41,81 @@ pub(super) fn write_chunk_report_json<T: Serialize>(
 /// A complete-evidence stream. Call `finish` before writing its summary;
 /// drop alone cannot report the final buffered write's failure.
 pub(super) struct JsonlReport {
-    path: PathBuf,
     writer: BufWriter<fs::File>,
+    location: JsonlLocation,
+}
+
+enum JsonlLocation {
+    Selected(PathBuf),
+    Pending(tempfile::TempPath),
+}
+
+impl JsonlLocation {
+    fn path(&self) -> &Path {
+        match self {
+            Self::Selected(path) => path,
+            Self::Pending(path) => path,
+        }
+    }
 }
 
 impl JsonlReport {
-    pub(super) fn create(path: PathBuf) -> Result<Self> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-        }
-        let writer = BufWriter::new(
-            fs::File::create(&path).with_context(|| format!("creating {}", path.display()))?,
-        );
-        Ok(Self { path, writer })
+    /// Full reports stream directly. Rejection-only streams stay temporary
+    /// until the same sweep supplies the final verdict and output decision.
+    pub(super) fn create(path: Option<PathBuf>) -> Result<Self> {
+        let (file, location) = match path {
+            Some(path) => {
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent)
+                        .with_context(|| format!("creating {}", parent.display()))?;
+                }
+                let file = fs::File::create(&path)
+                    .with_context(|| format!("creating {}", path.display()))?;
+                (file, JsonlLocation::Selected(path))
+            }
+            None => {
+                let (file, path) = tempfile::NamedTempFile::new()?.into_parts();
+                (file, JsonlLocation::Pending(path))
+            }
+        };
+        Ok(Self {
+            writer: BufWriter::new(file),
+            location,
+        })
     }
 
     pub(super) fn write(&mut self, row: &impl Serialize) -> Result<()> {
         serde_json::to_writer(&mut self.writer, row)
-            .with_context(|| format!("writing {}", self.path.display()))?;
+            .with_context(|| format!("writing {}", self.location.path().display()))?;
         self.writer
             .write_all(b"\n")
-            .with_context(|| format!("writing {}", self.path.display()))
+            .with_context(|| format!("writing {}", self.location.path().display()))
     }
 
-    pub(super) fn finish(mut self) -> Result<()> {
-        flush_jsonl(&mut self.writer, &self.path)
+    pub(super) fn finish(mut self, destination: Option<PathBuf>) -> Result<()> {
+        flush_jsonl(&mut self.writer, self.location.path())?;
+        match (&self.location, destination) {
+            (JsonlLocation::Selected(path), Some(destination)) => {
+                ensure!(
+                    *path == destination,
+                    "evidence destination changed during assessment"
+                );
+            }
+            (JsonlLocation::Selected(_), None) => {
+                bail!("selected evidence has no final report destination");
+            }
+            (JsonlLocation::Pending(path), Some(destination)) => {
+                if let Some(parent) = destination.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                // The temporary directory and output tree may be on different
+                // filesystems. The TempPath still owns cleanup on copy errors.
+                fs::copy(path, &destination)
+                    .with_context(|| format!("publishing {}", destination.display()))?;
+            }
+            (JsonlLocation::Pending(_), None) => {}
+        }
+        Ok(())
     }
 }
 

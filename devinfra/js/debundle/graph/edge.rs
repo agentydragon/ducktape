@@ -305,10 +305,12 @@ pub enum CellConflict {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EffectCellReport {
     Binding { binding: Atom },
+    LexicalCell { origin: u32 },
     GlobalProp { key: String },
     ArrayContents { origin: u32 },
     SetContents { origin: u32 },
     ObjectShape { origin: u32 },
+    DescriptorMapContents { origin: u32 },
     OwnProperty { origin: u32, property: String },
 }
 
@@ -318,10 +320,14 @@ impl From<&EffectCell> for EffectCellReport {
             EffectCell::Binding(id) => Self::Binding {
                 binding: id.0.clone(),
             },
+            EffectCell::LexicalCell(origin) => Self::LexicalCell { origin: *origin },
             EffectCell::GlobalProp(key) => Self::GlobalProp { key: key.clone() },
             EffectCell::ArrayContents(origin) => Self::ArrayContents { origin: *origin },
             EffectCell::SetContents(origin) => Self::SetContents { origin: *origin },
             EffectCell::ObjectShape(origin) => Self::ObjectShape { origin: *origin },
+            EffectCell::DescriptorMapContents(origin) => {
+                Self::DescriptorMapContents { origin: *origin }
+            }
             EffectCell::OwnProperty { origin, property } => Self::OwnProperty {
                 origin: *origin,
                 property: property.clone(),
@@ -334,10 +340,14 @@ impl fmt::Display for EffectCellReport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Binding { binding } => write!(f, "binding `{binding}`"),
+            Self::LexicalCell { origin } => write!(f, "lexical cell #{origin}"),
             Self::GlobalProp { key } => write!(f, "global property `{key}`"),
             Self::ArrayContents { origin } => write!(f, "array contents #{origin}"),
             Self::SetContents { origin } => write!(f, "Set contents #{origin}"),
             Self::ObjectShape { origin } => write!(f, "object shape #{origin}"),
+            Self::DescriptorMapContents { origin } => {
+                write!(f, "descriptor map contents #{origin}")
+            }
             Self::OwnProperty { origin, property } => {
                 write!(f, "own property `{property}` of allocation #{origin}")
             }

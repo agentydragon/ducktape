@@ -67,6 +67,7 @@ pub enum OrderedCallAdmissionRefusal {
     MultipleTargets,
     NonLocalTarget,
     UnsupportedReceiver,
+    UnsupportedNativeOperation,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]

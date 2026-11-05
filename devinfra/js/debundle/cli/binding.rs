@@ -8,7 +8,7 @@
 //!   template-local identifier, or an explicit readable `name:`. Graph query
 //!   aliases are separate. Ambiguous spec identifiers produce a list of matches.
 //! * Mutating commands validate-by-default (atomic post-batch state)
-//!   and refuse on collision / atom-split rejection.
+//!   and refuse on collisions, unresolved claims, or canonical assessment rejection.
 //! * Edits use the canonical module schema; changed YAML is reserialized.
 //!
 //! The per-command contract lives in the clap doc-comments
@@ -26,7 +26,7 @@ use graph_provenance::VerifiedGraphSourceContext;
 use selector_outcome::SelectorKind;
 use serde::Deserialize;
 
-use crate::candidate_assessment::EffectAssessmentUnavailable;
+use crate::candidate_assessment::{EffectAssessmentUnavailable, ensure_candidate_write};
 use pipeline::{AnalysisArtifactInput, TransformRequest, assess_candidate_effect_relocation};
 use spec::{
     AnonymousStatement, BindingAnnotation, LogicalModule, Member, MemberSelectorSpec, ModulePath,
@@ -455,6 +455,7 @@ pub fn rename_binding(
             } else {
                 GateOutcome::NamesOnly
             },
+            needs_full_assessment: false,
             files_written: if changed {
                 vec![hit.file.display().to_string()]
             } else {
@@ -632,6 +633,7 @@ pub fn rename_bindings(
             } else {
                 GateOutcome::NamesOnly
             },
+            needs_full_assessment: false,
             files_written,
             files_deleted,
         },
@@ -705,7 +707,7 @@ pub struct AssignOutcome {
     pub outcome: MutationOutcome,
     pub moves_applied: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
+    pub effect_relocation_assessment: Option<gate::ApplicationRelocationAssessmentReport>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effect_assessment_unavailable: Option<EffectAssessmentUnavailable>,
 }
@@ -834,8 +836,8 @@ fn proposal_to_moves(proposal: BatchProposal) -> std::result::Result<Vec<Move>, 
         .collect())
 }
 
-/// Plan a batch from one module snapshot, validate collisions + realizability +
-/// atom-split, then write destinations before deleting drained sources. Each
+/// Plan a batch from one module snapshot, validate collisions and claims,
+/// assess the exact candidate, then write destinations before deleting drained sources. Each
 /// file replacement is atomic; the multi-file write is not a transaction.
 /// Remaining semantic content prevents source deletion (see below).
 ///
@@ -853,12 +855,10 @@ fn proposal_to_moves(proposal: BatchProposal) -> std::result::Result<Vec<Move>, 
 ///     swept after draining, and only when they have no module-level
 ///     `comment:` or `note:`, no remaining `source_matches:`, `annotations:`, or
 ///     `anonymous_statements:`.
-///   * [`Gate::Run`] runs the unified realizability gate
-///     ([`Gate::check`]) against the
-///     in-memory post-batch spec; cycle or atom-split rejections
-///     bail before any file is written. [`Gate::Skip`] (`--no-verify`)
-///     skips validation. The CLI dispatcher requires `--graph` unless
-///     `--no-verify` is set ([`Gate::from_cli`]).
+///   * [`Gate::Run`] resolves claims in the post-batch spec; the canonical
+///     candidate assessment decides verified writes. [`Gate::Skip`]
+///     (`--no-verify`) skips validation. The CLI dispatcher requires
+///     `--graph` unless `--no-verify` is set ([`Gate::from_cli`]).
 pub fn run_bindings_assign(
     modules_root: &Path,
     moves: Vec<Move>,
@@ -873,6 +873,7 @@ pub fn run_bindings_assign(
                 verb: "assign",
                 action: "noop",
                 gate: GateOutcome::NotRequired,
+                needs_full_assessment: false,
                 files_written: Vec::new(),
                 files_deleted: Vec::new(),
             },
@@ -1090,10 +1091,11 @@ pub fn run_bindings_assign(
     let move_sources: BTreeSet<String> = plan.iter().map(|p| p.source_module.clone()).collect();
     let to_delete = drained_source_modules(&docs, &move_sources);
 
-    // Step 7: realizability + atom-split gate against the in-memory
-    // post-batch docs — the same `ModuleFile` claims model `debundle
-    // run` loads, so canonical source_matches[] claims gate
-    // identically. Runs before any file is written.
+    // Step 7: resolve the exact claims in the in-memory post-batch docs before
+    // assessing the candidate or writing any file.
+    if !no_moves {
+        gate.check_claims(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
+    }
     let effect_relocation_assessment = if let Some(context) = effect_assessment_context {
         let candidate_modules = docs
             .iter()
@@ -1110,11 +1112,12 @@ pub fn run_bindings_assign(
     } else {
         None
     };
-    if let Some(assessment) = &effect_relocation_assessment {
-        pipeline::ensure_candidate_emittable_for_write(assessment, dry_run)?;
-    }
     if !no_moves {
-        gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
+        ensure_candidate_write(
+            effect_relocation_assessment.as_ref(),
+            dry_run,
+            matches!(&gate, Gate::Skip),
+        )?;
     }
 
     let (files_written, files_deleted) =
@@ -1133,7 +1136,11 @@ pub fn run_bindings_assign(
                 GateOutcome::NotRequired
             } else {
                 gate.outcome()
+                    .with_candidate_assessment(effect_relocation_assessment.as_ref())
             },
+            needs_full_assessment: !no_moves
+                && effect_relocation_assessment.is_none()
+                && !matches!(&gate, Gate::Skip),
             files_written,
             files_deleted,
         },
@@ -1161,7 +1168,7 @@ pub struct SourceUnitRefineOutcome {
     pub outcome: MutationOutcome,
     pub source_units_reassigned: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
+    pub effect_relocation_assessment: Option<gate::ApplicationRelocationAssessmentReport>,
 }
 
 pub struct SourceUnitRefineOptions<'a> {
@@ -1225,10 +1232,6 @@ pub fn run_source_unit_refine(
         dry_run,
         effect_assessment_context,
     } = options;
-    anyhow::ensure!(
-        effect_assessment_context.is_none() || dry_run,
-        "candidate effect assessment requires --dry-run"
-    );
     if assignments.is_empty() {
         bail!("source unit assignment batch is empty");
     }
@@ -1242,10 +1245,13 @@ pub fn run_source_unit_refine(
     let scope = tree_config
         .map(|path| ModuleTreeScope::from_config(path, &dependency_graph.chunk_id))
         .transpose()?;
-    let mut original_docs = load_module_docs(modules_root)?;
-    if let Some(scope) = &scope {
-        original_docs.retain(|module, _| scope.contains(Path::new(module)));
-    }
+    let (original_docs, untouched_docs): (ModuleDocs, ModuleDocs) = load_module_docs(modules_root)?
+        .into_iter()
+        .partition(|(module, _)| {
+            scope
+                .as_ref()
+                .is_none_or(|scope| scope.contains(Path::new(module)))
+        });
     let mut docs = original_docs.clone();
     let initial_spec = post_edit_spec_from_docs(&original_docs, &BTreeSet::new())?;
     let claim_sets = source_claim_sets_from_post_spec(&initial_spec);
@@ -1576,24 +1582,24 @@ pub fn run_source_unit_refine(
 
     let to_delete = drained_source_modules(&docs, &source_modules);
     let post_spec = post_edit_spec_from_docs(&docs, &to_delete)?;
-    // This unchanged gate first proves the complete expected source-unit map
-    // and applies its legacy realizability/atom-split checks to `post_spec`.
+    // Prove the complete expected source-unit map and reject ambiguous claims
+    // before assessing the exact candidate.
     Gate::Run {
         graph_path: dependency_graph_path,
         input: std::sync::Arc::clone(&graph_input),
         source_root: Some(source_root),
         source_context,
     }
-    .check_source_units(
+    .check_source_unit_claims(
         modules_root,
         &post_spec,
         &expected_source_unit_modules,
         scope.as_ref(),
     )?;
     let effect_relocation_assessment = if let Some(context) = effect_assessment_context {
-        let candidate_modules = docs
+        let candidate_modules = untouched_docs
             .iter()
-            .filter(|(path, _)| !to_delete.contains(*path))
+            .chain(docs.iter().filter(|(path, _)| !to_delete.contains(*path)))
             .map(|(path, (_, doc))| (path.clone(), doc.clone()))
             .collect();
         Some(assess_candidate_effect_relocation(
@@ -1606,6 +1612,10 @@ pub fn run_source_unit_refine(
     } else {
         None
     };
+
+    if source_units_reassigned > 0 {
+        ensure_candidate_write(effect_relocation_assessment.as_ref(), dry_run, false)?;
+    }
 
     let (files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
@@ -1620,7 +1630,10 @@ pub fn run_source_unit_refine(
         outcome: MutationOutcome {
             verb: "refine",
             action,
-            gate: GateOutcome::Passed,
+            gate: GateOutcome::ClaimsChecked
+                .with_candidate_assessment(effect_relocation_assessment.as_ref()),
+            needs_full_assessment: source_units_reassigned > 0
+                && effect_relocation_assessment.is_none(),
             files_written,
             files_deleted,
         },
@@ -2097,7 +2110,7 @@ pub struct UnassignOutcome {
     pub outcome: MutationOutcome,
     pub unassigned: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
+    pub effect_relocation_assessment: Option<gate::ApplicationRelocationAssessmentReport>,
 }
 
 /// Remove one or more bindings from their current modules as one validated batch.
@@ -2108,7 +2121,7 @@ pub struct UnassignOutcome {
 ///
 /// After unassign, the bindings fall through to residual (the default
 /// when an source unit isn't claimed by any spec module's `members:`). The
-/// realizability + atom-split gate runs against the post-batch spec
+/// claim and selector checks run against the post-batch spec
 /// the same way `bindings assign` does. The CLI dispatcher enforces
 /// the "graph or no-verify" policy ([`Gate::from_cli`]).
 ///
@@ -2119,8 +2132,8 @@ pub struct UnassignOutcome {
 ///     readable name collapse to one removal.
 ///   * Only modules that were sources of a removal in THIS batch are
 ///     swept after draining.
-///   * [`Gate::Run`] gates the in-memory post-batch spec; cycle or
-///     atom-split rejections bail before any file is written.
+///   * [`Gate::Run`] checks claims in the in-memory post-batch spec.
+///     Verified writes require an accepted canonical candidate assessment.
 pub fn run_bindings_unassign(
     modules_root: &Path,
     syms: Vec<String>,
@@ -2135,6 +2148,7 @@ pub fn run_bindings_unassign(
                 verb: "unassign",
                 action: "noop",
                 gate: GateOutcome::NotRequired,
+                needs_full_assessment: false,
                 files_written: Vec::new(),
                 files_deleted: Vec::new(),
             },
@@ -2180,9 +2194,14 @@ pub fn run_bindings_unassign(
         .collect();
     let to_delete = drained_source_modules(&docs, &move_sources);
 
-    // Assess the exact typed post-edit documents before the legacy gate or any
-    // writes. The pipeline resolves this candidate through the same canonical
-    // selector and emitter-planning path as `run --analysis`.
+    // Resolve the exact authored claims before assessing the candidate or
+    // writing any file.
+    if !no_symbols {
+        gate.check_claims(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
+    }
+
+    // Assess the exact typed post-edit documents through the canonical
+    // selector and emitter-planning path used by `run --analysis`.
     let effect_relocation_assessment = if let Some(context) = effect_assessment_context {
         let candidate_modules = docs
             .iter()
@@ -2200,12 +2219,12 @@ pub fn run_bindings_unassign(
         None
     };
 
-    // Step 5: gate the in-memory post-batch spec (cycles +
-    // atom-split) before any file is written. Built from the mutated
-    // docs through the run pipeline's claims model, so source_matches[]
-    // claims in surviving modules stay claimed.
     if !no_symbols {
-        gate.check(modules_root, || post_edit_spec_from_docs(&docs, &to_delete))?;
+        ensure_candidate_write(
+            effect_relocation_assessment.as_ref(),
+            dry_run,
+            matches!(&gate, Gate::Skip),
+        )?;
     }
 
     let (files_written, files_deleted) =
@@ -2224,7 +2243,11 @@ pub fn run_bindings_unassign(
                 GateOutcome::NotRequired
             } else {
                 gate.outcome()
+                    .with_candidate_assessment(effect_relocation_assessment.as_ref())
             },
+            needs_full_assessment: !no_symbols
+                && effect_relocation_assessment.is_none()
+                && !matches!(&gate, Gate::Skip),
             files_written,
             files_deleted,
         },

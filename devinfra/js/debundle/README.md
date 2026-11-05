@@ -118,7 +118,11 @@ chunk_renames:
 
 `run` transforms source from an authored spec; the authoring commands inspect,
 propose, or edit that spec. Commands that resolve selectors or validate edits reuse
-the shared resolver and gate rather than their own acceptance rules.
+the shared resolver and gate rather than their own acceptance rules. Ownership
+edits require full-context staged analysis for a verified write; graph-only
+previews report `needs_full_assessment`. The normal run and those edits share one
+joint effect and structural relocation verdict. Legacy graph checks remain
+comparison diagnostics.
 
 | Responsibility                                                                  | Start here                                                          |
 | ------------------------------------------------------------------------------- | ------------------------------------------------------------------- |

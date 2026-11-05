@@ -44,6 +44,8 @@ pub enum Mutation {
     /// `[[DefineOwnProperty]]` on `target` for every own enumerable key of the
     /// `descriptors` record.
     DefineProperties { target: ArgSel, descriptors: ArgSel },
+    /// Enumerable own source values are read and written through strict `Set`.
+    AssignProperties { target: ArgSel, source: ArgSel },
     /// The fresh allocation receives the argument's own property descriptors:
     /// data values and accessor functions by identity, never invoked.
     FreshOwnDescriptorsOf(ArgSel),

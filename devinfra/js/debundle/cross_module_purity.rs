@@ -718,6 +718,7 @@ fn solve_callable_import_projections(
 /// The author inputs and host claims `resolve_imported_callable_summaries`
 /// checks the providers against.
 pub struct CallableSummaryInputs<'a> {
+    pub source_callable_members: &'a BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>>,
     pub selected_value_inputs: &'a BTreeMap<SourceModuleKey, Vec<SelectedBindingValueInput>>,
     pub selected_native_operation_inputs:
         &'a BTreeMap<SourceModuleKey, Vec<SelectedNativeOperationInput>>,
@@ -740,6 +741,7 @@ pub fn resolve_imported_callable_summaries(
     inputs: CallableSummaryInputs<'_>,
 ) -> Result<ResolvedCallableSummaries> {
     let CallableSummaryInputs {
+        source_callable_members,
         selected_value_inputs,
         selected_native_operation_inputs,
         argument_inputs,
@@ -1320,6 +1322,45 @@ pub fn resolve_imported_callable_summaries(
             );
         }
     }
+    // Specialize only layouts demanded by canonical imported call sites. The
+    // resulting conditions remain independent of all return capabilities.
+    let mut conditional_demands: BTreeMap<
+        CallableExportKey,
+        BTreeSet<crate::analysis_inputs::RecordInputShape>,
+    > = BTreeMap::new();
+    for (module, facts) in modules {
+        for (local, shape) in prepared[module].imported_record_inputs() {
+            let Some(target) = facts.imports.get(&local) else {
+                continue;
+            };
+            conditional_demands
+                .entry(CallableExportKey {
+                    module: target.module.clone(),
+                    export: target.export.clone(),
+                })
+                .or_default()
+                .insert(shape);
+        }
+    }
+    let mut conditional_bodies = Vec::new();
+    for (key, shapes) in conditional_demands {
+        let Some(provider) = modules.get(&key.module) else {
+            continue;
+        };
+        let Some(local) = provider.exports.get(&key.export) else {
+            continue;
+        };
+        let Some(prepared_provider) = prepared.get_mut(&key.module) else {
+            continue;
+        };
+        for shape in shapes {
+            if let Some((callable_key, derived)) =
+                prepared_provider.conditional_body(local, shape, &native_integrity)
+            {
+                conditional_bodies.push((key.clone(), local.clone(), callable_key, derived));
+            }
+        }
+    }
     let inferred: BTreeMap<_, _> = prepared
         .into_iter()
         .map(|(module, prepared)| {
@@ -1338,6 +1379,17 @@ pub fn resolve_imported_callable_summaries(
                     prepared,
                     &native_integrity,
                     &required_stable_providers,
+                    &source_callable_members
+                        .get(module)
+                        .into_iter()
+                        .flat_map(|exports| exports.iter())
+                        .filter_map(|(export, members)| {
+                            Some((
+                                modules[module].exports.get(export)?.clone(),
+                                members.clone(),
+                            ))
+                        })
+                        .collect(),
                     modules[module].exports.keys().any(|export| {
                         required.contains(&CallableExportKey {
                             module: module.clone(),
@@ -1382,18 +1434,46 @@ pub fn resolve_imported_callable_summaries(
             );
         }
     }
-    // A construction premise must hold in every analyzed chunk's census,
-    // including the importer's.
-    let intact_collections = inferred
+    // Every native row's complete requirements must hold in every analyzed
+    // chunk's census, including the importer's.
+    let intact_native_operations = inferred
         .values()
-        .map(|capabilities| &capabilities.intact_collections)
+        .map(|capabilities| &capabilities.intact_native_operations)
         .fold(None::<BTreeSet<_>>, |all, module| {
             Some(match all {
                 None => module.clone(),
-                Some(all) => all.intersection(module).copied().collect(),
+                Some(all) => all.intersection(module).cloned().collect(),
             })
         })
         .unwrap_or_default();
+    for (key, local, callable_key, body) in conditional_bodies {
+        if !body.native_operations.is_subset(&intact_native_operations) {
+            continue;
+        }
+        let mut summary = CallableSummary::default();
+        let dependencies = body.dependencies.clone();
+        summary
+            .conditional_bodies
+            .push(crate::analysis_inputs::ConditionalForeignBody {
+                defining_module: key.module.clone(),
+                export: key.export.clone(),
+                local,
+                callable_key,
+                input: body.input,
+                reads: body.reads,
+                native_operations: body.native_operations,
+                effects: body.effects,
+                dependencies: dependencies.clone(),
+                replacement_package: modules[&key.module]
+                    .replacement_packages
+                    .get(&key.export)
+                    .cloned(),
+            });
+        export_summaries
+            .entry(key)
+            .or_default()
+            .add(summary, dependencies);
+    }
     for (module, facts) in modules {
         let Some(capabilities) = inferred.get(module) else {
             continue;
@@ -1410,8 +1490,8 @@ pub fn resolve_imported_callable_summaries(
                 call.callback_factory
                     && call
                         .derived
-                        .native_constructions
-                        .is_subset(&intact_collections)
+                        .native_operations
+                        .is_subset(&intact_native_operations)
             }) else {
                 continue;
             };
@@ -1459,8 +1539,8 @@ pub fn resolve_imported_callable_summaries(
             if !required.contains(&key)
                 || !call
                     .derived
-                    .native_constructions
-                    .is_subset(&intact_collections)
+                    .native_operations
+                    .is_subset(&intact_native_operations)
             {
                 continue;
             }
@@ -1498,21 +1578,61 @@ pub fn resolve_imported_callable_summaries(
                 );
             }
             export_summaries.entry(key).or_default().add(
-                CallableSummary::foreign_call(ForeignCallSummary {
-                    defining_module: module.clone(),
-                    export: export.clone(),
-                    local: local.clone(),
-                    source_location: locate(call.declaration_start),
-                    invocation: call.derived.invocation,
-                    returns: call.derived.returns.clone(),
-                    retained_arguments: call.derived.retained_arguments.clone(),
-                    retained_provider_captures: call.derived.retained_provider_captures.clone(),
-                    native_constructions: call.derived.native_constructions.clone(),
-                    replacement_package: facts.replacement_packages.get(export).cloned(),
-                    dependencies: call.dependencies.clone(),
-                }),
+                CallableSummary::foreign_call(source_foreign_call_summary(
+                    module, export, local, None, facts, call,
+                )),
                 call.dependencies.clone(),
             );
+        }
+    }
+    for (module, exports) in source_callable_members {
+        let facts = modules.get(module).ok_or_else(|| {
+            anyhow::anyhow!("source_callable_members names missing module {module}")
+        })?;
+        for (export, members) in exports {
+            let local = facts.exports.get(export).ok_or_else(|| {
+                anyhow::anyhow!("source_callable_members names missing export {module}:{export}")
+            })?;
+            for member in members {
+                let body = inferred[module].member_calls.get(&(local.clone(), member.clone()))
+                    .ok_or_else(|| anyhow::anyhow!("source_callable_members {module}:{export}.{member} requires exactly one source function origin"))?;
+                let Some(call) = body else {
+                    continue;
+                };
+                if !call
+                    .derived
+                    .native_operations
+                    .is_subset(&intact_native_operations)
+                {
+                    continue;
+                }
+                let mut dependencies = call.dependencies.clone();
+                dependencies.add_source_callable_member(
+                    crate::analysis_inputs::SourceCallableMemberRef {
+                        defining_module: module.clone(),
+                        export: export.clone(),
+                        member: member.clone(),
+                    },
+                );
+                let mut summary = source_foreign_call_summary(
+                    module,
+                    export,
+                    local,
+                    Some(member.clone()),
+                    facts,
+                    call,
+                );
+                summary.dependencies = dependencies.clone();
+                let mut capabilities = CallableSummary::default();
+                capabilities.foreign_members.insert(member.clone(), summary);
+                export_summaries
+                    .entry(CallableExportKey {
+                        module: module.clone(),
+                        export: export.clone(),
+                    })
+                    .or_default()
+                    .add(capabilities, dependencies);
+            }
         }
     }
     for (module, facts) in modules {
@@ -1566,6 +1686,44 @@ pub fn resolve_imported_callable_summaries(
         argument_inputs: argument_inputs.clone(),
         structural_flows,
     })
+}
+
+fn source_foreign_call_summary(
+    module: &str,
+    export: &str,
+    local: &str,
+    member: Option<String>,
+    facts: &ModulePurityFacts<'_>,
+    call: &crate::facts::sync_effects::execution_index::InferredForeignCall,
+) -> ForeignCallSummary {
+    ForeignCallSummary {
+        defining_module: module.to_owned(),
+        export: export.to_owned(),
+        local: local.to_owned(),
+        member,
+        source_location: facts.source.as_ref().and_then(|(path, index)| {
+            let (line, column) = index.line_and_column_for_pos(BytePos(call.declaration_start))?;
+            Some(SourceLocation {
+                source_path: path.clone(),
+                start_line: line,
+                end_line: line,
+                start_column: Some(column),
+            })
+        }),
+        invocation: call.derived.invocation,
+        returns: call.derived.returns.clone(),
+        retained_arguments: call.derived.retained_arguments.clone(),
+        retained_provider_captures: call.derived.retained_provider_captures.clone(),
+        native_operations: call.derived.native_operations.clone(),
+        replacement_package: facts.replacement_packages.get(export).cloned(),
+        dependencies: call.dependencies.clone(),
+        body_effects: call.derived.body_effects.clone().map(|effects| {
+            Box::new(crate::analysis_inputs::ForeignBodyEffects {
+                callable_key: call.declaration_start,
+                effects,
+            })
+        }),
+    }
 }
 
 /// Resolve author-asserted inline-only callback factories through the same
@@ -2326,6 +2484,7 @@ mod tests {
             &asserted,
             &BTreeMap::new(),
             CallableSummaryInputs {
+                source_callable_members: &BTreeMap::new(),
                 selected_value_inputs: &BTreeMap::new(),
                 selected_native_operation_inputs: &BTreeMap::new(),
                 argument_inputs: &BTreeMap::new(),

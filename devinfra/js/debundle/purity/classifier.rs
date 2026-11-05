@@ -1191,13 +1191,13 @@ pub(crate) fn classify_new_expr_purity(
         )
         .then(purity);
     }
-    // Other Set proof families, including borrowed aliases and arrays of
-    // primitive static-member reads, remain outside the selected/inferred
-    // top-level source projection above.
+    // Checked const-array alias chains use the shared projection above. This
+    // existing path remains for primitive static-member array literals.
     if callee.sym.as_ref() == "Set"
         && !shadowed.contains("Set")
         && !local_shadowed.contains("Set")
         && let Some(dependencies) = graph.set_iterable_dependencies(new_expr.span)
+        && !graph.requires_native_iterable_operand(new_expr.span)
         && args.len() == 1
         && args[0].spread.is_none()
     {
@@ -1208,7 +1208,7 @@ pub(crate) fn classify_new_expr_purity(
         return Effects::of_detail(
             Effect::Invoke(InvokeSite::Construct),
             new_expr.span,
-            "new Set(array_alias) has an impure argument".to_string(),
+            "new Set has an impure iterable argument".to_string(),
         )
         .then(arg_purity);
     }

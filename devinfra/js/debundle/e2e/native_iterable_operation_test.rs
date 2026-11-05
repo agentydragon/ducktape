@@ -193,6 +193,61 @@ console.log([...copied].join(","));
 }
 
 #[test]
+fn borrowed_array_iterator_interference_stays_observable() {
+    for (source, expected) in [
+        (
+            "const input = ['source'];\nconst alias = input;\nconst tail = alias;\nObject.defineProperty(tail, Symbol.iterator, { get() { console.log('array getter'); return function* () { yield 'replacement'; }; } });\nconst copied = new Set(tail);\nconsole.log([...copied].join(','));\n",
+            "array getter\nreplacement\n",
+        ),
+        (
+            "const input = ['source'];\nconst alias = input;\nconst tail = alias;\nArray.prototype[Symbol.iterator] = function* () { console.log('array iterator'); yield 'replacement'; };\nconst copied = new Set(tail);\nconsole.log([...copied].join(','));\n",
+            "array iterator\nreplacement\n",
+        ),
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&fixture, expected);
+        let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+        let copied = graph["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| {
+                node["declared_bindings"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|binding| binding["binding"] == "copied")
+            })
+            .unwrap();
+        assert_eq!(
+            copied["synchronous_execution"]["complete"], false,
+            "the changed Array iterator stays on the runtime fallback: {graph}"
+        );
+    }
+}
+
+#[test]
+fn transitive_const_array_aliases_preserve_identity_and_mutation_order() {
+    for (source, expected) in [
+        (
+            "const input = ['source'];\nconst alias = input;\nconst tail = alias;\nconst copied = new Set(tail);\nconsole.log([...copied].join(','));\n",
+            "source\n",
+        ),
+        (
+            "const input = ['source'];\nconst alias = input;\nconst tail = alias;\ninput.push('before');\nconst copied = new Set(tail);\nconsole.log([...copied].join(','));\n",
+            "source,before\n",
+        ),
+        (
+            "const input = ['source'];\nconst alias = input;\nconst tail = alias;\nconst copied = new Set(tail);\ntail.push('after');\nconsole.log([...copied].join(','), input.join(','));\n",
+            "source source,after\n",
+        ),
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        assert_preserved_entry_output(&fixture, expected);
+    }
+}
+
+#[test]
 fn argument_throw_stops_evaluation_after_the_observed_prefix() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const seed = new Set(["a"]);
@@ -249,7 +304,7 @@ console.log("after");
 
 #[test]
 fn graph_backed_refinement_cannot_split_the_proved_set_interval() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::new_full_tree(
         "var seed = new Set(['a']), sibling = new Set(['x']), copied = new Set([...seed, 'c']); console.log(copied.size);",
         &[(
             "sets.yaml",
@@ -273,8 +328,11 @@ fn graph_backed_refinement_cannot_split_the_proved_set_interval() {
         serde_json::to_vec(&serde_json::json!([{ "unit_id": copied, "module": "copy" }])).unwrap(),
     )
     .unwrap();
-    fixture.assert_rejected_unchanged(
-        &["modules", "refine", "--batch", batch.to_str().unwrap()],
-        &["atomic"],
+    let analysis = fixture.stage_analysis();
+    let args = ["modules", "refine", "--batch", batch.to_str().unwrap()];
+    let verdict = fixture.assert_rejected_unchanged_with_assessment(&args, &analysis, &[]);
+    assert_eq!(
+        verdict["chunks"]["main"]["placement"]["status"], "blocked",
+        "{verdict}"
     );
 }

@@ -13,7 +13,7 @@ const MATCH: &str =
     "source_matches: [{match: 'let alpha = 0;', bindings: [{local: alpha, name: Alpha}]}]\n";
 
 fn atomic_fixture(yaml: &str) -> GraphFixture {
-    GraphFixture::new(
+    GraphFixture::new_full_tree(
         "let alpha = 0;\nfunction beta() { alpha = 1; }\nconst gamma = 3;\nconsole.log(alpha, typeof beta, gamma);\n",
         &[("home/atom.yaml", yaml), GAMMA],
     )
@@ -22,9 +22,16 @@ fn atomic_fixture(yaml: &str) -> GraphFixture {
 #[test]
 fn source_match_siblings_cannot_be_split_in_either_yaml_order() {
     for yaml in [format!("{MEMBER}{MATCH}"), format!("{MATCH}{MEMBER}")] {
-        atomic_fixture(&yaml).assert_rejected_unchanged(
+        let fixture = atomic_fixture(&yaml);
+        let assessment = fixture.stage_analysis();
+        let rejected = fixture.assert_rejected_unchanged_with_assessment(
             &["bindings", "unassign", "beta"],
-            &["splits one or more atomic groups"],
+            &assessment,
+            &[],
+        );
+        assert_eq!(
+            rejected["chunks"]["main"]["placement"]["status"], "blocked",
+            "{rejected}"
         );
     }
 }
@@ -32,7 +39,8 @@ fn source_match_siblings_cannot_be_split_in_either_yaml_order() {
 #[test]
 fn independent_unassign_resolves_source_match_claims_and_still_runs() {
     let fixture = atomic_fixture(&format!("{MEMBER}{MATCH}"));
-    fixture.assert_success(&["bindings", "unassign", "gamma"]);
+    let assessment = fixture.stage_analysis();
+    fixture.assert_success_with_assessment(&["bindings", "unassign", "gamma"], &assessment);
     assert!(!fixture.modules.join("solo/gamma.yaml").exists());
     fixture.assert_runs("0 function 3\n");
 }

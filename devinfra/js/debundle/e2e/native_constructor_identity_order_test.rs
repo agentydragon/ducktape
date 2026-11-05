@@ -45,21 +45,39 @@ console.log(instance.value.marker);
     );
     let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
     assert_preserved_entry_output(&fixture, "ReferenceError\n");
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            &source,
-            vec![
-                logical_module_with_anon(
-                    "registry",
-                    &[Member::new("Registry"), Member::new("instance")],
-                    &["globalThis.saved = () => later;", replacement],
-                ),
-                logical_module("later", &[Member::new("later")]),
-            ],
-        ),
-        &["registry", "later"],
-        &[],
+    let split = FixtureOpts::new(
+        &source,
+        vec![
+            logical_module_with_anon(
+                "registry",
+                &[Member::new("Registry"), Member::new("instance")],
+                &["globalThis.saved = () => later;", replacement],
+            ),
+            logical_module("later", &[Member::new("later")]),
+        ],
     );
+    match run_fixture_observing_gate(split) {
+        FixtureRunOutcome::Accepted(fixture) => {
+            save_relocation_reports(
+                &fixture.report_root,
+                &fixture.chunk_id,
+                "replaced-field-constructor",
+            );
+            assert_preserved_entry_output(&fixture, "ReferenceError\n");
+        }
+        FixtureRunOutcome::Rejected(rejected) => {
+            save_relocation_reports(
+                &rejected.report_root,
+                &rejected.chunk_id,
+                "replaced-field-constructor",
+            );
+            assert_eq!(rejected.status, Some(1), "{}", rejected.stderr);
+            assert_ne!(
+                rejected.candidate_relocation_assessment()["status"],
+                "accepted_within_checked_scope"
+            );
+        }
+    }
 }
 
 #[test]

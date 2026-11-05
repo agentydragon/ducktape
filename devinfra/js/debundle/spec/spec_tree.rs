@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 
 use output_layout::DebundleOutputLayout;
@@ -12,7 +12,9 @@ use spec::{
     PartialSwapPackage, PartialSwapSymbol, SwapMark, SwapVendorChunksConfig, TransformSpec,
     UnassignedMode, VendorLevel, VendorMark, VendorRole, WrapperShape, WriteJsTreeConfig,
 };
-use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
+use spec_modules::{
+    collect_module_files, ensure_unaliased_module_tree, module_path_from_file, read_module_file,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompileSpecTreeOptions {
@@ -82,17 +84,24 @@ pub struct ModuleTreeScope {
 impl ModuleTreeScope {
     pub fn from_config(config_path: &Path, chunk_id: &str) -> Result<Self> {
         let config: AuthoringConfig = read_yaml(config_path)?;
-        validate_module_roots(&config.module_roots)?;
-        let roots = if config.module_roots.is_empty() {
-            if config.main_chunk_id != chunk_id {
+        Self::from_roots(&config.main_chunk_id, &config.module_roots, chunk_id)
+    }
+
+    fn from_roots(
+        main_chunk_id: &str,
+        module_roots: &BTreeMap<PathBuf, String>,
+        chunk_id: &str,
+    ) -> Result<Self> {
+        validate_module_roots(module_roots)?;
+        let roots = if module_roots.is_empty() {
+            if main_chunk_id != chunk_id {
                 bail!("tree config has no module root for graph chunk {chunk_id:?}");
             }
             vec![PathBuf::new()]
         } else {
-            config
-                .module_roots
-                .into_iter()
-                .filter_map(|(root, chunk)| (chunk == chunk_id).then_some(root))
+            module_roots
+                .iter()
+                .filter_map(|(root, chunk)| (chunk == chunk_id).then_some(root.clone()))
                 .collect::<Vec<_>>()
         };
         if roots.is_empty() {
@@ -234,7 +243,32 @@ struct ModuleSource {
     module: LogicalModule,
 }
 
+/// Complete post-edit documents relative to the full authored tree or one
+/// configured root belonging to the graph chunk. Other chunks stay authored.
+pub struct ModuleTreeCandidate<'a> {
+    pub chunk_id: &'a str,
+    pub modules_root: &'a Path,
+    pub modules: &'a BTreeMap<String, LogicalModule>,
+}
+
 pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSpec> {
+    compile_tree(options, None)
+}
+
+pub fn compile_spec_tree_with_candidate(
+    options: &CompileSpecTreeOptions,
+    candidate: &ModuleTreeCandidate<'_>,
+) -> Result<TransformSpec> {
+    compile_tree(options, Some(candidate))
+}
+
+fn compile_tree(
+    options: &CompileSpecTreeOptions,
+    candidate: Option<&ModuleTreeCandidate<'_>>,
+) -> Result<TransformSpec> {
+    if candidate.is_some() {
+        ensure_unaliased_module_tree(&options.modules_root)?;
+    }
     let config: AuthoringConfig = read_yaml(&options.config_path)?;
     let source_root = options.source_root.as_deref();
     let input_root = source_path(source_root, config.inputs.root);
@@ -244,11 +278,20 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         .embedded_loaders_path
         .map(|path| source_path(source_root, path));
     let layout = DebundleOutputLayout::new(&options.out_root);
-    let module_sources = load_module_sources(
+    let mut module_sources = load_module_sources(
         &options.modules_root,
         &config.main_chunk_id,
         &config.module_roots,
     )?;
+    if let Some(candidate) = candidate {
+        overlay_module_candidate(
+            &options.modules_root,
+            &config.main_chunk_id,
+            &config.module_roots,
+            candidate,
+            &mut module_sources,
+        )?;
+    }
     Ok(TransformSpec {
         host_behavior: config.host_behavior,
         program_premises: config.program_premises,
@@ -288,6 +331,84 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
             }
         }),
     })
+}
+
+fn overlay_module_candidate(
+    modules_root: &Path,
+    main_chunk_id: &str,
+    module_roots: &BTreeMap<PathBuf, String>,
+    candidate: &ModuleTreeCandidate<'_>,
+    sources: &mut Vec<ModuleSource>,
+) -> Result<()> {
+    let scope = ModuleTreeScope::from_roots(main_chunk_id, module_roots, candidate.chunk_id)?;
+    let tree_root = graph_provenance::absolute(modules_root)?;
+    let edit_root = graph_provenance::absolute(candidate.modules_root)?;
+    let full_tree = edit_root == tree_root;
+    let mut selected_root = None;
+    if !full_tree {
+        for root in scope.roots() {
+            if graph_provenance::absolute(&tree_root.join(root))? == edit_root {
+                ensure!(
+                    selected_root.is_none(),
+                    "candidate module root is physically ambiguous"
+                );
+                selected_root = Some(root);
+            }
+        }
+        ensure!(
+            selected_root.is_some(),
+            "candidate assessment requires --modules to be the full tree or a configured graph chunk subtree"
+        );
+    }
+    if full_tree {
+        let mut authored_foreign = BTreeMap::new();
+        for file in collect_module_files(modules_root)? {
+            let path = module_path_from_file(&file, modules_root);
+            if !scope.contains(Path::new(&path)) {
+                ensure!(
+                    authored_foreign
+                        .insert(path, read_module_file(&file)?)
+                        .is_none(),
+                    "authored tree repeats a module path outside the graph chunk"
+                );
+            }
+        }
+        let candidate_foreign = candidate
+            .modules
+            .iter()
+            .filter(|(path, _)| !scope.contains(Path::new(path)))
+            .collect::<BTreeMap<_, _>>();
+        ensure!(
+            serde_yaml::to_value(&authored_foreign)? == serde_yaml::to_value(&candidate_foreign)?,
+            "candidate changes module documents outside the verified graph chunk"
+        );
+    }
+    sources.retain(|source| {
+        source.chunk_id != candidate.chunk_id
+            || selected_root.is_some_and(|root| source.tree != *root)
+    });
+    for (path, module) in candidate.modules {
+        let (tree, logical) = if let Some(root) = selected_root {
+            (root.clone(), path.as_str())
+        } else if scope.contains(Path::new(path)) {
+            let root = scope
+                .roots()
+                .iter()
+                .find(|root| Path::new(path).starts_with(root))
+                .context("candidate module has no configured root")?;
+            (root.clone(), scope.logical_destination(path)?)
+        } else {
+            continue;
+        };
+        ModulePath::parse(logical, "")?;
+        sources.push(ModuleSource {
+            chunk_id: candidate.chunk_id.to_string(),
+            tree,
+            path: logical.to_owned(),
+            module: module.clone(),
+        });
+    }
+    Ok(())
 }
 
 pub fn graph_module_roots(config_path: &Path) -> Result<BTreeMap<String, Vec<PathBuf>>> {

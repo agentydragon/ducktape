@@ -4111,7 +4111,10 @@ fn source_record_factory_does_not_cross_reexports() {
 #[test]
 fn source_record_deferred_live_cell_access_preserves_the_tdz() {
     let peer = "import { later } from './app.js';\nexport function factory() { let state = new Map; return { read() { return later; }, get value() { return later; }, has(key) { return state.has(key); } }; }\n";
-    for expression in ["queue.value", "queue.read()"] {
+    for (expression, case) in [
+        ("queue.value", "live-cell-getter"),
+        ("queue.read()", "live-cell-method"),
+    ] {
         let source = format!(
             "import {{ factory }} from './peer.js';\nconst queue = factory();\nconst observed = (() => {{ try {{ return {expression}; }} catch (error) {{ return error.name; }} }})();\nexport const later = 42;\nconsole.log(observed, later);\n"
         );
@@ -4131,18 +4134,28 @@ fn source_record_deferred_live_cell_access_preserves_the_tdz() {
             .with_extra_chunks(&peers),
         );
         assert_preserved_entry_output(&together, "ReferenceError 42\n");
-        expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                &source,
-                vec![
-                    logical_module("queue", &[Member::new("queue"), Member::new("observed")]),
-                    logical_module("later", &[Member::new("later")]),
-                ],
-            )
-            .with_extra_chunks(&peers),
-            &["queue", "later"],
-            &[],
-        );
+        let split = FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("queue", &[Member::new("queue"), Member::new("observed")]),
+                logical_module("later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&peers);
+        match run_fixture_observing_gate(split) {
+            FixtureRunOutcome::Accepted(fixture) => {
+                save_relocation_reports(&fixture.report_root, &fixture.chunk_id, case);
+                assert_preserved_entry_output(&fixture, "ReferenceError 42\n");
+            }
+            FixtureRunOutcome::Rejected(rejected) => {
+                save_relocation_reports(&rejected.report_root, &rejected.chunk_id, case);
+                assert_eq!(rejected.status, Some(1), "{}", rejected.stderr);
+                assert_ne!(
+                    rejected.candidate_relocation_assessment()["status"],
+                    "accepted_within_checked_scope"
+                );
+            }
+        }
     }
 }
 

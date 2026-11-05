@@ -40,7 +40,6 @@ mod naturalize;
 pub mod ownership_subset;
 mod placement;
 mod plans;
-mod rebind_fold;
 mod reentry_report;
 pub mod rename_ledger;
 #[cfg(test)]
@@ -274,7 +273,7 @@ pub struct MaterializeLogicalModulesOptions {
     pub full_reports: BTreeSet<FullReportKind>,
     pub full_report_chunks: BTreeSet<String>,
     pub gate_rejection: GateRejectionPolicy,
-    /// Stop materialization after the report-only effect relocation sweep for
+    /// Stop materialization after the complete candidate relocation assessment for
     /// each finalized assignment plan. This requires loaded staged analysis
     /// facts and is used by the assessment-only CLI path.
     pub assessment_only: bool,
@@ -300,6 +299,10 @@ pub enum AnalysisMode {
 /// A materialization's result.
 pub enum Materialized {
     Lowered(Box<MaterializeLogicalModulesResult>),
+    AssessedAndLowered {
+        result: Box<MaterializeLogicalModulesResult>,
+        assessments: Vec<(String, CandidateRelocationAssessmentReport)>,
+    },
     Assessed(Vec<(String, CandidateRelocationAssessmentReport)>),
 }
 
@@ -614,30 +617,35 @@ pub fn materialize_logical_modules(
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
 
-    if options.assessment_only {
-        let assessments = chunk_results
-            .into_iter()
-            .map(|result| match result {
+    let expected_results = chunk_results.len();
+    let mut assessments = Vec::new();
+    let mut lowered = Vec::with_capacity(expected_results);
+    for result in chunk_results {
+        match (options.assessment_only, result) {
+            (
+                true,
                 FinishedLogicalChunk::Assessed {
                     chunk_id,
                     assessment,
-                } => Ok((chunk_id, assessment)),
-                FinishedLogicalChunk::Lowered(_) => {
-                    bail!("assessment-only materialization unexpectedly lowered a chunk")
-                }
-            })
-            .collect::<Result<Vec<_>>>()?;
+                },
+            ) => {
+                assessments.push((chunk_id, *assessment));
+            }
+            (true, FinishedLogicalChunk::AssessedAndLowered { chunk, assessment }) => {
+                assessments.push((
+                    artifact.chunk_table.name(chunk.chunk_id).to_owned(),
+                    *assessment,
+                ));
+                lowered.push(*chunk);
+            }
+            (false, FinishedLogicalChunk::Lowered(chunk)) => lowered.push(*chunk),
+            _ => bail!("materialization result differs from the requested assessment mode"),
+        }
+    }
+    if options.assessment_only && lowered.len() != expected_results {
         return Ok(Materialized::Assessed(assessments));
     }
-    let chunk_results = chunk_results
-        .into_iter()
-        .map(|result| match result {
-            FinishedLogicalChunk::Lowered(chunk) => Ok(chunk),
-            FinishedLogicalChunk::Assessed { .. } => {
-                bail!("normal materialization unexpectedly returned an assessment")
-            }
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let chunk_results = lowered;
 
     let mut reports = Vec::with_capacity(chunk_results.len());
     let mut applied = Vec::<SelectedModuleLowering>::new();
@@ -664,14 +672,20 @@ pub fn materialize_logical_modules(
     let output = collect_materialized_logical_chunks(artifact, &target_dir, chunk_results)?;
 
     let module_count: usize = reports.iter().map(|r| r.final_module_contents.len()).sum();
-    Ok(Materialized::Lowered(Box::new(
-        MaterializeLogicalModulesResult {
-            output,
-            selected_lowerings: applied,
-            module_count,
-            vendor_reference_rewrites,
-            unmatched_spec_claims,
-            gate_rejections,
-        },
-    )))
+    let result = Box::new(MaterializeLogicalModulesResult {
+        output,
+        selected_lowerings: applied,
+        module_count,
+        vendor_reference_rewrites,
+        unmatched_spec_claims,
+        gate_rejections,
+    });
+    Ok(if options.assessment_only {
+        Materialized::AssessedAndLowered {
+            result,
+            assessments,
+        }
+    } else {
+        Materialized::Lowered(result)
+    })
 }

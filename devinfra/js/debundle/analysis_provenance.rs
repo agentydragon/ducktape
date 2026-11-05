@@ -36,6 +36,7 @@ pub enum InferenceRule {
     DescriptorCopyProvider,
     DescriptorCopyFactory,
     ForeignCallSummary,
+    ConditionalForeignBody,
 }
 
 /// Provenance actually consumed by one source-derived inference.

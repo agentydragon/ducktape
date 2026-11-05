@@ -539,7 +539,7 @@ impl Visit for ArrayContentCollector<'_> {
             // the platform result remains opaque to every subsequent use.
             return;
         }
-        // The projection constrains exact literal sites when present. Keep
+        // The projection constrains exact source sites when present. Keep
         // the previous flow-root admission for nonprojected Set sources.
         let certified_set = self
             .set_iterable_proof

@@ -3,7 +3,7 @@
 
 use super::super::allocation_transfer::AllocationJudgment;
 use super::super::effect_coverage::EffectCoverageFragment;
-use super::super::local_transfer::{CallableSelection, EvaluatedCallee};
+use super::super::local_transfer::{CallableSelection, EvaluatedCallee, SelectedValue};
 use super::super::noninvoking_initialization::{EvaluatedInitializer, OriginalInitializer};
 use super::super::property_inference::OwnPropertyProof;
 use super::super::value_model::{CapturedContext, Context, ValueExpr, Values};
@@ -71,8 +71,7 @@ pub(super) struct ProgramPoint {
 /// transfer must use these snapshots rather than evaluate their source again.
 pub(super) struct CallOperands {
     pub(super) callee: EvaluatedCallee,
-    pub(super) arguments: Vec<Values>,
-    pub(super) argument_selections: Vec<Option<CallableSelection>>,
+    pub(super) arguments: Vec<SelectedValue>,
 }
 
 pub(super) enum CallTransfer {
@@ -132,7 +131,7 @@ pub(super) enum RuntimeValue {
     Values(Values),
     Initializer {
         values: Values,
-        evaluated: Option<EvaluatedInitializer>,
+        evaluated: Option<Box<EvaluatedInitializer>>,
         operation_coverage: Option<Box<EffectCoverageFragment>>,
         refusal: Option<OwnerInitializationCoverageRefusalReason>,
     },
@@ -563,7 +562,7 @@ impl RuntimeRules<'_, '_> {
                     .then_some(OwnerInitializationCoverageRefusalReason::InitializerResultUnproved);
                 RuntimeValue::Initializer {
                     values,
-                    evaluated,
+                    evaluated: evaluated.map(Box::new),
                     operation_coverage: operation_coverage
                         .filter(|_| covered_operation)
                         .map(Box::new),

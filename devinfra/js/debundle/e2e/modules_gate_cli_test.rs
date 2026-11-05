@@ -4,17 +4,20 @@ use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 
 #[test]
-fn modules_merge_rejects_when_merge_creates_cycle() {
+fn graph_only_merge_reports_need_for_full_assessment() {
     let fixture = GraphFixture::dependency_chain();
-    fixture.assert_rejected_unchanged(
-        &["modules", "merge", "--target", "a.yaml", "b.yaml"],
-        &["unrealizable"],
-    );
+    let args = ["modules", "merge", "--target", "a.yaml", "b.yaml"];
+    let preview = fixture.json(&[&args[..], &["--dry-run"]].concat());
+    assert_eq!(preview["gate"], "claims_checked");
+    assert_eq!(preview["needs_full_assessment"], true);
+    let output = fixture.command(&args);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("needs_full_assessment"));
     fixture.assert_runs("3\n");
 }
 
 #[test]
-fn modules_merge_accepts_existing_and_missing_targets() {
+fn graph_only_merge_preserves_existing_and_missing_targets() {
     for (target, sources) in [
         ("a", vec!["b.yaml"]),
         ("merged/new_target", vec!["a.yaml", "b.yaml"]),
@@ -28,7 +31,9 @@ fn modules_merge_accepts_existing_and_missing_targets() {
             .collect();
         let mut preview = args.clone();
         preview.push("--dry-run");
-        assert_eq!(fixture.json(&preview)["action"], "dry-run");
+        let report = fixture.json(&preview);
+        assert_eq!(report["action"], "dry-run");
+        assert_eq!(report["needs_full_assessment"], true);
         for (path, bytes) in before {
             assert_eq!(fs::read(fixture.modules.join(path)).unwrap(), bytes);
         }
@@ -36,39 +41,49 @@ fn modules_merge_accepts_existing_and_missing_targets() {
             fixture.modules.join(format!("{target}.yaml")).exists(),
             target == "a"
         );
-        fixture.assert_success(&args);
-        assert!(fixture.modules.join(format!("{target}.yaml")).exists());
+        let output = fixture.command(&args);
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("needs_full_assessment"));
+        assert_eq!(
+            fixture.modules.join(format!("{target}.yaml")).exists(),
+            target == "a"
+        );
         for source in sources {
-            assert!(!fixture.modules.join(source).exists());
+            assert!(fixture.modules.join(source).exists());
         }
         fixture.assert_runs("2\n");
     }
 }
 
 #[test]
-fn modules_delete_force_rejects_stranding_an_eager_provider_in_entry() {
+fn graph_only_force_delete_cannot_claim_final_acceptance() {
     let fixture = GraphFixture::acyclic_pair();
     // Unlike a fabricated cyclic input, this pre-edit spec is executable.
     // Deleting beta's module leaves emitted alpha reading beta from entry,
     // which evaluates last and therefore cannot provide eager dependencies.
-    fixture.assert_rejected_unchanged(
-        &["modules", "delete", "b.yaml", "--force"],
-        &["unrealizable"],
-    );
-    fixture.assert_runs("2\n");
-}
-
-#[test]
-fn modules_delete_force_accepts_clean_deletion() {
-    let fixture = GraphFixture::acyclic_pair();
-    fixture.assert_success(&["modules", "delete", "a.yaml", "--force"]);
-    assert!(!fixture.modules.join("a.yaml").exists());
+    let args = ["modules", "delete", "b.yaml", "--force"];
+    let preview = fixture.json(&[&args[..], &["--dry-run"]].concat());
+    assert_eq!(preview["needs_full_assessment"], true);
+    let output = fixture.command(&args);
+    assert!(!output.status.success());
     assert!(fixture.modules.join("b.yaml").exists());
     fixture.assert_runs("2\n");
 }
 
 #[test]
-fn edit_gate_resolves_decorator_statement_claims_from_real_source() {
+fn graph_only_clean_force_delete_still_needs_full_assessment() {
+    let fixture = GraphFixture::acyclic_pair();
+    let preview = fixture.json(&["modules", "delete", "a.yaml", "--force", "--dry-run"]);
+    assert_eq!(preview["needs_full_assessment"], true);
+    let output = fixture.command(&["modules", "delete", "a.yaml", "--force"]);
+    assert!(!output.status.success());
+    assert!(fixture.modules.join("a.yaml").exists());
+    assert!(fixture.modules.join("b.yaml").exists());
+    fixture.assert_runs("2\n");
+}
+
+#[test]
+fn claim_check_resolves_decorator_statement_claims_from_real_source() {
     // A leading export is not an unit: source statement ordinals must not be
     // confused with positions in the source_unit table when resolving the decorator.
     let fixture = GraphFixture::new(
@@ -95,7 +110,7 @@ anonymous_statements:
             ("empty.yaml", "members: []"),
         ],
     );
-    fixture.assert_success(&[
+    let preview = fixture.json(&[
         "modules",
         "merge",
         "--target",
@@ -103,6 +118,10 @@ anonymous_statements:
         "empty",
         "--dry-run",
     ]);
-    fixture.assert_success(&["modules", "merge", "--target", "state", "empty"]);
+    assert_eq!(preview["gate"], "claims_checked");
+    assert_eq!(preview["needs_full_assessment"], true);
+    let output = fixture.command(&["modules", "merge", "--target", "state", "empty"]);
+    assert!(!output.status.success());
+    assert!(fixture.modules.join("empty.yaml").exists());
     fixture.assert_runs("2\n");
 }

@@ -87,8 +87,16 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(tmp_path: P
     shutil.rmtree(packages)
     worker_records = evidence / "worker"
     merge_and_regenerate(worker, Path("main"), ["values", "calculation"], "arithmetic", worker_records)
-    assert json.loads((worker_records / "apply.stdout").read_text())["gate"] == "passed"
-    for step in ("baseline", "preview", "apply", "regenerate"):
+    preview = json.loads((worker_records / "preview.stdout").read_text())
+    applied = json.loads((worker_records / "apply.stdout").read_text())
+    for outcome in (preview, applied):
+        assert outcome["gate"] == "passed"
+        assert "needs_full_assessment" not in outcome
+        assert outcome["effect_relocation_assessment"]["status"] == "accepted_within_checked_scope"
+        assert set(outcome["effect_relocation_assessment"]["chunks"]) == {"main"}
+        assert outcome["effect_relocation_assessment"]["chunks"]["main"]["decision"]["status"] == "accepted"
+    assert preview["effect_relocation_assessment"] == applied["effect_relocation_assessment"]
+    for step in ("baseline", "project", "analyze", "preview", "apply", "regenerate"):
         assert json.loads((worker_records / f"{step}.result.json").read_text()) == {"exit_code": 0}
     plan = json.loads((worker_records / "apply.plan.json").read_text())
     assert plan["executable"] == worker["engine"]

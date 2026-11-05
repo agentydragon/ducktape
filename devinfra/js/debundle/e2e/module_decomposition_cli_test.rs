@@ -67,12 +67,16 @@ fn apply_decomposition(fixture: &GraphFixture, report: &Value) {
             .collect::<Vec<_>>();
     let batch = tempfile::NamedTempFile::new().unwrap();
     fs::write(batch.path(), serde_json::to_vec(&assignments).unwrap()).unwrap();
-    fixture.assert_success(&[
-        "modules",
-        "refine",
-        "--batch",
-        batch.path().to_str().unwrap(),
-    ]);
+    let assessment = fixture.stage_analysis();
+    fixture.assert_success_with_assessment(
+        &[
+            "modules",
+            "refine",
+            "--batch",
+            batch.path().to_str().unwrap(),
+        ],
+        &assessment,
+    );
 }
 
 fn decomposition_path<'a>(report: &'a Value, source_unit_id: &Value) -> &'a str {
@@ -161,7 +165,7 @@ anonymous_statements:
 "#,
     )];
     modules.extend(provider);
-    GraphFixture::new(
+    GraphFixture::new_full_tree(
         r#"function decorateA(_decorators, target, key) { target[key] = "A"; }
 function decorateB(_decorators, target, key) { target[key] = "B"; }
 class Widget {}
@@ -497,7 +501,7 @@ fn zero_pair_budget_still_restores_a_two_fragment_home() {
 
 #[test]
 fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
-    let fixture = GraphFixture::rejected(
+    let fixture = GraphFixture::rejected_full_tree(
         "const first = 1;\nconst middle = first + 1;\nconst last = middle + 1;\nconst spare = 4;\nconst extra = 5;\nconsole.log(last + spare + extra);\n",
         &[
             (
@@ -689,7 +693,11 @@ fn rejoining_keeps_an_unsafe_home_split_and_refine_applies_accepted_groups() {
     let batch_dir = tempfile::tempdir().unwrap();
     let batch_path = batch_dir.path().join("batch.json");
     fs::write(&batch_path, serde_json::to_vec(&assignments).unwrap()).unwrap();
-    fixture.assert_success(&["modules", "refine", "--batch", batch_path.to_str().unwrap()]);
+    let analysis = fixture.stage_analysis();
+    fixture.assert_success_with_assessment(
+        &["modules", "refine", "--batch", batch_path.to_str().unwrap()],
+        &analysis,
+    );
     assert_eq!(
         middle_before,
         fs::read(fixture.modules.join("middle.yaml")).unwrap(),
@@ -822,7 +830,7 @@ fn proposes_a_realizable_refinement_without_changing_the_spec() {
 
 #[test]
 fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
-    let fixture = GraphFixture::rejected(
+    let fixture = GraphFixture::rejected_full_tree(
         "let count = 0;\nfunction bump() { count += 1; }\nconst outside = 7;\nconsole.log(count, typeof bump, outside);\n",
         &[
             (
@@ -965,7 +973,11 @@ fn atomic_mode_leaves_cross_module_structural_atoms_on_their_current_paths() {
         .map(|source_unit| serde_json::json!({"unit_id": source_unit, "module": target}))
         .collect();
     fs::write(&batch_path, serde_json::to_vec(&assignments).unwrap()).unwrap();
-    fixture.assert_success(&["modules", "refine", "--batch", batch_path.to_str().unwrap()]);
+    let analysis = fixture.stage_analysis();
+    fixture.assert_success_with_assessment(
+        &["modules", "refine", "--batch", batch_path.to_str().unwrap()],
+        &analysis,
+    );
     assert_eq!(
         outside_before,
         fs::read(fixture.modules.join("outside.yaml")).unwrap()
