@@ -1248,8 +1248,7 @@ fn captured_value_bindings_survive_saved_program_summary() {
         "import './setup.js';\nimport { read } from './peer.js';\nconst result = read();\nconsole.log(result);\nexport { result };\n",
         vec![logical_module("all", &[Member::new("result")])],
     )
-    .with_extra_chunks(&[("static/peer", PROVIDER)])
-    .with_extra_files(&[("static/setup.js", SETUP), ("static/app/setup.js", SETUP)])
+    .with_extra_chunks(&[("static/setup", SETUP), ("static/peer", PROVIDER)])
     .with_value_inputs("static/peer", vec![input]);
     let (staged, _fixture) = staged(opts);
     let direct = staged.run(&[]);
