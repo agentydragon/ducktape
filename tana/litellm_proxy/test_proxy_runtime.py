@@ -106,7 +106,7 @@ async def test_litellm_proxy_config_registers_custom_provider_before_router_buil
 
 
 async def test_litellm_router_forwards_local_reasoning_default_in_http_payload(
-    runfiles: Runfiles, tmp_path: Path, monkeypatch: Any
+    runfiles: Runfiles, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Use the pinned LiteLLM OpenAI adapter through a mock HTTP transport."""
     config_path = tmp_path / "config.yaml"
