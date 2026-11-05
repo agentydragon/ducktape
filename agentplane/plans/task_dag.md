@@ -987,9 +987,9 @@ none is, and the egress proxy substitutes a short-lived token for that account u
 kubeconfig placeholder. The SA-first direction of 2026-11-04 is the migration adapter, not the
 identity: Session/Environment separation still proceeds on SAs, and this cutover is not its
 prerequisite, but no new SA-keyed contract should land that the cutover would undo. The object
-shapes, lifetimes and UX proposed on 2026-11-05 are in the
-[Session/environment model log](session_environment_model.md#discussion); they are a proposal
-until this node's exit. Decide
+shapes, lifetimes, flows and open questions proposed on 2026-11-05 are in
+[identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md);
+they are a proposal until this node's exit. Decide
 the relationships and lifetimes of identities, Sessions and environments, who may act as an
 identity, whether associations can change, and how a central Session keeps its identity without
 an environment. The [Session/environment model](session_environment_model.md) records the

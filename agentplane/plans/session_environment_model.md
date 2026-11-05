@@ -1441,14 +1441,15 @@ The operator is confident that agent workloads should present SPIFFE certificate
 and the central egress proxy rather than Kubernetes ServiceAccount tokens, and that an agent should
 not automatically be provisioned a ServiceAccount: Agentplane owns the identity, and a Kubernetes
 account exists only while a binding grants that identity Kubernetes access. Policy objects stay in
-Kubernetes. The assistant proposed one `Identity` kind as the binding subject; a ServiceAccount per
-identity and apiserver that the Policy Controller creates with the first live Kubernetes grant and
-deletes with the last; TokenRequests bound to a controller-owned Secret, so removing the last grant
-invalidates outstanding tokens at the apiserver; and an `identityKubernetesToken` egress credential
-source replacing `projectedWorkloadToken` for `kubectl`. Temporary bindings keep `expiresAt`;
-identity deletion cascades through ownerReferences with no finalizer. Recorded in
-`NETWORK_WORKLOAD_IDENTITY` and `AGENT_PRINCIPAL_MODEL_DESIGN`; the object shapes are a proposal,
-not a decision, and the SA-first direction of 2026-11-04 becomes the migration adapter.
+Kubernetes. The operator then rejected a ServiceAccount derived per identity: two identities must be able to
+act as one shared account, a default low-privilege account for every agent with separate, possibly
+temporary accounts on request, and grants must attach by binding objects rather than fields on the
+account so Flux and runtime writers can share one. The resulting proposal, `Identity` and
+`KubernetesAccount` as `PolicyBinding` subject kinds, SVIDs on the egress hop, impersonation or
+TokenRequest at the proxy, lifetimes, migration and open questions, is in
+[identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md).
+Recorded in `NETWORK_WORKLOAD_IDENTITY` and `AGENT_PRINCIPAL_MODEL_DESIGN`; the object shapes are a
+proposal, not a decision, and the SA-first direction of 2026-11-04 becomes the migration adapter.
 
 **Still open**
 
