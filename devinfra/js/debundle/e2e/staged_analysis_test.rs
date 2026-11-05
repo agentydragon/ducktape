@@ -1237,7 +1237,10 @@ fn captured_value_bindings_survive_saved_program_summary() {
         value: CapturedValueContract {
             kind: CapturedValueKind::OrdinaryObject,
         },
-        audited_source_sha256: format!("{:x}", Sha256::digest(PROVIDER.as_bytes())),
+        audited_source_sha256: Sha256::digest(PROVIDER.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
         expected_export: None,
         note: None,
     };
