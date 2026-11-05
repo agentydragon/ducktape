@@ -1,8 +1,4 @@
-"""
-Habitify API client for interacting with the Habitify API.
-
-Implements only the endpoints shown in the API reference YAML files.
-"""
+"""Habitify client limited to the endpoints recorded in api_reference/*.yaml."""
 
 from __future__ import annotations
 
@@ -24,8 +20,6 @@ load_dotenv()
 
 
 class HabitifyError(Exception):
-    """Custom exception for Habitify API errors."""
-
     status_code: int | None = None
 
     def __init__(self, message: str, status_code: int | None = None):
@@ -34,20 +28,8 @@ class HabitifyError(Exception):
 
 
 class HabitifyClient:
-    """
-    Client for the Habitify API.
-
-    Supports only the endpoints documented in the reference YAML files.
-    """
-
     def __init__(self, api_key: str | None = None, timeout: float = 10.0):
-        """
-        Initialize the Habitify API client.
-
-        Args:
-            api_key: API key for the Habitify API. If not provided, will use HABITIFY_API_KEY env var.
-            timeout: Timeout for API requests in seconds (default: 10.0).
-        """
+        """Use HABITIFY_API_KEY when api_key is absent; timeout is in seconds."""
         # Priority order: passed api_key param, HABITIFY_API_KEY env var
         self.api_key = api_key or os.getenv("HABITIFY_API_KEY")
         self.base_url = os.getenv("HABITIFY_API_BASE_URL", "https://api.habitify.me")
@@ -68,15 +50,12 @@ class HabitifyClient:
         self.client = httpx.AsyncClient(base_url=self.base_url, headers=headers, timeout=self.timeout)
 
     async def __aenter__(self) -> HabitifyClient:
-        """Support async context manager protocol."""
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Close resources when exiting async context manager."""
         await self.client.aclose()
 
     def _process_response(self, response: httpx.Response, model_class: type | None = None) -> Any:
-        """Process an HTTP response and convert it to the appropriate type."""
         data = response.json()
         result = data.get("data", data)
 
@@ -92,15 +71,6 @@ class HabitifyClient:
         return result
 
     def _validate_habit_id(self, habit_id: str) -> str:
-        """
-        Simply validate that habit ID is not empty.
-
-        Args:
-            habit_id: Habit ID as provided
-
-        Returns:
-            The same habit ID unchanged
-        """
         if not habit_id:
             raise HabitifyError("Habit ID is required")
 
@@ -111,14 +81,7 @@ class HabitifyClient:
     #
 
     async def get_habits(self) -> list[Habit]:
-        """
-        Get all habits.
-
-        Endpoint: GET /habits
-
-        Returns:
-            List of habits as Pydantic models
-        """
+        """GET /habits: list habits."""
         try:
             response = await self.client.get("/habits")
             response.raise_for_status()
@@ -127,17 +90,7 @@ class HabitifyClient:
             raise self._handle_error(e)
 
     async def get_habit(self, habit_id: str) -> Habit:
-        """
-        Get a single habit by ID.
-
-        Endpoint: GET /habits/{habit_id}
-
-        Args:
-            habit_id: The habit ID
-
-        Returns:
-            Habit details as a Pydantic model
-        """
+        """GET /habits/{habit_id}: fetch one habit."""
         habit_id = self._validate_habit_id(habit_id)
 
         try:
@@ -148,14 +101,7 @@ class HabitifyClient:
             raise self._handle_error(e)
 
     async def get_areas(self) -> list[Area]:
-        """
-        Get all habit areas/categories.
-
-        Endpoint: GET /areas
-
-        Returns:
-            List of areas as Pydantic models
-        """
+        """GET /areas: list habit areas/categories."""
         try:
             response = await self.client.get("/areas")
             response.raise_for_status()
@@ -171,20 +117,10 @@ class HabitifyClient:
         time_of_day: str | None = None,
         area_id: str | None = None,
     ) -> list[Habit]:
-        """
-        Get filtered habits for a specific date.
+        """GET /journal: filter habits for a date (today by default).
 
-        Endpoint: GET /journal
-
-        Args:
-            date: Date to filter habits for (required, defaults to today if None)
-            order_by: How to order habits (priority, reminder_time, status)
-            status: Filter by status (comma-separated: none, in_progress, completed, failed, skipped)
-            time_of_day: Filter by time (comma-separated: morning, afternoon, evening, any_time)
-            area_id: Filter by specific area/category ID
-
-        Returns:
-            List of habits for the specified date
+        Filter/order values: api_reference/API_REFERENCE.md.
+        Request examples: api_reference/get_journal{,_filtered}.yaml.
         """
         target_date = format_date_for_api(date)
 
@@ -213,18 +149,7 @@ class HabitifyClient:
     async def check_habit_status(
         self, habit_id: str, date: str | datetime.date | datetime.datetime | None = None
     ) -> HabitStatus:
-        """
-        Check a habit's status for a date.
-
-        Endpoint: GET /status/{habit_id}
-
-        Args:
-            habit_id: The habit ID
-            date: Optional date (defaults to today). Can be datetime, date, or ISO string.
-
-        Returns:
-            Habit status with timezone-aware datetime
-        """
+        """GET /status/{habit_id}: return status with a timezone-aware date (today by default)."""
         habit_id = self._validate_habit_id(habit_id)
         check_date = format_date_for_api(date)
 
@@ -258,21 +183,7 @@ class HabitifyClient:
         note: str | None = None,
         value: float | None = None,
     ) -> HabitStatus:
-        """
-        Set a habit's status for a specific date.
-
-        Endpoint: PUT /status/{habit_id}
-
-        Args:
-            habit_id: The habit ID
-            status: Status to set (Status enum)
-            date: Optional date (defaults to today). Can be datetime, date, or ISO string.
-            note: Optional note to attach to the log
-            value: Optional value for habits with goals
-
-        Returns:
-            Habit status with timezone-aware datetime
-        """
+        """PUT /status/{habit_id}: synthesize timezone-aware status after the API returns null on success."""
         if not status:
             raise HabitifyError("Status is required")
 
@@ -311,15 +222,6 @@ class HabitifyClient:
             raise self._handle_error(e)
 
     def _handle_error(self, error: Exception) -> HabitifyError:
-        """
-        Handle API errors based on observed error patterns in examples.
-
-        Args:
-            error: The error to handle
-
-        Returns:
-            A more descriptive error
-        """
         if isinstance(error, httpx.HTTPStatusError):
             response = error.response
             status = response.status_code
