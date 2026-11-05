@@ -8,6 +8,9 @@ load("@ducktape//devinfra/js/debundle:pipeline.bzl", "debundle_pipeline")
 
 debundle_pipeline(
     name = "debundle",
+    # Limit Rayon workers for this target's Analyze action; 0 keeps the
+    # inherited RAYON_NUM_THREADS or Rayon's default.
+    analysis_threads = 2,
     input_data = [
         "//path/to:bundle_inputs",
     ],
@@ -39,6 +42,12 @@ CLI at repo or command-line scope with:
 bazelisk build //path/to:debundle \
   --@ducktape//devinfra/js/debundle:debundler=@my_debundle_bin//file
 ```
+
+`analysis_threads` controls only `DebundleAnalyze`: zero omits the override,
+using inherited `RAYON_NUM_THREADS` when set or Rayon's default otherwise. A
+positive value sets the tracked action environment `RAYON_NUM_THREADS` to that
+value. Negative values fail during rule analysis. Projection, Pipeline, and
+graph export keep their existing action environments.
 
 `DebundleAnalyze` uses the separate `:debundle_analyze` executable, selected by
 the `:analyzer` label flag or the rule's `analyzer` attribute. It accepts the

@@ -1,5 +1,5 @@
 load("//devinfra/js/debundle:pipeline.bzl", "debundle_pipeline")
-load(":pipeline_rule_test.bzl", "analysis_identity_inputs_test", "pipeline_report_flags_test")
+load(":pipeline_rule_test.bzl", "analysis_identity_inputs_test", "analysis_threads_action_test", "pipeline_report_flags_test")
 
 package(default_testonly = True)
 
@@ -43,6 +43,24 @@ debundle_pipeline(
     tree_modules = "fixture/modules",
     tree_source_root = ":source",
     tree_vendor_marks = "fixture/vendor_marks.yaml",
+)
+
+debundle_pipeline(
+    name = "thread_limited",
+    analysis_threads = 2,
+    input_data = [":source"],
+    spec_tree_inputs = [":spec"],
+    split_dependency_graphs = True,
+    tags = ["manual"],
+    tree_config = "fixture/config.yaml",
+    tree_modules = "fixture/modules",
+    tree_source_root = ":source",
+    tree_vendor_marks = "fixture/vendor_marks.yaml",
+)
+
+analysis_threads_action_test(
+    name = "analysis_threads_action_test",
+    target_under_test = ":thread_limited",
 )
 
 [
@@ -173,6 +191,7 @@ pipeline_report_flags_test(
 test_suite(
     name = "tests",
     tests = [
+        ":analysis_threads_action_test",
         ":default_test",
         ":export_test",
         ":filtered_test",

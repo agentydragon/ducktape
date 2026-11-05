@@ -22,6 +22,8 @@ load("@bazel_skylib//lib:shell.bzl", "shell")
 _GATE_REJECTED_EXIT_CODE = 3
 
 def _debundle_pipeline_impl(ctx):
+    if ctx.attr.analysis_threads < 0:
+        fail("analysis_threads must be nonnegative, got {}".format(ctx.attr.analysis_threads))
     if ctx.file.ownership_subset and ctx.attr.split_dependency_graphs:
         fail("ownership_subset does not support split_dependency_graphs")
     out_dir = ctx.actions.declare_directory(ctx.label.name + ".out")
@@ -62,6 +64,7 @@ def _debundle_pipeline_impl(ctx):
         mnemonic = "DebundleAnalyze",
         progress = "Analyzing debundle input for %{label}",
         tool = ctx.executable.analyzer,
+        analysis_threads = ctx.attr.analysis_threads,
     )
 
     output_groups = {
@@ -116,13 +119,16 @@ def _pipeline_command(ctx, plan, analysis, extra_flags, allow_gate_rejection = F
         )
     return command
 
-def _run_debundler(ctx, inputs, outputs, command, mnemonic, progress, tool = None):
+def _run_debundler(ctx, inputs, outputs, command, mnemonic, progress, tool = None, analysis_threads = 0):
+    action_env = {"BAZEL_BINDIR": ctx.bin_dir.path}
+    if analysis_threads > 0:
+        action_env["RAYON_NUM_THREADS"] = str(analysis_threads)
     ctx.actions.run_shell(
         inputs = inputs,
         tools = [tool if tool else ctx.executable.debundler],
         outputs = outputs,
         command = "cd \"${{BAZEL_BINDIR}}\" && {command}".format(command = command),
-        env = {"BAZEL_BINDIR": ctx.bin_dir.path},
+        env = action_env,
         use_default_shell_env = True,
         # The debundler asserts that each vendor package's resolved subpath
         # canonicalizes to a location within the package root. Inside
@@ -275,6 +281,10 @@ def _shell_execroot_path(execroot_relative):
     return "\"${{OLDPWD}}/{}\"".format(execroot_relative)
 
 _DEBUNDLE_PIPELINE_ATTRS = {
+    "analysis_threads": attr.int(
+        default = 0,
+        doc = "Rayon worker limit for DebundleAnalyze; 0 omits the override, using inherited RAYON_NUM_THREADS or Rayon's default, and positive values set RAYON_NUM_THREADS for that action only.",
+    ),
     "ownership_subset": attr.label(
         allow_single_file = [".json"],
         doc = "Optional retained chunk/module list for normal emission with full spec context. Only the Pipeline action reads it; requires inline_in_entry, per_atomic_group, or coarse_atomic_groups and conflicts with split_dependency_graphs.",

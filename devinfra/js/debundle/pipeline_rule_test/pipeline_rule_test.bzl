@@ -22,6 +22,9 @@ def _pipeline_report_flags_test_impl(ctx):
         expected_actions.append("DebundleExportGraphs")
     asserts.equals(env, sorted(expected_actions), sorted(actions))
     asserts.equals(env, sorted(baseline), sorted(actions))
+    for action in actions.values():
+        asserts.true(env, "BAZEL_BINDIR" in action.env)
+        asserts.false(env, "RAYON_NUM_THREADS" in action.env)
     for mnemonic in sorted(actions):
         actual = actions[mnemonic]
         original = baseline[mnemonic]
@@ -106,6 +109,23 @@ def _pipeline_report_flags_test_impl(ctx):
             [file.basename for file in groups.dependency_graphs.to_list()],
         )
     return analysistest.end(env)
+
+def _analysis_threads_action_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    actions = {action.mnemonic: action for action in analysistest.target_actions(env)}
+    asserts.equals(
+        env,
+        ["DebundleAnalyze", "DebundleExportGraphs", "DebundlePipeline", "DebundleProjectAnalysis"],
+        sorted(actions),
+    )
+    asserts.equals(env, "2", actions["DebundleAnalyze"].env["RAYON_NUM_THREADS"])
+    for mnemonic, action in actions.items():
+        asserts.true(env, "BAZEL_BINDIR" in action.env)
+        if mnemonic != "DebundleAnalyze":
+            asserts.false(env, "RAYON_NUM_THREADS" in action.env)
+    return analysistest.end(env)
+
+analysis_threads_action_test = analysistest.make(_analysis_threads_action_test_impl)
 
 pipeline_report_flags_test = analysistest.make(
     _pipeline_report_flags_test_impl,

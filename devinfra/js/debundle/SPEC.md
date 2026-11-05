@@ -188,6 +188,13 @@ package, spec and ownership-subset inputs for native replay. Requesting it alone
 selects their producers. The `analysis` and `debundler` groups supply the
 matching analysis artifacts and executable.
 
+The public `debundle_pipeline` rule's `analysis_threads` attr defaults to zero,
+omitting the override so `DebundleAnalyze` uses inherited `RAYON_NUM_THREADS`
+when set, or Rayon's default otherwise. A positive value sets the tracked
+`RAYON_NUM_THREADS` action environment for `DebundleAnalyze` only; projection,
+Pipeline and graph export keep their existing environments. Negative values fail
+during rule analysis.
+
 Staged `.analysis` headers carry `analysis_engine_sha256`, the generated
 configured compiled `staged_analysis` closure identity shared by the writer and
 reader. The closure owns source preparation, cross-module and per-chunk fact
