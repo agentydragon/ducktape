@@ -29,6 +29,56 @@ fn native_constructor_input(
     }
 }
 
+#[test]
+fn weak_map_empty_owner_keeps_its_exact_effect_coverage_dependency() {
+    const SOURCE: &str = "function publish(key, value) { globalThis[key] = value; }\nconst emptyWeakMap = new WeakMap();\nconst emptyMap = new Map();\nconsole.log(emptyWeakMap ? 'ready' : 'missing', emptyMap ? 'ready' : 'missing');\n";
+    let inputs = vec![
+        native_constructor_input(
+            SOURCE,
+            "const emptyWeakMap = new WeakMap();",
+            "emptyWeakMap",
+            NativeOperationKind::WeakMapEmpty,
+        ),
+        native_constructor_input(
+            SOURCE,
+            "const emptyMap = new Map();",
+            "emptyMap",
+            NativeOperationKind::MapEmpty,
+        ),
+    ];
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            SOURCE,
+            vec![logical_module(
+                "maps",
+                &[Member::new("emptyWeakMap"), Member::new("emptyMap")],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_native_operation_inputs("static/app", inputs),
+    );
+    assert_preserved_entry_output(&fixture, "ready ready\n");
+
+    let report = fixture.effect_translation_validation();
+    assert!(report["legacy_gate_accepts"].as_bool().unwrap_or(false));
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
+    assert_eq!(
+        report["coverage"]["owner_coverage_refusals"]["initializer_result_unproved"]
+            .as_u64()
+            .unwrap_or_default(),
+        0,
+        "the exact WeakMap and Map sites complete only their named owners: {report:#}"
+    );
+    assert_eq!(
+        report["coverage"]["covered_owner_dependencies"]["native_operation_inputs"],
+        serde_json::json!([
+            {"defining_chunk": "static/app", "input_index": 0},
+            {"defining_chunk": "static/app", "input_index": 1},
+        ]),
+        "both owner effect receipts retain their exact input dependency: {report:#}"
+    );
+}
+
 fn empty_native_collection_inputs(
     source: &str,
     declaration_kind: &str,

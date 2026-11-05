@@ -54,8 +54,9 @@ Callback and no-reentry keys below live under
 
 ### Exact empty native construction
 
-Use `native_operation_inputs` with `operation: map_empty` or `operation: set_empty`
-for one selected direct zero-argument construction only after auditing the
+Use `native_operation_inputs` with `operation: map_empty`,
+`operation: weak_map_empty`, or `operation: set_empty` for one selected direct
+zero-argument construction only after auditing the
 original standard global data binding through every admitted initialization
 schedule. Each comma declarator needs its own input. These assertions feed the
 existing empty-construction semantics; later methods, property reads,

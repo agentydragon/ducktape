@@ -159,9 +159,9 @@ member selectors, and evidence records which selector form was used.
 The selector and parser-input digest identify one
 direct native initializer, while `AnalysisAssumptions` retains its validated
 evidence separately from inferred native identity. Operations include direct
-`Symbol` and `Symbol.for` calls, exact Set constructions, static `Object` own-data function
-member reads, and primitive array spreads from preceding primitive-array
-declarators. For `Symbol`, the author asserts that its global
+`Symbol` and `Symbol.for` calls, exact Map, WeakMap, and Set constructions,
+static `Object` own-data function member reads, and primitive array spreads
+from preceding primitive-array declarators. For `Symbol`, the author asserts that its global
 data binding denotes the original operation through every synchronous
 initialization schedule admitted by emission. This is not a point observation
 or a whole-lifetime integrity claim; known in-source global `Symbol` changes
@@ -181,6 +181,12 @@ zero-argument `new TextEncoder()` site. Its original global data binding is
 checked against known exact-slot writes in every analyzed chunk. It uses the
 shared constructor row and leaves the result opaque. Adding this host census
 family does not expand the `IntrinsicFamily::ALL` author-premise vocabulary.
+The `map_empty`, `weak_map_empty`, and `set_empty` initializer premises certify
+the original global data binding at one direct bare zero-argument constructor
+site. WeakMap shares the checked collection-construction effect transfer with
+Map and retains an opaque result; later methods and other constructor sites
+keep their ordinary checks. These inputs establish no family-wide integrity or
+purity.
 The exact `Promise.resolve()` initializer premise requires stable global
 `Promise` and constructor `resolve` slots in the shared source census. Its
 independent `host_behavior.reentry_free_operations` assertion supplies timing; neither assertion

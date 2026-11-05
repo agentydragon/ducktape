@@ -1213,6 +1213,9 @@ fn native_operation_call_name(operation: NativeInputKind) -> &'static str {
         NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty) => {
             "direct zero-argument new Map() construction"
         }
+        NativeInputKind::Operation(spec::NativeOperationKind::WeakMapEmpty) => {
+            "direct zero-argument new WeakMap() construction"
+        }
         NativeInputKind::Operation(spec::NativeOperationKind::SetEmpty) => {
             "direct zero-argument new Set() construction"
         }
@@ -1239,6 +1242,9 @@ fn native_operation_mutation_name(operation: NativeInputKind) -> &'static str {
         }
         NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty) => {
             "global Map replacement or accessor installation"
+        }
+        NativeInputKind::Operation(spec::NativeOperationKind::WeakMapEmpty) => {
+            "global WeakMap replacement or accessor installation"
         }
         NativeInputKind::Operation(spec::NativeOperationKind::SetEmpty) => {
             "global Set replacement or accessor installation"
@@ -6950,7 +6956,7 @@ impl ExecutionIndex {
         use IntrinsicSlot::{
             ArrayIteratorPrototype, Global, Prototype, SetIteratorPrototype, Static,
         };
-        use NativeIntrinsic::{Array, Object, Promise, Set, Symbol};
+        use NativeIntrinsic::{Array, Object, Promise, Set, Symbol, WeakMap};
         use spec::{NativeCallIdentityKind as Callee, NativeOperationKind as Operation};
         const SET_FROM_ARRAY: &[IntrinsicSlot] = &[
             Global(Set),
@@ -6996,6 +7002,9 @@ impl ExecutionIndex {
                     }
                     NativeInputKind::Operation(Operation::MapEmpty) => {
                         (input.call_span, vec![Global(NativeIntrinsic::Map)])
+                    }
+                    NativeInputKind::Operation(Operation::WeakMapEmpty) => {
+                        (input.call_span, vec![Global(WeakMap)])
                     }
                     NativeInputKind::Operation(Operation::SetEmpty) => {
                         (input.call_span, vec![Global(Set)])

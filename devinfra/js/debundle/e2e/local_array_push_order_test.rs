@@ -217,6 +217,31 @@ fn unknown_construction_keeps_sequenced_fallback_barrier() {
 }
 
 #[test]
+fn empty_weak_map_does_not_create_a_heap_barrier_between_local_array_writes() {
+    const SOURCE: &str = "const values = [];\nvalues.push('first');\nconst cache = new WeakMap();\nvalues.push('second');\nconsole.log(values.join(','), cache ? 'ready' : 'missing');\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            SOURCE,
+            vec![
+                logical_module_with_anon(
+                    "values",
+                    &[Member::new("values")],
+                    &["values.push('first');", "values.push('second');"],
+                ),
+                logical_module("cache", &[Member::new("cache")]),
+                logical_module_with_anon(
+                    "observe",
+                    &[],
+                    &["console.log(values.join(','), cache ? 'ready' : 'missing');"],
+                ),
+            ],
+        )
+        .with_host_behavior(HostBehavior::default()),
+    );
+    assert_preserved_entry_output(&fixture, "first,second ready\n");
+}
+
+#[test]
 fn one_shot_array_born_after_opaque_call_does_not_inherit_old_frontier() {
     let fixture = run_fixture(FixtureOpts::new(
         "const old = [1];\nconst opaque = globalThis.makeSchema();\nconst fresh = [2];\nconst observed = fresh[0];\nconst retained = old[0];\n",

@@ -3212,15 +3212,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .borrow_mut()
                 .insert(proof.inference_use());
         }
-        let operation_coverage =
-            if kind == CallKind::New && row.op == IntrinsicOp::Map && expressions.is_empty() {
-                let mut dependencies = self.state.proof_dependencies.borrow().clone();
-                dependencies.extend(&self.queries.dependencies());
-                super::super::allocation_transfer::keyed_collection_new(row, site, dependencies)
-                    .map(|result| result.effects)
-            } else {
-                None
-            };
+        let operation_coverage = if kind == CallKind::New
+            && matches!(row.op, IntrinsicOp::Map | IntrinsicOp::WeakMap)
+            && expressions.is_empty()
+        {
+            let mut dependencies = self.state.proof_dependencies.borrow().clone();
+            dependencies.extend(&self.queries.dependencies());
+            super::super::allocation_transfer::keyed_collection_new(row, site, dependencies)
+                .map(|result| result.effects)
+        } else {
+            None
+        };
         Some(NativeCallResolution {
             row,
             own_property_projection,
