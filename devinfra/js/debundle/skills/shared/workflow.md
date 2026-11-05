@@ -226,7 +226,10 @@ helper, keep it as unclaimed context in that helper's contiguous
 `source_matches[].match` and list only the helper in `bindings[]`; see [keeping an
 adjacent declaration as local selector context](../../docs/selectors.md#keep-an-adjacent-declaration-as-local-selector-context).
 That local context does not create an anchor entity for other selectors.
-Validate selector resolution before running the gate.
+Before running the gate, inspect [`spec validate`'s template classifications](../../docs/cli.md#selector-outcomes)
+and check that an intended `reference` has not become a `wildcard` after its
+anchor was removed. A unique successful match alone does not establish that
+the original binding relationship is preserved.
 
 Configured `module_roots` still require their directories when they contain no
 selected YAML. A reduced config can omit unused root mappings instead of
