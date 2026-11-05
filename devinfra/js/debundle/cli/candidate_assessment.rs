@@ -172,12 +172,13 @@ impl ResolvedCandidateEffectAssessment<'_> {
         &self,
         edit_modules_root: &std::path::Path,
         candidate_modules: &BTreeMap<String, LogicalModule>,
+        analysis_engine_sha256: &'static str,
     ) -> Result<gate::CandidateRelocationAssessmentReport> {
         pipeline::assess_candidate_effect_relocation(
             &self.transform,
             AnalysisArtifactInput {
                 path: &self.analysis_path,
-                analysis_engine_sha256: analysis_identity::ANALYSIS_ENGINE_SHA256,
+                analysis_engine_sha256,
             },
             self.graph_source,
             edit_modules_root,

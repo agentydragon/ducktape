@@ -1306,7 +1306,6 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
-        ":analysis_identity",
         ":analyze_command",
         ":anonymous_resolution",
         ":artifact",
@@ -1685,6 +1684,7 @@ rust_binary(
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
+        ":analysis_identity",
         ":cli",
         ":gate",
         "@crates//:clap",
@@ -1704,6 +1704,7 @@ rust_binary(
     rustc_flags = ["-Cstrip=symbols"],
     visibility = ["//devinfra/js/debundle/e2e:__pkg__"],
     deps = [
+        ":analysis_identity",
         ":cli",
         ":gate",
         "@crates//:clap",
