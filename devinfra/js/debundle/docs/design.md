@@ -3616,15 +3616,16 @@ implements each, and when each runs — is the fixed composition in
 `run_transform` (<../pipeline.rs>); this doc does not
 mirror it. The shape to know: spec load/validate → chunk load/prepare
 (one parallel per-chunk SWC parse) → artifact indexes → the read-only
-`build_vendor_resolution_plan` → `materialize_logical_modules` (the only
-lowering stage) → `apply_emission_rewrites` →
+`build_vendor_resolution_plan` → `materialize_logical_modules` (frontend
+elaboration → chunk analysis → output-plan construction and lowering) →
+`apply_emission_rewrites` →
 `validate_emitted_exports` (duplicate-public-export tripwire) →
 optional tree/harness outputs.
 
-Within `materialize_logical_modules`, analysis (chunk AST scan,
-statement facts, dependency graph construction — <../lowering/chunk_ast.rs>,
-<../facts/mod.rs>, <../graph/>) feeds the stages that carry design
-invariants:
+Frontend source structure (<../frontend_elaboration/chunk_ast.rs>) and chunk
+analysis (statement facts and dependency graph construction —
+<../facts/mod.rs>, <../graph/>) feed the materialization stages that carry
+design invariants:
 
 1. **Binding assignment** → a per-binding `ModuleId`
    (`BindingKind::Owned`) from the spec's explicit member list. Bindings
