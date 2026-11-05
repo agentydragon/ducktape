@@ -118,6 +118,15 @@ inputs. Use `--graph-source-root` to explicitly relocate captured physical
 inputs, preserving each path relative to the recorded graph source root; the
 selector root, when supplied too, must contain the relocated input.
 
+Plain `graph-summary` reads the saved report without verifying the current
+engine, source, packages or YAML. Its success establishes report readability;
+supplying relocation flags does not turn it into a compatibility check.
+`graph-summary --include-proposals` does resolve current spec context and
+verify compatibility. For a bounded replay preflight, use
+`inspect-source --id unit:N` with the matching graph and roots, or `describe`
+with the graph's module scope. Retain the command's actual successful exit
+status and source report before claiming source compatibility.
+
 `--modules` must name the graph chunk's exact configured
 subtree. Commands accepting `--tree-config` may name the full modules tree
 when that flag names the config captured by the graph. `describe` resolves
