@@ -470,6 +470,12 @@ pub fn run_debundle_cli_from_process() -> ExitCode {
     let raw_argv = std::env::args_os().collect::<Vec<_>>();
     let command = cli_command();
     let matches = command.clone().get_matches_from(raw_argv.clone());
+    if let Err(error) = transform_command::validate_transform_arg_matches(&matches) {
+        command
+            .clone()
+            .error(clap::error::ErrorKind::ArgumentConflict, error.to_string())
+            .exit();
+    }
     let args = DebundleArgs::from_arg_matches(&matches)
         .expect("Clap validated DebundleArgs before constructing ArgMatches");
     let query_format = top_level_query_format(&args.command);

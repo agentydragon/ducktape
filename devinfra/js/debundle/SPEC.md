@@ -39,6 +39,17 @@ operation, or read-only analysis. Unrecognized shapes remain unclassified.
 Running an edit gate does not establish full pipeline, reconstruction, or
 runtime validation.
 
+## Transform input modes
+
+`--spec` selects flat input. It refuses explicitly supplied `--tree-config`,
+`--tree-modules`, `--tree-vendor-marks`, `--tree-source-root`, and `--out-root`.
+Inherited tree source/output defaults are inactive in flat mode and are omitted
+from invocation replay arguments. Tree mode retains its existing environment
+defaults. `--package-root` and `--packages-root` are shared inputs in both modes.
+With `run --reports-only`, `--out-root` is also a shared input and must name
+that same reports destination. The standalone projector applies the same mode
+resolution.
+
 ## Read-only query failures
 
 Once Clap accepts the command line, runtime failures from `describe`,
