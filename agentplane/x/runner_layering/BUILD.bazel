@@ -89,8 +89,8 @@ py_library(
     name = "local_vm",
     srcs = ["local_vm.py"],
     deps = [
-        "//devinfra/bazel:runfiles",
         "@pypi//httpx",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -121,10 +121,10 @@ py_test(
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/testing:scripted_model",
-        "//devinfra/bazel:runfiles",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

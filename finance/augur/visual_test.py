@@ -22,8 +22,8 @@ from urllib.parse import urlencode
 import pytest
 import pytest_bazel
 from playwright.async_api import Page, Playwright, ViewportSize
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.output_writer import BoundTestOutputs
 from finance.augur.api.config import Config
 from finance.augur.api.server import static_price_clients
@@ -390,7 +390,9 @@ def hermetic_prices() -> dict[Platform, dict[str, float]]:
     server needs a probability for each market to resolve the run with no network. The exact
     values only need to be plausible and deterministic; a gentle spread keeps the scored table
     and surfaced list visually populated."""
-    catalog = MarketCatalog.from_yaml(get_required_path("_main/finance/augur/calibration/example_openai_catalog.yaml"))
+    catalog = MarketCatalog.from_yaml(
+        Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/calibration/example_openai_catalog.yaml"
+    )
     by_platform: defaultdict[Platform, dict[str, float]] = defaultdict(dict)
     for index, market in enumerate(catalog.markets):
         by_platform[market.platform][market.market_id] = 0.3 + 0.4 * (index % 3) / 2

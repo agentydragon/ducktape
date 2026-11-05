@@ -1076,11 +1076,11 @@ py_test(
         "//:conftest",
         "//agentplane/env:config",
         "//cluster/cdk8s:conftest",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

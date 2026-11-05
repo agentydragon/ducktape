@@ -10,8 +10,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from finance.augur.model.historical_windows import HistoricalWindowsModel
 from finance.augur.model.series import InflationKey, LevelSeriesKey, SecurityDistributionKey, SecurityKey
 from finance.augur.sim.external_series import ExternalSeriesContext
@@ -187,7 +187,7 @@ def test_offline_cli_replays_selected_original_windows(tmp_path: Path, share: fl
     output = tmp_path / "study"
     subprocess.run(
         [
-            get_required_path(own_repo_rlocation("finance/augur/study/trinity/replay_bin")),
+            (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/study/trinity/replay_bin"),
             "--synthetic",
             "--equity-share",
             str(share),

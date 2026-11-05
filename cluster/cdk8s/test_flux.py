@@ -13,6 +13,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
     KustomizationSpecSourceRef,
     KustomizationSpecSourceRefKind,
 )
+from python.runfiles import Runfiles
 from source_watcher_crds.io.fluxcd.extensions.source import (
     ArtifactGeneratorSpecArtifacts,
     ArtifactGeneratorSpecArtifactsCopy,
@@ -31,7 +32,6 @@ from cluster.cdk8s.flux import (
     kustomizations_chart,
     kustomize_kustomization,
 )
-from devinfra.bazel.runfiles import get_required_path
 
 _HEALTH_CHECKS = [KustomizationSpecHealthChecks(kind="Deployment", name="test-app", namespace="test-ns")]
 
@@ -236,7 +236,7 @@ def test_config_map_data_preserves_values_through_kustomize(tmp_path: Path) -> N
     )
 
     result = subprocess.run(
-        [str(get_required_path("multitool/tools/kustomize/kustomize")), "build", str(tmp_path)],
+        [str(Runfiles.CreateOrRaise().root() / "multitool/tools/kustomize/kustomize"), "build", str(tmp_path)],
         capture_output=True,
         check=False,
     )
@@ -304,7 +304,7 @@ def test_secret_generator_builds_encrypted_payload_for_flux_post_build_decryptio
     )
 
     result = subprocess.run(
-        [str(get_required_path("multitool/tools/kustomize/kustomize")), "build", str(tmp_path)],
+        [str(Runfiles.CreateOrRaise().root() / "multitool/tools/kustomize/kustomize"), "build", str(tmp_path)],
         capture_output=True,
         check=False,
     )

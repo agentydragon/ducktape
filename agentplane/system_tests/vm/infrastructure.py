@@ -13,10 +13,10 @@ from contextlib import ExitStack
 from typing import Any
 
 import yaml
+from python.runfiles import Runfiles
 
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.k3s.release_manifests import load_release_manifest
-from devinfra.bazel.runfiles import get_required_path
 
 # The stack's `K3s.kubectl`: the stack calls this module while it starts.
 Kubectl = Callable[..., str]
@@ -69,7 +69,7 @@ def _assert_kvm_usable() -> None:
 
 
 def _manifest(variable: str) -> list[dict[str, Any]]:
-    return load_release_manifest(get_required_path(os.environ[variable]), variable)
+    return load_release_manifest((Runfiles.CreateOrRaise().root() / os.environ[variable]), variable)
 
 
 def _kubevirt_operator() -> list[dict[str, Any]]:

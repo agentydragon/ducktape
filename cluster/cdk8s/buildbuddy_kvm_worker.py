@@ -22,6 +22,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecVolumesEmptyDiskCapacity,
     VirtualMachineSpecTemplateSpecVolumesSecret,
 )
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.config_format import yaml_config
@@ -30,7 +31,6 @@ from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_lab
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.oci_cache import zot
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy, isolate_ingress
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "buildbuddy-kvm-worker"
 NAMESPACE = "buildbuddy-executor"
@@ -79,13 +79,14 @@ def _cloud_init() -> str:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    runfiles_root = Runfiles.CreateOrRaise().root()
     k8s.KubeConfigMap(
         chart,
         "guest-config",
         metadata=k8s.ObjectMeta(name=NAME, namespace=NAMESPACE),
         data={
             **{
-                name: get_required_path(own_repo_rlocation(f"devinfra/buildbuddy/kvm/worker/{name}")).read_text()
+                name: (runfiles_root / f"ducktape/devinfra/buildbuddy/kvm/worker/{name}").read_text()
                 for name in _GUEST_FILES
             },
             "k3s.yaml": yaml_config({"disable-default-registry-endpoint": True}),

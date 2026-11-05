@@ -11,6 +11,7 @@ import pytest
 import pytest_bazel
 import yaml
 from pydantic import AnyHttpUrl, ValidationError
+from python.runfiles import Runfiles
 
 # Each service module exports `Settings`; aliases keep their separate config contracts explicit.
 from agentplane.app.settings import Settings as AppSettings
@@ -31,7 +32,6 @@ from agentplane.system_tests.vm.block_storage import STORAGE_CLASS
 from agentplane.system_tests.vm.configuration import OOM_TEMPLATE, SUPERVISION_KERNEL_ARG, SUPERVISION_TEMPLATE
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s.agentplane import central_sampler, history_service, llm_ingress, runner_gateway
-from devinfra.bazel.runfiles import get_required_path
 from util.settings_contract import env_name
 
 _MCP = McpInputs(
@@ -50,7 +50,7 @@ def _resource(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any
 
 
 def _filled_fixture() -> rendered_fixture.RenderedFixture:
-    cached = rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"]))
+    cached = rendered_fixture.read(Runfiles.CreateOrRaise().root() / os.environ["K3S_FIXTURE_RLOCATION"])
     return rendered_fixture.fill(
         cached,
         RuntimeInputs(
@@ -388,7 +388,8 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations() -> None:
 
 
 def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling() -> None:
-    fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    fixture = rendered_fixture.read(runfiles_root / os.environ["K3S_VM_FIXTURE_RLOCATION"])
     selected = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
     other = _resource(fixture.objects, "SandboxTemplate", "environment-vm")
     original_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
@@ -407,7 +408,7 @@ def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling() -> No
     assert next(volume for volume in other_volumes if volume["name"] == "rootdisk")["containerDisk"]["image"].endswith(
         "/agentplane-vm-guest-root-profile:unset"
     )
-    control = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
+    control = rendered_fixture.read(runfiles_root / os.environ["K3S_VM_FIXTURE_RLOCATION"])
     vm_sandboxes.select_native_profile(control.objects, enabled=False, profile_root=True)
     control_oom = _resource(control.objects, "SandboxTemplate", OOM_TEMPLATE)
     control_spec = control_oom["spec"]["vm"]["template"]["spec"]
@@ -428,7 +429,7 @@ def test_kubevirt_baseline_selects_emulation_from_the_explicit_kvm_mode(monkeypa
 
 
 def test_vm_boot_evidence_selects_only_oom_guest_at_runtime() -> None:
-    fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
+    fixture = rendered_fixture.read(Runfiles.CreateOrRaise().root() / os.environ["K3S_VM_FIXTURE_RLOCATION"])
     selected = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
     other = _resource(fixture.objects, "SandboxTemplate", "environment-vm")
     original_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
@@ -442,7 +443,7 @@ def test_vm_boot_evidence_selects_only_oom_guest_at_runtime() -> None:
 
 
 def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
-    fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
+    fixture = rendered_fixture.read(Runfiles.CreateOrRaise().root() / os.environ["K3S_VM_FIXTURE_RLOCATION"])
     template = _resource(fixture.objects, "SandboxTemplate", "environment-vm")["spec"]
     state = template["stateVolume"]
     workspace = template["workspaceVolume"]

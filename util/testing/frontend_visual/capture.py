@@ -24,7 +24,6 @@ from playwright.async_api import BrowserContext, Locator, Page, Playwright, Rout
 from pydantic import JsonValue, TypeAdapter
 from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.output_writer import BoundTestOutputs
 from util.testing.frontend_visual.context import DISABLE_ANIMATIONS_CSS, FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.frontend_visual.page_capture import (
@@ -132,8 +131,9 @@ class InlinePage:
     @classmethod
     def from_env(cls) -> InlinePage:
         """What `py_visual_test(inline_page = True)` sets: runfiles paths (`rlocationpath`) of the stylesheets, space-separated."""
+        runfiles_root = Runfiles.CreateOrRaise().root()
         return cls(
-            stylesheet_paths=tuple(get_required_path(path) for path in os.environ["STYLESHEET_PATHS"].split()),
+            stylesheet_paths=tuple(runfiles_root / path for path in os.environ["STYLESHEET_PATHS"].split()),
             base_href=os.environ.get("BASE_HREF"),
             url=os.environ.get("PAGE_URL"),
         )
@@ -153,14 +153,15 @@ class HarnessConfig:
     @classmethod
     def from_env(cls) -> HarnessConfig:
         """What `py_visual_test` sets: runfiles paths (`rlocationpath`) of harness assets and capture metadata."""
+        runfiles_root = Runfiles.CreateOrRaise().root()
         return cls(
-            harness_path=get_required_path(os.environ["HARNESS_PATH"]),
+            harness_path=(runfiles_root / os.environ["HARNESS_PATH"]),
             title=os.environ["VISUAL_TITLE"],
             expected_font_family=os.environ.get("EXPECTED_FONT_FAMILY"),
             inline_page=InlinePage.from_env() if os.environ.get("INLINE_PAGE") else None,
             devtools_viewport=bool(os.environ.get("DEVTOOLS_VIEWPORT")),
             served_documents={
-                url: get_required_path(path)
+                url: (runfiles_root / path)
                 for url, path in _PATHS_BY_URL.validate_json(os.environ.get("SERVED_DOCUMENTS", "{}")).items()
             },
         )

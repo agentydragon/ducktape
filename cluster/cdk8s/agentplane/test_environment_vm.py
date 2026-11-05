@@ -14,10 +14,10 @@ from cdk8s import (
     Testing as Cdk8sTesting,  # not collected by pytest
 )
 from more_itertools import one
+from python.runfiles import Runfiles
 
 from agentplane.env.config import CodexReadiness, Configuration, VMEnvironment
 from cluster.cdk8s.agentplane import environment_sandbox, environment_vm, staging
-from devinfra.bazel.runfiles import get_required_path
 
 HARNESS_ENV = {"EXAMPLE_SERVICE_URL": "http://service.test"}
 
@@ -64,13 +64,18 @@ def _environment_vm_manifests(
 def _vm_guest_contract() -> dict[str, Any]:
     return cast(
         dict[str, Any],
-        json.loads(get_required_path("_main/agentplane/env/images/vm_guest_contract.json").read_text(encoding="utf-8")),
+        json.loads(
+            (Runfiles.CreateOrRaise().root() / "ducktape/agentplane/env/images/vm_guest_contract.json").read_text(
+                encoding="utf-8"
+            )
+        ),
     )
 
 
 def _runtime_service_unit() -> dict[str, str]:
-    contents = get_required_path(
-        "_main/agentplane/env/images/systemd/agentplane-environment-runtime.service"
+    contents = (
+        Runfiles.CreateOrRaise().root()
+        / "ducktape/agentplane/env/images/systemd/agentplane-environment-runtime.service"
     ).read_text(encoding="utf-8")
     return {
         key: value

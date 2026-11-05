@@ -31,6 +31,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Red
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Gauge, generate_latest
+from python.runfiles import Runfiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from aiquota.cache import _assemble, _instantiate
@@ -40,14 +41,13 @@ from aiquota.models import AllQuotas, FetchSuccess, HistorySnapshot, QuotaSnapsh
 from aiquota.providers.base import SupportsHistory
 from aiquota.render.view_model import AllQuotasView, to_view
 from aiquota.settings import Settings
-from devinfra.bazel.runfiles import find_path
 
 _CACHE_CONTROL = {"Cache-Control": "no-store"}
 _MAX_CAPTURE_BYTES = 1024 * 1024
 _bearer = HTTPBearer(auto_error=False)
 logger = logging.getLogger(__name__)
 
-_FRONTEND_INDEX = "_main/aiquota/frontend/dist/index.html"
+_FRONTEND_INDEX = "ducktape/aiquota/frontend/dist/index.html"
 _VIEW_UPDATE_SECONDS = 1
 
 
@@ -693,11 +693,11 @@ def create_app(
         # Only the server binaries package the SPA. The API library is also imported without
         # it — by its own tests, and by the OpenAPI exporter the frontend's types come from,
         # which cannot depend on the bundle it generates types for.
-        index = find_path(_FRONTEND_INDEX)
-        if index is None:
+        index = Runfiles.CreateOrRaise().root() / _FRONTEND_INDEX
+        if not index.is_file():
             logger.warning("aiquota frontend bundle is not present in runfiles")
         else:
-            frontend_dir = index.parent
+            frontend_dir = Path(str(index)).parent
     if frontend_dir is not None:
         app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
 

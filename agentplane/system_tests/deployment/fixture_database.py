@@ -23,10 +23,10 @@ from cdk8s_plus_34 import (
     Volume,
 )
 from constructs import Construct
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.secret_ref import SecretRef
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "postgres"
 SERVICE = "postgres-primary"
@@ -39,7 +39,7 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 
 
 def _fixture_file(name: str) -> str:
-    return get_required_path(own_repo_rlocation(f"agentplane/system_tests/deployment/{name}")).read_text(
+    return (Runfiles.CreateOrRaise().root() / f"ducktape/agentplane/system_tests/deployment/{name}").read_text(
         encoding="utf-8"
     )
 

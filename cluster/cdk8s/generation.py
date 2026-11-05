@@ -9,6 +9,7 @@ from pathlib import Path, PurePosixPath
 from cdk8s import ApiObjectMetadata, App, Chart, Yaml
 from cdk8s_plus_34 import ConfigMap
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDecryption
+from python.runfiles import Runfiles
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import namespaces
@@ -26,7 +27,6 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 CNPG_DATABASE_READY = (
     "has(status.applied) && status.applied && "
@@ -61,7 +61,7 @@ def copy_source_file(root: Path, directory: str, source: str) -> str:
     name = PurePosixPath(source).name
     out_dir = root / directory
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / name).write_bytes(get_required_path(own_repo_rlocation(source)).read_bytes())
+    (out_dir / name).write_bytes((Runfiles.CreateOrRaise().root() / f"ducktape/{source}").read_bytes())
     return name
 
 

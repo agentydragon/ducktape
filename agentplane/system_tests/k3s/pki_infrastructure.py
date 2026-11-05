@@ -6,11 +6,11 @@ from time import monotonic
 from typing import Any
 
 import yaml
+from python.runfiles import Runfiles
 from tenacity import Retrying, retry_if_exception, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.k3s.release_manifests import load_release_manifest
-from devinfra.bazel.runfiles import get_required_path
 
 Kubectl = Callable[..., str]
 NAMESPACE = "cert-manager"
@@ -18,7 +18,7 @@ READY_SECONDS = 180
 
 
 def _manifest(variable: str) -> list[dict[str, Any]]:
-    return load_release_manifest(get_required_path(os.environ[variable]), variable)
+    return load_release_manifest((Runfiles.CreateOrRaise().root() / os.environ[variable]), variable)
 
 
 def releases() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:

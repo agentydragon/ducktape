@@ -5,16 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from devinfra.bazel.runfiles import get_required_path
 
-_K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"
+_K8S_ROOT_KUSTOMIZATION = "ducktape/cluster/k8s/kustomization.yaml"
 
 
 @pytest.fixture(scope="session")
 def k8s_dir() -> Path:
-    return get_required_path(_K8S_ROOT_KUSTOMIZATION).parent
+    return Path(str(Runfiles.CreateOrRaise().root() / _K8S_ROOT_KUSTOMIZATION)).parent
 
 
 @pytest.fixture(scope="session")

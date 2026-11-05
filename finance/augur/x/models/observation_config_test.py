@@ -7,8 +7,8 @@ import pytest
 import pytest_bazel
 import yaml
 from pydantic import ValidationError
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from finance.augur.model.conditioning import ExogenousObservedPoint, ObservationTreatment, ObservationUnits
 from finance.augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from finance.augur.model.path_models.scenarios import DatedHistoricalSeries
@@ -106,7 +106,7 @@ def test_source_named_and_bare_numeric_anchors_are_not_an_alternate_format(confi
 
 
 def test_legacy_checked_in_vecm_artifact_requires_refitting() -> None:
-    path = get_required_path(own_repo_rlocation("finance/augur/x/models/calibrated/trained_vecm_provider.yaml"))
+    path = Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/x/models/calibrated/trained_vecm_provider.yaml"
     document = yaml.safe_load(path.read_text())
     with pytest.raises(ValidationError) as error:
         VecmProviderConfig.model_validate(document)

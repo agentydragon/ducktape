@@ -11,18 +11,19 @@ does not call parse_cluster, so the extra files don't reach the parse-based chec
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from cluster.validation.flux import validate_flux_build
-from devinfra.bazel.runfiles import get_required_path
 
-_K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"
+_K8S_ROOT_KUSTOMIZATION = "ducktape/cluster/k8s/kustomization.yaml"
 
 
 def test_flux_build_renders_tree() -> None:
     """`flux build` of the whole tree succeeds and yields Kustomization + GitRepository resources."""
-    k8s_dir = get_required_path(_K8S_ROOT_KUSTOMIZATION).parent
+    k8s_dir = Path(str(Runfiles.CreateOrRaise().root() / _K8S_ROOT_KUSTOMIZATION)).parent
     errors = asyncio.run(validate_flux_build(k8s_dir))
     assert not errors, "\n".join(errors)
 

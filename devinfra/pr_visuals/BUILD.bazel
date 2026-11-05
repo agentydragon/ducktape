@@ -295,9 +295,9 @@ py_test(
     ],
     deps = [
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//devinfra/pr_visuals:publisher",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

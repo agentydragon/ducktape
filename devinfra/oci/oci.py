@@ -27,8 +27,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from opentelemetry import trace
+from python.runfiles import Runfiles
 
-from devinfra.bazel import runfiles
 from devinfra.oci.crane import Crane, parse_pushed_digest
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,9 @@ _CRANE_RLOCATION = "crane/crane"
 
 def bazel_crane(*, registry: str | None = None, username: str | None = None, password: str | None = None) -> Crane:
     """A `Crane` on the binary Bazel staged in runfiles (`data = ["@crane"]`)."""
-    return Crane(runfiles.get_required_path(_CRANE_RLOCATION), registry=registry, username=username, password=password)
+    return Crane(
+        (Runfiles.CreateOrRaise().root() / _CRANE_RLOCATION), registry=registry, username=username, password=password
+    )
 
 
 @dataclass(frozen=True)
@@ -54,7 +56,7 @@ async def push_bazel_image(
     crane: Crane, image: BazelImage, registry_url: str, tag: str, *, insecure: bool = False
 ) -> str:
     """Push a Bazel-built OCI image to a registry. Returns the digest."""
-    image_path = runfiles.get_required_path(image.image_rlocation)
+    image_path = Runfiles.CreateOrRaise().root() / image.image_rlocation
     dest = f"{registry_url}/{image.repo_name}:{tag}"
     logger.info("Pushing %s -> %s via crane", image_path, dest)
     stdout = await crane.apush(image_path, dest, insecure=insecure)
@@ -175,7 +177,7 @@ def load_oci_image(layout_rlocation: str, *, image_ref: str | None = None) -> st
     and after acquiring a per-reference lock, avoiding redundant concurrent loads and
     detecting pruning or an out-of-band retag.
     """
-    oci_layout = runfiles.get_required_path(layout_rlocation)
+    oci_layout = Runfiles.CreateOrRaise().root() / layout_rlocation
     wanted = read_oci_layout_digest(oci_layout)
     if image_ref is None:
         # Docker tags have a restricted alphabet and length. Preserve ordinary OCI
@@ -267,7 +269,7 @@ def main() -> None:
     parser.add_argument("rloc_file", help="Bazel runfiles path to the image's .rloc file")
     parser.add_argument("tag", help="Docker image tag to load")
     args = parser.parse_args()
-    layout_rlocation = runfiles.get_required_path(args.rloc_file).read_text().strip()
+    layout_rlocation = (Runfiles.CreateOrRaise().root() / args.rloc_file).read_text().strip()
     load_oci_image(layout_rlocation, image_ref=args.tag)
 
 

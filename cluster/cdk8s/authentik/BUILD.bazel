@@ -74,9 +74,9 @@ py_library(
         "//cluster/cdk8s/providers/gateway_api:httproute",
         "//cluster/cdk8s/providers/prometheus_operator:pod_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -148,10 +148,10 @@ py_test(
     srcs = ["test_blueprint_contracts.py"],
     data = ["//cluster/k8s/authentik/app/blueprints:authentik_blueprints"],
     deps = [
-        "//devinfra/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )

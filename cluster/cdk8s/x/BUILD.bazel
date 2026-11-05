@@ -25,8 +25,8 @@ py_test(
         ":render_diff",
         "//:conftest",
         "//cluster/cdk8s:conftest",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )

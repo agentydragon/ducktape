@@ -14,8 +14,7 @@ from typing import Annotated, Literal
 from playwright.async_api import Error as PlaywrightError, Page
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic.alias_generators import to_camel
-
-from devinfra.bazel.runfiles import get_required_path
+from python.runfiles import Runfiles
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +159,7 @@ class EstimateError(_Recorded):
 
 
 def script_path() -> Path:
-    return get_required_path("_main/agentplane/app/testing/thread_view_marks.js")
+    return Runfiles.CreateOrRaise().root() / "ducktape/agentplane/app/testing/thread_view_marks.js"
 
 
 _EVENTS = TypeAdapter(list[TimedThreadViewEvent])

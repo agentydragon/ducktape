@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest_bazel
 import yaml
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
-
-_DASHBOARD = "_main/cluster/cdk8s/monitoring/dashboards/home-network-overview.json"
+_DASHBOARD = "ducktape/cluster/cdk8s/monitoring/dashboards/home-network-overview.json"
 
 
 def test_reliability_queries(tmp_path: Path) -> None:
-    dashboard = json.loads(get_required_path(_DASHBOARD).read_text())
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    dashboard = json.loads((runfiles_root / _DASHBOARD).read_text())
     expressions = {
         panel["id"]: panel["targets"][0]["expr"] for panel in dashboard["panels"] if panel["id"] in (51, 52, 53)
     }
@@ -36,12 +36,10 @@ def test_reliability_queries(tmp_path: Path) -> None:
     }
     (tmp_path / "smokeping.yaml").write_text(yaml.safe_dump(spec))
     (tmp_path / "tests.yaml").write_text(
-        get_required_path("_main/cluster/cdk8s/monitoring/testdata/smokeping_rules.yaml").read_text()
+        (runfiles_root / "ducktape/cluster/cdk8s/monitoring/testdata/smokeping_rules.yaml").read_text()
     )
     subprocess.run(
-        [get_required_path("multitool/tools/promtool/promtool"), "test", "rules", "tests.yaml"],
-        cwd=tmp_path,
-        check=True,
+        [(runfiles_root / "multitool/tools/promtool/promtool"), "test", "rules", "tests.yaml"], cwd=tmp_path, check=True
     )
 
 

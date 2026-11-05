@@ -44,11 +44,11 @@ py_test(
         ":conftest",
         "//:conftest",
         "//agentplane/runner_gateway:conftest",
-        "//devinfra/bazel:runfiles",
         "//util:db_url",
         "//util/testing:postgres",
         "@pypi//psycopg",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+        "@rules_python//python/runfiles",
     ],
 )

@@ -17,7 +17,6 @@ py_library(
         "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway:settings",
         "//agentplane/testing:tls",
-        "//devinfra/bazel:runfiles",
         "//devinfra/testing:undeclared_outputs",
         "//util:db_url",
         "//util:net",
@@ -28,6 +27,7 @@ py_library(
         "@pypi//protobuf",
         "@pypi//pyyaml",
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@rules_python//python/runfiles",
     ],
 )
 

@@ -59,10 +59,10 @@ py_library(
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/kubevirt:virtualmachine",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -103,11 +103,11 @@ py_test(
         ":flux",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -263,9 +263,9 @@ py_library(
         ":namespaces",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -791,9 +791,9 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         ":service_ref",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1129,11 +1129,11 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s/forgejo_registry:chart",
         "//cluster/cdk8s/monitoring:home_switch",
-        "//devinfra/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pygohcl",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1372,10 +1372,10 @@ py_library(
         "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1489,9 +1489,9 @@ py_library(
         ":namespaces",
         ":service_ref",
         "//cluster/scripts:nebula_mesh",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1847,9 +1847,9 @@ py_library(
         "//cluster/cdk8s/tofu_state:namespace",
         "//cluster/cdk8s/website",
         "//cluster/scripts:nebula_mesh",
-        "//devinfra/bazel:runfiles",
         "//devinfra/bazel:workspace",
         "@pypi//cdk8s",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1902,11 +1902,11 @@ py_test(
     deps = [
         ":generate_manifests_lib",
         ":manifest_roots",
-        "//devinfra/bazel:runfiles",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1944,10 +1944,10 @@ py_library(
         "//cluster/cdk8s/monitoring:mimir",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1963,10 +1963,10 @@ py_library(
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@rules_python//python/runfiles",
     ],
 )
 

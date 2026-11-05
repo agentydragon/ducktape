@@ -15,6 +15,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
 from jinja2 import Environment, StrictUndefined
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
@@ -24,7 +25,6 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 # Avoid colliding with this module's ollama Flux constructor.
 from model_catalog import ollama as models
@@ -388,13 +388,14 @@ def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     _namespace(chart)
     _claims(chart)
+    runfiles_root = Runfiles.CreateOrRaise().root()
     scripts = ConfigMap(
         chart,
         "scripts",
         metadata=ApiObjectMetadata(name=_SCRIPTS_CONFIG_MAP, namespace=_NAMESPACE),
         data={
             _SETUP_SCRIPT: Environment(undefined=StrictUndefined, keep_trailing_newline=True)
-            .from_string(get_required_path(own_repo_rlocation(f"{_SOURCE_DIR}/{_SETUP_SCRIPT}.j2")).read_text())
+            .from_string((runfiles_root / f"ducktape/{_SOURCE_DIR}/{_SETUP_SCRIPT}.j2").read_text())
             .render(
                 qwen=models.QWEN_IQ4XS_128K,
                 qwen_256k=models.QWEN_IQ4XS_256K,
@@ -404,7 +405,7 @@ def chart(app: App) -> Chart:
                 embedding=models.QWEN_EMBEDDING,
             ),
             **{
-                name: get_required_path(own_repo_rlocation(f"{_SOURCE_DIR}/{name}")).read_text()
+                name: (runfiles_root / f"ducktape/{_SOURCE_DIR}/{name}").read_text()
                 for name in (_LINK_SCRIPT, "qwen38-ssd-shards.tsv", "qwen38-ssd-derived-shards.tsv")
             },
         },
@@ -414,10 +415,10 @@ def chart(app: App) -> Chart:
         "auth-proxy-config",
         metadata=ApiObjectMetadata(name=_AUTH_PROXY_CONFIG_MAP, namespace=_NAMESPACE),
         data={
-            "default.conf.template": get_required_path(
-                own_repo_rlocation(f"{_SOURCE_DIR}/nginx-auth-proxy.conf.template")
+            "default.conf.template": (
+                runfiles_root / f"ducktape/{_SOURCE_DIR}/nginx-auth-proxy.conf.template"
             ).read_text(),
-            _NGINX_CONF: get_required_path(own_repo_rlocation(f"{_SOURCE_DIR}/{_NGINX_CONF}")).read_text(),
+            _NGINX_CONF: (runfiles_root / f"ducktape/{_SOURCE_DIR}/{_NGINX_CONF}").read_text(),
         },
     )
     _deployment(chart, scripts, auth_proxy_config)

@@ -7,8 +7,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from finance.augur.model.series import InflationKey, SecurityKey, SecuritySymbol
 from finance.augur.sim.bills import Biller
 from finance.augur.sim.books import AccountRef
@@ -225,7 +225,7 @@ def test_actual_study_cli_runs_on_generated_placeholder_paths(tmp_path: Path) ->
     output = tmp_path / "cli-comparison"
     subprocess.run(
         [
-            get_required_path("_main/finance/augur/x/bounded_spending/compare_bin"),
+            (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/x/bounded_spending/compare_bin"),
             "--synthetic",
             "--equity-share",
             "1",

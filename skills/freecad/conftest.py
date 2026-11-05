@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 from opentelemetry import trace
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.bazel.subprocess import _merge_pythonpath
 from util.testing.otel_tracing import configure_tracing
 
@@ -67,9 +67,9 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def _find_conda_root() -> Path:
     """Locate the conda env root via Rlocation of an anchor file inside the env."""
-    anchor = get_required_path(_CONDA_FREECADCMD_RLOCATION)
+    anchor = Runfiles.CreateOrRaise().root() / _CONDA_FREECADCMD_RLOCATION
     # anchor is <conda_root>/bin/freecadcmd → parent.parent is the conda root
-    conda_root = anchor.parent.parent
+    conda_root = Path(str(anchor)).parent.parent
     if not conda_root.is_dir():
         raise RuntimeError(f"Conda env not found at {conda_root}")
     return conda_root

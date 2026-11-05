@@ -15,9 +15,9 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel
+from python.runfiles import Runfiles
 
 from agent_core.events import ToolCall
-from devinfra.bazel.runfiles import get_required_path
 from openai_utils.client_factory import get_async_openai
 from openai_utils.model import BoundOpenAIModel, OpenAIModelProto
 
@@ -58,11 +58,11 @@ def save_summary(*, summary: RunSummary, summary_path: Path) -> None:
 
 DEFAULT_MODEL = "gpt-oss:20b"
 
-_SKILL_RLOCATION = "_main/skills/info_gathering/SKILL.md"
+_SKILL_RLOCATION = "ducktape/skills/info_gathering/SKILL.md"
 
 
 def load_skill() -> str:
-    return get_required_path(_SKILL_RLOCATION).read_text()
+    return (Runfiles.CreateOrRaise().root() / _SKILL_RLOCATION).read_text()
 
 
 def build_agent_system(skill_text: str, extra_system: str = "") -> str:

@@ -21,7 +21,7 @@ def test_runner_cleans_scratch_after_docker_start_failure(tmp_path: Path) -> Non
 
         files = runfiles.Create()
         assert files is not None
-        script = files.Rlocation("_main/devinfra/nixos_bazel_test/run.sh")
+        script = files.Rlocation("ducktape/devinfra/nixos_bazel_test/run.sh")
         assert script is not None
         scratch = tmp_path / "scratch"
         scratch.mkdir()

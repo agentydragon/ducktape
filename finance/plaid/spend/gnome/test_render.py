@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.output_writer import BoundTestOutputs
 from finance.plaid.spend.allowance import PeriodId
@@ -28,20 +28,20 @@ from gnome.test_image import gnome_shell_test
 from gnome.testing.fake_daemon import fake_daemon
 from gnome.testing.session import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
 
-_EXTENSION_ZIP = "_main/finance/plaid/spend/gnome/plaid-spend-desktop.zip"
+_EXTENSION_ZIP = "ducktape/finance/plaid/spend/gnome/plaid-spend-desktop.zip"
 _EXTENSION_UUID = "plaid-spend@allegedly.works"
 _FIXTURE_NAMES = ("ready_two_cards", "authentication_required", "offline", "retrying")
-_FIXTURE_DIR = "_main/finance/plaid/spend/gnome/fixtures"
+_FIXTURE_DIR = "ducktape/finance/plaid/spend/gnome/fixtures"
 _TEST_DBUS_DEST = "works.allegedly.PlaidSpendTest"
 _TEST_DBUS_PATH = "/works/allegedly/PlaidSpendTest"
 _FAKE_DBUS_DEST = "works.allegedly.PlaidSpendFake"
 _FAKE_DBUS_PATH = "/works/allegedly/PlaidSpendFake"
-_FAKE_DBUS_SERVICE = "_main/finance/plaid/spend/gnome/fake-daemon.js"
+_FAKE_DBUS_SERVICE = "ducktape/finance/plaid/spend/gnome/fake-daemon.js"
 
 
 def test_extension_metadata_supports_gnome_50() -> None:
     """Keep the distributed ZIP loadable by the GNOME Shell version on Rugged."""
-    with zipfile.ZipFile(get_required_path(_EXTENSION_ZIP)) as extension_zip:
+    with zipfile.ZipFile(Runfiles.CreateOrRaise().root() / _EXTENSION_ZIP) as extension_zip:
         metadata = json.loads(extension_zip.read("metadata.json"))
 
     assert "50" in metadata["shell-version"]
@@ -55,7 +55,7 @@ def gnome_shell_test_image() -> str:
 @pytest.fixture(scope="module")
 def extension_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     dest = tmp_path_factory.mktemp("plaid-spend-extension")
-    with zipfile.ZipFile(get_required_path(_EXTENSION_ZIP)) as extension_zip:
+    with zipfile.ZipFile(Runfiles.CreateOrRaise().root() / _EXTENSION_ZIP) as extension_zip:
         extension_zip.extractall(dest)
     return dest
 
@@ -79,9 +79,10 @@ def allowance_scenarios() -> dict[str, SpendView]:
 @pytest.fixture(scope="module")
 def fixture_json_dir(tmp_path_factory: pytest.TempPathFactory, allowance_scenarios: dict[str, SpendView]) -> Path:
     dest = tmp_path_factory.mktemp("plaid-spend-fixtures")
+    runfiles_root = Runfiles.CreateOrRaise().root()
     for fixture_name in _FIXTURE_NAMES:
-        source = get_required_path(f"{_FIXTURE_DIR}/{fixture_name}.json")
-        (dest / f"{fixture_name}.json").write_bytes(Path(source).read_bytes())
+        source = runfiles_root / f"{_FIXTURE_DIR}/{fixture_name}.json"
+        (dest / f"{fixture_name}.json").write_bytes(source.read_bytes())
     for fixture_name, view in allowance_scenarios.items():
         fixture = {"status": "ready", "error": "", "view": view.model_dump(mode="json")}
         (dest / f"{fixture_name}.json").write_text(json.dumps(fixture))
@@ -97,7 +98,7 @@ def session(
         extension_dir=extension_dir,
         extension=_EXTENSION_UUID,
         fixture_dir=fixture_json_dir,
-        fake_daemon_script=get_required_path(_FAKE_DBUS_SERVICE),
+        fake_daemon_script=(Runfiles.CreateOrRaise().root() / _FAKE_DBUS_SERVICE),
         screenshot_dir=tmp_path_factory.mktemp("gnome-renders"),
         destination=_TEST_DBUS_DEST,
         object_path=_TEST_DBUS_PATH,

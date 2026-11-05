@@ -28,8 +28,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":crane",
-        "//devinfra/bazel:runfiles",
         "@pypi//opentelemetry_api",
+        "@rules_python//python/runfiles",
     ],
 )
 

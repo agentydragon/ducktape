@@ -11,6 +11,7 @@ import json
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal
 
 import pytest
@@ -19,8 +20,8 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from playwright.async_api import Locator, Page, Playwright, Route, ViewportSize, expect
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.output_writer import BoundTestOutputs
 from finance.plaid.spend.allowance import EstimatePeriodId
 from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView
@@ -36,7 +37,7 @@ from util.testing.frontend_visual.context import deterministic_browser_context
 # gazelle:include_dep //util:playwright
 pytest_plugins = ("util.playwright",)
 
-_UI_DIR = get_required_path("_main/finance/plaid/spend/ui/dist/index.html").parent
+_UI_DIR = Path(str(Runfiles.CreateOrRaise().root() / "ducktape/finance/plaid/spend/ui/dist/index.html")).parent
 
 
 _FROZEN_NOW_MS = int(datetime(2026, 10, 15, tzinfo=UTC).timestamp() * 1000)
@@ -1256,7 +1257,9 @@ async def test_contextual_help_touch(touch_page: Page, dashboard_url: str) -> No
 
 async def test_accordion_readiness_ignores_unrelated_animations(page: Page) -> None:
     await page.set_content(
-        get_required_path("_main/finance/plaid/spend/ui/accordion-readiness-fixture.html").read_text()
+        (
+            Runfiles.CreateOrRaise().root() / "ducktape/finance/plaid/spend/ui/accordion-readiness-fixture.html"
+        ).read_text()
     )
     await _expand_accordion(page.get_by_role("button", name="Expand"))
     await expect(page.locator("#panel")).to_have_css("height", "120px")

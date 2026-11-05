@@ -176,8 +176,8 @@ py_library(
     deps = [
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/k3s:release_manifests",
-        "//devinfra/bazel:runfiles",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 

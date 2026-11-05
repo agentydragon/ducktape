@@ -9,7 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
+from python.runfiles import Runfiles
+
 from platform_sessions.chrome.cookies import chrome_password, chrome_user_agent, decrypt_cookie
 
 
@@ -91,7 +92,7 @@ class ChromeProfile:
         self, *, origin: str, keys: Sequence[str], prefixes: Sequence[str], extractor: Path | None = None
     ) -> dict[str, str]:
         if extractor is None:
-            extractor = get_required_path(own_repo_rlocation("platform_sessions/chrome/chrome_storage"))
+            extractor = Runfiles.CreateOrRaise().root() / "ducktape/platform_sessions/chrome/chrome_storage"
         args = [str(extractor), str(self.directory / "Local Storage" / "leveldb"), origin]
         for key in keys:
             args.extend(("--key", key))

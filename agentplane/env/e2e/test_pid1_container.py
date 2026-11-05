@@ -14,6 +14,7 @@ from typing import override
 import grpc
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 from testcontainers.core import testcontainers_config
 
 from agentplane.env.config import Configuration, Endpoint, EnvironmentVariables, Harness, PodEnvironment
@@ -24,7 +25,6 @@ from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.environment_runtime_transport.config import Insecure
 from agentplane.history_service import session_ingress_pb2, session_ingress_pb2_grpc
 from agentplane.proto import session_pb2
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from third_party.containers import debian_slim, ryuk
@@ -110,8 +110,9 @@ async def acknowledging_history() -> AsyncIterator[str]:
 @pytest.mark.parametrize("mode", ["native-exit", "term", "escalate", "crash"])
 async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str) -> None:
     debian_image = _load_images()
-    binary = get_required_path(
-        "_main/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
+    binary = (
+        Runfiles.CreateOrRaise().root()
+        / "ducktape/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
     ).resolve()
     container = (
         LoggedContainer(debian_image, test_name=f"runner-pid1-{mode}")
@@ -149,9 +150,10 @@ async def test_pid1_container_fence_and_replacement(tmp_path: Path, mode: str) -
 @pytest.mark.parametrize("abrupt", [False, True], ids=["term", "crash"])
 async def test_production_runner_selects_pid1(tmp_path: Path, gateway: Gateway, abrupt: bool) -> None:
     debian_image = _load_images()
-    runner = get_required_path(launches.RUNTIME_BINARY).resolve()
-    fixture = get_required_path(
-        "_main/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    runner = (runfiles_root / launches.RUNTIME_BINARY).resolve()
+    fixture = (
+        runfiles_root / "ducktape/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
     ).resolve()
     host_control = gateway.endpoint
     assert isinstance(host_control.security, Insecure)
@@ -213,9 +215,10 @@ async def test_production_pid1_embedded_host_reaps_setup(
 ) -> None:
     """A Host-owned setup child must use Runtime's PID1 reaper and join its process group."""
     debian_image = _load_images()
-    runner = get_required_path(launches.RUNTIME_BINARY).resolve()
-    fixture = get_required_path(
-        "_main/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    runner = (runfiles_root / launches.RUNTIME_BINARY).resolve()
+    fixture = (
+        runfiles_root / "ducktape/agentplane/env/runtime/supervision/runner_pid1_fixture_/runner_pid1_fixture"
     ).resolve()
     control = gateway.endpoint
     assert isinstance(control.security, Insecure)

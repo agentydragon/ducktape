@@ -327,8 +327,8 @@ py_test(
     deps = [
         "//:conftest",
         "//agentplane/system_tests:conftest",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

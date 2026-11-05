@@ -9,11 +9,11 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, 
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from python.runfiles import Runfiles
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from starlette import status
 
-from devinfra.bazel.runfiles import find_path
 from util.oidc_login import LoginConfig, install_login
 from x.ai_session_archive import queries
 from x.ai_session_archive.database import make_session_factory
@@ -30,7 +30,7 @@ from x.ai_session_archive.models import (
 )
 from x.ai_session_archive.web_settings import WebSettings
 
-_FRONTEND_INDEX = "_main/x/ai_session_archive/frontend/dist/index.html"
+_FRONTEND_INDEX = "ducktape/x/ai_session_archive/frontend/dist/index.html"
 
 
 class Machines(BaseModel):
@@ -145,9 +145,9 @@ def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | No
         ),
     )
     if frontend_dir is None:
-        index = find_path(_FRONTEND_INDEX)
-        if index is not None:
-            frontend_dir = index.parent
+        index = Runfiles.CreateOrRaise().root() / _FRONTEND_INDEX
+        if index.is_file():
+            frontend_dir = Path(str(index)).parent
     if frontend_dir is not None:
         index = frontend_dir / "index.html"
 

@@ -19,8 +19,8 @@ py_library(
         "//cluster/cdk8s:home_lan",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:service_ref",
-        "//devinfra/bazel:runfiles",
         "//ssh_mcp_server:server",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -57,8 +57,8 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -86,12 +86,12 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s:conftest",
         "//cluster/scripts:nebula_mesh",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )

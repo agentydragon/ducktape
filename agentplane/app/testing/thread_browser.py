@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 
 import pytest
 from playwright.async_api import Locator, Page, TimeoutError as PlaywrightTimeoutError, async_playwright
+from python.runfiles import Runfiles
 
 from agentplane.app.testing import history_probe, thread_view_marks
 from agentplane.app.testing.browser_certificate import BrowserCertificate, browser_certificate
@@ -47,7 +48,6 @@ from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatche
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess
 from agentplane.runner_gateway.testing.runner_server import runner_server
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.frontend_visual.context import deterministic_browser_context, disable_animations_script
 from util.testing.frontend_visual.viewports import DESKTOP, Viewport
@@ -92,7 +92,9 @@ async def page(
         await context.add_init_script(path=thread_view_marks.script_path())
         if capture_geometry:
             await context.add_init_script(path=history_probe.script_path())
-        await context.add_init_script(path=get_required_path("_main/agentplane/app/testing/thread_page.js"))
+        await context.add_init_script(
+            path=(Runfiles.CreateOrRaise().root() / "ducktape/agentplane/app/testing/thread_page.js")
+        )
         await context.tracing.start(screenshots=True, snapshots=True, sources=True)
         opened = await context.new_page()
         await history_probe.throttle_cpu(context, opened)

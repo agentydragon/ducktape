@@ -13,6 +13,7 @@ from uuid import uuid4
 import grpc
 from aiohttp import web
 from pydantic import SecretStr
+from python.runfiles import Runfiles
 from sqlalchemy.engine import make_url
 
 from agentplane.central_sampler import sampler_pb2, sampler_pb2_grpc
@@ -20,7 +21,6 @@ from agentplane.central_sampler.settings import AuthConfig, ConnectionConfig, Mo
 from agentplane.native.testing.model_endpoint import ModelEndpoint, ModelExchange
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.testing.go_process import go_process
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import listen_tcp
 
 METADATA = (("authorization", "Bearer test-token"),)
@@ -182,7 +182,7 @@ def create_request(cwd: Path) -> sampler_pb2.CreateSessionRequest:
 async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> AsyncIterator[str]:
     """Run the Go binary, which migrates before serving."""
     await asyncio.to_thread(directory.mkdir, parents=True, exist_ok=True)
-    binary = get_required_path(own_repo_rlocation("agentplane/central_sampler/cmd/main_bin_/main_bin"))
+    binary = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/central_sampler/cmd/main_bin_/main_bin"
     if config.database_url is None:
         raise ValueError("system-test sampler settings require database_url")
     with listen_tcp() as bound, TemporaryDirectory(prefix="sampler-credentials-") as credentials_directory:

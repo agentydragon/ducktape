@@ -31,7 +31,7 @@ py_library(
 py_library(
     name = "tool_resolve",
     srcs = ["tool_resolve.py"],
-    deps = ["//devinfra/bazel:runfiles"],
+    deps = ["@rules_python//python/runfiles"],
 )
 
 py_library(
@@ -132,7 +132,7 @@ py_library(
     ],
     deps = [
         ":tool_resolve",
-        "//devinfra/bazel:runfiles",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -152,8 +152,8 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         "//cluster/cdk8s:manifest_roots",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -175,10 +175,10 @@ py_test(
     deps = [
         ":kustomize",
         ":tool_resolve",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -268,9 +268,9 @@ py_test(
     data = ["//:nebula-mesh.json"],
     deps = [
         "//cluster/scripts:nebula_mesh",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -304,12 +304,12 @@ py_test(
         ":k8s",
         ":kustomize",
         "//cluster/cdk8s:manifest_roots",
-        "//devinfra/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -324,9 +324,9 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         "//cluster/cdk8s/authentik:jwt_rotation",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -366,8 +366,8 @@ py_test(
     ],
     deps = [
         ":flux",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -392,9 +392,9 @@ py_test(
     ],
     deps = [
         "//cluster/cdk8s:manifest_roots",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )

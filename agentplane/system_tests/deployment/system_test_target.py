@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from python.runfiles import Runfiles
 
 from agentplane.system_tests.deployment import rendered_fixture
 from agentplane.system_tests.deployment.rendered_fixture import Backend, LocalModel, PublicLiteLLM
@@ -17,7 +18,6 @@ from agentplane.system_tests.deployment.stack import Stack, StackInputs, running
 from agentplane.system_tests.deployment.virtualization import VirtualizationFactory
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.k3s.baseline import node_ip
-from devinfra.bazel.runfiles import get_required_path
 from util.net import Listener, listen_tcp
 
 
@@ -30,9 +30,10 @@ def scripted_listener() -> Iterator[Listener]:
 
 def load_stack_inputs() -> StackInputs:
     manifests = json.loads(os.environ["K3S_IMAGE_MANIFESTS"])
+    runfiles_root = Runfiles.CreateOrRaise().root()
     return StackInputs(
-        fixture=rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"])),
-        binary=get_required_path(os.environ["K3S_BINARY_RLOCATION"]),
+        fixture=rendered_fixture.read(runfiles_root / os.environ["K3S_FIXTURE_RLOCATION"]),
+        binary=(runfiles_root / os.environ["K3S_BINARY_RLOCATION"]),
         image_layouts=_image_layouts(manifests["fixture"]),
         pki_image_layouts=_image_layouts(manifests["pki"]),
         vm_image_layouts=_image_layouts(manifests["vm"]),
@@ -42,11 +43,12 @@ def load_stack_inputs() -> StackInputs:
 
 def _image_layouts(manifests: list[str]) -> dict[str, Path]:
     images = {}
+    runfiles_root = Runfiles.CreateOrRaise().root()
     for manifest in manifests:
-        for reference, location in json.loads(get_required_path(manifest).read_text()).items():
+        for reference, location in json.loads((runfiles_root / manifest).read_text()).items():
             if reference in images:
                 raise ValueError(f"duplicate image reference: {reference}")
-            images[reference] = get_required_path(location)
+            images[reference] = runfiles_root / location
     return images
 
 

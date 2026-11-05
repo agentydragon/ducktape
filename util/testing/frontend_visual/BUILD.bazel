@@ -71,7 +71,6 @@ py_library(
         ":context",
         ":page_capture",
         ":viewports",
-        "//devinfra/bazel:runfiles",
         "//devinfra/testing:output_writer",
         "@pypi//more_itertools",
         "@pypi//playwright",

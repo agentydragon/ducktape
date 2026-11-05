@@ -61,13 +61,13 @@ py_test(
     deps = [
         ":run",
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//finance/augur:conftest",
         "//finance/augur/sim:books",
         "//finance/augur/sim:ids",
         "//finance/augur/sim:results",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

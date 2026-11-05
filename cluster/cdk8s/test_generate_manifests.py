@@ -14,10 +14,10 @@ from typing import Any
 import pytest
 import pytest_bazel
 import yaml
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.generate_manifests import generate_manifests
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, PARKED_ROOT
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 _REGENERATE = "regenerate with `bb run //cluster/cdk8s:generate_manifests` and commit the result"
@@ -137,7 +137,7 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
 @pytest.fixture(scope="module")
 def checkout() -> Path:
     """The runfiles tree, which holds each committed file the data deps package at its repo path."""
-    return get_required_path(f"_main/{GENERATED_ROOT}").parents[1]
+    return Path(str(Runfiles.CreateOrRaise().root() / f"ducktape/{GENERATED_ROOT}")).parents[1]
 
 
 def test_generated_tree_matches_committed_snapshot(generated: Path, checkout: Path) -> None:
@@ -523,7 +523,7 @@ def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_sta
     assert workspace["spec"]["deletionPolicy"] == "Orphan"
     assert workspace["spec"]["forProvider"]["source"] == "Inline"
     assert "remotePullPolicy" not in workspace["spec"]["forProvider"]
-    root = get_required_path(own_repo_rlocation("tf/gitops/forgejo-agentydragon"))
+    root = Runfiles.CreateOrRaise().root() / "ducktape/tf/gitops/forgejo-agentydragon"
     assert workspace["spec"]["forProvider"]["module"] == "\n".join(
         source.read_text() for source in sorted(root.glob("*.tf"))
     )

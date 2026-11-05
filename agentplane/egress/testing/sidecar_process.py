@@ -11,13 +11,13 @@ from types import MappingProxyType
 
 import aiohttp
 import yaml
+from python.runfiles import Runfiles
 
 from agentplane.egress.platform_routes import PlatformRoute
 from agentplane.egress.sidecar_config import Settings
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.net import Listener, listen_tcp
 
-_BINARY = get_required_path(own_repo_rlocation("agentplane/egress/sidecar/egress-sidecar_/egress-sidecar"))
+_BINARY = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/egress/sidecar/egress-sidecar_/egress-sidecar"
 
 
 class SidecarProcess:

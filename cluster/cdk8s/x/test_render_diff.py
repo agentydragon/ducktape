@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.x.render_diff import (
     Blob,
@@ -18,7 +19,6 @@ from cluster.cdk8s.x.render_diff import (
     git_tree,
     reconcile,
 )
-from devinfra.bazel.runfiles import get_required_path
 
 _GOTK_SYNC = """\
 apiVersion: source.toolkit.fluxcd.io/v1
@@ -105,7 +105,7 @@ def base_files() -> dict[str, str]:
 
 def _graph(repo: Path, rev: str, cache: Path) -> Graph:
     store = BlobStore(cache / "blobs")
-    renderer = Renderer(cache, store, str(get_required_path("multitool/tools/kustomize/kustomize")))
+    renderer = Renderer(cache, store, str(Runfiles.CreateOrRaise().root() / "multitool/tools/kustomize/kustomize"))
     return reconcile(Revision(repo, rev, git_tree(repo, rev), cache / "upstream", store), renderer, jobs=2)
 
 

@@ -7,10 +7,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from python.runfiles import Runfiles
 
 from agentplane.system_tests.k3s import baseline
 from agentplane.system_tests.k3s.baseline import K3s
-from devinfra.bazel.runfiles import get_required_path
 
 
 def _assert_cri_pinned(k3s: K3s, reference: str, work: Path) -> str:
@@ -26,8 +26,8 @@ def _assert_cri_pinned(k3s: K3s, reference: str, work: Path) -> str:
 
 
 def test_imported_image_is_pinned_after_clean_attach(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    binary = get_required_path(os.environ["K3S_BINARY_RLOCATION"])
-    layout = get_required_path(os.environ["K3S_TEST_IMAGE_RLOCATION"])
+    binary = Runfiles.CreateOrRaise().root() / os.environ["K3S_BINARY_RLOCATION"]
+    layout = Runfiles.CreateOrRaise().root() / os.environ["K3S_TEST_IMAGE_RLOCATION"]
     reference = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset"
     fingerprint = "pinned-image-probe-v1:" + uuid.uuid4().hex
     k3s, marker, warm = baseline.open_baseline(binary, fingerprint, layers_in_memory=True)

@@ -87,7 +87,6 @@ py_library(
         "//agentplane/system_tests/driver:dispatcher_transport",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:tracing",
-        "//devinfra/bazel:runfiles",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
@@ -95,6 +94,7 @@ py_library(
         "@pypi//pytest",
         "@pypi//pyyaml",
         "@pypi//tenacity",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -254,10 +254,10 @@ py_library(
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/testing:codex_model",
         "//agentplane/testing:scripted_model",
-        "//devinfra/bazel:runfiles",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//tenacity",
+        "@rules_python//python/runfiles",
     ],
 )
 

@@ -21,8 +21,8 @@ from litellm.proxy import proxy_server
 from litellm.proxy.proxy_server import ProxyConfig
 from litellm.types.utils import GenericStreamingChunk
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from tana.litellm_proxy import custom_handler
 from tana.litellm_proxy.provider import TanaChatResult, TanaLiteLLM, TanaProxyClient, TanaProxyConfig
 from util.testing.asgi import serve_app_in_loop
@@ -41,7 +41,12 @@ def test_litellm_proxy_binary_imports_server(tmp_path: Path) -> None:
     )
 
     result = subprocess.run(
-        [get_required_path("ducktape/tana/litellm_proxy/server_bin"), "--config", config_path, "--skip_server_startup"],
+        [
+            (Runfiles.CreateOrRaise().root() / "ducktape/tana/litellm_proxy/server_bin"),
+            "--config",
+            config_path,
+            "--skip_server_startup",
+        ],
         capture_output=True,
         check=False,
         env=os.environ | {"LITELLM_MASTER_KEY": "sk-test"},
@@ -56,9 +61,11 @@ async def test_litellm_proxy_config_registers_custom_provider_before_router_buil
 ) -> None:
     handler_path = tmp_path / "tana/litellm_proxy/custom_handler.py"
     handler_path.parent.mkdir(parents=True)
-    shutil.copy(get_required_path("ducktape/tana/litellm_proxy/custom_handler.py"), handler_path)
+    shutil.copy((Runfiles.CreateOrRaise().root() / "ducktape/tana/litellm_proxy/custom_handler.py"), handler_path)
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(get_required_path("_main/tana/litellm_proxy/testdata/custom_provider.yaml").read_text())
+    config_path.write_text(
+        (Runfiles.CreateOrRaise().root() / "ducktape/tana/litellm_proxy/testdata/custom_provider.yaml").read_text()
+    )
 
     class FakeClient:
         async def chat_completion(
@@ -104,7 +111,9 @@ async def test_litellm_router_forwards_local_reasoning_default_in_http_payload(
 ) -> None:
     """Use the pinned LiteLLM OpenAI adapter through a mock HTTP transport."""
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(get_required_path("_main/tana/litellm_proxy/testdata/local_reasoning.yaml").read_text())
+    config_path.write_text(
+        (Runfiles.CreateOrRaise().root() / "ducktape/tana/litellm_proxy/testdata/local_reasoning.yaml").read_text()
+    )
 
     request_bodies: list[dict[str, Any]] = []
 
@@ -143,7 +152,9 @@ async def _serve_tana_proxy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, handle_tana_request: Callable[[httpx.Request], httpx.Response]
 ) -> AsyncIterator[str]:
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(get_required_path("_main/tana/litellm_proxy/testdata/custom_provider.yaml").read_text())
+    config_path.write_text(
+        (Runfiles.CreateOrRaise().root() / "ducktape/tana/litellm_proxy/testdata/custom_provider.yaml").read_text()
+    )
     monkeypatch.setenv("CONFIG_FILE_PATH", str(config_path))
     monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
     monkeypatch.setenv("DO_NOT_TRACK", "1")

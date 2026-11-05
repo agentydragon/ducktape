@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest_bazel
 import yaml
 from jsonschema import Draft4Validator
+from python.runfiles import Runfiles
 from referencing import Registry
 
 from agentplane.crds.generate import (
@@ -20,20 +21,20 @@ from agentplane.crds.generate import (
     SANDBOX_GENERATED_CRDS,
     generated_files,
 )
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 def _committed(relative: Path) -> str:
-    return get_required_path(f"_main/{relative}").read_text()
+    return (Runfiles.CreateOrRaise().root() / f"ducktape/{relative}").read_text()
 
 
 def test_committed_files_are_generated() -> None:
-    sandbox_generated = get_required_path(SANDBOX_GENERATED_CRDS)
-    egress_generated = get_required_path(EGRESS_GENERATED_CRDS)
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    sandbox_generated = runfiles_root / SANDBOX_GENERATED_CRDS
+    egress_generated = runfiles_root / EGRESS_GENERATED_CRDS
     sandbox_crds = {name: (sandbox_generated / source).read_text() for name, source in SANDBOX_CRDS.items()}
     egress_crds = {name: (egress_generated / source).read_text() for name, source in EGRESS_CRDS.items()}
-    policy_generated = get_required_path(POLICY_GENERATED_CRDS)
+    policy_generated = runfiles_root / POLICY_GENERATED_CRDS
     policy_crds = {name: (policy_generated / source).read_text() for name, source in POLICY_CRDS.items()}
     for relative, content in generated_files(
         {name: _committed(CRDS_DIR / name) for name in CRD_FILES}, sandbox_crds, egress_crds, policy_crds

@@ -7,14 +7,13 @@ from hashlib import md5
 from typing import Any
 
 import pytest_bazel
+from python.runfiles import Runfiles
 from sqlalchemy import create_engine, text
-
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 pytest_plugins = ("util.testing.postgres_fixtures",)
 
-_SAMPLE_SQL = get_required_path(own_repo_rlocation("x/ai_sub_value/archive-token-sample.sql")).read_text()
-_PARTIAL_SQL = get_required_path(own_repo_rlocation("x/ai_sub_value/archive-partial-records.sql")).read_text()
+_SAMPLE_SQL = (Runfiles.CreateOrRaise().root() / "ducktape/x/ai_sub_value/archive-token-sample.sql").read_text()
+_PARTIAL_SQL = (Runfiles.CreateOrRaise().root() / "ducktape/x/ai_sub_value/archive-partial-records.sql").read_text()
 
 _DDL = (
     """CREATE TEMP TABLE sessions (

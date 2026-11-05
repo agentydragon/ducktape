@@ -35,7 +35,7 @@ def pid1_go_test(name, srcs, embed, deps, git = False, size = "small", **kwargs)
             "//:conftest",
             "//third_party/containers:ryuk",
             "//devinfra/oci:oci",
-            "//devinfra/bazel:runfiles",
+            "@rules_python//python/runfiles",
             "//util/testing:container_logs",
             "@pypi//pytest_bazel",
             "@pypi//testcontainers",

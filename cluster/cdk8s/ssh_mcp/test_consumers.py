@@ -20,14 +20,14 @@ from cdk8s import (
     Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
 )
 from more_itertools import one
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_config
 from cluster.scripts import nebula_mesh
-from devinfra.bazel.runfiles import get_required_path
 
 
 def _locate(relative: str) -> Path:
-    return get_required_path(f"_main/{relative}")
+    return Runfiles.CreateOrRaise().root() / f"ducktape/{relative}"
 
 
 @pytest.fixture(scope="module")

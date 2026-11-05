@@ -47,8 +47,8 @@ from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.tool import Tool, ToolDef, bash, tool
 from inspect_ai.util import SandboxEnvironmentSpec, sandbox
 from pydantic import TypeAdapter, ValidationError
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.skills.reverse_engineer.reverse_engineer_skill_spec import SPEC as RE_SKILL_SPEC
 from skills.eval_infra.skill_staging import stage_skill
 
@@ -58,10 +58,10 @@ logger = logging.getLogger(__name__)
 # (`garble_binary`); the skill archive comes from the generated
 # `RE_SKILL_SPEC` (`skill_package`).
 _TARGET_BINARY_RLOCATION = (
-    "_main/devinfra/skills/reverse_engineer/evals/tasks/go_crypto_server/go_crypto_server_garbled.bin"
+    "ducktape/devinfra/skills/reverse_engineer/evals/tasks/go_crypto_server/go_crypto_server_garbled.bin"
 )
-_COMPOSE_RLOCATION = "_main/devinfra/skills/reverse_engineer/evals/x/compose.yaml"
-_SPECIMEN_DIR_RLOCATION = "_main/devinfra/skills/reverse_engineer/evals/tasks/go_crypto_server"
+_COMPOSE_RLOCATION = "ducktape/devinfra/skills/reverse_engineer/evals/x/compose.yaml"
+_SPECIMEN_DIR_RLOCATION = "ducktape/devinfra/skills/reverse_engineer/evals/tasks/go_crypto_server"
 _RUBRIC_RLOCATION = f"{_SPECIMEN_DIR_RLOCATION}/RUBRIC.yaml"
 _SPEC_RLOCATION = f"{_SPECIMEN_DIR_RLOCATION}/SPEC.md"
 
@@ -129,7 +129,7 @@ def _stage_target_binary() -> Path:
     """Copy the garbled binary to a stable temp path so Sample.files can
     refer to it. (Inspect resolves Sample.files paths against its own CWD,
     not against runfiles, so we make the path absolute here.)"""
-    src = get_required_path(_TARGET_BINARY_RLOCATION)
+    src = Runfiles.CreateOrRaise().root() / _TARGET_BINARY_RLOCATION
     dest_dir = Path(tempfile.mkdtemp(prefix="re_eval_input_"))
     dest = dest_dir / "target"
     shutil.copy(src, dest)
@@ -432,13 +432,14 @@ def rubric_judge(*, judge_model: str = _DEFAULT_JUDGE_MODEL, max_messages: int =
     `Score.metadata['per_item']` carries the full `{item_id, score,
     justification}` dict; per-item metrics can be added later.
     """
-    rubric_yaml_text = get_required_path(_RUBRIC_RLOCATION).read_text()
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    rubric_yaml_text = (runfiles_root / _RUBRIC_RLOCATION).read_text()
     rubric = yaml.safe_load(rubric_yaml_text)
     weights = {it["id"]: it["weight"] for it in rubric["items"]}
     weight_total = sum(weights.values())
-    rubric_path = get_required_path(_RUBRIC_RLOCATION)
-    spec_path = get_required_path(_SPEC_RLOCATION)
-    reference_dir = get_required_path(_SPECIMEN_DIR_RLOCATION)
+    rubric_path = runfiles_root / _RUBRIC_RLOCATION
+    spec_path = runfiles_root / _SPEC_RLOCATION
+    reference_dir = runfiles_root / _SPECIMEN_DIR_RLOCATION
 
     async def score(state: TaskState, target: Target) -> Score:
         recovered_dir = _resolve_recovered_dir(state)
@@ -564,7 +565,7 @@ def reverse_engineer_go_crypto(
     """Recover compilable Go source from a garbled go_crypto_server binary."""
     skill_dir = _stage_skill()
     target_binary = _stage_target_binary()
-    compose_path = get_required_path(_COMPOSE_RLOCATION)
+    compose_path = Runfiles.CreateOrRaise().root() / _COMPOSE_RLOCATION
 
     skill_md = (skill_dir / "SKILL.md").read_text()
     system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(skill_md=skill_md, skill_path=_SKILL_PATH)
@@ -653,7 +654,7 @@ def _reference_recovered_dir() -> Path:
     to discover the rubric inside the recovery dir. Copy only the *.go
     files; that's what a well-graded recovery should look like.
     """
-    src = get_required_path(_SPECIMEN_DIR_RLOCATION)
+    src = Runfiles.CreateOrRaise().root() / _SPECIMEN_DIR_RLOCATION
     dst = Path(tempfile.mkdtemp(prefix="re_eval_reference_recovered_"))
     for f in sorted(src.glob("*.go")):
         shutil.copy(f, dst / f.name)

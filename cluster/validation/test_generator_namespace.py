@@ -29,18 +29,18 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 import yaml
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, manifest_files
-from devinfra.bazel.runfiles import get_required_path
 
-_K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"
+_K8S_ROOT_KUSTOMIZATION = "ducktape/cluster/k8s/kustomization.yaml"
 
 GENERATOR_FIELDS = ("configMapGenerator", "secretGenerator")
 
 
 @pytest.fixture(scope="session")
 def repo_root() -> Path:
-    return get_required_path(_K8S_ROOT_KUSTOMIZATION).parents[2]
+    return Path(str(Runfiles.CreateOrRaise().root() / _K8S_ROOT_KUSTOMIZATION)).parents[2]
 
 
 def _flux_target_namespaces(repo_root: Path) -> dict[str, str | None]:

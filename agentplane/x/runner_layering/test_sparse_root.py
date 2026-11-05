@@ -12,21 +12,22 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from agentplane.env.e2e.testing import events, launches
 from agentplane.env.e2e.testing.driver import RunnerDriver
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess
 from agentplane.proto import event_pb2, session_pb2
 from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 # gazelle:include_dep @pypi//protobuf
 
 
 def _extract_oci_rootfs(rloc_file: str, destination: Path) -> None:
     """Expand the layers from a Bazel OCI layout into a disposable child root."""
-    reference = get_required_path(own_repo_rlocation(rloc_file))
-    layout = get_required_path(reference.read_text().strip())
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    reference = runfiles_root / f"ducktape/{rloc_file}"
+    layout = runfiles_root / reference.read_text().strip()
     index = json.loads((layout / "index.json").read_text())
     (descriptor,) = index["manifests"]
     manifest_path = layout / "blobs" / descriptor["digest"].replace(":", "/")
@@ -51,12 +52,12 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     child_spec.CopyFrom(spec)
     child_spec.cwd = "/workspace"
     child_root = tmp_path / "child-root"
-    codex = get_required_path(launches.CODEX_BINARY)
+    codex = Runfiles.CreateOrRaise().root() / launches.CODEX_BINARY
     binary_dir = child_root / "opt/bin"
     binary_dir.mkdir(parents=True)
     shutil.copyfile(codex, binary_dir / "codex")
     (binary_dir / "codex").chmod(0o555)
-    codex_bwrap = get_required_path("agentplane_codex_cli_linux_x64/codex-resources/bwrap")
+    codex_bwrap = Runfiles.CreateOrRaise().root() / "agentplane_codex_cli_linux_x64/codex-resources/bwrap"
     resources_dir = child_root / "opt/codex-resources"
     resources_dir.mkdir()
     shutil.copyfile(codex_bwrap, resources_dir / "bwrap")
@@ -70,7 +71,7 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     private_sentinel.write_text("runner-owned\n")
     workload_proof = Path(spec.cwd) / "workload-image-proof.txt"
     assert not workload_proof.exists()
-    child_exec = get_required_path(own_repo_rlocation("agentplane/x/runner_layering/child_exec_/child_exec"))
+    child_exec = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/x/runner_layering/child_exec_/child_exec"
     first_runner = await start_runner(
         codex_binary=child_exec,
         allow_user_namespaces=True,  # The sparse-root experiment creates its own user and mount namespaces.

@@ -41,9 +41,9 @@ py_test(
         ":baseline",
         "//:conftest",
         "//agentplane/system_tests:conftest",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -66,10 +66,10 @@ py_test(
         ":release_manifests",
         "//:conftest",
         "//agentplane/system_tests:conftest",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -106,9 +106,9 @@ py_test(
         ":iptables_rule",
         "//:conftest",
         "//agentplane/system_tests:conftest",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -155,9 +155,9 @@ py_library(
     deps = [
         ":release_manifests",
         "//agentplane/system_tests/driver:tracing",
-        "//devinfra/bazel:runfiles",
         "@pypi//pyyaml",
         "@pypi//tenacity",
+        "@rules_python//python/runfiles",
     ],
 )
 

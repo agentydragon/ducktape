@@ -28,11 +28,11 @@ from cdk8s import (
     Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
 )
 from more_itertools import one
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import node_feature_discovery
 from cluster.cdk8s.monitoring import loki
 from cluster.scripts import nebula_mesh
-from devinfra.bazel.runfiles import get_required_path
 
 # Roaming k8s nodes are exactly the `laptop`-role hosts in the mesh roster: they
 # join and leave the cluster, unlike `wyrm2`, which is NixOS but always-on and so
@@ -58,7 +58,7 @@ def release_manifests(scratch_app_factory: Callable[[], App]) -> list[dict]:
 
 @pytest.fixture(scope="module")
 def roaming_node_count() -> int:
-    mesh = nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
+    mesh = nebula_mesh.load(Runfiles.CreateOrRaise().root() / "ducktape/nebula-mesh.json")
     return sum(1 for host in mesh.hosts.values() if host.role == _ROAMING_ROLE)
 
 

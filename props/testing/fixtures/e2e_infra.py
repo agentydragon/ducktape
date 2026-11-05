@@ -122,10 +122,10 @@ def e2e_registry_url(e2e_registry: DockerContainer) -> str:
 
 # Map of repo_name → OCI layout rlocation
 _AGENT_IMAGES = {
-    "critic": "_main/props/agents/critic/image",
-    "grader": "_main/props/agents/grader/image",
-    "critic_dev_optimize": "_main/props/agents/critic_dev/optimize/image",
-    "critic_dev_improve": "_main/props/agents/critic_dev/improve/image",
+    "critic": "ducktape/props/agents/critic/image",
+    "grader": "ducktape/props/agents/grader/image",
+    "critic_dev_optimize": "ducktape/props/agents/critic_dev/optimize/image",
+    "critic_dev_improve": "ducktape/props/agents/critic_dev/improve/image",
 }
 
 

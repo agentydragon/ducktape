@@ -675,7 +675,6 @@ py_library(
         "//agentplane/testing:electric_role",
         "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:kubernetes_apiserver_fixtures",
-        "//devinfra/bazel:runfiles",
         "//util:db_url",
         "//util:net",
         "//util/testing:postgres",
@@ -687,5 +686,6 @@ py_library(
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
+        "@rules_python//python/runfiles",
     ],
 )

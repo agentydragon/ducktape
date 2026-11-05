@@ -1,7 +1,7 @@
 import pytest_bazel
+from python.runfiles import Runfiles
 from sqlalchemy import create_engine, func, select
 
-from devinfra.bazel.runfiles import get_required_path
 from finance.plaid.db.models import Base
 from finance.plaid.spend.portfolio_queries import select_account_balances, select_holding_batches
 from util.testing.postgres import PostgresDatabaseTemplate
@@ -11,7 +11,7 @@ from util.testing.postgres import PostgresDatabaseTemplate
 
 
 def test_runtime_holdings_reads_and_payload_boundary(postgres_admin_url: str) -> None:
-    grants = get_required_path("_main/cluster/k8s/agents/plaid-mcp/readonly-role.sql").read_text()
+    grants = (Runfiles.CreateOrRaise().root() / "ducktape/cluster/k8s/agents/plaid-mcp/readonly-role.sql").read_text()
     with PostgresDatabaseTemplate(postgres_admin_url, "plaidmcp") as database:
         engine = create_engine(database.url)
         try:

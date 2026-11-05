@@ -54,8 +54,8 @@ from typing import Literal
 import numpy as np
 import yaml
 from pydantic import Field, NonNegativeFloat, PositiveFloat, model_validator
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from finance.augur.model.bond_fund import MINIMUM_ANNUAL_YIELD, BondFundSpec
 from finance.augur.model.equity import EquitySpec
 from finance.augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
@@ -157,13 +157,11 @@ class StructuralMacroFittedDefaults(FrozenModel):
 
 
 # Repository-relative location of the checked-in fit — see `StructuralMacroFittedDefaults`.
-# Resolved through `own_repo_rlocation` rather than hardcoding `_main`: this is library code,
-# and a dependent repo importing it is `_main` itself.
 _BUNDLED_STRUCTURAL_MACRO_RUNFILE = "finance/augur/x/models/calibrated/trained_structural_macro.yaml"
 
 
 def _fitted_defaults() -> StructuralMacroFittedDefaults:
-    path = get_required_path(own_repo_rlocation(_BUNDLED_STRUCTURAL_MACRO_RUNFILE))
+    path = Runfiles.CreateOrRaise().root() / f"ducktape/{_BUNDLED_STRUCTURAL_MACRO_RUNFILE}"
     return StructuralMacroFittedDefaults.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
 
 

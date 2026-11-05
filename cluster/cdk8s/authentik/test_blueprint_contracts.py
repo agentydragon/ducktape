@@ -9,10 +9,9 @@ import pytest
 import pytest_bazel
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
-
-_BLUEPRINTS_DIR_ANCHOR = "_main/cluster/k8s/authentik/app/blueprints/embedded-outpost.yaml"
+_BLUEPRINTS_DIR_ANCHOR = "ducktape/cluster/k8s/authentik/app/blueprints/embedded-outpost.yaml"
 
 
 class _BlueprintLoader(yaml.SafeLoader):
@@ -200,7 +199,7 @@ def check_outpost_provider_references(blueprints_dir: Path) -> list[str]:
 
 @pytest.fixture(scope="session")
 def blueprints_dir() -> Path:
-    return get_required_path(_BLUEPRINTS_DIR_ANCHOR).parent
+    return Path(str(Runfiles.CreateOrRaise().root() / _BLUEPRINTS_DIR_ANCHOR)).parent
 
 
 def test_proxy_providers_assigned_to_outpost(blueprints_dir: Path) -> None:

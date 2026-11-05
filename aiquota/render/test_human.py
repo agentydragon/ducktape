@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 from syrupy.assertion import SnapshotAssertion
 
 from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
@@ -9,7 +10,6 @@ from aiquota.render import human
 from aiquota.render.format import format_deadline, format_reset_credit_summary
 from aiquota.render.view_model import to_view
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_fixture
-from devinfra.bazel.runfiles import get_required_path
 
 if __name__ == "__main__":
     pytest_bazel.main()
@@ -19,7 +19,7 @@ _NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 
 
 def _fixture(name: str) -> AllQuotas:
-    return load_quota_fixture(get_required_path(f"_main/aiquota/testing/fixtures/{name}.yaml"))
+    return load_quota_fixture(Runfiles.CreateOrRaise().root() / f"ducktape/aiquota/testing/fixtures/{name}.yaml")
 
 
 def _quota(result: FetchSuccess) -> AllQuotas:

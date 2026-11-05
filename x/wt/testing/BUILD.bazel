@@ -16,10 +16,10 @@ py_library(
     srcs = ["config_factory.py"],
     deps = [
         ":data",
-        "//devinfra/bazel:runfiles",
         "//x/wt/shared:config_file",
         "//x/wt/shared:configuration",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -79,7 +79,6 @@ py_library(
         ":mock_factory",
         ":repo_factory",
         ":utils",
-        "//devinfra/bazel:runfiles",
         "//x/wt/server:git_manager",
         "//x/wt/server:github_client",
         "//x/wt/server:worktree_service",
@@ -89,6 +88,7 @@ py_library(
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//typer",
+        "@rules_python//python/runfiles",
     ],
 )
 

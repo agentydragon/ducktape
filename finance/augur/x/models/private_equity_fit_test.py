@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from finance.augur.model.exogenous import ExogenousSamplingRequest
 from finance.augur.model.series import IssuerId
 from finance.augur.x.models.jsonl import write_jsonl
@@ -177,7 +177,9 @@ def test_train_round_trips_compact_model_and_runtime_samples(tmp_path: Path, row
     write_jsonl(tmp_path / "observations.jsonl", rows)
     config_path = tmp_path / "train.yaml"
     config_path.write_bytes(
-        get_required_path("_main/finance/augur/x/models/private-equity-training-fixture.yaml").read_bytes()
+        (
+            Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/x/models/private-equity-training-fixture.yaml"
+        ).read_bytes()
     )
 
     artifact = train_from_config(config_path)

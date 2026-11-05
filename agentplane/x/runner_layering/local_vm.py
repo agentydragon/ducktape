@@ -15,8 +15,7 @@ from pathlib import Path
 from typing import TextIO
 
 import httpx
-
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
+from python.runfiles import Runfiles
 
 
 def _put(client: httpx.Client, path: str, body: dict[str, object], output: list[str]) -> None:
@@ -37,8 +36,9 @@ def _read_console(stream: TextIO, output: list[str], lines: queue.Queue[str]) ->
 
 def _extract_oci_rootfs(rloc_file: str, destination: Path) -> None:
     """Expand the layers from a Bazel OCI layout into a temporary filesystem tree."""
-    reference = get_required_path(own_repo_rlocation(rloc_file))
-    layout = get_required_path(reference.read_text().strip())
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    reference = runfiles_root / f"ducktape/{rloc_file}"
+    layout = runfiles_root / reference.read_text().strip()
     index = json.loads((layout / "index.json").read_text())
     (descriptor,) = index["manifests"]
     manifest_path = layout / "blobs" / descriptor["digest"].replace(":", "/")
@@ -90,12 +90,13 @@ def main() -> None:
     parser.add_argument("--kernel", type=Path)
     parser.add_argument("--timeout-seconds", type=float, default=20)
     args = parser.parse_args()
-    kernel = args.kernel or get_required_path("firecracker_vmlinux_6_1_128/file/vmlinux-6.1.128")
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    kernel = args.kernel or (runfiles_root / "firecracker_vmlinux_6_1_128/file/vmlinux-6.1.128")
     if not kernel.is_file():
         raise SystemExit(f"kernel image is not available: {kernel}")
 
-    initramfs = get_required_path(own_repo_rlocation("agentplane/x/runner_layering/base-initramfs.cpio"))
-    firecracker_layer = get_required_path(own_repo_rlocation("devinfra/firecracker/firecracker_layer.tar"))
+    initramfs = runfiles_root / "ducktape/agentplane/x/runner_layering/base-initramfs.cpio"
+    firecracker_layer = runfiles_root / "ducktape/devinfra/firecracker/firecracker_layer.tar"
 
     with tempfile.TemporaryDirectory(prefix="agentplane-runner-layering-") as directory:
         root = Path(directory)
@@ -115,7 +116,7 @@ def main() -> None:
         for runfile, relative in harness_files:
             destination = harness_root / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(get_required_path(runfile), destination)
+            shutil.copyfile((runfiles_root / runfile), destination)
             destination.chmod(0o555)
             if runfile == "claude_code_cli_linux_x64/claude":
                 _probe_claude_on_host(destination)

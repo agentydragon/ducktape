@@ -5,10 +5,10 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 import yaml
+from python.runfiles import Runfiles
 
 from cluster.validation.kustomize import flux_generated_kustomization, stage_artifact_copies
 from cluster.validation.tool_resolve import resolve_tool
-from devinfra.bazel.runfiles import get_required_path
 
 
 def test_flux_generated_kustomization_scans_like_kustomize_controller(tmp_path: Path) -> None:
@@ -65,7 +65,7 @@ def test_stage_artifact_copies_reject_unsafe_or_missing_paths(tmp_path: Path) ->
 
 
 def test_environment_tools_image_pin_reaches_every_sandbox_template_container(tmp_path: Path) -> None:
-    image_pins = get_required_path("_main/cluster/k8s/agentplane-staging/image-pins")
+    image_pins = Runfiles.CreateOrRaise().root() / "ducktape/cluster/k8s/agentplane-staging/image-pins"
     shutil.copytree(image_pins, tmp_path / "image-pins")
     pins = yaml.safe_load((tmp_path / "image-pins/kustomization.yaml").read_text())
     environment_tools_image = "git.allegedly.works/ducktape-ci/environment-tools"
@@ -102,7 +102,7 @@ def test_environment_tools_image_pin_reaches_every_sandbox_template_container(tm
 
 
 def test_egress_sidecar_image_pin_reaches_launcher_relay_template(tmp_path: Path) -> None:
-    image_pins = get_required_path("_main/cluster/k8s/agentplane-staging/image-pins")
+    image_pins = Runfiles.CreateOrRaise().root() / "ducktape/cluster/k8s/agentplane-staging/image-pins"
     shutil.copytree(image_pins, tmp_path / "image-pins")
     pins = yaml.safe_load((tmp_path / "image-pins/kustomization.yaml").read_text())
     sidecar_image = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"

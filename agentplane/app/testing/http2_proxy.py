@@ -8,10 +8,10 @@ from dataclasses import dataclass
 
 import httpx
 from jinja2 import Template
+from python.runfiles import Runfiles
 
 from agentplane.app.frontend.serving.testing.image import LAYOUT_RLOCATION
 from agentplane.app.testing.browser_certificate import BrowserCertificate
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.oci.oci import load_oci_image
 from third_party.containers import nginx_unprivileged
 from util.testing.container_logs import LoggedContainer
@@ -62,7 +62,7 @@ async def http2_proxy(upstream: str, certificate: BrowserCertificate) -> AsyncIt
         # A separate nginx serves the actual built frontend. The TLS ingress supplies the
         # browser's single origin while API traffic still reaches the real app process.
         port = certificate.port
-        template = get_required_path("_main/agentplane/app/testing/http2_proxy.conf.j2").read_text()
+        template = (Runfiles.CreateOrRaise().root() / "ducktape/agentplane/app/testing/http2_proxy.conf.j2").read_text()
         (certificate.directory / "nginx.conf").write_text(
             Template(template).render(port=port, upstream=upstream, static_upstream=static_upstream) + "\n"
         )

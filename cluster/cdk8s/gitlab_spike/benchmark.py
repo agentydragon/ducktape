@@ -14,11 +14,11 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressDeny,
     CiliumNetworkPolicySpecIngressDenyFromEntities,
 )
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.gitlab_spike import app
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "gitlab-spike-benchmark"
 _FORGEJO_NAME = "forgejo-spike-benchmark"
@@ -30,16 +30,17 @@ _WORKER = "ovh-ns102453"
 
 
 def _scripts(chart: Chart) -> None:
+    runfiles_root = Runfiles.CreateOrRaise().root()
     ConfigMap(
         chart,
         "scripts",
         metadata=ApiObjectMetadata(name=_SCRIPTS, namespace=app.NAMESPACE),
         data={
-            "gitlab-bench.sh": get_required_path(
-                own_repo_rlocation("cluster/debug/gitlab_gitaly_storage_bench/gitlab-bench.sh")
+            "gitlab-bench.sh": (
+                runfiles_root / "ducktape/cluster/debug/gitlab_gitaly_storage_bench/gitlab-bench.sh"
             ).read_text(),
-            "forgejo-bench.sh": get_required_path(
-                own_repo_rlocation("cluster/debug/piraeus_migration/benchmarks/forgejo-bench.sh")
+            "forgejo-bench.sh": (
+                runfiles_root / "ducktape/cluster/debug/piraeus_migration/benchmarks/forgejo-bench.sh"
             ).read_text(),
         },
     )

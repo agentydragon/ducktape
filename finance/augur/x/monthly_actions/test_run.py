@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from finance.augur.sim.books import AccountRef
 from finance.augur.sim.ids import AccountId, AgentId
 from finance.augur.sim.results import (
@@ -26,7 +26,11 @@ from finance.augur.x.monthly_actions.run import compose, run_example, situation
 def example(tmp_path_factory: pytest.TempPathFactory) -> Finished:
     output = tmp_path_factory.mktemp("monthly-actions") / "results"
     subprocess.run(
-        [get_required_path(own_repo_rlocation("finance/augur/x/monthly_actions/run_bin")), "--output-dir", output],
+        [
+            (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/x/monthly_actions/run_bin"),
+            "--output-dir",
+            output,
+        ],
         check=True,
     )
     return Finished.model_validate_json((output / "outcomes.json").read_text())
@@ -100,7 +104,7 @@ def test_actual_cli_capture_agrees_with_selected_forensic_results(
     output = tmp_path / capture
     subprocess.run(
         [
-            get_required_path(own_repo_rlocation("finance/augur/x/monthly_actions/run_bin")),
+            (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/x/monthly_actions/run_bin"),
             "--output-dir",
             output,
             "--capture",
@@ -144,7 +148,7 @@ def test_cash_only_cli_buys_unheld_asset_then_sells_and_pays_tax(tmp_path: Path)
     output_dir = tmp_path / "cash-only"
     subprocess.run(
         [
-            get_required_path(own_repo_rlocation("finance/augur/x/monthly_actions/run_bin")),
+            (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/x/monthly_actions/run_bin"),
             "--output-dir",
             output_dir,
             "--cash-only-start",
@@ -189,11 +193,12 @@ def test_cash_only_cli_buys_unheld_asset_then_sells_and_pays_tax(tmp_path: Path)
 
 def test_profile_entrypoint_compares_matching_capture_workloads(tmp_path: Path) -> None:
     reports = []
+    runfiles_root = Runfiles.CreateOrRaise().root()
     for capture in ("summary", "forensic"):
         output = tmp_path / capture
         subprocess.run(
             [
-                get_required_path(own_repo_rlocation("finance/augur/x/monthly_actions/profile_bin")),
+                (runfiles_root / "ducktape/finance/augur/x/monthly_actions/profile_bin"),
                 "--output-dir",
                 output,
                 "--rollouts",
@@ -219,7 +224,7 @@ def test_population_cli_keeps_original_ids_for_selected_replay(tmp_path: Path) -
     output = tmp_path / "population"
     subprocess.run(
         [
-            get_required_path(own_repo_rlocation("finance/augur/x/monthly_actions/run_bin")),
+            (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/x/monthly_actions/run_bin"),
             "--output-dir",
             output,
             "--rollouts",

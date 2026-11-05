@@ -1,12 +1,12 @@
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from finance.augur.calibration.catalog import MarketCatalog
 from finance.evidence.markets import Platform, load_roster
 from finance.scraper.scrape import build_parser, markets_from_args
 
-_ROSTER = get_required_path("_main/finance/evidence/example_market_roster.yaml")
-_CATALOG = get_required_path("_main/finance/augur/calibration/example_openai_catalog.yaml")
+_ROSTER = Runfiles.CreateOrRaise().root() / "ducktape/finance/evidence/example_market_roster.yaml"
+_CATALOG = Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/calibration/example_openai_catalog.yaml"
 
 
 def test_markets_from_args_unions_roster_and_catalog() -> None:

@@ -3,8 +3,7 @@
 from enum import StrEnum
 
 from jinja2 import StrictUndefined, Template
-
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
+from python.runfiles import Runfiles
 
 PLATFORM_INSTRUCTIONS_TEMPLATE = "agentplane/session_instructions/platform_instructions.j2"
 
@@ -24,7 +23,7 @@ def render_platform_instructions(
 ) -> str:
     """Render the complete deployment-wide prompt from service URLs and shared guidance."""
     template = Template(
-        get_required_path(own_repo_rlocation(PLATFORM_INSTRUCTIONS_TEMPLATE)).read_text(encoding="utf-8"),
+        (Runfiles.CreateOrRaise().root() / f"ducktape/{PLATFORM_INSTRUCTIONS_TEMPLATE}").read_text(encoding="utf-8"),
         undefined=StrictUndefined,
     )
     return str(

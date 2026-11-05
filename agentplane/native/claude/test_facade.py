@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from agentplane.native.claude import facade, wire
 from agentplane.native.testing.async_process import AsyncNativeProcess, NativeProcessEofError
-from devinfra.bazel.runfiles import get_required_path
 
 
 @pytest.mark.parametrize("outcome", ["success", "error", "eof"])
@@ -20,7 +20,7 @@ async def test_initialize_requires_its_control_reply(tmp_path: Path, outcome: st
         tmp_path,
         [
             sys.executable,
-            str(get_required_path("_main/agentplane/native/claude/testing/control_reply_peer.py")),
+            str(Runfiles.CreateOrRaise().root() / "ducktape/agentplane/native/claude/testing/control_reply_peer.py"),
             outcome,
         ],
         cwd=tmp_path,

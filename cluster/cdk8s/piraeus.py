@@ -12,6 +12,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecPostRenderersKustomizePatchesTarget,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces, node_scheduling, piraeus_metrics
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -19,7 +20,6 @@ from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, oci_helm_repo
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.namespaces import Vpa
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAMESPACE = "piraeus-datastore"
 OPERATOR_OUTPUT_DIR = f"{GENERATED_ROOT}/piraeus/operator"
@@ -60,8 +60,9 @@ _RUGGED_SELECTOR = {_PIRAEUS_READY_LABEL: "true", "kubernetes.io/hostname": "rug
 # The opened LUKS partition behind rugged's root (nix/nixos/hosts/rugged/default.nix crypttab).
 _RUGGED_DATA_DEVICE = "/dev/mapper/piraeus-ssd"
 _CONTROLLER_POD_SELECTOR = {"app.kubernetes.io/component": "linstor-controller"}
-_REACTOR_CONFIG_PATCH = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-reactor-patch.yaml")).read_text()
-_DRBD_ALLOY_CONFIG = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-drbd-metrics.alloy")).read_text()
+_RUNFILES_ROOT = Runfiles.CreateOrRaise().root()
+_REACTOR_CONFIG_PATCH = (_RUNFILES_ROOT / "ducktape/cluster/cdk8s/piraeus-reactor-patch.yaml").read_text()
+_DRBD_ALLOY_CONFIG = (_RUNFILES_ROOT / "ducktape/cluster/cdk8s/piraeus-drbd-metrics.alloy").read_text()
 _DRBD_ALLOY_CONFIG_MAP = "piraeus-drbd-alloy"
 _DRBD_ALLOY_IMAGE = "docker.io/grafana/alloy:v1.21.1"
 _DRBD_ALLOY_LABELS = {"app.kubernetes.io/name": "piraeus-drbd-metrics"}

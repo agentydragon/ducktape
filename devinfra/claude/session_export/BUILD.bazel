@@ -327,12 +327,12 @@ py_library(
         ":settings",
         ":store",
         ":supervisor",
-        "//devinfra/bazel:runfiles",
         "//util:oidc_login",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//starlette",
+        "@rules_python//python/runfiles",
     ],
 )
 

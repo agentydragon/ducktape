@@ -18,12 +18,12 @@ from cdk8s_plus_34 import (
     Volume,
     VolumeMount,
 )
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import api_resource, namespaces, pod_policy
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAMESPACE = "gitlab-spike"
 NAME = "gitlab-spike-bootstrap"
@@ -42,7 +42,11 @@ def namespace_chart(app: App) -> Chart:
         chart,
         "ruby",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        data={"main.rb": get_required_path(own_repo_rlocation("cluster/cdk8s/gitlab_spike/bootstrap.rb")).read_text()},
+        data={
+            "main.rb": (
+                Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/gitlab_spike/bootstrap.rb"
+            ).read_text()
+        },
     )
     return chart
 
@@ -67,7 +71,9 @@ def chart(app: App) -> Chart:
         "script",
         metadata=ApiObjectMetadata(name=f"{NAME}-script", namespace=NAMESPACE),
         data={
-            "bootstrap.sh": get_required_path(own_repo_rlocation("cluster/cdk8s/gitlab_spike/bootstrap.sh")).read_text()
+            "bootstrap.sh": (
+                Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/gitlab_spike/bootstrap.sh"
+            ).read_text()
         },
     )
     job = Job(

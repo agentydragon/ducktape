@@ -9,8 +9,8 @@ from zoneinfo import ZoneInfo
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from finance.plaid.spend.allowance import (
     AllOf,
     AllowancePolicy,
@@ -859,7 +859,7 @@ def test_one_off_scope_is_validated_from_its_condition():
 
 
 def test_configuration_preserves_financial_yaml_decimal_tokens(tmp_path: Path) -> None:
-    example = get_required_path("_main/finance/plaid/spend/one-off-configuration.yaml")
+    example = Runfiles.CreateOrRaise().root() / "ducktape/finance/plaid/spend/one-off-configuration.yaml"
     policy = tmp_path / "policy.yaml"
     policy.write_text(
         example.read_text()
@@ -888,7 +888,7 @@ sustainability:
 
 
 def test_one_off_yaml_round_trip_and_configuration_view():
-    path = get_required_path("_main/finance/plaid/spend/one-off-configuration.yaml")
+    path = Runfiles.CreateOrRaise().root() / "ducktape/finance/plaid/spend/one-off-configuration.yaml"
     loaded = load_configuration(path)
     parsed = loaded.allowance
     assert parsed is not None

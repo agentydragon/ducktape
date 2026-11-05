@@ -6,14 +6,14 @@ import ipaddress
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from cluster.scripts import nebula_mesh
-from devinfra.bazel.runfiles import get_required_path
 
 
 @pytest.fixture(scope="module")
 def mesh() -> nebula_mesh.Mesh:
-    return nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
+    return nebula_mesh.load(Runfiles.CreateOrRaise().root() / "ducktape/nebula-mesh.json")
 
 
 def test_global_mtu_consumer_uses_smallest_destination_constraint() -> None:

@@ -16,6 +16,7 @@ import grpc
 import pytest
 import yaml
 from kubernetes_asyncio import client as k8s, watch as k8s_watch
+from python.runfiles import Runfiles
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.crd_group import GROUP, VERSION
@@ -36,7 +37,6 @@ from agentplane.system_tests.driver.sandbox import (
     POD_TEMPLATE,
 )
 from agentplane.system_tests.driver.tracing import tracer
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 WORKLOAD = "runner-gateway"
@@ -164,7 +164,7 @@ async def _archive_runner_data(
     # A separate process lets timeout/cancellation stop SQLite backup and filesystem traversal
     # before cleanup removes their sources; cancelling a worker thread would leave them running.
     process = await asyncio.create_subprocess_exec(
-        str(get_required_path("_main/agentplane/system_tests/driver/runner_data_archive_bin")),
+        str(Runfiles.CreateOrRaise().root() / "ducktape/agentplane/system_tests/driver/runner_data_archive_bin"),
         str(plan_path),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,

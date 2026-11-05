@@ -11,12 +11,12 @@ from uuid import uuid4
 import pytest
 import pytest_bazel
 from aiohttp import web
+from python.runfiles import Runfiles
 
 from agentplane.native.claude.testing import anthropic_sse
 from agentplane.native.claude.testing.messages import AnthropicMessages
 from agentplane.native.claude.x.remote_io.local_proxy import HOST, local_proxy, make_tls
 from agentplane.native.claude.x.remote_io.server import SESSION_PATH, TEST_TOKEN, RemoteIOServer
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 MODEL = "agentplane-test/claude-haiku-4-5-20251001"
@@ -134,7 +134,7 @@ async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
                 "CLAUDE_CODE_WORKER_EPOCH": "1",
             }
             command = [
-                str(get_required_path("claude_remote_io_cli_linux_x64/claude")),
+                str(Runfiles.CreateOrRaise().root() / "claude_remote_io_cli_linux_x64/claude"),
                 "--sdk-url",
                 f"https://{HOST}{SESSION_PATH}",
                 "--session-id",

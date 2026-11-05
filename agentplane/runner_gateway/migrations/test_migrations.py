@@ -3,16 +3,16 @@
 import subprocess
 
 import pytest_bazel
+from python.runfiles import Runfiles
 from sqlalchemy import create_engine, text
 
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.db_url import render_postgresql_url
 from util.testing.postgres import DatabaseNames, create_temporary_database
 
 # SQLAlchemy loads this URL dialect dynamically.
 # gazelle:include_dep @pypi//psycopg
 
-_SERVICE = get_required_path(own_repo_rlocation("agentplane/runner_gateway/runner-gateway_/runner-gateway"))
+_SERVICE = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/runner_gateway/runner-gateway_/runner-gateway"
 _VERSION = "runner_gateway_dispatcher_goose_version"
 
 

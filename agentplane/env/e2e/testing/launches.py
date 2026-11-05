@@ -7,6 +7,8 @@ import os
 from collections.abc import Sequence
 from pathlib import Path
 
+from python.runfiles import Runfiles
+
 from agentplane.env.config import (
     Configuration,
     ContainerExecutor,
@@ -22,16 +24,15 @@ from agentplane.native.claude.testing import model as claude_model
 from agentplane.native.codex.testing import model as codex_model
 from agentplane.proto import session_pb2
 from agentplane.sandboxes.launch import SandboxIdentity
-from devinfra.bazel.runfiles import get_required_path
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
 CLAUDE_BINARY = "claude_code_cli_linux_x64/claude"
 CODEX_BINARY = "agentplane_codex_cli_linux_x64/bin/codex"
-RUNTIME_BINARY = "_main/agentplane/env/runtime/cmd/agentplane-environment-runtime_/agentplane-environment-runtime"
+RUNTIME_BINARY = "ducktape/agentplane/env/runtime/cmd/agentplane-environment-runtime_/agentplane-environment-runtime"
 EXECUTION_BINARY = (
-    "_main/agentplane/env/runtime/execution/cmd/agentplane-execution-service_/agentplane-execution-service"
+    "ducktape/agentplane/env/runtime/execution/cmd/agentplane-execution-service_/agentplane-execution-service"
 )
 TOKEN = "test-key"
 PLATFORM_INSTRUCTIONS = "Test platform guidance."
@@ -90,11 +91,11 @@ def config(
 
 
 def claude_launch(endpoint: str) -> NativeLaunch:
-    return NativeLaunch(binary=get_required_path(CLAUDE_BINARY), base_url=endpoint, token=TOKEN)
+    return NativeLaunch(binary=(Runfiles.CreateOrRaise().root() / CLAUDE_BINARY), base_url=endpoint, token=TOKEN)
 
 
 def codex_launch(endpoint: str) -> NativeLaunch:
-    return NativeLaunch(binary=get_required_path(CODEX_BINARY), base_url=f"{endpoint}/v1", token=TOKEN)
+    return NativeLaunch(binary=(Runfiles.CreateOrRaise().root() / CODEX_BINARY), base_url=f"{endpoint}/v1", token=TOKEN)
 
 
 def runner_command(
@@ -150,7 +151,7 @@ def runner_command(
     path = state_dir.parent / "environment-runtime.json"
     path.write_text(config.model_dump_json(exclude_none=True))
     return [
-        str(runner_binary or get_required_path(RUNTIME_BINARY)),
+        str(runner_binary or (Runfiles.CreateOrRaise().root() / RUNTIME_BINARY)),
         "--config",
         str(path),
         "--launch-file",
@@ -193,4 +194,10 @@ def command(config: RunnerTestConfig, *, control: EnvironmentRuntimeControl, ing
     )
     path = config.state_dir.parent / f"{config.state_dir.name}-environment-runtime.json"
     path.write_text(file.model_dump_json(exclude_none=True))
-    return [str(get_required_path(RUNTIME_BINARY)), "--config", str(path), "--launch-file", str(launch_file)]
+    return [
+        str(Runfiles.CreateOrRaise().root() / RUNTIME_BINARY),
+        "--config",
+        str(path),
+        "--launch-file",
+        str(launch_file),
+    ]

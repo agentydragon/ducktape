@@ -18,12 +18,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 
 import pytest
 import pytest_bazel
 from playwright.async_api import Playwright, ViewportSize
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.output_writer import BoundTestOutputs
 from study_casino.app import create_app
 from study_casino.changelog import LATEST_CHANGELOG_ID
@@ -71,7 +72,9 @@ def casino_server(request: pytest.FixtureRequest, casino_database_template: Post
     """uvicorn-backed casino server with a writable database for the visual suite."""
     db_name = DatabaseNames(request.node.nodeid)()
     with casino_database_template.clone(db_name) as db_url:
-        frontend_dist = get_required_path("_main/study_casino/frontend/dist/index.html").parent
+        frontend_dist = Path(
+            str(Runfiles.CreateOrRaise().root() / "ducktape/study_casino/frontend/dist/index.html")
+        ).parent
 
         # The rendered views want a non-empty UI for prizes/stats. Seed a few
         # sessions and a token balance via the server's own action endpoints

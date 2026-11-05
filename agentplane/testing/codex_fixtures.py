@@ -8,9 +8,9 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from python.runfiles import Runfiles
 from sqlalchemy.engine import make_url
 
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.postgres import create_temporary_database
 
@@ -29,12 +29,12 @@ def database_url(postgres_admin_url: str) -> Iterator[str]:
 
 @pytest.fixture
 def codex_binary() -> str:
-    return str(get_required_path("agentplane_codex_cli_linux_x64/bin/codex"))
+    return str(Runfiles.CreateOrRaise().root() / "agentplane_codex_cli_linux_x64/bin/codex")
 
 
 @pytest.fixture
 def code_mode_host() -> str:
-    return str(get_required_path("agentplane_codex_cli_linux_x64/bin/codex-code-mode-host"))
+    return str(Runfiles.CreateOrRaise().root() / "agentplane_codex_cli_linux_x64/bin/codex-code-mode-host")
 
 
 @pytest.fixture

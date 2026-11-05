@@ -6,8 +6,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from python.runfiles import Runfiles
+
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixture
-from devinfra.bazel.runfiles import get_required_path
 
 
 def scene_payloads(*, now: datetime | None = None) -> dict[str, Any]:
@@ -15,7 +16,7 @@ def scene_payloads(*, now: datetime | None = None) -> dict[str, Any]:
 
 
 def _fixture_path(name: str) -> Path:
-    return get_required_path(f"_main/aiquota/testing/fixtures/{name}.yaml")
+    return Runfiles.CreateOrRaise().root() / f"ducktape/aiquota/testing/fixtures/{name}.yaml"
 
 
 def _write(path: Path, payload: object) -> None:

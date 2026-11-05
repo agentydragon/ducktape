@@ -5,6 +5,7 @@ import posixpath
 from pathlib import Path
 
 from cdk8s import App
+from python.runfiles import Runfiles
 
 from agentplane.crds.generate import CRD_FILES
 from cluster.cdk8s import (
@@ -264,7 +265,6 @@ from cluster.cdk8s.tofu_controller import release as tofu_controller_release
 from cluster.cdk8s.tofu_state import db as tofu_state_db, namespace as tofu_state_namespace
 from cluster.cdk8s.website import website
 from cluster.scripts import nebula_mesh
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.bazel.workspace import get_build_workspace_directory
 
 
@@ -272,7 +272,7 @@ def generate_manifests(root: Path) -> None:
     """Write every converted directory's generated manifests under ``root``."""
     write_generated_readme(root)
     gitlab_spike_demo.write_manifests(root)
-    mesh = nebula_mesh.load(get_required_path("_main/nebula-mesh.json"))
+    mesh = nebula_mesh.load(Runfiles.CreateOrRaise().root() / "ducktape/nebula-mesh.json")
     agentplane_staging_resource_chart = agentplane_generation.write_environment_manifests(
         root, staging.LAYOUT, staging.chart
     )

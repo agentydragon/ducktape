@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 from jinja2 import Environment
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.ollama.patch_qwen38_template import (
     NEW_BRANCH,
@@ -17,11 +18,10 @@ from cluster.cdk8s.ollama.patch_qwen38_template import (
     Reader,
     replace_template,
 )
-from devinfra.bazel.runfiles import get_required_path
 
 
 def _template_path() -> Path:
-    return get_required_path("_main/cluster/cdk8s/ollama/qwen38-chat-template.jinja")
+    return Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/ollama/qwen38-chat-template.jinja"
 
 
 def _string(value: bytes) -> bytes:

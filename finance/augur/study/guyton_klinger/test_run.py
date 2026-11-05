@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from finance.augur.sim.ids import AssetId
 from finance.augur.sim.results import Finished, Rollout
 from finance.augur.study.guyton_klinger.panel import Sleeve, load_panel
@@ -120,7 +120,7 @@ def test_selected_replay_returns_the_original_paths(windows: AnnualWindows) -> N
 def cli(output: Path, *args: str | Path) -> None:
     subprocess.run(
         [
-            get_required_path(own_repo_rlocation("finance/augur/study/guyton_klinger/run_bin")),
+            (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/study/guyton_klinger/run_bin"),
             *args,
             *("--output-dir", output),
         ],
@@ -371,7 +371,7 @@ def test_cli_requires_a_tax_law_exactly_when_taxed(tmp_path: Path, panel_path: P
     with pytest.raises(subprocess.CalledProcessError) as failure:
         subprocess.run(
             [
-                get_required_path(own_repo_rlocation("finance/augur/study/guyton_klinger/run_bin")),
+                (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/study/guyton_klinger/run_bin"),
                 *("--panel", panel_path, "--years", "2", "--initial-wealth", "100", "--initial-rate", "0.1"),
                 *("--output-dir", tmp_path / "unwritten"),
                 *taxes,

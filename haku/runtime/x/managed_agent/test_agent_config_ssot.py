@@ -11,15 +11,18 @@ import pygohcl
 import pytest
 import pytest_bazel
 import yaml
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
-
-_SHARED = yaml.safe_load(get_required_path("_main/haku/runtime/x/managed_agent/agent_shared.yaml").read_text())
+_SHARED = yaml.safe_load(
+    (Runfiles.CreateOrRaise().root() / "ducktape/haku/runtime/x/managed_agent/agent_shared.yaml").read_text()
+)
 _SELF_HOSTED = yaml.safe_load(
-    get_required_path("_main/haku/runtime/x/managed_agent/self_hosted/haku.agent.yaml").read_text()
+    (Runfiles.CreateOrRaise().root() / "ducktape/haku/runtime/x/managed_agent/self_hosted/haku.agent.yaml").read_text()
 )
 _CLOUD = pygohcl.loads(
-    get_required_path("_main/haku/runtime/x/managed_agent/anthropic_hosted/terraform/main.tf").read_text()
+    (
+        Runfiles.CreateOrRaise().root() / "ducktape/haku/runtime/x/managed_agent/anthropic_hosted/terraform/main.tf"
+    ).read_text()
 )["resource"]["claude-managed-agents_agent"]["haku_cloud"]
 
 _SURFACES = {"self_hosted": _SELF_HOSTED, "cloud": _CLOUD}

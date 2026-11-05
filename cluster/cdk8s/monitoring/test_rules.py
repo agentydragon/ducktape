@@ -9,9 +9,9 @@ from cdk8s import (
     App,
     Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
 )
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.monitoring import rules
-from devinfra.bazel.runfiles import get_required_path
 
 
 def _promtool_test_rules(app: App, tmp_path: Path, rule_files: dict[str, str], tests: str) -> None:
@@ -19,13 +19,12 @@ def _promtool_test_rules(app: App, tmp_path: Path, rule_files: dict[str, str], t
     manifests = {manifest["metadata"]["name"]: manifest for manifest in Cdk8sTesting.synth(rules.chart(app))}
     for manifest_name, rule_file in rule_files.items():
         (tmp_path / rule_file).write_text(yaml.safe_dump(manifests[manifest_name]["spec"]))
+    runfiles_root = Runfiles.CreateOrRaise().root()
     (tmp_path / "tests.yaml").write_text(
-        get_required_path(f"_main/cluster/cdk8s/monitoring/testdata/{tests}").read_text()
+        (runfiles_root / f"ducktape/cluster/cdk8s/monitoring/testdata/{tests}").read_text()
     )
     subprocess.run(
-        [get_required_path("multitool/tools/promtool/promtool"), "test", "rules", "tests.yaml"],
-        cwd=tmp_path,
-        check=True,
+        [(runfiles_root / "multitool/tools/promtool/promtool"), "test", "rules", "tests.yaml"], cwd=tmp_path, check=True
     )
 
 

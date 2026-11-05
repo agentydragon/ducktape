@@ -21,10 +21,10 @@ py_test(
     deps = [
         ":patch_qwen38_template",
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "@pypi//jinja2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -51,11 +51,11 @@ py_library(
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//devinfra/bazel:runfiles",
         "//model_catalog:ollama",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
         "@pypi//jinja2",
+        "@rules_python//python/runfiles",
     ],
 )

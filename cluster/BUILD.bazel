@@ -55,10 +55,10 @@ py_library(
     srcs = ["bootstrap.py"],
     deps = [
         ":network_readiness",
-        "//devinfra/bazel:runfiles",
         "//devinfra/bazel:workspace",
         "@pypi//kubernetes",
         "@pypi//pygit2",
+        "@rules_python//python/runfiles",
     ],
 )
 

@@ -3,7 +3,8 @@
 import subprocess
 import sys
 
-from devinfra.bazel import runfiles
+from python.runfiles import Runfiles
+
 from devinfra.oci.oci import (
     _already_loaded,
     _loaded_marker,
@@ -25,7 +26,7 @@ def main() -> None:
         return
     if mode != "guarded_rules" or len(script) != 1:
         raise ValueError((mode, script))
-    wanted = read_oci_layout_digest(runfiles.get_required_path(postgres_18.LAYOUT_RLOCATION))
+    wanted = read_oci_layout_digest(Runfiles.CreateOrRaise().root() / postgres_18.LAYOUT_RLOCATION)
     if _already_loaded(tag, wanted):
         return
     with _one_loader_at_a_time(tag):
