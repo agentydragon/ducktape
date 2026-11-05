@@ -201,6 +201,38 @@ fn simple_binding(pattern: &Pat) -> Option<Id> {
     }
 }
 
+fn lower_simple_var_declaration(
+    declaration: &VarDecl,
+    class_template: bool,
+    bindings: &mut BTreeMap<Id, LocalBinding>,
+    operations: &mut Vec<LocalOperation>,
+) -> Option<()> {
+    let kind = match declaration.kind {
+        VarDeclKind::Var => LocalBinding::Var,
+        VarDeclKind::Let => LocalBinding::Let,
+        VarDeclKind::Const => LocalBinding::Const,
+    };
+    for declarator in &declaration.decls {
+        if declarator.definite {
+            return None;
+        }
+        let binding = simple_binding(&declarator.name)?;
+        match bindings.get(&binding) {
+            Some(LocalBinding::Var | LocalBinding::Parameter) if kind == LocalBinding::Var => {}
+            Some(_) => return None,
+            None => {
+                bindings.insert(binding.clone(), kind);
+            }
+        }
+        let value = LocalExpression::optional(declarator.init.as_deref(), class_template)?;
+        if kind == LocalBinding::Const && value.is_none() {
+            return None;
+        }
+        operations.push(LocalOperation::Initialize(binding, value));
+    }
+    Some(())
+}
+
 fn literal_definition_name(name: &PropName) -> Option<String> {
     matches!(
         name,
@@ -680,30 +712,12 @@ impl LocalBody {
             match statement {
                 Stmt::Empty(_) => {}
                 Stmt::Decl(Decl::Var(declaration)) if !declaration.declare => {
-                    let kind = match declaration.kind {
-                        VarDeclKind::Var => LocalBinding::Var,
-                        VarDeclKind::Let => LocalBinding::Let,
-                        VarDeclKind::Const => LocalBinding::Const,
-                    };
-                    for declarator in &declaration.decls {
-                        if declarator.definite {
-                            return None;
-                        }
-                        let binding = simple_binding(&declarator.name)?;
-                        match bindings.get(&binding) {
-                            Some(LocalBinding::Var | LocalBinding::Parameter)
-                                if kind == LocalBinding::Var => {}
-                            Some(_) => return None,
-                            None => {
-                                bindings.insert(binding.clone(), kind);
-                            }
-                        }
-                        let value = LocalExpression::optional(declarator.init.as_deref(), false)?;
-                        if kind == LocalBinding::Const && value.is_none() {
-                            return None;
-                        }
-                        operations.push(LocalOperation::Initialize(binding, value));
-                    }
+                    lower_simple_var_declaration(
+                        declaration,
+                        false,
+                        &mut bindings,
+                        &mut operations,
+                    )?;
                 }
                 Stmt::Expr(expression) => operations.push(LocalOperation::Evaluate(
                     LocalExpression::lower(&expression.expr, false)?,
@@ -842,31 +856,12 @@ impl LocalBody {
                 match statement {
                     Stmt::Empty(_) => {}
                     Stmt::Decl(Decl::Var(declaration)) if !declaration.declare => {
-                        let kind = match declaration.kind {
-                            VarDeclKind::Var => LocalBinding::Var,
-                            VarDeclKind::Let => LocalBinding::Let,
-                            VarDeclKind::Const => LocalBinding::Const,
-                        };
-                        for declarator in &declaration.decls {
-                            if declarator.definite {
-                                return None;
-                            }
-                            let binding = simple_binding(&declarator.name)?;
-                            match bindings.get(&binding) {
-                                Some(LocalBinding::Var | LocalBinding::Parameter)
-                                    if kind == LocalBinding::Var => {}
-                                Some(_) => return None,
-                                None => {
-                                    bindings.insert(binding.clone(), kind);
-                                }
-                            }
-                            let value =
-                                LocalExpression::optional(declarator.init.as_deref(), true)?;
-                            if kind == LocalBinding::Const && value.is_none() {
-                                return None;
-                            }
-                            constructor_operations.push(LocalOperation::Initialize(binding, value));
-                        }
+                        lower_simple_var_declaration(
+                            declaration,
+                            true,
+                            &mut bindings,
+                            &mut constructor_operations,
+                        )?;
                     }
                     Stmt::Expr(expression) => {
                         let operation = LocalExpression::lower(&expression.expr, true)?;
