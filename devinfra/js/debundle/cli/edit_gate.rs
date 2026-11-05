@@ -18,7 +18,7 @@
 //! module paths, each with the binding names and anonymous source unit ids
 //! it declares. Each verb projects its planned documents or deletions into a
 //! `PostEditSpec`, then uses [`Gate::check`], [`Gate::check_expected`], or
-//! [`gate_post_edit_assignment_with_expected_source_unit_modules`]. These share
+//! [`Gate::check_source_units`]. These share
 //! the gate path that returns a [`GateRejection`] error carrying the same
 //! `render_cycle_summary` / `render_atomic_group_conflict_summary`
 //! text the materializer emits when its own gate rejects, so authors
@@ -205,13 +205,49 @@ impl<'a> Gate<'a> {
                     verified: *source_context,
                 },
                 &post_spec()?,
-                expected,
-                None,
-                None,
+                ExpectedPostEditClaims::Members(expected),
             ),
             Self::Skip => Ok(()),
         }
     }
+
+    /// Prove the complete resolved assignment, including source units that stay
+    /// residual, against the same graph used to plan the edit.
+    pub fn check_source_units(
+        &self,
+        modules_root: &Path,
+        post_spec: &PostEditSpec,
+        assignments: &SourceUnitModuleAssignments,
+        scope: Option<&ModuleTreeScope>,
+    ) -> Result<()> {
+        match self {
+            Self::Run {
+                graph_path,
+                input,
+                source_root,
+                source_context,
+            } => gate_post_edit_assignment_with_expected(
+                graph_path,
+                input,
+                modules_root,
+                EditSourceLookup {
+                    root: *source_root,
+                    verified: *source_context,
+                },
+                post_spec,
+                ExpectedPostEditClaims::SourceUnits { assignments, scope },
+            ),
+            Self::Skip => Ok(()),
+        }
+    }
+}
+
+enum ExpectedPostEditClaims<'a> {
+    Members(&'a [ExpectedResolvedMember]),
+    SourceUnits {
+        assignments: &'a SourceUnitModuleAssignments,
+        scope: Option<&'a ModuleTreeScope>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -811,42 +847,13 @@ pub fn read_gate_claims(path: &Path) -> Result<ModuleClaims> {
     read_module_claims(path).with_context(|| format!("reading module {}", path.display()))
 }
 
-/// Run the normal gate and prove the entire resolved post-edit source-unit assignment
-/// is exactly the reviewed assignment, including source units that remain residual.
-pub fn gate_post_edit_assignment_with_expected_source_unit_modules(
-    dependency_graph_path: &Path,
-    input: &DependencyGraphInput,
-    modules_root: &Path,
-    source_root: Option<&Path>,
-    source_context: Option<&VerifiedGraphSourceContext>,
-    post_spec: &PostEditSpec,
-    expected_source_unit_modules: &SourceUnitModuleAssignments,
-    scope: Option<&ModuleTreeScope>,
-) -> Result<()> {
-    gate_post_edit_assignment_with_expected(
-        dependency_graph_path,
-        input,
-        modules_root,
-        EditSourceLookup {
-            root: source_root,
-            verified: source_context,
-        },
-        post_spec,
-        &[],
-        Some(expected_source_unit_modules),
-        scope,
-    )
-}
-
 fn gate_post_edit_assignment_with_expected(
     dependency_graph_path: &Path,
     input: &DependencyGraphInput,
     modules_root: &Path,
     source_lookup: EditSourceLookup<'_>,
     post_spec: &PostEditSpec,
-    expected: &[ExpectedResolvedMember],
-    expected_source_unit_modules: Option<&SourceUnitModuleAssignments>,
-    scope: Option<&ModuleTreeScope>,
+    expected: ExpectedPostEditClaims<'_>,
 ) -> Result<()> {
     let dependency_graph_report = input.report();
     let dependency_graph = input.graph();
@@ -867,54 +874,61 @@ fn gate_post_edit_assignment_with_expected(
     let claim_projection =
         project_source_unit_claims(dependency_graph_report, post_spec, &resolved_claims)?;
     reject_unresolved_projected_claims(&claim_projection)?;
-    if let Some(expected_source_unit_modules) = expected_source_unit_modules {
-        let actual_source_unit_modules = source_unit_module_assignments_from_projection(
-            dependency_graph_report,
-            modules_root,
-            post_spec,
-            &claim_projection,
+    match expected {
+        ExpectedPostEditClaims::SourceUnits {
+            assignments: expected_source_unit_modules,
             scope,
-        )?;
-        if &actual_source_unit_modules != expected_source_unit_modules {
-            let source_unit_ids = actual_source_unit_modules
-                .keys()
-                .chain(expected_source_unit_modules.keys())
-                .collect::<BTreeSet<_>>();
-            let first_mismatch = source_unit_ids.into_iter().find(|source_unit_id| {
-                actual_source_unit_modules.get(*source_unit_id)
-                    != expected_source_unit_modules.get(*source_unit_id)
-            });
-            if let Some(source_unit_id) = first_mismatch {
+        } => {
+            let actual_source_unit_modules = source_unit_module_assignments_from_projection(
+                dependency_graph_report,
+                modules_root,
+                post_spec,
+                &claim_projection,
+                scope,
+            )?;
+            if &actual_source_unit_modules != expected_source_unit_modules {
+                let source_unit_ids = actual_source_unit_modules
+                    .keys()
+                    .chain(expected_source_unit_modules.keys())
+                    .collect::<BTreeSet<_>>();
+                let first_mismatch = source_unit_ids.into_iter().find(|source_unit_id| {
+                    actual_source_unit_modules.get(*source_unit_id)
+                        != expected_source_unit_modules.get(*source_unit_id)
+                });
+                if let Some(source_unit_id) = first_mismatch {
+                    bail!(
+                        "post-edit selector resolution changed the reviewed source unit assignment for {source_unit_id:?}: requested {:?}, resolved {:?}",
+                        expected_source_unit_modules.get(source_unit_id),
+                        actual_source_unit_modules.get(source_unit_id)
+                    );
+                }
                 bail!(
-                    "post-edit selector resolution changed the reviewed source unit assignment for {source_unit_id:?}: requested {:?}, resolved {:?}",
-                    expected_source_unit_modules.get(source_unit_id),
-                    actual_source_unit_modules.get(source_unit_id)
+                    "post-edit source unit assignment does not match the reviewed complete candidate"
                 );
             }
-            bail!(
-                "post-edit source unit assignment does not match the reviewed complete candidate"
-            );
         }
-    }
-    for target in expected {
-        let module_idx = post_spec
-            .modules
-            .iter()
-            .position(|module| module.path == target.module_path)
-            .with_context(|| {
-                format!("expected module {} is absent", target.module_path.display())
-            })?;
-        let actual = resolved_claims[module_idx]
-            .member_bindings
-            .get(&target.export_name);
-        if actual != Some(&target.binding_name) {
-            bail!(
-                "selector for {} in {} resolved binding {:?}, expected {:?}",
-                target.export_name,
-                target.module_path.display(),
-                actual,
-                target.binding_name,
-            );
+        ExpectedPostEditClaims::Members(expected) => {
+            for target in expected {
+                let module_idx = post_spec
+                    .modules
+                    .iter()
+                    .position(|module| module.path == target.module_path)
+                    .with_context(|| {
+                        format!("expected module {} is absent", target.module_path.display())
+                    })?;
+                let actual = resolved_claims[module_idx]
+                    .member_bindings
+                    .get(&target.export_name);
+                if actual != Some(&target.binding_name) {
+                    bail!(
+                        "selector for {} in {} resolved binding {:?}, expected {:?}",
+                        target.export_name,
+                        target.module_path.display(),
+                        actual,
+                        target.binding_name,
+                    );
+                }
+            }
         }
     }
 

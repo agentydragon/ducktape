@@ -41,8 +41,7 @@ use yaml_edit::write_yaml_atomic;
 
 use crate::edit_gate::{
     Gate, ProjectedBindingKind, SourceUnitClaimProjection, SourceUnitModuleAssignments,
-    gate_post_edit_assignment_with_expected_source_unit_modules, post_edit_spec_from_docs,
-    project_source_unit_claims, source_claim_sets_from_post_spec,
+    post_edit_spec_from_docs, project_source_unit_claims, source_claim_sets_from_post_spec,
     source_unit_module_assignments_from_projection,
 };
 use crate::outcome::{GateOutcome, MutationOutcome};
@@ -1238,7 +1237,8 @@ pub fn run_source_unit_refine(
         validate_refine_module_id(&assignment.module)?;
     }
 
-    let graph_input = analysis::DependencyGraphInput::read(dependency_graph_path)?;
+    let graph_input =
+        std::sync::Arc::new(analysis::DependencyGraphInput::read(dependency_graph_path)?);
     let dependency_graph = graph_input.report();
     let scope = tree_config
         .map(|path| ModuleTreeScope::from_config(path, &dependency_graph.chunk_id))
@@ -1583,12 +1583,14 @@ pub fn run_source_unit_refine(
     let post_spec = post_edit_spec_from_docs(&docs, &to_delete)?;
     // This unchanged gate first proves the complete expected source-unit map
     // and applies its legacy realizability/atom-split checks to `post_spec`.
-    gate_post_edit_assignment_with_expected_source_unit_modules(
-        dependency_graph_path,
-        &graph_input,
-        modules_root,
-        Some(source_root),
+    Gate::Run {
+        graph_path: dependency_graph_path,
+        input: std::sync::Arc::clone(&graph_input),
+        source_root: Some(source_root),
         source_context,
+    }
+    .check_source_units(
+        modules_root,
         &post_spec,
         &expected_source_unit_modules,
         scope.as_ref(),
