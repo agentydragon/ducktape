@@ -3,7 +3,7 @@
 //! across exactly the spec edits analysis does not read.
 
 use analysis_model::DepKind;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -1121,6 +1121,124 @@ fn graph_node_for_binding<'a>(graph: &'a Value, binding: &str) -> &'a Value {
                 })
         })
         .unwrap_or_else(|| panic!("no graph node declares {binding:?}: {graph:#}"))
+}
+
+#[test]
+fn imported_impure_call_causes_survive_staged_analysis_as_shared_refs() {
+    let provider = "let calls = 0;\n\
+                    function leaf() { calls += 1; return calls; }\n\
+                    function middle() { return leaf(); }\n\
+                    export function sharedImpure() { return middle(); }\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            r#"import { sharedImpure } from "./provider.js";
+const first = sharedImpure();
+const second = sharedImpure();
+console.log(first, second);
+export { first, second };
+"#,
+            vec![logical_module(
+                "results",
+                &[Member::new("first"), Member::new("second")],
+            )],
+        )
+        .with_extra_chunks(&[("static/provider", provider)]),
+    );
+
+    let direct = staged.run(&[]);
+    assert_ok(&direct.result, "direct run of shared imported impure calls");
+    let loaded = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert_ok(
+        &loaded.result,
+        "run shared imported impure calls from analysis",
+    );
+    assert_same_invocation_trees(&direct, &loaded);
+
+    let direct_entry = direct.output_root().join("app/static/app/entry.js");
+    let loaded_entry = loaded.output_root().join("app/static/app/entry.js");
+    assert_node_output(&direct_entry, "1 2\n", "");
+    assert_node_output(&loaded_entry, "1 2\n", "");
+
+    let graph: Value = read_gzip_json(
+        &direct
+            .output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz"),
+    );
+    let first_reasons = graph_node_for_binding(&graph, "first")["purity"]["reasons"]
+        .as_array()
+        .expect("first verdict reasons");
+    let second_reasons = graph_node_for_binding(&graph, "second")["purity"]["reasons"]
+        .as_array()
+        .expect("second verdict reasons");
+    assert_eq!(first_reasons.len(), 1, "{first_reasons:#?}");
+    assert_eq!(second_reasons.len(), 1, "{second_reasons:#?}");
+    for reasons in [first_reasons, second_reasons] {
+        assert_eq!(reasons[0]["rule"], "impure_function_call");
+        assert!(
+            reasons[0].get("cause").is_none(),
+            "the JSON reason must point to a shared cause row instead of nesting it: {reasons:#?}"
+        );
+    }
+    let shared_cause = first_reasons[0]["cause_ref"]
+        .as_str()
+        .expect("first imported call has a cause reference");
+    assert_eq!(
+        second_reasons[0]["cause_ref"].as_str(),
+        Some(shared_cause),
+        "both statements call the same imported impure callable"
+    );
+
+    let causes = graph["purity_causes"]
+        .as_array()
+        .expect("factored purity cause rows");
+    assert_eq!(
+        causes.len(),
+        3,
+        "the sharedImpure -> middle -> leaf chain appears once: {causes:#?}"
+    );
+    let causes_by_id = causes
+        .iter()
+        .map(|cause| (cause["id"].as_str().expect("cause row id"), cause))
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(causes_by_id.len(), causes.len(), "cause ids are unique");
+
+    let mut pending = vec![shared_cause];
+    let mut visited = BTreeSet::new();
+    let mut cause_edges = 0;
+    let mut saw_leaf_mutation = false;
+    while let Some(id) = pending.pop() {
+        if !visited.insert(id) {
+            continue;
+        }
+        let cause = causes_by_id
+            .get(id)
+            .unwrap_or_else(|| panic!("unresolved purity cause {id:?}: {causes:#?}"));
+        let reasons = cause["purity"]["reasons"]
+            .as_array()
+            .expect("cause purity reasons");
+        for reason in reasons {
+            assert!(
+                reason.get("cause").is_none(),
+                "nested causes stay factored in the table: {reason:#}"
+            );
+            if reason["rule"] == "assign_or_update" {
+                saw_leaf_mutation = true;
+            }
+            if let Some(cause_ref) = reason["cause_ref"].as_str() {
+                cause_edges += 1;
+                pending.push(cause_ref);
+            }
+        }
+    }
+    assert_eq!(visited.len(), causes.len(), "all cause rows are reachable");
+    assert!(
+        cause_edges >= 2,
+        "the provider explanation is nested: {causes:#?}"
+    );
+    assert!(
+        saw_leaf_mutation,
+        "the chain reaches leaf's state update: {causes:#?}"
+    );
 }
 
 fn assert_lexical_authority_staged_parity(
