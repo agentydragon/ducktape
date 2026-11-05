@@ -12,6 +12,7 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.agentplane import telemetry
@@ -20,7 +21,6 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_helmrepository, loki, mimir, tempo
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 _NAME = "alloy"
 NAMESPACE = "monitoring"
@@ -60,12 +60,13 @@ _CONFIG_ENV = {
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
+    runfiles_root = Runfiles.CreateOrRaise().root()
     config_map, node_config_map, syslog_config_map = (
         ConfigMap(
             chart,
             name,
             metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-            data={key: get_required_path(own_repo_rlocation(f"cluster/cdk8s/monitoring/{key}")).read_text()},
+            data={key: (runfiles_root / f"ducktape/cluster/cdk8s/monitoring/{key}").read_text()},
         )
         for name, key in (
             (_CONFIG_MAP, _CONFIG_KEY),

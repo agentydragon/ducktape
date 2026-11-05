@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
+from python.runfiles import Runfiles
 
 from agentplane.testing.codex_fixtures import (
     ExecutorServer,
@@ -14,7 +15,6 @@ from agentplane.testing.codex_fixtures import (
     executor_server,
 )
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.postgres_fixtures import postgres_admin_url, postgres_container, postgres_image
 
@@ -22,12 +22,13 @@ from util.testing.postgres_fixtures import postgres_admin_url, postgres_containe
 @pytest.fixture
 async def execution_target(executor_server: ExecutorServer) -> AsyncIterator[str]:
     """Run the production typed adapter around the pinned native Codex exec-server."""
-    adapter = get_required_path(
-        own_repo_rlocation("agentplane/env/runtime/execution/adapter/testing/adapter_bin_/adapter_bin")
+    adapter = (
+        Runfiles.CreateOrRaise().root()
+        / "ducktape/agentplane/env/runtime/execution/adapter/testing/adapter_bin_/adapter_bin"
     )
     with (undeclared_outputs_dir() / "sampler-execution-adapter.log").open("wb") as log:
         process = await asyncio.create_subprocess_exec(
-            str(adapter),
+            adapter,
             "--listen",
             "127.0.0.1:0",
             "--executor-url",

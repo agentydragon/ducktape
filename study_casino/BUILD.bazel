@@ -352,12 +352,12 @@ py_test(
         ":config",
         ":conftest",
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//util:playwright",
         "//util/testing:asgi",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -377,7 +377,6 @@ py_test(
         ":config",
         ":conftest",
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//devinfra/testing:output_writer",
         "//util:playwright",
         "//util/testing:asgi",
@@ -388,6 +387,7 @@ py_test(
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

@@ -20,12 +20,14 @@ py_test(
         "@nodejs_linux_amd64//:bin/node",
     ],
     # //cluster/cdk8s:conftest imports cdk8s, whose jsii runtime starts Node at collection.
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    env = {
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "KUSTOMIZE_RLOCATION": "$(rlocationpath @multitool//tools/kustomize)",
+    },
     deps = [
         ":render_diff",
         "//:conftest",
         "//cluster/cdk8s:conftest",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

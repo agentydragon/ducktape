@@ -54,13 +54,13 @@ py_library(
         "//agentplane/proto:identity_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/testing:go_process",
-        "//devinfra/bazel:runfiles",
         "//util:net",
         "@pypi//aiohttp",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -72,10 +72,10 @@ py_library(
     deps = [
         "//agentplane/testing:codex_fixtures",
         "//agentplane/testing:kubernetes_apiserver_fixtures",
-        "//devinfra/bazel:runfiles",
         "//devinfra/testing:undeclared_outputs",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )
 

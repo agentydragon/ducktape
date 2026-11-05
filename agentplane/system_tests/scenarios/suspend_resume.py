@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
 from google.protobuf.json_format import MessageToDict
+from python.runfiles import Runfiles
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
@@ -35,7 +36,6 @@ from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.codex_model import CodexModel
 from agentplane.testing.scripted_model import Text
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 # `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
@@ -137,14 +137,9 @@ async def _wait_until_idle_suspended_without_pod(
 
 
 async def _run_cli(environment: dict[str, str], *arguments: str) -> dict[str, object]:
-    binary = get_required_path(own_repo_rlocation("agentplane/cli/agentplane_/agentplane"))
+    binary = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/cli/agentplane_/agentplane"
     process = await asyncio.create_subprocess_exec(
-        str(binary),
-        "--json",
-        *arguments,
-        env=environment,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        binary, "--json", *arguments, env=environment, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     try:
         async with asyncio.timeout(45):

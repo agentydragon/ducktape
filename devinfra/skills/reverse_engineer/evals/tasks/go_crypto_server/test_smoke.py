@@ -30,8 +30,8 @@ from pathlib import Path
 import httpx
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from util.net import listen_tcp
 
 PROTOCOL_VERSION = "ncs/1"
@@ -141,7 +141,7 @@ def _put(client: httpx.Client, token: str, *, title: str, plaintext: str) -> str
 
 @pytest.fixture(params=["PLAIN_BIN", "GARBLED_BIN"])
 def binary(request: pytest.FixtureRequest) -> Path:
-    return get_required_path(os.environ[request.param])
+    return Runfiles.CreateOrRaise().root() / os.environ[request.param]
 
 
 def test_round_trip(binary: Path) -> None:

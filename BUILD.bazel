@@ -111,6 +111,7 @@ npm_link_package(
 
 # Export workspace files for npm_translate_lock data tracking
 exports_files([
+    "MODULE.bazel",
     "mypy.ini",
     "nebula-mesh.json",
     "package.json",
@@ -150,6 +151,7 @@ py_library(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_timeout",
+        "@rules_python//python/runfiles",
     ],
 )
 

@@ -14,10 +14,10 @@ py_library(
     ],
     deps = [
         "//agentplane/env/e2e/testing:launches",
-        "//devinfra/bazel:runfiles",
         "//devinfra/oci",
         "//third_party/containers:debian_slim",
         "//util/testing:container_logs",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )

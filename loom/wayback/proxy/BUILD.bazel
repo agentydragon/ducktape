@@ -138,12 +138,12 @@ py_test(
     deps = [
         ":fake_ia",
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//devinfra/oci",
         "//devinfra/testing:undeclared_outputs",
         "//loom/wayback/proxy:wayback_proxy_image",
         "//third_party/containers:python_3_14_slim",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )

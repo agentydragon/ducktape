@@ -50,6 +50,7 @@ from clickhouse_keeper_installation_crds.com.altinity.clickhouse_keeper import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitorSpecSelector
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import agent_access_profiles as access, cilium, node_scheduling
 from cluster.cdk8s.clickhouse import client
@@ -58,7 +59,6 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint, PodMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/clickhouse/cluster"
 SOPS_FILES = (
@@ -278,7 +278,9 @@ def _users() -> dict[str, object]:
 # The key must sort after the operator's own generated
 # `01-clickhouse-0*-{query,part,trace}_log.xml`, which set `replace="1"`.
 _SYSTEM_LOGS_FILE = "zz-system-logs.xml"
-_SYSTEM_LOGS_XML = get_required_path(own_repo_rlocation("cluster/cdk8s/clickhouse/zz-system-logs.xml")).read_text()
+_SYSTEM_LOGS_XML = (
+    Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/clickhouse/zz-system-logs.xml"
+).read_text()
 
 
 def clickhouse_chart(app: App) -> Chart:

@@ -25,6 +25,18 @@ py_library(
     deps = ["@pypi//pydantic"],
 )
 
+py_library(
+    name = "nebula_mesh_fixtures",
+    testonly = True,
+    srcs = ["nebula_mesh_fixtures.py"],
+    visibility = ["//cluster:__subpackages__"],
+    deps = [
+        ":nebula_mesh",
+        "@pypi//pytest",
+        "@rules_python//python/runfiles",
+    ],
+)
+
 py_binary(
     name = "render_mobile_nebula_config",
     srcs = ["render_mobile_nebula_config.py"],

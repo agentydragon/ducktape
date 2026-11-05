@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from grocy_mcp.fix_openapi_spec import (
     _MISSING_PRODUCT_PROPERTIES,
     fix_entity_refs,
@@ -85,7 +85,7 @@ def test_fixed_spec_has_every_writable_product_column() -> None:
     ``entity_update`` feedback asked for: every field named in the tool's
     docstring examples must actually be accepted by the tool's input schema.
     """
-    spec_path = get_required_path("_main/grocy_mcp/grocy.openapi.fixed.json")
+    spec_path = Runfiles.CreateOrRaise().root() / "ducktape/grocy_mcp/grocy.openapi.fixed.json"
     spec = json.loads(spec_path.read_text())
     properties = spec["components"]["schemas"]["Product"]["properties"]
 

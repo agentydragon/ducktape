@@ -171,12 +171,12 @@ py_test(
         ":catalog",
         ":conftest",
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//finance/augur:conftest",
         "//finance/augur/model:series",
         "//finance/evidence:markets",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

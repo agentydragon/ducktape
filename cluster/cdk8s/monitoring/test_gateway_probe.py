@@ -10,10 +10,10 @@ from cdk8s import (
     Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
 )
 from more_itertools import one
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.monitoring import gateway_probe
 from cluster.scripts.nebula_mesh import Host, Mesh
-from devinfra.bazel.runfiles import get_required_path
 
 # testdata/gateway_probe_rules.yaml writes its series for these node names.
 _MESH = Mesh(
@@ -30,21 +30,18 @@ _MESH = Mesh(
 )
 
 
-def test_gateway_probe_rules(scratch_app: App, tmp_path: Path) -> None:
+def test_gateway_probe_rules(runfiles: Runfiles, promtool: Path, scratch_app: App, tmp_path: Path) -> None:
     manifest = one(
         manifest
         for manifest in Cdk8sTesting.synth(gateway_probe.chart(scratch_app, _MESH))
         if manifest["kind"] == "PrometheusRule"
     )
     (tmp_path / "gateway-probe.yaml").write_text(yaml.safe_dump(manifest["spec"]))
+    runfiles_root = runfiles.root()
     (tmp_path / "tests.yaml").write_text(
-        get_required_path("_main/cluster/cdk8s/monitoring/testdata/gateway_probe_rules.yaml").read_text()
+        (runfiles_root / "ducktape/cluster/cdk8s/monitoring/testdata/gateway_probe_rules.yaml").read_text()
     )
-    subprocess.run(
-        [get_required_path("multitool/tools/promtool/promtool"), "test", "rules", "tests.yaml"],
-        cwd=tmp_path,
-        check=True,
-    )
+    subprocess.run([promtool, "test", "rules", "tests.yaml"], cwd=tmp_path, check=True)
 
 
 if __name__ == "__main__":

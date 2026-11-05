@@ -1,24 +1,25 @@
 """Dispatcher Goose schema creation, idempotency and concurrent migration."""
 
 import subprocess
+from pathlib import Path
 
 import pytest_bazel
+from python.runfiles import Runfiles
 from sqlalchemy import create_engine, text
 
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from util.db_url import render_postgresql_url
 from util.testing.postgres import DatabaseNames, create_temporary_database
 
 # SQLAlchemy loads this URL dialect dynamically.
 # gazelle:include_dep @pypi//psycopg
 
-_SERVICE = get_required_path(own_repo_rlocation("agentplane/runner_gateway/runner-gateway_/runner-gateway"))
+_SERVICE = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/runner_gateway/runner-gateway_/runner-gateway"
 _VERSION = "runner_gateway_dispatcher_goose_version"
 
 
 def _run(url: str, *, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [str(_SERVICE), "--migrate-only"],
+        [_SERVICE, "--migrate-only"],
         env={"AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": _wire_url(url)},
         text=True,
         capture_output=True,
@@ -47,7 +48,7 @@ def test_fresh_database_and_repeat_are_idempotent(postgres_admin_url: str, datab
 
 def test_concurrent_runners_serialize(postgres_admin_url: str, database_names: DatabaseNames) -> None:
     with create_temporary_database(postgres_admin_url, database_names()) as url:
-        argv = [str(_SERVICE), "--migrate-only"]
+        argv: list[str | Path] = [_SERVICE, "--migrate-only"]
         first = subprocess.Popen(
             argv,
             env={"AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": _wire_url(url)},

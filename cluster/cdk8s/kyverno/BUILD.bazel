@@ -61,8 +61,8 @@ py_library(
     srcs = ["apply.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//devinfra/bazel:runfiles",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -74,9 +74,9 @@ py_library(
         ":apply",
         ":policies",
         ":proxy_injection",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 

@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Any, cast
 
 import yaml
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.bazel.workspace import get_build_workspace_directory
 
 CRDS_DIR = Path("agentplane/crds/manifests")
@@ -29,9 +29,9 @@ SANDBOX_CRDS = {
     "crd-sandboxes.yaml": "agentplane.allegedly.works_sandboxes.yaml",
 }
 EGRESS_CRDS = {"crd-egresscredentials.yaml": "agentplane.allegedly.works_egresscredentials.yaml"}
-SANDBOX_GENERATED_CRDS = "_main/agentplane/sandboxes/api/generated_crds"
-EGRESS_GENERATED_CRDS = "_main/agentplane/egress/api/v1alpha1/generated_crds"
-POLICY_GENERATED_CRDS = "_main/agentplane/policy/api/v1alpha1/generated_crds"
+SANDBOX_GENERATED_CRDS = "ducktape/agentplane/sandboxes/api/generated_crds"
+EGRESS_GENERATED_CRDS = "ducktape/agentplane/egress/api/v1alpha1/generated_crds"
+POLICY_GENERATED_CRDS = "ducktape/agentplane/policy/api/v1alpha1/generated_crds"
 POLICY_CRDS = {
     "crd-policysets.yaml": "agentplane.allegedly.works_policysets.yaml",
     "crd-policybindings.yaml": "agentplane.allegedly.works_policybindings.yaml",
@@ -91,11 +91,12 @@ def generated_files(
 
 def main() -> None:
     root = get_build_workspace_directory()
-    sandbox_generated = get_required_path(SANDBOX_GENERATED_CRDS)
-    egress_generated = get_required_path(EGRESS_GENERATED_CRDS)
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    sandbox_generated = runfiles_root / SANDBOX_GENERATED_CRDS
+    egress_generated = runfiles_root / EGRESS_GENERATED_CRDS
     sandbox_crds = {name: (sandbox_generated / source).read_text() for name, source in SANDBOX_CRDS.items()}
     egress_crds = {name: (egress_generated / source).read_text() for name, source in EGRESS_CRDS.items()}
-    policy_generated = get_required_path(POLICY_GENERATED_CRDS)
+    policy_generated = runfiles_root / POLICY_GENERATED_CRDS
     policy_crds = {name: (policy_generated / source).read_text() for name, source in POLICY_CRDS.items()}
     for relative, content in generated_files(
         {name: (root / CRDS_DIR / name).read_text() for name in CRD_FILES}, sandbox_crds, egress_crds, policy_crds

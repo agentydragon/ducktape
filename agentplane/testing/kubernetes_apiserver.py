@@ -12,9 +12,9 @@ from uuid import uuid4
 
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.config import new_client_from_config
+from python.runfiles import Runfiles
 
 from agentplane.subjects import ServiceAccountRef
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
@@ -84,9 +84,11 @@ def control_plane() -> Iterator[Path]:
     Only control-plane processes are started. No event loop is involved, so a session-scoped fixture can share
     one control plane among tests whose loops differ; each test enters `kubernetes_api` in its own loop.
     """
-    binary = get_required_path(own_repo_rlocation("agentplane/testing/envtest/server_/server"))
-    assets = get_required_path("envtest_kubernetes_linux_amd64/kube-apiserver").parent
-    crds = get_required_path(own_repo_rlocation("agentplane/crds/manifests"))
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    binary = runfiles_root / "ducktape/agentplane/testing/envtest/server_/server"
+    api_server = Path(str(runfiles_root / "envtest_kubernetes_linux_amd64/kube-apiserver"))
+    assets = api_server.parent
+    crds = runfiles_root / "ducktape/agentplane/crds/manifests"
     log_path = undeclared_outputs_dir() / f"kubernetes-apiserver-{uuid4().hex}.log"
     with tempfile.TemporaryDirectory(prefix="agentplane-apiserver-") as work, log_path.open("wb") as log:
         kubeconfig = Path(work) / "kubeconfig"

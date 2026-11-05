@@ -29,21 +29,15 @@ py_library(
 )
 
 py_library(
-    name = "tool_resolve",
-    srcs = ["tool_resolve.py"],
-    deps = ["//devinfra/bazel:runfiles"],
-)
-
-py_library(
     name = "kustomize",
     testonly = True,
     srcs = ["kustomize.py"],
     data = ["@multitool//tools/kustomize"],
     deps = [
         ":k8s",
-        ":tool_resolve",
         "@pypi//pydantic",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -53,10 +47,10 @@ py_library(
     data = ["@multitool//tools/flux"],
     deps = [
         ":k8s",
-        ":tool_resolve",
         "//cluster/cdk8s:manifest_roots",
         "@pypi//pydantic",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -131,8 +125,7 @@ py_library(
         "@multitool//tools/helm",
     ],
     deps = [
-        ":tool_resolve",
-        "//devinfra/bazel:runfiles",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -150,10 +143,11 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
+    data = ["//:MODULE.bazel"],
     deps = [
         "//cluster/cdk8s:manifest_roots",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -174,11 +168,11 @@ py_test(
     data = ["//cluster/k8s/agentplane-staging:image_pins"],
     deps = [
         ":kustomize",
-        ":tool_resolve",
-        "//devinfra/bazel:runfiles",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -267,8 +261,9 @@ py_test(
     srcs = ["test_nebula_mesh.py"],
     data = ["//:nebula-mesh.json"],
     deps = [
+        "//:conftest",
         "//cluster/scripts:nebula_mesh",
-        "//devinfra/bazel:runfiles",
+        "//cluster/scripts:nebula_mesh_fixtures",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -304,12 +299,12 @@ py_test(
         ":k8s",
         ":kustomize",
         "//cluster/cdk8s:manifest_roots",
-        "//devinfra/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -324,9 +319,9 @@ py_test(
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         "//cluster/cdk8s/authentik:jwt_rotation",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -365,8 +360,9 @@ py_test(
         "//cluster/k8s/litellm/app:manifests",
     ],
     deps = [
+        ":conftest",
         ":flux",
-        "//devinfra/bazel:runfiles",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -391,9 +387,9 @@ py_test(
         "//cluster/k8s/agentplane-staging:manifests",
     ],
     deps = [
+        ":conftest",
+        "//:conftest",
         "//cluster/cdk8s:manifest_roots",
-        "//devinfra/bazel:runfiles",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],

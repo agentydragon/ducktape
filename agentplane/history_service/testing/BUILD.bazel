@@ -113,11 +113,11 @@ py_library(
         "//agentplane/proto:session_pb2",
         "//agentplane/testing:go_process",
         "//agentplane/testing:kubernetes_apiserver",
-        "//devinfra/bazel:runfiles",
         "//util:db_url",
         "//util:net",
         "//util/testing:postgres",
         "@pypi//grpcio",
         "@pypi//protobuf",
+        "@rules_python//python/runfiles",
     ],
 )

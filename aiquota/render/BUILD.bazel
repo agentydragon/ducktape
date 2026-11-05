@@ -79,10 +79,10 @@ py_test(
         "//:conftest",
         "//aiquota:models",
         "//aiquota/testing:quota_fixtures",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//syrupy",
+        "@rules_python//python/runfiles",
     ],
 )
 

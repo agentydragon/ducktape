@@ -25,6 +25,7 @@ from cilium_crds.io.cilium import (
 )
 from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -34,7 +35,6 @@ from cluster.cdk8s.monitoring import grafana_helmrepository
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.seaweedfs import s3
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 NAME = "loki"
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/loki"
@@ -293,8 +293,8 @@ def _promtail_journal_values() -> dict[str, object]:
                 # Disable the chart's default Kubernetes pod-log scrape — the main promtail
                 # already collects pod logs on every node; this release must not double-collect.
                 "scrapeConfigs": "",
-                "extraScrapeConfigs": get_required_path(
-                    own_repo_rlocation("cluster/cdk8s/monitoring/journal-scrape.yaml")
+                "extraScrapeConfigs": (
+                    Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/monitoring/journal-scrape.yaml"
                 ).read_text(),
             },
         },

@@ -24,8 +24,8 @@ py_library(
         "//skills:__subpackages__",
     ],
     deps = [
-        "//devinfra/bazel:runfiles",
         "//skills:skill_spec",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -79,12 +79,12 @@ py_library(
     ],
     deps = [
         ":skill_staging",
-        "//devinfra/bazel:runfiles",
         "//mcp_infra/exec/docker:types",
         "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_claude",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//agent_framework_core",
         "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
+        "@rules_python//python/runfiles",
     ],
 )
 

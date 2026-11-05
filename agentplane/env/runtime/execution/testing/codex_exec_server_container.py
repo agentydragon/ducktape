@@ -12,9 +12,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from python.runfiles import Runfiles
 
 from agentplane.env.e2e.testing import launches
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.oci.oci import load_oci_image
 from third_party.containers import debian_slim
 from util.testing.container_logs import LoggedContainer
@@ -58,8 +58,9 @@ def inspect_codex_exec_server_container(path: Path) -> CodexExecServerContainerS
 @pytest.fixture
 def codex_exec_server_container(tmp_path: Path) -> Iterator[CodexExecServerContainer]:
     debian_image = load_oci_image(debian_slim.LAYOUT_RLOCATION)
-    execution_binary = get_required_path(launches.EXECUTION_BINARY).resolve()
-    codex_binary = get_required_path(launches.CODEX_BINARY).resolve()
+    runfiles_root = Runfiles.CreateOrRaise().root()
+    execution_binary = (runfiles_root / launches.EXECUTION_BINARY).resolve()
+    codex_binary = Path(str(runfiles_root / launches.CODEX_BINARY)).resolve()
     socket_path = tmp_path / "executor.sock"
     with socket.socket() as executor_listener, socket.socket() as health_listener:
         executor_listener.bind(("127.0.0.1", 0))

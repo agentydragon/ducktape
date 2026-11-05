@@ -31,7 +31,7 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(tmp_path: P
     assert files is not None
     engine = files.Rlocation(os.environ["DEBUNDLE_HANDOFF_ENGINE"])
     node = files.Rlocation(os.environ["DEBUNDLE_HANDOFF_NODE"])
-    fixture_config = files.Rlocation("_main/devinfra/js/debundle/skills/shared/examples/fixture/spec_config.yaml")
+    fixture_config = files.Rlocation("ducktape/devinfra/js/debundle/skills/shared/examples/fixture/spec_config.yaml")
     assert engine is not None
     assert node is not None
     assert fixture_config is not None

@@ -21,14 +21,14 @@ from litellm.proxy import proxy_server
 from litellm.proxy.proxy_server import ProxyConfig
 from litellm.types.utils import GenericStreamingChunk
 from openai.types.chat import ChatCompletionMessageParam, ChatCompletionToolParam
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from tana.litellm_proxy import custom_handler
 from tana.litellm_proxy.provider import TanaChatResult, TanaLiteLLM, TanaProxyClient, TanaProxyConfig
 from util.testing.asgi import serve_app_in_loop
 
 
-def test_litellm_proxy_binary_imports_server(tmp_path: Path) -> None:
+def test_litellm_proxy_binary_imports_server(runfiles: Runfiles, tmp_path: Path) -> None:
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         textwrap.dedent(
@@ -41,7 +41,12 @@ def test_litellm_proxy_binary_imports_server(tmp_path: Path) -> None:
     )
 
     result = subprocess.run(
-        [get_required_path("ducktape/tana/litellm_proxy/server_bin"), "--config", config_path, "--skip_server_startup"],
+        [
+            (runfiles.root() / "ducktape/tana/litellm_proxy/server_bin"),
+            "--config",
+            config_path,
+            "--skip_server_startup",
+        ],
         capture_output=True,
         check=False,
         env=os.environ | {"LITELLM_MASTER_KEY": "sk-test"},
@@ -52,13 +57,14 @@ def test_litellm_proxy_binary_imports_server(tmp_path: Path) -> None:
 
 
 async def test_litellm_proxy_config_registers_custom_provider_before_router_build(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated_litellm_provider: None
+    runfiles: Runfiles, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated_litellm_provider: None
 ) -> None:
+    runfiles_root = runfiles.root()
     handler_path = tmp_path / "tana/litellm_proxy/custom_handler.py"
     handler_path.parent.mkdir(parents=True)
-    shutil.copy(get_required_path("ducktape/tana/litellm_proxy/custom_handler.py"), handler_path)
+    shutil.copy(runfiles_root / "ducktape/tana/litellm_proxy/custom_handler.py", handler_path)
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(get_required_path("_main/tana/litellm_proxy/testdata/custom_provider.yaml").read_text())
+    config_path.write_text((runfiles_root / "ducktape/tana/litellm_proxy/testdata/custom_provider.yaml").read_text())
 
     class FakeClient:
         async def chat_completion(
@@ -100,11 +106,11 @@ async def test_litellm_proxy_config_registers_custom_provider_before_router_buil
 
 
 async def test_litellm_router_forwards_local_reasoning_default_in_http_payload(
-    tmp_path: Path, monkeypatch: Any
+    runfiles: Runfiles, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Use the pinned LiteLLM OpenAI adapter through a mock HTTP transport."""
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(get_required_path("_main/tana/litellm_proxy/testdata/local_reasoning.yaml").read_text())
+    config_path.write_text((runfiles.root() / "ducktape/tana/litellm_proxy/testdata/local_reasoning.yaml").read_text())
 
     request_bodies: list[dict[str, Any]] = []
 
@@ -140,10 +146,13 @@ async def test_litellm_router_forwards_local_reasoning_default_in_http_payload(
 
 @asynccontextmanager
 async def _serve_tana_proxy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, handle_tana_request: Callable[[httpx.Request], httpx.Response]
+    runfiles: Runfiles,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    handle_tana_request: Callable[[httpx.Request], httpx.Response],
 ) -> AsyncIterator[str]:
     config_path = tmp_path / "config.yaml"
-    config_path.write_text(get_required_path("_main/tana/litellm_proxy/testdata/custom_provider.yaml").read_text())
+    config_path.write_text((runfiles.root() / "ducktape/tana/litellm_proxy/testdata/custom_provider.yaml").read_text())
     monkeypatch.setenv("CONFIG_FILE_PATH", str(config_path))
     monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-test")
     monkeypatch.setenv("DO_NOT_TRACK", "1")
@@ -202,6 +211,7 @@ class _KnownLiteLLMContractGapError(RuntimeError):
     ],
 )
 async def test_anthropic_http_stream_tool_result_continuation_uses_tana_provider(
+    runfiles: Runfiles,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     isolated_litellm_provider: None,
@@ -235,7 +245,7 @@ async def test_anthropic_http_stream_tool_result_continuation_uses_tana_provider
         return httpx.Response(200, json=body, request=request)
 
     async with (
-        _serve_tana_proxy(tmp_path, monkeypatch, handle_tana_request) as origin,
+        _serve_tana_proxy(runfiles, tmp_path, monkeypatch, handle_tana_request) as origin,
         AsyncAnthropic(api_key="sk-test", base_url=origin, max_retries=0) as client,
     ):
         system: list[TextBlockParam] = [
@@ -334,6 +344,7 @@ def _chat_messages() -> list[ChatCompletionMessageParam]:
 @pytest.mark.parametrize("streaming", [False, True])
 @pytest.mark.parametrize("include_usage", [False, True])
 async def test_chat_completions_preserves_cache_and_optional_usage(
+    runfiles: Runfiles,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     isolated_litellm_provider: None,
@@ -365,7 +376,7 @@ async def test_chat_completions_preserves_cache_and_optional_usage(
         return httpx.Response(200, json=body)
 
     async with (
-        _serve_tana_proxy(tmp_path, monkeypatch, handle) as origin,
+        _serve_tana_proxy(runfiles, tmp_path, monkeypatch, handle) as origin,
         openai.AsyncOpenAI(api_key="sk-test", base_url=origin + "/v1", max_retries=0) as client,
     ):
         if streaming:
@@ -392,7 +403,7 @@ async def test_chat_completions_preserves_cache_and_optional_usage(
 
 
 async def test_chat_completions_stream_tool_roundtrip_without_usage(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated_litellm_provider
+    runfiles: Runfiles, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated_litellm_provider
 ) -> None:
     requests: list[dict[str, Any]] = []
 
@@ -412,7 +423,7 @@ async def test_chat_completions_stream_tool_roundtrip_without_usage(
         return httpx.Response(200, json={"text": "Fact received."})
 
     async with (
-        _serve_tana_proxy(tmp_path, monkeypatch, handle) as origin,
+        _serve_tana_proxy(runfiles, tmp_path, monkeypatch, handle) as origin,
         openai.AsyncOpenAI(api_key="sk-test", base_url=origin + "/v1", max_retries=0) as client,
     ):
         tools: list[ChatCompletionToolParam] = [

@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from finance.augur.sim.results import Paid
 from finance.augur.x.bounded_spending.python_policy import Parameters
 from finance.augur.x.joint_spending_allocation.compare import Measurements, Traces, replay_cell, run_cell
@@ -19,7 +19,7 @@ def results(tmp_path_factory: pytest.TempPathFactory) -> Path:
     directory = tmp_path_factory.mktemp("joint-study") / "results"
     subprocess.run(
         [
-            get_required_path(own_repo_rlocation("finance/augur/x/joint_spending_allocation/compare_bin")),
+            (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/x/joint_spending_allocation/compare_bin"),
             "--output-dir",
             directory,
         ],
