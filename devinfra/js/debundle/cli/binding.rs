@@ -25,7 +25,6 @@ use anyhow::{Context, Result, anyhow, bail};
 use graph_provenance::VerifiedGraphSourceContext;
 use selector_outcome::SelectorKind;
 use serde::Deserialize;
-use source_identity::SourceUnitId;
 
 use crate::candidate_assessment::EffectAssessmentUnavailable;
 use pipeline::{AnalysisArtifactInput, TransformCli, assess_candidate_effect_relocation};
