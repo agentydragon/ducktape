@@ -65,8 +65,8 @@ status:
 An identity is never owned by a Sandbox or any other environment (operator, 2026-11-05): a central
 Session attaches and detaches environments repeatedly, and a standing agent moves between Sandboxes,
 so the agent's lifetime and the compute's are different things. A Sandbox names its identity in
-`spec.identity`, immutable for the Sandbox's life, and the Sandbox Controller refuses a Sandbox
-without one. Who creates the identity decides its lifetime: Flux for a standing agent; the app at
+`spec.identity`, changeable only while the Sandbox is stopped ([below](#changing-an-environments-identity)),
+and the Sandbox Controller refuses a Sandbox without one. Who creates the identity decides its lifetime: Flux for a standing agent; the app at
 launch when the operator starts a fresh agent, deleted by the operator's explicit "finish with this
 agent"; Dispatcher for a Session-managed identity, deleted with the Session
 ([Session/environment model](session_environment_model.md#sessions-serviceaccounts-and-environments)).
@@ -182,6 +182,27 @@ address is not identity evidence.
 Workloads without an SVID, such as the public coder's OpenClaw fronted by the proxy, keep presenting
 a projected SA token; `status.workloadCredentials` maps that account to its identity. The MCP edge
 binds a Connection to an `Identity` instead of a ServiceAccount.
+
+## Changing an environment's identity
+
+The credential is not what makes this hard: the SVID names the Sandbox incarnation, not the
+identity, and every verifier reads `spec.identity` from the live Sandbox, so a changed field takes
+effect on the next request with the certificate untouched. What makes it hard is what is in flight
+at the moment of the change: Sessions already bound to the old identity, whose execution principal
+is immutable and which the same-environment invariant now bars from running there; requests and
+tunnels admitted as one identity and completing as another; and a RAM-preserving Firecracker
+snapshot, whose restore would resume the old agent's harness mid-turn acting as the new identity.
+
+So `spec.identity` is mutable only while the environment is fully stopped: no workload running and
+no RAM snapshot pending restore. The next start runs as the new identity, and the controller
+rotates the credential ID on that start so the boundary shows in every audit log as a new SPIFFE ID.
+Sessions placed on the environment under the old identity, including native harness conversations
+on its state volume, are retained, readable and marked unrunnable with a reason, the way a Session
+is when its required environment is deleted; they are never re-attributed. New identity, new
+Sessions. The workspace and state volumes carry over, which is the point of reusing the
+environment: the operator is accepting that the next agent sees whatever the previous one left
+there, exactly as two Sessions sharing an environment do today, and the app says so in the same
+words it uses for running as an existing identity.
 
 ## Central Sessions with no environment
 
