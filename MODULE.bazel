@@ -412,7 +412,6 @@ use_repo(oci, "debian_trixie_slim", "debian_trixie_slim_linux_amd64", "dex", "de
 # CI workflows update the JSON via devinfra/update_image_pin.py.
 image_pins = use_extension("//devinfra:image_pins.bzl", "image_pins")
 image_pins.from_file(lockfile = "//devinfra:image_pins.json")
-use_repo(image_pins, "firecracker_boot", "firecracker_boot_linux_amd64")
 use_repo(image_pins, "blackbox_exporter", "blackbox_exporter_linux_amd64", "cert_manager_cainjector", "cert_manager_cainjector_linux_amd64", "cert_manager_controller", "cert_manager_controller_linux_amd64", "cert_manager_webhook", "cert_manager_webhook_linux_amd64", "electric_1_8_1", "electric_1_8_1_linux_amd64", "excalidraw", "excalidraw_linux_amd64", "freecad_test", "freecad_test_linux_amd64", "image_pins", "k3s_test_node", "k3s_test_node_linux_amd64", "kubevirt_virt_api", "kubevirt_virt_api_linux_amd64", "kubevirt_virt_controller", "kubevirt_virt_controller_linux_amd64", "kubevirt_virt_handler", "kubevirt_virt_handler_linux_amd64", "kubevirt_virt_launcher", "kubevirt_virt_launcher_linux_amd64", "kubevirt_virt_operator", "kubevirt_virt_operator_linux_amd64", "kyverno_kyverno", "kyverno_kyverno_linux_amd64", "kyverno_kyvernopre", "kyverno_kyvernopre_linux_amd64", "nginx_unprivileged", "nginx_unprivileged_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "ryuk", "ryuk_linux_amd64", "trust_manager", "trust_manager_linux_amd64")
 
 # Hermetic deb packages for container images (rules_distroless).
@@ -1818,7 +1817,11 @@ http_file(
     name = "vm_guest_kernel_deb",
     downloaded_file_path = "linux-image-cloud-amd64.deb",
     sha256 = "c26573a3b5dca6bd3bf2b06a13b81cbb845c04eb6e35d7ad57f4b885746153e4",
-    urls = ["https://snapshot.debian.org/archive/debian-security/20261102T161514Z/pool/updates/main/l/linux-signed-amd64/linux-image-6.12.115+deb13.1-cloud-amd64_6.12.115-2_amd64.deb"],
+    # The security CDN carries these exact bytes; keep the snapshot when the pool ages out.
+    urls = [
+        "https://deb.debian.org/debian-security/pool/updates/main/l/linux-signed-amd64/linux-image-6.12.115+deb13.1-cloud-amd64_6.12.115-2_amd64.deb",
+        "https://snapshot.debian.org/archive/debian-security/20261102T161514Z/pool/updates/main/l/linux-signed-amd64/linux-image-6.12.115+deb13.1-cloud-amd64_6.12.115-2_amd64.deb",
+    ],
 )
 
 # Firecracker v1.12 CI's x86_64 ELF guest kernel, pinned for the local runner-layering VM probe.

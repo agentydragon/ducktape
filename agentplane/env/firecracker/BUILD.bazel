@@ -13,11 +13,14 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/env/firecracker",
     deps = [
         ":management_go_proto",
+        "//agentplane/firecracker/vsock",
+        "//agentplane/firecracker/workloadidentity",
         "@com_github_mdlayher_vsock//:vsock",
+        "@com_github_spiffe_go_spiffe_v2//proto/spiffe/workload",
+        "@com_github_spiffe_go_spiffe_v2//workloadapi",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_x_sys//unix",
     ],
 )
@@ -28,12 +31,14 @@ go_test(
     embed = [":firecracker"],
     deps = [
         ":management_go_proto",
+        "//agentplane/environment_runtime_transport/testing",
+        "//agentplane/firecracker/workloadidentity",
+        "@com_github_spiffe_go_spiffe_v2//proto/spiffe/workload",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//status",
         "@org_golang_google_grpc//test/bufconn",
-        "@org_golang_google_protobuf//proto",
     ],
 )
 

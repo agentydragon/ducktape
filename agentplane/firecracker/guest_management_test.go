@@ -3,6 +3,7 @@ package firecracker
 import (
 	"bufio"
 	"context"
+	"crypto/x509"
 	"errors"
 	"io"
 	"net"
@@ -12,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	transporttesting "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 
 	managementpb "github.com/agentydragon/ducktape/agentplane/env/firecracker/managementpb"
 	"google.golang.org/grpc"
@@ -132,6 +135,10 @@ func (transport *firecrackerTransport) handle(connection net.Conn) {
 	if err != nil {
 		return
 	}
+	if request == "CONNECT 53\n" {
+		_, _ = io.WriteString(connection, "ERR no credential subscriber in management fixture\n")
+		return
+	}
 	if request != "CONNECT 52\n" {
 		transport.badHandshake.Store(true)
 		return
@@ -186,15 +193,18 @@ func startGuestManagementFixture(t *testing.T, service *guestManagementService, 
 	if err := os.Mkdir(credentialsDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for name, value := range map[string]string{
-		"tls.crt": "test certificate",
-		"tls.key": "test private key",
-		"ca.crt":  "test CA bundle",
-	} {
-		if err := os.WriteFile(filepath.Join(credentialsDir, name), []byte(value), 0o600); err != nil {
+	ca := transporttesting.NewCA(t)
+	tls := ca.IssueWithUsage(t, "spiffe://agentplane/environment-runtime/agent-ns/sandbox-uid/pod-uid", x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth)
+	for name, path := range map[string]string{"tls.crt": tls.CertFile, "tls.key": tls.KeyFile, "ca.crt": tls.CAFile} {
+		value, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(credentialsDir, name), value, 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
+
 	return transport, socketPath, credentialsDir
 }
 
@@ -216,18 +226,19 @@ func waitForSignal(t *testing.T, signal <-chan struct{}) {
 	}
 }
 
-func TestSynchronizeGuestWaitsForStartupAndUsesDirectVsock(t *testing.T) {
+func TestConnectGuestWaitsForStartupAndUsesDirectVsock(t *testing.T) {
 	const bootID = "guest-boot-test"
 	service := newGuestManagementService(bootID)
 	transport, socketPath, credentialsDir := startGuestManagementFixture(t, service, 1)
 	before := time.Now().UnixNano()
 
-	gotBootID, err := SynchronizeGuest(t.Context(), socketPath, bootID, credentialsDir)
+	guest, err := ConnectGuest(t.Context(), socketPath, bootID, credentialsDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotBootID != bootID {
-		t.Fatalf("boot ID = %q, want %q", gotBootID, bootID)
+	defer guest.Close()
+	if guest.BootID != bootID {
+		t.Fatalf("boot ID = %q, want %q", guest.BootID, bootID)
 	}
 	if transport.attempts.Load() < 2 {
 		t.Fatalf("vsock handshake attempts = %d, want a rejected startup attempt and a successful retry", transport.attempts.Load())
@@ -237,9 +248,7 @@ func TestSynchronizeGuestWaitsForStartupAndUsesDirectVsock(t *testing.T) {
 	}
 	select {
 	case request := <-service.synchronizeRequests:
-		if request.GetTlsCert() != "test certificate" || request.GetTlsKey() != "test private key" || request.GetCaBundle() != "test CA bundle" {
-			t.Fatalf("synchronization credentials = (%q, %q, %q)", request.GetTlsCert(), request.GetTlsKey(), request.GetCaBundle())
-		}
+
 		if request.GetExpectedBootId() != bootID {
 			t.Fatalf("expected boot ID = %q, want %q", request.GetExpectedBootId(), bootID)
 		}
@@ -252,7 +261,7 @@ func TestSynchronizeGuestWaitsForStartupAndUsesDirectVsock(t *testing.T) {
 	assertNoSynchronizeRequest(t, service)
 }
 
-func TestSynchronizeGuestValidatesStatusIdentityBeforeSendingCredentials(t *testing.T) {
+func TestConnectGuestValidatesStatusIdentityBeforeSendingCredentials(t *testing.T) {
 	for _, test := range []struct {
 		name           string
 		statusBootID   string
@@ -264,26 +273,26 @@ func TestSynchronizeGuestValidatesStatusIdentityBeforeSendingCredentials(t *test
 		t.Run(test.name, func(t *testing.T) {
 			service := newGuestManagementService(test.statusBootID)
 			_, socketPath, credentialsDir := startGuestManagementFixture(t, service, 0)
-			if _, err := SynchronizeGuest(t.Context(), socketPath, test.expectedBootID, credentialsDir); err == nil {
-				t.Fatal("SynchronizeGuest succeeded with an invalid guest identity")
+			if _, err := ConnectGuest(t.Context(), socketPath, test.expectedBootID, credentialsDir); err == nil {
+				t.Fatal("ConnectGuest succeeded with an invalid guest identity")
 			}
 			assertNoSynchronizeRequest(t, service)
 		})
 	}
 }
 
-func TestSynchronizeGuestDoesNotSendCredentialsWhenStatusFails(t *testing.T) {
+func TestConnectGuestDoesNotSendCredentialsWhenStatusFails(t *testing.T) {
 	service := newGuestManagementService("guest-boot-test")
 	service.statusError = status.Error(codes.FailedPrecondition, "guest not ready")
 	_, socketPath, credentialsDir := startGuestManagementFixture(t, service, 0)
 
-	if _, err := SynchronizeGuest(t.Context(), socketPath, "", credentialsDir); status.Code(err) != codes.FailedPrecondition {
+	if _, err := ConnectGuest(t.Context(), socketPath, "", credentialsDir); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("GetStatus error = %v, want FailedPrecondition", err)
 	}
 	assertNoSynchronizeRequest(t, service)
 }
 
-func TestSynchronizeGuestDeadlineDoesNotSendCredentials(t *testing.T) {
+func TestConnectGuestDeadlineDoesNotSendCredentials(t *testing.T) {
 	service := newGuestManagementService("guest-boot-test")
 	service.statusStarted = make(chan struct{})
 	service.statusCanceled = make(chan struct{})
@@ -293,19 +302,19 @@ func TestSynchronizeGuestDeadlineDoesNotSendCredentials(t *testing.T) {
 	defer cancel()
 	result := make(chan error, 1)
 	go func() {
-		_, err := SynchronizeGuest(ctx, socketPath, "", credentialsDir)
+		_, err := ConnectGuest(ctx, socketPath, "", credentialsDir)
 		result <- err
 	}()
 
 	waitForSignal(t, service.statusStarted)
 	if err := <-result; status.Code(err) != codes.DeadlineExceeded {
-		t.Fatalf("SynchronizeGuest error = %v, want DeadlineExceeded", err)
+		t.Fatalf("ConnectGuest error = %v, want DeadlineExceeded", err)
 	}
 	waitForSignal(t, service.statusCanceled)
 	assertNoSynchronizeRequest(t, service)
 }
 
-func TestSynchronizeGuestCancellationDoesNotSendCredentials(t *testing.T) {
+func TestConnectGuestCancellationDoesNotSendCredentials(t *testing.T) {
 	service := newGuestManagementService("guest-boot-test")
 	service.statusStarted = make(chan struct{})
 	service.statusCanceled = make(chan struct{})
@@ -314,26 +323,26 @@ func TestSynchronizeGuestCancellationDoesNotSendCredentials(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	result := make(chan error, 1)
 	go func() {
-		_, err := SynchronizeGuest(ctx, socketPath, "", credentialsDir)
+		_, err := ConnectGuest(ctx, socketPath, "", credentialsDir)
 		result <- err
 	}()
 
 	waitForSignal(t, service.statusStarted)
 	cancel()
 	if err := <-result; !errors.Is(err, context.Canceled) && status.Code(err) != codes.Canceled {
-		t.Fatalf("SynchronizeGuest error = %v, want Canceled", err)
+		t.Fatalf("ConnectGuest error = %v, want Canceled", err)
 	}
 	waitForSignal(t, service.statusCanceled)
 	assertNoSynchronizeRequest(t, service)
 }
 
-func TestSynchronizeGuestRejectsChangedReplyIdentity(t *testing.T) {
+func TestConnectGuestRejectsChangedReplyIdentity(t *testing.T) {
 	service := newGuestManagementService("guest-boot-test")
 	service.synchronizeBootID = "different-guest-boot"
 	_, socketPath, credentialsDir := startGuestManagementFixture(t, service, 0)
 
-	if _, err := SynchronizeGuest(t.Context(), socketPath, "", credentialsDir); err == nil {
-		t.Fatal("SynchronizeGuest accepted a changed boot ID")
+	if _, err := ConnectGuest(t.Context(), socketPath, "", credentialsDir); err == nil {
+		t.Fatal("ConnectGuest accepted a changed boot ID")
 	}
 	select {
 	case request := <-service.synchronizeRequests:
@@ -346,12 +355,12 @@ func TestSynchronizeGuestRejectsChangedReplyIdentity(t *testing.T) {
 	assertNoSynchronizeRequest(t, service)
 }
 
-func TestSynchronizeGuestDoesNotRetryFailedSynchronization(t *testing.T) {
+func TestConnectGuestDoesNotRetryFailedSynchronization(t *testing.T) {
 	service := newGuestManagementService("guest-boot-test")
 	service.synchronizeError = status.Error(codes.Unavailable, "guest synchronization failed")
 	_, socketPath, credentialsDir := startGuestManagementFixture(t, service, 0)
 
-	if _, err := SynchronizeGuest(t.Context(), socketPath, "", credentialsDir); status.Code(err) != codes.Unavailable {
+	if _, err := ConnectGuest(t.Context(), socketPath, "", credentialsDir); status.Code(err) != codes.Unavailable {
 		t.Fatalf("Synchronize error = %v, want Unavailable", err)
 	}
 	select {

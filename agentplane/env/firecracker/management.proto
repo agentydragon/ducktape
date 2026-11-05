@@ -17,9 +17,6 @@ message GetStatusResponse {
 
 message SynchronizeRequest {
   int64 unix_nano = 1;
-  string tls_cert = 2;
-  string tls_key = 3;
-  string ca_bundle = 4;
   string expected_boot_id = 5;
 }
 

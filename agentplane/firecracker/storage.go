@@ -18,15 +18,14 @@ import (
 )
 
 const (
-	stateDirectory          = "/var/lib/agentplane/state"
-	workspaceImage          = "/var/lib/agentplane/workspace/disk.img"
-	workspaceBlock          = "/dev/agentplane-workspace"
-	credentialDirectory     = "/run/agentplane/environment-runtime-tls"
-	credentialTempDirectory = "/work"
-	configSourceDirectory   = "/run/agentplane/config"
-	launchSourceDirectory   = "/run/agentplane/sandbox"
-	trustSourceDirectory    = "/run/agentplane/trust"
-	configDigestDomain      = "agentplane-firecracker-config/v2\x00"
+	stateDirectory        = "/var/lib/agentplane/state"
+	workspaceImage        = "/var/lib/agentplane/workspace/disk.img"
+	workspaceBlock        = "/dev/agentplane-workspace"
+	credentialDirectory   = "/run/agentplane/environment-runtime-tls"
+	configSourceDirectory = "/run/agentplane/config"
+	launchSourceDirectory = "/run/agentplane/sandbox"
+	trustSourceDirectory  = "/run/agentplane/trust"
+	configDigestDomain    = "agentplane-firecracker-config/v3\x00"
 )
 
 type FileRecord struct {
@@ -55,8 +54,6 @@ type Storage struct {
 	configSourceDirectory string
 	launchSourceDirectory string
 	trustSourceDirectory  string
-	credentialDirectory   string
-	credentialTempDir     string
 }
 
 func NewStorage(config Config, binary string) *Storage {
@@ -76,18 +73,15 @@ func NewStorage(config Config, binary string) *Storage {
 		configSourceDirectory: configSourceDirectory,
 		launchSourceDirectory: launchSourceDirectory,
 		trustSourceDirectory:  trustSourceDirectory,
-		credentialDirectory:   credentialDirectory,
-		credentialTempDir:     credentialTempDirectory,
 		Paths: map[string]string{
-			"kernel":      filepath.Join(live, "vmlinux"),
-			"rootfs":      filepath.Join(live, "rootfs.ext4"),
-			"runner":      filepath.Join(live, "runner.img"),
-			"state":       filepath.Join(stateDirectory, "disk.img"),
-			"workspace":   workspace,
-			"config":      filepath.Join(live, "config.iso"),
-			"launch":      filepath.Join(live, "launch.iso"),
-			"trust":       filepath.Join(live, "trust.iso"),
-			"credentials": filepath.Join(live, "credentials.ext4"),
+			"kernel":    filepath.Join(live, "vmlinux"),
+			"rootfs":    filepath.Join(live, "rootfs.ext4"),
+			"runner":    filepath.Join(live, "runner.img"),
+			"state":     filepath.Join(stateDirectory, "disk.img"),
+			"workspace": workspace,
+			"config":    filepath.Join(live, "config.iso"),
+			"launch":    filepath.Join(live, "launch.iso"),
+			"trust":     filepath.Join(live, "trust.iso"),
 		},
 	}
 	return storage
@@ -190,38 +184,7 @@ func (storage *Storage) Prepare(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := os.MkdirAll(storage.credentialTempDir, 0o700); err != nil {
-		return err
-	}
-	seed, err := os.MkdirTemp(storage.credentialTempDir, "credential-seed-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(seed)
-	credentials, err := ReadCredentials(storage.credentialDirectory)
-	if err != nil {
-		return err
-	}
-	for _, file := range []struct {
-		name  string
-		value string
-	}{
-		{name: "tls.crt", value: credentials.TLSCert},
-		{name: "tls.key", value: credentials.TLSKey},
-		{name: "ca-certificates.crt", value: credentials.CABundle},
-	} {
-		path := filepath.Join(seed, file.name)
-		if err := os.WriteFile(path, []byte(file.value), 0o600); err != nil {
-			return err
-		}
-		if err := os.Chmod(path, 0o600); err != nil {
-			return err
-		}
-	}
-	if err := createExt4(ctx, storage.Paths["credentials"], "16M", "APCREDENTIAL", seed); err != nil {
-		return err
-	}
-	return os.Chmod(storage.Paths["credentials"], 0o600)
+	return nil
 }
 
 // Boot images may supply an initramfs for kernels with modular boot drivers.

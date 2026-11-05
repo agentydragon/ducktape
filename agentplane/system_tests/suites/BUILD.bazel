@@ -28,28 +28,6 @@ k3s_suite(
     ],
 )
 
-# The same acceptance contract against the separately published production NixOS guest.
-k3s_suite(
-    name = "test_firecracker_production",
-    srcs = ["test_firecracker.py"],
-    main = "test_firecracker.py",
-    require_kvm = True,
-    stack = "firecracker_production",
-    tags = ["manual"],
-    deps = [
-        "//:conftest",
-        "//agentplane/app/testing:client",
-        "//agentplane/runner_gateway/dispatcher:testing_client",
-        "//agentplane/system_tests:conftest",
-        "//agentplane/system_tests/driver:cluster",
-        "//agentplane/system_tests/driver:sandbox",
-        "//agentplane/system_tests/driver:scripted_upstream",
-        "//agentplane/system_tests/scenarios:firecracker",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 # Each target starts exactly one stack. Per-test clients and Sandbox cleanup remain isolated.
 k3s_suite(
     name = "test_pod",

@@ -30,8 +30,8 @@ Three artifacts have separate release boundaries:
 
 The guest device order is fixed by
 [`firecracker_guest_contract.json`](../env/images/firecracker_guest_contract.json): root, runner,
-state, workspace, public config, launch, egress trust and private credential seed. Firecracker's
-block serials depend on backing inodes, so the guest uses `/dev/vda` through `/dev/vdh` rather than
+state, workspace, public config, launch and egress trust. Firecracker's
+block serials depend on backing inodes, so the guest uses `/dev/vda` through `/dev/vdg` rather than
 KubeVirt serial names. The generated Runtime config identifies the workspace as `/dev/vdd`.
 
 State must use `RawDiskImage` on a Filesystem PVC. Workspace must use `RawDiskImage` on a
@@ -111,18 +111,49 @@ The relay alone mounts projected ServiceAccount tokens. It reads kubelet-rotated
 proxy and platform-route authentication. The guest receives an inert bearer placeholder and the
 public CA bundle; no ServiceAccount token is copied into a disk or RAM snapshot.
 
-The host holds the Runtime TLS Secret. Initial credentials arrive on a private read-only seed disk;
-the root-only guest agent writes private tmpfs credentials. On each start/restore the supervisor
-sends the current certificate, key, CA and host wall time through the typed `GuestManagement`
-gRPC service over vsock port 52. The guest accepts only host CID 2 and checks the expected boot
-identity before applying changes. The root service binds a privileged port so an unprivileged
-guest process cannot impersonate it and receive private keys. The Go supervisor uses its generated gRPC client with a custom context dialer from
-[`agentplane/firecracker/vsock`](../firecracker/vsock/README.md). The dialer performs the
-Firecracker `CONNECT 52` handshake and returns the stream directly to gRPC in the same process.
-The guest uses `github.com/mdlayher/vsock` for its native listener; host-CID authorization
-remains in the management service. Runtime reloads TLS files on a new handshake without restarting
-its process.
-The public egress CA disk and Runtime trust are distinct.
+```mermaid
+flowchart LR
+    issuer[cert-manager] --> secret[Projected TLS Secret]
+    subgraph host[Launcher process]
+        api[Workload API server]
+        management[Guest-management client]
+    end
+    subgraph guest[Guest]
+        subgraph agent[Root guest agent]
+            subscriber[Workload API client]
+            local[Workload API server]
+            control[Guest-management server]
+        end
+        runtime[Runtime X509Source]
+    end
+    secret --> api
+    subscriber -->|gRPC over vsock 53| api
+    subscriber --> local
+    runtime -->|gRPC over restricted Unix socket| local
+    management -->|gRPC over vsock 52| control
+```
+
+The host holds the Runtime TLS Secret, issued and renewed by cert-manager. The launcher serves
+its current certificate, key and trust bundle through the standard SPIFFE Workload API X.509
+stream. The root guest agent subscribes over vsock port 53 and mirrors updates to a mode-0600
+Unix socket in Runtime's private directory. Runtime uses go-spiffe's in-memory `X509Source` to
+consume rotations without restarting or replacing certificate files. JWT issuance is disabled.
+
+The supervisor verifies the kernel boot ID through guest management on port 52 before starting
+credential delivery. On each start/restore, `Synchronize` repairs wall time, replaces the guest's
+old subscription, and waits for a fresh credential update before acknowledging the boot ID.
+The launcher then enables networking; Runtime consumes the update asynchronously. Both guest
+listeners accept only host CID 2 and bind privileged ports. The host initiates both byte streams;
+on the credential stream, it serves gRPC and the guest is the client. Unprivileged guest programs
+cannot impersonate these listeners or dial a host credential endpoint. The existing launcher and
+guest agent own these services; no bridge executable is added.
+
+The host stops credential delivery before pausing the VM. Thaw always resubscribes, even if RAM
+contains old credentials and stream state. Complete snapshots and reconnect behavior follow the
+[Workload API specification](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE_Workload_API.md).
+The transport adapters live under [`agentplane/firecracker/vsock`](../firecracker/vsock/README.md).
+Invalid updates are rejected while the last valid credential remains usable until expiry; renewal
+does not reauthenticate established TLS connections. The public egress CA disk remains separate.
 
 The guest reaches the relay at `192.0.2.1:3128` or `[fd00:fc::1]:3128` and explicitly declared
 platform-route ports. TAP and guest MTUs are 1280. Pod-local IPv4/IPv6 filtering rejects direct
@@ -148,7 +179,8 @@ disposable k3s stack on the existing `wyrm2-kvm-vm` BuildBuddy executor. It uses
 creates its Sandbox through the app, and checks a
 scripted Codex tool turn followed by one RAM-preserving suspend/resume. It asserts unchanged Pod,
 guest and Runtime boot identities, native process identity, and a progressing child with a
-random memory-resident marker. The manual `test_firecracker_production` target exercises the
-same contract against the published NixOS guest. Cilium policy enforcement and TLS rotation while suspended remain
-outside that suite's coverage. Never run the fixture's host-cgroup cleanup in a privileged
+random memory-resident marker. The suite reissues credentials while running and while suspended,
+then verifies Runtime serves the new leaf through a fresh authenticated TLS handshake. Acceptance
+uses only the lighter Bazel-built filesystem; it does not validate the production NixOS guest.
+Cilium policy enforcement remains outside this suite's coverage. Never run the fixture's host-cgroup cleanup in a privileged
 live-cluster Pod.

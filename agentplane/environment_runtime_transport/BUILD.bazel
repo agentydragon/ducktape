@@ -7,6 +7,7 @@ go_library(
     name = "environment_runtime_transport",
     srcs = [
         "credentials.go",
+        "open.go",
         "security.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport",
@@ -15,6 +16,7 @@ go_library(
         "@com_github_spiffe_go_spiffe_v2//spiffeid",
         "@com_github_spiffe_go_spiffe_v2//spiffetls/tlsconfig",
         "@com_github_spiffe_go_spiffe_v2//svid/x509svid",
+        "@com_github_spiffe_go_spiffe_v2//workloadapi",
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//peer",
@@ -26,13 +28,19 @@ go_test(
     srcs = [
         "credentials_test.go",
         "security_test.go",
+        "workload_test.go",
     ],
     embed = [":environment_runtime_transport"],
     race = "on",
     deps = [
         "//agentplane/environment_runtime_transport/testing",
+        "@com_github_spiffe_go_spiffe_v2//proto/spiffe/workload",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//peer",
+        "@org_golang_google_grpc//status",
     ],
 )
 

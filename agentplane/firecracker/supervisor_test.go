@@ -108,12 +108,12 @@ func TestContinuationCheckpointOrderAndFailureFence(t *testing.T) {
 			if err := os.WriteFile(s.intent, []byte("false"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			s.synchronize = func(context.Context, string, string, string) (string, error) {
+			s.synchronize = func(context.Context, string, string, string) (*GuestConnection, error) {
 				events.add("thaw")
 				if syncFailure {
-					return "", errors.New("guest identity mismatch")
+					return nil, errors.New("guest identity mismatch")
 				}
-				return "boot-test", nil
+				return &GuestConnection{BootID: "boot-test", close: func() { events.add("credentials-stop") }}, nil
 			}
 			s.start = func(binary, socket, log string) (virtualMachine, error) {
 				if _, err := os.Stat(storage.ActivePath); err != nil {
@@ -178,7 +178,7 @@ func TestContinuationCheckpointOrderAndFailureFence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(events.snapshot(), []string{"thaw", "enable", "disable", "pause", "capture", "vmm-exit"}) {
+			if !reflect.DeepEqual(events.snapshot(), []string{"thaw", "enable", "disable", "credentials-stop", "pause", "capture", "vmm-exit"}) {
 				t.Fatal(events.snapshot())
 			}
 			if _, err := os.Stat(storage.ActivePath); !errors.Is(err, os.ErrNotExist) {

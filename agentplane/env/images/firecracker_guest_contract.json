@@ -41,21 +41,12 @@
       "mount": "/run/agentplane/trust",
       "filesystem": "iso9660",
       "read_only": true
-    },
-    "credential_seed": {
-      "device": "/dev/vdh",
-      "mount": "/run/agentplane/credential-seed",
-      "filesystem": "ext4",
-      "read_only": true
     }
   },
   "files": {
     "runtime_config": "environment-runtime.json",
     "runtime_environment": "environment-runtime.env",
-    "launch": "launch.json",
-    "credential_tls_cert": "tls.crt",
-    "credential_tls_key": "tls.key",
-    "credential_ca_bundle": "ca-certificates.crt"
+    "launch": "launch.json"
   },
   "environment_runtime_tls": {
     "private_mount": "/run/agentplane/environment-runtime-private/environment-runtime-tls",

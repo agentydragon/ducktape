@@ -87,7 +87,6 @@ _STACKS = {
     "mcp": struct(fixture = _MCP_FIXTURE, vm = False, firecracker = False, real_model = False, images = [_HARNESSES_LAYOUT, _MCP_IMAGES]),
     "vm": struct(fixture = _VM_FIXTURE, vm = True, firecracker = False, real_model = False, images = []),
     "firecracker": struct(fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = [], guest_images = "//agentplane/system_tests/firecracker:images"),
-    "firecracker_production": struct(fixture = _FIRECRACKER_FIXTURE, vm = False, firecracker = True, real_model = False, images = [], guest_images = "//agentplane/system_tests/firecracker:production_images"),
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, firecracker = False, real_model = True, images = [_HARNESSES_LAYOUT]),
 }
 

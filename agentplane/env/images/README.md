@@ -15,16 +15,15 @@ The executable erofs disk keeps the KubeVirt serial `agentplane-runner` and moun
 Secret stays behind a root-only private virtiofs directory, with the public Runtime path exposed as
 a symlink. The trust-manager bundle mounts separately as public trust data.
 
-The Firecracker contract assigns `vda` to the raw ext4 NixOS root and `vdb` through `vdh` to the
-runner erofs, persistent state, workspace, config, launch, egress trust and credential seed disks.
+The Firecracker contract assigns `vda` to the raw ext4 NixOS root and `vdb` through `vdg` to the
+runner erofs, persistent state, workspace, config, launch and egress trust disks.
 The launcher creates the state and workspace ext4 filesystems; the guest does not auto-format them.
-The read-only credential seed contains only `tls.crt`, `tls.key` and `ca-certificates.crt`. A root
-systemd thaw agent copies the seed into a root-only tmpfs directory, accepts host time and rotated
-Runtime credentials through the typed `GuestManagement` gRPC service over privileged vsock
-port 52, and acknowledges the stable kernel boot ID. Runtime keeps
-its process and boot identity through resume and reloads these files for later TLS handshakes.
-`systemd-networkd` waits for the first thaw acknowledgement before configuring the fixed guest
-addresses.
+The root guest agent repairs time through guest-management gRPC on privileged vsock port 52 and
+subscribes to the host's SPIFFE Workload API over a separate connection on privileged port 53.
+It serves credentials on a root-only local Unix socket, which Runtime consumes with go-spiffe's
+in-memory `X509Source`. Cold boot and thaw require a fresh subscription before network admission;
+normal rotations flow over the stream without restarting Runtime. `systemd-networkd` waits for
+the first synchronization acknowledgement before configuring the fixed guest addresses.
 
 ## Release and image inputs
 

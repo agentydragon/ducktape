@@ -2,10 +2,9 @@ package firecracker
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -14,121 +13,24 @@ import (
 	"time"
 
 	managementpb "github.com/agentydragon/ducktape/agentplane/env/firecracker/managementpb"
+	"github.com/agentydragon/ducktape/agentplane/firecracker/vsock"
+	"github.com/agentydragon/ducktape/agentplane/firecracker/workloadidentity"
+	"github.com/spiffe/go-spiffe/v2/proto/spiffe/workload"
+	"github.com/spiffe/go-spiffe/v2/workloadapi"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 )
 
 const maxManagementMessageBytes = 1 << 20
 
-type credentialFiles struct {
-	TLSCertPath  string
-	TLSKeyPath   string
-	CABundlePath string
-}
-
 type clockSetter func(time.Time) error
-
-func validateCredentials(request *managementpb.SynchronizeRequest) error {
-	if request.GetTlsCert() == "" || request.GetTlsKey() == "" || request.GetCaBundle() == "" {
-		return errors.New("tls_cert, tls_key, and ca_bundle must be non-empty")
-	}
-	if _, err := tls.X509KeyPair([]byte(request.GetTlsCert()), []byte(request.GetTlsKey())); err != nil {
-		return fmt.Errorf("parse runtime TLS certificate and key: %w", err)
-	}
-	trust := x509.NewCertPool()
-	if !trust.AppendCertsFromPEM([]byte(request.GetCaBundle())) {
-		return errors.New("ca_bundle contains no certificates")
-	}
-	return nil
-}
-
-func readSeed(seedDir string) (*managementpb.SynchronizeRequest, error) {
-	paths := []string{"tls.crt", "tls.key", "ca-certificates.crt"}
-	values := make([]string, len(paths))
-	for index, name := range paths {
-		path := filepath.Join(seedDir, name)
-		info, err := os.Lstat(path)
-		if err != nil {
-			return nil, fmt.Errorf("inspect credential seed %q: %w", path, err)
-		}
-		if !info.Mode().IsRegular() {
-			return nil, fmt.Errorf("credential seed %q is not a regular file", path)
-		}
-		contents, err := os.ReadFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("read credential seed %q: %w", path, err)
-		}
-		if len(contents) > maxManagementMessageBytes {
-			return nil, fmt.Errorf("credential seed %q exceeds %d bytes", path, maxManagementMessageBytes)
-		}
-		values[index] = string(contents)
-	}
-	request := &managementpb.SynchronizeRequest{TlsCert: values[0], TlsKey: values[1], CaBundle: values[2]}
-	if err := validateCredentials(request); err != nil {
-		return nil, fmt.Errorf("validate credential seed: %w", err)
-	}
-	if proto.Size(request) > maxManagementMessageBytes {
-		return nil, fmt.Errorf("credential seed exceeds %d bytes", maxManagementMessageBytes)
-	}
-	return request, nil
-}
-
-func writeAtomic(path string, contents []byte, mode os.FileMode) error {
-	directory := filepath.Dir(path)
-	file, err := os.CreateTemp(directory, ".agentplane-thaw-*")
-	if err != nil {
-		return fmt.Errorf("create temporary credential in %q: %w", directory, err)
-	}
-	temporary := file.Name()
-	defer os.Remove(temporary)
-	if err := file.Chmod(mode); err != nil {
-		_ = file.Close()
-		return fmt.Errorf("set mode on temporary credential %q: %w", temporary, err)
-	}
-	if _, err := file.Write(contents); err != nil {
-		_ = file.Close()
-		return fmt.Errorf("write temporary credential %q: %w", temporary, err)
-	}
-	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		return fmt.Errorf("sync temporary credential %q: %w", temporary, err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close temporary credential %q: %w", temporary, err)
-	}
-	if err := os.Rename(temporary, path); err != nil {
-		return fmt.Errorf("install credential %q: %w", path, err)
-	}
-	directoryFile, err := os.Open(directory)
-	if err != nil {
-		return fmt.Errorf("open credential directory %q: %w", directory, err)
-	}
-	defer directoryFile.Close()
-	if err := directoryFile.Sync(); err != nil {
-		return fmt.Errorf("sync credential directory %q: %w", directory, err)
-	}
-	return nil
-}
-
-func applyCredentials(files credentialFiles, request *managementpb.SynchronizeRequest) error {
-	if err := writeAtomic(files.TLSCertPath, []byte(request.GetTlsCert()), 0o600); err != nil {
-		return err
-	}
-	if err := writeAtomic(files.TLSKeyPath, []byte(request.GetTlsKey()), 0o600); err != nil {
-		return err
-	}
-	if err := writeAtomic(files.CABundlePath, []byte(request.GetCaBundle()), 0o644); err != nil {
-		return err
-	}
-	return nil
-}
 
 type managementServer struct {
 	managementpb.UnimplementedGuestManagementServer
 	bootID        string
-	files         credentialFiles
 	setClock      clockSetter
+	refresh       func(context.Context) error
 	onFirstSync   func() error
 	mu            sync.Mutex
 	readyNotified bool
@@ -138,27 +40,22 @@ func (server *managementServer) GetStatus(context.Context, *managementpb.GetStat
 	return &managementpb.GetStatusResponse{BootId: server.bootID}, nil
 }
 
-func (server *managementServer) Synchronize(_ context.Context, request *managementpb.SynchronizeRequest) (*managementpb.SynchronizeResponse, error) {
+func (server *managementServer) Synchronize(ctx context.Context, request *managementpb.SynchronizeRequest) (*managementpb.SynchronizeResponse, error) {
 	if request.GetExpectedBootId() != server.bootID {
 		return nil, status.Error(codes.FailedPrecondition, "guest boot ID changed before synchronization")
-	}
-	if proto.Size(request) > maxManagementMessageBytes {
-		return nil, status.Errorf(codes.ResourceExhausted, "synchronization message exceeds %d bytes", maxManagementMessageBytes)
 	}
 	if request.GetUnixNano() <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "unix_nano must be positive")
 	}
-	if err := validateCredentials(request); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	if err := server.setClock(time.Unix(0, request.GetUnixNano())); err != nil {
 		return nil, status.Errorf(codes.Internal, "set guest clock: %v", err)
 	}
-	if err := applyCredentials(server.files, request); err != nil {
-		return nil, status.Errorf(codes.Internal, "install runtime credentials: %v", err)
+	// A restored guest contains its old credential state and stream. A fresh
+	// subscription receives the host's current full snapshot before network admission.
+	if err := server.refresh(ctx); err != nil {
+		return nil, status.Errorf(codes.Unavailable, "refresh Workload API credentials: %v", err)
 	}
 	if !server.readyNotified {
 		if err := server.onFirstSync(); err != nil {
@@ -176,64 +73,175 @@ func notifySystemdReady() error {
 	}
 	connection, err := net.DialUnix("unixgram", nil, &net.UnixAddr{Name: address, Net: "unixgram"})
 	if err != nil {
-		return fmt.Errorf("connect to systemd notify socket %q: %w", address, err)
+		return fmt.Errorf("connect to systemd notify socket: %w", err)
 	}
 	defer connection.Close()
-	if _, err := connection.Write([]byte("READY=1\nSTATUS=host synchronization accepted; Runtime may start\n")); err != nil {
-		return fmt.Errorf("notify systemd readiness: %w", err)
-	}
-	return nil
+	_, err = connection.Write([]byte("READY=1\nSTATUS=host synchronization accepted; Runtime may start\n"))
+	return err
 }
 
-func serve(ctx context.Context, seedDir string, runtimeTLSDir string, runtimeTrustDir string) error {
+func Run(ctx context.Context) error {
 	if os.Geteuid() != 0 {
 		return errors.New("firecracker guest management agent must run as root")
 	}
-	if err := os.MkdirAll(runtimeTLSDir, 0o700); err != nil {
-		return fmt.Errorf("create private runtime TLS directory: %w", err)
+	const directory = "/run/agentplane/environment-runtime-private/environment-runtime-tls"
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return err
 	}
-	if err := os.Chmod(runtimeTLSDir, 0o700); err != nil {
-		return fmt.Errorf("set private runtime TLS directory mode: %w", err)
+	if err := os.Chmod(directory, 0700); err != nil {
+		return err
 	}
-	if err := os.MkdirAll(runtimeTrustDir, 0o755); err != nil {
-		return fmt.Errorf("create runtime trust directory: %w", err)
+	path := filepath.Join(directory, "workload.sock")
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
-	if err := os.Chmod(runtimeTrustDir, 0o755); err != nil {
-		return fmt.Errorf("set runtime trust directory mode: %w", err)
-	}
-	seed, err := readSeed(seedDir)
+	local, err := net.Listen("unix", path)
 	if err != nil {
 		return err
 	}
-	files := credentialFiles{
-		TLSCertPath:  filepath.Join(runtimeTLSDir, "tls.crt"),
-		TLSKeyPath:   filepath.Join(runtimeTLSDir, "tls.key"),
-		CABundlePath: filepath.Join(runtimeTrustDir, "ca-certificates.crt"),
+	defer local.Close()
+	if err := os.Chmod(path, 0600); err != nil {
+		return err
 	}
-	if err := applyCredentials(files, seed); err != nil {
-		return fmt.Errorf("install initial credential seed: %w", err)
+
+	host, err := listenHostOnly(53)
+	if err != nil {
+		return err
 	}
+	broker := vsock.AcceptDialer(host)
+	defer broker.Close()
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	mirror := workloadidentity.New()
+	subscriber := &credentialSubscriber{ctx: runCtx, dial: broker.DialContext, mirror: mirror}
+
+	localServer := grpc.NewServer(grpc.MaxRecvMsgSize(maxManagementMessageBytes))
+	workload.RegisterSpiffeWorkloadAPIServer(localServer, mirror)
+	localDone := make(chan error, 1)
+	go func() { localDone <- localServer.Serve(local) }()
+	defer localServer.Stop()
+
 	bootIDBytes, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
 	if err != nil {
-		return fmt.Errorf("read kernel boot ID: %w", err)
+		return err
 	}
 	bootID := strings.TrimSpace(string(bootIDBytes))
 	if bootID == "" {
 		return errors.New("kernel boot ID is empty")
 	}
-	return serveVsock(ctx, 52, &managementServer{
-		bootID:      bootID,
-		files:       files,
-		setClock:    setRealtimeClock,
-		onFirstSync: notifySystemdReady,
-	})
+	managementDone := make(chan error, 1)
+	managementStopped := make(chan struct{})
+	go func() {
+		defer close(managementStopped)
+		managementDone <- serveVsock(runCtx, 52, &managementServer{
+			bootID: bootID, setClock: setRealtimeClock,
+			refresh: subscriber.Refresh, onFirstSync: notifySystemdReady,
+		})
+	}()
+	defer func() { cancel(); <-managementStopped; subscriber.Close() }()
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-localDone:
+		return fmt.Errorf("local Workload API stopped: %w", err)
+	case err := <-managementDone:
+		return err
+	}
 }
 
-func Run(ctx context.Context) error {
-	return serve(
+// The management process owns this subscription and mirrors it to a root-only
+// Unix socket. Unprivileged guest programs cannot bind the privileged vsock
+// listener, and cannot obtain credentials by dialing a host endpoint themselves.
+type credentialSubscriber struct {
+	ctx    context.Context
+	dial   func(context.Context, string) (net.Conn, error)
+	mirror *workloadidentity.Server
+	client *workloadapi.Client
+	cancel context.CancelFunc
+	done   chan error
+}
+
+func (subscriber *credentialSubscriber) Close() {
+	if subscriber.cancel != nil {
+		subscriber.cancel()
+		_ = subscriber.client.Close()
+		<-subscriber.done
+		subscriber.cancel = nil
+	}
+}
+
+func (subscriber *credentialSubscriber) Refresh(ctx context.Context) error {
+	subscriber.Close()
+	client, err := workloadapi.New(
 		ctx,
-		"/run/agentplane/credential-seed",
-		"/run/agentplane/environment-runtime-private/environment-runtime-tls",
-		"/run/agentplane/environment-runtime-trust",
+		workloadapi.WithAddr("unix:///firecracker-workload-api"),
+		workloadapi.WithDialOptions(grpc.WithContextDialer(subscriber.dial),
+			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxManagementMessageBytes))),
 	)
+	if err != nil {
+		return err
+	}
+	watchCtx, cancel := context.WithCancel(subscriber.ctx)
+	subscriber.client, subscriber.cancel, subscriber.done = client, cancel, make(chan error, 1)
+	watcher := &credentialWatcher{mirror: subscriber.mirror, first: make(chan error, 1)}
+	go func() { subscriber.done <- client.WatchX509Context(watchCtx, watcher) }()
+	select {
+	case err := <-watcher.first:
+		if err != nil {
+			subscriber.Close()
+		}
+		return err
+	case <-ctx.Done():
+		subscriber.Close()
+		return ctx.Err()
+	case err := <-subscriber.done:
+		// Put the terminal outcome back for Close to join the watcher exactly once.
+		subscriber.done <- err
+		subscriber.Close()
+		return fmt.Errorf("Workload API subscription stopped: %w", err)
+	}
+}
+
+type credentialWatcher struct {
+	mirror *workloadidentity.Server
+	first  chan error
+	once   sync.Once
+}
+
+func (watcher *credentialWatcher) OnX509ContextUpdate(update *workloadapi.X509Context) {
+	err := watcher.install(update)
+	if err != nil {
+		slog.Warn("reject Workload API credential update", "error", err)
+	}
+	watcher.once.Do(func() { watcher.first <- err })
+}
+
+func (watcher *credentialWatcher) OnX509ContextWatchError(err error) {
+	if status.Code(err) != codes.Canceled && !errors.Is(err, context.Canceled) {
+		slog.Warn("Workload API subscription interrupted", "error", err)
+	}
+	// go-spiffe reconnects with backoff; an existing valid credential remains
+	// usable until its expiry. Boot/thaw still waits for a fresh successful update.
+}
+
+func (watcher *credentialWatcher) install(update *workloadapi.X509Context) error {
+	if len(update.SVIDs) != 1 {
+		return errors.New("expected exactly one Runtime identity")
+	}
+	svid := update.SVIDs[0]
+	cert, key, err := svid.MarshalRaw()
+	if err != nil {
+		return err
+	}
+	bundle, err := update.Bundles.GetX509BundleForTrustDomain(svid.ID.TrustDomain())
+	if err != nil {
+		return err
+	}
+	var roots []byte
+	for _, root := range bundle.X509Authorities() {
+		roots = append(roots, root.Raw...)
+	}
+	return watcher.mirror.Set(&workload.X509SVIDResponse{Svids: []*workload.X509SVID{{
+		SpiffeId: svid.ID.String(), X509Svid: cert, X509SvidKey: key, Bundle: roots,
+	}}})
 }

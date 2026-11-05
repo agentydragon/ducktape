@@ -148,7 +148,9 @@ flowchart LR
 
 Firecracker Sandboxes use a controller-owned launcher Pod, a separate token-holding relay and a
 NixOS guest. Their supervisor checkpoints RAM and all disks, then restores the same Runtime and
-processes in the same Pod. See [Firecracker Sandboxes](firecracker_sandboxes.md) for the control,
+processes in the same Pod. Its launcher serves SPIFFE Workload API credentials over vsock to the
+root guest agent, which serves a restricted Unix endpoint consumed by Runtime. Guest management
+uses a separate gRPC connection for boot/thaw readiness. See [Firecracker Sandboxes](firecracker_sandboxes.md) for the control,
 credential and network boundaries.
 
 A VM guest runs Environment Runtime with Session components and Execution; its relay is in the separate KubeVirt launcher Pod. The Git index is

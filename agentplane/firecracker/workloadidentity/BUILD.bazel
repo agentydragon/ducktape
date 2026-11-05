@@ -1,0 +1,40 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "workloadidentity",
+    srcs = [
+        "pem.go",
+        "server.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/firecracker/workloadidentity",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/environment_runtime_transport",
+        "@com_github_spiffe_go_spiffe_v2//bundle/x509bundle",
+        "@com_github_spiffe_go_spiffe_v2//proto/spiffe/workload",
+        "@com_github_spiffe_go_spiffe_v2//spiffeid",
+        "@com_github_spiffe_go_spiffe_v2//svid/x509svid",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "workloadidentity_test",
+    srcs = ["server_test.go"],
+    embed = [":workloadidentity"],
+    deps = [
+        "//agentplane/environment_runtime_transport",
+        "//agentplane/environment_runtime_transport/testing",
+        "@com_github_spiffe_go_spiffe_v2//proto/spiffe/workload",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_grpc//test/bufconn",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

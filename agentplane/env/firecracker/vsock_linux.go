@@ -40,16 +40,24 @@ func setRealtimeClock(value time.Time) error {
 	return unix.ClockSettime(unix.CLOCK_REALTIME, &unix.Timespec{Sec: value.Unix(), Nsec: int64(value.Nanosecond())})
 }
 
-func serveVsock(ctx context.Context, port uint32, service managementpb.GuestManagementServer) error {
+func listenHostOnly(port uint32) (net.Listener, error) {
 	listener, err := vsock.Listen(port, nil)
+	if err != nil {
+		return nil, err
+	}
+	return hostOnlyListener{Listener: listener}, nil
+}
+
+func serveVsock(ctx context.Context, port uint32, service managementpb.GuestManagementServer) error {
+	listener, err := listenHostOnly(port)
 	if err != nil {
 		return err
 	}
 	defer listener.Close()
-	server := grpc.NewServer(grpc.MaxRecvMsgSize(maxManagementMessageBytes))
+	server := grpc.NewServer(grpc.MaxRecvMsgSize(maxManagementMessageBytes), grpc.WaitForHandlers(true))
 	managementpb.RegisterGuestManagementServer(server, service)
 	serveErr := make(chan error, 1)
-	go func() { serveErr <- server.Serve(hostOnlyListener{Listener: listener}) }()
+	go func() { serveErr <- server.Serve(listener) }()
 	select {
 	case <-ctx.Done():
 		server.Stop()

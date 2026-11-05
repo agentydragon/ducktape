@@ -42,7 +42,6 @@ let
       firecrackerContract.disks.egress_trust
     else
       guestContract.disks.egress_trust;
-  credentialSeedDisk = firecrackerContract.disks.credential_seed;
   stateDir = stateDisk.mount;
   workspaceDir = workspaceDisk.mount;
   runtimeDir = "/run/agentplane";
@@ -318,7 +317,6 @@ in
         ${configDisk.mount} = readOnlyFilesystem configDisk;
         ${launchDisk.mount} = readOnlyFilesystem launchDisk;
         ${trustDisk.mount} = readOnlyFilesystem trustDisk;
-        ${credentialSeedDisk.mount} = readOnlyFilesystem credentialSeedDisk;
       }
     else
       {
@@ -475,7 +473,6 @@ in
     ];
     unitConfig.RequiresMountsFor = [
       environmentDir
-      credentialSeedDisk.mount
     ];
     serviceConfig = {
       Type = "notify";
@@ -490,10 +487,7 @@ in
       NoNewPrivileges = true;
       ProtectSystem = "strict";
       ProtectHome = "read-only";
-      ReadWritePaths = [
-        runtimeTLS.private_mount
-        runtimeTrust.mount
-      ];
+      ReadWritePaths = [ runtimeTLS.private_mount ];
       RestrictAddressFamilies = [
         "AF_UNIX"
         "AF_VSOCK"

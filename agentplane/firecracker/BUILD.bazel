@@ -27,7 +27,9 @@ go_library(
     deps = [
         "//agentplane/env/firecracker:management_go_proto",
         "//agentplane/firecracker/vsock",
+        "//agentplane/firecracker/workloadidentity",
         "@com_github_google_uuid//:uuid",
+        "@com_github_spiffe_go_spiffe_v2//proto/spiffe/workload",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//credentials/insecure",
     ],
@@ -39,6 +41,7 @@ go_test(
     embed = [":firecracker"],
     deps = [
         "//agentplane/env/firecracker:management_go_proto",
+        "//agentplane/environment_runtime_transport/testing",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

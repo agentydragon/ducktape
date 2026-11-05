@@ -41,7 +41,7 @@ type Config struct {
 	SandboxUID    string
 	BootID        string
 	ListenAddress string
-	Security      environmentruntimetransport.Security
+	Security      *environmentruntimetransport.OpenedSecurity
 
 	IsClosing        func() bool
 	AdoptIncarnation func(context.Context, string) error
@@ -91,7 +91,7 @@ func New(config Config, backend environmentruntimepb.EnvironmentRuntimeServer) *
 // Listen opens the configured authenticated control listener and registers the
 // Runner, executor stream, and standard gRPC health services.
 func (s *Server) Listen(executor executorpb.ExecutorServer) (net.Listener, *grpc.Server, error) {
-	credentials, err := s.config.Security.ServerCredentials(environmentruntimetransport.GatewayURI)
+	transportCredentials, err := s.config.Security.ServerCredentials(environmentruntimetransport.GatewayURI)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -100,7 +100,7 @@ func (s *Server) Listen(executor executorpb.ExecutorServer) (net.Listener, *grpc
 		return nil, nil, err
 	}
 	server := grpc.NewServer(
-		grpc.Creds(credentials),
+		grpc.Creds(transportCredentials),
 		observability.GRPCServerOption(),
 		grpc.UnaryInterceptor(func(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 			if strings.HasPrefix(info.FullMethod, "/grpc.health.v1.Health/") {

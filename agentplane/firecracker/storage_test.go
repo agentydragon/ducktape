@@ -110,8 +110,6 @@ func testStorage(t *testing.T) *Storage {
 	storage.configSourceDirectory = filepath.Join(root, "config")
 	storage.launchSourceDirectory = filepath.Join(root, "launch")
 	storage.trustSourceDirectory = filepath.Join(root, "trust")
-	storage.credentialDirectory = filepath.Join(root, "credentials")
-	storage.credentialTempDir = filepath.Join(root, "tmp")
 	if err := os.MkdirAll(storage.liveDirectory, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -122,15 +120,14 @@ func testStorage(t *testing.T) *Storage {
 		t.Fatal(err)
 	}
 	storage.Paths = map[string]string{
-		"kernel":      filepath.Join(storage.liveDirectory, "vmlinux"),
-		"rootfs":      filepath.Join(storage.liveDirectory, "rootfs.ext4"),
-		"runner":      filepath.Join(storage.liveDirectory, "runner.img"),
-		"state":       filepath.Join(state, "disk.img"),
-		"workspace":   workspace,
-		"config":      filepath.Join(storage.liveDirectory, "config.iso"),
-		"launch":      filepath.Join(storage.liveDirectory, "launch.iso"),
-		"trust":       filepath.Join(storage.liveDirectory, "trust.iso"),
-		"credentials": filepath.Join(storage.liveDirectory, "credentials.ext4"),
+		"kernel":    filepath.Join(storage.liveDirectory, "vmlinux"),
+		"rootfs":    filepath.Join(storage.liveDirectory, "rootfs.ext4"),
+		"runner":    filepath.Join(storage.liveDirectory, "runner.img"),
+		"state":     filepath.Join(state, "disk.img"),
+		"workspace": workspace,
+		"config":    filepath.Join(storage.liveDirectory, "config.iso"),
+		"launch":    filepath.Join(storage.liveDirectory, "launch.iso"),
+		"trust":     filepath.Join(storage.liveDirectory, "trust.iso"),
 	}
 	for name, path := range storage.Paths {
 		if err := os.WriteFile(path, []byte(name), 0o600); err != nil {

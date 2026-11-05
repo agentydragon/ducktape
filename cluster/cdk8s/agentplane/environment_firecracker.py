@@ -57,6 +57,7 @@ class EnvironmentFirecrackerTemplate(Construct):
             data=guest_config_data(
                 env,
                 gateway=GATEWAY,
+                workload_api_socket="unix:///run/agentplane/environment-runtime-tls/workload.sock",
                 block_devices=("/dev/vdd",),
                 platform_instructions=platform_instructions,
                 harness_env=harness_env,

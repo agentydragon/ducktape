@@ -623,6 +623,13 @@ def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boun
     assert firecracker["bootImage"] == environment_firecracker.BOOT_IMAGE
     assert firecracker["runnerImage"] == environment_vm.RUNNER_DISK_IMAGE
     assert firecracker["vcpuCount"] > 0
+    config = json.loads(
+        _resource(fixture.objects, "ConfigMap", "environment-firecracker-config")["data"]["environment-runtime.json"]
+    )
+    assert config["control"]["security"] == {
+        "mode": "mtls",
+        "tls": {"workload_api_socket": "unix:///run/agentplane/environment-runtime-tls/workload.sock"},
+    }
 
     for volume in (template["stateVolume"], template["workspaceVolume"]):
         assert volume["layout"] == {"type": "RawDiskImage", "filesystem": "ext4"}

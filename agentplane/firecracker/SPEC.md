@@ -44,21 +44,35 @@ The TAP uses `192.0.2.1/30` and `fd00:fc::1/64` at MTU `1280`. The guest can rea
 declared relay and platform route TCP listeners on the host. Forwarding allows established
 replies to inbound Runtime traffic on port `9090` and rejects guest-initiated off-Pod flows.
 Firewall changes install parent-chain reject guards before modifying private chains. Guest
-network admission follows the typed `GuestManagement.Synchronize` gRPC response over AF_VSOCK
-port `52`. The host first reads `GetStatus`, then sends the current clock, TLS certificate, key,
-CA bundle and expected boot ID; the guest rejects a mismatched identity before changing state.
-The host client retries transport establishment for up to two minutes while the guest boots.
-After `GetStatus`, the single credential synchronization RPC has its own 30-second deadline.
-The Go supervisor uses the generated gRPC client directly with a custom context dialer from
-`agentplane/firecracker/vsock`. The dialer performs Firecracker's `CONNECT 52` handshake on the VMM's
-Unix socket and returns the connection to gRPC. There is no intermediate process or private
-listening socket. gRPC owns serialization, message limits, deadlines and cancellation; each
-synchronization closes its client connection on success or failure.
-The root guest service accepts only host CID `2` and holds `CAP_SYS_TIME` and
-`CAP_NET_BIND_SERVICE`. Keeping its listener below port `1024` prevents an unprivileged guest
-process from replacing the service and receiving Runtime private keys. It exposes no TCP listener.
-The launcher resolves Kubernetes Secret `..data` once per credential read so a projected
-generation change cannot pair a new certificate with an old key.
+network admission follows the typed `GuestManagement.Synchronize` response over AF_VSOCK
+port `52`. The host first reads `GetStatus`, checks the expected boot ID, and starts credential
+delivery. `Synchronize` repairs wall time and waits for a fresh Workload API subscription before
+acknowledging the same boot ID. Transport establishment has a two-minute boot budget; the single
+synchronization RPC has its own 30-second deadline and is never replayed automatically.
+
+The launcher serves the standard SPIFFE Workload API X.509 profile from one coherent projected
+Secret generation. It polls for changes every second and streams complete replacements. Issuance
+remains owned by cert-manager; JWT issuance is disabled. The first valid Runtime SPIFFE ID is pinned
+for the continuation, and changed identities, invalid chains and mismatched keys are rejected.
+An unavailable or invalid projection is logged and retried; the last accepted credential remains
+usable only until its certificate expires. No invalid update replaces accepted state.
+
+Both vsock connections are initiated by the host through Firecracker's Unix socket. Port `52`
+serves guest-management gRPC; port `53` accepts a byte stream on which the guest is the Workload API
+client and the host is its gRPC server. The root guest service accepts only host CID `2` and holds
+`CAP_SYS_TIME` and `CAP_NET_BIND_SERVICE`. Binding privileged ports prevents unprivileged guest
+programs from impersonating either listener to receive private keys. There is no guest-accessible
+host credential listener, intermediate binary or TCP management endpoint.
+
+The guest agent mirrors validated updates to a mode-0600 Unix socket in its root-only Runtime
+credential directory. Runtime subscribes using go-spiffe's `X509Source` and retains credentials in
+memory for subsequent TLS handshakes. It does not write certificate/key files or restart on renewal.
+The guest refreshes the host subscription on every thaw, even when its restored RAM contains an
+old accepted credential. Networking stays fenced until the fresh update reaches the guest agent;
+Runtime consumes that update asynchronously. Existing TLS connections are not reauthenticated by
+credential renewal. The host credential service is stopped and joined before VM pause/snapshot.
+The launcher pins Kubernetes Secret `..data` once per read so a projected generation change cannot
+pair a new certificate with an old key. There is no credential seed disk.
 
 The Pod template currently grants the launcher root and privileged access for KVM, TAP, image
 construction, and firewall setup. The VMM uses its built-in seccomp filters, but this launcher

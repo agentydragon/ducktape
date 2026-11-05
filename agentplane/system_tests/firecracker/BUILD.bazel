@@ -6,23 +6,6 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_testonly = True)
 
-filegroup(
-    name = "production_boot_layout",
-    srcs = ["@firecracker_boot_linux_amd64"],
-    tags = ["manual"],
-    visibility = ["//agentplane/system_tests:__subpackages__"],
-)
-
-oci_image_manifest(
-    name = "production_images",
-    images = {
-        "//agentplane/firecracker:image": "git.allegedly.works/ducktape-ci/agentplane-firecracker-launcher:unset",
-        ":production_boot_layout": "git.allegedly.works/ducktape-ci/agentplane-environment-firecracker:unset",
-    },
-    tags = ["manual"],
-    visibility = ["//agentplane/system_tests:__subpackages__"],
-)
-
 pkg_files(
     name = "boot_files",
     srcs = [

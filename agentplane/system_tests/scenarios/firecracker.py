@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+import base64
 import json
 import shlex
+import ssl
+import tempfile
 import textwrap
+from pathlib import Path
 from uuid import uuid4
 
+from cryptography import x509
+from cryptography.hazmat.primitives.serialization import Encoding
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import Client
@@ -20,6 +27,7 @@ from agentplane.system_tests.driver.agent import (
 )
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.offered_models import models_offered_for
+from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.sandbox import VM_WORKING_DIRECTORY, Sandboxes, wait_until_running
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -78,6 +86,65 @@ def _probe(*, start: bool) -> str:
         """
     )
     return f"python3 -c {shlex.quote(script)}"
+
+
+async def _renew_credentials(cluster: Cluster, secret_name: str) -> dict[str, str]:
+    original = json.loads(await cluster.kubectl("get", "secret", secret_name, "-o", "json"))
+    # cert-manager remains the issuer. Deleting this disposable test Secret
+    # exercises real reissuance, kubelet projection and live Workload API updates.
+    await cluster.kubectl("delete", "secret", secret_name)
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(90), wait=wait_fixed(1), retry=retry_if_exception_type(AssertionError), reraise=True
+    ):
+        with attempt:
+            encoded = await cluster.kubectl("get", "secret", secret_name, "--ignore-not-found", "-o", "json")
+            assert encoded, "cert-manager has not recreated the Secret"
+            replacement = json.loads(encoded)
+            assert replacement["metadata"]["uid"] != original["metadata"]["uid"]
+            assert replacement["data"]["tls.crt"] != original["data"]["tls.crt"]
+    return replacement["data"]
+
+
+async def _wait_for_served_certificate(cluster: Cluster, pod_name: str, credential: dict[str, str]) -> None:
+    gateway = json.loads(await cluster.kubectl("get", "secret", "agentplane-runner-gateway-tls", "-o", "json"))["data"]
+    expected = x509.load_pem_x509_certificate(base64.b64decode(credential["tls.crt"]))
+    forward = PortForward(
+        cluster.command("port-forward"),
+        resource=f"pod/{pod_name}",
+        local_address="127.0.0.1",
+        local_port=None,
+        remote_port=9090,
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        cert, key = Path(directory) / "cert.pem", Path(directory) / "key.pem"
+        cert.write_bytes(base64.b64decode(gateway["tls.crt"]))
+        key.write_bytes(base64.b64decode(gateway["tls.key"]))
+        trust = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        # The authenticated identity is the exact expected SPIFFE certificate,
+        # checked below; these certificates have URI SANs rather than DNS SANs.
+        trust.check_hostname = False
+        trust.load_verify_locations(cadata=base64.b64decode(credential["ca.crt"]).decode())
+        trust.load_cert_chain(cert, key)
+        trust.set_alpn_protocols(["h2"])
+        async with async_port_forward(forward) as target:
+            host, port = target.rsplit(":", 1)
+            async for attempt in AsyncRetrying(
+                stop=stop_after_delay(90),
+                wait=wait_fixed(1),
+                retry=retry_if_exception_type((AssertionError, OSError)),
+                reraise=True,
+            ):
+                with attempt:
+                    _, writer = await asyncio.wait_for(
+                        asyncio.open_connection(
+                            host, int(port), ssl=trust, server_hostname="", ssl_handshake_timeout=5
+                        ),
+                        timeout=6,
+                    )
+                    actual = writer.get_extra_info("ssl_object").getpeercert(binary_form=True)
+                    writer.close()
+                    await writer.wait_closed()
+                    assert actual == expected.public_bytes(Encoding.DER), "Runtime still serves its old certificate"
 
 
 async def preserves_live_guest(
@@ -144,6 +211,11 @@ async def preserves_live_guest(
         "/run/agentplane/trust": "iso9660",
     }.items():
         assert mounts[mount] == filesystem, before
+    pod_json = json.loads(await cluster.kubectl("get", "pod", pod.name, "-o", "json"))
+    credential_id = pod_json["metadata"]["labels"]["agentplane.allegedly.works/environment-runtime-credential"]
+    secret_name = f"runner-{credential_id}"
+    running_credential = await _renew_credentials(cluster, secret_name)
+    await _wait_for_served_certificate(cluster, pod.name, running_credential)
     initial = await client.runner_status(view.target.name, view.target.uid)
     (session,) = [row for row in initial.sessions if row.session_id == str(agent.thread_id)]
     assert session.HasField("process_id")
@@ -167,8 +239,10 @@ async def preserves_live_guest(
     pod_json = json.loads(await cluster.kubectl("get", "pod", pod.name, "-o", "json"))
     assert pod_json["metadata"]["uid"] == pod.uid
     assert all(row.get("restartCount", 0) == 0 for row in pod_json["status"]["containerStatuses"])
+    thaw_credential = await _renew_credentials(cluster, secret_name)
     await client.resume_sandbox(view.target)
     resumed = await wait_until_running(client, view.target)
+    await _wait_for_served_certificate(cluster, pod.name, thaw_credential)
     assert resumed.kubernetes_diagnostics.pod.uid == pod.uid
     async for attempt in environment_runtime_startup_retries():
         with attempt:

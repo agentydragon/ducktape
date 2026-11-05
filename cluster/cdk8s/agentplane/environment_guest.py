@@ -34,6 +34,7 @@ def guest_config_data(
     env: Environment,
     *,
     gateway: str,
+    workload_api_socket: str | None = None,
     block_devices: Sequence[str],
     platform_instructions: str,
     harness_env: Mapping[str, str],
@@ -67,7 +68,9 @@ def guest_config_data(
             listen_address=f"0.0.0.0:{_ENVIRONMENT_RUNTIME_PORT}",
             security=MTLS(
                 mode="mtls",
-                tls=TLS(
+                tls=TLS(workload_api_socket=workload_api_socket)
+                if workload_api_socket
+                else TLS(
                     cert_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/tls.crt",
                     key_file=f"{_ENVIRONMENT_RUNTIME_TLS_PATH}/tls.key",
                     ca_file=f"{_ENVIRONMENT_RUNTIME_TRUST_PATH}/{ENVIRONMENT_RUNTIME_TRUST_BUNDLE_KEY}",

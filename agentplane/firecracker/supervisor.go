@@ -64,7 +64,7 @@ type Supervisor struct {
 	apiPath      string
 	vsockPath    string
 	start        func(string, string, string) (virtualMachine, error)
-	synchronize  func(context.Context, string, string, string) (string, error)
+	synchronize  func(context.Context, string, string, string) (*GuestConnection, error)
 	reachable    func(context.Context) bool
 }
 
@@ -75,7 +75,7 @@ func NewSupervisor(config Config) *Supervisor {
 		status:  launcherStatus{PodUID: config.PodUID, Phase: starting},
 		intent:  intentPath, apiPath: apiSocket, vsockPath: vsockSocket,
 		start:       func(binary, socket, log string) (virtualMachine, error) { return StartVMM(binary, socket, log) },
-		synchronize: SynchronizeGuest, reachable: guestReachable,
+		synchronize: ConnectGuest, reachable: guestReachable,
 	}
 }
 
@@ -291,7 +291,6 @@ func (s *Supervisor) configure(ctx context.Context, api *API) error {
 		{"config", true},
 		{"launch", true},
 		{"trust", true},
-		{"credentials", true},
 	} {
 		if err := api.Request(ctx, "PUT", "/drives/"+drive.name, struct {
 			ID       string `json:"drive_id"`
@@ -377,10 +376,12 @@ func (s *Supervisor) runContinuation(ctx context.Context, manifest *Manifest) (e
 	if manifest != nil {
 		expectedBoot = manifest.BootID
 	}
-	bootID, err := s.synchronize(ctx, s.vsockPath, expectedBoot, "/run/agentplane/environment-runtime-tls")
+	guest, err := s.synchronize(ctx, s.vsockPath, expectedBoot, "/run/agentplane/environment-runtime-tls")
 	if err != nil {
 		return err
 	}
+	defer guest.Close()
+	bootID := guest.BootID
 	slog.Info("guest thaw acknowledged", "boot_id", bootID)
 	if err := s.network.Enable(ctx); err != nil {
 		return err
@@ -404,6 +405,7 @@ func (s *Supervisor) runContinuation(ctx context.Context, manifest *Manifest) (e
 	if err := s.network.Disable(ctx); err != nil {
 		return err
 	}
+	guest.Close() // Stop credential transport before the paused snapshot boundary.
 	if err := api.Request(ctx, "PATCH", "/vm", struct {
 		State string `json:"state"`
 	}{"Paused"}); err != nil {
