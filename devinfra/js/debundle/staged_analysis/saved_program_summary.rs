@@ -6,9 +6,10 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
+use analysis::analysis_inputs::saved::{SavedCallableSummary, SavedNativeIntegrity};
 use analysis::analysis_inputs::{
-    CallableSummary, NativeIntegrity, ResolvedArgumentInput, ResolvedBindingValueInput,
-    ResolvedNativeOperationInput, ValueInputEvidence,
+    ResolvedArgumentInput, ResolvedBindingValueInput, ResolvedNativeOperationInput,
+    ValueInputEvidence,
 };
 use analysis::facts::abstract_domain::value::Value;
 use analysis_codec::{ContextOrdinals, SavedBinding};
@@ -29,8 +30,10 @@ pub(super) struct SavedProgramSummary<'a> {
     members: Cow<'a, BTreeMap<String, BTreeMap<String, BTreeSet<String>>>>,
     fluent: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
     constructors: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
-    imported_callables: Cow<'a, BTreeMap<String, BTreeMap<String, CallableSummary>>>,
-    native_integrity: Cow<'a, Option<NativeIntegrity>>,
+    imported_callables: BTreeMap<String, BTreeMap<String, SavedCallableSummary<'a>>>,
+    /// Required field, nullable value: missing must differ from explicit None.
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    native_integrity: Option<SavedNativeIntegrity<'a>>,
     bundle_globals: Cow<'a, analysis::analysis_inputs::BundleGlobalNames>,
     value_inputs: BTreeMap<String, Vec<SavedValueInput>>,
     native_operation_inputs: Cow<'a, BTreeMap<String, Vec<ResolvedNativeOperationInput>>>,
@@ -86,6 +89,21 @@ impl<'a> SavedProgramSummary<'a> {
                 ))
             })
             .collect::<Result<_>>()?;
+        let imported_callables = summary
+            .imported_callables
+            .iter()
+            .map(|(chunk, callables)| {
+                (
+                    chunk.clone(),
+                    callables
+                        .iter()
+                        .map(|(name, callable)| {
+                            (name.clone(), SavedCallableSummary::snapshot(callable))
+                        })
+                        .collect(),
+                )
+            })
+            .collect();
         Ok(Self {
             bindings,
             value_inputs,
@@ -93,8 +111,11 @@ impl<'a> SavedProgramSummary<'a> {
             members: Cow::Borrowed(&summary.members),
             fluent: Cow::Borrowed(&summary.fluent),
             constructors: Cow::Borrowed(&summary.constructors),
-            imported_callables: Cow::Borrowed(&summary.imported_callables),
-            native_integrity: Cow::Borrowed(&summary.native_integrity),
+            imported_callables,
+            native_integrity: summary
+                .native_integrity
+                .as_ref()
+                .map(SavedNativeIntegrity::snapshot),
             bundle_globals: Cow::Borrowed(&summary.bundle_globals),
             native_operation_inputs: Cow::Borrowed(&summary.native_operation_inputs),
             stable_set_spreads: Cow::Borrowed(&summary.stable_set_spreads),
@@ -146,6 +167,19 @@ impl<'a> SavedProgramSummary<'a> {
                 ))
             })
             .collect::<Result<_>>()?;
+        let imported_callables = self
+            .imported_callables
+            .into_iter()
+            .map(|(chunk, callables)| {
+                Ok((
+                    chunk,
+                    callables
+                        .into_iter()
+                        .map(|(name, callable)| Ok((name, callable.restore()?)))
+                        .collect::<Result<_>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?;
         Ok(ProgramSummary {
             bindings,
             value_inputs,
@@ -153,8 +187,11 @@ impl<'a> SavedProgramSummary<'a> {
             members: self.members.into_owned(),
             fluent: self.fluent.into_owned(),
             constructors: self.constructors.into_owned(),
-            imported_callables: self.imported_callables.into_owned(),
-            native_integrity: self.native_integrity.into_owned(),
+            imported_callables,
+            native_integrity: self
+                .native_integrity
+                .map(SavedNativeIntegrity::restore)
+                .transpose()?,
             bundle_globals: self.bundle_globals.into_owned(),
             native_operation_inputs: self.native_operation_inputs.into_owned(),
             stable_set_spreads: self.stable_set_spreads.into_owned(),
@@ -202,5 +239,63 @@ impl SavedValueInput {
             initializer_span: self.initializer_span,
             initializer_ordinal: self.initializer_ordinal,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_census_field_requires_explicit_none_in_ordinary_serde() {
+        let summary = ProgramSummary {
+            bindings: BTreeMap::new(),
+            values: BTreeMap::new(),
+            members: BTreeMap::new(),
+            fluent: BTreeMap::new(),
+            constructors: BTreeMap::new(),
+            imported_callables: BTreeMap::new(),
+            native_integrity: None,
+            bundle_globals: Default::default(),
+            value_inputs: BTreeMap::new(),
+            native_operation_inputs: BTreeMap::new(),
+            stable_set_spreads: BTreeMap::new(),
+            inferred_set_constructions: BTreeMap::new(),
+            argument_inputs: BTreeMap::new(),
+            inline_callback_factories: BTreeMap::new(),
+            callback_factory_members: BTreeMap::new(),
+            retained_callback_factories: BTreeMap::new(),
+            retained_callback_factory_members: BTreeMap::new(),
+            retained_callback_constructors: BTreeMap::new(),
+            no_reentry_exports: BTreeMap::new(),
+            no_reentry_callback_exports: BTreeMap::new(),
+            no_reentry_members: BTreeMap::new(),
+            no_reentry_record_members: BTreeMap::new(),
+            namespace_independent_members: BTreeMap::new(),
+        };
+        let ordinals = ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>());
+        let mut purities = PuritySnapshot::default();
+        let saved = SavedProgramSummary::snapshot(&summary, &ordinals, &mut purities)
+            .expect("empty program summary snapshots");
+        let saved_json = serde_json::to_value(&saved).expect("saved summary serializes");
+        assert!(saved_json["native_integrity"].is_null());
+
+        let mut missing_field = saved_json.clone();
+        missing_field
+            .as_object_mut()
+            .expect("saved summary is a map")
+            .remove("native_integrity");
+        assert!(serde_json::from_value::<SavedProgramSummary<'static>>(missing_field).is_err());
+
+        let decoded: SavedProgramSummary<'static> =
+            serde_json::from_value(saved_json).expect("explicit None native census decodes");
+        let restored_purities = PuritySnapshot::default()
+            .finish()
+            .restore()
+            .expect("empty purity graph restores");
+        let restored = decoded
+            .restore(&ordinals, &restored_purities)
+            .expect("absent native census restores");
+        assert!(restored.native_integrity.is_none());
     }
 }

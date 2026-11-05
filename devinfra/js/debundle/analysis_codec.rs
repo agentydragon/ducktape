@@ -23,10 +23,9 @@
 //! Spans need no mapping: every chunk is parsed into its own `SourceMap`, so a
 //! `BytePos` is already an offset from that chunk's file start.
 //!
-//! Legacy report-only spans and trusted dependencies still use
-//! [`outside_artifact`] as their `skip_serializing_if`, which is true except
-//! while [`encode`] runs. Purity causes and spans use explicit saved data in
-//! `analysis::purity::saved`; this codec does not manage their sharing.
+//! Trusted proof dependencies and report-only spans use explicit saved
+//! projections at their analysis-owned boundaries; this codec only maps binding
+//! identities to stable context ordinals.
 //!
 //! Structs are encoded with field names (`rmp_serde`'s struct maps), which the
 //! existing `skip_serializing_if` and tagged-enum attributes require, then
@@ -116,7 +115,6 @@ impl Visit for ContextOrdinals {
 
 /// zstd-compressed named MessagePack of `value`, contexts as ordinals.
 pub fn encode<T: Serialize>(value: &T, ordinals: &ContextOrdinals) -> Result<Vec<u8>> {
-    let _scope = ArtifactScope::enter();
     let mut encoder = zstd::Encoder::new(Vec::new(), ZSTD_LEVEL)?;
     let mut serializer = rmp_serde::Serializer::new(&mut encoder).with_struct_map();
     value.serialize(Encoder {
@@ -131,7 +129,6 @@ pub fn encode<T: Serialize>(value: &T, ordinals: &ContextOrdinals) -> Result<Vec
 /// this process.
 pub fn decode<T: DeserializeOwned>(bytes: &[u8], ordinals: &ContextOrdinals) -> Result<T> {
     let mut reader = zstd::Decoder::new(bytes).context("decompress analysis output")?;
-    let _scope = ArtifactScope::enter();
     let value = {
         let mut deserializer = rmp_serde::Deserializer::new(&mut reader);
         T::deserialize(Decoder {
@@ -144,36 +141,6 @@ pub fn decode<T: DeserializeOwned>(bytes: &[u8], ordinals: &ContextOrdinals) -> 
     // or a later frame. Consume the remainder so corruption still fails.
     std::io::copy(&mut reader, &mut std::io::sink()).context("decompress analysis output")?;
     Ok(value)
-}
-
-// Remaining legacy report-field selection. Shared runtime identities belong
-// to explicit snapshot/restore state rather than this serialization scope.
-thread_local! {
-    static ARTIFACT: Cell<bool> = const { Cell::new(false) };
-}
-
-struct ArtifactScope;
-
-impl ArtifactScope {
-    fn enter() -> Self {
-        ARTIFACT.with(|artifact| {
-            let previous = artifact.replace(true);
-            assert!(!previous, "analysis codec calls do not nest");
-        });
-        Self
-    }
-}
-
-impl Drop for ArtifactScope {
-    fn drop(&mut self) {
-        ARTIFACT.with(|artifact| artifact.set(false));
-    }
-}
-
-/// `skip_serializing_if` for a field JSON reports leave out but the artifact
-/// keeps; pair it with `default`.
-pub fn outside_artifact<T: ?Sized>(_: &T) -> bool {
-    ARTIFACT.with(|artifact| !artifact.get())
 }
 
 fn encode_ordinal(ordinal: u32) -> i64 {

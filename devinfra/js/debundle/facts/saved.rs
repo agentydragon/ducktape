@@ -10,6 +10,10 @@ use source_identity::SourceUnitOrdinal;
 use super::statement_facts::{ConstructorFacts, HeapContentCells, SynchronousCalls};
 use super::*;
 use crate::purity::saved::{PuritySnapshot, RestoredPurities, SavedPurity};
+use crate::reports::saved::{
+    SavedExecutionPrecisionLoss, SavedLocalRecordFactoryRejection, SavedLocalRecordFactoryUse,
+    SavedNativeOperationInputUse, SavedReentryFreeOperationUse,
+};
 
 #[derive(Serialize, Deserialize)]
 pub struct SavedChunkFactAnalysis<'a> {
@@ -163,6 +167,11 @@ impl<'a> SavedStatementFacts<'a> {
 struct SavedSynchronousCalls<'a> {
     execution: Cow<'a, SynchronousCalls>,
     purity_disagreement: Option<SavedPurityDisagreement>,
+    local_record_factory_uses: Vec<SavedLocalRecordFactoryUse<'a>>,
+    local_record_factory_rejections: Vec<SavedLocalRecordFactoryRejection<'a>>,
+    precision_losses: Vec<SavedExecutionPrecisionLoss<'a>>,
+    native_operation_input_uses: Vec<SavedNativeOperationInputUse<'a>>,
+    author_host_contract_uses: Vec<SavedReentryFreeOperationUse<'a>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -181,11 +190,61 @@ impl<'a> SavedSynchronousCalls<'a> {
                     completed: purities.snapshot_value(&disagreement.completed),
                 }
             }),
+            local_record_factory_uses: calls
+                .local_record_factory_uses
+                .iter()
+                .map(SavedLocalRecordFactoryUse::snapshot)
+                .collect(),
+            local_record_factory_rejections: calls
+                .local_record_factory_rejections
+                .iter()
+                .map(SavedLocalRecordFactoryRejection::snapshot)
+                .collect(),
+            precision_losses: calls
+                .precision_losses
+                .iter()
+                .map(SavedExecutionPrecisionLoss::snapshot)
+                .collect(),
+            native_operation_input_uses: calls
+                .native_operation_input_uses
+                .iter()
+                .map(SavedNativeOperationInputUse::snapshot)
+                .collect(),
+            author_host_contract_uses: calls
+                .author_host_contract_uses
+                .iter()
+                .map(SavedReentryFreeOperationUse::snapshot)
+                .collect(),
         }
     }
 
     fn restore(self, purities: &RestoredPurities) -> Result<SynchronousCalls> {
         let mut calls = self.execution.into_owned();
+        calls.local_record_factory_uses = self
+            .local_record_factory_uses
+            .into_iter()
+            .map(SavedLocalRecordFactoryUse::restore)
+            .collect();
+        calls.local_record_factory_rejections = self
+            .local_record_factory_rejections
+            .into_iter()
+            .map(SavedLocalRecordFactoryRejection::restore)
+            .collect();
+        calls.precision_losses = self
+            .precision_losses
+            .into_iter()
+            .map(SavedExecutionPrecisionLoss::restore)
+            .collect();
+        calls.native_operation_input_uses = self
+            .native_operation_input_uses
+            .into_iter()
+            .map(SavedNativeOperationInputUse::restore)
+            .collect();
+        calls.author_host_contract_uses = self
+            .author_host_contract_uses
+            .into_iter()
+            .map(SavedReentryFreeOperationUse::restore)
+            .collect();
         calls.purity_disagreement = self
             .purity_disagreement
             .map(|disagreement| -> Result<_> {
@@ -214,6 +273,7 @@ mod tests {
     fn disagreement_verdicts_preserve_spans_and_shared_causes() {
         let cause = Arc::new(Purity::pure());
         let span = Span::new(BytePos(5), BytePos(13));
+        let precision_loss_span = Span::new(BytePos(17), BytePos(23));
         let calls = SynchronousCalls {
             purity_disagreement: Some(PurityCompletionDisagreement {
                 prepared: Purity::Pure {
@@ -231,8 +291,18 @@ mod tests {
                     }],
                 },
             }),
+            precision_losses: vec![crate::reports::schema::ExecutionPrecisionLoss {
+                reason: crate::reports::schema::ExecutionPrecisionLossReason::RecursiveInvocation,
+                reach: crate::reports::schema::HavocReach::Bounded,
+                statement_ordinal: SourceUnitOrdinal(3),
+                source_location: None,
+                span: precision_loss_span,
+            }],
             ..SynchronousCalls::default()
         };
+        let report = serde_json::to_value(&calls.precision_losses[0])
+            .expect("precision-loss report serializes");
+        assert!(report.get("span").is_none());
         let mut snapshot = PuritySnapshot::default();
         let saved = SavedSynchronousCalls::snapshot(&calls, &mut snapshot);
         let cause_id = snapshot.snapshot(&cause);
@@ -244,6 +314,7 @@ mod tests {
         ) = rmp_serde::from_slice(&bytes).expect("ordinary decode");
         let purities = graph.restore().expect("valid graph");
         let calls = saved.restore(&purities).expect("valid execution facts");
+        assert_eq!(calls.precision_losses[0].span, precision_loss_span);
         let disagreement = calls.purity_disagreement.expect("preserved disagreement");
         assert_eq!(disagreement.prepared, Purity::pure());
         let Purity::NotPure { reasons } = disagreement.completed else {

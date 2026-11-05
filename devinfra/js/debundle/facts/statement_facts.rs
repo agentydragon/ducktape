@@ -221,7 +221,9 @@ pub(crate) struct SynchronousCalls {
     // shared purity graph; the report projects this runtime field separately.
     #[serde(skip)]
     pub purity_disagreement: Option<crate::reports::schema::PurityCompletionDisagreement>,
+    #[serde(skip)]
     pub local_record_factory_uses: Vec<crate::reports::schema::LocalRecordFactoryUse>,
+    #[serde(skip)]
     pub local_record_factory_rejections: Vec<crate::reports::schema::LocalRecordFactoryRejection>,
     /// Internal call-site certificate produced only after the checked local
     /// constructor-factory proof and ordinary synchronous execution both
@@ -257,15 +259,18 @@ pub(crate) struct SynchronousCalls {
     /// path. This is a subset of `heap_contents` and is used only to check
     /// explicit commuting premises; the conservative heap order uses all cells.
     pub(crate) non_assumed_heap_accesses: HeapContentAccesses,
+    #[serde(skip)]
     pub precision_losses: Vec<crate::reports::schema::ExecutionPrecisionLoss>,
     pub native_integrity_checks: Vec<crate::reports::schema::NativeIntegrityCheck>,
     pub native_prototype_property_checks: Vec<crate::reports::schema::NativePrototypePropertyCheck>,
     pub native_prefix_observations: Vec<crate::reports::schema::NativePrefixObservation>,
     pub native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
+    #[serde(skip)]
     pub native_operation_input_uses: Vec<crate::reports::schema::NativeOperationInputUse>,
     pub inference_uses: Vec<crate::analysis_provenance::InferenceUse>,
     pub callback_factory_uses: Vec<CallbackFactoryUseFact>,
     pub returned_record_uses: Vec<ReturnedRecordUseFact>,
+    #[serde(skip)]
     pub author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
 }
 

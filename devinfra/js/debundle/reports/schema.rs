@@ -364,7 +364,7 @@ pub struct NativeMutationWitness {
     /// its containing branch unreachable in every covered activation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unreachable_branch: Option<NativeUnreachableBranch>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) span: swc_common::Span,
 }
 
@@ -426,11 +426,11 @@ pub struct NativeUnreachableBranch {
     pub wrapper_call_location: Option<SourceLocation>,
     pub callback_location: Option<SourceLocation>,
     pub guard_location: Option<SourceLocation>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) guard_span: swc_common::Span,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) wrapper_call_span: swc_common::Span,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) callback_span: swc_common::Span,
 }
 
@@ -482,7 +482,7 @@ pub struct NativePrototypeMutation {
     pub properties: Option<BTreeSet<String>>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub key_dependencies: BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) span: swc_common::Span,
 }
 
@@ -712,7 +712,7 @@ pub enum InitializerBindingEffectsUse {
 pub struct NativeOperationInputUse {
     pub evidence: crate::analysis_inputs::NativeOperationInputEvidence,
     pub source_location: Option<SourceLocation>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) span: swc_common::Span,
 }
 
@@ -724,7 +724,7 @@ pub struct LocalRecordFactoryUse {
     pub prototype_properties: Vec<String>,
     pub lexical_statement_ordinal: SourceUnitOrdinal,
     pub source_location: Option<SourceLocation>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) span: swc_common::Span,
 }
 
@@ -752,7 +752,7 @@ pub struct LocalRecordFactoryRejection {
     pub first_class_members_publication: Option<FirstClassMembersPublication>,
     pub lexical_statement_ordinal: SourceUnitOrdinal,
     pub source_location: Option<SourceLocation>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) span: swc_common::Span,
 }
 
@@ -940,7 +940,7 @@ pub enum RecordFactoryRejectionReason {
 pub struct ReentryFreeOperationUse {
     pub operation: spec::ReentryFreeOperation,
     pub source_location: Option<SourceLocation>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) span: swc_common::Span,
 }
 
@@ -982,7 +982,7 @@ pub struct ExecutionPrecisionLoss {
     pub statement_ordinal: SourceUnitOrdinal,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
-    #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
+    #[serde(skip)]
     pub(crate) span: swc_common::Span,
 }
 
