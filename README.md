@@ -12,8 +12,9 @@ report snapshots. The CI reports are:
   [evidence](visual-reliability/evidence.json),
   [source and observation window](visual-reliability/manifest.json).
 
-- **Cluster storage:** [inventory and storage options](storage/index.html), a dated
-  SeaweedFS and Piraeus report.
+- **Cluster storage:** [current inventory and storage options](storage/index.html), a read-only live inventory snapshot with last-reported usage and migration alternatives.
+- **Fixture and model audit:** [open findings](fixture-model-audit/index.html), with current acceptance criteria and source provenance.
+- **Agentplane protocol shapes:** [open criteria](agentplane-protocol-shapes/index.html), with service ownership boundaries and pinned source evidence.
 
 Each CI refresh replaces only its own directory's `index.html`, `evidence.json`,
 `manifest.json`, and optional `attribution.json`, through a PR against `gh-pages`.
