@@ -193,9 +193,14 @@ literal's own-key set and the current identity-store key set. This admits a
 local binding or alias to that object; a known added key, an unknown key or an
 escaped/mutated source falls back. Tracked writes that only replace values keep
 their value-set overapproximation. The Object binding and native integrity
-must remain intact. Applying a captured descriptor map still requires the
-separate ordinary Object prototype guard on its `Object.defineProperties`
-target.
+must remain intact. Applying a captured descriptor map also requires the
+ordinary Object prototype guard, recorded in the canonical `Object.defineProperties`
+row's protocol requirements, separately from its callee-identity slots.
+Native descriptor records inherit that prototype; descriptor conversion
+checks inherited `get`/`set` fields and can therefore execute code or throw.
+See [ToPropertyDescriptor](https://tc39.es/ecma262/2026/multipage/ecmascript-data-types-and-values.html#sec-topropertydescriptor).
+The eligible ordinary target, valid carrier and dynamic-scope checks remain
+separate operand/source obligations.
 
 `Object.getOwnPropertyNames` shares this exact-origin, static-shape and current
 prefix-state proof. It emits a dense array of exact string values in
@@ -207,26 +212,46 @@ admit the call as pure or exception-free. Each call derives its prefix fact in
 a fresh short-lived context, so later mutations cannot reuse an earlier
 projection.
 
-`Object.getOwnPropertyDescriptors` captures the current data-value identities
-and getter/setter callbacks without invoking accessors. Its carrier has no
-general readable descriptor-map shape. The sole composition modeled is a
-direct, unmodified `Object.defineProperties` call with that live carrier and an
-untainted, currently empty fresh ordinary target. It writes captured data
-values and distinct accessor callback metadata into the target's existing
-identity, so aliases observe the same result. A callsite whose repeated
-execution sees a conflicting source identity or descriptor values is
-invalidated rather than joined. Map member access or mutation, return, escape,
-or opaque consumption invalidates application while retaining its callback
-graph. Copied accessor reads promote their getter; opaque target use retains
-getter, setter and method callbacks. Data-valued object identities remain
-connected to later mutations. Under exact native identity and intact Object
-prototype guards, a result expression may retain argument 0's target identity
-even when application eligibility is not proved, and it also retains a
-possible throw. This return-shape fact does not authorize descriptor
-application or suppress opaque timing/effect fallback. The proof does not
-cover returned/readable maps,
-arbitrary descriptor edits, `Object.assign`, imported wrapper bodies, general
-purity or exception freedom.
+Ordered execution can derive conditional body effects from these checked
+prefix proofs. Names read object shape, descriptor capture also reads each
+captured data slot, and application reads a valid descriptor carrier and the
+target's shape before writing shape and named properties. These cells
+share allocation-site multiplicity: they grant no strong update or private
+birth proof. Callee selection and argument evaluation retain separate coverage
+obligations; the canonical rows keep unknown unconditional body effects.
+
+`Object.getOwnPropertyDescriptors` captures data-value identities and
+getter/setter callbacks without invoking accessors. A live carrier can be
+applied to a settled ordinary extensible target whose overwritten properties
+are configurable. The initial literal witness proves known attributes only
+while integrity, escape and pooled-reentry guards survive; otherwise captured
+attributes remain unknown. Current keys must match the indexed source shape,
+and a source with applied accessor metadata cannot reuse stale literal Data
+syntax. Heap values and accessor callbacks are weak unions, not strong updates.
+Conflicting repeated captures invalidate the carrier but retain callbacks.
+
+A normally completing definition can supply a per-value native descriptor
+postcondition. The checked target identity and heap epoch must still match
+when consumed after every argument has executed. Const-local bindings may
+carry it; ordinary callable boundaries and author wrapper projections do not.
+Definitions always advance the epoch, even when values remain unchanged.
+This proof never refines every runtime object at a pooled origin.
+
+The bounded two-argument `Object.assign` transfer uses the canonical row's
+`ToObject`, own-key, descriptor, `Get` and strict `Set` obligations. It admits
+only a checked source of enumerable own data and a target with writable data
+slots or extensible absent slots under the ordinary Object prototype guard.
+An absent `__proto__` key is refused. Getters, setters, proxies, unknown flags
+and failed writes keep fallback. The transfer composes source-shape/data reads
+and target-shape/property writes through the same heap and effect model in
+application and provider contexts. The row cannot certify general purity.
+See [Object.assign](https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-object.assign).
+
+Map member access/mutation, return, escape and opaque consumption still revoke
+application while retaining the callback graph. A result-identity projection
+without complete operation proof retains possible throws and unknown effects.
+Readable maps, arbitrary descriptor edits and general exception freedom remain
+unsupported.
 
 ## Source-composed returned records
 
@@ -466,17 +491,19 @@ accessor, reentry and taint guards remain required.
 
 For checked top-level Set initializer operations, `SetIterableProof` also
 publishes one typed source-operand projection keyed by the exact constructor
-span. It names the immediate array-literal allocation site and its source-unit
-occurrence; protocol dependencies remain on the canonical constructor proof.
-This source projection is consumed by native-row purity, heap-content
-classification (including vendor pruning), and the execution adapter. It does
-not contain evaluated values, array length, Set size, iteration order,
-multiplicity after Set deduplication, or a reusable prefix snapshot. The
-`IterateNative` transfer still matches the runtime source allocation against
-the projected origin and derives exact slots only from the current settled
-prefix; otherwise it may retain only primitive-only knowledge. Borrowed array
-aliases with no immediate literal source remain on the separate checked
-alias-purity path.
+span. For immediate literals it names the argument-array allocation site. For
+a borrowed const-array root or checked alias, it names the exact operand
+binding, root allocation site, and allocation owner; the constructor owner
+remains separate. Protocol dependencies remain on the canonical constructor
+proof. Native-row purity,
+heap-content classification (including vendor pruning), and the execution
+adapter consume this projection. It contains no evaluated values, runtime
+slots, array length, Set size, iteration order, multiplicity, or reusable
+prefix snapshot. `IterateNative` matches the runtime source allocation at the
+constructor prefix and derives exact slots only from the current settled
+prefix; otherwise it may retain only primitive-only knowledge. Transitive
+const aliases share this projection. Static-member arrays retain their
+separate checked path.
 
 After successful admission, the exact native Fresh Set row can retain a Set
 allocation kind/origin on its normal branch. This does not model Set contents,
@@ -711,8 +738,12 @@ the single argument of a standard `new Set(...)` call. Any other use rejects
 the whole alias chain, including member access, assignment, publication,
 passing it to another call, or capture by an unrelated expression. A
 chunk-wide direct `eval` also disables the proof. The implementation records
-the approved constructor spans in the existing structural analysis; purity and
-synchronous callback analysis consume that same proof.
+the approved constructor spans in the existing structural analysis. Direct
+roots and checked alias-chain operands consumed by a top-level constructor use
+the shared source-operand projection. The use census rejects aliases that
+escape, mutate, or receive descriptor changes. Primitive static-member array
+literals keep their separate structural proof. Purity and synchronous
+callback analysis consume the same source-use proof.
 
 Under A11, `%Set%` obtains the iterable and calls its built-in `add` for each
 item. The standard Array iterator reads the indexed own data properties of the

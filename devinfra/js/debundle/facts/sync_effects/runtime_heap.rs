@@ -13,6 +13,10 @@ pub(super) enum NativeIterableInput {
     Borrowed,
     /// Canonical immediate argument-array syntax, not origin uniqueness.
     ImmediateArrayLiteral(u32),
+    /// A source-checked const array binding, still read from the runtime prefix.
+    BorrowedConstArray {
+        allocation_site: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]

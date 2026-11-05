@@ -1245,6 +1245,14 @@ impl ChunkExportPurityBuilder {
         self
     }
 
+    pub fn with_source_callable_members(mut self, export: &str, members: &[&str]) -> Self {
+        self.purity.source_callable_members.insert(
+            export.to_string(),
+            members.iter().map(|s| (*s).to_string()).collect(),
+        );
+        self
+    }
+
     pub fn build(self) -> (&'static str, spec::ChunkExportPurity) {
         (self.chunk, self.purity)
     }
@@ -1549,3 +1557,5 @@ export { renderCard, decoratePrimary, decorateSecondary };
         ],
     )
 }
+
+pub const DESCRIPTOR_COPY_PROVIDER: &str = "export function wrap(definition) { const create = definition.create; const extra = { create: (...args) => create.call(definition, ...args), call: () => create.call(definition) }; return Object.assign(Object.defineProperties({ enabled: () => true, userFacingName: () => definition.name }, Object.getOwnPropertyDescriptors(definition)), extra); }";

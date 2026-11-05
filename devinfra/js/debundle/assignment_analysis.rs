@@ -64,12 +64,9 @@ pub struct AssignmentAnalysis {
     /// downstream diagnostics reuse the same atomic group grouping that
     /// factor assembly validated.
     atomic_groups: Vec<AtomicGroup>,
-    /// Atomic-group conflicts the spec demands but the
-    /// constraining-edge SCC analysis forbids — populated by
-    /// `assignment_assembly` when YAML claims split an atomic group across
-    /// destination modules. Non-empty means the spec is unrealizable
-    /// by construction; the materializer bails on these before
-    /// emitting code.
+    /// Atomic-group conflicts populated by `assignment_assembly` when YAML
+    /// claims split a group across destinations. The final assessment separates
+    /// structural blockers from semantic-order comparison constraints.
     assembly_conflicts: Vec<AtomicGroupConflict>,
     module_quotient: ModuleQuotient,
     /// SCC partition of `module_quotient` in `tarjan_scc` reverse-
@@ -86,16 +83,17 @@ pub struct AssignmentAnalysis {
     realizability: OnceLock<RealizabilityVerdict>,
 }
 
-/// An immutable assignment whose atomic-group, schedule, and rebinding checks
-/// passed. The borrow prevents changing the assignment while lowering uses it.
+/// An immutable assignment whose complete effect and structural assessment
+/// accepted the exact emitted order. The borrow keeps that assignment fixed.
 #[derive(Debug)]
 pub struct ValidatedAssignment<'a> {
     assignment_analysis: &'a AssignmentAnalysis,
     validation: AssignmentValidation,
+    assessment: CandidateRelocationAssessment,
 }
 
-impl ValidatedAssignment<'_> {
-    pub fn assignment_analysis(&self) -> &AssignmentAnalysis {
+impl<'a> ValidatedAssignment<'a> {
+    pub fn assignment_analysis(&self) -> &'a AssignmentAnalysis {
         self.assignment_analysis
     }
 
@@ -103,8 +101,8 @@ impl ValidatedAssignment<'_> {
         &self.validation.report
     }
 
-    pub fn cross_destination_rebinds(&self) -> &[CrossRebindEdge] {
-        &self.validation.verdict.cross_rebinds
+    pub fn assessment(&self) -> &CandidateRelocationAssessment {
+        &self.assessment
     }
 }
 
@@ -117,52 +115,37 @@ pub struct RejectedAssignment<'a> {
     validation: Box<AssignmentValidation>,
 }
 
-impl RejectedAssignment<'_> {
-    pub fn assignment_analysis(&self) -> &AssignmentAnalysis {
+impl<'a> RejectedAssignment<'a> {
+    pub fn assignment_analysis(&self) -> &'a AssignmentAnalysis {
         self.assignment_analysis
     }
 
     pub fn report(&self) -> &AssignmentReport {
         &self.validation.report
     }
-
-    pub fn cross_destination_rebinds(&self) -> &[CrossRebindEdge] {
-        &self.validation.verdict.cross_rebinds
-    }
 }
 
-/// The authoritative assignment gate and both diagnostic projections of the
-/// same concrete candidate. Assessment always runs; report selection controls
-/// only serialization. Effect coverage remains diagnostic until all required
-/// owner domains can discharge the relocation obligations.
+/// One final candidate assessment over the exact immutable assignment. Legacy
+/// graph and edge validation are retained only as diagnostic comparisons.
 #[derive(Debug)]
 pub struct CandidateEvaluation<'a> {
-    validation: Result<ValidatedAssignment<'a>, RejectedAssignment<'a>>,
+    assignment_analysis: &'a AssignmentAnalysis,
+    legacy_validation: AssignmentValidation,
     translation_validation: TranslationValidationResult,
     candidate_assessment: CandidateRelocationAssessment,
 }
 
 impl<'a> CandidateEvaluation<'a> {
-    pub fn assignment_analysis(&self) -> &AssignmentAnalysis {
-        match &self.validation {
-            Ok(validated) => validated.assignment_analysis(),
-            Err(rejected) => rejected.assignment_analysis(),
-        }
-    }
-
-    pub fn validation(&self) -> &Result<ValidatedAssignment<'a>, RejectedAssignment<'a>> {
-        &self.validation
+    pub fn assignment_analysis(&self) -> &'a AssignmentAnalysis {
+        self.assignment_analysis
     }
 
     pub fn is_rejected(&self) -> bool {
-        self.validation.is_err()
+        self.candidate_assessment.status() != CandidateRelocationStatus::AcceptedWithinCheckedScope
     }
 
     pub fn report(&self) -> &AssignmentReport {
-        match &self.validation {
-            Ok(validated) => validated.report(),
-            Err(rejected) => rejected.report(),
-        }
+        &self.legacy_validation.report
     }
 
     pub fn translation_validation(&self) -> &TranslationValidationResult {
@@ -174,14 +157,24 @@ impl<'a> CandidateEvaluation<'a> {
     }
 
     pub fn into_validation(self) -> Result<ValidatedAssignment<'a>, RejectedAssignment<'a>> {
-        self.validation
+        if self.is_rejected() {
+            Err(RejectedAssignment {
+                assignment_analysis: self.assignment_analysis,
+                validation: Box::new(self.legacy_validation),
+            })
+        } else {
+            Ok(ValidatedAssignment {
+                assignment_analysis: self.assignment_analysis,
+                validation: self.legacy_validation,
+                assessment: self.candidate_assessment,
+            })
+        }
     }
 
-    /// Evaluate legacy translation validation and candidate effects/placement
-    /// against the same accepted or rejected assignment. The visitors stream
-    /// complete evidence without retaining a second copy of its rows.
+    /// Assess every final candidate, regardless of report output. The visitors
+    /// export the same sweeps without retaining a second copy of their rows.
     pub fn evaluate<E>(
-        validation: Result<ValidatedAssignment<'a>, RejectedAssignment<'a>>,
+        assignment_analysis: &'a AssignmentAnalysis,
         facts: &[analysis::facts::StatementFacts],
         projection: &analysis::PlacementProjection<'_>,
         translation_validation_visitor: Option<
@@ -189,22 +182,15 @@ impl<'a> CandidateEvaluation<'a> {
         >,
         effect_visitor: Option<&mut impl FnMut(&EffectConflictDiagnosticRow<'_>) -> Result<(), E>>,
     ) -> Result<Self, E> {
-        let assignment_analysis = match &validation {
-            Ok(assignment) => assignment.assignment_analysis,
-            Err(rejected) => rejected.assignment_analysis,
-        };
-        let assignment_validation = match &validation {
-            Ok(assignment) => &assignment.validation,
-            Err(rejected) => rejected.validation.as_ref(),
-        };
+        let legacy_validation = assignment_analysis.validate_with_verdict();
         let emitted_order = assignment_analysis.candidate_emitted_order();
         let translation_validation = assignment_analysis.translation_validation(
-            assignment_validation,
+            &legacy_validation,
             &emitted_order,
             translation_validation_visitor,
         )?;
         let candidate_assessment = assignment_analysis.candidate_relocation_assessment(
-            assignment_validation,
+            &legacy_validation,
             facts,
             &translation_validation,
             &emitted_order,
@@ -212,7 +198,8 @@ impl<'a> CandidateEvaluation<'a> {
             effect_visitor,
         )?;
         Ok(Self {
-            validation,
+            assignment_analysis,
+            legacy_validation,
             translation_validation,
             candidate_assessment,
         })
@@ -267,8 +254,8 @@ impl StructuralPlacementCoverage {
 #[derive(Debug, Clone, Serialize)]
 pub struct StructuralPlacementAssessment {
     pub status: StructuralPlacementStatus,
-    /// Reads the same typed outcome that `EmissionPlacement::from_projection`
-    /// uses; diagnostic counts do not reconstruct the emitter's decision.
+    /// Reads the same typed projection consumed by emission; diagnostic counts
+    /// do not reconstruct the emitter's decision.
     pub emission_mappable: bool,
     pub coverage: StructuralPlacementCoverage,
     pub projection_violations: Vec<analysis::PlacementProjectionViolation>,
@@ -299,14 +286,80 @@ pub struct CandidateRelocationAssessmentReport {
     pub effect: EffectRelocationAssessment,
     pub status: CandidateRelocationStatus,
     pub legacy_gate_accepts: bool,
-    /// The current legacy gate still rejects semantic-order-only SCCs. This
-    /// field distinguishes that remaining veto from effect/placement blocks.
+    /// Diagnostic disagreement: the legacy graph rejects semantic-order SCCs
+    /// independently of the final effect/structural verdict.
     pub legacy_gate_ordering_veto: bool,
     pub placement: StructuralPlacementAssessment,
 }
 
-/// This assessment never claims acceptance while the structural coverage
-/// declaration is incomplete. The current legacy gate remains authoritative.
+/// One application verdict with every required materialized chunk's actual
+/// effect/placement assessment. Construction rejects partial or repeated sets.
+#[derive(Debug, Clone, Serialize)]
+pub struct ApplicationRelocationAssessmentReport {
+    pub status: CandidateRelocationStatus,
+    pub chunks: BTreeMap<String, CandidateRelocationAssessmentReport>,
+}
+
+#[derive(Debug, Error)]
+pub enum ApplicationAssessmentError {
+    #[error("candidate assessment contains unexpected materialized chunk {0:?}")]
+    UnexpectedChunk(String),
+    #[error("candidate assessment repeats materialized chunk {0:?}")]
+    DuplicateChunk(String),
+    #[error("candidate assessment is missing materialized chunks {0:?}")]
+    MissingChunks(Vec<String>),
+}
+
+impl ApplicationRelocationAssessmentReport {
+    pub fn from_chunks(
+        expected: &BTreeSet<String>,
+        assessments: Vec<(String, CandidateRelocationAssessmentReport)>,
+    ) -> Result<Self, ApplicationAssessmentError> {
+        let mut chunks = BTreeMap::new();
+        for (chunk, report) in assessments {
+            if !expected.contains(&chunk) {
+                return Err(ApplicationAssessmentError::UnexpectedChunk(chunk));
+            }
+            if chunks.insert(chunk.clone(), report).is_some() {
+                return Err(ApplicationAssessmentError::DuplicateChunk(chunk));
+            }
+        }
+        let missing = expected
+            .iter()
+            .filter(|chunk| !chunks.contains_key(*chunk))
+            .cloned()
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            return Err(ApplicationAssessmentError::MissingChunks(missing));
+        }
+        let mut effect_blocked = false;
+        let mut placement_blocked = false;
+        let mut incomplete = false;
+        for report in chunks.values() {
+            match report.status {
+                CandidateRelocationStatus::BlockedByEffect => effect_blocked = true,
+                CandidateRelocationStatus::BlockedByPlacement => placement_blocked = true,
+                CandidateRelocationStatus::BlockedByEffectAndPlacement => {
+                    effect_blocked = true;
+                    placement_blocked = true;
+                }
+                CandidateRelocationStatus::Incomplete => incomplete = true,
+                CandidateRelocationStatus::AcceptedWithinCheckedScope => {}
+            }
+        }
+        let status = match (effect_blocked, placement_blocked, incomplete) {
+            (true, true, _) => CandidateRelocationStatus::BlockedByEffectAndPlacement,
+            (true, false, _) => CandidateRelocationStatus::BlockedByEffect,
+            (false, true, _) => CandidateRelocationStatus::BlockedByPlacement,
+            (false, false, true) => CandidateRelocationStatus::Incomplete,
+            (false, false, false) => CandidateRelocationStatus::AcceptedWithinCheckedScope,
+        };
+        Ok(Self { status, chunks })
+    }
+}
+
+/// Final relocation verdict for the assessed order. Acceptance requires complete
+/// effect and structural obligations and actual emitter placement maps.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CandidateRelocationStatus {
@@ -318,7 +371,7 @@ pub enum CandidateRelocationStatus {
 }
 
 impl CandidateRelocationAssessment {
-    pub fn report(&self) -> CandidateRelocationAssessmentReport {
+    pub fn status(&self) -> CandidateRelocationStatus {
         let effect_blocked = matches!(
             self.effect.assessment.decision,
             crate::realizability::EffectRelocationDecision::Conflict { .. }
@@ -327,8 +380,12 @@ impl CandidateRelocationAssessment {
             self.effect.assessment.decision,
             crate::realizability::EffectRelocationDecision::Accepted { .. }
         );
+        candidate_relocation_status(effect_blocked, effect_accepted, &self.placement)
+    }
+
+    pub fn report(&self) -> CandidateRelocationAssessmentReport {
         CandidateRelocationAssessmentReport {
-            status: candidate_relocation_status(effect_blocked, effect_accepted, &self.placement),
+            status: self.status(),
             legacy_gate_accepts: self.effect.report.legacy_gate_accepts,
             legacy_gate_ordering_veto: has_legacy_gate_ordering_veto(&self.placement),
             effect: self.effect.assessment.clone(),
@@ -349,7 +406,11 @@ fn candidate_relocation_status(
         (true, true) => CandidateRelocationStatus::BlockedByEffectAndPlacement,
         (true, false) => CandidateRelocationStatus::BlockedByEffect,
         (false, true) => CandidateRelocationStatus::BlockedByPlacement,
-        (false, false) if !effect_accepted || !placement.coverage.is_complete() => {
+        (false, false)
+            if !effect_accepted
+                || !placement.coverage.is_complete()
+                || !placement.emission_mappable =>
+        {
             CandidateRelocationStatus::Incomplete
         }
         (false, false) => CandidateRelocationStatus::AcceptedWithinCheckedScope,
@@ -626,11 +687,9 @@ impl AssignmentAnalysis {
         )
     }
 
-    /// Translation validation of the emitted order beside the gate's verdict
-    /// in `report`. The gate stays authoritative. With conflicts read off the
-    /// gate's ordering edges the two must agree, so with `DEBUNDLE_TV_ORACLE`
-    /// set a disagreement panics: it is a bug in the loader model, the sweep
-    /// or the gate.
+    /// Diagnostic edge translation validation beside the legacy graph verdict.
+    /// `DEBUNDLE_TV_ORACLE` compares these two legacy checks, independently of
+    /// the final effect/placement status.
     fn translation_validation<E>(
         &self,
         validation: &AssignmentValidation,
@@ -709,23 +768,6 @@ impl AssignmentAnalysis {
                 projection,
             ),
             effect,
-        })
-    }
-
-    pub fn validate_for_emission(&self) -> Result<ValidatedAssignment<'_>, RejectedAssignment<'_>> {
-        let validation = self.validate_with_verdict();
-        if !validation.verdict.is_realizable()
-            || !validation.report.atomic_group_conflicts.is_empty()
-            || !validation.report.cycles.is_empty()
-        {
-            return Err(RejectedAssignment {
-                assignment_analysis: self,
-                validation: Box::new(validation),
-            });
-        }
-        Ok(ValidatedAssignment {
-            assignment_analysis: self,
-            validation,
         })
     }
 

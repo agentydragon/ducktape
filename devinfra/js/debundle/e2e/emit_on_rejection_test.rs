@@ -1,4 +1,4 @@
-//! `debundle run --emit-on-rejection`: a spec the realizability gate rejects
+//! `debundle run --emit-on-rejection`: a rejected relocation
 //! still writes its logical-module tree for reading, marked unrunnable
 //! (SPEC.md § Accepted output). Without the flag the same rejection writes
 //! diagnostics only.
@@ -58,20 +58,21 @@ fn accepted_split() -> FixtureOpts<'static> {
 #[test]
 fn rejection_writes_marked_unrunnable_tree_without_harness() {
     let rejected = run_emit_on_rejection_fixture(rejected_split());
-    let cycles = rejected.report_path("cycles.json");
-    assert!(cycles.is_file(), "gate evidence is still written");
+    let assessment = rejected.report_path("candidate_relocation_assessment.json");
+    assert!(assessment.is_file(), "final assessment is still written");
+    assert!(rejected.report_path("cycles.json").is_file());
 
     let app_root = rejected.app_root();
     for module in MODULE_FILES {
         assert!(app_root.join(module).is_file(), "missing {module}");
     }
     assert_module_source(&app_root, MODULE_FILES[1], &["sub_a"], &[]);
-    assert_gate_rejected_banner(&rejected.entry_path(), &cycles);
+    assert_gate_rejected_banner(&rejected.entry_path(), &assessment);
 
     let marker = std::fs::read_to_string(rejected.gate_rejected_marker())
         .expect("GATE_REJECTED marker at the output root");
     assert!(
-        marker.contains(cycles.to_str().unwrap()),
+        marker.contains(assessment.to_str().unwrap()),
         "marker must name the gate report:\n{marker}"
     );
 

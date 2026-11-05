@@ -691,12 +691,23 @@ pub enum BindingEffectAuthorityReport {
     LegacyExecution { complete: bool },
     /// The exact source-only initializer assertion was applied.
     AuthorSourceOnly,
+    /// Complete operation effects, including a retained depth-limited suffix.
+    /// Execution and returned-value precision remain incomplete.
+    RetainedEffectClosure {
+        receipt: Box<LexicalBindingEffectReceipt>,
+        dependencies: crate::analysis_inputs::ProofDependencies,
+        precision_losses: Vec<ExecutionPrecisionLoss>,
+    },
     /// Ordered root execution started, but did not seal typed lexical proof.
     OrderedRootInitializerUncovered {
         owner: SourceUnitOrdinal,
         binding: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         initializer_span: Option<swc_common::Span>,
+    },
+    OrderedRootExpressionUncovered {
+        owner: SourceUnitOrdinal,
+        expression_span: swc_common::Span,
     },
     /// Typed operation evidence sealed for the exact ordered root owner/body.
     OperationReceipt {
@@ -707,8 +718,8 @@ pub enum BindingEffectAuthorityReport {
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LexicalBindingEffectReceipt {
     pub owner: SourceUnitOrdinal,
-    pub binding: String,
-    pub initializer_span: Option<swc_common::Span>,
+    #[serde(flatten)]
+    pub root: LexicalEffectRoot,
     pub read_dependencies: crate::analysis_inputs::ProofDependencies,
     pub rebind_dependencies: crate::analysis_inputs::ProofDependencies,
     /// Flat exact call edges retain each consuming call-site, caller body,
@@ -718,19 +729,47 @@ pub struct LexicalBindingEffectReceipt {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "root_kind", rename_all = "snake_case")]
+pub enum LexicalEffectRoot {
+    BindingInitializer {
+        binding: String,
+        initializer_span: swc_common::Span,
+    },
+    ExpressionStatement {
+        expression_span: swc_common::Span,
+    },
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LexicalBindingEffectBody {
     RootInitializer {
         owner: SourceUnitOrdinal,
         initializer_span: swc_common::Span,
     },
+    RootExpression {
+        owner: SourceUnitOrdinal,
+        expression_span: swc_common::Span,
+    },
     Callable {
         key: u32,
         owner: SourceUnitOrdinal,
     },
+    ImportedCallable {
+        defining_module: String,
+        export: String,
+        local: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        member: Option<String>,
+        key: u32,
+    },
     Native {
         intrinsic: crate::analysis_inputs::NativeIntrinsic,
+        #[serde(skip_serializing_if = "Option::is_none")]
         property: Option<String>,
+    },
+    NativeConstruction {
+        intrinsic: crate::analysis_inputs::NativeIntrinsic,
     },
 }
 

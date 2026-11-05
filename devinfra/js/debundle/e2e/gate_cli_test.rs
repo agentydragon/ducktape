@@ -188,8 +188,8 @@ fn atomic_group_rejection_also_writes_current_cycle_report() {
     assert_eq!(summary["atomic_group_conflicts"], 1, "{summary}");
     assert_eq!(summary["cycles"], 1, "{summary}");
     assert!(
-        rejected.stderr.contains("atomic-group conflict"),
-        "the atomic rejection remains primary: {}",
+        rejected.stderr.contains("candidate relocation"),
+        "the final relocation assessment must be primary: {}",
         rejected.stderr
     );
     assert!(

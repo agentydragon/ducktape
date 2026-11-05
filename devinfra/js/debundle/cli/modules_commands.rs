@@ -158,11 +158,12 @@ enum ModulesNsCommand {
     /// `anonymous_statements:` into the target (created if needed);
     /// source `comment:` fields concatenate into the target's with a
     /// `--- from <source>:` divider, and `merged from: <sources>`
-    /// provenance lands in the target's `note:`. Validates the
-    /// post-merge assignment with the realizability gate (requires
-    /// `--graph` unless `--no-verify`). `--dry-run --analysis` additionally
-    /// reports statement-order commutation for the exact merged candidate; it
-    /// requires the full tree transform context and does not change the gate.
+    /// provenance lands in the target's `note:`. Resolves exact post-merge
+    /// claims with `--graph`; graph checks do not decide final acceptance.
+    /// `--dry-run` without `--analysis` reports `needs_full_assessment`; a
+    /// verified write requires the canonical candidate assessment and full
+    /// tree transform context. `--no-verify` writes an explicitly unvalidated
+    /// edit.
     Merge(Box<MergeArgs>),
     /// Delete one or more module YAML files. Refuses non-empty modules unless `--force`.
     ///
@@ -171,11 +172,12 @@ enum ModulesNsCommand {
     /// atomically: every path is validated up front; if any check fails,
     /// nothing is deleted. All-empty deletions cannot change the
     /// assignment, so the gate is a no-op; `--force` deletions of
-    /// non-empty modules run the realizability gate against the
-    /// post-delete spec (requires `--graph` unless `--no-verify`).
-    /// `--dry-run --analysis` additionally reports statement-order
-    /// commutation for the exact post-delete candidate. It requires the full
-    /// tree transform context and does not change the legacy gate.
+    /// non-empty modules check claims against the
+    /// post-delete claims with `--graph`; graph checks do not decide final
+    /// acceptance. `--dry-run` without `--analysis` reports
+    /// `needs_full_assessment`; a verified ownership write requires the
+    /// canonical candidate assessment and full tree transform context.
+    /// `--no-verify` writes an explicitly unvalidated edit.
     Delete(Box<DeleteArgs>),
     /// Emit module-assignment proposals derived from the atomic DAG.
     ///
@@ -196,9 +198,8 @@ enum ModulesNsCommand {
     /// before they can land.
     Propose(PlanWorkArgs),
     /// Claim reviewed residual proposal bindings using proven structural selectors.
-    /// `--dry-run --analysis` additionally reports statement-order commutation for
-    /// the exact candidate using the full tree transform context; it does not
-    /// change the realizability gate.
+    /// `--dry-run --analysis` additionally reports the exact candidate using the full tree transform context; this is
+    /// required for a verified write.
     Apply(ModulesApplyArgs),
     /// Move reviewed existing source-unit claims as one validated batch.
     ///
@@ -206,12 +207,11 @@ enum ModulesNsCommand {
     /// rows. Omitted source units keep their current module. This command moves
     /// existing selectors and metadata without synthesizing selectors, then
     /// resolves the entire scoped spec again and requires the complete source-unit
-    /// assignment to match the requested assignment before running the normal
-    /// realizability and atomic-group gates. Import/export scaffolding and
+    /// assignment to match the requested assignment before requiring the canonical assessment for a verified write. Import/export scaffolding and
     /// residual source units cannot be moved. Module comments and notes stay with
     /// their original YAML module. `--dry-run --analysis` additionally reports
-    /// statement-order commutation for the exact candidate; it requires the full
-    /// tree transform context and does not change the gate verdict.
+    /// the exact candidate; a verified write requires the full tree transform
+    /// context.
     Refine(ModulesRefineArgs),
     /// Report a read-only, gate-checked refinement of existing module groups.
     ///
@@ -318,8 +318,8 @@ struct ModulesRefineArgs {
     #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
     tree_config: Option<PathBuf>,
 
-    /// Opt-in report-only relocation assessment using the complete transform
-    /// context and a verified staged analysis artifact. Requires --dry-run.
+    /// Opt-in canonical candidate assessment using the complete transform
+    /// context and a verified staged analysis artifact. Verified writes require --analysis; dry runs may omit it.
     #[command(flatten)]
     effect_assessment: CandidateEffectAssessmentExistingTreeArgs,
 
@@ -678,9 +678,11 @@ fn run_modules_refine(
         source_root: Some(args.source_root.clone()),
         format: args.format,
     };
-    let candidate_context =
-        args.effect_assessment
-            .resolve(&edit, source_context, args.tree_config.as_deref())?;
+    let candidate_context = args.effect_assessment.resolve_for_verified_write(
+        &edit,
+        source_context,
+        args.tree_config.as_deref(),
+    )?;
     let effect_assessment_context =
         candidate_context
             .as_ref()
@@ -711,13 +713,21 @@ fn run_modules_refine(
         }
     };
     match OutputFormat::resolve(args.format) {
-        OutputFormat::Text => println!(
-            "{}: {} source_unit(s), {} file(s) written, {} file(s) deleted",
-            outcome.outcome.action,
-            outcome.source_units_reassigned,
-            outcome.outcome.files_written.len(),
-            outcome.outcome.files_deleted.len(),
-        ),
+        OutputFormat::Text => {
+            let assessment = if outcome.outcome.needs_full_assessment {
+                "; needs_full_assessment"
+            } else {
+                ""
+            };
+            println!(
+                "{}: {} source_unit(s), {} file(s) written, {} file(s) deleted{}",
+                outcome.outcome.action,
+                outcome.source_units_reassigned,
+                outcome.outcome.files_written.len(),
+                outcome.outcome.files_deleted.len(),
+                assessment,
+            );
+        }
         format => print_outcome_json(&outcome, format)?,
     }
     Ok(())
@@ -766,8 +776,22 @@ pub(super) fn run(
 ) -> Result<()> {
     match args.command {
         ModulesNsCommand::Comment(c) => run_module_comment_cmd(c),
-        ModulesNsCommand::Merge(m) => run_merge(*m, source_context, analysis_engine_sha256),
-        ModulesNsCommand::Delete(d) => run_delete(*d, source_context, analysis_engine_sha256),
+        ModulesNsCommand::Merge(m) => {
+            let format = m.edit.format;
+            let result = run_merge(*m, source_context, analysis_engine_sha256);
+            if let Err(err) = &result {
+                emit_gate_rejection_json("merge", format, err);
+            }
+            result
+        }
+        ModulesNsCommand::Delete(d) => {
+            let format = d.edit.format;
+            let result = run_delete(*d, source_context, analysis_engine_sha256);
+            if let Err(err) = &result {
+                emit_gate_rejection_json("delete", format, err);
+            }
+            result
+        }
         ModulesNsCommand::Propose(p) => {
             let report = run_plan_work_report(&p, source_context)?;
             emit_report(
@@ -779,7 +803,12 @@ pub(super) fn run(
         }
         ModulesNsCommand::Decompose(args) => run_module_decompose(args, source_context),
         ModulesNsCommand::Apply(args) => {
-            run_modules_apply(args, source_context, analysis_engine_sha256)
+            let format = args.format;
+            let result = run_modules_apply(args, source_context, analysis_engine_sha256);
+            if let Err(err) = &result {
+                emit_gate_rejection_json("apply", format, err);
+            }
+            result
         }
         ModulesNsCommand::Refine(args) => {
             run_modules_refine(args, source_context, analysis_engine_sha256)

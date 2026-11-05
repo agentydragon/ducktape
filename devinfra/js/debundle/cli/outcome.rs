@@ -6,18 +6,16 @@
 //! json|ndjson`, or stdout is a pipe): the shared core is
 //! `verb` / `action` / `gate` / `files_written` / `files_deleted`;
 //! verb-specific fields (`moves_applied`, `binding`, …) flatten in
-//! alongside it. When the realizability gate refuses the edit, the
-//! verbs instead print a [`GateRejectionOutcome`] (`action:
-//! "rejected"`) carrying the canonical rejection projections — the
-//! same `BlockingSccEntry` / `AtomicGroupConflictReport` wire shapes
-//! `cycles.json` / `atomic_group_conflicts.json` use — and exit
-//! non-zero. See docs/cli.md § "Rejection diagnostics".
+//! alongside it. A refused verified write carries the canonical candidate
+//! assessment that caused the refusal. The historical graph-gate rejection
+//! envelope remains for diagnostic callers. See docs/cli.md § "Rejection diagnostics".
 
 use anyhow::Result;
 use peel::OutputFormat;
 use serde::Serialize;
 
-use crate::edit_gate::{GateRejection, GateRejectionReport};
+use crate::candidate_assessment::CandidateAssessmentRejection;
+use crate::edit_gate::GateRejection;
 
 /// How a mutating verb's edit was validated, reported in the outcome
 /// so machine readers can tell a gate-checked apply from a
@@ -25,9 +23,11 @@ use crate::edit_gate::{GateRejection, GateRejectionReport};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GateOutcome {
-    /// The realizability + atom-split gate ran against the post-edit
-    /// spec and passed.
+    /// The canonical candidate assessment accepted the edit.
     Passed,
+    /// Graph claims and requested selectors resolved; a full assessment is
+    /// needed before a verified write.
+    ClaimsChecked,
     /// Name-collision validation only (no graph-backed gate for this
     /// verb or edit).
     NamesOnly,
@@ -36,6 +36,23 @@ pub enum GateOutcome {
     /// No gate needed: the edit cannot change the assignment (e.g.
     /// deleting structurally empty modules, an empty batch).
     NotRequired,
+}
+
+impl GateOutcome {
+    pub fn with_candidate_assessment(
+        self,
+        assessment: Option<&gate::ApplicationRelocationAssessmentReport>,
+    ) -> Self {
+        if self == Self::ClaimsChecked
+            && assessment.is_some_and(|report| {
+                report.status == gate::CandidateRelocationStatus::AcceptedWithinCheckedScope
+            })
+        {
+            Self::Passed
+        } else {
+            self
+        }
+    }
 }
 
 /// The shared outcome core. Verb-specific outcome structs embed this
@@ -49,21 +66,26 @@ pub struct MutationOutcome {
     /// `applied` | `dry-run` | `noop` | `unchanged`.
     pub action: &'static str,
     pub gate: GateOutcome,
+    /// A graph-only preview has checked claims but still needs the canonical
+    /// full-context assessment before it can become a verified write.
+    #[serde(skip_serializing_if = "is_false")]
+    pub needs_full_assessment: bool,
     /// Files written (or, under `--dry-run`, that would be written).
     pub files_written: Vec<String>,
     /// Files deleted (or, under `--dry-run`, that would be deleted).
     pub files_deleted: Vec<String>,
 }
 
-/// Stdout envelope for a realizability-gate rejection. `action:
-/// "rejected"` keeps it in the same schema family as the success
-/// outcomes; `rejection` carries the canonical per-SCC / per-conflict
-/// projections.
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+/// Shared stdout envelope for typed candidate and graph diagnostics.
 #[derive(Debug, Serialize)]
-pub struct GateRejectionOutcome<'a> {
+pub struct GateRejectionOutcome<'a, T> {
     pub verb: &'static str,
     pub action: &'static str,
-    pub rejection: &'a GateRejectionReport,
+    pub rejection: &'a T,
 }
 
 /// Print `value` as JSON on stdout: pretty for `json`, one line for
@@ -87,6 +109,21 @@ pub fn emit_gate_rejection_json(
     format: Option<OutputFormat>,
     err: &anyhow::Error,
 ) {
+    if let Some(rejection) = err.downcast_ref::<CandidateAssessmentRejection>() {
+        let format = OutputFormat::resolve(format);
+        if format != OutputFormat::Text {
+            print_outcome_json(
+                &GateRejectionOutcome {
+                    verb,
+                    action: "rejected",
+                    rejection: &rejection.report,
+                },
+                format,
+            )
+            .expect("candidate rejection serializes");
+        }
+        return;
+    }
     let Some(rejection) = err.downcast_ref::<GateRejection>() else {
         return;
     };

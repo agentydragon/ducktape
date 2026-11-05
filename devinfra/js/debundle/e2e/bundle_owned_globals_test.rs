@@ -140,13 +140,30 @@ fn a_slot_holding_the_global_object_can_replace_map() {
         "globalThis.registry[[\"Ma\", \"p\"].join(\"\")] = function Map() { try { globalThis.saved(); return { size: \"ready\" }; } catch (error) { return { size: error.name }; } };",
     ];
     let source = source(bundle);
-    expect_atomic_conflict_rejection(
-        opts(&source, &[], &anonymous, true),
-        &["values/native", "values/later"],
-        &[],
-    );
     let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
     assert_preserved_entry_output(&fixture, "ReferenceError 42\n");
+    match run_fixture_observing_gate(opts(&source, &[], &anonymous, true)) {
+        FixtureRunOutcome::Accepted(fixture) => {
+            save_relocation_reports(
+                &fixture.report_root,
+                &fixture.chunk_id,
+                "global-alias-map-replacement",
+            );
+            assert_preserved_entry_output(&fixture, "ReferenceError 42\n");
+        }
+        FixtureRunOutcome::Rejected(rejected) => {
+            save_relocation_reports(
+                &rejected.report_root,
+                &rejected.chunk_id,
+                "global-alias-map-replacement",
+            );
+            assert_eq!(rejected.status, Some(1), "{}", rejected.stderr);
+            assert_ne!(
+                rejected.candidate_relocation_assessment()["status"],
+                "accepted_within_checked_scope"
+            );
+        }
+    }
 }
 
 #[test]

@@ -1,12 +1,15 @@
 //! One ordered local-operation semantics for execution and provider queries.
 
 use super::allocation_transfer::{
-    self, AllocationContext, AllocationJudgment, AllocationValue, LiteralHeap, LiteralLayout,
+    self, AllocationContext, AllocationJudgment, AllocationValue, ArrayElement, ArraySpreadResult,
+    KeyedCollectionOperationResult, LiteralHeap, LiteralLayout,
 };
 use super::array_transfer::ArrayPushSelection;
-use super::effect_coverage::EffectCoverageFragment;
+use super::descriptor_transfer::NativeObjectPostcondition;
+use super::effect_coverage::{EffectCoverageFragment, NativeCalleeSelection};
 use super::local_operations::{
-    DeferredCallableCreation, LocalBinding, LocalBody, LocalCallee, LocalExpression, LocalOperation,
+    DeferredCallableCreation, LocalArrayElement, LocalBinding, LocalBody, LocalCallee,
+    LocalExpression, LocalOperation,
 };
 use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataSlot};
 use super::value_model::{AbstractValue, CallSite, Context, PropertyDefinition, ValueExpr, Values};
@@ -21,9 +24,10 @@ use swc_ecma_ast::Id;
 pub(super) struct LocalFrame {
     pub(super) environment: Context,
     pub(super) binding_selections: BTreeMap<Id, CallableSelection>,
+    pub(super) binding_postconditions: BTreeMap<Id, Box<NativeObjectPostcondition>>,
     pub(super) return_selection: Option<CallableSelection>,
     /// Present only when the caller delegates the actual parameter prologue
-    /// to this kernel. Provider/compatibility frames are already bound.
+    /// to this kernel. Compatibility frames are already bound.
     pub(super) parameter_inputs: Option<Vec<SelectedValue>>,
     /// Bindings initialized by an actual operation in this activation.
     /// Prebound values alone do not establish a declarative-cell receipt.
@@ -46,6 +50,7 @@ impl LocalFrame {
             inputs: environment.values().flatten().cloned().collect(),
             environment,
             binding_selections: BTreeMap::new(),
+            binding_postconditions: BTreeMap::new(),
             return_selection: None,
             parameter_inputs: None,
             initialized_bindings: BTreeSet::new(),
@@ -91,6 +96,7 @@ impl CallableSelection {
 pub(super) struct SelectedValue {
     pub(super) values: Values,
     pub(super) selection: Option<CallableSelection>,
+    pub(super) postcondition: Option<Box<NativeObjectPostcondition>>,
 }
 
 impl SelectedValue {
@@ -98,6 +104,7 @@ impl SelectedValue {
         Self {
             values,
             selection: None,
+            postcondition: None,
         }
     }
 }
@@ -111,6 +118,11 @@ pub(super) enum EvaluatedCallee {
         selection_dependencies: Option<Box<ProofDependencies>>,
         array_push: Option<Box<ArrayPushSelection>>,
     },
+    Native {
+        selection: Box<NativeCalleeSelection>,
+        /// No application callable targets: the intrinsic identity is in its row.
+        targets: Values,
+    },
 }
 
 impl EvaluatedCallee {
@@ -118,6 +130,7 @@ impl EvaluatedCallee {
         match self {
             Self::Direct(targets) => &targets.values,
             Self::Member { targets, .. } => targets,
+            Self::Native { targets, .. } => targets,
         }
     }
 
@@ -125,6 +138,7 @@ impl EvaluatedCallee {
         match self {
             Self::Direct(_) => None,
             Self::Member { receiver, .. } => Some(receiver),
+            Self::Native { .. } => None,
         }
     }
 }
@@ -133,6 +147,7 @@ pub(super) struct LocalValueResult {
     pub(super) allocation: AllocationValue,
     pub(super) effects: EffectCoverageFragment,
     pub(super) selection: Option<CallableSelection>,
+    pub(super) postcondition: Option<Box<NativeObjectPostcondition>>,
 }
 
 pub(super) struct LocalTransferResult {
@@ -140,15 +155,65 @@ pub(super) struct LocalTransferResult {
     pub(super) effects: EffectCoverageFragment,
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum BindingOperation {
+    Create,
+    Initialize,
+    Store,
+}
+
 pub(super) trait LocalContext: OwnDataContext {
+    /// Select an exact intrinsic before arguments run. A missing selection
+    /// keeps the ordinary binding/member transfer and conservative fallback.
+    fn native_callee(
+        &mut self,
+        _frame: &mut LocalFrame,
+        _callee: &LocalCallee,
+        _span: Span,
+    ) -> Option<(NativeCalleeSelection, EffectCoverageFragment)> {
+        None
+    }
+    /// An exact imported-member selection can carry a separate runtime
+    /// identity/lookup premise. It covers both the receiver cell read and
+    /// GetValue, before arguments execute; it grants no body effects.
+    fn imported_member_callee(
+        &mut self,
+        _frame: &mut LocalFrame,
+        _receiver: &Id,
+        _property: &str,
+        _span: Span,
+    ) -> Option<(Values, LocalValueResult)> {
+        None
+    }
+    fn array_push_callee(
+        &mut self,
+        _receivers: &Values,
+        _property: &str,
+    ) -> Option<(ArrayPushSelection, EffectCoverageFragment)> {
+        None
+    }
+    fn array_creation_started(&mut self, _allocation: u32) {}
     fn array_created(&mut self, _allocation: u32, _sparse: bool) {}
+    fn array_allocation_is_fresh(&self, _allocation: u32) -> bool {
+        false
+    }
+    fn array_spread(
+        &mut self,
+        _frame: &mut LocalFrame,
+        _span: Span,
+        _operand: &Values,
+    ) -> Option<ArraySpreadResult> {
+        None
+    }
+    fn primitive_array_created(&mut self, _allocation: u32, _dependencies: &ProofDependencies) {}
     fn instantiate_parameter_bindings(&mut self, _frame: &mut LocalFrame) {}
-    /// Effects of declarative-cell creation, initialization, or a checked
-    /// store to an initialized local. Captured cells remain separate.
+    /// Effects of actual declarative-cell creation, initialization or a checked
+    /// mutable local store. Operand evaluation and captured stores are separate.
     fn declarative_binding_operation(
-        &self,
+        &mut self,
         _binding: &Id,
         _frame: &LocalFrame,
+        _operation: BindingOperation,
     ) -> EffectCoverageFragment {
         EffectCoverageFragment::default()
     }
@@ -160,13 +225,6 @@ pub(super) trait LocalContext: OwnDataContext {
     /// queries keep the default false and require fresh-local ownership.
     fn module_prefix_receiver(&self, _binding: &Id, _receivers: &Values) -> bool {
         false
-    }
-    fn array_push_callee(
-        &mut self,
-        _receivers: &Values,
-        _property: &str,
-    ) -> Option<(ArrayPushSelection, EffectCoverageFragment)> {
-        None
     }
     /// Conditions under which the current settled prefix is valid. The
     /// application adapter snapshots these at an actual read/write transfer;
@@ -185,7 +243,7 @@ pub(super) trait LocalContext: OwnDataContext {
         binding: &Id,
         values: &Values,
         span: Span,
-    ) -> Option<AllocationValue>;
+    ) -> Option<LocalValueResult>;
     /// Operands have already been evaluated in source order. Return the value
     /// from that invocation's effect transfer; do not evaluate the call again.
     fn call(
@@ -216,6 +274,16 @@ pub(super) trait LocalContext: OwnDataContext {
     ) -> Option<LocalValueResult> {
         None
     }
+    /// A symbolic provider query can defer a checked own-data input read to
+    /// its complete input-layout condition. Application execution never uses
+    /// this as a substitute for a current-prefix slot proof.
+    fn symbolic_field_read(
+        &mut self,
+        _receivers: &Values,
+        _property: &str,
+    ) -> Option<LocalValueResult> {
+        None
+    }
     /// The receiver cell was read at this operation. A strict query refuses
     /// an unproved field; application execution retains its existing proofs
     /// and summarizes the remainder if getter effects remain unproved.
@@ -237,6 +305,9 @@ pub(super) trait LocalContext: OwnDataContext {
         values: &Values,
         span: Span,
     );
+    /// Operands have already executed. Summarize possible coercion code from
+    /// these retained values without evaluating either operand again.
+    fn unproved_operator(&mut self, _frame: &mut LocalFrame, _operands: &Values, _span: Span) {}
     fn publish_throw(&mut self, values: &Values);
     fn keyed_collection_new(
         &mut self,
@@ -244,12 +315,18 @@ pub(super) trait LocalContext: OwnDataContext {
         _callee: &ValueExpr,
         _arguments: &[ValueExpr],
         _site: CallSite,
-    ) -> Option<AllocationValue> {
+    ) -> Option<KeyedCollectionOperationResult> {
         None
     }
-    /// Both binary operands have completed in source order, but at least one
-    /// may be an object or unknown value whose coercion can execute user code.
-    fn binary_fallback(&mut self, _frame: &LocalFrame, _reached: &Values, _span: Span) {}
+    fn set_construction(
+        &mut self,
+        _frame: &mut LocalFrame,
+        _source: &ValueExpr,
+        _argument: &SelectedValue,
+        _site: CallSite,
+    ) -> Option<LocalValueResult> {
+        None
+    }
 }
 
 struct LocalValueContext<'a, C> {
@@ -261,8 +338,25 @@ impl<C: LocalContext> AllocationContext for LocalValueContext<'_, C> {
     fn source_covered(&self) -> bool {
         true
     }
+    fn array_creation_started(&mut self, allocation: u32) {
+        self.context.array_creation_started(allocation);
+    }
     fn array_created(&mut self, allocation: u32, sparse: bool) {
         self.context.array_created(allocation, sparse);
+    }
+    fn array_allocation_is_fresh(&self, allocation: u32) -> bool {
+        self.context.array_allocation_is_fresh(allocation)
+    }
+    fn array_spread(&mut self, span: Span, operand: &Values) -> Option<ArraySpreadResult> {
+        let spread = self.context.array_spread(self.frame, span, operand)?;
+        self.frame.effect_coverage.compose(
+            &EffectCoverageFragment::ordered_native_iterable_protocol(&spread.dependencies),
+        );
+        Some(spread)
+    }
+    fn primitive_array_created(&mut self, allocation: u32, dependencies: &ProofDependencies) {
+        self.context
+            .primitive_array_created(allocation, dependencies);
     }
     fn binding(&mut self, binding: &Id) -> Option<AllocationValue> {
         let result = self.context.read_binding(binding, self.frame)?;
@@ -274,13 +368,24 @@ impl<C: LocalContext> AllocationContext for LocalValueContext<'_, C> {
             .effect_coverage
             .compose(&EffectCoverageFragment::default());
     }
+    fn operation_effects(&mut self, effects: EffectCoverageFragment) {
+        self.frame.effect_coverage.compose(&effects);
+    }
+    fn child(&mut self, expression: &ValueExpr) -> Option<AllocationValue> {
+        value(self.context, expression, self.frame)
+    }
     fn noninvoking_operation(&mut self) {
         self.frame
             .effect_coverage
             .compose(&EffectCoverageFragment::no_effects());
     }
-    fn child(&mut self, expression: &ValueExpr) -> Option<AllocationValue> {
-        value(self.context, expression, self.frame)
+    fn literal_creation_operation(&mut self, covered: bool) {
+        let effects = if covered {
+            EffectCoverageFragment::no_effects()
+        } else {
+            EffectCoverageFragment::default()
+        };
+        self.frame.effect_coverage.compose(&effects);
     }
     fn literal_layout(&self, allocation: u32) -> LiteralLayout {
         self.context.literal_layout(allocation)
@@ -300,7 +405,7 @@ impl<C: LocalContext> AllocationContext for LocalValueContext<'_, C> {
         callee: &ValueExpr,
         arguments: &[ValueExpr],
         site: CallSite,
-    ) -> Option<AllocationValue> {
+    ) -> Option<KeyedCollectionOperationResult> {
         self.context
             .keyed_collection_new(self.frame, callee, arguments, site)
     }
@@ -365,6 +470,13 @@ fn completing_selected(mut selected: SelectedValue, frame: &mut LocalFrame) -> S
     {
         selected.selection = None;
     }
+    if selected
+        .postcondition
+        .as_ref()
+        .is_some_and(|proof| !proof.matches(&selected.values))
+    {
+        selected.postcondition = None;
+    }
     selected
 }
 
@@ -380,10 +492,15 @@ fn read_binding_selected(
     let selection = result
         .selection
         .filter(|selection| selection.matches(&result.allocation.values));
+    let postcondition = result
+        .postcondition
+        .or_else(|| frame.binding_postconditions.get(binding).cloned())
+        .filter(|proof| proof.matches(&result.allocation.values));
     Some(completing_selected(
         SelectedValue {
             values: result.allocation.values,
             selection,
+            postcondition,
         },
         frame,
     ))
@@ -414,17 +531,12 @@ fn read_field(
     property: &str,
     span: Span,
 ) -> Option<LocalValueResult> {
-    let module_prefix = context.module_prefix_receiver(receiver, receivers);
-    let slot = if module_prefix {
-        own_data_transfer::resolve_slot(
-            context,
-            receivers,
-            property,
-            OwnDataOwnership::CurrentPrefix,
-        )
-    } else {
-        own_data_field(context, receivers, property, frame)
-    };
+    let slot = own_data_transfer::resolve_slot(
+        context,
+        receivers,
+        property,
+        OwnDataOwnership::CurrentPrefix,
+    );
     match slot {
         Ok(slot) => {
             let selection_dependencies = context.selection_prerequisites();
@@ -432,10 +544,8 @@ fn read_field(
             let selection =
                 CallableSelection::observed(&read.values, selection_dependencies.clone());
             context.record_property_read(read.cell);
-            let mut effects = EffectCoverageFragment::lexical_operation();
-            if module_prefix {
-                effects.depend_on(selection_dependencies.as_ref());
-            }
+            let mut effects = EffectCoverageFragment::modeled_own_data_access();
+            effects.depend_on(selection_dependencies.as_ref());
             Some(LocalValueResult {
                 allocation: AllocationValue {
                     values: read.values,
@@ -443,16 +553,88 @@ fn read_field(
                 },
                 effects,
                 selection,
+                postcondition: None,
             })
         }
         Err(refusal) => context
-            .unproved_field_read(frame, receiver, receivers, property, span, refusal)
-            .map(|allocation| LocalValueResult {
-                allocation,
-                effects: EffectCoverageFragment::default(),
-                selection: None,
+            .symbolic_field_read(receivers, property)
+            .or_else(|| {
+                context
+                    .unproved_field_read(frame, receiver, receivers, property, span, refusal)
+                    .map(|allocation| LocalValueResult {
+                        allocation,
+                        effects: EffectCoverageFragment::default(),
+                        selection: None,
+                        postcondition: None,
+                    })
             }),
     }
+}
+
+fn store_binding(
+    context: &mut impl LocalContext,
+    body: &LocalBody,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+    binding: &Id,
+    selected: SelectedValue,
+    span: Span,
+) -> Option<SelectedValue> {
+    let values = selected.values;
+    if values.is_empty() {
+        return Some(SelectedValue::raw(values));
+    }
+    let Some(kind) = body.bindings.get(binding) else {
+        frame.binding_selections.remove(binding);
+        let result = context.assign_capture(frame, binding, &values, span)?;
+        frame.effect_coverage.compose(&result.effects);
+        judgment.compose(&result.allocation.judgment);
+        return Some(completing_selected(
+            SelectedValue::raw(result.allocation.values),
+            frame,
+        ));
+    };
+    if matches!(kind, LocalBinding::Const | LocalBinding::NamedSelf(_))
+        || (*kind == LocalBinding::Parameter
+            && frame.parameter_inputs.is_some()
+            && !frame.initialized_bindings.contains(binding))
+        || (*kind == LocalBinding::Let
+            && frame
+                .environment
+                .get(binding)
+                .expect("instantiated local binding")
+                .contains(&AbstractValue::Value(Value::Unavailable)))
+    {
+        frame
+            .effect_coverage
+            .compose(&EffectCoverageFragment::default());
+        frame
+            .returns
+            .insert(AbstractValue::Value(Value::Unavailable));
+        return Some(SelectedValue::raw(Values::new()));
+    }
+    // This PutValue reaches an initialized mutable declarative cell.
+    // The adapter independently covers this cell operation;
+    // evaluating its RHS has already composed its own effects.
+    frame
+        .effect_coverage
+        .compose(&context.declarative_binding_operation(binding, frame, BindingOperation::Store));
+    frame.environment.insert(binding.clone(), values.clone());
+    if let Some(selection) = selected
+        .selection
+        .filter(|selection| selection.matches(&values))
+    {
+        frame.binding_selections.insert(binding.clone(), selection);
+    } else {
+        frame.binding_selections.remove(binding);
+    }
+    frame.binding_postconditions.remove(binding);
+    context.local_binding_stored(binding, frame);
+    Some(SelectedValue {
+        values,
+        selection: frame.binding_selections.get(binding).cloned(),
+        postcondition: None,
+    })
 }
 
 fn expression(
@@ -463,6 +645,20 @@ fn expression(
     judgment: &mut AllocationJudgment,
 ) -> Option<SelectedValue> {
     match node {
+        LocalExpression::Binary {
+            operator,
+            left,
+            right,
+            span,
+        } => binary_expression(
+            &mut LocalValueContext { context, frame },
+            operator,
+            left,
+            right,
+            span,
+            body,
+            judgment,
+        ),
         LocalExpression::Value(node) => value_expression(context, node, frame, judgment),
         LocalExpression::PrimitiveLiteral(kind) => {
             // The canonical source literal cannot invoke code, access exterior
@@ -489,6 +685,11 @@ fn expression(
             allocation,
             elements,
         } => array_expression(context, allocation, elements, body, frame, judgment),
+        LocalExpression::SetConstruction {
+            array,
+            source,
+            site,
+        } => set_construction_expression(context, array, source, site, body, frame, judgment),
         LocalExpression::Sequence(expressions) => {
             sequence_expression(context, expressions, body, frame, judgment)
         }
@@ -496,12 +697,6 @@ fn expression(
             substitutions,
             span,
         } => template_expression(context, substitutions, *span, body, frame, judgment),
-        LocalExpression::Binary {
-            op,
-            left,
-            right,
-            span,
-        } => binary_expression(context, *op, (left, right), *span, body, frame, judgment),
         LocalExpression::Closure(callable) => {
             closure_expression(context, callable, frame, judgment)
         }
@@ -511,7 +706,7 @@ fn expression(
             span,
         } => assign_expression(context, binding, node, span, body, frame, judgment),
         LocalExpression::UpdateBinding { binding, span } => {
-            update_binding_expression(context, binding, *span, body, frame, judgment)
+            update_binding_expression(context, binding, span, body, frame, judgment)
         }
         LocalExpression::Call {
             callee,
@@ -546,53 +741,52 @@ fn expression(
 }
 
 fn binary_expression(
-    context: &mut impl LocalContext,
-    op: swc_ecma_ast::BinaryOp,
-    (left, right): (&LocalExpression, &LocalExpression),
-    span: Span,
+    local: &mut LocalValueContext<'_, impl LocalContext>,
+    operator: &swc_ecma_ast::BinaryOp,
+    left: &LocalExpression,
+    right: &LocalExpression,
+    span: &Span,
     body: &LocalBody,
-    frame: &mut LocalFrame,
     judgment: &mut AllocationJudgment,
 ) -> Option<SelectedValue> {
-    let left = expression(context, left, body, frame, judgment)?;
+    let left = expression(local.context, left, body, local.frame, judgment)?;
     if left.values.is_empty() {
         return Some(left);
     }
-    let right = expression(context, right, body, frame, judgment)?;
+    let right = expression(local.context, right, body, local.frame, judgment)?;
     if right.values.is_empty() {
         return Some(right);
     }
-
-    let transfer = allocation_transfer::binary(
-        op,
-        &left.values,
-        &right.values,
-        AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
-    );
-    let Some(transfer) = transfer else {
-        judgment.compose(&AllocationJudgment::Opaque);
-        let mut reached = left.values;
-        reached.extend(right.values);
-        context.binary_fallback(frame, &reached, span);
-        return None;
+    let values = match allocation_transfer::binary_result(*operator, &left.values, &right.values) {
+        allocation_transfer::PrimitiveOperationResult::Covered(values) => {
+            local
+                .frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::no_effects());
+            values
+        }
+        allocation_transfer::PrimitiveOperationResult::MayThrow(values) => {
+            *judgment = AllocationJudgment::Opaque;
+            local
+                .frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::default());
+            values
+        }
+        allocation_transfer::PrimitiveOperationResult::CoercionRequired => {
+            let mut operands = left.values;
+            operands.extend(right.values);
+            local
+                .frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::default());
+            local
+                .context
+                .unproved_operator(local.frame, &operands, *span);
+            return None;
+        }
     };
-    judgment.compose(&transfer.judgment);
-    let effects = if transfer
-        .values
-        .contains(&AbstractValue::Value(Value::Unavailable))
-    {
-        // Allocation opacity does not certify effect or completion coverage.
-        // A primitive operation such as Symbol coercion or BigInt division
-        // can throw after both operands ran, so leave those domains unknown.
-        EffectCoverageFragment::default()
-    } else {
-        EffectCoverageFragment::no_effects()
-    };
-    frame.effect_coverage.compose(&effects);
-    Some(completing_selected(
-        SelectedValue::raw(transfer.values),
-        frame,
-    ))
+    Some(completing_selected(SelectedValue::raw(values), local.frame))
 }
 
 fn template_expression(
@@ -612,27 +806,28 @@ fn template_expression(
         // String concatenation has the same primitive ToString result and
         // abrupt alternatives. Object conversion needs a separate string-hint
         // proof, so it retains the existing conservative fallback.
-        let Some(transfer) = allocation_transfer::binary(
+        let values = match allocation_transfer::binary_result(
             swc_ecma_ast::BinaryOp::Add,
             &string,
             &operand.values,
-            AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
-        ) else {
-            judgment.compose(&AllocationJudgment::Opaque);
-            context.binary_fallback(frame, &operand.values, span);
-            return None;
+        ) {
+            allocation_transfer::PrimitiveOperationResult::Covered(values) => {
+                frame.effect_coverage.compose(&EffectCoverageFragment::no_effects());
+                values
+            }
+            allocation_transfer::PrimitiveOperationResult::MayThrow(values) => {
+                judgment.compose(&AllocationJudgment::Opaque);
+                frame.effect_coverage.compose(&EffectCoverageFragment::default());
+                values
+            }
+            allocation_transfer::PrimitiveOperationResult::CoercionRequired => {
+                judgment.compose(&AllocationJudgment::Opaque);
+                frame.effect_coverage.compose(&EffectCoverageFragment::default());
+                context.unproved_operator(frame, &operand.values, span);
+                return None;
+            }
         };
-        judgment.compose(&transfer.judgment);
-        let effects = if transfer
-            .values
-            .contains(&AbstractValue::Value(Value::Unavailable))
-        {
-            EffectCoverageFragment::default()
-        } else {
-            EffectCoverageFragment::no_effects()
-        };
-        frame.effect_coverage.compose(&effects);
-        if completing(transfer.values, frame).is_empty() {
+        if completing(values, frame).is_empty() {
             return Some(SelectedValue::raw(Values::new()));
         }
     }
@@ -663,9 +858,6 @@ fn record_expression(
     frame: &mut LocalFrame,
     judgment: &mut AllocationJudgment,
 ) -> Option<SelectedValue> {
-    frame
-        .effect_coverage
-        .compose(&EffectCoverageFragment::default());
     if !matches!(context.literal_layout(*allocation), LiteralLayout::Record) {
         return None;
     }
@@ -703,7 +895,7 @@ fn record_expression(
 fn array_expression(
     context: &mut impl LocalContext,
     allocation: &u32,
-    elements: &[Option<LocalExpression>],
+    elements: &[LocalArrayElement],
     body: &LocalBody,
     frame: &mut LocalFrame,
     judgment: &mut AllocationJudgment,
@@ -711,7 +903,11 @@ fn array_expression(
     let result = allocation_transfer::array(
         &mut LocalValueContext { context, frame },
         *allocation,
-        elements.iter().map(Option::as_ref),
+        elements.iter().map(|element| match element {
+            LocalArrayElement::Hole => ArrayElement::Hole,
+            LocalArrayElement::Value(value) => ArrayElement::Value(value),
+            LocalArrayElement::Spread { value, span } => ArrayElement::Spread(value, *span),
+        }),
         AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
         |context, node| {
             let mut judgment =
@@ -727,6 +923,32 @@ fn array_expression(
     judgment.compose(&result.judgment);
     Some(completing_selected(
         SelectedValue::raw(result.values),
+        frame,
+    ))
+}
+
+fn set_construction_expression(
+    context: &mut impl LocalContext,
+    array: &LocalExpression,
+    source: &ValueExpr,
+    site: &CallSite,
+    body: &LocalBody,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<SelectedValue> {
+    let argument = expression(context, array, body, frame, judgment)?;
+    if argument.values.is_empty() {
+        return Some(completing_selected(argument, frame));
+    }
+    frame.inputs.extend(argument.values.iter().cloned());
+    let result = context.set_construction(frame, source, &argument, *site)?;
+    judgment.compose(&result.allocation.judgment);
+    frame.effect_coverage.compose(&result.effects);
+    frame
+        .inputs
+        .extend(result.allocation.values.iter().cloned());
+    Some(completing_selected(
+        SelectedValue::raw(result.allocation.values),
         frame,
     ))
 }
@@ -759,6 +981,7 @@ fn sequence_expression(
         SelectedValue {
             values: result.values,
             selection,
+            postcondition: None,
         },
         frame,
     ))
@@ -777,6 +1000,7 @@ fn closure_expression(
         SelectedValue {
             values: result.allocation.values,
             selection: result.selection,
+            postcondition: result.postcondition,
         },
         frame,
     ))
@@ -791,90 +1015,14 @@ fn assign_expression(
     frame: &mut LocalFrame,
     judgment: &mut AllocationJudgment,
 ) -> Option<SelectedValue> {
-    frame
-        .effect_coverage
-        .compose(&EffectCoverageFragment::default());
     let selected = expression(context, node, body, frame, judgment)?;
     store_binding(context, body, frame, judgment, binding, selected, *span)
-}
-
-fn store_binding(
-    context: &mut impl LocalContext,
-    body: &LocalBody,
-    frame: &mut LocalFrame,
-    judgment: &mut AllocationJudgment,
-    binding: &Id,
-    selected: SelectedValue,
-    span: Span,
-) -> Option<SelectedValue> {
-    let values = selected.values;
-    if values.is_empty() {
-        return Some(SelectedValue::raw(values));
-    }
-    let Some(kind) = body.bindings.get(binding) else {
-        frame
-            .effect_coverage
-            .compose(&EffectCoverageFragment::default());
-        frame.binding_selections.remove(binding);
-        let result = context.assign_capture(frame, binding, &values, span)?;
-        judgment.compose(&result.judgment);
-        return Some(completing_selected(
-            SelectedValue::raw(result.values),
-            frame,
-        ));
-    };
-    if matches!(kind, LocalBinding::Const | LocalBinding::NamedSelf(_))
-        || (*kind == LocalBinding::Parameter
-            && frame.parameter_inputs.is_some()
-            && !frame.initialized_bindings.contains(binding))
-        || (*kind == LocalBinding::Let
-            && frame
-                .environment
-                .get(binding)
-                .expect("instantiated local binding")
-                .contains(&AbstractValue::Value(Value::Unavailable)))
-    {
-        frame
-            .effect_coverage
-            .compose(&EffectCoverageFragment::default());
-        frame
-            .returns
-            .insert(AbstractValue::Value(Value::Unavailable));
-        return Some(SelectedValue::raw(Values::new()));
-    }
-    if matches!(kind, LocalBinding::Parameter | LocalBinding::Let)
-        && frame.initialized_bindings.contains(binding)
-    {
-        // The adapter's declarative-cell proof already rejects live captured
-        // cells. Assignment's earlier unknown fragment remains unknown.
-        frame
-            .effect_coverage
-            .compose(&context.declarative_binding_operation(binding, frame));
-    } else {
-        frame
-            .effect_coverage
-            .compose(&EffectCoverageFragment::default());
-    }
-    frame.environment.insert(binding.clone(), values.clone());
-    if let Some(selection) = selected
-        .selection
-        .filter(|selection| selection.matches(&values))
-    {
-        frame.binding_selections.insert(binding.clone(), selection);
-    } else {
-        frame.binding_selections.remove(binding);
-    }
-    context.local_binding_stored(binding, frame);
-    Some(SelectedValue {
-        values,
-        selection: frame.binding_selections.get(binding).cloned(),
-    })
 }
 
 fn update_binding_expression(
     context: &mut impl LocalContext,
     binding: &Id,
-    span: Span,
+    span: &Span,
     body: &LocalBody,
     frame: &mut LocalFrame,
     judgment: &mut AllocationJudgment,
@@ -883,26 +1031,32 @@ fn update_binding_expression(
     if operand.values.is_empty() {
         return Some(operand);
     }
-    let Some(result) = allocation_transfer::update_result(&operand.values) else {
-        judgment.compose(&AllocationJudgment::Opaque);
-        frame
-            .effect_coverage
-            .compose(&EffectCoverageFragment::default());
-        context.binary_fallback(frame, &operand.values, span);
-        return None;
+    let values = match allocation_transfer::update_result(&operand.values) {
+        allocation_transfer::PrimitiveOperationResult::Covered(values) => {
+            frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::no_effects());
+            values
+        }
+        allocation_transfer::PrimitiveOperationResult::MayThrow(values) => {
+            *judgment = AllocationJudgment::Opaque;
+            frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::default());
+            values
+        }
+        allocation_transfer::PrimitiveOperationResult::CoercionRequired => {
+            frame
+                .effect_coverage
+                .compose(&EffectCoverageFragment::default());
+            context.unproved_operator(frame, &operand.values, *span);
+            return None;
+        }
     };
-    judgment.compose(&result.judgment);
-    let effects = if result
-        .values
-        .contains(&AbstractValue::Value(Value::Unavailable))
-    {
-        EffectCoverageFragment::default()
-    } else {
-        EffectCoverageFragment::no_effects()
-    };
-    frame.effect_coverage.compose(&effects);
-    let selected = completing_selected(SelectedValue::raw(result.values), frame);
-    store_binding(context, body, frame, judgment, binding, selected, span)
+    // Both the returned old numeric value and stored new numeric
+    // value have these kinds; exact numbers are outside this domain.
+    let selected = completing_selected(SelectedValue::raw(values), frame);
+    store_binding(context, body, frame, judgment, binding, selected, *span)
 }
 
 fn call_expression(
@@ -916,62 +1070,79 @@ fn call_expression(
 ) -> Option<SelectedValue> {
     // GetValue(callee) precedes every argument. In particular, an
     // argument assignment must not replace this captured callee.
-    let callee = match callee {
-        LocalCallee::Creation(callable) => {
-            EvaluatedCallee::Direct(closure_expression(context, callable, frame, judgment)?)
+    let callee = if let Some((selection, effects)) = context.native_callee(frame, callee, *span) {
+        frame.effect_coverage.compose(&effects);
+        EvaluatedCallee::Native {
+            selection: Box::new(selection),
+            targets: Values::new(),
         }
-        LocalCallee::Binding(binding) => {
-            EvaluatedCallee::Direct(read_binding_selected(context, binding, frame, judgment)?)
-        }
-        LocalCallee::Member {
-            receiver,
-            property,
-            span,
-        } => {
-            let result = value(context, &ValueExpr::Binding(receiver.clone()), frame)?;
-            judgment.compose(&result.judgment);
-            let receivers = completing(result.values, frame);
-            if receivers.is_empty() {
-                return Some(SelectedValue::raw(Values::new()));
+    } else {
+        match callee {
+            LocalCallee::Creation(callable) => {
+                EvaluatedCallee::Direct(closure_expression(context, callable, frame, judgment)?)
             }
-            frame.inputs.extend(receivers.iter().cloned());
-            let module_prefix = context.module_prefix_receiver(receiver, &receivers);
-            let mut array_push = None;
-            let result = if let Some((selection, effects)) =
-                context.array_push_callee(&receivers, property)
-            {
-                array_push = Some(Box::new(selection));
-                LocalValueResult {
-                    allocation: AllocationValue::opaque(Values::new()),
-                    effects,
-                    selection: None,
+            LocalCallee::Binding(binding) => {
+                EvaluatedCallee::Direct(read_binding_selected(context, binding, frame, judgment)?)
+            }
+            LocalCallee::Member {
+                receiver,
+                property,
+                span,
+            } => {
+                let mut array_push = None;
+                let (receivers, result, selection_dependencies) = if let Some((receivers, result)) =
+                    context.imported_member_callee(frame, receiver, property, *span)
+                {
+                    (receivers, result, None)
+                } else {
+                    let result = value(context, &ValueExpr::Binding(receiver.clone()), frame)?;
+                    judgment.compose(&result.judgment);
+                    let receivers = completing(result.values, frame);
+                    if receivers.is_empty() {
+                        return Some(SelectedValue::raw(Values::new()));
+                    }
+                    let module_prefix = context.module_prefix_receiver(receiver, &receivers);
+                    let result = if let Some((selection, effects)) =
+                        context.array_push_callee(&receivers, property)
+                    {
+                        array_push = Some(Box::new(selection));
+                        LocalValueResult {
+                            allocation: AllocationValue::opaque(Values::new()),
+                            effects,
+                            selection: None,
+                            postcondition: None,
+                        }
+                    } else {
+                        read_field(context, frame, receiver, &receivers, property, *span)?
+                    };
+                    let selection_dependencies = module_prefix
+                        .then(|| result.effects.lexical_selection_dependencies())
+                        .flatten();
+                    (receivers, result, selection_dependencies)
+                };
+                frame.inputs.extend(receivers.iter().cloned());
+                // Selection/GetValue is an executed lexical operation and
+                // is composed now, before any argument can throw or mutate
+                // the selected property.
+                frame.effect_coverage.compose(&result.effects);
+                judgment.compose(&result.allocation.judgment);
+                EvaluatedCallee::Member {
+                    receiver: receivers,
+                    targets: completing(result.allocation.values, frame),
+                    selection_dependencies,
+                    array_push,
                 }
-            } else {
-                read_field(context, frame, receiver, &receivers, property, *span)?
-            };
-            let selection_dependencies = module_prefix
-                .then(|| result.effects.lexical_selection_dependencies())
-                .flatten();
-            // Selection/GetValue is an executed lexical operation and
-            // is composed now, before any argument can throw or mutate
-            // the selected property.
-            frame.effect_coverage.compose(&result.effects);
-            judgment.compose(&result.allocation.judgment);
-            EvaluatedCallee::Member {
-                receiver: receivers,
-                targets: completing(result.allocation.values, frame),
-                selection_dependencies,
-                array_push,
             }
         }
     };
     if callee.targets().is_empty()
         && !matches!(
             &callee,
-            EvaluatedCallee::Member {
-                array_push: Some(_),
-                ..
-            }
+            EvaluatedCallee::Native { .. }
+                | EvaluatedCallee::Member {
+                    array_push: Some(_),
+                    ..
+                }
         )
     {
         return Some(SelectedValue::raw(Values::new()));
@@ -993,6 +1164,7 @@ fn call_expression(
         SelectedValue {
             values: result.allocation.values,
             selection: result.selection,
+            postcondition: result.postcondition,
         },
         frame,
     ))
@@ -1013,6 +1185,7 @@ fn read_field_expression(
             SelectedValue {
                 values: result.allocation.values,
                 selection: result.selection,
+                postcondition: result.postcondition,
             },
             frame,
         ));
@@ -1030,6 +1203,7 @@ fn read_field_expression(
         SelectedValue {
             values: result.allocation.values,
             selection: result.selection,
+            postcondition: result.postcondition,
         },
         frame,
     ))
@@ -1082,7 +1256,7 @@ fn assign_field_expression(
         .heap()
         .write_property(slot.object, Some(property.to_owned()), &selected.values);
     if writable {
-        let mut effects = EffectCoverageFragment::lexical_operation();
+        let mut effects = EffectCoverageFragment::modeled_own_data_access();
         effects.depend_on(
             write_dependencies
                 .as_ref()
@@ -1136,6 +1310,89 @@ fn define_this_field_expression(
         .write_property(*object, Some(property.to_owned()), &selected.values);
     Some(selected)
 }
+// Prologue state is gone before the body invokes another callable. Defaults
+// still execute through the same ordered expression transfers.
+fn initialize_parameters(
+    context: &mut impl LocalContext,
+    body: &LocalBody,
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<std::ops::ControlFlow<()>> {
+    let arguments = frame
+        .parameter_inputs
+        .clone()
+        .expect("selected invocation parameters");
+    // Later parameters are in TDZ while an earlier default executes.
+    // Body declarations are instantiated only after this environment.
+    for parameter in body.parameters.iter() {
+        frame.environment.insert(
+            parameter.binding.clone(),
+            Values::from([AbstractValue::Value(Value::Unavailable)]),
+        );
+        frame.binding_selections.remove(&parameter.binding);
+    }
+    context.instantiate_parameter_bindings(frame);
+    for parameter in body.parameters.iter() {
+        frame
+            .effect_coverage
+            .compose(&context.declarative_binding_operation(
+                &parameter.binding,
+                frame,
+                BindingOperation::Create,
+            ));
+    }
+    for (index, parameter) in body.parameters.iter().enumerate() {
+        let mut selected = arguments
+            .get(index)
+            .cloned()
+            .unwrap_or_else(|| SelectedValue::raw(Values::from([AbstractValue::UNDEFINED])));
+        if let Some(default) = &parameter.default
+            && selected.values.remove(&AbstractValue::UNDEFINED)
+        {
+            let alternative = !selected.values.is_empty();
+            let default = expression(context, default, body, frame, judgment)?;
+            if alternative {
+                // Abstract alternatives do not prove which prologue path
+                // completed. Keep every reached effect and value.
+                frame
+                    .effect_coverage
+                    .compose(&EffectCoverageFragment::default());
+                selected.values.extend(default.values);
+                selected.selection = None;
+            } else {
+                selected = default;
+            }
+        }
+        if selected.values.is_empty() {
+            return Some(std::ops::ControlFlow::Break(()));
+        }
+        let selection = selected
+            .selection
+            .filter(|selection| selection.matches(&selected.values));
+        frame.inputs.extend(selected.values.iter().cloned());
+        frame
+            .environment
+            .insert(parameter.binding.clone(), selected.values);
+        if let Some(selection) = selection {
+            frame
+                .binding_selections
+                .insert(parameter.binding.clone(), selection);
+        } else {
+            frame.binding_selections.remove(&parameter.binding);
+        }
+        context.local_binding_stored(&parameter.binding, frame);
+        frame.initialized_bindings.insert(parameter.binding.clone());
+        frame
+            .effect_coverage
+            .compose(&context.declarative_binding_operation(
+                &parameter.binding,
+                frame,
+                BindingOperation::Initialize,
+            ));
+    }
+    Some(std::ops::ControlFlow::Continue(()))
+}
+
 /// Syntax coverage comes from LocalBody's canonical lowering. The judgment
 /// composes every reached operation, including values discarded by a sequence.
 pub(super) fn execute(
@@ -1145,62 +1402,10 @@ pub(super) fn execute(
 ) -> Option<LocalTransferResult> {
     let mut judgment = AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default());
     frame.return_selection = None;
-    if let Some(arguments) = frame.parameter_inputs.clone() {
-        // Later parameters are in TDZ while an earlier default executes.
-        // Body declarations are instantiated only after this environment.
-        for parameter in body.parameters.iter() {
-            frame.environment.insert(
-                parameter.binding.clone(),
-                Values::from([AbstractValue::Value(Value::Unavailable)]),
-            );
-            frame.binding_selections.remove(&parameter.binding);
-        }
-        context.instantiate_parameter_bindings(frame);
-        for (index, parameter) in body.parameters.iter().enumerate() {
-            let mut selected = arguments
-                .get(index)
-                .cloned()
-                .unwrap_or_else(|| SelectedValue::raw(Values::from([AbstractValue::UNDEFINED])));
-            if let Some(default) = &parameter.default
-                && selected.values.remove(&AbstractValue::UNDEFINED)
-            {
-                let alternative = !selected.values.is_empty();
-                let default = expression(context, default, body, frame, &mut judgment)?;
-                if alternative {
-                    // Abstract alternatives do not prove which prologue path
-                    // completed. Keep every reached effect and value.
-                    frame
-                        .effect_coverage
-                        .compose(&EffectCoverageFragment::default());
-                    selected.values.extend(default.values);
-                    selected.selection = None;
-                } else {
-                    selected = default;
-                }
-            }
-            if selected.values.is_empty() {
-                return Some(finish(frame, judgment));
-            }
-            let selection = selected
-                .selection
-                .filter(|selection| selection.matches(&selected.values));
-            frame.inputs.extend(selected.values.iter().cloned());
-            frame
-                .environment
-                .insert(parameter.binding.clone(), selected.values);
-            if let Some(selection) = selection {
-                frame
-                    .binding_selections
-                    .insert(parameter.binding.clone(), selection);
-            } else {
-                frame.binding_selections.remove(&parameter.binding);
-            }
-            context.local_binding_stored(&parameter.binding, frame);
-            frame.initialized_bindings.insert(parameter.binding.clone());
-            frame
-                .effect_coverage
-                .compose(&context.declarative_binding_operation(&parameter.binding, frame));
-        }
+    if frame.parameter_inputs.is_some()
+        && initialize_parameters(context, body, frame, &mut judgment)?.is_break()
+    {
+        return Some(finish(frame, judgment));
     }
     for (binding, kind) in &body.bindings {
         match kind {
@@ -1252,7 +1457,7 @@ pub(super) fn execute(
         // Let/const cells have actually been created in TDZ above. Hoisted
         // values and compatibility parameters retain their separate boundary.
         let effects = if matches!(kind, LocalBinding::Let | LocalBinding::Const) {
-            context.declarative_binding_operation(binding, frame)
+            context.declarative_binding_operation(binding, frame, BindingOperation::Create)
         } else {
             EffectCoverageFragment::default()
         };
@@ -1277,7 +1482,18 @@ pub(super) fn execute(
                 if selected.values.is_empty() {
                     return Some(finish(frame, judgment));
                 }
-                let SelectedValue { values, selection } = selected;
+                let SelectedValue {
+                    values,
+                    selection,
+                    postcondition,
+                } = selected;
+                if matches!(body.bindings[binding], LocalBinding::Const)
+                    && let Some(proof) = postcondition.filter(|proof| proof.matches(&values))
+                {
+                    frame.binding_postconditions.insert(binding.clone(), proof);
+                } else {
+                    frame.binding_postconditions.remove(binding);
+                }
                 let selection = selection.filter(|selection| selection.matches(&values));
                 frame.environment.insert(binding.clone(), values);
                 if let Some(selection) = selection {
@@ -1289,7 +1505,11 @@ pub(super) fn execute(
                 frame.initialized_bindings.insert(binding.clone());
                 frame
                     .effect_coverage
-                    .compose(&context.declarative_binding_operation(binding, frame));
+                    .compose(&context.declarative_binding_operation(
+                        binding,
+                        frame,
+                        BindingOperation::Initialize,
+                    ));
             }
             LocalOperation::Evaluate(node) => {
                 if expression(context, node, body, frame, &mut judgment)?

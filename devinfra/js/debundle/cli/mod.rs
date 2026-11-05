@@ -182,7 +182,7 @@ fn verify_graph_header_compatibility(
                     graph.chunk_id
                 )
             })?;
-        let exact_chunk_scope = scopes.len() == 1 && relative == scopes[0];
+        let exact_chunk_scope = scopes.iter().any(|scope| relative == scope);
         let full_tree_with_config = relative.as_os_str().is_empty() && tree_config.is_some();
         if !exact_chunk_scope && !full_tree_with_config {
             return Err(GraphMismatch::new(

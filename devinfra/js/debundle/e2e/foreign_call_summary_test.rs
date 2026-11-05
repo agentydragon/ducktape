@@ -3,8 +3,156 @@
 //! importer; anything that can run other code stays conservative.
 
 use analysis::analysis_provenance::InferenceRule;
+use analysis::execution_evidence::{GlobalReachCause, HavocReach};
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
+
+fn assert_foreign_record_reach(fixture: &Fixture, expected: bool) {
+    let graph = fixture.dependency_graph();
+    let reached = graph
+        .nodes
+        .iter()
+        .filter_map(|node| node.synchronous_execution.as_ref())
+        .flat_map(|execution| &execution.precision_losses)
+        .any(|loss| {
+            loss.reach
+                == HavocReach::Global {
+                    cause: GlobalReachCause::ForeignRecord,
+                }
+        });
+    assert_eq!(reached, expected);
+}
+
+#[test]
+fn stable_primitive_provider_captures_do_not_retain_foreign_callbacks() {
+    for (initializer, expected) in [
+        ("'marker'", "string\n"),
+        ("Symbol.for('fixture.marker')", "symbol\n"),
+    ] {
+        let provider = format!(
+            "var captured = {initializer}; export function make() {{ return {{ value: captured }}; }}"
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                "import { make } from './peer.js'; const result = make(); console.log(typeof result.value);",
+                vec![],
+            )
+            .with_extra_chunks(&[("static/peer", &provider)]),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        let report: serde_json::Value =
+            read_json(&fixture.report_root.join("static/app/modules.json"));
+        let summary = &report["imported_callables"]["make"]["foreign_call"];
+        assert!(summary.is_object(), "{report:#}");
+        assert!(
+            summary["retained_provider_captures"].is_null(),
+            "{summary:#}"
+        );
+        assert_foreign_record_reach(&fixture, false);
+    }
+}
+
+#[test]
+fn unproved_provider_capture_kinds_retain_foreign_callbacks() {
+    for (case, prefix) in [
+        ("callback", "var captured = () => 7;"),
+        (
+            "reassigned",
+            "var captured = Symbol.for('fixture.marker'); captured = () => 7;",
+        ),
+        (
+            "shadowed-native",
+            "var Symbol = { for() { return () => 7; } }; var captured = Symbol.for('fixture.marker');",
+        ),
+        (
+            "mutated-native",
+            "Symbol.for = function() { return () => 7; }; var captured = Symbol.for('fixture.marker');",
+        ),
+        (
+            "erased-assignment",
+            "var source = () => 7; var captured = (source ||= 'marker');",
+        ),
+        (
+            "redeclared",
+            "var captured = 'marker'; var captured = () => 7;",
+        ),
+    ] {
+        let provider =
+            format!("{prefix} export function make() {{ return {{ value: captured }}; }}");
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                "import { make } from './peer.js'; const result = make(); console.log(result.value());",
+                vec![],
+            )
+            .with_extra_chunks(&[("static/peer", &provider)]),
+        );
+        assert_preserved_entry_output(&fixture, "7\n");
+        let report: serde_json::Value =
+            read_json(&fixture.report_root.join("static/app/modules.json"));
+        let summary = &report["imported_callables"]["make"]["foreign_call"];
+        assert_eq!(
+            summary["retained_provider_captures"],
+            serde_json::json!(["captured"]),
+            "{case}: {summary:#}"
+        );
+        assert_foreign_record_reach(&fixture, true);
+    }
+}
+
+#[test]
+fn provider_capture_kinds_preserve_ancestor_initialization_and_hoisting() {
+    const ASSIGN: &str = "api.make = function() { return { value: captured }; };";
+    for (body, expected, retained) in [
+        (
+            format!("var captured = 'marker'; {ASSIGN}"),
+            "string\n",
+            false,
+        ),
+        (
+            format!("{ASSIGN} return; var captured = 'marker';"),
+            "undefined\n",
+            false,
+        ),
+        (
+            format!(
+                "{ASSIGN} return; var captured = 'marker'; function captured() {{ return 7; }}"
+            ),
+            "function\n",
+            true,
+        ),
+        (
+            format!("for (var captured of [() => 7]) {{}} {ASSIGN}"),
+            "function\n",
+            true,
+        ),
+    ] {
+        let provider =
+            format!("var api = {{}}; function setup() {{ {body} }} setup(); export {{ api }};");
+        let policy = [ChunkExportPurityBuilder::new("static/peer")
+            .with_namespace_independent_members("api", &["make"])
+            .with_source_callable_members("api", &["make"])
+            .build()];
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                "import { api as remote } from './peer.js'; const result = remote.make(); console.log(typeof result.value);",
+                vec![],
+            )
+            .with_extra_chunks(&[("static/peer", &provider)])
+            .with_chunk_export_purity(&policy),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        let report: serde_json::Value =
+            read_json(&fixture.report_root.join("static/app/modules.json"));
+        let summary = &report["imported_callables"]["remote"]["foreign_members"]["make"];
+        assert!(summary.is_object(), "{report:#}");
+        assert_eq!(
+            summary["retained_provider_captures"].is_array(),
+            retained,
+            "{body}: {summary:#}"
+        );
+        assert_foreign_record_reach(&fixture, retained);
+    }
+}
 
 const BOX: &str = "export class Box {\n  #callback;\n  #cache = new WeakMap();\n  constructor(callback, label) { this.#callback = callback; }\n  invoke() { return this.#callback(); }\n}\n";
 
@@ -38,8 +186,8 @@ fn derived_constructor_retains_its_callback_until_instance_use() {
     assert_eq!(summary["invocation"], "construct");
     assert_eq!(summary["retained_arguments"], serde_json::json!([0]));
     assert_eq!(
-        summary["native_constructions"],
-        serde_json::json!(["weak_map"])
+        summary["native_operations"],
+        serde_json::json!([{"invocation": "construct", "intrinsic": "weak_map"}])
     );
     let graph = fixture.dependency_graph();
     let wrapped = graph
@@ -83,8 +231,13 @@ fn class_fields_keep_typed_empty_keyed_collection_constructions() {
     let summary = &report["imported_callables"]["Collections"]["foreign_call"];
     assert_eq!(summary["invocation"], "construct");
     assert_eq!(
-        summary["native_constructions"],
-        serde_json::json!(["map", "set", "weak_map", "weak_set"])
+        summary["native_operations"],
+        serde_json::json!([
+            {"invocation": "construct", "intrinsic": "map"},
+            {"invocation": "construct", "intrinsic": "set"},
+            {"invocation": "construct", "intrinsic": "weak_map"},
+            {"invocation": "construct", "intrinsic": "weak_set"},
+        ])
     );
 }
 
@@ -110,7 +263,10 @@ fn callable_factories_use_shared_empty_keyed_collection_transfers() {
             serde_json::json!([{"kind": "fresh_allocation"}])
         );
         assert_eq!(summary["retained_arguments"], serde_json::json!([]));
-        assert_eq!(summary["native_constructions"], serde_json::json!(["map"]));
+        assert_eq!(
+            summary["native_operations"],
+            serde_json::json!([{"invocation": "construct", "intrinsic": "map"}])
+        );
     }
     assert!(fixture.dependency_graph().nodes.iter().any(|node| {
         node.synchronous_execution
@@ -153,7 +309,7 @@ fn regexp_literal_factories_return_fresh_allocations_without_protocol_shape() {
             serde_json::json!([{"kind": "fresh_allocation"}])
         );
         assert_eq!(summary["retained_arguments"], serde_json::json!([]));
-        assert_eq!(summary["native_constructions"], serde_json::json!([]));
+        assert_eq!(summary["native_operations"], serde_json::json!([]));
     }
 }
 
@@ -189,7 +345,7 @@ fn regexp_literal_summary_keeps_global_binding_and_prototype_behavior_live() {
         literal["returns"],
         serde_json::json!([{"kind": "fresh_allocation"}])
     );
-    assert_eq!(literal["native_constructions"], serde_json::json!([]));
+    assert_eq!(literal["native_operations"], serde_json::json!([]));
     assert!(
         report["imported_callables"]["construct"]["foreign_call"].is_null(),
         "a constructor call does not use the RegExp-literal transfer"
@@ -1044,8 +1200,8 @@ fn deferred_descriptor_creation_migration_controls() {
             "{provider}"
         );
         assert_eq!(
-            callable["foreign_call"]["native_constructions"],
-            serde_json::json!(native)
+            callable["foreign_call"]["native_operations"],
+            serde_json::json!(native.iter().map(|intrinsic| serde_json::json!({"invocation": "construct", "intrinsic": intrinsic})).collect::<Vec<_>>())
         );
         assert_eq!(callable["callback_factory_evidence"], serde_json::json!([]));
         if members.is_empty() {

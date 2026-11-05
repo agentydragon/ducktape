@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
 use super::statement_facts::{
-    ConstructorFacts, FallbackOnlyEffects, HeapContentAccesses, HeapContentCells, SynchronousCalls,
+    ConstructorFacts, ExportLinkage, FallbackOnlyEffects, HeapContentAccesses, HeapContentCells,
+    SynchronousCalls,
 };
 use super::*;
 use crate::facts::sync_effects::SavedBindingEffectCoverage;
@@ -97,10 +98,12 @@ impl SavedConstructorFacts {
 #[serde(rename_all = "snake_case")]
 enum SavedEffectCell {
     Binding(SavedBinding),
+    LexicalCell(u32),
     GlobalProp(String),
     ArrayContents(u32),
     SetContents(u32),
     ObjectShape(u32),
+    DescriptorMapContents(u32),
     OwnProperty { origin: u32, property: String },
 }
 
@@ -108,10 +111,12 @@ impl SavedEffectCell {
     fn snapshot(cell: &EffectCell, ordinals: &ContextOrdinals) -> Result<Self> {
         Ok(match cell {
             EffectCell::Binding(binding) => Self::Binding(ordinals.snapshot_binding(binding)?),
+            EffectCell::LexicalCell(origin) => Self::LexicalCell(*origin),
             EffectCell::GlobalProp(property) => Self::GlobalProp(property.clone()),
             EffectCell::ArrayContents(origin) => Self::ArrayContents(*origin),
             EffectCell::SetContents(origin) => Self::SetContents(*origin),
             EffectCell::ObjectShape(origin) => Self::ObjectShape(*origin),
+            EffectCell::DescriptorMapContents(origin) => Self::DescriptorMapContents(*origin),
             EffectCell::OwnProperty { origin, property } => Self::OwnProperty {
                 origin: *origin,
                 property: property.clone(),
@@ -122,10 +127,12 @@ impl SavedEffectCell {
     fn restore(self, ordinals: &ContextOrdinals) -> Result<EffectCell> {
         Ok(match self {
             Self::Binding(binding) => EffectCell::Binding(ordinals.restore_binding(binding)?),
+            Self::LexicalCell(origin) => EffectCell::LexicalCell(origin),
             Self::GlobalProp(property) => EffectCell::GlobalProp(property),
             Self::ArrayContents(origin) => EffectCell::ArrayContents(origin),
             Self::SetContents(origin) => EffectCell::SetContents(origin),
             Self::ObjectShape(origin) => EffectCell::ObjectShape(origin),
+            Self::DescriptorMapContents(origin) => EffectCell::DescriptorMapContents(origin),
             Self::OwnProperty { origin, property } => EffectCell::OwnProperty { origin, property },
         })
     }
@@ -465,7 +472,7 @@ struct SavedSynchronousCalls<'a> {
     uninitialized_reads: BTreeSet<SavedBinding>,
     fallback_only: SavedFallbackOnlyEffects,
     complete: bool,
-    binding_effect_coverage: SavedBindingEffectCoverage,
+    binding_effect_coverage: SavedBindingEffectCoverage<'a>,
     settled_array_elements: BTreeMap<SavedBinding, super::SettledElements>,
     global_object_aliases: Option<BTreeSet<SavedBinding>>,
     heap_contents: SavedHeapContentCells,

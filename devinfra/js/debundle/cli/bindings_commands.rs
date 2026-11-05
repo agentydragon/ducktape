@@ -102,8 +102,8 @@ enum BindingsNsCommand {
     /// Each positional `<sym>:<module>[:<readable>]` moves a binding
     /// and optionally renames it in the same step; `--batch` reads
     /// moves as JSON. Validation runs on the *whole batch's* post-state
-    /// and includes the realizability + atom-split gate (the same
-    /// predicate `modules merge` / `modules delete --force` use), so a
+    /// and resolves post-edit claims; verified writes require the canonical
+    /// full-context candidate assessment, so a
     /// multi-move refactor whose intermediate states would be invalid
     /// can land in one shot; wanting refuse-intermediate-invalid
     /// semantics means invoking once per move. Destination modules are
@@ -127,7 +127,7 @@ enum BindingsNsCommand {
     /// the same input. `source_matches[].bindings[]` entries cannot yet
     /// be unassigned with this command. `--dry-run --analysis` additionally
     /// reports statement-order commutation for the exact post-unassign
-    /// candidate, without changing the legacy gate.
+    /// candidate; graph-only dry runs need full assessment before a write.
     Unassign(Box<BindingsUnassignArgs>),
 }
 
@@ -189,7 +189,7 @@ struct BindingsRenameArgs {
 struct BindingsUnassignArgs {
     #[command(flatten)]
     pub edit: GraphEditArgs,
-    /// Optional full-context report-only assessment of the in-memory
+    /// Full-context canonical assessment of the in-memory
     /// post-unassign candidate through the canonical lowering path.
     #[command(flatten)]
     pub effect_assessment: CandidateEffectAssessmentArgs,
@@ -204,7 +204,7 @@ struct BindingsUnassignArgs {
 struct BindingsAssignArgs {
     #[command(flatten)]
     pub edit: GraphEditArgs,
-    /// Optional full-context report-only assessment of the in-memory
+    /// Full-context canonical assessment of the in-memory
     /// post-batch candidate through the canonical lowering path.
     #[command(flatten)]
     pub effect_assessment: CandidateEffectAssessmentArgs,
@@ -325,6 +325,11 @@ fn run_bindings_assign_cmd(
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
 ) -> Result<()> {
+    if args.edit.no_verify {
+        eprintln!(
+            "warning: --no-verify skips claim validation and candidate assessment; this assignment is unvalidated."
+        );
+    }
     use std::io::Read;
     let mut moves: Vec<Move> = Vec::new();
     for t in &args.triples {
@@ -345,7 +350,7 @@ fn run_bindings_assign_cmd(
         .resolve_for_verified_write(&args.edit, source_context)?;
     // `GraphEditArgs::gate` is the shared "graph or no-verify" policy
     // every mutating verb uses; no verb can silently skip the
-    // realizability gate.
+    // graph-backed claim checks and canonical candidate assessment.
     let gate = args.edit.gate(source_context)?;
     let effect_assessment =
         candidate_context
@@ -380,7 +385,14 @@ fn run_bindings_unassign_cmd(
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
 ) -> Result<()> {
-    let candidate_context = args.effect_assessment.resolve(&args.edit, source_context)?;
+    if args.edit.no_verify {
+        eprintln!(
+            "warning: --no-verify skips claim validation and candidate assessment; this unassignment is unvalidated."
+        );
+    }
+    let candidate_context = args
+        .effect_assessment
+        .resolve_for_verified_write(&args.edit, source_context)?;
     let effect_assessment =
         candidate_context
             .as_ref()
@@ -413,12 +425,18 @@ fn run_bindings_unassign_cmd(
 fn print_unassign_outcome(out: &UnassignOutcome, format: OutputFormat) -> Result<()> {
     match format {
         OutputFormat::Text => {
+            let assessment = if out.outcome.needs_full_assessment {
+                "; needs_full_assessment"
+            } else {
+                ""
+            };
             println!(
-                "{}: {} unassign(s); {} file(s) written, {} file(s) deleted",
+                "{}: {} unassign(s); {} file(s) written, {} file(s) deleted{}",
                 out.outcome.action,
                 out.unassigned,
                 out.outcome.files_written.len(),
-                out.outcome.files_deleted.len()
+                out.outcome.files_deleted.len(),
+                assessment,
             );
             Ok(())
         }
@@ -429,12 +447,18 @@ fn print_unassign_outcome(out: &UnassignOutcome, format: OutputFormat) -> Result
 fn print_assign_outcome(out: &AssignOutcome, format: OutputFormat) -> Result<()> {
     match format {
         OutputFormat::Text => {
+            let assessment = if out.outcome.needs_full_assessment {
+                "; needs_full_assessment"
+            } else {
+                ""
+            };
             println!(
-                "{}: {} move(s); {} file(s) written, {} file(s) deleted",
+                "{}: {} move(s); {} file(s) written, {} file(s) deleted{}",
                 out.outcome.action,
                 out.moves_applied,
                 out.outcome.files_written.len(),
-                out.outcome.files_deleted.len()
+                out.outcome.files_deleted.len(),
+                assessment,
             );
             Ok(())
         }

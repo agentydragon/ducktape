@@ -461,6 +461,9 @@ impl StatementFacts {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum EffectCell {
     Binding(Id),
+    /// A captured declarative binding, pooled across activations by its
+    /// canonical declaration offset. No singleton or private-birth proof.
+    LexicalCell(u32),
     GlobalProp(String),
     /// Heap contents of one array allocation, keyed by its canonical object
     /// origin from chunk value flow.
@@ -470,12 +473,28 @@ pub enum EffectCell {
     /// Own keys and descriptor attributes, shared by every generation of
     /// this source allocation. Distinct from stored data values.
     ObjectShape(u32),
+    /// A captured native descriptor carrier, including its property records.
+    DescriptorMapContents(u32),
     /// One static own property, conservatively shared by every runtime
     /// generation of the source allocation. This supplies no strong update.
     OwnProperty {
         origin: u32,
         property: String,
     },
+}
+
+impl EffectCell {
+    pub(crate) fn is_heap_content(&self) -> bool {
+        match self {
+            Self::Binding(_) | Self::GlobalProp(_) => false,
+            Self::ArrayContents(_)
+            | Self::LexicalCell(_)
+            | Self::SetContents(_)
+            | Self::ObjectShape(_)
+            | Self::DescriptorMapContents(_)
+            | Self::OwnProperty { .. } => true,
+        }
+    }
 }
 
 /// The (writes, reads) cell view of one statement, derived by
@@ -934,7 +953,7 @@ mod initializer_overlay_tests {
                 .as_ref()
                 .unwrap()
                 .clone();
-            let BindingEffectCoverage::OrderedRootInitializer { receipt, .. } =
+            let BindingEffectCoverage::OrderedRoot { receipt, .. } =
                 &before.binding_effect_coverage
             else {
                 panic!("the fixture must exercise ordered root receipt sealing: {before:#?}");

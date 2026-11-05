@@ -3,8 +3,8 @@
 //! asserts the generated wrapper.
 
 use debundle_e2e_support::{
-    CommandResult, assert_module_source, assert_node_output, assert_source_file, read_json,
-    run_debundler, write_text_file, write_yaml_file,
+    CommandResult, assert_module_source, assert_node_output, assert_source_file, read_gzip_json,
+    read_json, run_debundler, run_debundler_with_args, write_text_file, write_yaml_file,
 };
 use serde_json::{Value, json};
 use spec::{
@@ -3362,5 +3362,114 @@ fn bundled_reentry_proof_requires_closed_bundle() {
             "{}",
             fixture.result.stderr
         );
+    }
+}
+
+#[test]
+fn partial_swap_body_effect_receipt_retains_equivalence_dependency() {
+    for (case, provider, invocation, member) in [
+        (
+            "direct",
+            "export function object() { const record = { value: 1 }; return record; }\n",
+            "object()",
+            None,
+        ),
+        (
+            "member",
+            "var object = {}; object.make = function() { const record = { value: 1 }; return record; }; export { object };\n",
+            "object.make()",
+            Some("make"),
+        ),
+    ] {
+        let (ws, package_root) = setup_partial_swap_consumer_fixture(
+            "vendor-partial-swap-body-effects-",
+            &format!("{provider}export const keep = () => 7;\n"),
+            &format!(
+                "import {{ object }} from './megachunk.js';\nconst wrapped = {invocation};\nconsole.log(wrapped.value);\n"
+            ),
+            "fac",
+            "1.0.0",
+            "lib/index.mjs",
+            provider,
+        );
+        let report_root = ws.out_root.join("reports").join("tree");
+        let mut spec = build_bundled_partial_swap_spec(
+            &ws,
+            json!({"static/megachunk.js": partial_swap_vendor(
+                "equivalent body-effect fixture",
+                &[("fac", partial_package("1.0.0", "lib/index.mjs", Some("fac")))],
+                &[("object", swap_symbol("fac", PartialSwapKind::Member, Some("object"), None))],
+            )}),
+            Some(json!({
+                "logical_modules": {
+                    "static/app": {
+                        "records/wrapped": {
+                            "members": [{ "name": "wrapped", "selector": { "binding": { "name": "wrapped" } } }],
+                        },
+                    },
+                },
+                "unassigned_mode": { "static/app": { "kind": "inline_in_entry" } },
+                "materialize_logical_modules": {
+                    "prune_other_chunks": false,
+                    "report_out_dir": &report_root,
+                },
+            })),
+        );
+        if let Some(member) = member {
+            spec["chunk_export_purity"] = json!({"static/megachunk": {
+                "namespace_independent_members": {"object": [member]},
+                "source_callable_members": {"object": [member]},
+            }});
+        }
+        let spec_path = ws.root.path().join("transform_spec.yaml");
+        write_yaml_file(&spec_path, &spec);
+        let result = run_debundler_with_args(&spec_path, &[("fac", &package_root)], &["--graphs"]);
+        assert_success(&result);
+        let artifacts = PathBuf::from(std::env::var_os("TEST_UNDECLARED_OUTPUTS_DIR").unwrap())
+            .join("imported-body-vendor-equivalence")
+            .join(case);
+        fs::create_dir_all(&artifacts).unwrap();
+        for name in [
+            "dependency_graph.json.gz",
+            "effect_translation_validation.json",
+            "candidate_relocation_assessment.json",
+        ] {
+            fs::copy(
+                report_root.join("static/app").join(name),
+                artifacts.join(name),
+            )
+            .unwrap();
+        }
+        let graph: Value = read_gzip_json(&report_root.join("static/app/dependency_graph.json.gz"));
+        let wrapped = graph["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| {
+                node["declared_bindings"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|binding| binding["binding"] == "wrapped")
+            })
+            .unwrap();
+        let authority = &wrapped["synchronous_execution"]["binding_effect_authority"];
+        assert_eq!(authority["authority"], "operation_receipt", "{wrapped:#}");
+        let call = &authority["receipt"]["calls"][0];
+        assert_eq!(call["target"]["kind"], "imported_callable");
+        assert_eq!(
+            call["dependencies"]["vendor_swap_equivalences"],
+            json!([{"defining_module": "static/megachunk", "export": "object", "replacement_package": "fac"}])
+        );
+        assert_eq!(call["target"]["member"], json!(member));
+        if let Some(member) = member {
+            assert_eq!(
+                call["dependencies"]["source_callable_members"][0]["member"],
+                member
+            );
+        }
+        let app_root = ws.out_root.join("app");
+        install_node_module(&app_root, "fac", "1.0.0", provider);
+        assert_node_output(&app_root.join("static/app/entry.js"), "1\n", "");
     }
 }

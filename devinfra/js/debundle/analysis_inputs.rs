@@ -131,6 +131,17 @@ pub enum ForeignInvocation {
     Construct,
 }
 
+/// An original native operation required by an interpreted provider body.
+/// Every consumer checks the canonical row's complete slot requirements;
+/// a global constructor family alone cannot establish a static call's identity.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct ForeignNativeOperation {
+    pub invocation: ForeignInvocation,
+    pub intrinsic: NativeIntrinsic,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub property: Option<String>,
+}
+
 /// One possible result of a derived foreign call.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -155,17 +166,19 @@ pub struct ForeignCallSummary {
     pub defining_module: String,
     pub export: String,
     pub local: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member: Option<String>,
     pub source_location: Option<SourceLocation>,
     pub invocation: ForeignInvocation,
     pub returns: BTreeSet<ForeignReturn>,
     pub retained_arguments: BTreeSet<usize>,
-    /// Source-private provider var values retained by the result. Their kinds
-    /// remain unknown; later use must retain opaque foreign capabilities.
+    /// Provider var values retained by the result whose kinds remain unknown;
+    /// later use must retain opaque foreign capabilities.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub retained_provider_captures: BTreeSet<String>,
-    /// Census families the body constructs from (`new WeakMap()`); their
-    /// integrity premise is in `dependencies`.
-    pub native_constructions: BTreeSet<NativeIntrinsic>,
+    /// Exact native operations consumed by the body. Their integrity premises
+    /// are in `dependencies` and must hold in every analyzed chunk's census.
+    pub native_operations: BTreeSet<ForeignNativeOperation>,
     /// The vendor swap's replacement package when the emitted program runs it
     /// instead of this body; the summary then rests on the swap's equivalence
     /// promise (SPEC.md § Vendor swap equivalence).
@@ -174,6 +187,54 @@ pub struct ForeignCallSummary {
     /// Trusted provider judgment; deliberately absent from report JSON.
     #[serde(skip)]
     pub(crate) dependencies: ProofDependencies,
+    /// Actual shared-kernel operations, independent of the allocation-only
+    /// return judgment. Unknown domains and completion remain unknown.
+    #[serde(skip)]
+    pub(crate) body_effects: Option<Box<ForeignBodyEffects>>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub(crate) struct ForeignBodyEffects {
+    pub(crate) callable_key: u32,
+    pub(crate) effects: crate::facts::sync_effects::EffectCoverageFragment,
+}
+
+/// A finite ordinary input layout. Values and callback identities are deliberately
+/// absent: the consumer checks current descriptors after every operand runs.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub(crate) struct RecordInputShape {
+    pub(crate) properties: BTreeMap<String, RecordInputProperty>,
+    pub(crate) creation_order: Vec<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum RecordInputProperty {
+    Data,
+    Accessor { getter: bool, setter: bool },
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ParameterHeapRead {
+    ObjectShape { argument: usize },
+    OwnProperty { argument: usize, property: String },
+}
+
+/// Conditional body evidence is independent of every returned-value capability.
+/// Its argument layout and parameterized footprint must be instantiated together.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub(crate) struct ConditionalForeignBody {
+    pub(crate) defining_module: String,
+    pub(crate) export: String,
+    pub(crate) local: String,
+    pub(crate) callable_key: u32,
+    pub(crate) input: RecordInputShape,
+    pub(crate) reads: BTreeSet<ParameterHeapRead>,
+    pub(crate) native_operations: BTreeSet<ForeignNativeOperation>,
+    pub(crate) effects: crate::facts::sync_effects::EffectCoverageFragment,
+    pub(crate) dependencies: ProofDependencies,
+    pub(crate) replacement_package: Option<String>,
 }
 
 /// Capabilities of one bare imported callable, keyed by the importer's local
@@ -191,6 +252,11 @@ pub struct CallableSummary {
     pub descriptor_copy_factory: Option<DescriptorCopyFactorySummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub foreign_call: Option<ForeignCallSummary>,
+    /// Audited member identity with independently interpreted source bodies.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub foreign_members: BTreeMap<String, ForeignCallSummary>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) conditional_bodies: Vec<ConditionalForeignBody>,
 }
 
 impl CallableSummary {
@@ -202,6 +268,8 @@ impl CallableSummary {
             callback_object_arguments: None,
             descriptor_copy_factory: None,
             foreign_call: None,
+            foreign_members: BTreeMap::new(),
+            conditional_bodies: Vec::new(),
         }
     }
 
@@ -242,6 +310,19 @@ impl CallableSummary {
     }
 
     pub fn merge(&mut self, other: Self) {
+        for body in other.conditional_bodies {
+            if !self.conditional_bodies.contains(&body) {
+                self.conditional_bodies.push(body);
+            }
+        }
+        for (member, call) in other.foreign_members {
+            assert!(
+                self.foreign_members
+                    .get(&member)
+                    .is_none_or(|old| old == &call)
+            );
+            self.foreign_members.insert(member, call);
+        }
         if let Some(call) = other.foreign_call {
             assert!(
                 self.foreign_call
@@ -414,6 +495,23 @@ pub struct DescriptorCopyAuthorRef {
     pub spec_location: String,
 }
 
+/// The exact vendor export whose bundled source stands for the replacement.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct VendorSwapEquivalenceRef {
+    pub defining_module: String,
+    pub export: String,
+    pub replacement_package: String,
+}
+
+/// Runtime selection is an author assertion, independent of body effects.
+/// Source-marker policies use the resolved provider key from AnalysisSpec.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct SourceCallableMemberRef {
+    pub defining_module: String,
+    pub export: String,
+    pub member: String,
+}
+
 /// Additional captured-value assertions required by an inferred proof.
 /// Structural source evidence stays on the proof's existing source identity.
 /// Empty dependencies add no captured-value premise; the analysis's baseline
@@ -434,6 +532,12 @@ pub struct ProofDependencies {
     pub program_premises: BTreeSet<ProgramPremiseKey>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub no_accessor_install_callables: BTreeSet<NoAccessorInstallRef>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub vendor_swap_equivalences: BTreeSet<VendorSwapEquivalenceRef>,
+    /// Rare author-conditioned member selections stay out of every domain's
+    /// inline set layout and allocate only when actually consumed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_callable_members: Option<Arc<BTreeSet<SourceCallableMemberRef>>>,
 }
 
 /// A stable source module export cell that contributed to an imported
@@ -534,6 +638,11 @@ impl ProofDependencies {
             && self.host_behavior.is_empty()
             && self.program_premises.is_empty()
             && self.no_accessor_install_callables.is_empty()
+            && self.vendor_swap_equivalences.is_empty()
+            && self
+                .source_callable_members
+                .as_ref()
+                .is_none_or(|members| members.is_empty())
     }
 
     pub fn extend(&mut self, other: &Self) {
@@ -553,6 +662,21 @@ impl ProofDependencies {
             .extend(other.program_premises.iter().copied());
         self.no_accessor_install_callables
             .extend(other.no_accessor_install_callables.iter().cloned());
+        self.vendor_swap_equivalences
+            .extend(other.vendor_swap_equivalences.iter().cloned());
+        if let Some(members) = &other.source_callable_members {
+            match &mut self.source_callable_members {
+                None => self.source_callable_members = Some(members.clone()),
+                Some(held) if !Arc::ptr_eq(held, members) => {
+                    Arc::make_mut(held).extend(members.iter().cloned());
+                }
+                Some(_) => {}
+            }
+        }
+    }
+
+    pub(crate) fn add_source_callable_member(&mut self, reference: SourceCallableMemberRef) {
+        Arc::make_mut(self.source_callable_members.get_or_insert_default()).insert(reference);
     }
 }
 

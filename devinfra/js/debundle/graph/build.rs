@@ -1117,7 +1117,10 @@ fn emit_heap_content_order(
                 .any(|cell| {
                     matches!(
                         cell,
-                        EffectCell::OwnProperty { .. } | EffectCell::ObjectShape(_)
+                        EffectCell::OwnProperty { .. }
+                            | EffectCell::LexicalCell(_)
+                            | EffectCell::ObjectShape(_)
+                            | EffectCell::DescriptorMapContents(_)
                     )
                 })
     });
@@ -1208,28 +1211,12 @@ fn heap_content_cells(
     crate::StatementEffectSummary {
         reads: reads
             .iter()
-            .filter(|cell| {
-                matches!(
-                    cell,
-                    EffectCell::ArrayContents(_)
-                        | EffectCell::SetContents(_)
-                        | EffectCell::ObjectShape(_)
-                        | EffectCell::OwnProperty { .. }
-                )
-            })
+            .filter(|cell| cell.is_heap_content())
             .cloned()
             .collect(),
         writes: writes
             .iter()
-            .filter(|cell| {
-                matches!(
-                    cell,
-                    EffectCell::ArrayContents(_)
-                        | EffectCell::SetContents(_)
-                        | EffectCell::ObjectShape(_)
-                        | EffectCell::OwnProperty { .. }
-                )
-            })
+            .filter(|cell| cell.is_heap_content())
             .cloned()
             .collect(),
     }
@@ -2194,6 +2181,18 @@ fn promote_at_init_calls(
                     continue;
                 };
                 let callee_source_unit = SourceUnitId(callee_ordinal.0);
+                if callee_source_unit == caller
+                    && direct_eager_bindings.contains(&(
+                        caller,
+                        target_source_unit,
+                        target_binding.clone(),
+                    ))
+                {
+                    // Ordered root evaluation observes the same eager read
+                    // already recorded from source. It is not a second call
+                    // promotion. Reads from a distinct callee keep their role.
+                    continue;
+                }
                 if caller == target_source_unit
                     || !emitted.insert((target_source_unit, callee_source_unit))
                 {
@@ -2215,13 +2214,14 @@ fn promote_at_init_calls(
                     complete: true,
                 }
                 | crate::facts::sync_effects::BindingEffectAuthority::AuthorSourceOnly
-                | crate::facts::sync_effects::BindingEffectAuthority::OperationReceipt => {
+                | crate::facts::sync_effects::BindingEffectAuthority::OperationReceipt
+                | crate::facts::sync_effects::BindingEffectAuthority::RetainedEffectClosure => {
                     continue;
                 }
                 crate::facts::sync_effects::BindingEffectAuthority::LegacyExecution {
                     complete: false,
                 }
-                | crate::facts::sync_effects::BindingEffectAuthority::OrderedRootInitializerUncovered => {}
+                | crate::facts::sync_effects::BindingEffectAuthority::OrderedRootUncovered => {}
             }
         }
         if stmt.calls.eager.is_empty()

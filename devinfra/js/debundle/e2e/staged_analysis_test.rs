@@ -279,6 +279,7 @@ impl TreeStaged {
 
     fn merge(
         &self,
+        modules_root: &Path,
         target: &str,
         source: &str,
         analysis: Option<&Path>,
@@ -291,7 +292,7 @@ impl TreeStaged {
             "modules".to_string(),
             "merge".to_string(),
             "--modules".to_string(),
-            path(&self.modules).to_string(),
+            path(modules_root).to_string(),
             "--graph".to_string(),
             path(&self.graph).to_string(),
             "--source-root".to_string(),
@@ -619,7 +620,7 @@ fn module_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
 }
 
 fn assert_candidate_assessment_matches_run(
-    assessment: &Value,
+    application: &Value,
     run: &TreeStaged,
     expect_success: bool,
     emit_on_rejection: bool,
@@ -632,26 +633,19 @@ fn assert_candidate_assessment_matches_run(
         "candidate run failed unexpectedly:\n{}",
         result.result.stderr
     );
-    let report = read_effect_report(&out_root);
-    for field in [
-        "decision",
-        "emitted_order",
-        "swapped_pairs",
-        "relocation_dependencies",
-        "premise_dependencies",
-        "counts",
-        "coverage",
-    ] {
-        assert_eq!(assessment[field], report[field], "assessment field {field}");
+    for (chunk, assessment) in application["chunks"].as_object().unwrap() {
+        let report: Value = serde_json::from_slice(
+            &fs::read(out_root.join(format!(
+                "reports/tree/{chunk}/candidate_relocation_assessment.json"
+            )))
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            assessment, &report,
+            "candidate preview and emitted run differ for chunk {chunk}"
+        );
     }
-    let placement_report: Value = serde_json::from_slice(
-        &fs::read(out_root.join("reports/tree/main/candidate_relocation_assessment.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(
-        assessment["placement"], placement_report["placement"],
-        "candidate preview and emitted run must use the same typed placement result"
-    );
     result
 }
 
@@ -1239,6 +1233,219 @@ fn assert_lexical_authority_staged_parity(
 }
 
 #[test]
+fn imported_binding_update_effects_survive_saved_analysis() {
+    let source = "import { advance } from './peer.js'; const readLater = () => later; const result = advance(); const later = 1; console.log(result.before, result.after, result.state, readLater());\n";
+    let chunks = [(
+        "static/peer",
+        "export function advance() { let state = 40; const before = state++; const after = ++state; return { before, after, state }; }",
+    )];
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("work", &[Member::new("readLater"), Member::new("result")]),
+                logical_module("value", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&chunks),
+    );
+    let direct = staged.run(&["--effect-conflicts-jsonl"]);
+    assert_ok(&direct.result, "direct imported update run");
+    let graph: Value = read_gzip_json(
+        &direct
+            .output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz"),
+    );
+    let execution = &graph_node_for_binding(&graph, "result")["synchronous_execution"];
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "{execution:#}"
+    );
+    let artifact = path(&staged.artifact).to_owned();
+    let loaded = staged.run(&["--effect-conflicts-jsonl", "--analysis", &artifact]);
+    assert_ok(&loaded.result, "imported update run from saved analysis");
+    assert_same_invocation_trees(&direct, &loaded);
+    for run in [&direct, &loaded] {
+        assert_node_output(
+            &run.output_root().join("app/static/app/entry.js"),
+            "40 42 42 1\n",
+            "",
+        );
+    }
+}
+
+#[test]
+fn conditional_descriptor_body_effects_survive_saved_analysis() {
+    let source = "import { wrap } from './peer.js'; const wrapped = wrap({ name: 'report', create() { return later(); }, get schema() { return later(); } }); var later = () => 42; console.log(wrapped.schema, wrapped.create());\n";
+    let chunks = [("static/peer", DESCRIPTOR_COPY_PROVIDER)];
+    let contracts = [ChunkExportPurityBuilder::new("static/peer")
+        .with_descriptor_copy_factory("wrap", &["create"], &["create", "call"])
+        .build()];
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("wrapped", &[Member::new("wrapped")]),
+                logical_module("later", &[Member::new("later")]),
+            ],
+        )
+        .with_extra_chunks(&chunks)
+        .with_chunk_export_purity(&contracts),
+    );
+    let direct = staged.run(&["--effect-conflicts-jsonl"]);
+    assert_ok(&direct.result, "direct conditional body run");
+    let graph: Value = read_gzip_json(
+        &direct
+            .output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz"),
+    );
+    let execution = &graph_node_for_binding(&graph, "wrapped")["synchronous_execution"];
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "{execution:#}"
+    );
+    assert!(
+        execution["inference_uses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|usage| usage["conclusion"] == "conditional_foreign_body"),
+        "{execution:#}"
+    );
+    let artifact = path(&staged.artifact).to_owned();
+    let loaded = staged.run(&["--effect-conflicts-jsonl", "--analysis", &artifact]);
+    assert_ok(&loaded.result, "conditional body run from saved analysis");
+    assert_same_invocation_trees(&direct, &loaded);
+    for run in [&direct, &loaded] {
+        assert_node_output(
+            &run.output_root().join("app/static/app/entry.js"),
+            "42 42\n",
+            "",
+        );
+    }
+}
+
+#[test]
+fn captured_cell_conflicts_keep_distinct_origins_through_saved_analysis() {
+    let source = "function makeFirst(seed) { let state = seed; return { read: () => state, write: () => state = 42 }; }\nfunction makeSecond(seed) { let state = seed; return { read: () => state, write: () => state = 43 }; }\nconst first = makeFirst(1); const beforeFirst = first.read(); const afterFirst = first.write();\nconst second = makeSecond(2); const beforeSecond = second.read(); const afterSecond = second.write();\nconsole.log(beforeFirst, afterFirst, beforeSecond, afterSecond);\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "writer",
+                &[
+                    Member::new("makeFirst"),
+                    Member::new("makeSecond"),
+                    Member::new("first"),
+                    Member::new("afterFirst"),
+                    Member::new("second"),
+                    Member::new("afterSecond"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    let flags = ["--emit-on-rejection", "--effect-conflicts-jsonl"];
+    let direct = staged.run(&flags);
+    assert_eq!(
+        direct.result.status.code(),
+        Some(3),
+        "{}",
+        direct.result.stderr
+    );
+    let output = direct.output_root().join("reports/tree/static/app");
+    let graph: Value = read_gzip_json(&output.join("dependency_graph.json.gz"));
+    let rows = read_jsonl(&output.join("effect_conflicts.jsonl"));
+    let mut origins = std::collections::BTreeSet::new();
+    for (before, after) in [
+        ("beforeFirst", "afterFirst"),
+        ("beforeSecond", "afterSecond"),
+    ] {
+        let observer = &graph_node_for_binding(&graph, before)["statement_ordinal"];
+        let writer = &graph_node_for_binding(&graph, after)["statement_ordinal"];
+        let pair = rows
+            .iter()
+            .find(|row| {
+                &row["runs_first"]["unit"] == writer && &row["runs_later"]["unit"] == observer
+            })
+            .unwrap_or_else(|| panic!("no captured-cell conflict for {after}/{before}: {rows:#?}"));
+        assert_eq!(pair["havoc"], false, "{pair:#}");
+        let cells = pair["cells"].as_array().unwrap();
+        let cell = cells
+            .iter()
+            .find(|cell| {
+                cell["cell"]["kind"] == "lexical_cell"
+                    && !cell["first_write"].is_null()
+                    && !cell["later_read"].is_null()
+            })
+            .unwrap_or_else(|| panic!("captured-cell effects must remain explicit: {pair:#}"));
+        assert!(origins.insert(cell["cell"]["origin"].as_u64().unwrap()));
+    }
+    let artifact = path(&staged.artifact).to_owned();
+    let loaded = staged.run(&[flags[0], flags[1], "--analysis", &artifact]);
+    assert_eq!(loaded.result.status.code(), direct.result.status.code());
+    assert_same_invocation_trees(&direct, &loaded);
+}
+
+#[test]
+fn retained_effect_closure_survives_saved_analysis_without_marking_execution_complete() {
+    assert_retained_effect_saved_parity("return seed;", "7\n", |next| format!("step{next}()"));
+}
+
+#[test]
+fn composed_retained_effect_closure_survives_saved_analysis() {
+    assert_retained_effect_saved_parity("return seed + 1;", "8\n", |next| {
+        format!("(step{next}(), seed + 1)")
+    });
+}
+
+fn assert_retained_effect_saved_parity(
+    tail: &str,
+    expected: &str,
+    call_expression: impl Fn(usize) -> String,
+) {
+    let mut source = String::from("const seed = 7;\n");
+    let mut members = vec![Member::new("seed"), Member::new("result")];
+    for index in 0..66 {
+        source.push_str(&format!(
+            "function step{index}() {{ return {}; }}\n",
+            call_expression(index + 1)
+        ));
+        members.push(Member::new(format!("step{index}").leak()));
+    }
+    source.push_str(&format!(
+        "function step66() {{ {tail} }}\nconst result = step0();\nconsole.log(result);\n"
+    ));
+    members.push(Member::new("step66"));
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        &source,
+        vec![logical_module("all", &members)],
+    ));
+    let direct = staged.run(&[]);
+    assert_ok(&direct.result, "direct retained-effect run");
+    let graph: Value = read_gzip_json(
+        &direct
+            .output_root()
+            .join("reports/tree/static/app/dependency_graph.json.gz"),
+    );
+    let execution = &graph_node_for_binding(&graph, "result")["synchronous_execution"];
+    assert_eq!(execution["complete"], false, "{execution:#}");
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "retained_effect_closure",
+        "{execution:#}"
+    );
+    let analysis = path(&staged.artifact).to_owned();
+    let loaded = staged.run(&["--analysis", analysis.as_str()]);
+    assert_ok(&loaded.result, "retained-effect run from analysis");
+    assert_same_invocation_trees(&direct, &loaded);
+    assert_node_output(
+        &loaded.output_root().join("app/static/app/entry.js"),
+        expected,
+        "",
+    );
+}
+
+#[test]
 fn lexical_effect_authority_and_fallback_survive_staged_artifact_round_trip() {
     assert_lexical_authority_staged_parity(
         "const seed = 41;\nconst values = [];\nfunction readSeed() { values.push(seed); return seed; }\nvar result = readSeed();\nconsole.log(result);\n",
@@ -1787,8 +1994,24 @@ fn graph_options_survive_the_source_only_analysis_boundary() {
             fs::read(&staged.projection).unwrap() == fs::read(edited).unwrap(),
             "graph-only setting changed analysis identity"
         );
-        let reused = staged.run(&["--analysis", path(&staged.artifact)]);
-        assert_ok(&reused.result, "run saved facts with changed graph options");
+        let reused = staged.run(&["--analysis", path(&staged.artifact), "--emit-on-rejection"]);
+        if enabled {
+            assert_incomplete_relocation(&reused);
+        } else {
+            assert_ok(&reused.result, "run with original sequencing retained");
+            let report: Value = serde_json::from_slice(
+                &fs::read(
+                    reused
+                        .output_root()
+                        .join("reports/tree/static/app/candidate_relocation_assessment.json"),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(report["status"], "accepted_within_checked_scope");
+            assert_eq!(report["decision"]["scope"], "no_reordering");
+            assert_eq!(report["swapped_pairs"], 0);
+        }
         let graph: DependencyGraphReport = read_gzip_json(
             &reused
                 .output_root()
@@ -1802,8 +2025,8 @@ fn graph_options_survive_the_source_only_analysis_boundary() {
                     || (edge.source == b && edge.target == a))
         });
         assert_eq!(has_edge, !enabled, "dataflow graph setting was not applied");
-        let direct = staged.run(&[]);
-        assert_ok(&direct.result, "direct run with changed graph options");
+        let direct = staged.run(&["--emit-on-rejection"]);
+        assert_eq!(direct.result.status.code(), reused.result.status.code());
         assert_same_invocation_trees(&reused, &direct);
     }
 }
@@ -1828,11 +2051,10 @@ export { Holder1, Holder2, instA, instB };
         .with_dataflow_aware_s_chain()
         .with_trusted_dataflow_summaries(),
     );
-    let reused = staged.run(&["--analysis", path(&staged.artifact)]);
-    assert_ok(
-        &reused.result,
-        "run trusted dataflow facts from the staged artifact",
-    );
+    let reused = staged.run(&["--analysis", path(&staged.artifact), "--emit-on-rejection"]);
+    // Syntactic allocation summaries remove legacy sequencing edges but do
+    // not prove complete constructor effects for the actual relocation.
+    assert_incomplete_relocation(&reused);
     let graph: DependencyGraphReport = read_gzip_json(
         &reused
             .output_root()
@@ -1848,8 +2070,8 @@ export { Holder1, Holder2, instA, instB };
         }),
         "trusted syntactic summaries should keep disjoint constructor calls unsequenced"
     );
-    let direct = staged.run(&[]);
-    assert_ok(&direct.result, "direct run with trusted dataflow summaries");
+    let direct = staged.run(&["--emit-on-rejection"]);
+    assert_incomplete_relocation(&direct);
     assert_same_invocation_trees(&reused, &direct);
 
     let mut spec: serde_yaml::Value =
@@ -2178,6 +2400,26 @@ fn full_effect_stream_matches_between_direct_and_staged_runs() {
     );
 }
 
+fn assert_incomplete_relocation(invocation: &StagedInvocation) {
+    assert_eq!(
+        invocation.result.status.code(),
+        Some(3),
+        "expected rejected inspection output: {}",
+        invocation.result.stderr
+    );
+    let report: Value = serde_json::from_slice(
+        &fs::read(
+            invocation
+                .output_root()
+                .join("reports/tree/static/app/candidate_relocation_assessment.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(report["status"], "incomplete");
+    assert_eq!(report["decision"]["uncovered_havoc"], true);
+}
+
 fn assert_export_filter_changes_only_sinks(
     export_args: &[&str],
     filter_flag: &str,
@@ -2192,24 +2434,22 @@ fn assert_export_filter_changes_only_sinks(
         vec![logical_module("outer", &[Member::new("first"), Member::new("tail")]), logical_module("inner", &[Member::new("second")])],
     ).with_extra_chunks(&[("static/peer", "globalThis.externalMarker = 1;\nexport const value = 1;\n")]).with_extra_chunk_logical_modules(&extra_modules);
     let (staged, _fixture) = staged(opts);
-    let all = staged.run(export_args);
-    assert_ok(&all.result, "unfiltered export");
     let mut flags = export_args.to_vec();
+    flags.push("--emit-on-rejection");
+    let all = staged.run(&flags);
+    assert_incomplete_relocation(&all);
     flags.extend([filter_flag, "static/app"]);
     let filtered = staged.run(&flags);
-    assert_ok(&filtered.result, "filtered export");
-    let without_streams = |root: &Path| {
-        tree(root)
+    assert_incomplete_relocation(&filtered);
+    let without_streams = |invocation: &StagedInvocation| {
+        invocation_tree(invocation)
             .into_iter()
             .filter(|(path, _)| path.file_name().is_none_or(|name| name != filename))
             .collect::<BTreeMap<_, _>>()
     };
-    // tree() removes only command provenance. Every other byte, including
-    // all graphs, summary counts, native census and emitted JS, must match.
-    assert_eq!(
-        without_streams(&all.output_root()),
-        without_streams(&filtered.output_root())
-    );
+    // Normalize only invocation paths and command provenance. All graphs,
+    // summary counts, native census and inspection JS must match.
+    assert_eq!(without_streams(&all), without_streams(&filtered));
     let main_stream = PathBuf::from(format!("reports/tree/static/app/{filename}"));
     let peer_stream = PathBuf::from(format!("reports/tree/static/peer/{filename}"));
     assert_eq!(
@@ -2222,15 +2462,13 @@ fn assert_export_filter_changes_only_sinks(
     let mut loaded_flags = flags.to_vec();
     loaded_flags.extend(["--analysis", &artifact]);
     let filtered_loaded = staged.run(&loaded_flags);
-    assert_ok(
-        &filtered_loaded.result,
-        "filtered export from full staged analysis",
-    );
+    assert_incomplete_relocation(&filtered_loaded);
     assert_same_invocation_trees(&filtered, &filtered_loaded);
     let mut all_selected = export_args.to_vec();
+    all_selected.push("--emit-on-rejection");
     all_selected.extend([filter_flag, "static/app", filter_flag, "static/peer"]);
     let all_selected = staged.run(&all_selected);
-    assert_ok(&all_selected.result, "repeated filter selects both chunks");
+    assert_incomplete_relocation(&all_selected);
     assert_same_invocation_trees(&all, &all_selected);
 }
 
@@ -2543,7 +2781,8 @@ fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
     let result = staged.assign(Some("second:a_earlier"), Some(&staged.artifact), true);
     assert_ok(&result.result, "bindings assign --dry-run --analysis");
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
-    let assessment = &outcome["effect_relocation_assessment"];
+    let application = &outcome["effect_relocation_assessment"];
+    let assessment = &application["chunks"]["main"];
     assert_eq!(
         assessment["status"], "accepted_within_checked_scope",
         "{assessment:#}"
@@ -2572,9 +2811,12 @@ fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
     let applied = staged.assign(Some("second:a_earlier"), Some(&staged.artifact), false);
     assert_ok(&applied.result, "bindings assign --analysis");
     let applied: Value = serde_json::from_str(&applied.result.stdout).unwrap();
-    assert_eq!(applied["effect_relocation_assessment"], *assessment);
+    assert_eq!(
+        applied["effect_relocation_assessment"]["chunks"]["main"],
+        *assessment
+    );
     assert!(staged.modules.join("a_earlier.yaml").is_file());
-    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
+    let candidate = assert_candidate_assessment_matches_run(application, &staged, true, false);
     assert_node_output(
         &candidate.output_root().join("app/main/entry.js"),
         "first second\n",
@@ -2596,7 +2838,8 @@ console.log(left, right);\n";
     let result = staged.assign(None, Some(&staged.artifact), true);
     assert_ok(&result.result, "destructuring bindings assign preview");
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
-    let assessment = &outcome["effect_relocation_assessment"];
+    let application = &outcome["effect_relocation_assessment"];
+    let assessment = &application["chunks"]["main"];
     assert_eq!(
         assessment["placement"]["projection_violations"],
         json!([]),
@@ -2607,7 +2850,7 @@ console.log(left, right);\n";
         json!([]),
         "destructuring grouping must be covered in the finalized preview"
     );
-    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
+    let candidate = assert_candidate_assessment_matches_run(application, &staged, true, false);
     assert_node_output(
         &candidate.output_root().join("app/main/entry.js"),
         "10 20\n",
@@ -2629,7 +2872,8 @@ console.log(impl);\n";
     let result = staged.assign(None, Some(&staged.artifact), true);
     assert_ok(&result.result, "nested-var bindings assign preview");
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
-    let assessment = &outcome["effect_relocation_assessment"];
+    let application = &outcome["effect_relocation_assessment"];
+    let assessment = &application["chunks"]["main"];
     assert_eq!(
         assessment["placement"]["projection_violations"],
         json!([]),
@@ -2640,7 +2884,7 @@ console.log(impl);\n";
         json!([]),
         "nested-var owners and whole-statement placement must be covered"
     );
-    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
+    let candidate = assert_candidate_assessment_matches_run(application, &staged, true, false);
     assert_node_output(
         &candidate.output_root().join("app/main/entry.js"),
         "primary\n",
@@ -2666,7 +2910,8 @@ console.log(written, read);\n";
         "bindings assign --dry-run --analysis with no moves",
     );
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
-    let assessment = &outcome["effect_relocation_assessment"];
+    let application = &outcome["effect_relocation_assessment"];
+    let assessment = &application["chunks"]["main"];
     assert_eq!(
         assessment["decision"]["status"], "conflict",
         "{assessment:#}"
@@ -2677,7 +2922,7 @@ console.log(written, read);\n";
         "{assessment:#}"
     );
     assert!(assessment["counts"]["havoc_pairs"].as_u64().unwrap() > 0);
-    assert_candidate_assessment_matches_run(assessment, &staged, false, true);
+    assert_candidate_assessment_matches_run(application, &staged, false, true);
 }
 
 #[test]
@@ -2711,7 +2956,8 @@ fn modules_apply_assessment_matches_the_selected_residual_candidate() {
     let result = staged.apply(&batch, Some(&staged.artifact), true, true, false);
     assert_ok(&result.result, "modules apply --dry-run --analysis");
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
-    let assessment = &outcome["effect_relocation_assessment"];
+    let application = &outcome["effect_relocation_assessment"];
+    let assessment = &application["chunks"]["main"];
     assert_eq!(
         assessment["decision"]["status"], "accepted",
         "{assessment:#}"
@@ -2730,12 +2976,12 @@ fn modules_apply_assessment_matches_the_selected_residual_candidate() {
     assert_ok(&applied.result, "modules apply --analysis");
     let applied: Value = serde_json::from_str(&applied.result.stdout).unwrap();
     assert_eq!(
-        applied["effect_relocation_assessment"], *assessment,
+        applied["effect_relocation_assessment"]["chunks"]["main"], *assessment,
         "the written candidate must use the same canonical assessment as its preview"
     );
     assert!(applied.get("effect_assessment_unavailable").is_none());
     assert!(staged.modules.join("a_earlier.yaml").is_file());
-    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
+    let candidate = assert_candidate_assessment_matches_run(application, &staged, true, false);
     assert_node_output(
         &candidate.output_root().join("app/main/entry.js"),
         "first second\n",
@@ -2762,7 +3008,8 @@ fn modules_apply_assessment_accepts_a_closed_no_swap_candidate() {
         "modules apply --dry-run --analysis with no swap",
     );
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
-    let assessment = &outcome["effect_relocation_assessment"];
+    let application = &outcome["effect_relocation_assessment"];
+    let assessment = &application["chunks"]["main"];
     assert_eq!(
         assessment["decision"]["status"], "accepted",
         "{assessment:#}"
@@ -2834,7 +3081,10 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
         not_dry.result.stderr
     );
     assert_eq!(module_snapshot(&staged.modules), before);
+}
 
+#[test]
+fn modules_apply_scoped_assessment_matches_staged_emission() {
     let scoped = staged_tree_with_module_roots(
         &[(
             "main",
@@ -2862,22 +3112,29 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
         &scoped_preview.result,
         "ordinary scoped modules apply --dry-run",
     );
-    let scoped_refused = scoped.apply(&scoped_batch, Some(&scoped.artifact), true, true, false);
-    assert_eq!(
-        scoped_refused.result.status.code(),
-        Some(1),
-        "{}",
-        scoped_refused.result.stderr
+    let assessed = scoped.apply(&scoped_batch, Some(&scoped.artifact), true, true, false);
+    assert_ok(
+        &assessed.result,
+        "scoped modules apply --dry-run --analysis",
     );
-    assert!(
-        scoped_refused
-            .result
-            .stderr
-            .contains("one full-tree module root"),
-        "{}",
-        scoped_refused.result.stderr
-    );
+    let assessed: Value = serde_json::from_str(&assessed.result.stdout).unwrap();
+    let application = &assessed["effect_relocation_assessment"];
+    let assessment = &application["chunks"]["main"];
+    assert_eq!(assessment["status"], "accepted_within_checked_scope");
     assert_eq!(module_snapshot(&scoped.modules), scoped_before);
+    let applied = scoped.apply(&scoped_batch, Some(&scoped.artifact), false, true, false);
+    assert_ok(&applied.result, "scoped modules apply --analysis");
+    let applied: Value = serde_json::from_str(&applied.result.stdout).unwrap();
+    assert_eq!(
+        applied["effect_relocation_assessment"]["chunks"]["main"],
+        *assessment
+    );
+    let candidate = assert_candidate_assessment_matches_run(application, &scoped, true, false);
+    assert_node_output(
+        &candidate.output_root().join("app/main/entry.js"),
+        "first second\n",
+        "",
+    );
 }
 
 #[test]
@@ -2971,7 +3228,8 @@ fn bindings_unassign_assessment_matches_the_staged_run_for_its_candidate_plan() 
     let result = staged.unassign("first", Some(&staged.artifact), true);
     assert_ok(&result.result, "bindings unassign --dry-run --analysis");
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
-    let assessment = &outcome["effect_relocation_assessment"];
+    let application = &outcome["effect_relocation_assessment"];
+    let assessment = &application["chunks"]["main"];
     assert_eq!(
         assessment["decision"]["status"], "accepted",
         "{assessment:#}"
@@ -2986,11 +3244,11 @@ fn bindings_unassign_assessment_matches_the_staged_run_for_its_candidate_plan() 
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let applied = staged.unassign("first", None, false);
-    assert_ok(&applied.result, "ordinary graph-backed bindings unassign");
+    let applied = staged.unassign("first", Some(&staged.artifact), false);
+    assert_ok(&applied.result, "verified bindings unassign");
     assert!(!staged.modules.join("a_earlier.yaml").exists());
     assert!(staged.modules.join("z_later.yaml").is_file());
-    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
+    let candidate = assert_candidate_assessment_matches_run(application, &staged, true, false);
     assert_node_output(
         &candidate.output_root().join("app/main/entry.js"),
         "first second\n",
@@ -3063,7 +3321,7 @@ fn modules_merge_assessment_matches_the_staged_run_for_its_candidate_plan() {
     assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
     let before = module_snapshot(&staged.modules);
-    let ordinary = staged.merge("z_later", "a_earlier", None, true);
+    let ordinary = staged.merge(&staged.modules, "z_later", "a_earlier", None, true);
     assert_ok(
         &ordinary.result,
         "ordinary graph-backed modules merge dry-run",
@@ -3076,10 +3334,17 @@ fn modules_merge_assessment_matches_the_staged_run_for_its_candidate_plan() {
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let result = staged.merge("z_later", "a_earlier", Some(&staged.artifact), true);
+    let result = staged.merge(
+        &staged.modules,
+        "z_later",
+        "a_earlier",
+        Some(&staged.artifact),
+        true,
+    );
     assert_ok(&result.result, "modules merge --dry-run --analysis");
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
-    let assessment = &outcome["effect_relocation_assessment"];
+    let application = &outcome["effect_relocation_assessment"];
+    let assessment = &application["chunks"]["main"];
     assert_eq!(
         assessment["decision"]["status"], "accepted",
         "{assessment:#}"
@@ -3091,11 +3356,17 @@ fn modules_merge_assessment_matches_the_staged_run_for_its_candidate_plan() {
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let applied = staged.merge("z_later", "a_earlier", None, false);
-    assert_ok(&applied.result, "ordinary graph-backed modules merge");
+    let applied = staged.merge(
+        &staged.modules,
+        "z_later",
+        "a_earlier",
+        Some(&staged.artifact),
+        false,
+    );
+    assert_ok(&applied.result, "verified modules merge");
     assert!(!staged.modules.join("a_earlier.yaml").exists());
     assert!(staged.modules.join("z_later.yaml").is_file());
-    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
+    let candidate = assert_candidate_assessment_matches_run(application, &staged, true, false);
     assert_node_output(
         &candidate.output_root().join("app/main/entry.js"),
         "first second third\n",
@@ -3149,7 +3420,8 @@ fn modules_delete_assessment_matches_the_staged_run_for_its_candidate_plan() {
         "modules delete --force --dry-run --analysis",
     );
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
-    let assessment = &outcome["effect_relocation_assessment"];
+    let application = &outcome["effect_relocation_assessment"];
+    let assessment = &application["chunks"]["main"];
     assert_eq!(
         assessment["decision"]["status"], "accepted",
         "{assessment:#}"
@@ -3164,11 +3436,11 @@ fn modules_delete_assessment_matches_the_staged_run_for_its_candidate_plan() {
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let applied = staged.delete("a_earlier", true, None, false);
-    assert_ok(&applied.result, "ordinary graph-backed modules delete");
+    let applied = staged.delete("a_earlier", true, Some(&staged.artifact), false);
+    assert_ok(&applied.result, "verified modules delete");
     assert!(!staged.modules.join("a_earlier.yaml").exists());
     assert!(staged.modules.join("z_later.yaml").is_file());
-    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
+    let candidate = assert_candidate_assessment_matches_run(application, &staged, true, false);
     assert_node_output(
         &candidate.output_root().join("app/main/entry.js"),
         "first second\n",
@@ -3247,7 +3519,13 @@ fn modules_merge_requested_assessment_refuses_stale_artifacts_before_yaml_writes
         )],
     );
     let before = module_snapshot(&staged.modules);
-    let result = staged.merge("z_later", "a_earlier", Some(&foreign.artifact), true);
+    let result = staged.merge(
+        &staged.modules,
+        "z_later",
+        "a_earlier",
+        Some(&foreign.artifact),
+        true,
+    );
     assert_eq!(
         result.result.status.code(),
         Some(1),
@@ -3296,7 +3574,8 @@ fn modules_refine_assessment_matches_staged_run_for_its_candidate_plan() {
     let result = staged.refine(&batch, Some(&staged.artifact), true, false);
     assert_ok(&result.result, "modules refine --dry-run --analysis");
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
-    let assessment = &outcome["effect_relocation_assessment"];
+    let application = &outcome["effect_relocation_assessment"];
+    let assessment = &application["chunks"]["main"];
     assert_eq!(
         assessment["decision"]["status"], "accepted",
         "{assessment:#}"
@@ -3311,17 +3590,16 @@ fn modules_refine_assessment_matches_staged_run_for_its_candidate_plan() {
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let applied = staged.refine(&batch, None, false, false);
-    assert_ok(&applied.result, "ordinary graph-backed modules refine");
+    let applied = staged.refine(&batch, Some(&staged.artifact), false, false);
+    assert_ok(&applied.result, "verified modules refine");
     let applied_outcome: Value = serde_json::from_str(&applied.result.stdout).unwrap();
-    assert!(
-        applied_outcome
-            .get("effect_relocation_assessment")
-            .is_none()
+    assert_eq!(
+        &applied_outcome["effect_relocation_assessment"]["chunks"]["main"],
+        assessment
     );
     assert!(staged.modules.join("a_earlier.yaml").is_file());
     assert!(staged.modules.join("z_later.yaml").is_file());
-    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
+    let candidate = assert_candidate_assessment_matches_run(application, &staged, true, false);
     assert_node_output(
         &candidate.output_root().join("app/main/entry.js"),
         "first second\n",
@@ -3474,9 +3752,12 @@ fn modules_refine_assessment_refuses_stale_or_partial_context_before_writes() {
 }
 
 #[test]
-fn modules_refine_assessment_refuses_scoped_tree_before_writes() {
+fn modules_refine_scoped_assessment_matches_staged_emission() {
     let staged = staged_tree_with_module_roots(
-        &[("main", "function first() { return \"first\"; }\n")],
+        &[(
+            "main",
+            "function first() { return \"first\"; }\nconsole.log(first());\n",
+        )],
         &[("chunks/main", "main")],
         &[(
             "chunks/main/z_later.yaml",
@@ -3495,18 +3776,431 @@ fn modules_refine_assessment_refuses_scoped_tree_before_writes() {
     .unwrap();
     let before = module_snapshot(&staged.modules);
     let result = staged.refine(&batch, Some(&staged.artifact), true, false);
+    assert_ok(&result.result, "scoped modules refine --dry-run --analysis");
+    let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
+    let application = &outcome["effect_relocation_assessment"];
+    let assessment = &application["chunks"]["main"];
+    assert_eq!(assessment["status"], "accepted_within_checked_scope");
+    assert_eq!(module_snapshot(&staged.modules), before);
+    let applied = staged.refine(&batch, Some(&staged.artifact), false, false);
+    assert_ok(&applied.result, "scoped modules refine --analysis");
+    let applied: Value = serde_json::from_str(&applied.result.stdout).unwrap();
     assert_eq!(
-        result.result.status.code(),
-        Some(1),
-        "{}",
-        result.result.stderr
+        applied["effect_relocation_assessment"]["chunks"]["main"],
+        *assessment
+    );
+    let candidate = assert_candidate_assessment_matches_run(application, &staged, true, false);
+    assert_node_output(
+        &candidate.output_root().join("app/main/entry.js"),
+        "first\n",
+        "",
+    );
+}
+
+fn application_tree_fixture() -> TreeStaged {
+    staged_tree_with_module_roots(
+        &[
+            (
+                "main",
+                "import { suffix } from './helper.js';\n\
+                 function first() { return 'first'; }\n\
+                 function second() { return 'second'; }\n\
+                 console.log(first(), second(), suffix);\n",
+            ),
+            ("helper", "export const suffix = 'peer';\n"),
+        ],
+        &[
+            ("chunks/left", "main"),
+            ("chunks/right", "main"),
+            ("chunks/peer", "helper"),
+        ],
+        &[
+            (
+                "chunks/left/original.yaml",
+                "members: [{selector: {binding: {name: first}}}]\n",
+            ),
+            (
+                "chunks/right/other.yaml",
+                "members: [{selector: {binding: {name: second}}}]\n",
+            ),
+            (
+                "chunks/peer/peer.yaml",
+                "members: [{selector: {binding: {name: suffix}}}]\n",
+            ),
+        ],
+    )
+}
+
+#[test]
+fn application_candidate_preserves_other_roots_and_materialized_chunk_runtime() {
+    let staged = application_tree_fixture();
+    let batch = staged.root().join("refine.json");
+    fs::write(
+        &batch,
+        serde_json::to_vec(&json!([{
+            "unit_id": source_unit_for_binding(&staged, "first"),
+            "module": "chunks/right/moved",
+        }]))
+        .unwrap(),
+    )
+    .unwrap();
+    let before = module_snapshot(&staged.modules);
+    let preview = staged.refine(&batch, Some(&staged.artifact), true, false);
+    assert_ok(&preview.result, "complete application preview");
+    assert_eq!(module_snapshot(&staged.modules), before);
+    let preview: Value = serde_json::from_str(&preview.result.stdout).unwrap();
+    let assessment = &preview["effect_relocation_assessment"];
+    assert_eq!(assessment["status"], "accepted_within_checked_scope");
+    assert_eq!(
+        assessment["chunks"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["helper", "main"]
+    );
+    let applied = staged.refine(&batch, Some(&staged.artifact), false, false);
+    assert_ok(&applied.result, "complete application apply");
+    let applied: Value = serde_json::from_str(&applied.result.stdout).unwrap();
+    assert_eq!(applied["effect_relocation_assessment"], *assessment);
+    let after = module_snapshot(&staged.modules);
+    assert_eq!(
+        after[&staged.modules.join("chunks/peer/peer.yaml")],
+        before[&staged.modules.join("chunks/peer/peer.yaml")]
+    );
+    assert_eq!(
+        after[&staged.modules.join("chunks/right/other.yaml")],
+        before[&staged.modules.join("chunks/right/other.yaml")]
+    );
+    let emitted = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
+    assert_node_output(&staged.source, "first second peer\n", "");
+    assert_node_output(
+        &emitted.output_root().join("app/main/entry.js"),
+        "first second peer\n",
+        "",
+    );
+}
+
+#[test]
+fn application_candidate_applies_an_exact_root_without_dropping_sibling_roots() {
+    let staged = application_tree_fixture();
+    let edit_root = staged.modules.join("chunks/right");
+    let before = module_snapshot(&staged.modules);
+    let preview = staged.merge(&edit_root, "moved", "other", Some(&staged.artifact), true);
+    assert_ok(&preview.result, "application subtree merge preview");
+    assert_eq!(module_snapshot(&staged.modules), before);
+    let preview: Value = serde_json::from_str(&preview.result.stdout).unwrap();
+    let application = &preview["effect_relocation_assessment"];
+    assert_eq!(application["status"], "accepted_within_checked_scope");
+    assert_eq!(application["chunks"].as_object().unwrap().len(), 2);
+    let applied = staged.merge(&edit_root, "moved", "other", Some(&staged.artifact), false);
+    assert_ok(&applied.result, "application subtree merge apply");
+    let applied: Value = serde_json::from_str(&applied.result.stdout).unwrap();
+    assert_eq!(applied["effect_relocation_assessment"], *application);
+    let after = module_snapshot(&staged.modules);
+    for path in ["chunks/left/original.yaml", "chunks/peer/peer.yaml"] {
+        let path = staged.modules.join(path);
+        assert_eq!(after[&path], before[&path]);
+    }
+    let emitted = assert_candidate_assessment_matches_run(application, &staged, true, false);
+    assert_node_output(&staged.source, "first second peer\n", "");
+    assert_node_output(
+        &emitted.output_root().join("app/main/entry.js"),
+        "first second peer\n",
+        "",
+    );
+}
+
+#[test]
+fn application_candidate_refuses_aliases_in_an_untouched_root_before_writes() {
+    let staged = staged_tree_with_module_roots(
+        &[
+            (
+                "main",
+                "function first() { return 'first'; }\nconsole.log(first());\n",
+            ),
+            ("helper", "export function first() { return 'peer'; }\n"),
+        ],
+        &[("chunks/left", "main"), ("chunks/peer", "helper")],
+        &[
+            (
+                "chunks/left/original.yaml",
+                "members: [{selector: {binding: {name: first}}}]\n",
+            ),
+            (
+                "chunks/peer/original.yaml",
+                "members: [{selector: {binding: {name: first}}}]\n",
+            ),
+        ],
+    );
+    let peer = staged.modules.join("chunks/peer");
+    fs::remove_dir_all(&peer).unwrap();
+    std::os::unix::fs::symlink("left", &peer).unwrap();
+    let baseline = staged.run_with_analysis(&staged.artifact, false);
+    assert_ok(&baseline.result, "normal read of aliased authored roots");
+    let graph = baseline
+        .output_root()
+        .join("reports/tree/main/dependency_graph.json.gz");
+    assert!(graph.is_file());
+    let edit_root = staged.modules.join("chunks/left");
+    let output = staged.root().join("candidate-out");
+    let before = module_snapshot(&staged.modules);
+    for dry_run in [true, false] {
+        let mut args = vec![
+            "modules",
+            "merge",
+            "--modules",
+            path(&edit_root),
+            "--graph",
+            path(&graph),
+            "--source-root",
+            path(staged.source.parent().unwrap()),
+            "--target",
+            "moved",
+            "original",
+            "--format",
+            "json",
+            "--tree-config",
+            path(&staged.config),
+            "--tree-modules",
+            path(&staged.modules),
+            "--tree-vendor-marks",
+            path(&staged.vendor_marks),
+            "--tree-source-root",
+            path(staged.root()),
+            "--out-root",
+            path(&output),
+            "--analysis",
+            path(&staged.artifact),
+        ];
+        if dry_run {
+            args.push("--dry-run");
+        }
+        let result = command(&args);
+        assert_eq!(result.status.code(), Some(1), "{}", result.stderr);
+        assert!(
+            result.stderr.contains("symlink entries"),
+            "{}",
+            result.stderr
+        );
+        assert_eq!(module_snapshot(&staged.modules), before);
+        assert_eq!(fs::read_link(&peer).unwrap(), Path::new("left"));
+    }
+}
+
+#[test]
+fn application_candidate_does_not_discard_a_refused_sibling_chunk() {
+    let staged = staged_tree_with_module_roots(
+        &[
+            (
+                "main",
+                "function first() { return 'first'; }\nconsole.log(first());\n",
+            ),
+            (
+                "helper",
+                "const written = (globalThis.marker = 1);\nconst read = globalThis.marker;\nconsole.log(written, read);\n",
+            ),
+        ],
+        &[("chunks/main", "main"), ("chunks/peer", "helper")],
+        &[
+            (
+                "chunks/main/original.yaml",
+                "members: [{selector: {binding: {name: first}}}]\n",
+            ),
+            (
+                "chunks/peer/a_reader.yaml",
+                "members: [{selector: {binding: {name: read}}}]\n",
+            ),
+        ],
     );
     assert!(
-        result.result.stderr.contains("one full-tree module root"),
-        "{}",
-        result.result.stderr
+        !staged.run.result.status.success(),
+        "the authored sibling split is refused"
+    );
+    let batch = staged.root().join("refine.json");
+    fs::write(
+        &batch,
+        serde_json::to_vec(&json!([{
+            "unit_id": source_unit_for_binding(&staged, "first"),
+            "module": "chunks/main/moved",
+        }]))
+        .unwrap(),
+    )
+    .unwrap();
+    let before = module_snapshot(&staged.modules);
+    let preview = staged.refine(&batch, Some(&staged.artifact), true, false);
+    assert_ok(&preview.result, "application preview with refused sibling");
+    let preview: Value = serde_json::from_str(&preview.result.stdout).unwrap();
+    let application = &preview["effect_relocation_assessment"];
+    assert_ne!(application["status"], "accepted_within_checked_scope");
+    assert_eq!(
+        application["chunks"]["main"]["status"],
+        "accepted_within_checked_scope"
+    );
+    assert_ne!(
+        application["chunks"]["helper"]["status"],
+        "accepted_within_checked_scope"
     );
     assert_eq!(module_snapshot(&staged.modules), before);
+    let refused = staged.refine(&batch, Some(&staged.artifact), false, false);
+    assert_eq!(
+        refused.result.status.code(),
+        Some(1),
+        "{}",
+        refused.result.stderr
+    );
+    let refused: Value = serde_json::from_str(&refused.result.stdout).unwrap();
+    assert_eq!(refused["rejection"], *application);
+    assert_eq!(module_snapshot(&staged.modules), before);
+    assert_node_output(&staged.root().join("snapshot/helper.js"), "1 1\n", "");
+}
+
+#[test]
+fn application_candidate_requires_final_program_validation_after_chunk_acceptance() {
+    let staged = staged_tree_with_module_roots(
+        &[
+            (
+                "main",
+                "import { present } from './helper.js';\nfunction first() { return 'first'; }\nconsole.log(first(), present);\n",
+            ),
+            ("helper", "export const present = 7;\n"),
+        ],
+        &[("chunks/main", "main"), ("chunks/peer", "helper")],
+        &[
+            (
+                "chunks/main/original.yaml",
+                "members: [{selector: {binding: {name: first}}}]\n",
+            ),
+            (
+                "chunks/peer/missing.yaml",
+                "members: [{selector: {binding: {name: missing}}}]\n",
+            ),
+        ],
+    );
+    assert!(
+        !staged.run.result.status.success(),
+        "normal reconstruction refuses an unresolved claim"
+    );
+    for chunk in ["main", "helper"] {
+        let report: Value = serde_json::from_slice(
+            &fs::read(
+                staged
+                    .run
+                    .report_root
+                    .join(format!("{chunk}/candidate_relocation_assessment.json")),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(report["status"], "accepted_within_checked_scope");
+    }
+    let batch = staged.root().join("refine.json");
+    fs::write(
+        &batch,
+        serde_json::to_vec(&json!([{
+            "unit_id": source_unit_for_binding(&staged, "first"),
+            "module": "chunks/main/moved",
+        }]))
+        .unwrap(),
+    )
+    .unwrap();
+    let before = module_snapshot(&staged.modules);
+    for dry_run in [true, false] {
+        let result = staged.refine(&batch, Some(&staged.artifact), dry_run, false);
+        assert_eq!(
+            result.result.status.code(),
+            Some(1),
+            "{}",
+            result.result.stderr
+        );
+        assert!(
+            result.result.stderr.contains("missing"),
+            "{}",
+            result.result.stderr
+        );
+        assert_eq!(module_snapshot(&staged.modules), before);
+    }
+    assert_node_output(&staged.source, "first 7\n", "");
+}
+
+#[test]
+fn application_candidate_covers_all_configured_roots_and_materialized_chunks() {
+    let cases = [
+        (
+            staged_tree_with_module_roots(
+                &[("main", "function first() {}\nfunction second() {}\n")],
+                &[("chunks/first", "main"), ("chunks/second", "main")],
+                &[
+                    (
+                        "chunks/first/original.yaml",
+                        "members: [{selector: {binding: {name: first}}}]\n",
+                    ),
+                    (
+                        "chunks/second/other.yaml",
+                        "members: [{selector: {binding: {name: second}}}]\n",
+                    ),
+                ],
+            ),
+            "chunks/first/moved",
+            vec!["main"],
+        ),
+        (
+            staged_tree_with_module_roots(
+                &[
+                    ("main", "function first() {}\n"),
+                    ("helper", "export const shared = 7;\n"),
+                ],
+                &[("chunks/main", "main"), ("chunks/helper", "helper")],
+                &[
+                    (
+                        "chunks/main/original.yaml",
+                        "members: [{selector: {binding: {name: first}}}]\n",
+                    ),
+                    (
+                        "chunks/helper/other.yaml",
+                        "members: [{selector: {binding: {name: shared}}}]\n",
+                    ),
+                ],
+            ),
+            "chunks/main/moved",
+            vec!["helper", "main"],
+        ),
+    ];
+    for (staged, destination, expected) in cases {
+        let batch = staged.root().join("refine.json");
+        fs::write(
+            &batch,
+            serde_json::to_vec(&json!([{
+                "unit_id": source_unit_for_binding(&staged, "first"),
+                "module": destination,
+            }]))
+            .unwrap(),
+        )
+        .unwrap();
+        let before = module_snapshot(&staged.modules);
+        for dry_run in [true, false] {
+            let result = staged.refine(&batch, Some(&staged.artifact), dry_run, false);
+            assert_ok(&result.result, "complete application configured scope");
+            let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
+            let application = &outcome["effect_relocation_assessment"];
+            assert_eq!(application["status"], "accepted_within_checked_scope");
+            assert_eq!(
+                application["chunks"]
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+                expected
+            );
+            if dry_run {
+                assert_eq!(module_snapshot(&staged.modules), before);
+            } else {
+                assert_candidate_assessment_matches_run(application, &staged, true, false);
+            }
+        }
+    }
 }
 
 #[test]
@@ -3627,7 +4321,8 @@ fn assert_candidate_has_placement_violation(
 ) {
     assert_ok(result, label);
     let outcome: Value = serde_json::from_str(&result.stdout).unwrap();
-    let assessment = &outcome["effect_relocation_assessment"];
+    let application = &outcome["effect_relocation_assessment"];
+    let assessment = &application["chunks"]["main"];
     assert_eq!(
         assessment["status"], "blocked_by_placement",
         "{assessment:#}"
@@ -4158,11 +4853,25 @@ fn initializer_source_only_uses_resolved_binding_and_keeps_comma_siblings_raw() 
 
 #[test]
 fn inferred_and_selected_set_spread_bindings_survive_saved_analysis() {
+    assert_set_spread_saved_replay(
+        "console.log('before');\nvar seed = new Set(['a', 'b']), sibling = new Set(['x']), copied = new Set([...seed, 'c']);\nconsole.log('after', copied.size);\nexport {};\n",
+        "before\nafter 3\n",
+    );
+}
+
+#[test]
+fn set_spread_operation_receipts_survive_saved_relocation() {
+    assert_set_spread_saved_replay(
+        "0;\nvar seed = new Set(['a', 'b']), sibling = new Set(['x']), copied = new Set([...seed, 'c']);\nconsole.log('after', copied.size);\nexport {};\n",
+        "after 3\n",
+    );
+}
+
+fn assert_set_spread_saved_replay(source: &str, expected_stdout: &str) {
     const DECLARATION: &str = "var seed = new Set(['a', 'b']), sibling = new Set(['x']), copied = new Set([...seed, 'c']);";
-    const SOURCE: &str = "console.log('before');\nvar seed = new Set(['a', 'b']), sibling = new Set(['x']), copied = new Set([...seed, 'c']);\nconsole.log('after', copied.size);\nexport {};\n";
     for selected in [false, true] {
         let mut opts = FixtureOpts::new(
-            SOURCE,
+            source,
             vec![logical_module(
                 "sets",
                 &[
@@ -4187,7 +4896,7 @@ fn inferred_and_selected_set_spread_bindings_survive_saved_analysis() {
                     .expect("native construction selector"),
                 ),
                 operation,
-                audited_source_sha256: Sha256::digest(SOURCE.as_bytes())
+                audited_source_sha256: Sha256::digest(source.as_bytes())
                     .iter()
                     .map(|byte| format!("{byte:02x}"))
                     .collect(),
@@ -4197,6 +4906,11 @@ fn inferred_and_selected_set_spread_bindings_survive_saved_analysis() {
             opts = opts.with_native_operation_inputs("static/app", inputs);
         }
         let (staged, _fixture) = staged(opts);
+        assert_node_output(
+            &staged.root().join("snapshot/static/app.js"),
+            expected_stdout,
+            "",
+        );
         let direct = staged.run(&[]);
         assert_ok(&direct.result, "direct Set spread run");
         let loaded = staged.run(&["--analysis", path(&staged.artifact)]);
@@ -4205,7 +4919,7 @@ fn inferred_and_selected_set_spread_bindings_survive_saved_analysis() {
         for invocation in [&direct, &loaded] {
             assert_node_output(
                 &invocation.output_root().join("app/static/app/entry.js"),
-                "before\nafter 3\n",
+                expected_stdout,
                 "",
             );
         }
@@ -4216,7 +4930,45 @@ fn inferred_and_selected_set_spread_bindings_survive_saved_analysis() {
         );
         let execution = &graph_node_for_binding(&graph, "copied")["synchronous_execution"];
         assert_eq!(execution["complete"], true, "{execution:#}");
+        let receipt = &execution["binding_effect_authority"];
+        assert_eq!(receipt["authority"], "operation_receipt", "{execution:#}");
+        assert!(
+            receipt["receipt"]["calls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|call| {
+                    call["target"]["kind"] == "native_construction"
+                        && call["target"]["intrinsic"] == "set"
+                }),
+            "{execution:#}"
+        );
+        let report: Value = read_json(
+            &loaded
+                .output_root()
+                .join("reports/tree/static/app/effect_translation_validation.json"),
+        );
+        assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
         if selected {
+            assert!(
+                receipt["receipt"]["calls"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|call| {
+                        call["target"]["kind"] == "native_construction"
+                            && call["target"]["intrinsic"] == "set"
+                            && call["dependencies"]["native_operation_inputs"]
+                                .as_array()
+                                .is_some_and(|inputs| {
+                                    inputs.iter().any(|input| {
+                                        input["defining_chunk"] == "static/app"
+                                            && input["input_index"] == 2
+                                    })
+                                })
+                    }),
+                "the selected construction receipt must retain its native input: {receipt:#}"
+            );
             assert!(
                 execution["native_operation_input_uses"]
                     .as_array()
@@ -4238,5 +4990,31 @@ fn inferred_and_selected_set_spread_bindings_survive_saved_analysis() {
                 "{execution:#}"
             );
         }
+    }
+}
+
+#[test]
+fn module_declarative_store_effects_survive_saved_analysis() {
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            "function make() { return () => 3; }\nconst read = make();\nlet marker = 0;\nmarker = 1;\nconst result = read();\nmarker = 2;\nconsole.log(marker, result);\n",
+            vec![
+                logical_module_with_anon("markers", &[Member::new("marker")], &["marker = 1;", "marker = 2;"]),
+                logical_module("result", &[Member::new("make"), Member::new("read"), Member::new("result")]),
+                logical_module_with_anon("observe", &[], &["console.log(marker, result);"]),
+            ],
+        ).with_dataflow_aware_s_chain(),
+    );
+    let direct = staged.run(&[]);
+    assert_ok(&direct.result, "direct module-store run");
+    let loaded = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert_ok(&loaded.result, "module-store run from saved analysis");
+    assert_same_invocation_trees(&direct, &loaded);
+    for invocation in [&direct, &loaded] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "2 3\n",
+            "",
+        );
     }
 }

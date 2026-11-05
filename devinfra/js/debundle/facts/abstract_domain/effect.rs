@@ -17,6 +17,8 @@ pub enum CoerceOp {
     ToNumber,
     /// `[[Get]]` of a named property, including descriptor fields.
     Get,
+    /// `Set` with Throw=true, including inherited setters and failed writes.
+    Set,
     /// `[[OwnPropertyKeys]]`.
     OwnPropertyKeys,
     /// `[[GetOwnProperty]]` per own key.
@@ -47,7 +49,11 @@ impl CoerceOp {
     pub fn silent_on_primitive(self) -> bool {
         !matches!(
             self,
-            Self::ToObject | Self::Iterate | Self::EntryGet | Self::EntryKeyToPropertyKey
+            Self::Set
+                | Self::ToObject
+                | Self::Iterate
+                | Self::EntryGet
+                | Self::EntryKeyToPropertyKey
         )
     }
 }

@@ -62,21 +62,16 @@ pub struct UnmatchedSpecClaim {
 /// Which realizability-gate check rejected a chunk's assignment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GateVerdict {
-    /// Members of one atomic group were claimed by different modules.
-    AtomicGroupConflicts { count: usize },
-    /// Module-quotient SCCs with at-init / side-effect edges between members.
-    UnrealizableCycles { count: usize },
+    /// The canonical effect and structural assessment rejected this candidate.
+    Relocation {
+        status: gate::CandidateRelocationStatus,
+    },
 }
 
 impl fmt::Display for GateVerdict {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::AtomicGroupConflicts { count } => {
-                write!(f, "{count} atomic-group conflict(s)")
-            }
-            Self::UnrealizableCycles { count } => {
-                write!(f, "{count} unrealizable module SCC(s)")
-            }
+            Self::Relocation { status } => write!(f, "candidate relocation {status:?}"),
         }
     }
 }

@@ -7,6 +7,7 @@ use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
 
 const SOURCE: &str = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst marker = Symbol('marker');\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconst made = factory();\nglobalThis.unrelatedKey = 'safe';\nconsole.log(marker.description, made.name, globalThis.unrelatedKey);\nexport { marker, factory, LaterError, reflect };\n";
 const REFLECT_SOURCE: &str = "export function reflect(receiver, key) { Object.defineProperty(Object.getPrototypeOf(receiver), key, { value: 'changed', configurable: true }); }\n";
@@ -184,10 +185,10 @@ fn certified_fresh_sets_split_after_unrelated_constructor_heap_barrier() {
 }
 
 #[test]
-fn borrowed_and_static_member_sets_keep_their_existing_frontier() {
+fn transitive_borrowed_and_static_member_sets_keep_their_existing_frontier() {
     let fixture = run_fixture(
         FixtureOpts::new(
-            "import { Box } from './box.js';\nconst source = ['a'];\nconst alias = source;\nconst memo = new Box(() => 1);\nconst seed = new Set(alias);\nconst lookup = { key: 'token' };\nconst unique = new Set([lookup.key]);\nconsole.log(seed.size, unique.size);\n",
+            "import { Box } from './box.js';\nconst source = ['a'];\nconst alias = source;\nconst tail = alias;\nconst memo = new Box(() => 1);\nconst seed = new Set(tail);\nconst lookup = { key: 'token' };\nconst unique = new Set([lookup.key]);\nconsole.log(seed.size, unique.size);\n",
             vec![],
         )
         .with_extra_chunks(&[(
@@ -207,7 +208,7 @@ fn borrowed_and_static_member_sets_keep_their_existing_frontier() {
         graph.edges.iter().any(|edge| edge.source == seed
             && edge.target == memo
             && edge.edge_kind == DepKind::Sequenced),
-        "borrowed array's live frontier disappeared: {graph:#?}"
+        "transitive borrowed array's live ArrayContents frontier disappeared: {graph:#?}"
     );
     let graph = serde_json::to_value(graph).unwrap();
     assert_eq!(
@@ -223,6 +224,39 @@ fn borrowed_and_static_member_sets_keep_their_existing_frontier() {
         node_for_binding(&graph, "unique")["synchronous_execution"]["complete"],
         true,
         "the static-member source keeps its existing effect frontier: {graph}"
+    );
+}
+
+#[test]
+fn direct_borrowed_root_keeps_its_runtime_prefix_and_contents_frontier() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "import { Box } from './box.js';\nconst input = ['a'];\nconst memo = new Box(() => 1);\nconst result = new Set(input);\nconsole.log(result.size, result.has('a'));\n",
+            vec![],
+        )
+        .with_extra_chunks(&[(
+            "static/box",
+            "export class Box { #callback; constructor(callback) { this.#callback = callback; } value() { return this.#callback(); } }\n",
+        )])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/box")
+            .with_pure_new_exports(&["Box"])
+            .with_retained_callback_constructor("Box", 1, &[0])
+            .build()]),
+    );
+    assert_preserved_entry_output(&fixture, "1 true\n");
+    let graph = fixture.dependency_graph();
+    let result = source_unit_for_binding(&graph, "result");
+    let memo = source_unit_for_binding(&graph, "memo");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == result && edge.target == memo && edge.edge_kind == DepKind::Sequenced
+        }),
+        "the borrowed input keeps its live ArrayContents frontier: {graph:#?}"
+    );
+    let graph = serde_json::to_value(graph).unwrap();
+    assert_eq!(
+        node_for_binding(&graph, "result")["synchronous_execution"]["complete"],
+        true
     );
 }
 
@@ -368,7 +402,7 @@ fn set_spread_requires_every_intervening_constructor_and_one_output_module() {
             .with_native_operation_inputs("static/app", vec![seed.clone(), spread.clone()]),
         &["uncertified intervening source unit"],
     );
-    expect_rejection_containing_all(
+    let rejected = run_rejection_fixture(
         FixtureOpts::new(
             &source,
             vec![
@@ -377,8 +411,61 @@ fn set_spread_requires_every_intervening_constructor_and_one_output_module() {
             ],
         )
         .with_native_operation_inputs("static/app", vec![seed, sibling, spread]),
-        &["atomic-group conflict"],
     );
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_eq!(
+        assessment["status"], "blocked_by_placement",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["decision"]["scope"], "no_reordering",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["placement"]["status"], "blocked",
+        "{assessment:#}"
+    );
+    let violations = assessment["placement"]["projection_violations"]
+        .as_array()
+        .expect("typed placement projection violations");
+    let split = violations
+        .iter()
+        .find(|violation| violation["kind"] == "stable_set_interval_destination_split")
+        .expect("certified Set interval split in candidate placement report");
+    assert_eq!(split["interval_index"], 0, "{assessment:#}");
+    let bindings = split["bindings"]
+        .as_array()
+        .expect("Set interval binding owners");
+    assert_eq!(bindings.len(), 3, "{assessment:#}");
+    let binding_names = bindings
+        .iter()
+        .map(|binding| {
+            binding
+                .as_array()
+                .expect("SWC Id tuple")
+                .first()
+                .and_then(Value::as_str)
+                .expect("SWC Id symbol")
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        binding_names,
+        BTreeSet::from(["seed", "sibling", "merged"]),
+        "{assessment:#}"
+    );
+    let destinations = split["destinations"]
+        .as_array()
+        .expect("Set interval destination identities");
+    let destination_ids = destinations
+        .iter()
+        .map(|destination| destination.as_u64().expect("serialized ModuleId"))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(destinations.len(), 2, "{assessment:#}");
+    assert_eq!(destination_ids.len(), 2, "{assessment:#}");
 }
 
 #[test]
@@ -1291,7 +1378,14 @@ fn primitive_argument_throw_is_preserved_by_selected_symbol_for() {
     );
     assert_preserved_entry_error(&fixture, "TypeError");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    assert_eq!(native_input_uses(&graph).len(), 1);
+    assert!(
+        native_input_uses(&graph).is_empty(),
+        "the mixed numeric argument always throws before the native body consumes its input"
+    );
+    assert_ne!(
+        node_for_binding(&graph, "marker")["synchronous_execution"]["binding_effect_authority"]["authority"],
+        "operation_receipt"
+    );
     assert_eq!(
         node_for_binding(&graph, "marker")["purity"]["kind"],
         "not_pure"
@@ -1443,20 +1537,17 @@ fn unselected_symbol_site_keeps_the_strict_fallback() {
     .with_extra_chunks(REFLECT_CHUNKS)
     .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)])
     .with_native_operation_inputs("static/app", vec![marker_input(source)]);
-    let rejected = run_rejection_fixture(opts);
-    let conflicts = rejected.atomic_group_conflicts();
-    assert!(
-        conflicts.iter().any(|conflict| {
-            let claims = conflict["claims"].as_array().expect("conflict claims");
-            ["other", "later"].iter().all(|module| {
-                claims
-                    .iter()
-                    .any(|claim| claim["module"].as_str() == Some(*module))
-            })
-        }),
-        "unselected Symbol call must retain the synthetic reentry conflict: {conflicts:#?}"
+    let fixture = run_fixture(opts);
+    assert_preserved_entry_output(&fixture, "marker other LaterError\n");
+    assert_preserved_entry_output_with_host_setup(
+        &fixture,
+        r#"Object.defineProperty(globalThis, 'saved', { configurable: true, set(callback) {
+  try { callback(); } catch (error) { console.log(error.name); }
+} });"#,
+        "ReferenceError\nmarker other LaterError\n",
+        "unselected-symbol-global-root",
     );
-    let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     assert!(
         has_unknown_call_target(node_for_binding(&graph, "other")),
         "the unselected primitive Symbol call must retain its unknown-call precision loss: {graph}"
@@ -1561,8 +1652,14 @@ fn primitive_argument_throw_is_preserved_by_the_selected_call_path() {
     assert_preserved_entry_error(&fixture, "TypeError");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let uses = native_input_uses(&graph);
-    assert_eq!(uses.len(), 1, "the exact selected call is still reported");
-    assert_eq!(uses[0]["evidence"]["selected_binding"], "marker");
+    assert!(
+        uses.is_empty(),
+        "the native body is not reached after its argument throws"
+    );
+    assert_ne!(
+        node_for_binding(&graph, "marker")["synchronous_execution"]["binding_effect_authority"]["authority"],
+        "operation_receipt"
+    );
 }
 
 fn encoder_input(source: &str) -> NativeOperationInputContract {

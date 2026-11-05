@@ -1,42 +1,11 @@
-//! Shared realizability + atom-split gate for spec-mutating CLI verbs.
+//! Shared graph claim validation for spec-mutating CLI verbs.
 //!
-//! Every command that edits the spec on disk (`modules merge`,
-//! `modules delete --force`, `bindings assign`) must reject edits that
-//! would render the spec unrealizable BEFORE writing any YAML. Two
-//! invariants the gate enforces, mirroring what `debundle run` checks
-//! against the on-disk spec:
-//!
-//! 1. **No cross-module init-order cycles** — `check_realizability` /
-//!    `validate_assignment` over the post-edit assignment.
-//! 2. **No atom-split** — every `AtomicGroup` (constraining-edge SCC of
-//!    the dependency graph) maps to a single destination module under the
-//!    post-edit assignment. Splitting a member off into a different
-//!    module is unrealizable by construction (see
-//!    `docs/design.md` §"Two classes of atom").
-//!
-//! Both checks share the same `PostEditSpec` view: a list of surviving
-//! module paths, each with the binding names and anonymous source unit ids
-//! it declares. Each verb projects its planned documents or deletions into a
-//! `PostEditSpec`, then uses [`Gate::check`], [`Gate::check_expected`], or
-//! [`Gate::check_source_units`]. These share
-//! the gate path that returns a [`GateRejection`] error carrying the same
-//! `render_cycle_summary` / `render_atomic_group_conflict_summary`
-//! text the materializer emits when its own gate rejects, so authors
-//! see one consistent diagnostic regardless of whether the rejection
-//! came from `debundle run` or a CLI edit verb. The error also
-//! carries a machine-readable [`GateRejectionReport`] payload (the
-//! same `BlockingSccEntry` / `AtomicGroupConflictReport` projections
-//! the pipeline writes to disk), which the CLI dispatchers serialize
-//! to stdout when a JSON format is selected.
-//!
-//! On rejection the gate also writes the same on-disk artifacts the
-//! pipeline writes — `cycles.json` / `atomic_group_conflicts.json` as
-//! siblings of the supplied `dependency_graph.json.gz` (the location
-//! `debundle gate list/describe` reads by default) — so the
-//! documented `gate` follow-up queries work after an edit-gate or
-//! `--dry-run` rejection. Stale artifacts from a previous rejection
-//! are removed when the gate passes (or when the rejection kind
-//! changes), keeping `gate list` consistent with the latest verdict.
+//! Ownership edits project their exact planned documents into [`PostEditSpec`]
+//! and resolve direct and source-backed claims, expected members, and (for
+//! reviewed refinement) the complete source-unit assignment. The canonical
+//! candidate assessment supplies the verified write verdict. The historical
+//! cycle/atom report path remains available to callers of [`Gate::check`], but
+//! ownership-changing CLI paths do not use it as a second veto.
 
 use analysis_model::DepKind;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -78,7 +47,8 @@ pub struct GraphEditArgs {
     /// Validate and report the edit without modifying spec files.
     #[arg(long)]
     pub dry_run: bool,
-    /// Skip validation. Can permit name collisions or unrealizable specs.
+    /// `--no-verify`: skip claim validation and candidate assessment. Can
+    /// permit unresolved claims, name collisions, or an unaccepted candidate.
     #[arg(long)]
     pub no_verify: bool,
     /// dependency graph for validation; required unless --no-verify or the edit
@@ -106,14 +76,11 @@ impl GraphEditArgs {
     }
 }
 
-/// How a spec-mutating CLI verb validates its edit. Replaces the
-/// `(no_verify: bool, dependency_graph_path: Option<&Path>)` pair whose
-/// `(false, None)` combination used to silently skip the
-/// realizability gate.
-#[derive(Debug)]
+/// How a spec-mutating CLI verb validates its edit.
+#[derive(Debug, Clone)]
 pub enum Gate<'a> {
-    /// Run name-collision checks and the post-edit realizability +
-    /// atom-split gate against this dependency graph.
+    /// Resolve post-edit claims using this saved dependency graph. The
+    /// canonical candidate assessment supplies verified-write acceptance.
     Run {
         graph_path: &'a Path,
         input: Arc<DependencyGraphInput>,
@@ -153,7 +120,7 @@ impl<'a> Gate<'a> {
                 source_context,
             }),
             None => bail!(
-                "realizability gate requires --graph (path to dependency_graph.json.gz) or --no-verify"
+                "graph-backed claim validation requires --graph (path to dependency_graph.json.gz) or --no-verify"
             ),
         }
     }
@@ -167,14 +134,14 @@ impl<'a> Gate<'a> {
     /// validation mode.
     pub fn outcome(&self) -> crate::outcome::GateOutcome {
         match self {
-            Self::Run { .. } => crate::outcome::GateOutcome::Passed,
+            Self::Run { .. } => crate::outcome::GateOutcome::ClaimsChecked,
             Self::Skip => crate::outcome::GateOutcome::Skipped,
         }
     }
 
-    /// Run the realizability + atom-split gate against the post-edit
-    /// spec when this is [`Gate::Run`]. `post_spec` is lazy so
-    /// skipped gates don't pay for spec assembly.
+    /// Run the historical graph-cycle and atom-split diagnostic against the
+    /// post-edit spec when this is [`Gate::Run`]. Ownership writers use the
+    /// claims-only methods and the canonical candidate assessment instead.
     pub fn check(
         &self,
         modules_root: &Path,
@@ -207,6 +174,46 @@ impl<'a> Gate<'a> {
                 },
                 &post_spec()?,
                 ExpectedPostEditClaims::Members(expected),
+                GateCheckMode::Legacy,
+            ),
+            Self::Skip => Ok(()),
+        }
+    }
+
+    /// Resolve post-edit claims and authored selectors without applying the
+    /// historical graph cycle/atom veto. The candidate assessment decides
+    /// whether a verified ownership write is accepted.
+    pub fn check_claims(
+        &self,
+        modules_root: &Path,
+        post_spec: impl FnOnce() -> Result<PostEditSpec>,
+    ) -> Result<()> {
+        self.check_expected_claims(modules_root, post_spec, &[])
+    }
+
+    pub fn check_expected_claims(
+        &self,
+        modules_root: &Path,
+        post_spec: impl FnOnce() -> Result<PostEditSpec>,
+        expected: &[ExpectedResolvedMember],
+    ) -> Result<()> {
+        match self {
+            Self::Run {
+                graph_path,
+                input,
+                source_root,
+                source_context,
+            } => gate_post_edit_assignment_with_expected(
+                graph_path,
+                input,
+                modules_root,
+                EditSourceLookup {
+                    root: *source_root,
+                    verified: *source_context,
+                },
+                &post_spec()?,
+                ExpectedPostEditClaims::Members(expected),
+                GateCheckMode::ClaimsOnly,
             ),
             Self::Skip => Ok(()),
         }
@@ -237,10 +244,48 @@ impl<'a> Gate<'a> {
                 },
                 post_spec,
                 ExpectedPostEditClaims::SourceUnits { assignments, scope },
+                GateCheckMode::Legacy,
             ),
             Self::Skip => Ok(()),
         }
     }
+
+    /// Resolve claims and prove the complete reviewed source-unit map, without
+    /// making the historical graph gate authoritative for this edit.
+    pub fn check_source_unit_claims(
+        &self,
+        modules_root: &Path,
+        post_spec: &PostEditSpec,
+        assignments: &SourceUnitModuleAssignments,
+        scope: Option<&ModuleTreeScope>,
+    ) -> Result<()> {
+        match self {
+            Self::Run {
+                graph_path,
+                input,
+                source_root,
+                source_context,
+            } => gate_post_edit_assignment_with_expected(
+                graph_path,
+                input,
+                modules_root,
+                EditSourceLookup {
+                    root: *source_root,
+                    verified: *source_context,
+                },
+                post_spec,
+                ExpectedPostEditClaims::SourceUnits { assignments, scope },
+                GateCheckMode::ClaimsOnly,
+            ),
+            Self::Skip => Ok(()),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum GateCheckMode {
+    Legacy,
+    ClaimsOnly,
 }
 
 enum ExpectedPostEditClaims<'a> {
@@ -842,6 +887,7 @@ fn gate_post_edit_assignment_with_expected(
     source_lookup: EditSourceLookup<'_>,
     post_spec: &PostEditSpec,
     expected: ExpectedPostEditClaims<'_>,
+    mode: GateCheckMode,
 ) -> Result<()> {
     ensure_unaliased_module_tree(modules_root)?;
     let dependency_graph_report = input.report();
@@ -918,6 +964,10 @@ fn gate_post_edit_assignment_with_expected(
                 }
             }
         }
+    }
+
+    if matches!(mode, GateCheckMode::ClaimsOnly) {
+        return Ok(());
     }
 
     // ModuleId assignment: residual at logical:0, every surviving

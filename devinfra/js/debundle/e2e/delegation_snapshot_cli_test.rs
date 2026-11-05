@@ -35,6 +35,49 @@ fn verify(directory: &Path) -> Output {
         .expect("verify snapshot")
 }
 
+fn stage_analysis(report: &Value) -> std::path::PathBuf {
+    let engine = report["engine"].as_str().unwrap();
+    let root = Path::new(report["directory"].as_str().unwrap());
+    let projection = root.join("analysis/edit.projection");
+    let analysis = root.join("analysis/edit.dba");
+    let mut project = Command::new(engine);
+    project
+        .args(["spec", "project-analysis"])
+        .args(
+            report["transform_context_args"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|arg| arg.as_str().unwrap()),
+        )
+        .arg("--out")
+        .arg(&projection);
+    let mut analyze = Command::new(engine);
+    analyze
+        .arg("analyze")
+        .arg("--projection")
+        .arg(&projection)
+        .args(
+            report["analysis_input_args"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|arg| arg.as_str().unwrap()),
+        )
+        .arg("--out")
+        .arg(&analysis);
+    for command in [&mut project, &mut analyze] {
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{command:?}\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    analysis
+}
+
 fn app_files(root: &Path) -> std::collections::BTreeMap<std::path::PathBuf, Vec<u8>> {
     fn collect(
         root: &Path,
@@ -90,7 +133,28 @@ fn delegated_workers_replay_after_original_inputs_are_removed_and_edit_independe
     assert!(verify(&first).status.success());
     let moved_second = workers.path().join("moved second worker");
     fs::rename(&second, &moved_second).unwrap();
-    assert!(verify(&moved_second).status.success());
+    let moved_verification = verify(&moved_second);
+    assert!(moved_verification.status.success());
+    let moved_report: Value = serde_json::from_slice(&moved_verification.stdout).unwrap();
+    let moved_analysis = stage_analysis(&moved_report);
+    let moved_argv: Vec<_> = moved_report["regeneration_argv"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|arg| arg.as_str().unwrap())
+        .collect();
+    let moved_replay = Command::new(moved_argv[0])
+        .args(&moved_argv[1..])
+        .arg("--analysis")
+        .arg(moved_analysis)
+        .output()
+        .unwrap();
+    assert!(
+        moved_replay.status.success(),
+        "{}",
+        String::from_utf8_lossy(&moved_replay.stderr)
+    );
+    assert!(moved_second.join("output/app/main/entry.js").is_file());
     let query = checked(
         Command::new(first_report["engine"].as_str().unwrap())
             .arg("--graph-package-root")
@@ -382,13 +446,19 @@ fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
     directory_package.close().unwrap();
     assert!(verify(&destination).status.success());
 
+    let analysis = stage_analysis(&report);
     let argv: Vec<_> = report["regeneration_argv"]
         .as_array()
         .unwrap()
         .iter()
         .map(|arg| arg.as_str().unwrap())
         .collect();
-    let replay = Command::new(argv[0]).args(&argv[1..]).output().unwrap();
+    let replay = Command::new(argv[0])
+        .args(&argv[1..])
+        .arg("--analysis")
+        .arg(analysis)
+        .output()
+        .unwrap();
     assert!(
         replay.status.success(),
         "{}",
