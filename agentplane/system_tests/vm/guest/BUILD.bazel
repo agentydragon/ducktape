@@ -63,6 +63,10 @@ oci_image(
     architecture = "amd64",
     os = "linux",
     tars = [":boot_tar"],
+    visibility = [
+        "//agentplane/system_tests/suites:__pkg__",
+        "//agentplane/system_tests/vm:__subpackages__",
+    ],
 )
 
 py_binary(
@@ -346,6 +350,10 @@ oci_image(
     os = "linux",
     tars = [":root_disk"],
     user = "107:107",
+    visibility = [
+        "//agentplane/system_tests/suites:__pkg__",
+        "//agentplane/system_tests/vm:__subpackages__",
+    ],
 )
 
 pkg_tar(
@@ -362,6 +370,10 @@ oci_image(
     os = "linux",
     tars = [":root_profile_disk"],
     user = "107:107",
+    visibility = [
+        "//agentplane/system_tests/suites:__pkg__",
+        "//agentplane/system_tests/vm:__subpackages__",
+    ],
 )
 
 py_library(
