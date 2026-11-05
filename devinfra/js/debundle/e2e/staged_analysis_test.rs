@@ -1226,6 +1226,42 @@ fn lexical_effect_authority_and_fallback_survive_staged_artifact_round_trip() {
 }
 
 #[test]
+fn captured_value_bindings_survive_saved_program_summary() {
+    const PROVIDER: &str = "var captured = globalThis.runtimeSettings.state;\nexport function read() { return captured.value; }\n";
+    const SETUP: &str = "globalThis.runtimeSettings = { state: { value: 41 } };\n";
+    let input = ValueInputContract {
+        source_match: serde_yaml::from_str(
+            "match: var captured = globalThis.runtimeSettings.state;\nbindings: [captured]\n",
+        )
+        .expect("source selector"),
+        value: CapturedValueContract {
+            kind: CapturedValueKind::OrdinaryObject,
+        },
+        audited_source_sha256: format!("{:x}", Sha256::digest(PROVIDER.as_bytes())),
+        expected_export: None,
+        note: None,
+    };
+    let opts = FixtureOpts::new(
+        "import './setup.js';\nimport { read } from './peer.js';\nconst result = read();\nconsole.log(result);\nexport { result };\n",
+        vec![logical_module("all", &[Member::new("result")])],
+    )
+    .with_extra_chunks(&[("static/peer", PROVIDER)])
+    .with_extra_files(&[("static/setup.js", SETUP), ("static/app/setup.js", SETUP)])
+    .with_value_inputs("static/peer", vec![input]);
+    let (staged, _fixture) = staged(opts);
+    let direct = staged.run(&[]);
+    assert_ok(&direct.result, "direct captured-value run");
+    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert_ok(&saved.result, "saved captured-value run");
+    assert_same_invocation_trees(&direct, &saved);
+    assert_node_output(
+        &saved.output_root().join("app/static/app/entry.js"),
+        "41\n",
+        "",
+    );
+}
+
+#[test]
 fn accepted_split_matches_a_direct_run() {
     assert_staged_run_matches(split_with_pure_import(), &[]);
     assert_staged_run_matches(

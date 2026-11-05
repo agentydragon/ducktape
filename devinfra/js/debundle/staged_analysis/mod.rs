@@ -26,6 +26,8 @@ pub mod loader_surface;
 pub mod program_summary;
 pub mod progress;
 mod request;
+mod saved_program_summary;
+mod saved_purity;
 pub use analysis_projection::AnalysisSpec;
 pub use loader_surface::{
     ExportReentryLoaderDerivation, ExportReentryLoaderFailure, ExportReentryLoaderRequest,

@@ -2776,6 +2776,18 @@ hygiene contexts as first-occurrence ordinals of the re-parsed modules; see
 `docs/lessons_learned/cross_process_stage_b.md` for why simpler encodings
 are wrong.
 
+The runtime `ProgramSummary` and `AnalysisArtifactBody` do not implement Serde.
+`SavedAnalysisBody::snapshot` selects the saved representation, and `restore`
+reconstructs runtime structures after the header has been checked. In this first
+slice, imported purity verdicts use an explicit postorder node table (preserving
+shared causes, spans and proof dependencies), and resolved value-input bindings
+use named symbol/context-ordinal fields. These saved types use ordinary Serde.
+Unchanged summary fields are borrowed during writing rather than cloned. The
+remaining fields still pass through the existing codec, including its contextual
+report-field handling; moving those fields to explicit saved types is subsequent
+work. There is no compatibility reader: the compiled engine digest already
+invalidates artifacts produced by another implementation.
+
 The reason to call this out: every diagnostic in §"Two classes of
 atom" lives in materialization (it depends on the spec's quotient), but
 its inputs all come from chunk analysis. Refactors that move work
