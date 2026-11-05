@@ -117,20 +117,19 @@ def test_selected_replay_returns_the_original_paths(windows: AnnualWindows) -> N
         assert (row.summary, row.stop) == (population[row.rollout_id].summary, population[row.rollout_id].stop)
 
 
-def cli(output: Path, *args: str | Path) -> None:
+def cli(runfiles: Runfiles, output: Path, *args: str | Path) -> None:
     subprocess.run(
-        [
-            (Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/study/guyton_klinger/run_bin"),
-            *args,
-            *("--output-dir", output),
-        ],
+        [(runfiles.root() / "ducktape/finance/augur/study/guyton_klinger/run_bin"), *args, *("--output-dir", output)],
         check=True,
     )
 
 
-def test_cli_replays_reordered_start_years_from_a_panel_file(tmp_path: Path, panel_path: Path) -> None:
+def test_cli_replays_reordered_start_years_from_a_panel_file(
+    runfiles: Runfiles, tmp_path: Path, panel_path: Path
+) -> None:
     output = tmp_path / "study"
     cli(
+        runfiles,
         output,
         *("--panel", panel_path, "--taxes", "none", "--years", "2", "--initial-wealth", "100", "--initial-rate", "0.1"),
         *("--start-year", "2005", "--start-year", "2001", "--start-year", "2003"),
@@ -171,11 +170,12 @@ def untaxed(withdrawal: int) -> YearAmounts:
     return YearAmounts(withdrawal=withdrawal, federal_tax=0, california_tax=0, tax=0, spendable=withdrawal)
 
 
-def test_cli_records_a_freeze_and_a_prosperity_raise(tmp_path: Path) -> None:
+def test_cli_records_a_freeze_and_a_prosperity_raise(runfiles: Runfiles, tmp_path: Path) -> None:
     panel = tmp_path / "guardrails.csv"
     panel.write_text(GUARDRAILS)
     output = tmp_path / "study"
     cli(
+        runfiles,
         output,
         *("--panel", panel, "--taxes", "none", "--years", "3", "--initial-wealth", "1000", "--initial-rate", "0.05"),
     )
@@ -224,9 +224,10 @@ def test_cli_records_a_freeze_and_a_prosperity_raise(tmp_path: Path) -> None:
     assert wealth(rollout, 36) == dollars("1495")
 
 
-def test_cli_runs_the_generated_placeholder_panel(tmp_path: Path) -> None:
+def test_cli_runs_the_generated_placeholder_panel(runfiles: Runfiles, tmp_path: Path) -> None:
     output = tmp_path / "study"
     cli(
+        runfiles,
         output,
         *("--synthetic", "--taxes", "federal-ca", "--tax-law", "fixed-nominal", "--years", "5"),
         *("--initial-wealth", "1000000"),
@@ -257,12 +258,14 @@ TAXED = textwrap.dedent(
 )
 
 
-def test_cli_pays_each_years_federal_and_california_tax_out_of_its_withdrawal(tmp_path: Path) -> None:
+def test_cli_pays_each_years_federal_and_california_tax_out_of_its_withdrawal(
+    runfiles: Runfiles, tmp_path: Path
+) -> None:
     panel = tmp_path / "taxed.csv"
     panel.write_text(TAXED)
     common = ("--panel", panel, "--years", "2", "--initial-wealth", "1000000", "--initial-rate", "0.05")
-    cli(tmp_path / "taxed", *common, "--taxes", "federal-ca", "--tax-law", "fixed-nominal")
-    cli(tmp_path / "untaxed", *common, "--taxes", "none")
+    cli(runfiles, tmp_path / "taxed", *common, "--taxes", "federal-ca", "--tax-law", "fixed-nominal")
+    cli(runfiles, tmp_path / "untaxed", *common, "--taxes", "none")
     [path] = Records.model_validate_json((tmp_path / "taxed" / "records.json").read_text()).paths
     [taxed] = Finished.model_validate_json((tmp_path / "taxed" / "outcomes.json").read_text()).rollouts
     [control] = Finished.model_validate_json((tmp_path / "untaxed" / "outcomes.json").read_text()).rollouts
@@ -345,11 +348,12 @@ INDEXED = textwrap.dedent(
     ],
 )
 def test_cpi_indexed_tables_carry_the_law_years_brackets_to_each_windows_price_level(
-    tmp_path: Path, tax_law: str, federal_tax: list[str]
+    runfiles: Runfiles, tmp_path: Path, tax_law: str, federal_tax: list[str]
 ) -> None:
     panel = tmp_path / "indexed.csv"
     panel.write_text(INDEXED)
     cli(
+        runfiles,
         tmp_path / "study",
         *("--panel", panel, "--years", "1", "--start-year", "2023", "--start-year", "2025"),
         *("--initial-wealth", "1000000", "--initial-rate", "0.05", "--taxes", "federal-ca", "--tax-law", tax_law),
@@ -399,11 +403,12 @@ DEFLATED = textwrap.dedent(
 )
 
 
-def test_initial_wealth_in_one_years_dollars_deflates_to_each_windows_start(tmp_path: Path) -> None:
+def test_initial_wealth_in_one_years_dollars_deflates_to_each_windows_start(runfiles: Runfiles, tmp_path: Path) -> None:
     panel = tmp_path / "deflated.csv"
     panel.write_text(DEFLATED)
     output = tmp_path / "study"
     cli(
+        runfiles,
         output,
         *("--panel", panel, "--taxes", "none", "--years", "1", "--initial-rate", "0.1"),
         *("--initial-wealth", "1000", "--initial-wealth-dollars-of", "2002"),

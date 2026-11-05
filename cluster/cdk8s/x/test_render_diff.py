@@ -103,20 +103,24 @@ def base_files() -> dict[str, str]:
     }
 
 
-def _graph(repo: Path, rev: str, cache: Path) -> Graph:
+def _graph(runfiles: Runfiles, repo: Path, rev: str, cache: Path) -> Graph:
     store = BlobStore(cache / "blobs")
-    renderer = Renderer(cache, store, str(Runfiles.CreateOrRaise().root() / "multitool/tools/kustomize/kustomize"))
+    renderer = Renderer(cache, store, str(runfiles.root() / "multitool/tools/kustomize/kustomize"))
     return reconcile(Revision(repo, rev, git_tree(repo, rev), cache / "upstream", store), renderer, jobs=2)
 
 
-def test_identical_revisions_compare_clean(repo: Path, base_files: dict[str, str], tmp_path: Path) -> None:
+def test_identical_revisions_compare_clean(
+    runfiles: Runfiles, repo: Path, base_files: dict[str, str], tmp_path: Path
+) -> None:
     rev = _commit(repo, base_files)
-    graph = _graph(repo, rev, tmp_path / "cache")
+    graph = _graph(runfiles, repo, rev, tmp_path / "cache")
     assert set(graph.results) == {("flux-system", n) for n in ("flux-system", "generators", "app")}
-    assert compare(graph, _graph(repo, rev, tmp_path / "cache")) == []
+    assert compare(graph, _graph(runfiles, repo, rev, tmp_path / "cache")) == []
 
 
-def test_reports_changed_field_and_removed_object(repo: Path, base_files: dict[str, str], tmp_path: Path) -> None:
+def test_reports_changed_field_and_removed_object(
+    runfiles: Runfiles, repo: Path, base_files: dict[str, str], tmp_path: Path
+) -> None:
     base = _commit(repo, base_files)
     head = _commit(
         repo,
@@ -126,7 +130,7 @@ def test_reports_changed_field_and_removed_object(repo: Path, base_files: dict[s
             "cluster/k8s/app/README.md": "changes nothing Flux applies",
         },
     )
-    report = compare(_graph(repo, base, tmp_path / "cache"), _graph(repo, head, tmp_path / "cache"))
+    report = compare(_graph(runfiles, repo, base, tmp_path / "cache"), _graph(runfiles, repo, head, tmp_path / "cache"))
     assert report == [
         "== flux-system/app ==",
         '~ ConfigMap app/app\n    data.key: "one" -> "two"',
@@ -134,20 +138,24 @@ def test_reports_changed_field_and_removed_object(repo: Path, base_files: dict[s
     ]
 
 
-def test_build_failure_is_a_difference(repo: Path, base_files: dict[str, str], tmp_path: Path) -> None:
+def test_build_failure_is_a_difference(
+    runfiles: Runfiles, repo: Path, base_files: dict[str, str], tmp_path: Path
+) -> None:
     base = _commit(repo, base_files)
     head = _commit(repo, {"cluster/k8s/app/kustomization.yaml": "resources: [missing.yaml]\n"})
-    head_graph = _graph(repo, head, tmp_path / "cache")
+    head_graph = _graph(runfiles, repo, head, tmp_path / "cache")
     assert isinstance(head_graph.results[("flux-system", "app")], Failed)
-    assert compare(_graph(repo, base, tmp_path / "cache"), head_graph)[0] == "== flux-system/app =="
+    assert compare(_graph(runfiles, repo, base, tmp_path / "cache"), head_graph)[0] == "== flux-system/app =="
 
 
-def test_kustomization_object_change_is_reported_once(repo: Path, base_files: dict[str, str], tmp_path: Path) -> None:
+def test_kustomization_object_change_is_reported_once(
+    runfiles: Runfiles, repo: Path, base_files: dict[str, str], tmp_path: Path
+) -> None:
     base = _commit(repo, base_files)
     head = _commit(
         repo, {"cluster/k8s/flux/kustomizations.yaml": _FLUX.replace("targetNamespace: app", "targetNamespace: app2")}
     )
-    report = compare(_graph(repo, base, tmp_path / "cache"), _graph(repo, head, tmp_path / "cache"))
+    report = compare(_graph(runfiles, repo, base, tmp_path / "cache"), _graph(runfiles, repo, head, tmp_path / "cache"))
     assert report[:2] == [
         "== Flux Kustomization objects ==",
         '~ flux-system/app\n    spec.targetNamespace: "app" -> "app2"',

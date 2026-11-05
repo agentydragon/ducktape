@@ -49,8 +49,8 @@ def _resource(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any
     return matches[0]
 
 
-def _filled_fixture() -> rendered_fixture.RenderedFixture:
-    cached = rendered_fixture.read(Runfiles.CreateOrRaise().root() / os.environ["K3S_FIXTURE_RLOCATION"])
+def _filled_fixture(runfiles: Runfiles) -> rendered_fixture.RenderedFixture:
+    cached = rendered_fixture.read(runfiles.root() / os.environ["K3S_FIXTURE_RLOCATION"])
     return rendered_fixture.fill(
         cached,
         RuntimeInputs(
@@ -61,8 +61,8 @@ def _filled_fixture() -> rendered_fixture.RenderedFixture:
     )
 
 
-def test_direct_fixture_uses_gateway_and_embedded_migrations() -> None:
-    fixture = _filled_fixture()
+def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles) -> None:
+    fixture = _filled_fixture(runfiles)
     assert fixture.central_sampler
     assert "k3s-env-placeholder-" not in fixture.model_dump_json()
     docs = fixture.objects
@@ -517,8 +517,8 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(runfiles: Runf
     }
 
 
-def test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring() -> None:
-    fixture = _filled_fixture()
+def test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(runfiles: Runfiles) -> None:
+    fixture = _filled_fixture(runfiles)
     assert fixture.central_sampler
     assert not fixture.vm_sandboxes
     docs = fixture.objects

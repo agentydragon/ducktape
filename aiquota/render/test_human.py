@@ -18,8 +18,8 @@ if __name__ == "__main__":
 _NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 
 
-def _fixture(name: str) -> AllQuotas:
-    return load_quota_fixture(Runfiles.CreateOrRaise().root() / f"ducktape/aiquota/testing/fixtures/{name}.yaml")
+def _fixture(runfiles: Runfiles, name: str) -> AllQuotas:
+    return load_quota_fixture(runfiles.root() / f"ducktape/aiquota/testing/fixtures/{name}.yaml")
 
 
 def _quota(result: FetchSuccess) -> AllQuotas:
@@ -27,8 +27,8 @@ def _quota(result: FetchSuccess) -> AllQuotas:
     return AllQuotas(providers=[ProviderQuota(provider="codex", last_output=fetched)], fetched_at=_NOW)
 
 
-def test_default_rows_keep_balances_grants_groups_and_subscription_windows_separate() -> None:
-    rendered = human.render(_fixture("platform_credits_with_subscription_resets"), now=_NOW, tz=UTC)
+def test_default_rows_keep_balances_grants_groups_and_subscription_windows_separate(runfiles: Runfiles) -> None:
+    rendered = human.render(_fixture(runfiles, "platform_credits_with_subscription_resets"), now=_NOW, tz=UTC)
 
     assert rendered.startswith("Subscriptions\n\nClaude\n  Prepaid balance: $25.75")
     assert "5h:  45% used  ↻ 2h" in rendered
@@ -46,8 +46,8 @@ def test_default_rows_keep_balances_grants_groups_and_subscription_windows_separ
     assert len({line.index("leaves") for line in forecast_rows}) == 1
 
 
-def test_details_show_grant_originals_full_deadlines_pace_and_peak_schedule() -> None:
-    quotas = _fixture("binding_summary")
+def test_details_show_grant_originals_full_deadlines_pace_and_peak_schedule(runfiles: Runfiles) -> None:
+    quotas = _fixture(runfiles, "binding_summary")
 
     default = human.render(quotas, now=_NOW, tz=UTC)
     detailed = human.render(quotas, now=_NOW, tz=UTC, details=True)
@@ -57,13 +57,13 @@ def test_details_show_grant_originals_full_deadlines_pace_and_peak_schedule() ->
     assert "pace +10 pp" in detailed
     assert "3x windows (local)" in detailed
 
-    credits = human.render(_fixture("openai_platform_credits"), now=_NOW, tz=UTC, details=True)
+    credits = human.render(_fixture(runfiles, "openai_platform_credits"), now=_NOW, tz=UTC, details=True)
     assert "expires 2026-02-01 00:00 UTC" in credits
     assert "$100.00 granted" in credits
 
 
-def test_observed_account_has_compact_expiries_and_broad_promo_scope_only_in_details() -> None:
-    quotas = _fixture("observed_account_2026_11_04")
+def test_observed_account_has_compact_expiries_and_broad_promo_scope_only_in_details(runfiles: Runfiles) -> None:
+    quotas = _fixture(runfiles, "observed_account_2026_11_04")
     default = human.render(quotas, now=quotas.fetched_at, tz=UTC)
     detailed = human.render(quotas, now=quotas.fetched_at, tz=UTC, details=True)
 
@@ -74,8 +74,8 @@ def test_observed_account_has_compact_expiries_and_broad_promo_scope_only_in_det
         assert any(line.endswith(f"expires {date}") for line in default.splitlines())
 
 
-def test_paid_mode_keeps_each_window_row_and_marks_actionable_state() -> None:
-    rendered = human.render(_fixture("paid_credits"), now=_NOW, tz=UTC)
+def test_paid_mode_keeps_each_window_row_and_marks_actionable_state(runfiles: Runfiles) -> None:
+    rendered = human.render(_fixture(runfiles, "paid_credits"), now=_NOW, tz=UTC)
 
     assert "Codex\n  Paid credits: 2,746 credits" in rendered
     assert "Included quota exhausted · paid credits available" in rendered
@@ -83,16 +83,16 @@ def test_paid_mode_keeps_each_window_row_and_marks_actionable_state() -> None:
     assert "7d:  38% used  ↻ 3d 14h" in rendered
 
 
-def test_empty_success_has_precise_empty_state_and_does_not_render_burn_schedule() -> None:
-    rendered = human.render(_fixture("empty"), now=_NOW, tz=UTC)
+def test_empty_success_has_precise_empty_state_and_does_not_render_burn_schedule(runfiles: Runfiles) -> None:
+    rendered = human.render(_fixture(runfiles, "empty"), now=_NOW, tz=UTC)
 
     assert rendered.count("No quota or credit data available") == 3
     assert "burn" not in rendered
     assert "Claude\n  No quota or credit data available" in rendered
 
 
-def test_offline_view_reports_cached_snapshot_age_and_hides_raw_error_by_default() -> None:
-    view = to_view(_fixture("binding_summary"), now=_NOW).model_copy(
+def test_offline_view_reports_cached_snapshot_age_and_hides_raw_error_by_default(runfiles: Runfiles) -> None:
+    view = to_view(_fixture(runfiles, "binding_summary"), now=_NOW).model_copy(
         update={"connection_error": "request timed out", "fetched_at": _NOW - timedelta(minutes=8)}
     )
 
@@ -104,25 +104,25 @@ def test_offline_view_reports_cached_snapshot_age_and_hides_raw_error_by_default
     assert "connection error: request timed out" in detailed
 
 
-def test_provider_error_uses_shared_summary_and_details_keep_original_error() -> None:
-    rendered = human.render(_fixture("tints"), now=_NOW, tz=UTC)
-    detailed = human.render(_fixture("tints"), now=_NOW, tz=UTC, details=True)
+def test_provider_error_uses_shared_summary_and_details_keep_original_error(runfiles: Runfiles) -> None:
+    rendered = human.render(_fixture(runfiles, "tints"), now=_NOW, tz=UTC)
+    detailed = human.render(_fixture(runfiles, "tints"), now=_NOW, tz=UTC, details=True)
 
     assert "Claude\n  Authentication failed" in rendered
     assert "invalid_token" not in rendered
     assert "error: HTTP 401 invalid_request: invalid_token" in detailed
 
 
-def test_stale_observation_is_marked_without_showing_pace_or_forecast() -> None:
-    rendered = human.render(_fixture("stale_observation"), now=_NOW, tz=UTC)
+def test_stale_observation_is_marked_without_showing_pace_or_forecast(runfiles: Runfiles) -> None:
+    rendered = human.render(_fixture(runfiles, "stale_observation"), now=_NOW, tz=UTC)
 
     assert "Stale data · last observed 20m ago" in rendered
     assert "pace " not in rendered
     assert "leaves" not in rendered
 
 
-def test_expired_reset_waits_for_new_usage_and_suppresses_forecast() -> None:
-    rendered = human.render(_fixture("reset_pending"), now=_NOW, tz=UTC)
+def test_expired_reset_waits_for_new_usage_and_suppresses_forecast(runfiles: Runfiles) -> None:
+    rendered = human.render(_fixture(runfiles, "reset_pending"), now=_NOW, tz=UTC)
 
     assert "Reset time passed · awaiting updated usage" in rendered
     assert "↻ awaiting update" in rendered
@@ -183,8 +183,8 @@ def test_reset_credit_summary_is_compact_by_default_and_lists_all_expiries_in_de
 
 
 @pytest.mark.parametrize("fixture_name", FIXTURE_NAMES)
-def test_renders_shared_fixture(fixture_name: str, snapshot: SnapshotAssertion) -> None:
-    quotas = _fixture(fixture_name)
+def test_renders_shared_fixture(runfiles: Runfiles, fixture_name: str, snapshot: SnapshotAssertion) -> None:
+    quotas = _fixture(runfiles, fixture_name)
     assert human.render(quotas, now=quotas.fetched_at, tz=UTC) == snapshot
 
 

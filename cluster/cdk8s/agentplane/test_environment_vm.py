@@ -61,21 +61,18 @@ def _environment_vm_manifests(
     }
 
 
-def _vm_guest_contract() -> dict[str, Any]:
+def _vm_guest_contract(runfiles: Runfiles) -> dict[str, Any]:
     return cast(
         dict[str, Any],
         json.loads(
-            (Runfiles.CreateOrRaise().root() / "ducktape/agentplane/env/images/vm_guest_contract.json").read_text(
-                encoding="utf-8"
-            )
+            (runfiles.root() / "ducktape/agentplane/env/images/vm_guest_contract.json").read_text(encoding="utf-8")
         ),
     )
 
 
-def _runtime_service_unit() -> dict[str, str]:
+def _runtime_service_unit(runfiles: Runfiles) -> dict[str, str]:
     contents = (
-        Runfiles.CreateOrRaise().root()
-        / "ducktape/agentplane/env/images/systemd/agentplane-environment-runtime.service"
+        runfiles.root() / "ducktape/agentplane/env/images/systemd/agentplane-environment-runtime.service"
     ).read_text(encoding="utf-8")
     return {
         key: value
@@ -216,9 +213,9 @@ def test_vm_template_renders_mtls_server_listener(scratch_app: App) -> None:
     assert {"port": 9090} in interface["ports"]
 
 
-def test_vm_template_matches_the_guest_disk_and_runtime_file_contract(scratch_app: App) -> None:
-    contract = _vm_guest_contract()
-    unit = _runtime_service_unit()
+def test_vm_template_matches_the_guest_disk_and_runtime_file_contract(runfiles: Runfiles, scratch_app: App) -> None:
+    contract = _vm_guest_contract(runfiles)
+    unit = _runtime_service_unit(runfiles)
     rendered = _environment_vm_manifests(app=scratch_app, console_autologin=False)
     config_map = rendered["config_map"]
     runtime_config = rendered["environment_runtime"]

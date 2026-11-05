@@ -23,9 +23,9 @@ from agentplane.testing.scripted_model import ScriptedModel, ShellCall, Text
 # gazelle:include_dep @pypi//protobuf
 
 
-def _extract_oci_rootfs(rloc_file: str, destination: Path) -> None:
+def _extract_oci_rootfs(runfiles: Runfiles, rloc_file: str, destination: Path) -> None:
     """Expand the layers from a Bazel OCI layout into a disposable child root."""
-    runfiles_root = Runfiles.CreateOrRaise().root()
+    runfiles_root = runfiles.root()
     reference = runfiles_root / f"ducktape/{rloc_file}"
     layout = runfiles_root / reference.read_text().strip()
     index = json.loads((layout / "index.json").read_text())
@@ -64,7 +64,7 @@ async def test_sparse_child_root_completes_turn_and_resumes_after_harness_exit(
     resources_dir.mkdir()
     shutil.copyfile(codex_bwrap, resources_dir / "bwrap")
     (resources_dir / "bwrap").chmod(0o555)
-    _extract_oci_rootfs("agentplane/x/runner_layering/tools_rootfs.rloc", child_root)
+    _extract_oci_rootfs(runfiles, "agentplane/x/runner_layering/tools_rootfs.rloc", child_root)
     assert (child_root / "usr/local/bin/workload-tool").is_file()
 
     state_dir = tmp_path / "state"
