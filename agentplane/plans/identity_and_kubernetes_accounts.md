@@ -65,8 +65,9 @@ status:
 An identity is never owned by a Sandbox or any other environment (operator, 2026-11-05): a central
 Session attaches and detaches environments repeatedly, and a standing agent moves between Sandboxes,
 so the agent's lifetime and the compute's are different things. A Sandbox names its identity in
-`spec.identity`, changeable only while the Sandbox is stopped ([below](#changing-an-environments-identity)),
-and the Sandbox Controller refuses a Sandbox without one. Who creates the identity decides its lifetime: Flux for a standing agent; the app at
+`spec.identity`, which may be absent or changed while nothing is running
+([below](#changing-an-environments-identity)); a start without one is refused with
+`IdentityMissing`. Who creates the identity decides its lifetime: Flux for a standing agent; the app at
 launch when the operator starts a fresh agent, deleted by the operator's explicit "finish with this
 agent"; Dispatcher for a Session-managed identity, deleted with the Session
 ([Session/environment model](session_environment_model.md#sessions-serviceaccounts-and-environments)).
@@ -193,9 +194,15 @@ is immutable and which the same-environment invariant now bars from running ther
 tunnels admitted as one identity and completing as another; and a RAM-preserving Firecracker
 snapshot, whose restore would resume the old agent's harness mid-turn acting as the new identity.
 
-So `spec.identity` is mutable only while the environment is fully stopped: no workload running and
-no RAM snapshot pending restore. The next start runs as the new identity, and the controller
-rotates the credential ID on that start so the boundary shows in every audit log as a new SPIFFE ID.
+So `spec.identity` may be absent or changed while the environment is suspended or stopped, and a
+start requires one (operator, 2026-11-05: changing it while suspended is wanted). The next start
+runs as the new identity, and the controller rotates the credential ID on that start so the
+boundary shows in every audit log as a new SPIFFE ID. If a RAM-preserving Firecracker snapshot
+exists, the controller discards it and cold-starts the guest, which is the one way the snapshot
+hazard is handled. An environment may therefore be created unbound and bound by the Session that
+attaches it, the create-then-bind sequence the
+[Session/environment model](session_environment_model.md#session-managed-sa-and-native-creation-order)
+floated.
 Sessions placed on the environment under the old identity, including native harness conversations
 on its state volume, are retained, readable and marked unrunnable with a reason, the way a Session
 is when its required environment is deleted; they are never re-attributed. New identity, new

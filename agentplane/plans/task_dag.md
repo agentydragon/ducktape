@@ -3015,9 +3015,11 @@ with no environment.
 
 ### `SANDBOX_IDENTITY_SPEC` — a Sandbox names its identity and creates nothing else
 
-**Blocked on `IDENTITY_KINDS`.** `Sandbox.spec.identity` is required and immutable; the Sandbox
-Controller creates no ServiceAccount and no PolicyBinding, runs the Pod on the default SA with
-`automountServiceAccountToken: false`, and reports `IdentityMissing` when the identity is gone;
+**Blocked on `IDENTITY_KINDS`.** `Sandbox.spec.identity` may be absent or changed only while nothing is
+running, a start without one is refused with `IdentityMissing`, and a change discards any RAM
+snapshot and rotates the credential ID; the Sandbox Controller creates no ServiceAccount and no
+PolicyBinding, runs the Pod on the default SA with `automountServiceAccountToken: false`, and
+reports `IdentityMissing` when the identity is gone;
 the sandbox templates stop mounting a kubeconfig; `EnvironmentService` creation takes an identity;
 the agent Kubernetes docs lose the kubeconfig and point at the rules endpoint. **Exit:** controller
 tests for a Sandbox with and without a live identity, the rendered Pod has no token projection but
