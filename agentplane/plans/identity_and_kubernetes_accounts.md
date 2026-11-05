@@ -276,9 +276,12 @@ watch and "View grants" disclosure re-anchored on the identity instead of a Serv
   one, is kept, since a standing agent's grants are the expensive thing to recreate. The app records
   that fact on the identity at creation (an annotation naming the Sandbox or Session it was minted
   for), so the default is a property of the object, not of whichever screen happens to finish it.
-- **Launch** is unchanged on the surface: pick sets, and either a new identity or an existing one
-  from the list. Choosing an existing identity shows its current grants, so the operator sees what
-  the new environment will be able to do before it starts.
+- **Start a session** (operator, 2026-11-05: "session", not "agent") is unchanged on the surface
+  for a new identity: pick sets, and they become the identity's launch binding. Choosing an
+  existing identity hides the set selector and shows that identity's current bindings read-only,
+  with a link to its page. Permissions are a property of the identity: bindings are additive, so a
+  launch cannot narrow them per environment, and widening a standing identity is a deliberate grant
+  with its own expiry on the identity's page, never a side effect of starting a session.
 
 ## Lifetimes
 
