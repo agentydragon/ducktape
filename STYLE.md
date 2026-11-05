@@ -132,6 +132,8 @@ Build `.ts`/`.tsx` with one `ts_library` (`//devinfra/js:ts_library.bzl`) per mo
 
 For Python runfiles, use `rules_python`'s `Runfiles` API directly. For this repository's own data, resolve `ducktape/<repository-relative-path>` in the caller's context; `_main` names the root module of the build, which can be a different repository. Pass Bazel-generated `$(rlocationpath ...)` values unchanged to the resolver.
 
+Reuse a `Runfiles` instance for related lookups within an operation: `CreateOrRaise()` creates a new instance and can reread the runfiles manifest. Introduce shared caching only when evidence warrants it.
+
 ### System CA certificates in distroless images
 
 `rules_distroless` ships no CA bundle: add `//third_party/debian_slim:cacerts` to the `oci_image` `tars`, never assemble one at runtime. Per-client details: <docs/distroless_ca_certificates.md>.
