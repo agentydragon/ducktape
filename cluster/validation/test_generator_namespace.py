@@ -24,7 +24,7 @@ The cdk8s generator refuses to write such a kustomization
 holds the hand-written ones, which live in the other manifest roots.
 """
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest_bazel
 import yaml
@@ -50,6 +50,18 @@ def _flux_target_namespaces(repo_root: Path) -> dict[str, str | None]:
 def test_generators_declare_a_namespace(repo_root: Path) -> None:
     offenders: list[str] = []
     flux_target_namespaces = _flux_target_namespaces(repo_root)
+    hand_written_root = PurePosixPath(HAND_WRITTEN_ROOT)
+    missing_flux_dirs = sorted(
+        flux_path
+        for flux_path in flux_target_namespaces
+        if (path := PurePosixPath(flux_path)).is_relative_to(hand_written_root)
+        and not repo_root.joinpath(*path.parts).is_dir()
+    )
+    assert not missing_flux_dirs, (
+        "Direct hand-written Flux paths are missing from this test's materialized runfiles; "
+        "add their package filegroups to `cluster_k8s_inputs`:\n" + "\n".join(missing_flux_dirs)
+    )
+
     for kust in manifest_files(repo_root, "kustomization.yaml"):
         if kust.is_relative_to(repo_root / GENERATED_ROOT):
             continue

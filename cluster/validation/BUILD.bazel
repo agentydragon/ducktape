@@ -7,6 +7,23 @@ package(default_visibility = [
     "//devinfra/precommit:__pkg__",
 ])
 
+# Shared inputs for tests that walk the hand-written manifest roots or render Flux paths.
+# Each package glob stops at its Bazel package boundary; this filegroup makes those inputs
+# available at their repo-relative paths in the Linux runfiles tree.
+filegroup(
+    name = "cluster_k8s_inputs",
+    testonly = True,
+    srcs = [
+        "//cluster/k8s:cluster_all_files",
+        "//cluster/k8s/agentplane-staging:manifests",
+        "//cluster/k8s/authentik/app/blueprints:authentik_blueprints",
+        "//cluster/k8s/cli-proxy-api:manifests",
+        "//cluster/k8s/flux/flux-system:flux_system_files",
+        "//cluster/k8s/home-assistant/app:manifests",
+        "//cluster/k8s/litellm/app:manifests",
+    ],
+)
+
 py_test(
     name = "test_cluster",
     srcs = ["test_cluster.py"],
@@ -274,17 +291,10 @@ py_test(
     size = "medium",
     srcs = ["test_cluster_integration.py"],
     data = [
+        ":cluster_k8s_inputs",
         "//:session_backup_sops_source",
         "//agentplane/crds:manifests",
         "//cluster:generated_manifests",
-        "//cluster/k8s:cluster_all_files",
-        "//cluster/k8s/agentplane-staging:manifests",
-        "//cluster/k8s/authentik/app/blueprints:authentik_blueprints",
-        "//cluster/k8s/cli-proxy-api:manifests",
-        "//cluster/k8s/flux/flux-system:flux_bootstrap_files",
-        "//cluster/k8s/flux/flux-system:flux_system_files",
-        "//cluster/k8s/home-assistant/app:manifests",
-        "//cluster/k8s/litellm/app:manifests",
         "@multitool//tools/kustomize",
     ],
     deps = [
@@ -348,16 +358,11 @@ py_test(
     srcs = ["test_flux_build.py"],
     # validate_flux_build needs the whole tree the root kustomization references.
     # cluster_all_files' glob stops at package boundaries, so each local package
-    # supplies its Kustomize inputs through a filegroup. :flux carries the CLI.
+    # supplies its Kustomize inputs through a filegroup. :cluster_k8s_inputs collects them;
+    # :flux carries the CLI.
     data = [
+        ":cluster_k8s_inputs",
         "//cluster:generated_manifests",
-        "//cluster/k8s:cluster_all_files",
-        "//cluster/k8s/agentplane-staging:manifests",
-        "//cluster/k8s/authentik/app/blueprints:authentik_blueprints",
-        "//cluster/k8s/cli-proxy-api:manifests",
-        "//cluster/k8s/flux/flux-system:flux_system_files",
-        "//cluster/k8s/home-assistant/app:manifests",
-        "//cluster/k8s/litellm/app:manifests",
     ],
     deps = [
         ":conftest",
@@ -383,8 +388,8 @@ py_test(
     name = "test_generator_namespace",
     srcs = ["test_generator_namespace.py"],
     data = [
-        "//cluster/k8s:cluster_all_files",
-        "//cluster/k8s/agentplane-staging:manifests",
+        ":cluster_k8s_inputs",
+        "//agentplane/crds:manifests",
     ],
     deps = [
         ":conftest",
