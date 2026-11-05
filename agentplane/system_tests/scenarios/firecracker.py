@@ -135,7 +135,9 @@ async def _wait_for_served_certificate(cluster: Cluster, pod_name: str, credenti
                     timeout=6,
                 )
                 actual = writer.get_extra_info("ssl_object").getpeercert(binary_form=True)
-                writer.close()
+                # This probe ends at the authenticated TLS handshake. Abort instead
+                # of racing TLS shutdown against the server's HTTP/2 SETTINGS frame.
+                writer.transport.abort()
                 await writer.wait_closed()
                 assert actual == expected.public_bytes(Encoding.DER), "Runtime still serves its old certificate"
 
