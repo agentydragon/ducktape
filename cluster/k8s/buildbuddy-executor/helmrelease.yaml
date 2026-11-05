@@ -54,8 +54,9 @@ spec:
                 path: /spec/template/spec/automountServiceAccountToken
                 value: false
   values:
-    # Disable the pod pool while retaining Helm reconciliation; suspend leaves pods running.
-    replicas: 0
+    # Keep Helm reconciling: suspend leaves pods running. Quote zero because the
+    # chart's `default 1` replaces numeric zero with one replica.
+    replicas: "0"
     poolName: wyrm2-kvm
     strategy:
       type: Recreate
