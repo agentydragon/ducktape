@@ -66,6 +66,7 @@ go_test(
     ],
     data = [":sdk_dcr_client_bin"],
     embed = [":authserver"],
+    env = {"SDK_DCR_CLIENT_RLOCATION": "$(rlocationpath :sdk_dcr_client_bin)"},
     tags = ["requires_docker"],
     deps = [
         "//agentplane/mcp_edge:connection_service_go_proto",

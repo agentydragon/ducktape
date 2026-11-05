@@ -332,6 +332,7 @@ go_test(
     srcs = ["staging_config_test.go"],
     data = ["//cluster/k8s/agentplane-staging:agentplane-staging.k8s.yaml"],
     embed = [":main_lib"],
+    env = {"AGENTPLANE_STAGING_CONFIG_RLOCATION": "$(rlocationpath //cluster/k8s/agentplane-staging:agentplane-staging.k8s.yaml)"},
     deps = [
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_bazel_rules_go//go/runfiles",

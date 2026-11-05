@@ -83,6 +83,7 @@ go_test(
     ],
     data = ["//agentplane/env/images:vm_guest_contract.json"],
     embed = [":sandbox_controller"],
+    env = {"VM_GUEST_CONTRACT_RLOCATION": "$(rlocationpath //agentplane/env/images:vm_guest_contract.json)"},
     deps = [
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/sandboxes/api",

@@ -862,7 +862,7 @@ func TestDependencyOutagesAreSanitizedAndDoNotForwardWorkloadCredentials(t *test
 }
 
 func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
-	binary, err := runfiles.Rlocation("ducktape/agentplane/llm_ingress/server_/server")
+	binary, err := runfiles.Rlocation(os.Getenv("LLM_INGRESS_SERVER_RLOCATION"))
 	if err != nil {
 		t.Fatal(err)
 	}

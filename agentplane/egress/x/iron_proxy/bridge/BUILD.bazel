@@ -28,6 +28,10 @@ go_test(
         "@ducktape_iron_proxy//:patched_binary",
     ],  # keep: subprocess interoperability with both pinned proxy CLIs
     embed = [":bridge"],
+    env = {
+        "IRON_PROXY_BINARY_RLOCATION": "$(rlocationpath @ducktape_iron_proxy//:binary)",
+        "IRON_PROXY_PATCHED_BINARY_RLOCATION": "$(rlocationpath @ducktape_iron_proxy//:patched_binary)",
+    },
     deps = [
         "//agentplane/egress/decision",
         "//agentplane/egress/identity",

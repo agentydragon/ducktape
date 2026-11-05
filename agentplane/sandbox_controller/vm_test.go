@@ -48,7 +48,7 @@ type vmGuestContract struct {
 
 func readVMGuestContract(t *testing.T) vmGuestContract {
 	t.Helper()
-	path, err := runfiles.Rlocation("_main/agentplane/env/images/vm_guest_contract.json")
+	path, err := runfiles.Rlocation(os.Getenv("VM_GUEST_CONTRACT_RLOCATION"))
 	if err != nil {
 		t.Fatal(err)
 	}

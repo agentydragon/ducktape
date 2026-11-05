@@ -56,7 +56,7 @@ type deliveryVectors struct {
 
 func loadVectors(t *testing.T) deliveryVectors {
 	t.Helper()
-	path, err := runfiles.Rlocation("_main/agentplane/notification_service/store/golden.json")
+	path, err := runfiles.Rlocation(os.Getenv("NOTIFICATION_GOLDEN_RLOCATION"))
 	if err != nil {
 		t.Fatal(err)
 	}

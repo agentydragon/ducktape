@@ -3,6 +3,7 @@ package authserver
 import (
 	"context"
 	"net/http"
+	"os"
 	"os/exec"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ func TestPythonSDKRegistersAgainstProductionHandlers(t *testing.T) {
 			ResourceMetadataURL: server.ResourceMetadataURL(),
 		})
 	})
-	binary, err := runfiles.Rlocation("ducktape/agentplane/mcp_edge/authserver/sdk_dcr_client_bin")
+	binary, err := runfiles.Rlocation(os.Getenv("SDK_DCR_CLIENT_RLOCATION"))
 	if err != nil {
 		t.Fatal(err)
 	}

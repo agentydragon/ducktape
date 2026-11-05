@@ -21,7 +21,7 @@ var executorKindNames = map[action_servicepb.ExecutorKind]string{
 
 // The explicit view expectations cover settings accepted by both catalog construction and the API projection.
 func TestCatalogViewsMatchTheirContractFixtures(t *testing.T) {
-	path, err := runfiles.Rlocation("_main/agentplane/action_service/catalog/golden.json")
+	path, err := runfiles.Rlocation(os.Getenv("ACTION_SERVICE_CATALOG_GOLDEN_RLOCATION"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -261,11 +261,16 @@ func startIronProxy(t *testing.T, transformAddress string) string {
 
 func startConfiguredIronProxy(t *testing.T, transformAddress string, settings ironProxyConfig) string {
 	t.Helper()
-	files, err := runfiles.New()
-	if err != nil {
-		t.Fatal(err)
+	var binaryRlocation string
+	switch settings.binary {
+	case "binary":
+		binaryRlocation = os.Getenv("IRON_PROXY_BINARY_RLOCATION")
+	case "patched_binary":
+		binaryRlocation = os.Getenv("IRON_PROXY_PATCHED_BINARY_RLOCATION")
+	default:
+		t.Fatalf("unknown iron proxy binary %q", settings.binary)
 	}
-	binary, err := files.Rlocation("ducktape_iron_proxy/" + settings.binary + "_/" + settings.binary)
+	binary, err := runfiles.Rlocation(binaryRlocation)
 	if err != nil {
 		t.Fatal(err)
 	}

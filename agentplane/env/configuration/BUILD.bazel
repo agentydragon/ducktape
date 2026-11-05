@@ -31,6 +31,7 @@ go_test(
     ],
     data = ["//agentplane/env/runtime/cmd:agentplane-environment-runtime"],
     embed = [":configuration"],
+    env = {"ENVIRONMENT_RUNTIME_RLOCATION": "$(rlocationpath //agentplane/env/runtime/cmd:agentplane-environment-runtime)"},
     race = "on",
     deps = [
         "//agentplane/env/runtime/codexappserver",
