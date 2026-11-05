@@ -556,6 +556,7 @@ rust_library(
     name = "analysis",
     srcs = [
         "analysis_inputs.rs",
+        "analysis_provenance.rs",
         "assignment_assembly.rs",
         "atomic_groups.rs",
         "cross_module_purity.rs",

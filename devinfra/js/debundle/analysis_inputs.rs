@@ -69,7 +69,7 @@ pub struct ReturnedRecordSummary {
     pub source_location: Option<SourceLocation>,
     pub members: Vec<DeferredRecordMember>,
     /// Composed source/native proof, including its captured-input dependencies.
-    pub inference: crate::reports::schema::InferenceUse,
+    pub inference: crate::analysis_provenance::InferenceUse,
     /// As on `ForeignCallSummary`: the swap's replacement package when the
     /// emitted program runs it instead of this body.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -93,7 +93,7 @@ pub struct NamespaceWrapperSummary {
     pub export: String,
     pub local: String,
     pub source_location: Option<SourceLocation>,
-    pub inference: crate::reports::schema::InferenceUse,
+    pub inference: crate::analysis_provenance::InferenceUse,
     /// Trusted provider judgment; deliberately absent from report JSON.
     #[serde(default, skip_serializing_if = "analysis_codec::outside_artifact")]
     pub(crate) dependencies: ProofDependencies,
@@ -634,7 +634,7 @@ pub struct ArgumentInputRef {
 }
 
 /// Spec-relative like [`ValueInputEvidence`]; reports render only its
-/// location (`InferenceUse::argument_input_spec_locations`).
+/// location (`InferenceUseReport::argument_input_spec_locations`).
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ArgumentInputEvidence {
     pub reference: ArgumentInputRef,
@@ -775,7 +775,7 @@ pub struct InferredSetConstruction {
     pub binding: Id,
     pub operation: InferredSetOperation,
     pub dependencies: ProofDependencies,
-    pub inference: crate::reports::schema::InferenceUse,
+    pub inference: crate::analysis_provenance::InferenceUse,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

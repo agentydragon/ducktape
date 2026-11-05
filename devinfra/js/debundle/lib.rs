@@ -17,6 +17,7 @@
 //! composer lives in the `chunk_analysis` crate. Both build on this core.
 
 pub mod analysis_inputs;
+pub mod analysis_provenance;
 pub mod assignment_assembly;
 pub mod atomic_groups;
 pub mod cross_module_purity;

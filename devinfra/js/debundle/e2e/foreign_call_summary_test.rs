@@ -2,7 +2,7 @@
 //! a provider export whose body only allocates is no unknown callee at the
 //! importer; anything that can run other code stays conservative.
 
-use analysis::reports::schema::InferenceRule;
+use analysis::analysis_provenance::InferenceRule;
 use debundle_e2e_support::*;
 
 const BOX: &str = "export class Box {\n  #callback;\n  #cache = new WeakMap();\n  constructor(callback, label) { this.#callback = callback; }\n  invoke() { return this.#callback(); }\n}\n";

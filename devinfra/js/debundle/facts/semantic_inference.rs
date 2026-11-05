@@ -18,11 +18,11 @@ use crate::analysis_inputs::{
     ArgumentInputRef, DescriptorCopyAuthorRef, DescriptorCopyFactorySummary, NativeIntrinsic,
     ProofDependencies, ResolvedArgumentInput,
 };
+use crate::analysis_provenance::{InferenceRule, InferenceUse};
 use crate::inference::{
     CertificateContext, FactContext, GuardedContext, IterativeFacts, IterativeInference,
     IterativeRules, Judgment,
 };
-use crate::reports::schema::{InferenceRule, InferenceUse};
 use spec::DescriptorCopyFactorySignature;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -148,7 +148,6 @@ pub(crate) fn native_premise(
             value_input_refs: dependencies.value_inputs.clone(),
             descriptor_copy_author_refs: BTreeSet::new(),
             argument_input_refs: BTreeSet::new(),
-            argument_input_spec_locations: BTreeSet::new(),
             native_operation_input_refs: dependencies.native_operation_inputs.clone(),
         },
         census,
@@ -580,7 +579,6 @@ impl SemanticFacts {
             value_input_refs: dependencies.value_inputs.clone(),
             descriptor_copy_author_refs: dependencies.descriptor_copy_authors.clone(),
             argument_input_refs: dependencies.argument_inputs.clone(),
-            argument_input_spec_locations: BTreeSet::new(),
             native_operation_input_refs: dependencies.native_operation_inputs.clone(),
         })
     }

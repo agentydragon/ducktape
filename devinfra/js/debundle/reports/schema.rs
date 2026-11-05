@@ -544,49 +544,36 @@ pub struct NativeIntegrityUse {
     pub program_premises: BTreeSet<crate::analysis_inputs::ProgramPremiseKey>,
 }
 
-/// Positive rules participating in a consumed construction certificate.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum InferenceRule {
-    NativeIntegrity,
-    NativeCallIdentity,
-    NativeOwnDataRead,
-    EmptyCollectionConstruction,
-    LocalClassConstruction,
-    PrimitiveSetIteration,
-    StablePrimitiveArraySpread,
-    StableFunction,
-    StableProvider,
-    ArgumentNoEscape,
-    ReturnedRecord,
-    NamespaceWrapper,
-    OwnPropertySourceOrigin,
-    OwnPropertyShape,
-    OwnPropertyPrefixState,
-    OwnPropertyNamesProjection,
-    OwnPropertyDescriptorProjection,
-    DescriptorCopyProvider,
-    DescriptorCopyFactory,
-    ForeignCallSummary,
-}
-
-/// A purpose-specific certificate actually used by synchronous execution.
-/// Internal derivations share premise IDs; reports expand only rule names.
+/// Human-readable projection of inference provenance for report output.
+///
+/// Analysis owns the typed evidence. The report builder enriches it with
+/// rendered author-input locations while preserving the stable report shape.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-pub struct InferenceUse {
-    pub conclusion: InferenceRule,
-    pub derivation_rules: BTreeSet<InferenceRule>,
+pub struct InferenceUseReport {
+    pub conclusion: crate::analysis_provenance::InferenceRule,
+    pub derivation_rules: BTreeSet<crate::analysis_provenance::InferenceRule>,
     pub value_input_refs: BTreeSet<crate::analysis_inputs::ValueInputRef>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub descriptor_copy_author_refs: BTreeSet<crate::analysis_inputs::DescriptorCopyAuthorRef>,
     pub argument_input_refs: BTreeSet<crate::analysis_inputs::ArgumentInputRef>,
-    /// Report-only: the spec locations of `argument_input_refs`, rendered by
-    /// [`crate::reports::author_inputs::AuthorInputLocations`]; empty in
-    /// analysis output.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub argument_input_spec_locations: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub native_operation_input_refs: BTreeSet<crate::analysis_inputs::NativeOperationInputRef>,
+}
+
+impl From<&crate::analysis_provenance::InferenceUse> for InferenceUseReport {
+    fn from(inference: &crate::analysis_provenance::InferenceUse) -> Self {
+        Self {
+            conclusion: inference.conclusion,
+            derivation_rules: inference.derivation_rules.clone(),
+            value_input_refs: inference.value_input_refs.clone(),
+            descriptor_copy_author_refs: inference.descriptor_copy_author_refs.clone(),
+            argument_input_refs: inference.argument_input_refs.clone(),
+            argument_input_spec_locations: BTreeSet::new(),
+            native_operation_input_refs: inference.native_operation_input_refs.clone(),
+        }
+    }
 }
 
 /// A classifier-pure owner becoming impure at completion is an inference bug.
@@ -609,7 +596,7 @@ pub struct SynchronousExecutionReport {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub binding_effect_authority: Option<BindingEffectAuthorityReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub inference_uses: Vec<InferenceUse>,
+    pub inference_uses: Vec<InferenceUseReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub local_record_factory_uses: Vec<LocalRecordFactoryUse>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

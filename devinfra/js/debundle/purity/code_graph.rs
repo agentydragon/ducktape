@@ -23,7 +23,7 @@ use std::sync::Arc;
 pub struct ChunkCodeGraph {
     pub(crate) bindings: BTreeMap<String, ChunkBinding>,
     plain_data_dependencies: BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
-    plain_data_inference_uses: BTreeMap<String, BTreeSet<crate::reports::schema::InferenceUse>>,
+    plain_data_inference_uses: BTreeMap<String, BTreeSet<crate::analysis_provenance::InferenceUse>>,
     fresh_record_proofs: BTreeMap<u32, FreshRecordProof>,
     pure_new_constructors: BTreeSet<String>,
     /// Per-binding declared-pure member-call set. Looked up by the
@@ -101,7 +101,7 @@ pub(crate) struct PurityShapeInputs<'a> {
     pub(crate) plain_data_dependencies:
         &'a BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
     pub(crate) plain_data_inference_uses:
-        &'a BTreeMap<String, BTreeSet<crate::reports::schema::InferenceUse>>,
+        &'a BTreeMap<String, BTreeSet<crate::analysis_provenance::InferenceUse>>,
     pub(crate) plain_array_bindings: &'a BTreeSet<String>,
     pub(crate) stable_var_number_candidates: &'a BTreeSet<Id>,
 }
@@ -290,7 +290,7 @@ impl ChunkCodeGraph {
         plain_data_dependencies: &BTreeMap<String, crate::analysis_inputs::ProofDependencies>,
         plain_data_inference_uses: &BTreeMap<
             String,
-            BTreeSet<crate::reports::schema::InferenceUse>,
+            BTreeSet<crate::analysis_provenance::InferenceUse>,
         >,
         plain_array_bindings: &BTreeSet<String>,
         stable_var_number_candidates: &BTreeSet<Id>,
@@ -531,7 +531,7 @@ impl ChunkCodeGraph {
     pub(crate) fn plain_data_inference_uses(
         &self,
         name: &str,
-    ) -> Option<&BTreeSet<crate::reports::schema::InferenceUse>> {
+    ) -> Option<&BTreeSet<crate::analysis_provenance::InferenceUse>> {
         self.plain_data_inference_uses.get(name)
     }
 

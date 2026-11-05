@@ -6756,7 +6756,7 @@ impl ExecutionIndex {
         &self,
         integrity: &IntegrityFlags,
     ) -> BTreeMap<u32, InferredSetConstruction> {
-        use crate::reports::schema::InferenceRule;
+        use crate::analysis_provenance::InferenceRule;
         use IntrinsicSlot::{ArrayIteratorPrototype, Global, Prototype, SetIteratorPrototype};
         use NativeIntrinsic::{Array, Set};
         if !self.dynamic_scope_owners.is_empty() {
@@ -10302,7 +10302,7 @@ impl ExecutionIndex {
             &self.integrity,
             slots,
             Some(span.lo.0),
-            crate::reports::schema::InferenceRule::NativeOwnDataRead,
+            crate::analysis_provenance::InferenceRule::NativeOwnDataRead,
         )
     }
 
@@ -13278,12 +13278,12 @@ fn deferred_callback_closure(index: &ExecutionIndex, outer: u32, closure: &Range
 /// captures for the report.
 pub(crate) struct InferredReturnedRecord {
     pub members: Vec<(String, u32, BTreeSet<String>)>,
-    pub inference: crate::reports::schema::InferenceUse,
+    pub inference: crate::analysis_provenance::InferenceUse,
 }
 
 pub(crate) struct InferredNamespaceWrapper {
     pub function_start: u32,
-    pub inference: crate::reports::schema::InferenceUse,
+    pub inference: crate::analysis_provenance::InferenceUse,
     pub dependencies: ProofDependencies,
 }
 
@@ -13892,7 +13892,7 @@ fn returned_record(
     derived: &crate::facts::abstract_domain::foreign_call::DerivedForeignCall,
     dependencies: &ProofDependencies,
 ) -> InferredReturnedRecord {
-    use crate::reports::schema::{InferenceRule, InferenceUse};
+    use crate::analysis_provenance::{InferenceRule, InferenceUse};
     let members = members
         .iter()
         .map(|member| {
@@ -13928,7 +13928,6 @@ fn returned_record(
             value_input_refs: dependencies.value_inputs.clone(),
             descriptor_copy_author_refs: BTreeSet::new(),
             argument_input_refs: dependencies.argument_inputs.clone(),
-            argument_input_spec_locations: BTreeSet::new(),
             native_operation_input_refs: dependencies.native_operation_inputs.clone(),
         },
     }

@@ -356,7 +356,11 @@ pub fn build_dependency_graph_with(
                     native_prefix_observations: calls.native_prefix_observations.clone(),
                     native_integrity_uses: calls.native_integrity_uses.clone(),
                     native_operation_input_uses: calls.native_operation_input_uses.clone(),
-                    inference_uses: calls.inference_uses.clone(),
+                    inference_uses: calls
+                        .inference_uses
+                        .iter()
+                        .map(crate::reports::schema::InferenceUseReport::from)
+                        .collect(),
                     precision_losses: calls.precision_losses.clone(),
                     callback_factory_uses: Vec::new(),
                     returned_record_uses: Vec::new(),

@@ -1,6 +1,7 @@
 //! Guarded own-name inspection preserves exact keys without invoking getters.
 
-use analysis::reports::schema::{InferenceRule, InferenceUse};
+use analysis::analysis_provenance::InferenceRule;
+use analysis::reports::schema::InferenceUseReport;
 use debundle_e2e_support::*;
 use std::collections::BTreeSet;
 
@@ -51,7 +52,7 @@ console.log(names[0], names[1], names[2], names[3], names[4], names[5], names[6]
         .expect("own-name projection inference");
     assert_eq!(
         usage,
-        &InferenceUse {
+        &InferenceUseReport {
             conclusion: InferenceRule::OwnPropertyNamesProjection,
             derivation_rules: BTreeSet::from([
                 InferenceRule::NativeIntegrity,

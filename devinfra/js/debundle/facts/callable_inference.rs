@@ -1,13 +1,13 @@
 //! Callable conclusions composed from canonical identity and body candidates.
 
 use crate::analysis_inputs::NativeIntrinsic;
+use crate::analysis_provenance::InferenceRule;
 use crate::facts::abstract_domain::builtins::Row;
 use crate::facts::abstract_domain::integrity::IntrinsicSlot;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::semantic_inference::{NativeCallee, NativePremises, SemanticFact, SemanticKey};
 use crate::facts::value_flow::Values;
 use crate::inference::CertificateContext;
-use crate::reports::schema::InferenceRule;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;
 

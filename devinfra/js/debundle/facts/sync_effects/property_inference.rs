@@ -9,9 +9,9 @@ use super::value_model::{
     ordered_own_property_names,
 };
 use crate::analysis_inputs::ProofDependencies;
+use crate::analysis_provenance::{InferenceRule, InferenceUse};
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::semantic_inference::{NativePremise, SemanticFact, SemanticFacts, SemanticKey};
-use crate::reports::schema::{InferenceRule, InferenceUse};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
@@ -74,7 +74,6 @@ impl OwnPropertyProof {
             value_input_refs: self.dependencies.value_inputs.clone(),
             descriptor_copy_author_refs: self.dependencies.descriptor_copy_authors.clone(),
             argument_input_refs: self.dependencies.argument_inputs.clone(),
-            argument_input_spec_locations: BTreeSet::new(),
             native_operation_input_refs: self.dependencies.native_operation_inputs.clone(),
         }
     }
@@ -275,12 +274,12 @@ mod tests {
     };
     use super::{OwnPropertyProjection, OwnPropertyRequest, infer_own_property_projection};
     use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies, ValueInputRef};
+    use crate::analysis_provenance::InferenceRule;
     use crate::facts::abstract_domain::integrity::{
         IntegrityFlags, IntrinsicSlot, PrototypeWrites,
     };
     use crate::facts::abstract_domain::value::{Kind, Value};
     use crate::facts::semantic_inference::{SemanticFacts, native_premise};
-    use crate::reports::schema::InferenceRule;
     use std::collections::{BTreeMap, BTreeSet};
 
     #[test]

@@ -3954,7 +3954,7 @@ fn source_empty_map_record_factory_defers_members_and_getter() {
     let certificate = &graph.imported_callable_summaries[0];
     assert!(certificate.callback_factory_evidence.is_empty());
     let record = certificate.returned_record.as_ref().unwrap();
-    use analysis::reports::schema::InferenceRule;
+    use analysis::analysis_provenance::InferenceRule;
     assert_eq!(record.inference.conclusion, InferenceRule::ReturnedRecord);
     assert_eq!(
         record.inference.derivation_rules,
@@ -3984,7 +3984,9 @@ fn source_empty_map_record_factory_defers_members_and_getter() {
         })
         .unwrap();
     let execution = queue.synchronous_execution.as_ref().unwrap();
-    assert!(execution.inference_uses.contains(&record.inference));
+    assert!(execution.inference_uses.contains(
+        &analysis::reports::schema::InferenceUseReport::from(&record.inference)
+    ));
     assert!(execution.callback_factory_uses.is_empty());
     let uses = &execution.returned_record_uses;
     assert!(uses.iter().any(|proof| proof.kind == analysis::reports::schema::ReturnedRecordUseKind::CallTiming));

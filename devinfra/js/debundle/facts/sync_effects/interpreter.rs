@@ -39,6 +39,7 @@ use super::{
     object_own_data_read_property,
 };
 use crate::analysis_inputs::{AnalysisInputs, NativeInputKind, ProofDependencies};
+use crate::analysis_provenance::InferenceRule;
 use crate::facts::ExportReentryPolicy;
 use crate::facts::StableArraySpreadShapes;
 use crate::facts::abstract_domain::builtins::{
@@ -80,7 +81,7 @@ use crate::reports::schema::{
     BoundedInvocationFallbackUnknownPathReason, CallbackFactoryUseKind,
     ClassMembersPublicationWriter, ConstructionRejection, ExecutionOperation,
     ExecutionPrecisionLoss, ExecutionPrecisionLossReason, FirstClassMembersPublication,
-    GlobalReachCause, HavocReach, InferenceRule, LocalRecordFactoryRejection, NativeIntegrityCheck,
+    GlobalReachCause, HavocReach, LocalRecordFactoryRejection, NativeIntegrityCheck,
     NativeIntegrityGuard, NativePrefixObservation, NativePrototypePropertyCheck,
     OrderedCallAdmissionRefusal, OrderedFieldReadRefusal, PossibleGetterLookupSite,
     PossibleGetterPromotion, RecordFactoryRejectionReason,
@@ -951,7 +952,7 @@ pub(super) struct ExecutionState {
     native_operation_input_uses:
         RefCell<BTreeMap<(u32, u32), crate::reports::schema::NativeOperationInputUse>>,
     proof_dependencies: RefCell<ProofDependencies>,
-    inference_uses: RefCell<BTreeSet<crate::reports::schema::InferenceUse>>,
+    inference_uses: RefCell<BTreeSet<crate::analysis_provenance::InferenceUse>>,
     class_member_effects: BTreeMap<SourceUnitOrdinal, (BTreeSet<Id>, BTreeSet<Id>)>,
     class_superclasses: OrdMap<u32, Values>,
     active_class_member_promotions: BTreeSet<u32>,
@@ -2675,7 +2676,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     fn record_inference_use(
         &self,
         guard: NativeIntegrityGuard,
-        proof: crate::reports::schema::InferenceUse,
+        proof: crate::analysis_provenance::InferenceUse,
         dependencies: &ProofDependencies,
     ) {
         self.record_proof_dependencies(guard, dependencies);
@@ -6672,7 +6673,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn record_foreign_call_use(&self, summary: &crate::analysis_inputs::ForeignCallSummary) {
-        use crate::reports::schema::{InferenceRule, InferenceUse};
+        use crate::analysis_provenance::{InferenceRule, InferenceUse};
         let mut derivation_rules = BTreeSet::from([InferenceRule::ForeignCallSummary]);
         if !summary.native_constructions.is_empty() {
             derivation_rules.insert(InferenceRule::NativeIntegrity);
@@ -6685,7 +6686,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 value_input_refs: summary.dependencies.value_inputs.clone(),
                 descriptor_copy_author_refs: BTreeSet::new(),
                 argument_input_refs: summary.dependencies.argument_inputs.clone(),
-                argument_input_spec_locations: BTreeSet::new(),
                 native_operation_input_refs: summary.dependencies.native_operation_inputs.clone(),
             },
             &summary.dependencies,
@@ -12445,7 +12445,7 @@ impl PreparedSynchronousCallIndex {
         &self,
         span: Span,
     ) -> Option<(
-        crate::reports::schema::InferenceUse,
+        crate::analysis_provenance::InferenceUse,
         Option<crate::analysis_inputs::NativeOperationInputEvidence>,
         ProofDependencies,
     )> {
