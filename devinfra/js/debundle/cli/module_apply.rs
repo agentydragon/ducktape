@@ -145,7 +145,7 @@ pub fn run_modules_apply(
     if requests.is_empty() {
         bail!("apply batch is empty");
     }
-    let graph = analysis::DependencyGraphInput::read(&args.graph)?;
+    let graph = std::sync::Arc::new(analysis::DependencyGraphInput::read(&args.graph)?);
     let scope = args
         .tree_config
         .as_deref()
@@ -413,7 +413,7 @@ pub fn run_modules_apply(
     let deleted = BTreeSet::new();
     let gate = Gate::Run {
         graph_path: &args.graph,
-        input: std::borrow::Cow::Borrowed(&graph),
+        input: std::sync::Arc::clone(&graph),
         source_root: Some(&args.source_root),
         source_context,
     };

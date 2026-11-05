@@ -38,11 +38,11 @@
 //! are removed when the gate passes (or when the rejection kind
 //! changes), keeping `gate list` consistent with the latest verdict.
 
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use ::gate::{
     BlockingSccEntry, render_atomic_group_conflict_summary, render_cycle_summary,
@@ -115,7 +115,7 @@ pub enum Gate<'a> {
     /// atom-split gate against this dependency graph.
     Run {
         graph_path: &'a Path,
-        input: Cow<'a, DependencyGraphInput>,
+        input: Arc<DependencyGraphInput>,
         /// Root used to resolve relative `source_location.source_path`
         /// values when the gate resolves source-backed selectors.
         source_root: Option<&'a Path>,
@@ -147,7 +147,7 @@ impl<'a> Gate<'a> {
         match graph {
             Some(graph) => Ok(Self::Run {
                 graph_path: graph,
-                input: Cow::Owned(DependencyGraphInput::read(graph)?),
+                input: Arc::new(DependencyGraphInput::read(graph)?),
                 source_root,
                 source_context,
             }),

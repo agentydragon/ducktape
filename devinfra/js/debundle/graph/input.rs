@@ -17,7 +17,7 @@ use crate::DependencyGraphReport;
 /// commuting premise, instead of reconstructing it for each candidate. This is a
 /// report-backed graph: it does not contain the hygienic bindings and analysis
 /// facts needed to assemble an assignment from the compiler's AST.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct DependencyGraphInput {
     report: DependencyGraphReport,
     graph: Arc<DependencyGraph>,
