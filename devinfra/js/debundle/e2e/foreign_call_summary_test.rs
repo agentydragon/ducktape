@@ -3,6 +3,7 @@
 //! importer; anything that can run other code stays conservative.
 
 use analysis::analysis_provenance::InferenceRule;
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 const BOX: &str = "export class Box {\n  #callback;\n  #cache = new WeakMap();\n  constructor(callback, label) { this.#callback = callback; }\n  invoke() { return this.#callback(); }\n}\n";

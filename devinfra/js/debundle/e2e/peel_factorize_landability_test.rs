@@ -7,6 +7,7 @@
 //! diagnostics, not proposals.
 
 use analysis::{DepKind, DependencyGraphInput};
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use peel::propose::{PeelCandidateStatus, ProposalsReport, propose};
 use spec::MemberEffect;

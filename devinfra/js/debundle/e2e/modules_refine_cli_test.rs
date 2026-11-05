@@ -1,8 +1,7 @@
 //! Reviewed source_unit-to-module batches preserve existing selector metadata.
 
-use debundle_e2e_support::{
-    GraphFixture, TreeFixture, debundler_path, read_gzip_json, run_tree_graph_fixture,
-};
+use debundle_e2e_graph_support::GraphFixture;
+use debundle_e2e_support::{TreeFixture, debundler_path, read_gzip_json, run_tree_graph_fixture};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::fs;

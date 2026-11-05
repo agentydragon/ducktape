@@ -1,6 +1,7 @@
 //! An audited descriptor-copy provider retains input methods and getters only
 //! through its returned ordinary wrapper.
 
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 
 const PROVIDER: &str = "export function wrap(definition) { const create = definition.create; const extra = { create: (...args) => create.call(definition, ...args), call: () => create.call(definition) }; return Object.assign(Object.defineProperties({ enabled: () => true, userFacingName: () => definition.name }, Object.getOwnPropertyDescriptors(definition)), extra); }";

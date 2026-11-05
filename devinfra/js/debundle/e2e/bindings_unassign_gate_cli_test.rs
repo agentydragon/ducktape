@@ -1,7 +1,6 @@
 //! Unassign real bindings, then re-run the edited spec and emitted JS.
 
-use debundle_e2e_support::GraphFixture;
-
+use debundle_e2e_graph_support::GraphFixture;
 #[test]
 fn bindings_unassign_rejects_atom_split_in_both_modes_without_writes() {
     GraphFixture::atomic_pair().assert_rejected_unchanged(

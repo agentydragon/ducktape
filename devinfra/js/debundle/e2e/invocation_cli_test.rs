@@ -1,7 +1,7 @@
+use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 use std::process::Command;
 
-use debundle_e2e_support::GraphFixture;
 use serde_json::Value;
 use tempfile::TempDir;
 

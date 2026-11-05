@@ -1,6 +1,6 @@
 //! Query the artifacts emitted from real JS/spec inputs, through the CLI.
 
-use debundle_e2e_support::GraphFixture;
+use debundle_e2e_graph_support::GraphFixture;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::fs;

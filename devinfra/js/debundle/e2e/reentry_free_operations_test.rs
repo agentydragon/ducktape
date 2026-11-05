@@ -1,5 +1,6 @@
 //! Audited `host_behavior.reentry_free_operations` stay opt-in and shape-specific.
 
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use serde_json::Value;
 use sha2::{Digest, Sha256};

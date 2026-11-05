@@ -1,5 +1,6 @@
 //! A local array content mutation must stay ordered before a separate reader.
 use analysis::{DepKind, DependencyGraphReport};
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 
 fn source_unit_for_ordinal(graph: &DependencyGraphReport, ordinal: usize) -> &str {

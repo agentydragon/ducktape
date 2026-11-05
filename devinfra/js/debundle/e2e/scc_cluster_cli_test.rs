@@ -1,6 +1,6 @@
 //! Module-quotient queries over graph artifacts from real JS/specs.
 
-use debundle_e2e_support::GraphFixture;
+use debundle_e2e_graph_support::GraphFixture;
 use serde_json::Value;
 use std::fs;
 

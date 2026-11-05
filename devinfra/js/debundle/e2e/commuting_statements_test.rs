@@ -3,6 +3,7 @@
 //! an accepted pair buys the realizability gate is pinned in
 //! `commuting_statements_gate_test.rs`.
 
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 
 /// `globalThis.record` is a callable the analysis cannot see into, so every

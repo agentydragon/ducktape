@@ -20,6 +20,7 @@
 //! extension.
 
 use analysis::DependencyGraphReport;
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use peel::propose::propose;
 use spec::ModulePath;

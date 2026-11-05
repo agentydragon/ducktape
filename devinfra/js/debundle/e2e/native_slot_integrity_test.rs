@@ -2,6 +2,7 @@
 //! key on any receiver reaches only that key, and an exact constructor or
 //! global-object receiver reaches only its own properties.
 
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 
 fn opts<'a>(source: &'a str, member: &'static str, anonymous: &[&str]) -> FixtureOpts<'a> {

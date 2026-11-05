@@ -1,7 +1,11 @@
 //! Real JS/spec inputs for graph-backed query and edit workflows.
 
 use super::*;
+use debundle_e2e_support::*;
 use std::collections::BTreeMap;
+use std::fs;
+use std::process::Command;
+use tempfile::TempDir;
 
 pub struct GraphFixture {
     run: TreeRun,
@@ -58,7 +62,7 @@ impl GraphFixture {
             "{}",
             run.result.stderr
         );
-        let modules_root = run._root.path().join("modules/main");
+        let modules_root = run.root().join("modules/main");
         Self {
             graph: run.report_root.join("main/dependency_graph.json.gz"),
             modules: modules_root,
@@ -109,7 +113,7 @@ impl GraphFixture {
     }
 
     pub fn source_path(&self) -> PathBuf {
-        self.run._root.path().join("snapshot/main.js")
+        self.run.root().join("snapshot/main.js")
     }
 
     pub fn assert_success(&self, args: &[&str]) {
@@ -189,10 +193,7 @@ impl GraphFixture {
             .args(args)
             .env("DEBUNDLE_MODULES", &self.modules)
             .env("DEBUNDLE_GRAPH", &self.graph)
-            .env(
-                "DEBUNDLE_SOURCE_ROOT",
-                self.run._root.path().join("snapshot"),
-            );
+            .env("DEBUNDLE_SOURCE_ROOT", self.run.root().join("snapshot"));
         command
     }
 
@@ -233,7 +234,7 @@ impl GraphFixture {
     }
 
     fn rerun(&self) -> TempDir {
-        let rerun = TempDir::new_in(self.run._root.path()).expect("create fresh output directory");
+        let rerun = TempDir::new_in(self.run.root()).expect("create fresh output directory");
         let out = self.run_current_spec(rerun.path());
         assert!(
             out.status.success(),
@@ -246,7 +247,7 @@ impl GraphFixture {
     /// Run validation against the current input spec, independent of the
     /// saved graph used by CLI edit commands.
     pub fn assert_current_pipeline_rejects(&self, diagnostics: &[&str]) {
-        let output_root = TempDir::new_in(self.run._root.path())
+        let output_root = TempDir::new_in(self.run.root())
             .expect("create current-spec validation output directory");
         let out = self.run_current_spec(output_root.path());
         let stderr = String::from_utf8_lossy(&out.stderr);
@@ -265,7 +266,7 @@ impl GraphFixture {
     }
 
     fn run_current_spec(&self, out_root: &Path) -> std::process::Output {
-        let root = self.run._root.path();
+        let root = self.run.root();
         Command::new(debundler_path())
             .arg("run")
             .arg("--graphs")

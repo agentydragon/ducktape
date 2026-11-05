@@ -1,6 +1,7 @@
 //! Source-backed edit gates must resolve the same claims as the run pipeline.
 
-use debundle_e2e_support::{GraphFixture, write_text_file};
+use debundle_e2e_graph_support::GraphFixture;
+use debundle_e2e_support::write_text_file;
 use std::fs;
 
 const GAMMA: (&str, &str) = (

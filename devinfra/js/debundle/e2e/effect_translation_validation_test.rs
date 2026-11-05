@@ -1,5 +1,6 @@
 //! Public-pipeline controls for conservative, report-only effect TV.
 
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 use serde_json::Value;
 use sha2::{Digest, Sha256};

@@ -11,6 +11,7 @@
 //! `this`.
 
 use analysis::{DepKind, DependencyGraphReport};
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 fn trusted_dataflow_opts<'a>(

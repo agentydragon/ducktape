@@ -1,8 +1,8 @@
 //! Fresh residual claims from current module proposals.
 
+use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::{
-    GraphFixture, TreeFixture, assert_module_exports, assert_node_output, debundler_path,
-    run_tree_graph_fixture,
+    TreeFixture, assert_module_exports, assert_node_output, debundler_path, run_tree_graph_fixture,
 };
 use serde_json::json;
 use std::fs;

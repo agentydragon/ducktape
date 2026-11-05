@@ -1,8 +1,9 @@
 //! Real JS/spec → merge CLI → rewritten spec → emitted Node behavior.
 
+use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 
-use debundle_e2e_support::{GraphFixture, write_text_file};
+use debundle_e2e_support::write_text_file;
 use serde_yaml::Value;
 
 #[test]

@@ -1,9 +1,10 @@
 //! Real CLI comment workflows; editor environment belongs to the child, not the test process.
 
+use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use debundle_e2e_support::{GraphFixture, parse_stdout_json};
+use debundle_e2e_support::parse_stdout_json;
 use serde_yaml::Value;
 
 fn fixture() -> GraphFixture {

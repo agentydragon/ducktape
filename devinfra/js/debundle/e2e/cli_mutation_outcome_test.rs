@@ -1,8 +1,7 @@
 //! Mutation JSON, diagnostic artifacts, and recovery over real JS/spec inputs.
 
-use debundle_e2e_support::{
-    GraphFixture, parse_stdout_json, read_json, run_debundle, write_text_file,
-};
+use debundle_e2e_graph_support::GraphFixture;
+use debundle_e2e_support::{parse_stdout_json, read_json, run_debundle, write_text_file};
 use serde_json::Value;
 
 fn assert_core(report: &Value, verb: &str, action: &str, gate: &str) {

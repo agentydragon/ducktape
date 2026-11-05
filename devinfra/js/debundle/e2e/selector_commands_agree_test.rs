@@ -16,10 +16,11 @@
 //! `switch`; property names stay exact; and a `const ANYTHING = <init>`
 //! declarator matches its initializer wherever it sits in its statement.
 
+use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 
 use debundle_e2e_support::{
-    BindingGroup, Fixture, FixtureOpts, GraphFixture, Member, assert_entry_output,
+    BindingGroup, Fixture, FixtureOpts, Member, assert_entry_output,
     assert_generated_module_after_entry_script, assert_module_source, logical_module,
     logical_module_with_binding_groups, outcomes, parse_stdout_json, read_selector_outcomes,
     run_dry_run_fixture, run_dry_run_rejection_fixture, run_fixture, run_match_selector,

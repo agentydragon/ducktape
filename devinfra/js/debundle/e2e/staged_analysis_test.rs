@@ -1619,8 +1619,8 @@ fn graph_options_survive_the_source_only_analysis_boundary() {
                 .output_root()
                 .join("reports/tree/static/app/dependency_graph.json.gz"),
         );
-        let a = debundle_e2e_support::source_unit_for_binding(&graph, "a");
-        let b = debundle_e2e_support::source_unit_for_binding(&graph, "b");
+        let a = debundle_e2e_graph_support::source_unit_for_binding(&graph, "a");
+        let b = debundle_e2e_graph_support::source_unit_for_binding(&graph, "b");
         let has_edge = graph.edges.iter().any(|edge| {
             edge.edge_kind == DepKind::Sequenced
                 && ((edge.source == a && edge.target == b)
@@ -1663,8 +1663,8 @@ export { Holder1, Holder2, instA, instB };
             .output_root()
             .join("reports/tree/static/app/dependency_graph.json.gz"),
     );
-    let inst_a = debundle_e2e_support::source_unit_for_binding(&graph, "instA");
-    let inst_b = debundle_e2e_support::source_unit_for_binding(&graph, "instB");
+    let inst_a = debundle_e2e_graph_support::source_unit_for_binding(&graph, "instA");
+    let inst_b = debundle_e2e_graph_support::source_unit_for_binding(&graph, "instB");
     assert!(
         graph.edges.iter().all(|edge| {
             edge.edge_kind != DepKind::Sequenced

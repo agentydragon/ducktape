@@ -15,6 +15,7 @@
 
 use analysis::analysis_inputs::CommutingStatementsRef;
 use analysis::{DepKind, DependencyGraphReport, SequencedCause};
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 /// `globalThis.record` is a callable the analysis cannot see into, so every

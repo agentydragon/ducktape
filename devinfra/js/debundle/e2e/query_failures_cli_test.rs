@@ -1,6 +1,6 @@
 //! Runtime failures from read-only top-level queries remain machine-readable.
 
-use debundle_e2e_support::GraphFixture;
+use debundle_e2e_graph_support::GraphFixture;
 use serde_json::Value;
 use std::fs;
 

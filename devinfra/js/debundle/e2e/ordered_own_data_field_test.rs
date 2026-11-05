@@ -1,4 +1,5 @@
 use analysis::{DepKind, DependencyGraphReport, reports::schema::BindingEffectAuthorityReport};
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 
 fn assert_property_frontier(graph: &DependencyGraphReport, later: usize, earlier: usize) {

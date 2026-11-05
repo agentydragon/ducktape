@@ -1,5 +1,6 @@
 //! A native own-data function reference has no heap observation of caller arrays.
 
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use serde_json::Value;
 use sha2::{Digest, Sha256};

@@ -1,5 +1,6 @@
 //! A local primitive array spread can preserve narrow module boundaries.
 
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use sha2::{Digest, Sha256};
 

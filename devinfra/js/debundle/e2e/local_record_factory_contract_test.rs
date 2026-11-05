@@ -1,6 +1,7 @@
 //! The record-factory assertion supplies only the prototype premises for the
 //! existing checked private-constructor proof.
 
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 
 const HOLDER: &str = r#"class Holder {

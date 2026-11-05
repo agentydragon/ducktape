@@ -1,4 +1,5 @@
 //! A selected local helper can borrow an enum table without making it escape.
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 use sha2::{Digest, Sha256};
 

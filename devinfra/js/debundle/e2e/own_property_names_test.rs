@@ -2,6 +2,7 @@
 
 use analysis::analysis_provenance::InferenceRule;
 use analysis::reports::schema::InferenceUseReport;
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use std::collections::BTreeSet;
 

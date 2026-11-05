@@ -9,6 +9,7 @@
 //! sub-expression's reason is concatenated alongside the outer
 //! `unknown_new` umbrella reason in source order.
 
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 
 #[test]

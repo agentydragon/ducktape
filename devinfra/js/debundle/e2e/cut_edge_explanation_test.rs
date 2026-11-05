@@ -18,6 +18,7 @@
 //! write-after-write. Any feedback arc set that breaks the SCC cuts at
 //! least one arc of each shape.
 
+use debundle_e2e_graph_support::{FixtureGraphExt, assert_cycle_edge_source_units};
 use debundle_e2e_support::*;
 use serde_json::{Value, json};
 

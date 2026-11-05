@@ -1,6 +1,7 @@
 //! Immediate reads of known own data fields do not run getter code.
 //! The factory's eager effects and unsupported result shapes remain ordered.
 
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 fn first_reasons(source: &str) -> Vec<analysis::PurityRule> {

@@ -1,6 +1,7 @@
 //! A returned object can be mutated through an alias before a later read.
 //! Classifying the original binding's member read as pure may reorder it.
 
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 
 #[test]
