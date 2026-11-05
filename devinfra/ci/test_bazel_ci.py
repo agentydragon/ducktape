@@ -6,8 +6,7 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
-
-from devinfra.bazel.runfiles import get_required_path
+from python.runfiles import Runfiles
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BAZEL_CI = REPO_ROOT / "devinfra/ci/bazel_ci.py"
@@ -25,8 +24,9 @@ def run_ci(tmp_path: Path) -> Callable[[dict[str, str]], subprocess.CompletedPro
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     cache_root = tmp_path / "xdg-cache"
+    runfiles_root = Runfiles.CreateOrRaise().root()
     for command, asset in (("git", "fake_git.py"), ("bazel-diff", "fake_bazel_diff.py"), ("bazel", "fake_bazel.py")):
-        _write_executable(bin_dir / command, get_required_path(f"_main/devinfra/ci/testing/{asset}").read_text())
+        _write_executable(bin_dir / command, (runfiles_root / f"ducktape/devinfra/ci/testing/{asset}").read_text())
     _write_executable(bin_dir / "python3", "#!/bin/sh\nexit 0\n")
 
     def run(overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:

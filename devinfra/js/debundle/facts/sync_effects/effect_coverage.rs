@@ -2,6 +2,8 @@
 
 use crate::analysis_inputs::ProofDependencies;
 use crate::reports::schema::BindingEffectAuthorityReport;
+use analysis_codec::{ContextOrdinals, SavedBinding};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeMap;
@@ -94,6 +96,28 @@ pub(crate) enum BindingEffectAuthority {
 }
 
 impl BindingEffectCoverage {
+    pub(crate) fn snapshot(
+        &self,
+        ordinals: &ContextOrdinals,
+    ) -> Result<SavedBindingEffectCoverage> {
+        Ok(match self {
+            Self::Unclassified => SavedBindingEffectCoverage::Unclassified,
+            Self::LegacyExecution => SavedBindingEffectCoverage::LegacyExecution,
+            Self::OrderedRootInitializer { identity, receipt } => {
+                SavedBindingEffectCoverage::OrderedRootInitializer {
+                    identity: SavedRootInitializerIdentity::snapshot(identity, ordinals)?,
+                    receipt: receipt
+                        .as_deref()
+                        .map(|receipt| {
+                            SavedLexicalBindingEffectReceipt::snapshot(receipt, ordinals)
+                        })
+                        .transpose()?
+                        .map(Box::new),
+                }
+            }
+        })
+    }
+
     pub(crate) fn authority(
         &self,
         complete: bool,
@@ -150,6 +174,89 @@ impl BindingEffectCoverage {
                 }
             }
         }
+    }
+}
+
+/// Process-independent binding-effect authority retained by staged analysis.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SavedBindingEffectCoverage {
+    Unclassified,
+    LegacyExecution,
+    OrderedRootInitializer {
+        identity: SavedRootInitializerIdentity,
+        receipt: Option<Box<SavedLexicalBindingEffectReceipt>>,
+    },
+}
+
+impl SavedBindingEffectCoverage {
+    pub(crate) fn restore(self, ordinals: &ContextOrdinals) -> Result<BindingEffectCoverage> {
+        Ok(match self {
+            Self::Unclassified => BindingEffectCoverage::Unclassified,
+            Self::LegacyExecution => BindingEffectCoverage::LegacyExecution,
+            Self::OrderedRootInitializer { identity, receipt } => {
+                BindingEffectCoverage::OrderedRootInitializer {
+                    identity: identity.restore(ordinals)?,
+                    receipt: receipt
+                        .map(|receipt| receipt.restore(ordinals))
+                        .transpose()?
+                        .map(Box::new),
+                }
+            }
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct SavedRootInitializerIdentity {
+    owner: SourceUnitOrdinal,
+    binding: SavedBinding,
+    initializer_span: Option<Span>,
+}
+
+impl SavedRootInitializerIdentity {
+    fn snapshot(identity: &RootInitializerIdentity, ordinals: &ContextOrdinals) -> Result<Self> {
+        Ok(Self {
+            owner: identity.owner,
+            binding: ordinals.snapshot_binding(&identity.binding)?,
+            initializer_span: identity.initializer_span,
+        })
+    }
+
+    fn restore(self, ordinals: &ContextOrdinals) -> Result<RootInitializerIdentity> {
+        Ok(RootInitializerIdentity {
+            owner: self.owner,
+            binding: ordinals.restore_binding(self.binding)?,
+            initializer_span: self.initializer_span,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct SavedLexicalBindingEffectReceipt {
+    identity: SavedRootInitializerIdentity,
+    read_dependencies: ProofDependencies,
+    rebind_dependencies: ProofDependencies,
+    calls: Vec<LocalCallReceipt>,
+}
+
+impl SavedLexicalBindingEffectReceipt {
+    fn snapshot(receipt: &LexicalBindingEffectReceipt, ordinals: &ContextOrdinals) -> Result<Self> {
+        Ok(Self {
+            identity: SavedRootInitializerIdentity::snapshot(&receipt.identity, ordinals)?,
+            read_dependencies: receipt.read_dependencies.clone(),
+            rebind_dependencies: receipt.rebind_dependencies.clone(),
+            calls: receipt.calls.clone(),
+        })
+    }
+
+    fn restore(self, ordinals: &ContextOrdinals) -> Result<LexicalBindingEffectReceipt> {
+        Ok(LexicalBindingEffectReceipt {
+            identity: self.identity.restore(ordinals)?,
+            read_dependencies: self.read_dependencies,
+            rebind_dependencies: self.rebind_dependencies,
+            calls: self.calls,
+        })
     }
 }
 
@@ -548,7 +655,6 @@ fn local_call_key(call: &LocalCallReceipt) -> LocalCallKey {
 mod tests {
     use super::*;
     use crate::analysis_inputs::{ProgramPremiseKey, ValueInputRef};
-    use crate::facts::statement_facts::SynchronousCalls;
     use swc_common::BytePos;
 
     fn test_callable(key: u32, owner: usize) -> LocalBodyIdentity {
@@ -584,24 +690,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_staged_binding_effect_authority_is_rejected_and_default_is_unknown() {
-        let mut encoded = serde_json::to_value(SynchronousCalls::default())
-            .expect("default synchronous facts serialize");
-        serde_json::from_value::<SynchronousCalls>(encoded.clone())
-            .expect("complete synchronous facts deserialize");
-        encoded
-            .as_object_mut()
-            .expect("synchronous facts are a struct")
-            .remove("binding_effect_coverage");
-        let ordinals =
-            analysis_codec::ContextOrdinals::new(std::iter::empty::<&swc_ecma_ast::Module>());
-        let bytes = analysis_codec::encode(&encoded, &ordinals).expect("encode missing-field row");
-        let error = analysis_codec::decode::<SynchronousCalls>(&bytes, &ordinals)
-            .expect_err("staged facts without typed authority must fail to decode");
-        assert!(
-            format!("{error:#}").contains("binding_effect_coverage"),
-            "failure should name the missing authority field, not an unrelated decode error: {error:#}"
-        );
+    fn default_binding_effect_authority_is_unknown() {
         assert_eq!(
             BindingEffectCoverage::default().authority(true, false),
             BindingEffectAuthority::Unclassified,

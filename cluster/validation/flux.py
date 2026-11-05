@@ -11,10 +11,10 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.manifest_roots import MANIFEST_ROOTS
 from cluster.validation.k8s import Condition, SecretRef, parse_k8s_resources
-from cluster.validation.tool_resolve import resolve_tool
 
 
 class DependsOn(BaseModel):
@@ -269,7 +269,7 @@ async def run_flux_build(k8s_dir: Path) -> tuple[int, str, str]:
     if not kustomization_file.exists():
         raise FileNotFoundError(f"gotk-sync.yaml not found at {kustomization_file}")
 
-    flux_bin = resolve_tool("flux", "multitool/tools/flux/flux")
+    flux_bin = Runfiles.CreateOrRaise().root() / "multitool/tools/flux/flux"
     proc = await asyncio.create_subprocess_exec(
         flux_bin,
         "build",

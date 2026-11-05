@@ -688,85 +688,24 @@ localhost,127.0.0.1,169.254.169.254,metadata.google.internal,
 
 ### 2. Git Proxy (Local)
 
-Git operations use a separate local proxy managed by environment-manager.
-
-**Proxy Address**: `127.0.0.1:{dynamic_port}` (e.g., 58929)
-
-**Authentication**: Basic auth via URL username:
-
-```
-http://local_proxy@127.0.0.1:58929/git/{owner}/{repo}
-```
-
-**Git Remote Rewrite**:
-
-```
-Original:  https://github.com/user/repo.git
-Rewritten: http://local_proxy@127.0.0.1:58929/git/user/repo
-```
-
-**Git Configuration** (`~/.gitconfig`):
-
-```ini
-[http]
-    proxyAuthMethod = basic
-```
-
-**Purpose**:
-
-- Routes git operations through session ingress
-- Enables branch restrictions (e.g., `claude/*` branches only)
-- Provides authentication without exposing tokens
-- Allows audit logging of all git operations
+Git uses a separate `environment-manager` proxy; its remote rewrite, authentication,
+security probes, and source details are documented under [Git Proxy](#git-proxy).
 
 ### Proxy Flow Diagram
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│ HTTP/HTTPS Request (curl, npm, pip, etc.)                               │
-└────────────────────────┬────────────────────────────────────────────────┘
-                         │ HTTP_PROXY / HTTPS_PROXY
-                         ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│ Egress Proxy (21.0.0.127:15004)                                         │
-│   - Authenticates via JWT in URL                                        │
-│   - Validates session_id, container_id                                  │
-│   - Checks allowed_hosts                                                │
-│   - Logs request for audit                                              │
-└────────────────────────┬────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│ Internet (filtered by network policy)                                   │
-└─────────────────────────────────────────────────────────────────────────┘
+```text
+HTTP clients ── HTTP_PROXY / HTTPS_PROXY + JWT ──▶ egress proxy
+             ── host/network policy ──▶ Internet
 
-
-┌─────────────────────────────────────────────────────────────────────────┐
-│ Git Operation (git push, git fetch, etc.)                               │
-└────────────────────────┬────────────────────────────────────────────────┘
-                         │ Rewritten remote URL
-                         ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│ Local Git Proxy (127.0.0.1:58929)                                       │
-│   - Managed by environment-manager                                      │
-│   - Adds session authentication                                         │
-└────────────────────────┬────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│ Session Ingress (api.anthropic.com)                                     │
-│   /v1/session_ingress/session/{id}/git_proxy/{owner}/{repo}.git        │
-└────────────────────────┬────────────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│ GitHub (via Anthropic's authenticated connection)                       │
-└─────────────────────────────────────────────────────────────────────────┘
+Git remote ── rewritten URL + local Basic auth ──▶ local git proxy
+          ── session authentication ──▶ Anthropic session ingress
+          ── Anthropic-authenticated GitHub connection ──▶ GitHub
 ```
 
 ## MCP Server: Codesign
 
-A Model Context Protocol server for Ed25519 code signing.
+The authenticated MCP server exposes Ed25519 signing for Git commits. The private key
+stays in the server; the agent receives the signature through `sign_file`.
 
 ### Discovery
 
@@ -826,10 +765,6 @@ $ curl -s -X POST http://localhost:$CODESIGN_MCP_PORT/mcp \
 
 - `resources/list` → `-32601: resources not supported`
 - `prompts/list` → `-32601: prompts not supported`
-
-### Purpose
-
-The codesign MCP server allows the agent to make **signed git commits** without exposing the private signing key. The key stays in the MCP server; only the signing operation is exposed.
 
 ## Claude Configuration
 
@@ -965,29 +900,18 @@ Located at `~/.claude/skills/session-start-hook/SKILL.md`, teaches how to create
 
 ## Git Proxy
 
-### Local Proxy
+`environment-manager` runs a local proxy on a dynamically allocated port and rewrites Git
+remotes through it. The local URL uses the `local_proxy` Basic-auth username; the proxy
+forwards authorized repository paths to session ingress.
 
-The environment-manager runs a local git proxy on a dynamically allocated port:
+For example, `https://github.com/user/repo.git` is rewritten to
+`http://local_proxy@127.0.0.1:58929/git/user/repo`; the remote endpoint is:
 
-```
-Address: http://127.0.0.1:{dynamic_port}
-Example: http://local_proxy@127.0.0.1:58929/git/{owner}/{repo}
-```
-
-### Remote Rewrite
-
-All git remotes are rewritten to route through the local proxy:
-
-```
-Original: https://github.com/user/repo.git
-Rewritten: http://local_proxy@127.0.0.1:58929/git/user/repo
-```
-
-The local proxy then forwards to session ingress:
-
-```
+```text
 https://api.anthropic.com/v1/session_ingress/session/{session_id}/git_proxy/{owner}/{repo}.git/{path}
 ```
+
+Git's `~/.gitconfig` sets `[http] proxyAuthMethod = basic` for this URL.
 
 ### Implementation Details
 
@@ -1067,12 +991,8 @@ The proxy strictly validates:
 - Does not support HTTP CONNECT tunneling
 - Cannot be used to reach arbitrary URLs
 
-### Purpose
-
-- **Authentication**: Git operations authenticated via session token
-- **Auditing**: All git activity logged through Anthropic
-- **Branch restrictions**: Can enforce branch naming (e.g., `claude/*`)
-- **Repository whitelisting**: Only pre-authorized repos accessible
+The proxy authenticates and logs all Git activity through session ingress; it can restrict
+branch names (for example, to `claude/*`) and permits only pre-authorized repositories.
 
 ## Installed Tools
 
@@ -1131,17 +1051,12 @@ Git commits are signed using a bridge between git's GPG interface and the MCP co
 
 1. Git calls `/tmp/code-sign` with the file to sign
 2. `code-sign` calls the MCP server's `sign_file` tool
-3. MCP server signs with Ed25519 key (key never leaves server)
-4. Signature returned to git
+3. The MCP server signs the file and returns the signature to Git
 
 The `sign_file` tool schema is documented above in § MCP Server: Codesign → List Tools.
 
-### Security Benefits
-
-- **Key isolation**: Private signing key never exposed to agent
-- **Audit trail**: All signatures logged via MCP
-- **Revocability**: Key controlled by Anthropic, can be revoked
-- **Verification**: Commits can be verified against known public keys
+MCP signing calls are logged; Anthropic controls and can revoke the key, and signatures
+can be verified against known public keys.
 
 ## Security Analysis
 

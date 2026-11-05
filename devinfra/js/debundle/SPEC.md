@@ -2236,6 +2236,14 @@ bindings. This removes only the own syntax-opacity bit: explicit heap cells and
 allocations, receipt dependencies, callee heap opacity and incomplete-execution
 barriers remain.
 
+The existing exact private frozen-namespace recognizer can also cover its whole
+initializer through the root-effect route. It checks the fresh null-prototype
+data object, primitive descriptor, stored values and exact native call sites.
+Coverage additionally requires intact Object/Symbol slots and Object.prototype,
+since inherited descriptor getters can execute during `Object.defineProperty`.
+Those census dependencies remain on the receipt; stored callbacks retain their
+later reachability and invocation effects.
+
 The census records each input reference actually consumed by a receiver
 refinement. Those dependencies flow into successful native guards, native-call
 identity uses, inferred imported returned-record certificates and uses, and

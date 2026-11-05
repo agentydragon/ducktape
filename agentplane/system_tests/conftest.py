@@ -6,6 +6,7 @@ once at the fixture boundary and default to staging.
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator, Generator, Iterator
 from functools import partial
 from pathlib import Path
@@ -13,6 +14,7 @@ from typing import cast
 
 import pytest
 from opentelemetry import trace
+from python.runfiles import Runfiles
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
@@ -31,6 +33,11 @@ from util.testing.otel_tracing import configure_tracing
 
 # `session_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
+
+
+@pytest.fixture(scope="session")
+def k3s_binary(runfiles: Runfiles) -> Path:
+    return runfiles.root() / os.environ["K3S_BINARY_RLOCATION"]
 
 
 def pytest_configure(config: pytest.Config) -> None:

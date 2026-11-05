@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pytest
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from finance.augur.api.config import Config, load_augur_config
 from finance.augur.fit.synthetic_evidence import synthetic_evidence_dir
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
@@ -20,7 +20,7 @@ _PRIVATE_HOLDING_A = IssuerId("private_holding_a")
 
 @pytest.fixture(scope="module")
 def augur_config() -> Config:
-    return load_augur_config(get_required_path("_main/finance/augur/api/testdata/config.yaml"))
+    return load_augur_config(Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/api/testdata/config.yaml")
 
 
 @pytest.fixture

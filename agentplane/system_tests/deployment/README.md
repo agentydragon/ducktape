@@ -154,8 +154,9 @@ bootstrap failures include the last probe result and k3s log tail and stop the s
 The image list includes the serving binaries, which apply their embedded migrations at startup. A fast
 [`test_render`](BUILD.bazel) check validates this fixture composition and its endpoint/Service wiring
 without starting Kubernetes.
-`oci_image_manifest` bundles explicit image references and OCI layout runfiles paths. The suite owns
-these artifacts; importing the stack library does not bring in service images or k3s. The importer
+`oci_image_group` declares image references and OCI layouts. Each suite combines its selected groups
+into one JSON manifest, keyed by import group and image reference, and carries the layouts in runfiles.
+The suite owns these artifacts; importing the stack library does not bring in service images or k3s. The importer
 combines index descriptors with those references and streams each distinct blob once, without
 materializing Docker-format `oci_load` tarballs.
 

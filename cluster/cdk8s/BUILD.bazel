@@ -59,10 +59,10 @@ py_library(
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/kubevirt:virtualmachine",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -71,7 +71,12 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = ["//cluster/cdk8s/testing:scratch"],
+    deps = [
+        "//cluster/cdk8s/testing:scratch",
+        "//cluster/scripts:nebula_mesh_fixtures",
+        "@pypi//pytest",
+        "@rules_python//python/runfiles",
+    ],
 )
 
 py_library(
@@ -96,14 +101,17 @@ py_test(
         "@multitool//tools/kustomize",
         "@nodejs_linux_amd64//:bin/node",
     ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    env = {
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "KUSTOMIZE_RLOCATION": "$(rlocationpath @multitool//tools/kustomize)",
+    },
     deps = [
         ":artifact_generators",
         ":conftest",
         ":flux",
+        "//:conftest",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -263,9 +271,9 @@ py_library(
         ":namespaces",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -791,9 +799,9 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         ":service_ref",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1129,11 +1137,11 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s/forgejo_registry:chart",
         "//cluster/cdk8s/monitoring:home_switch",
-        "//devinfra/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pygohcl",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1372,10 +1380,10 @@ py_library(
         "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1489,9 +1497,9 @@ py_library(
         ":namespaces",
         ":service_ref",
         "//cluster/scripts:nebula_mesh",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1590,9 +1598,9 @@ py_library(
         ":manifest_roots",
         ":service_ref",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1847,9 +1855,9 @@ py_library(
         "//cluster/cdk8s/tofu_state:namespace",
         "//cluster/cdk8s/website",
         "//cluster/scripts:nebula_mesh",
-        "//devinfra/bazel:runfiles",
         "//devinfra/bazel:workspace",
         "@pypi//cdk8s",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1887,6 +1895,7 @@ py_test(
     # the whole generated root, which the test holds closed. cluster_all_files' glob stops at
     # sub-package boundaries.
     data = [
+        "//:MODULE.bazel",
         "//:session_backup_sops_source",
         "//agentplane/crds:manifests",
         "//cluster:generated_manifests",
@@ -1902,11 +1911,12 @@ py_test(
     deps = [
         ":generate_manifests_lib",
         ":manifest_roots",
-        "//devinfra/bazel:runfiles",
+        "//:conftest",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1944,10 +1954,10 @@ py_library(
         "//cluster/cdk8s/monitoring:mimir",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1963,10 +1973,10 @@ py_library(
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@rules_python//python/runfiles",
     ],
 )
 

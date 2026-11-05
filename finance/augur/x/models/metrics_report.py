@@ -28,7 +28,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
+from python.runfiles import Runfiles
+
 from finance.augur.api.config import load_augur_config
 from finance.augur.fit.data import load_evidence_segments
 from finance.augur.fit.metrics import (
@@ -53,7 +54,9 @@ class ModelMetricSpec:
 
 
 def _build_independent_from_testdata() -> Scorable:
-    augur_config = load_augur_config(get_required_path(own_repo_rlocation("finance/augur/api/testdata/config.yaml")))
+    augur_config = load_augur_config(
+        Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/api/testdata/config.yaml"
+    )
     provider = augur_config.models[augur_config.default_model_id]
     if isinstance(provider, CompositeProviderConfig):
         config = provider.macro

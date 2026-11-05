@@ -70,11 +70,11 @@ py_test(
         ":construction",
         ":run",
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//finance/augur:conftest",
         "//finance/augur/sim:results",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )

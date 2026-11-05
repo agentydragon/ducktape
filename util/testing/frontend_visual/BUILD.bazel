@@ -13,9 +13,9 @@ py_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//devinfra/bazel:runfiles",
         "//util/testing/browser:launcher",
         "@pypi//playwright",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -71,11 +71,11 @@ py_library(
         ":context",
         ":page_capture",
         ":viewports",
-        "//devinfra/bazel:runfiles",
         "//devinfra/testing:output_writer",
         "@pypi//more_itertools",
         "@pypi//playwright",
         "@pypi//pydantic",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -115,7 +115,6 @@ py_test(
         ":capture",
         ":viewports",
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//devinfra/testing:output_records",
         "//devinfra/testing:output_writer",
         "//util:playwright",
@@ -123,6 +122,7 @@ py_test(
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

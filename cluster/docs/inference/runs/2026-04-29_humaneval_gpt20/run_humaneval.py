@@ -14,10 +14,10 @@
 """Run HumanEval against gpt-oss:20b on the cluster Ollama endpoint via
 Inspect AI, sweeping `reasoning_effort` ∈ {low, medium, high}.
 
-Mirrors the AIME-2024 sweep at <../2026-04-29_aime_gpt20_n30/run_aime.py>;
-the only differences are the task name (`inspect_evals/humaneval` vs
-`inspect_evals/aime2024`), the default limit (164 — the full HumanEval
-set), and an explicit `--sandbox docker` (HumanEval scores by executing
+Uses the shared AIME-2024 driver at <../aime/run_aime.py> as the
+reference for this Inspect invocation. This script selects
+`inspect_evals/humaneval`, defaults to all 164 problems, and passes
+`--sandbox docker` explicitly (HumanEval scores by executing
 model-generated Python in a sandbox; docker is the task's default but
 we record it explicitly).
 

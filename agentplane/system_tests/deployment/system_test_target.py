@@ -10,6 +10,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from python.runfiles import Runfiles
 
 from agentplane.system_tests.deployment import rendered_fixture
 from agentplane.system_tests.deployment.rendered_fixture import Backend, LocalModel, PublicLiteLLM
@@ -17,7 +18,6 @@ from agentplane.system_tests.deployment.stack import Stack, StackInputs, running
 from agentplane.system_tests.deployment.virtualization import VirtualizationFactory
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.k3s.baseline import node_ip
-from devinfra.bazel.runfiles import get_required_path
 from util.net import Listener, listen_tcp
 
 
@@ -28,26 +28,22 @@ def scripted_listener() -> Iterator[Listener]:
         yield listener
 
 
-def load_stack_inputs() -> StackInputs:
-    manifests = json.loads(os.environ["K3S_IMAGE_MANIFESTS"])
+def load_stack_inputs(runfiles: Runfiles, k3s_binary: Path) -> StackInputs:
+    runfiles_root = runfiles.root()
+    images = json.loads((runfiles_root / os.environ["K3S_IMAGE_MANIFEST_RLOCATION"]).read_text())
     return StackInputs(
-        fixture=rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"])),
-        binary=get_required_path(os.environ["K3S_BINARY_RLOCATION"]),
-        image_layouts=_image_layouts(manifests["fixture"]),
-        pki_image_layouts=_image_layouts(manifests["pki"]),
-        vm_image_layouts=_image_layouts(manifests["vm"]),
-        guest_image_layouts=_image_layouts(manifests["guest"]),
+        fixture=rendered_fixture.read(runfiles_root / os.environ["K3S_FIXTURE_RLOCATION"]),
+        binary=k3s_binary,
+        image_layouts=_image_layouts(runfiles, images["fixture"]),
+        pki_image_layouts=_image_layouts(runfiles, images["pki"]),
+        vm_image_layouts=_image_layouts(runfiles, images["vm"]),
+        guest_image_layouts=_image_layouts(runfiles, images["guest"]),
     )
 
 
-def _image_layouts(manifests: list[str]) -> dict[str, Path]:
-    images = {}
-    for manifest in manifests:
-        for reference, location in json.loads(get_required_path(manifest).read_text()).items():
-            if reference in images:
-                raise ValueError(f"duplicate image reference: {reference}")
-            images[reference] = get_required_path(location)
-    return images
+def _image_layouts(runfiles: Runfiles, images: dict[str, str]) -> dict[str, Path]:
+    runfiles_root = runfiles.root()
+    return {reference: runfiles_root / location for reference, location in images.items()}
 
 
 def _models(inputs: StackInputs, listener: Listener) -> rendered_fixture.Models:
@@ -65,9 +61,13 @@ def virtualization_factory() -> VirtualizationFactory | None:
 
 @pytest.fixture(scope="session", autouse=True)
 def deployment(
-    request: pytest.FixtureRequest, scripted_listener: Listener, virtualization_factory: VirtualizationFactory | None
+    request: pytest.FixtureRequest,
+    scripted_listener: Listener,
+    virtualization_factory: VirtualizationFactory | None,
+    runfiles: Runfiles,
+    k3s_binary: Path,
 ) -> Iterator[Stack]:
-    inputs = load_stack_inputs()
+    inputs = load_stack_inputs(runfiles, k3s_binary)
     required_backend = "scripted_model" if inputs.fixture.backend is Backend.LOCAL_MODEL else "real_model"
     incompatible = "real_model" if required_backend == "scripted_model" else "scripted_model"
     for item in request.session.items:

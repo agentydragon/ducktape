@@ -20,6 +20,7 @@ import grpc
 import httpx
 import uvicorn
 from playwright.async_api import Page
+from python.runfiles import Runfiles
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
@@ -33,7 +34,6 @@ from agentplane.app.testing.notifications import FakeNotifications
 from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service import notifications_pb2_grpc
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url
 from util.net import Listener, listen_tcp
@@ -245,7 +245,7 @@ async def spawn_go_app(
         process_env.update(env or {})
         with stderr.open("wb") as log:
             process = await asyncio.create_subprocess_exec(
-                get_required_path("_main/agentplane/app/go/agentplane-app_/agentplane-app"),
+                (Runfiles.CreateOrRaise().root() / "ducktape/agentplane/app/go/agentplane-app_/agentplane-app"),
                 pass_fds=(listener_fd,),
                 env=process_env,
                 stdout=log,

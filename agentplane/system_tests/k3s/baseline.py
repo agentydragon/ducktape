@@ -17,7 +17,7 @@ import subprocess
 import tarfile
 import tempfile
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -655,7 +655,7 @@ def _baseline_identity(k3s: K3s, pid: int) -> dict[str, str | int]:
 
 def fingerprint(
     binary: Path,
-    crds: list[Path],
+    crds: Sequence[Path],
     baseline: list[dict[str, Any]],
     images: dict[str, Path],
     *,

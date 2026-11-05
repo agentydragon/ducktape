@@ -20,7 +20,6 @@ py_library(
     ],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//devinfra/bazel:runfiles",
         "//openai_utils:model_metadata",
         "//props:config",
         "//props/db:config",
@@ -32,6 +31,7 @@ py_library(
         "@pypi//pytest_asyncio",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
+        "@rules_python//python/runfiles",
     ],
 )
 

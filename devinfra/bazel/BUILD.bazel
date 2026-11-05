@@ -9,13 +9,6 @@ py_library(
 )
 
 py_library(
-    name = "runfiles",
-    srcs = ["runfiles.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@rules_python//python/runfiles"],
-)
-
-py_library(
     name = "subprocess",
     srcs = ["subprocess.py"],
     visibility = ["//visibility:public"],

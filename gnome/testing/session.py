@@ -14,9 +14,9 @@ from typing import cast
 
 from docker.models.containers import Container, ExecResult
 from PIL import Image
+from python.runfiles import Runfiles
 from testcontainers.core.container import DockerContainer
 
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.output_writer import BoundTestOutputs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -181,7 +181,7 @@ def gnome_session(
     container.with_volume_mapping(str(fixture_dir), "/fixtures", "ro")
     container.with_volume_mapping(str(fake_daemon_script), "/fake-daemon.js", "ro")
     container.with_volume_mapping(
-        str(get_required_path("_main/gnome/testing/fake-daemon.js")), "/gnome-fake-daemon.js", "ro"
+        str(Runfiles.CreateOrRaise().root() / "ducktape/gnome/testing/fake-daemon.js"), "/gnome-fake-daemon.js", "ro"
     )
     container.with_volume_mapping(str(screenshot_dir), "/out", "rw")
     with container:

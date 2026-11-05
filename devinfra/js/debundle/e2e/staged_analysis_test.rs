@@ -4092,3 +4092,88 @@ fn initializer_source_only_uses_resolved_binding_and_keeps_comma_siblings_raw() 
         );
     }
 }
+
+#[test]
+fn inferred_and_selected_set_spread_bindings_survive_saved_analysis() {
+    const DECLARATION: &str = "var seed = new Set(['a', 'b']), sibling = new Set(['x']), copied = new Set([...seed, 'c']);";
+    const SOURCE: &str = "console.log('before');\nvar seed = new Set(['a', 'b']), sibling = new Set(['x']), copied = new Set([...seed, 'c']);\nconsole.log('after', copied.size);\nexport {};\n";
+    for selected in [false, true] {
+        let mut opts = FixtureOpts::new(
+            SOURCE,
+            vec![logical_module(
+                "sets",
+                &[
+                    Member::new("seed"),
+                    Member::new("sibling"),
+                    Member::new("copied"),
+                ],
+            )],
+        );
+        if selected {
+            let inputs = [
+                ("seed", NativeOperationKind::SetFromPrimitiveArray),
+                ("sibling", NativeOperationKind::SetFromPrimitiveArray),
+                ("copied", NativeOperationKind::SetFromSetSpread),
+            ]
+            .into_iter()
+            .map(|(binding, operation)| NativeOperationInputContract {
+                selector: SourceUnitSelector::SourceMatch(
+                    serde_yaml::from_str(&format!(
+                        "match: {DECLARATION:?}\nbindings: [{binding}]\n"
+                    ))
+                    .expect("native construction selector"),
+                ),
+                operation,
+                audited_source_sha256: Sha256::digest(SOURCE.as_bytes())
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect(),
+                note: None,
+            })
+            .collect();
+            opts = opts.with_native_operation_inputs("static/app", inputs);
+        }
+        let (staged, _fixture) = staged(opts);
+        let direct = staged.run(&[]);
+        assert_ok(&direct.result, "direct Set spread run");
+        let loaded = staged.run(&["--analysis", path(&staged.artifact)]);
+        assert_ok(&loaded.result, "Set spread run from saved analysis");
+        assert_same_invocation_trees(&direct, &loaded);
+        for invocation in [&direct, &loaded] {
+            assert_node_output(
+                &invocation.output_root().join("app/static/app/entry.js"),
+                "before\nafter 3\n",
+                "",
+            );
+        }
+        let graph: Value = read_gzip_json(
+            &loaded
+                .output_root()
+                .join("reports/tree/static/app/dependency_graph.json.gz"),
+        );
+        let execution = &graph_node_for_binding(&graph, "copied")["synchronous_execution"];
+        assert_eq!(execution["complete"], true, "{execution:#}");
+        if selected {
+            assert!(
+                execution["native_operation_input_uses"]
+                    .as_array()
+                    .expect("selected Set spread input uses")
+                    .iter()
+                    .any(|use_site| {
+                        use_site["evidence"]["operation"] == "set_from_set_spread"
+                            && use_site["evidence"]["selected_binding"] == "copied"
+                    }),
+                "{execution:#}"
+            );
+        } else {
+            assert!(
+                execution["inference_uses"]
+                    .as_array()
+                    .expect("Set spread inference uses")
+                    .iter()
+                    .any(|proof| proof["conclusion"] == "primitive_set_iteration"),
+                "{execution:#}"
+            );
+        }
+    }
+}

@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 import yaml
+from python.runfiles import Runfiles
 
 from agentplane.system_tests.k3s.release_manifests import load_release_manifest
-from devinfra.bazel.runfiles import get_required_path
 
 _PINNED_MANIFESTS = (
     "CERT_MANAGER_INSTALL_RLOCATION",
@@ -18,8 +18,8 @@ _PINNED_MANIFESTS = (
 
 
 @pytest.mark.parametrize("variable", _PINNED_MANIFESTS)
-def test_release_manifest_matches_safe_loader(variable: str) -> None:
-    path = get_required_path(os.environ[variable])
+def test_release_manifest_matches_safe_loader(runfiles: Runfiles, variable: str) -> None:
+    path = runfiles.root() / os.environ[variable]
     expected = [doc for doc in yaml.safe_load_all(path.read_text(encoding="utf-8")) if doc]
 
     assert load_release_manifest(path, variable) == expected

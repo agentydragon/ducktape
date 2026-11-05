@@ -240,8 +240,6 @@ py_test(
         "//:conftest",
         "//util:db_url",
         "//util/testing:postgres",
-        "@pypi//alembic",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],

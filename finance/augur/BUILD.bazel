@@ -10,13 +10,13 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        "//devinfra/bazel:runfiles",
         "//finance/augur/api:config",
         "//finance/augur/fit:synthetic_evidence",
         "//finance/augur/model:series",
         "//finance/augur/model:testing",
         "//finance/augur/product:testing",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -40,11 +40,11 @@ py_library(
     name = "dev_server",
     srcs = ["dev_server.py"],
     deps = [
-        "//devinfra/bazel:runfiles",
         "//finance/augur/api:config",
         "//finance/augur/api:server",
         "//finance/augur/calibration:default_clients",
         "@pypi//fastapi",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -55,9 +55,10 @@ py_binary(
         "//finance/augur/api:public_fixture_properties",
         "//finance/augur/calibration:example_openai_catalog",
         "//finance/augur/frontend:bundle_base",
+        "//finance/augur/frontend:bundle_index_html",
     ],
     env = {
-        "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/finance/augur/frontend/dist/index.html",
+        "AUGUR_BUNDLE_INDEX_RUNFILE": "$(rlocationpath //finance/augur/frontend:bundle_index_html)",
         "AUGUR_CONFIG_PATH": "$(location //finance/augur/api:public_fixture_config)",
     },
     main_module = "finance.augur.dev_server",
@@ -73,19 +74,20 @@ py_test(
         "//finance/augur/api:public_fixture_config",
         "//finance/augur/api:public_fixture_properties",
         "//finance/augur/calibration:example_openai_catalog",
+        "//finance/augur/frontend:bundle_index_html",
     ],
     env = {
-        "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/finance/augur/frontend/dist/index.html",
+        "AUGUR_BUNDLE_INDEX_RUNFILE": "$(rlocationpath //finance/augur/frontend:bundle_index_html)",
     },
     deps = [
         ":conftest",
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//finance/augur/testing:server",
         "//util:playwright",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -106,16 +108,16 @@ py_test(
         "//finance/augur/api:public_fixture_properties",
         "//finance/augur/calibration:example_openai_catalog",
         "//finance/augur/frontend:bundle_base",
+        "//finance/augur/frontend:bundle_index_html",
     ],
     env = {
-        "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/finance/augur/frontend/dist/index.html",
+        "AUGUR_BUNDLE_INDEX_RUNFILE": "$(rlocationpath //finance/augur/frontend:bundle_index_html)",
     },
     tags = ["visual"],
     deps = [
         ":conftest",
         ":dev_server",
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//devinfra/testing:output_writer",
         "//finance/augur/api:config",
         "//finance/augur/api:server",
@@ -131,5 +133,6 @@ py_test(
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )

@@ -2,13 +2,15 @@
 
 import json
 
-from devinfra.bazel.runfiles import find_path, get_required_path, own_repo_rlocation
+from python.runfiles import Runfiles
 
-_FLAGS = json.loads(get_required_path(own_repo_rlocation("util/testing/browser/chromium-flags.json")).read_text())
+_RUNFILES = Runfiles.CreateOrRaise()
+_FLAGS = json.loads((_RUNFILES.root() / "ducktape/util/testing/browser/chromium-flags.json").read_text())
 CONTAINER_BASE_BROWSER_ARGS: list[str] = _FLAGS["containerBase"]
 DETERMINISTIC_BROWSER_ARGS: list[str] = CONTAINER_BASE_BROWSER_ARGS + _FLAGS["deterministicExtra"]
 
 
 def chromium_executable() -> str | None:
-    """Resolve the hermetic browser, or let Playwright select one outside Bazel."""
-    return str(path) if (path := find_path("chrome_headless_shell/chrome-headless-shell")) else None
+    """Resolve the hermetic browser, or let Playwright select one if absent."""
+    path = _RUNFILES.root() / "chrome_headless_shell/chrome-headless-shell"
+    return str(path) if path.exists() else None

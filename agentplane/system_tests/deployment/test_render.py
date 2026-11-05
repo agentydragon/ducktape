@@ -11,6 +11,7 @@ import pytest
 import pytest_bazel
 import yaml
 from pydantic import AnyHttpUrl, ValidationError
+from python.runfiles import Runfiles
 
 # Each service module exports `Settings`; aliases keep their separate config contracts explicit.
 from agentplane.app.settings import Settings as AppSettings
@@ -38,7 +39,6 @@ from cluster.cdk8s.agentplane import (
     llm_ingress,
     runner_gateway,
 )
-from devinfra.bazel.runfiles import get_required_path
 from util.settings_contract import env_name
 
 _MCP = McpInputs(
@@ -56,8 +56,8 @@ def _resource(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any
     return matches[0]
 
 
-def _filled_fixture() -> rendered_fixture.RenderedFixture:
-    cached = rendered_fixture.read(get_required_path(os.environ["K3S_FIXTURE_RLOCATION"]))
+def _filled_fixture(runfiles: Runfiles) -> rendered_fixture.RenderedFixture:
+    cached = rendered_fixture.read(runfiles.root() / os.environ["K3S_FIXTURE_RLOCATION"])
     return rendered_fixture.fill(
         cached,
         RuntimeInputs(
@@ -68,8 +68,18 @@ def _filled_fixture() -> rendered_fixture.RenderedFixture:
     )
 
 
-def test_direct_fixture_uses_gateway_and_embedded_migrations() -> None:
-    fixture = _filled_fixture()
+@pytest.fixture(scope="module")
+def _vm_fixture_template(runfiles: Runfiles) -> rendered_fixture.RenderedFixture:
+    return rendered_fixture.read(runfiles.root() / os.environ["K3S_VM_FIXTURE_RLOCATION"])
+
+
+@pytest.fixture
+def vm_fixture(_vm_fixture_template: rendered_fixture.RenderedFixture) -> rendered_fixture.RenderedFixture:
+    return _vm_fixture_template.model_copy(deep=True)
+
+
+def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles) -> None:
+    fixture = _filled_fixture(runfiles)
     assert fixture.central_sampler
     assert "k3s-env-placeholder-" not in fixture.model_dump_json()
     docs = fixture.objects
@@ -394,13 +404,15 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations() -> None:
     }
 
 
-def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling() -> None:
-    fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
-    selected = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
-    other = _resource(fixture.objects, "SandboxTemplate", "environment-vm")
+def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling(
+    vm_fixture: rendered_fixture.RenderedFixture,
+) -> None:
+    control = vm_fixture.model_copy(deep=True)
+    selected = _resource(vm_fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
+    other = _resource(vm_fixture.objects, "SandboxTemplate", "environment-vm")
     original_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     original_other_args = other["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
-    vm_sandboxes.select_native_profile(fixture.objects, enabled=True, profile_root=True)
+    vm_sandboxes.select_native_profile(vm_fixture.objects, enabled=True, profile_root=True)
     selected_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     other_args = other["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     assert other_args == original_other_args
@@ -414,7 +426,6 @@ def test_vm_native_profile_uses_single_manual_root_and_oom_only_sampling() -> No
     assert next(volume for volume in other_volumes if volume["name"] == "rootdisk")["containerDisk"]["image"].endswith(
         "/agentplane-vm-guest-root-profile:unset"
     )
-    control = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
     vm_sandboxes.select_native_profile(control.objects, enabled=False, profile_root=True)
     control_oom = _resource(control.objects, "SandboxTemplate", OOM_TEMPLATE)
     control_spec = control_oom["spec"]["vm"]["template"]["spec"]
@@ -434,13 +445,12 @@ def test_kubevirt_baseline_selects_emulation_from_the_explicit_kvm_mode(monkeypa
     assert kvm["useEmulation"] is False
 
 
-def test_vm_boot_evidence_selects_only_oom_guest_at_runtime() -> None:
-    fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
-    selected = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
-    other = _resource(fixture.objects, "SandboxTemplate", "environment-vm")
+def test_vm_boot_evidence_selects_only_oom_guest_at_runtime(vm_fixture: rendered_fixture.RenderedFixture) -> None:
+    selected = _resource(vm_fixture.objects, "SandboxTemplate", OOM_TEMPLATE)
+    other = _resource(vm_fixture.objects, "SandboxTemplate", "environment-vm")
     original_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     original_other_args = other["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
-    vm_sandboxes.select_boot_evidence(fixture.objects, enabled=True)
+    vm_sandboxes.select_boot_evidence(vm_fixture.objects, enabled=True)
     selected_args = selected["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     other_args = other["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"]
     assert other_args == original_other_args
@@ -448,9 +458,8 @@ def test_vm_boot_evidence_selects_only_oom_guest_at_runtime() -> None:
     assert "agentplane.boot-evidence=1" not in other_args
 
 
-def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
-    fixture = rendered_fixture.read(get_required_path(os.environ["K3S_VM_FIXTURE_RLOCATION"]))
-    template = _resource(fixture.objects, "SandboxTemplate", "environment-vm")["spec"]
+def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: rendered_fixture.RenderedFixture) -> None:
+    template = _resource(vm_fixture.objects, "SandboxTemplate", "environment-vm")["spec"]
     state = template["stateVolume"]
     workspace = template["workspaceVolume"]
 
@@ -460,14 +469,16 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     assert workspace["claim"]["storageClassName"] == STORAGE_CLASS
     assert workspace["claim"]["volumeMode"] == "Block"
 
-    vm_template = _resource(fixture.objects, "SandboxTemplate", "environment-vm")["spec"]
+    vm_template = _resource(vm_fixture.objects, "SandboxTemplate", "environment-vm")["spec"]
     vm_spec = vm_template["vm"]["template"]["spec"]
     runner_disk = next(disk for disk in vm_spec["domain"]["devices"]["disks"] if disk["name"] == "runner")
     assert runner_disk["serial"] == "agentplane-runner"  # vm.nix mounts virtio-agentplane-runner from fstab.
     runner_volume = next(volume for volume in vm_spec["volumes"] if volume["name"] == "runner")
     assert runner_volume["containerDisk"]["image"] == ("git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset")
-    supervision = _resource(fixture.objects, "SandboxTemplate", SUPERVISION_TEMPLATE)["spec"]["vm"]["template"]["spec"]
-    oom_template = _resource(fixture.objects, "SandboxTemplate", OOM_TEMPLATE)["spec"]["vm"]["template"]["spec"]
+    supervision = _resource(vm_fixture.objects, "SandboxTemplate", SUPERVISION_TEMPLATE)["spec"]["vm"]["template"][
+        "spec"
+    ]
+    oom_template = _resource(vm_fixture.objects, "SandboxTemplate", OOM_TEMPLATE)["spec"]["vm"]["template"]["spec"]
     ordinary_root = next(
         volume["containerDisk"]["image"] for volume in vm_spec["volumes"] if volume["name"] == "rootdisk"
     )
@@ -488,9 +499,9 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     }
     interface = next(item for item in vm_spec["domain"]["devices"]["interfaces"] if item["name"] == "default")
     assert {"port": 9090} in interface["ports"]
-    config_map = _resource(fixture.objects, "ConfigMap", "environment-vm-config")
+    config_map = _resource(vm_fixture.objects, "ConfigMap", "environment-vm-config")
     config = json.loads(config_map["data"]["environment-runtime.json"])
-    oom_config_map = _resource(fixture.objects, "ConfigMap", oom_config_volume["configMap"]["name"])
+    oom_config_map = _resource(vm_fixture.objects, "ConfigMap", oom_config_volume["configMap"]["name"])
     oom_config = json.loads(oom_config_map["data"]["environment-runtime.json"])
     oom_resources = oom_config["environment"]["resources"]
     ordinary_resources = config["environment"]["resources"]
@@ -507,7 +518,7 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
         "exec_server_dependency_timeout_ms": 120_000,
     }
     pod_config = json.loads(
-        _resource(fixture.objects, "ConfigMap", "environment-tools-config")["data"]["environment-runtime.json"]
+        _resource(vm_fixture.objects, "ConfigMap", "environment-tools-config")["data"]["environment-runtime.json"]
     )
     assert "codex_readiness" not in pod_config
     assert config["control"] == {
@@ -523,8 +534,8 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state() -> None:
     }
 
 
-def test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring() -> None:
-    fixture = _filled_fixture()
+def test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(runfiles: Runfiles) -> None:
+    fixture = _filled_fixture(runfiles)
     assert fixture.central_sampler
     assert not fixture.vm_sandboxes
     docs = fixture.objects
@@ -611,8 +622,8 @@ def test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wir
     assert {"namespace": NAMESPACE, "name": central_sampler.NAME} in history_config["ingress"]["sampler_accounts"]
 
 
-def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary() -> None:
-    fixture = rendered_fixture.read(get_required_path(os.environ["K3S_FIRECRACKER_FIXTURE_RLOCATION"]))
+def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary(runfiles: Runfiles) -> None:
+    fixture = rendered_fixture.read(runfiles.root() / os.environ["K3S_FIRECRACKER_FIXTURE_RLOCATION"])
     assert fixture.firecracker_sandboxes
     assert not fixture.vm_sandboxes
     assert not any(doc["kind"] == "CiliumNetworkPolicy" for doc in fixture.objects)

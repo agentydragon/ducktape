@@ -48,7 +48,6 @@ py_test(
     ],
     deps = [
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//devinfra/testing:undeclared_outputs",
         "//skills/freecad:conftest",
         "//skills/freecad/examples:export_page",
@@ -59,6 +58,7 @@ py_test(
         "//skills/freecad/testing:compare",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -73,7 +73,6 @@ py_test(
     ],
     deps = [
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "//devinfra/testing:undeclared_outputs",
         "//skills/freecad:conftest",
         "//skills/freecad/examples:render_debug_edges",
@@ -84,5 +83,6 @@ py_test(
         "@pypi//pillow",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )

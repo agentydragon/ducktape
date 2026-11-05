@@ -16,6 +16,7 @@ import grpc
 import httpx
 import yaml
 from grpc_health.v1 import health_pb2, health_pb2_grpc
+from python.runfiles import Runfiles
 
 from agentplane.environment_runtime_transport.config import MTLS, TLS
 from agentplane.grpc.calls import ServiceError, dial
@@ -24,7 +25,6 @@ from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url
 from util.net import listen_tcp
@@ -33,18 +33,17 @@ from util.settings_contract import env_name
 # gazelle:include_dep @pypi//protobuf
 
 
-_GATEWAY_BINARY = "agentplane/runner_gateway/runner-gateway_/runner-gateway"
+_GATEWAY_BINARY = "ducktape/agentplane/runner_gateway/runner-gateway_/runner-gateway"
 
 
 def _wire_database_url(database_url: str) -> str:
     return render_postgresql_url(database_url, "postgresql", query={"sslmode": "disable"})
 
 
-def _migrate(database_url: str, log_path: Path) -> None:
-    migrator = get_required_path(own_repo_rlocation(_GATEWAY_BINARY))
+def _migrate(binary: Path, database_url: str, log_path: Path) -> None:
     try:
         result = subprocess.run(
-            [str(migrator), "--migrate-only"],
+            [binary, "--migrate-only"],
             env={"AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL": _wire_database_url(database_url)},
             capture_output=True,
             text=True,
@@ -217,10 +216,10 @@ async def run_gateway(
     runner applies the schema before the server starts. Platform gRPC and HTTP use the public
     listeners; Runner connections use each active Sandbox's direct mTLS gRPC server.
     """
+    binary = Runfiles.CreateOrRaise().root() / _GATEWAY_BINARY
     migration_log = undeclared_outputs_dir() / f"go-runner-gateway-migration-{uuid4().hex}.log"
-    await asyncio.to_thread(_migrate, database_url, migration_log)
+    await asyncio.to_thread(_migrate, binary, database_url, migration_log)
 
-    binary = get_required_path(own_repo_rlocation(_GATEWAY_BINARY))
     log_path = undeclared_outputs_dir() / f"go-runner-gateway-{uuid4().hex}.log"
     # The database URL and Pod fields stay out of the file, as in deployment, where they come from
     # runtime sources. The explicit empty wake list exercises the authoring schema and Go loader contract.
@@ -296,7 +295,7 @@ async def run_gateway(
             pass_fds = [grpc_listener.socket.fileno(), http_listener.socket.fileno()]
             spawn = asyncio.create_task(
                 asyncio.create_subprocess_exec(
-                    str(binary), env=environment, stdout=log_file, stderr=subprocess.STDOUT, pass_fds=pass_fds
+                    binary, env=environment, stdout=log_file, stderr=subprocess.STDOUT, pass_fds=pass_fds
                 )
             )
             try:

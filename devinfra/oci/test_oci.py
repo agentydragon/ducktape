@@ -13,19 +13,17 @@ from devinfra.oci import oci
 def test_load_oci_image_uses_manifest_digest_and_respects_explicit_reference(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    locations: dict[str, Path] = {}
     digests: list[str] = []
     for name in ("first", "repinned"):
-        layout = tmp_path / name
-        layout.mkdir()
+        layout = tmp_path / "test-layouts" / name
+        layout.mkdir(parents=True)
         digest = "sha256:" + hashlib.sha256(name.encode()).hexdigest()
         (layout / "index.json").write_text(json.dumps({"manifests": [{"digest": digest}]}))
-        locations[f"test-layouts/{name}"] = layout
         digests.append(digest)
 
     daemon_ids: dict[str, str] = {}
     loaded: list[tuple[str, str]] = []
-    monkeypatch.setattr(oci.runfiles, "get_required_path", lambda rloc: locations[rloc])
+    monkeypatch.setattr(oci.Runfiles, "CreateOrRaise", lambda: oci.Runfiles.CreateDirectoryBased(str(tmp_path)))
     monkeypatch.setattr(oci, "daemon_image_id", daemon_ids.get)
     monkeypatch.setattr(
         oci, "_loaded_marker", lambda ref: tmp_path / f"{hashlib.sha256(ref.encode()).hexdigest()}.loaded"

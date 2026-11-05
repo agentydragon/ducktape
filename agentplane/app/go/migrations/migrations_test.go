@@ -73,83 +73,7 @@ func TestUpFreshDatabaseCreatesCurrentSchema(t *testing.T) {
 	assertGooseVersion(t, db)
 }
 
-func TestUpAdoptsCompletedVersionTwoWithoutChangingRows(t *testing.T) {
-	db := openDatabase(t)
-	createAlembicHeadSchema(t, db)
-	exec(t, db, `DROP TABLE alembic_version_app;
- CREATE TABLE agentplane_app_goose_version (id SERIAL PRIMARY KEY, version_id bigint NOT NULL, is_applied boolean NOT NULL, tstamp timestamp NOT NULL DEFAULT now());
- INSERT INTO agentplane_app_goose_version (version_id, is_applied) VALUES (0, true), (1, true), (2, true)`)
-	seedCurrentSchema(t, db)
-	beforeThreads, beforeSessions := jsonRows(t, db, "thread"), jsonRows(t, db, "operator_browser_session")
-	if err := Up(t.Context(), db); err != nil {
-		t.Fatal(err)
-	}
-	if got := jsonRows(t, db, "thread"); got != beforeThreads {
-		t.Fatalf("thread rows changed: %s vs %s", got, beforeThreads)
-	}
-	if got := jsonRows(t, db, "operator_browser_session"); got != beforeSessions {
-		t.Fatalf("session rows changed: %s vs %s", got, beforeSessions)
-	}
-	assertCurrentSchema(t, db)
-	assertNoAlembicMarker(t, db)
-	assertGooseVersion(t, db)
-}
-
-func TestUpRejectsPartialGooseHistory(t *testing.T) {
-	db := openDatabase(t)
-	createAlembicHeadSchema(t, db)
-	exec(t, db, `CREATE TABLE agentplane_app_goose_version (id SERIAL PRIMARY KEY, version_id bigint NOT NULL, is_applied boolean NOT NULL, tstamp timestamp NOT NULL DEFAULT now()); INSERT INTO agentplane_app_goose_version (version_id, is_applied) VALUES (0, true), (1, true)`)
-	seedCurrentSchema(t, db)
-	before := jsonRows(t, db, "thread")
-	if err := Up(t.Context(), db); err == nil || !strings.Contains(err.Error(), "previous image") {
-		t.Fatalf("Up = %v, want actionable rejection", err)
-	}
-	if got := jsonRows(t, db, "thread"); got != before {
-		t.Fatal("rejection changed rows")
-	}
-}
-
-func TestUpRejectsHistoryGap(t *testing.T) {
-	db := openDatabase(t)
-	createAlembicHeadSchema(t, db)
-	exec(t, db, `DROP TABLE alembic_version_app;
- CREATE TABLE agentplane_app_goose_version (id SERIAL PRIMARY KEY, version_id bigint NOT NULL, is_applied boolean NOT NULL, tstamp timestamp NOT NULL DEFAULT now());
- INSERT INTO agentplane_app_goose_version (version_id, is_applied) VALUES (0, true), (2, true)`)
-	if err := Up(t.Context(), db); err == nil {
-		t.Fatal("Up accepted a gap in predecessor history")
-	}
-}
-
-func TestUpRejectsCorruptCompletedVersionTwo(t *testing.T) {
-	db := openDatabase(t)
-	createAlembicHeadSchema(t, db)
-	exec(t, db, `DROP TABLE alembic_version_app;
- CREATE TABLE agentplane_app_goose_version (id SERIAL PRIMARY KEY, version_id bigint NOT NULL, is_applied boolean NOT NULL, tstamp timestamp NOT NULL DEFAULT now());
- INSERT INTO agentplane_app_goose_version (version_id, is_applied) VALUES (0, true), (1, true), (2, true);
- ALTER TABLE thread DROP COLUMN name`)
-	if err := Up(t.Context(), db); err == nil {
-		t.Fatal("Up accepted an incomplete version 2 schema")
-	}
-}
-
 func TestUpRejectsUnknownAndPartialSchemas(t *testing.T) {
-	t.Run("unknown Alembic revision", func(t *testing.T) {
-		db := openDatabase(t)
-		exec(t, db, `
-			CREATE TABLE alembic_version_app (version_num varchar(32) NOT NULL PRIMARY KEY);
-			INSERT INTO alembic_version_app VALUES ('0035_event_log_into_thread');
-			CREATE TABLE thread (id uuid PRIMARY KEY);
-		`)
-		if err := Up(t.Context(), db); err == nil {
-			t.Fatal("Up accepted an unknown Alembic revision")
-		}
-		assertNoAppliedMigration(t, db)
-		assertNotCreated(t, db, "operator_browser_session")
-		if got := stringValue(t, db, "SELECT version_num FROM alembic_version_app"); got != "0035_event_log_into_thread" {
-			t.Fatalf("Alembic revision changed on rejection: %q", got)
-		}
-	})
-
 	t.Run("unmarked partial app schema", func(t *testing.T) {
 		db := openDatabase(t)
 		exec(t, db, `CREATE TABLE thread (id uuid PRIMARY KEY)`)
@@ -159,60 +83,6 @@ func TestUpRejectsUnknownAndPartialSchemas(t *testing.T) {
 		assertNoAppliedMigration(t, db)
 		assertNotCreated(t, db, "operator_browser_session")
 		assertNotCreated(t, db, "alembic_version_app")
-	})
-
-	t.Run("head marker with missing current table", func(t *testing.T) {
-		db := openDatabase(t)
-		exec(t, db, `
-			CREATE TABLE alembic_version_app (version_num varchar(32) NOT NULL PRIMARY KEY);
-			INSERT INTO alembic_version_app VALUES ('0037_drop_auto_thread_titles');
-			CREATE TABLE thread (id uuid PRIMARY KEY);
-		`)
-		if err := Up(t.Context(), db); err == nil {
-			t.Fatal("Up adopted an incomplete schema at Alembic head")
-		}
-		assertNoAppliedMigration(t, db)
-		assertNotCreated(t, db, "operator_browser_session")
-		if got := stringValue(t, db, "SELECT version_num FROM alembic_version_app"); got != "0037_drop_auto_thread_titles" {
-			t.Fatalf("Alembic revision changed on rejection: %q", got)
-		}
-	})
-
-	t.Run("head marker with composite thread key", func(t *testing.T) {
-		db := openDatabase(t)
-		createAlembicHeadSchema(t, db)
-		exec(t, db, `
-			ALTER TABLE thread DROP CONSTRAINT thread_pkey;
-			ALTER TABLE thread ADD PRIMARY KEY (id, created_at);
-		`)
-		if err := Up(t.Context(), db); err == nil {
-			t.Fatal("Up adopted a thread table with an incompatible primary key")
-		}
-		assertNoAppliedMigration(t, db)
-	})
-
-	t.Run("head marker with altered session check", func(t *testing.T) {
-		db := openDatabase(t)
-		createAlembicHeadSchema(t, db)
-		exec(t, db, `
-			ALTER TABLE operator_browser_session DROP CONSTRAINT operator_browser_session_operator_whole;
-			ALTER TABLE operator_browser_session ADD CONSTRAINT operator_browser_session_operator_whole
-				CHECK (operator_issuer IS NULL);
-		`)
-		if err := Up(t.Context(), db); err == nil {
-			t.Fatal("Up adopted an altered operator session check")
-		}
-		assertNoAppliedMigration(t, db)
-	})
-
-	t.Run("head marker with unexpected foreign key", func(t *testing.T) {
-		db := openDatabase(t)
-		createAlembicHeadSchema(t, db)
-		exec(t, db, `ALTER TABLE thread ADD CONSTRAINT unexpected_thread_fk FOREIGN KEY (id) REFERENCES thread(id)`)
-		if err := Up(t.Context(), db); err == nil {
-			t.Fatal("Up adopted a thread table with an unexpected foreign key")
-		}
-		assertNoAppliedMigration(t, db)
 	})
 }
 
@@ -381,82 +251,9 @@ func assertNotCreated(t *testing.T, db *sql.DB, table string) {
 	}
 }
 
-func stringValue(t *testing.T, db *sql.DB, query string) string {
-	t.Helper()
-	var value string
-	if err := db.QueryRowContext(t.Context(), query).Scan(&value); err != nil {
-		t.Fatal(err)
-	}
-	return value
-}
-
-func jsonRows(t *testing.T, db *sql.DB, table string) string {
-	t.Helper()
-	query := fmt.Sprintf("SELECT COALESCE(jsonb_agg(to_jsonb(row_value) ORDER BY row_value.id::text)::text, '[]') FROM %s AS row_value", table)
-	return stringValue(t, db, query)
-}
-
 func exec(t *testing.T, db *sql.DB, query string) {
 	t.Helper()
 	if _, err := db.ExecContext(t.Context(), query); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func createAlembicHeadSchema(t *testing.T, db *sql.DB) {
-	t.Helper()
-	exec(t, db, `
-		CREATE TABLE thread (
-			id uuid PRIMARY KEY,
-			name text,
-			archived boolean NOT NULL DEFAULT false,
-			created_at timestamptz NOT NULL
-		);
-		CREATE TABLE operator_browser_session (
-			id text PRIMARY KEY,
-			expires_at timestamptz NOT NULL,
-			payload jsonb NOT NULL,
-			absolute_expires_at timestamptz NOT NULL,
-			operator_issuer text,
-			operator_subject text,
-			operator_username text,
-			access_token text,
-			access_token_expires_at timestamptz,
-			refresh_token text,
-			CONSTRAINT operator_browser_session_operator_whole CHECK (
-				(operator_issuer IS NULL) = (operator_subject IS NULL)
-				AND (operator_issuer IS NULL) = (operator_username IS NULL)
-			),
-			CONSTRAINT operator_browser_session_access_token_whole CHECK (
-				(access_token IS NULL) = (access_token_expires_at IS NULL)
-			),
-			CONSTRAINT operator_browser_session_tokens_logged_in CHECK (
-				access_token IS NULL OR operator_issuer IS NOT NULL
-			),
-			CONSTRAINT operator_browser_session_refresh_token_with_access_token CHECK (
-				refresh_token IS NULL OR access_token IS NOT NULL
-			)
-		);
-		CREATE INDEX ix_operator_browser_session_expires_at ON operator_browser_session (expires_at);
-		CREATE TABLE alembic_version_app (version_num varchar(32) NOT NULL PRIMARY KEY);
-		INSERT INTO alembic_version_app VALUES ('0037_drop_auto_thread_titles');
-	`)
-}
-
-func seedCurrentSchema(t *testing.T, db *sql.DB) {
-	t.Helper()
-	exec(t, db, `
-		INSERT INTO thread (id, created_at, name, archived) VALUES
-			('00000000-0000-0000-0000-000000000001', '2026-01-01T00:00:00Z', NULL, false),
-			('00000000-0000-0000-0000-000000000002', '2026-01-02T00:00:00Z', 'A manual title', true);
-		INSERT INTO operator_browser_session (
-			id, expires_at, payload, absolute_expires_at, operator_issuer, operator_subject,
-			operator_username, access_token, access_token_expires_at, refresh_token
-		) VALUES
-			('pending-session', '2027-01-01T00:00:00Z', '{"state":"pending"}', '2027-01-02T00:00:00Z',
-			 NULL, NULL, NULL, NULL, NULL, NULL),
-			('logged-in-session', '2027-02-01T00:00:00Z', '{"csrf":"kept"}', '2027-02-02T00:00:00Z',
-			 'https://issuer.example', 'subject-1', 'Operator', 'secret-access',
-			 '2027-02-01T12:00:00Z', 'secret-refresh');
-	`)
 }

@@ -64,8 +64,8 @@ py_test(
     env = {"EROFS_CLOSURE": "$(rlocationpath @trixie_erofs_utils//:flat)"},
     deps = [
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -75,8 +75,8 @@ py_test(
     data = [":home_prepare"],
     deps = [
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )

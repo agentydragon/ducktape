@@ -22,11 +22,11 @@ images:
     newTag: devel-20261104155227-2cb32f0 # {"$imagepolicy": "flux-system:agentplane-runner-gateway:tag"}
   # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating Sandboxes.
   - name: git.allegedly.works/ducktape-ci/environment-tools
-    newTag: devel-20261105074258-9f92562 # {"$imagepolicy": "flux-system:environment-tools:tag"}
+    newTag: devel-20261105214211-e683dc1 # {"$imagepolicy": "flux-system:environment-tools:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
-    newTag: devel-20261105073930-9f92562 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
+    newTag: devel-20261105213906-e683dc1 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
-    newTag: devel-20261105073924-9f92562 # {"$imagepolicy": "flux-system:agentplane-sandbox-build:tag"}
+    newTag: devel-20261105213915-e683dc1 # {"$imagepolicy": "flux-system:agentplane-sandbox-build:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar
     newTag: devel-20261104035139-3b6893a # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
   # Publication bootstrap: unused until the separate MCP edge cutover.
@@ -40,7 +40,7 @@ images:
     newTag: devel-20261104155213-2cb32f0 # {"$imagepolicy": "flux-system:agentplane-history-service:tag"}
   # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating VM Sandboxes.
   - name: git.allegedly.works/ducktape-ci/agentplane-environment-vm
-    newTag: devel-20261105074212-9f92562 # {"$imagepolicy": "flux-system:agentplane-environment-vm:tag"}
+    newTag: devel-20261105214230-e683dc1 # {"$imagepolicy": "flux-system:agentplane-environment-vm:tag"}
   # The `agentplane` command disk beside the VM guest and as an image volume in the environment Pod.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-disk
     newTag: devel-20261105043125-6a4bf53 # {"$imagepolicy": "flux-system:agentplane-runner-disk:tag"}

@@ -64,7 +64,6 @@ py_library(
         "//agentplane/grpc:serving",
         "//agentplane/history_service:client",
         "//agentplane/notification_service:notifications_pb2_grpc",
-        "//devinfra/bazel:runfiles",
         "//devinfra/testing:undeclared_outputs",
         "//util:db_url",
         "//util:net",
@@ -77,6 +76,7 @@ py_library(
         "@pypi//starlette",
         "@pypi//tenacity",
         "@pypi//uvicorn",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -109,13 +109,13 @@ py_library(
     deps = [
         ":browser_certificate",
         "//agentplane/app/frontend/serving/testing:image",
-        "//devinfra/bazel:runfiles",
         "//devinfra/oci",
         "//third_party/containers:nginx_unprivileged",
         "//util/testing:container_logs",
         "@pypi//h2",
         "@pypi//httpx",
         "@pypi//jinja2",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -124,8 +124,8 @@ py_library(
     srcs = ["history_probe.py"],
     data = ["history_probe.js"],
     deps = [
-        "//devinfra/bazel:runfiles",
         "@pypi//playwright",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -138,9 +138,9 @@ py_library(
         "//agentplane/app/frontend/testing:__pkg__",
     ],
     deps = [
-        "//devinfra/bazel:runfiles",
         "@pypi//playwright",
         "@pypi//pydantic",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -169,7 +169,6 @@ py_library(
         "//agentplane/runner_gateway/testing:gateway_process",
         "//agentplane/runner_gateway/testing:runner_server",
         "//agentplane/sandboxes/testing:kubernetes",
-        "//devinfra/bazel:runfiles",
         "//devinfra/testing:undeclared_outputs",
         "//util/testing:postgres",
         "//util/testing/frontend_visual:context",
@@ -177,6 +176,7 @@ py_library(
         "@pypi//playwright",
         "@pypi//protobuf",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )
 

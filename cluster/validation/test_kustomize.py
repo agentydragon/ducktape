@@ -1,14 +1,26 @@
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 import pytest_bazel
 import yaml
+from python.runfiles import Runfiles
 
 from cluster.validation.kustomize import flux_generated_kustomization, stage_artifact_copies
-from cluster.validation.tool_resolve import resolve_tool
-from devinfra.bazel.runfiles import get_required_path
+
+
+@pytest.fixture
+def image_pins(runfiles: Runfiles, tmp_path: Path) -> dict[str, Any]:
+    source = runfiles.root() / "ducktape/cluster/k8s/agentplane-staging/image-pins"
+    shutil.copytree(source, tmp_path / "image-pins")
+    return cast(dict[str, Any], yaml.safe_load((tmp_path / "image-pins/kustomization.yaml").read_text()))
+
+
+@pytest.fixture(scope="module")
+def kustomize(runfiles: Runfiles) -> Path:
+    return runfiles.root() / "multitool/tools/kustomize/kustomize"
 
 
 def test_flux_generated_kustomization_scans_like_kustomize_controller(tmp_path: Path) -> None:
@@ -64,12 +76,11 @@ def test_stage_artifact_copies_reject_unsafe_or_missing_paths(tmp_path: Path) ->
         stage_artifact_copies(repo_root, tmp_path / "artifact", [("@repo/missing.yaml", "@artifact/a.yaml")])
 
 
-def test_environment_tools_image_pin_reaches_every_sandbox_template_container(tmp_path: Path) -> None:
-    image_pins = get_required_path("_main/cluster/k8s/agentplane-staging/image-pins")
-    shutil.copytree(image_pins, tmp_path / "image-pins")
-    pins = yaml.safe_load((tmp_path / "image-pins/kustomization.yaml").read_text())
+def test_environment_tools_image_pin_reaches_every_sandbox_template_container(
+    image_pins: dict[str, Any], kustomize: Path, tmp_path: Path
+) -> None:
     environment_tools_image = "git.allegedly.works/ducktape-ci/environment-tools"
-    environment_tools_pin = next(image for image in pins["images"] if image["name"] == environment_tools_image)
+    environment_tools_pin = next(image for image in image_pins["images"] if image["name"] == environment_tools_image)
     (tmp_path / "kustomization.yaml").write_text(
         "apiVersion: kustomize.config.k8s.io/v1beta1\n"
         "kind: Kustomization\n"
@@ -90,23 +101,18 @@ def test_environment_tools_image_pin_reaches_every_sandbox_template_container(tm
         "        - name: codex-executor\n"
         f"          image: {environment_tools_image}:unset\n"
     )
-    result = subprocess.run(
-        [str(resolve_tool("kustomize", "multitool/tools/kustomize/kustomize")), "build", str(tmp_path)],
-        capture_output=True,
-        check=False,
-    )
+    result = subprocess.run([kustomize, "build", tmp_path], capture_output=True, check=False)
     assert result.returncode == 0, result.stderr.decode()
     [template] = yaml.safe_load_all(result.stdout)
     images = [container["image"] for container in template["spec"]["pod"]["spec"]["containers"]]
     assert images == [f"{environment_tools_image}:{environment_tools_pin['newTag']}"] * 2
 
 
-def test_egress_sidecar_image_pin_reaches_launcher_relay_template(tmp_path: Path) -> None:
-    image_pins = get_required_path("_main/cluster/k8s/agentplane-staging/image-pins")
-    shutil.copytree(image_pins, tmp_path / "image-pins")
-    pins = yaml.safe_load((tmp_path / "image-pins/kustomization.yaml").read_text())
+def test_egress_sidecar_image_pin_reaches_launcher_relay_template(
+    image_pins: dict[str, Any], kustomize: Path, tmp_path: Path
+) -> None:
     sidecar_image = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
-    sidecar_pin = next(image for image in pins["images"] if image["name"] == sidecar_image)
+    sidecar_pin = next(image for image in image_pins["images"] if image["name"] == sidecar_image)
     (tmp_path / "kustomization.yaml").write_text(
         "apiVersion: kustomize.config.k8s.io/v1beta1\n"
         "kind: Kustomization\n"
@@ -130,11 +136,7 @@ def test_egress_sidecar_image_pin_reaches_launcher_relay_template(tmp_path: Path
             }
         )
     )
-    result = subprocess.run(
-        [str(resolve_tool("kustomize", "multitool/tools/kustomize/kustomize")), "build", str(tmp_path)],
-        capture_output=True,
-        check=False,
-    )
+    result = subprocess.run([kustomize, "build", tmp_path], capture_output=True, check=False)
     assert result.returncode == 0, result.stderr.decode()
     [policy] = yaml.safe_load_all(result.stdout)
     relay = policy["spec"]["rules"][0]["context"][0]["variable"]["value"]

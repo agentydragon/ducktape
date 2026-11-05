@@ -5,19 +5,19 @@ import subprocess
 from pathlib import Path
 
 import pytest_bazel
-
-from devinfra.bazel.runfiles import get_required_path
+from python.runfiles import Runfiles
 
 
 def test_environment_disk_holds_the_executables(tmp_path: Path) -> None:
+    runfiles_root = Runfiles.CreateOrRaise().root()
     subprocess.run(
         [
-            get_required_path("_main/devinfra/erofs/erofs_tool_bin"),
-            get_required_path(os.environ["EROFS_CLOSURE"]),
+            (runfiles_root / "ducktape/devinfra/erofs/erofs_tool_bin"),
+            (runfiles_root / os.environ["EROFS_CLOSURE"]),
             "fsck.erofs",
             f"--extract={tmp_path}",
             "--preserve-perms",
-            get_required_path("_main/agentplane/env/images/runner.img"),
+            (runfiles_root / "ducktape/agentplane/env/images/runner.img"),
         ],
         check=True,
     )

@@ -9,8 +9,7 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
-
-from devinfra.bazel.runfiles import get_required_path
+from python.runfiles import Runfiles
 
 
 @dataclass
@@ -20,10 +19,11 @@ class Harness:
     codex: Path
     staging: Path
     environment: dict[str, str]
+    runfiles: Runfiles
 
     def restic(self, *arguments: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [get_required_path("_main/third_party/restic/restic_bin"), *arguments],
+            [self.runfiles.root() / "ducktape/third_party/restic/restic_bin", *arguments],
             env=self.environment,
             check=True,
             capture_output=True,
@@ -31,13 +31,14 @@ class Harness:
         )
 
     def backup(self, *, check: bool = True) -> subprocess.CompletedProcess[str]:
+        runfiles_root = self.runfiles.root()
         return subprocess.run(
             [
                 "/bin/bash",
-                get_required_path("_main/nix/home/services/session_backup.sh"),
-                get_required_path("_main/third_party/restic/restic_bin"),
+                (runfiles_root / "ducktape/nix/home/services/session_backup.sh"),
+                (runfiles_root / "ducktape/third_party/restic/restic_bin"),
                 sys.executable,
-                get_required_path("_main/nix/home/services/snapshot_sqlite.py"),
+                (runfiles_root / "ducktape/nix/home/services/snapshot_sqlite.py"),
                 str(self.home),
                 str(self.claude),
                 str(self.codex),
@@ -55,7 +56,7 @@ class Harness:
 
 
 @pytest.fixture
-def harness(tmp_path: Path) -> Harness:
+def harness(tmp_path: Path, runfiles: Runfiles) -> Harness:
     home = tmp_path / "home"
     claude, codex = home / ".claude", home / ".codex"
     claude.mkdir(parents=True)
@@ -71,7 +72,7 @@ def harness(tmp_path: Path) -> Harness:
         "RUNTIME_DIRECTORY": str(runtime),
     }
     environment.pop("RESTIC_PASSWORD", None)
-    return Harness(home, claude, codex, home / ".local/state/ducktape/ai-session-backup-sqlite", environment)
+    return Harness(home, claude, codex, home / ".local/state/ducktape/ai-session-backup-sqlite", environment, runfiles)
 
 
 def test_restores_raw_tree_and_live_wal_database(harness: Harness, tmp_path: Path) -> None:

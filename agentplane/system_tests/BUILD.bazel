@@ -32,5 +32,6 @@ py_library(
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",
         "@pypi//pytest",
+        "@rules_python//python/runfiles",
     ],
 )

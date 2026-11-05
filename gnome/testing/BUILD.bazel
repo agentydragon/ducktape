@@ -10,12 +10,12 @@ py_library(
     data = [":fake_daemon_js"],
     visibility = ["//visibility:public"],
     deps = [
-        "//devinfra/bazel:runfiles",
         "//devinfra/testing:output_writer",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//docker",
         "@pypi//pillow",
         "@pypi//testcontainers",
+        "@rules_python//python/runfiles",
     ],
 )
 

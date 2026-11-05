@@ -8,18 +8,18 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 
 _NAME = "piraeus-lvm-metrics"
 _METRICS_PORT_NAME = "metrics"
 _METRICS_PORT = 9100
 _TEXTFILE_PATH = "/textfiles/lvm_thin_pool.prom"
-_COLLECTOR_SCRIPT = get_required_path(own_repo_rlocation("cluster/cdk8s/piraeus-lvm-metrics.sh")).read_text()
+_COLLECTOR_SCRIPT = (Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/piraeus-lvm-metrics.sh").read_text()
 
 
 def _validate_lvm_name(name: str, *, field: str) -> None:

@@ -5,8 +5,8 @@ import subprocess
 from pathlib import Path
 
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 _EXPECTED_OUTPUTS = {
@@ -19,7 +19,7 @@ _EXPECTED_OUTPUTS = {
 
 
 def test_independent_renders_are_byte_identical(tmp_path: Path) -> None:
-    renderer = get_required_path(os.environ["K3S_RENDERER_RLOCATION"])
+    renderer = Runfiles.CreateOrRaise().root() / os.environ["K3S_RENDERER_RLOCATION"]
     outputs = []
     for attempt in range(2):
         output = tmp_path / str(attempt)

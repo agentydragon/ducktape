@@ -34,9 +34,9 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixture
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.output_writer import BoundTestOutputs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -44,20 +44,19 @@ from gnome.test_image import gnome_shell_test
 from gnome.testing.fake_daemon import fake_daemon
 from gnome.testing.session import GnomeMenuCapture, GnomeSession, gnome_session, string_reply, wait_until
 
-_EXTENSION_ZIP = "_main/aiquota/gnome/aiquota.zip"
+_EXTENSION_ZIP = "ducktape/aiquota/gnome/aiquota.zip"
 _EXTENSION_UUID = "aiquota@allegedly.works"
 
 _TEST_DBUS_DEST = "works.allegedly.AiQuotaTest"
 _TEST_DBUS_PATH = "/works/allegedly/AiQuotaTest"
 _FAKE_DBUS_DEST = "works.allegedly.AiQuotaFake"
 _FAKE_DBUS_PATH = "/works/allegedly/AiQuotaFake"
-_FAKE_DBUS_SERVICE = "_main/aiquota/gnome/fake-daemon.js"
+_FAKE_DBUS_SERVICE = "ducktape/aiquota/gnome/fake-daemon.js"
 
 
-def test_extension_metadata_supports_gnome_50() -> None:
+def test_extension_metadata_supports_gnome_50(extension_dir: Path) -> None:
     """Keep the distributed zip loadable by wyrm2's GNOME Shell generation."""
-    with zipfile.ZipFile(get_required_path(_EXTENSION_ZIP)) as extension_zip:
-        metadata = json.loads(extension_zip.read("metadata.json"))
+    metadata = json.loads((extension_dir / "metadata.json").read_text())
 
     assert "50" in metadata["shell-version"]
 
@@ -68,20 +67,21 @@ def gnome_shell_test_image() -> str:
 
 
 @pytest.fixture(scope="module")
-def extension_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+def extension_dir(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Unzip the distribution zip into a single dir for bind-mounting."""
     dest = tmp_path_factory.mktemp("claude-quota-ext")
-    with zipfile.ZipFile(get_required_path(_EXTENSION_ZIP)) as z:
+    with zipfile.ZipFile(runfiles.root() / _EXTENSION_ZIP) as z:
         z.extractall(dest)
     return dest
 
 
 @pytest.fixture(scope="module")
-def fixture_json_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+def fixture_json_dir(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Materialize the normal API view payload for the GNOME JS test hook."""
     dest = tmp_path_factory.mktemp("ai-quota-fixtures")
+    runfiles_root = runfiles.root()
     for fixture_name in FIXTURE_NAMES:
-        src = get_required_path(f"_main/aiquota/testing/fixtures/{fixture_name}.yaml")
+        src = runfiles_root / f"ducktape/aiquota/testing/fixtures/{fixture_name}.yaml"
         data = load_quota_view_fixture(src)
         (dest / f"{fixture_name}.json").write_text(json.dumps(data, indent=2) + "\n")
     return dest
@@ -89,14 +89,18 @@ def fixture_json_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="module")
 def session(
-    gnome_shell_test_image: str, extension_dir: Path, fixture_json_dir: Path, tmp_path_factory: pytest.TempPathFactory
+    runfiles: Runfiles,
+    gnome_shell_test_image: str,
+    extension_dir: Path,
+    fixture_json_dir: Path,
+    tmp_path_factory: pytest.TempPathFactory,
 ) -> Iterator[GnomeSession]:
     with gnome_session(
         gnome_shell_test_image,
         extension_dir=extension_dir,
         extension=_EXTENSION_UUID,
         fixture_dir=fixture_json_dir,
-        fake_daemon_script=get_required_path(_FAKE_DBUS_SERVICE),
+        fake_daemon_script=runfiles.root() / _FAKE_DBUS_SERVICE,
         screenshot_dir=tmp_path_factory.mktemp("gnome-renders"),
         destination=_TEST_DBUS_DEST,
         object_path=_TEST_DBUS_PATH,

@@ -23,11 +23,6 @@ from more_itertools import one
 
 from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_config
 from cluster.scripts import nebula_mesh
-from devinfra.bazel.runfiles import get_required_path
-
-
-def _locate(relative: str) -> Path:
-    return get_required_path(f"_main/{relative}")
 
 
 @pytest.fixture(scope="module")
@@ -37,12 +32,10 @@ def ssh_config() -> ssh_mcp_config.SshMcpConfig:
 
 @pytest.fixture(scope="module")
 def ssh_resources(
-    scratch_app_factory: Callable[[], App], ssh_config: ssh_mcp_config.SshMcpConfig
+    scratch_app_factory: Callable[[], App], ssh_config: ssh_mcp_config.SshMcpConfig, nebula_roster: nebula_mesh.Mesh
 ) -> list[dict[str, Any]]:
     chart = Chart(scratch_app_factory(), "test")
-    ssh_mcp_backend.SshMcp(
-        chart, ssh_mcp_config.NAME, config=ssh_config, mesh=nebula_mesh.load(_locate("nebula-mesh.json"))
-    )
+    ssh_mcp_backend.SshMcp(chart, ssh_mcp_config.NAME, config=ssh_config, mesh=nebula_roster)
     return Cdk8sTesting.synth(chart)
 
 

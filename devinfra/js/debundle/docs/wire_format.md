@@ -260,7 +260,8 @@ edges with caller/target bodies and merged conditions. The analyzer verifies
 that those edges connect to the root body. This DTO is output-only; it cannot
 be loaded as engine authority.
 Staged analysis artifacts instead carry the engine-owned, externally tagged
-`BindingEffectCoverage` fact. That field is required: older or incomplete
+saved `BindingEffectCoverage` fact. Its root binding uses the same saved
+symbol and context ordinal as other staged facts. That field is required:
 artifacts missing it fail to decode, and the normal analysis-engine and source
 provenance checks still apply. `legacy_execution` is a temporary decision for
 owners outside ordered-root execution, not evidence of covered operations.
@@ -371,7 +372,7 @@ resolver assigned to the chunk. This works because both sides agree
 that _every name in this file is a chunk-top-level binding_ — the
 ctxt is determined by that role, not by the wire data.
 
-## Why pre-filter facts (`StatementFacts`) aren't on the wire
+## Why pre-filter facts (`StatementFacts`) are absent from public reports
 
 `StatementFacts` is **pre-filter** raw analyzer output —
 `StatementFactsCollector::visit_ident` records every `Ident::to_id()`
@@ -380,11 +381,13 @@ with inner-scope marks. Those inner-scope `Id`s are `Globals`-bound:
 their `ctxt: u32` is meaningful only inside the SWC `Globals` that
 minted them.
 
-We don't serialize them. An `Atom`-only shape that reconstructs `Id`s via
-`top_level_id(name, fresh_mark)` is unsound under shadowing (a closure-local
-`counter` would collide with a top-level `counter`); a SWC hygiene-snapshot
-replay and pre-filtering inner-scope reads don't pay for themselves. See
-`docs/lessons_learned/cross_process_stage_b.md`.
+Public reports omit these raw facts. Staged analysis artifacts do retain them
+through explicit saved data: every SWC binding is represented by its symbol and
+a `ContextOrdinals` index, then restored against the consumer's freshly parsed
+modules. This preserves closure-local shadowing without serializing a
+process-local context number. Reconstructing all bindings as
+`top_level_id(name, fresh_mark)` would make a closure-local `counter` collide
+with a top-level `counter`. See `docs/lessons_learned/cross_process_stage_b.md`.
 
 ## Reader audiences
 

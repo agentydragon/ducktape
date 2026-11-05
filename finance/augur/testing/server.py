@@ -9,7 +9,8 @@ from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
-from devinfra.bazel.runfiles import get_required_path
+from python.runfiles import Runfiles
+
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.net import listen_tcp
 
@@ -23,11 +24,11 @@ def run_server(
         (undeclared_outputs_dir() / "augur-server.log").open("w") as server_log,
         subprocess.Popen(
             [
-                str(binary),
+                binary,
                 "--fd",
                 str(listener.socket.fileno()),
                 "--config",
-                str(get_required_path("_main/finance/augur/api/testdata/config.yaml")),
+                Runfiles.CreateOrRaise().root() / "ducktape/finance/augur/api/testdata/config.yaml",
                 *args,
             ],
             env={

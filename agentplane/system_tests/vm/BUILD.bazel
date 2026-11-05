@@ -12,7 +12,7 @@ load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//agentplane/system_tests/k3s:defs.bzl", "K3S_EXEC_PROPERTIES")
 load("//devinfra/erofs:defs.bzl", "erofs_image")
-load("//devinfra/oci:defs.bzl", "oci_image_manifest")
+load("//devinfra/oci:defs.bzl", "oci_image_group")
 
 package(
     default_testonly = True,
@@ -88,13 +88,13 @@ oci_image(
     user = "107:107",
 )
 
-oci_image_manifest(
+oci_image_group(
     name = "vm_runner_disk_image",
     images = {":test_runner_disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"},
     visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
-oci_image_manifest(
+oci_image_group(
     name = "vm_images",
     images = {
         "@kubevirt_virt_api_linux_amd64": KUBEVIRT_VIRT_API_REFERENCE,
@@ -176,8 +176,8 @@ py_library(
     deps = [
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/k3s:release_manifests",
-        "//devinfra/bazel:runfiles",
         "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 

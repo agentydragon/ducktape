@@ -33,7 +33,6 @@ py_library(
         ":cases",
         ":prompts",
         ":result_types",
-        "//devinfra/bazel:runfiles",
         "//grocy_mcp:client",
         "//grocy_mcp:mcp_types",
         "//grocy_mcp:server",  # transitively provides server_instructions.md via runfiles
@@ -45,6 +44,7 @@ py_library(
         "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//httpx",
         "@pypi//uvicorn",
+        "@rules_python//python/runfiles",
     ],
 )
 

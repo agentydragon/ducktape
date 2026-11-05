@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 from playwright.async_api import async_playwright, expect
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.output_writer import BoundTestOutputs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from grafana.visual_tests.recorded import replay_query, validate_fixture
@@ -29,10 +29,11 @@ pytest_plugins = ("devinfra.testing.pytest_outputs",)
 
 @pytest.mark.asyncio
 async def test_dashboard_visual(tmp_path: Path, test_outputs: BoundTestOutputs) -> None:
-    dashboard_path = get_required_path(os.environ["GRAFANA_DASHBOARD_RLOCATION"])
+    root = Runfiles.CreateOrRaise().root()
+    dashboard_path = root / os.environ["GRAFANA_DASHBOARD_RLOCATION"]
     dashboard = json.loads(dashboard_path.read_text())
     fixture_path = os.environ["GRAFANA_FIXTURE_RLOCATION"]
-    fixture = json.loads(get_required_path(fixture_path).read_text())
+    fixture = json.loads((root / fixture_path).read_text())
     validate_fixture(dashboard, fixture)
     with grafana_dashboard(
         tmp_path, dashboard_path, "", render_fixture=True, variables=fixture.get("variables", {})

@@ -386,7 +386,6 @@ py_test(
         "//agentplane/proto:identity_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/testing:scripted_model",
-        "//devinfra/bazel:runfiles",
         "//devinfra/oci",
         "//third_party/containers:debian_slim",
         "//util/testing:container_logs",
@@ -394,6 +393,7 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -420,7 +420,6 @@ py_test(
         "//agentplane/history_service:session_ingress_pb2",
         "//agentplane/history_service:session_ingress_pb2_grpc",
         "//agentplane/proto:session_pb2",
-        "//devinfra/bazel:runfiles",
         "//devinfra/oci",
         "//devinfra/testing:undeclared_outputs",
         "//third_party/containers:debian_slim",
@@ -432,5 +431,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//testcontainers",
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@rules_python//python/runfiles",
     ],
 )

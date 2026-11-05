@@ -9,10 +9,9 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
-
-HOME_PREPARE = get_required_path("_main/agentplane/env/images/home_prepare")
+HOME_PREPARE = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/env/images/home_prepare"
 
 
 def _prepare(legacy_home: Path, agent_home: Path) -> subprocess.CompletedProcess[str]:

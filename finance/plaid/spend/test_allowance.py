@@ -9,8 +9,8 @@ from zoneinfo import ZoneInfo
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from finance.plaid.spend.allowance import (
     AllOf,
     AllowancePolicy,
@@ -858,11 +858,15 @@ def test_one_off_scope_is_validated_from_its_condition():
         AllowancePolicy.model_validate(unconfigured)
 
 
-def test_configuration_preserves_financial_yaml_decimal_tokens(tmp_path: Path) -> None:
-    example = get_required_path("_main/finance/plaid/spend/one-off-configuration.yaml")
+@pytest.fixture(scope="module")
+def one_off_configuration(runfiles: Runfiles) -> Path:
+    return runfiles.root() / "ducktape/finance/plaid/spend/one-off-configuration.yaml"
+
+
+def test_configuration_preserves_financial_yaml_decimal_tokens(one_off_configuration: Path, tmp_path: Path) -> None:
     policy = tmp_path / "policy.yaml"
     policy.write_text(
-        example.read_text()
+        one_off_configuration.read_text()
         + """
 sustainability:
   portfolio:
@@ -887,15 +891,14 @@ sustainability:
     assert correction.value_multiplier == Decimal("1.00000000000000000000000000001")
 
 
-def test_one_off_yaml_round_trip_and_configuration_view():
-    path = get_required_path("_main/finance/plaid/spend/one-off-configuration.yaml")
-    loaded = load_configuration(path)
+def test_one_off_yaml_round_trip_and_configuration_view(one_off_configuration: Path):
+    loaded = load_configuration(one_off_configuration)
     parsed = loaded.allowance
     assert parsed is not None
     assert [rule.id for rule in parsed.rules] == ["example-hotel-2026-06-04", None]
     assert [rule.scope for rule in parsed.rules] == [RuleScope.ONE_OFF, RuleScope.PATTERN]
     assert SpendConfiguration.model_validate(loaded.model_dump(mode="json")) == loaded
-    assert load_configuration(path) == loaded
+    assert load_configuration(one_off_configuration) == loaded
     view = SpendConfigurationView(
         time_zone=loaded.time_zone.key,
         cards=[],

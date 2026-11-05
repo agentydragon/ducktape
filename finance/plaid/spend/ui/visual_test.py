@@ -11,6 +11,7 @@ import json
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal
 
 import pytest
@@ -19,8 +20,8 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from playwright.async_api import Locator, Page, Playwright, Route, ViewportSize, expect
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.output_writer import BoundTestOutputs
 from finance.plaid.spend.allowance import EstimatePeriodId
 from finance.plaid.spend.models import SpendConfigurationView, SpendTransactionsView, SpendView
@@ -35,8 +36,6 @@ from util.testing.frontend_visual.context import deterministic_browser_context
 # pytest_plugins loads util.playwright by name; Gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
 pytest_plugins = ("util.playwright",)
-
-_UI_DIR = get_required_path("_main/finance/plaid/spend/ui/dist/index.html").parent
 
 
 _FROZEN_NOW_MS = int(datetime(2026, 10, 15, tzinfo=UTC).timestamp() * 1000)
@@ -124,12 +123,13 @@ async def _expect_tooltip_hidden(tooltip: Locator) -> None:
 
 
 @pytest.fixture(scope="module")
-def dashboard_url() -> Iterator[str]:
+def dashboard_url(runfiles: Runfiles) -> Iterator[str]:
+    ui_dir = Path(str(runfiles.root() / "ducktape/finance/plaid/spend/ui/dist/index.html")).parent
     app = FastAPI()
 
     @app.get("/")
     def index() -> FileResponse:
-        return FileResponse(_UI_DIR / "index.html")
+        return FileResponse(ui_dir / "index.html")
 
     app.add_api_route("/api/v1/view", dashboard.spend_view, methods=["GET"], response_model=SpendView)
     app.add_api_route(
@@ -154,7 +154,7 @@ def dashboard_url() -> Iterator[str]:
     def sustainability_windows() -> SustainabilityDashboard:
         return sustainability.dashboard(*(sustainability.window(days) for days in (30, 90, 365)))
 
-    app.mount("/static", StaticFiles(directory=_UI_DIR))
+    app.mount("/static", StaticFiles(directory=ui_dir))
     with serve_app_sync(app) as url:
         yield url
 
@@ -1254,9 +1254,9 @@ async def test_contextual_help_touch(touch_page: Page, dashboard_url: str) -> No
     await _expect_tooltip_hidden(tooltip)
 
 
-async def test_accordion_readiness_ignores_unrelated_animations(page: Page) -> None:
+async def test_accordion_readiness_ignores_unrelated_animations(page: Page, runfiles: Runfiles) -> None:
     await page.set_content(
-        get_required_path("_main/finance/plaid/spend/ui/accordion-readiness-fixture.html").read_text()
+        (runfiles.root() / "ducktape/finance/plaid/spend/ui/accordion-readiness-fixture.html").read_text()
     )
     await _expand_accordion(page.get_by_role("button", name="Expand"))
     await expect(page.locator("#panel")).to_have_css("height", "120px")

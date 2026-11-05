@@ -7,14 +7,10 @@ from hashlib import md5
 from typing import Any
 
 import pytest_bazel
+from python.runfiles import Runfiles
 from sqlalchemy import create_engine, text
 
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
-
 pytest_plugins = ("util.testing.postgres_fixtures",)
-
-_SAMPLE_SQL = get_required_path(own_repo_rlocation("x/ai_sub_value/archive-token-sample.sql")).read_text()
-_PARTIAL_SQL = get_required_path(own_repo_rlocation("x/ai_sub_value/archive-partial-records.sql")).read_text()
 
 _DDL = (
     """CREATE TEMP TABLE sessions (
@@ -70,8 +66,11 @@ _DDL = (
 
 
 def test_archive_usage_sql_reconstructs_partial_versions_without_counter_multiplication(
-    postgres_admin_url: str,
+    postgres_admin_url: str, runfiles: Runfiles
 ) -> None:
+    root = runfiles.root()
+    sample_sql = (root / "ducktape/x/ai_sub_value/archive-token-sample.sql").read_text()
+    partial_sql = (root / "ducktape/x/ai_sub_value/archive-partial-records.sql").read_text()
     engine = create_engine(postgres_admin_url)
     try:
         with engine.connect() as connection, connection.begin():
@@ -178,7 +177,7 @@ def test_archive_usage_sql_reconstructs_partial_versions_without_counter_multipl
                  20, 6, 3, 1, 1, 31)"""
             )
 
-            samples = [row[0] for row in connection.exec_driver_sql(_SAMPLE_SQL)]
+            samples = [row[0] for row in connection.exec_driver_sql(sample_sql)]
             assert [sample["ordinal"] for sample in samples] == [0, 1, 2, 3, 4]
             assert {sample["version_status"] for sample in samples} == {"partial"}
             assert {sample["version_parse_issue_count"] for sample in samples} == {1}
@@ -199,7 +198,7 @@ def test_archive_usage_sql_reconstructs_partial_versions_without_counter_multipl
             assert "response-secret-101" not in repr(samples)
             assert "message-secret-101" not in repr(samples)
 
-            reports = {row[0]["issue"]: row[0] for row in connection.exec_driver_sql(_PARTIAL_SQL)}
+            reports = {row[0]["issue"]: row[0] for row in connection.exec_driver_sql(partial_sql)}
             assert set(reports) == {"readable", "JSONDecodeError"}
             assert reports["readable"]["machine"] == "machine-a"
             assert reports["readable"]["harness"] == "claude"
