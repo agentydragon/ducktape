@@ -19,8 +19,8 @@ mod validation;
 
 pub use assignment_analysis::{
     AssignmentAnalysis, AssignmentAnalysisBuildError, AtomicGroupPlacementClass,
-    AtomicGroupPlacementObligation, CandidateAssessmentSelection, CandidateEvaluation,
-    CandidateRelocationAssessment, CandidateRelocationAssessmentReport, CandidateRelocationStatus,
+    AtomicGroupPlacementObligation, CandidateEvaluation, CandidateRelocationAssessment,
+    CandidateRelocationAssessmentReport, CandidateRelocationStatus,
     CrossDestinationRebindObligation, RejectedAssignment, SemanticOrderSccObligation,
     StructuralPlacementAssessment, StructuralPlacementCoverage, StructuralPlacementStatus,
     ValidatedAssignment,
