@@ -24913,5 +24913,210 @@
     ]
   },
   "github_snapshot_assembled_at_utc": "2026-11-04T13:01:12Z",
-  "publication_privacy": "Structured public-source timings, repository/head identities and source links only. No raw logs/profiles, worker IDs, bytestream addresses or credentials."
+  "publication_privacy": "Structured public-source timings, repository/head identities and source links only. No raw logs/profiles, worker IDs, bytestream addresses or credentials.",
+  "post_snapshot_followup": {
+    "admin_snapshot": {
+      "checked_at_utc": "2026-11-05T08:00:38.025331+00:00",
+      "get_execution_nodes_http_status": 200,
+      "get_usage_http_status": 200,
+      "identity_check_http_status": 500,
+      "identity_check_result": "token_refresh_failed; no retry"
+    },
+    "executor_pools": [
+      {
+        "assignable_cpu_cores": 4.0,
+        "assignable_memory_gib": 8.0,
+        "is_default": false,
+        "pool": "wyrm2-kvm",
+        "provider_fleet": false
+      },
+      {
+        "assignable_cpu_cores": 4.0,
+        "assignable_memory_gib": 14.0,
+        "is_default": false,
+        "pool": "wyrm2-kvm-vm",
+        "provider_fleet": false
+      }
+    ],
+    "hosted_cpu_usage": {
+      "complete_utc_days": 4,
+      "cpu_core_days": 183.514377309329,
+      "excluded_partial_utc_day": "2026-11-05",
+      "excludes_self_hosted": true,
+      "mean_busy_cores_calculation": "total_hosted_cpu_nanos / 1e9 / (complete_utc_days * 86400)",
+      "mean_busy_cores_over_period": 45.878594327332,
+      "period_end_utc_inclusive": "2026-11-04",
+      "period_start_utc": "2026-11-01",
+      "rbe_cpu_hours": 3925.981940589,
+      "rbe_cpu_nanos": 14133534986120000,
+      "runner_cpu_hours": 478.363114835,
+      "runner_cpu_nanos": 1722107213406000,
+      "total_hosted_cpu_hours": 4404.345055424,
+      "total_hosted_cpu_nanos": 15855642199526000,
+      "daily": [
+        {
+          "utc_day": "2026-11-01",
+          "hosted_rbe_cpu_nanos": 3376628272698000,
+          "hosted_runner_cpu_nanos": 276349009777000,
+          "hosted_rbe_cpu_hours": 937.9522979716667,
+          "hosted_runner_cpu_hours": 76.76361382694445,
+          "mean_busy_cores": 42.27982965827546
+        },
+        {
+          "utc_day": "2026-11-02",
+          "hosted_rbe_cpu_nanos": 6076085608444000,
+          "hosted_runner_cpu_nanos": 656374347666000,
+          "hosted_rbe_cpu_hours": 1687.801557901111,
+          "hosted_runner_cpu_hours": 182.326207685,
+          "mean_busy_cores": 77.92199023275462
+        },
+        {
+          "utc_day": "2026-11-03",
+          "hosted_rbe_cpu_nanos": 1176697593151000,
+          "hosted_runner_cpu_nanos": 193006734353000,
+          "hosted_rbe_cpu_hours": 326.86044254194445,
+          "hosted_runner_cpu_hours": 53.61298176472222,
+          "mean_busy_cores": 15.85305934611111
+        },
+        {
+          "utc_day": "2026-11-04",
+          "hosted_rbe_cpu_nanos": 3504123511827000,
+          "hosted_runner_cpu_nanos": 596377121610000,
+          "hosted_rbe_cpu_hours": 973.3676421741667,
+          "hosted_runner_cpu_hours": 165.66031155833335,
+          "mean_busy_cores": 47.4594980721875
+        }
+      ],
+      "scope": "Entire authenticated organization across repositories; actual reported CPU, not peak concurrency, reservation, provider fleet size or quota."
+    },
+    "measurement_boundary": {
+      "frozen_base": "46ac6921a1bb953861bdb6104a4963700f07a059",
+      "frozen_base_is_exact_latest_devel": false
+    },
+    "queue_example": {
+      "action_mnemonic": "Rustc",
+      "action_target": "//devinfra/js/debundle:cli",
+      "boundary": "One targeted run; not representative of fleet-wide behavior and no guaranteed latency gain.",
+      "execution_completed_at_utc": "2026-11-05T05:40:54.539462Z",
+      "execution_seconds": 20.145,
+      "execution_started_at_utc": "2026-11-05T05:40:34.394284Z",
+      "full_critical_path_seconds": 130.98,
+      "new_physical_action": true,
+      "one_targeted_run_only": true,
+      "output_kind": "rlib",
+      "queue_to_worker_seconds": 35.584521,
+      "queued_at_utc": "2026-11-05T05:39:58.316744Z",
+      "worker_started_at_utc": "2026-11-05T05:40:33.901265Z",
+      "invocation_url": "https://app.buildbuddy.io/invocation/c76a9967-64f9-50ea-8e7c-859062f1dc40",
+      "input_fetch_seconds": 0.221,
+      "worker_wait_share_of_action_critical_path": 0.271679042601924,
+      "worker_wait_share_is_whole_pr_saving": false
+    },
+    "report": {
+      "canonical_url": "https://github.com/agentydragon/ducktape/blob/77cd7fd5188d3a845f6a1d651589eb11fe27893f/devinfra/js/debundle/debug/2026_11_04_production_rust_boundaries.md",
+      "merge_commit": "77cd7fd5188d3a845f6a1d651589eb11fe27893f"
+    },
+    "rust_e2e_comparison": {
+      "all_arms_passed_targets": 190,
+      "arms": 7,
+      "combined_elapsed_range_seconds": [
+        227.241,
+        229.03
+      ],
+      "combined_elapsed_seconds": [
+        229.03,
+        227.241
+      ],
+      "combined_median_elapsed_seconds": 228.1355,
+      "compiler_actions_avoided_per_combined_arm": 11,
+      "compiler_actions_per_combined_arm": 127,
+      "compiler_actions_per_control_arm": 138,
+      "control_elapsed_range_seconds": [
+        219.914,
+        263.127
+      ],
+      "control_elapsed_seconds": [
+        263.127,
+        234.074,
+        219.914
+      ],
+      "control_median_elapsed_seconds": 234.074,
+      "elapsed_benefit_conclusion": "No reliable elapsed-time benefit in these arms.",
+      "same_roster": true
+    },
+    "schema_version": 1,
+    "inspected_source_devel_commit": "7fe51fd3cc159b7cecf1995eee15d5c0b4aa9a73",
+    "publication_scope": "Bounded follow-up only; historical PR-feedback population, statistics and window unchanged. No new performance experiments, infrastructure changes or goal resumption.",
+    "remaining_unknowns": [
+      "Effective organization-wide hosted CPU/concurrency allowance",
+      "Whether outer runners and RBE share that allowance",
+      "Fair-share, burst, regional and pool constraints",
+      "Provider scheduler cause of the selected 35.6s wait",
+      "Frequency and feedback reach of such waits in representative PRs"
+    ],
+    "next_diagnostic": "Read 20 recent PR invocations: identify recurring critical-path waits, independent ready work, overlapping executions and requested versus actual resources. Choose a matched coverage-preserving experiment only after that discriminator.",
+    "provider_contact": "Questions prepared; no message sent.",
+    "access_source": "SOPS-managed org admin key; decrypted in memory. No credential value or raw API response published.",
+    "configuration_at_inspected_source": {
+      "bazel_jobs_per_invocation": 50,
+      "default_outer_runner_requested_compute_units": 8,
+      "default_rbe_action_requested_compute_units": 3,
+      "requests_are_not_capacity_entitlement": true
+    },
+    "landed_dispositions": [
+      {
+        "pr": 14361,
+        "state": "MERGED",
+        "merge_commit": "76f14cd4f8bca5ab84e5e9d5ea0be3099be5b354",
+        "change": "Validated module-resolution cache",
+        "matched_later_query_seconds": {
+          "resolution_off": 36.506,
+          "validated_reuse": 3.298
+        },
+        "whole_pr_benefit": "unmeasured"
+      },
+      {
+        "pr": 14375,
+        "state": "MERGED",
+        "merge_commit": "f9847936c252d5c030d28efc87c7526c2d5dc2ca",
+        "change": "Native safe YAML loader",
+        "profiled_parser_seconds": {
+          "control": 13.527,
+          "candidate": 1.219
+        },
+        "whole_target_seconds": {
+          "control": 55.3,
+          "candidate": 68.4
+        },
+        "performance_invocation_url": "https://app.buildbuddy.io/invocation/23c992f5-5449-421b-9c58-2c37b9c9d7f4",
+        "whole_target_benefit": "not demonstrated; repeated JSII IPC remains a profile finding"
+      },
+      {
+        "pr": 14377,
+        "state": "MERGED",
+        "merge_commit": "1fd60ac8e313ea2e6590b3247f8bff7dff4b9c7b",
+        "change": "Native attribute fingerprinting",
+        "boundary": "Global Starlark fallback retained"
+      },
+      {
+        "pr": 14407,
+        "state": "MERGED",
+        "merge_commit": "d5a9c93b92c9f5d07c7e4042258894ada99dc4ff",
+        "change": "CLI fingerprint injection"
+      },
+      {
+        "pr": 14409,
+        "state": "MERGED",
+        "merge_commit": "77cd7fd5188d3a845f6a1d651589eb11fe27893f",
+        "change": "Artifact model boundary"
+      },
+      {
+        "pr": 14390,
+        "state": "OPEN",
+        "draft": true,
+        "change": "Prepared package-default hashing patch",
+        "boundary": "Not adopted or submitted upstream"
+      }
+    ]
+  }
 }
