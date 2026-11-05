@@ -136,12 +136,21 @@ _VM_RUNNER_DISK_IMAGE = {
     "//agentplane/system_tests/vm:test_runner_disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
 }
 
+def _merge_image_maps(*groups):
+    images = {}
+    for group in groups:
+        for image, reference in group.items():
+            if image in images:
+                fail("duplicate image target: " + image)
+            images[image] = reference
+    return images
+
 # Each preset explicitly owns the environment its selected scenarios need. Dispatcher failover
 # uses the pod preset in a dedicated suite because it mutates shared controller Deployments.
 _STACKS = {
     "pod": struct(fixture = _FIXTURE, vm = False, real_model = False, images = _HARNESSES_IMAGES),
     "deletion": struct(fixture = _FIXTURE, vm = False, real_model = False, images = _HARNESSES_IMAGES),
-    "mcp": struct(fixture = _MCP_FIXTURE, vm = False, real_model = False, images = _HARNESSES_IMAGES | _MCP_IMAGES),
+    "mcp": struct(fixture = _MCP_FIXTURE, vm = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _MCP_IMAGES)),
     "vm": struct(fixture = _VM_FIXTURE, vm = True, real_model = False, images = {}),
     "real_model": struct(fixture = _REAL_MODEL_FIXTURE, vm = False, real_model = True, images = _HARNESSES_IMAGES),
 }
@@ -182,8 +191,8 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
     if boot_evidence and stack != "vm":
         fail("boot_evidence requires the VM stack")
     config = _STACKS[stack]
-    fixture_images = _SERVICE_IMAGES | config.images
-    fixture_images |= _DELETION_TEST_DISK_IMAGE if stack == "deletion" else _VM_RUNNER_DISK_IMAGE if config.vm else _RUNNER_DISK_IMAGE
+    runner_disk_image = _DELETION_TEST_DISK_IMAGE if stack == "deletion" else _VM_RUNNER_DISK_IMAGE if config.vm else _RUNNER_DISK_IMAGE
+    fixture_images = _merge_image_maps(_SERVICE_IMAGES, config.images, runner_disk_image)
     images = {"fixture": fixture_images, "pki": _PKI_IMAGES, "vm": {}, "guest": {}}
     data = [config.fixture, K3S_BINARY, _CERT_MANAGER_INSTALL, _TRUST_MANAGER_INSTALL, "//agentplane/crds"]
     env = {
@@ -199,7 +208,8 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         # Three 1.5 GiB guests boot alongside k3s services; request eight estimated compute units.
         properties["EstimatedComputeUnits"] = "8"
         images["vm"] = _VM_IMAGES
-        images["guest"] = _VM_GUEST_BOOT_IMAGE | (_VM_GUEST_ROOT_PROFILE_IMAGE if profile_guest else _VM_GUEST_ROOT_IMAGE)
+        guest_root_image = _VM_GUEST_ROOT_PROFILE_IMAGE if profile_guest else _VM_GUEST_ROOT_IMAGE
+        images["guest"] = _merge_image_maps(_VM_GUEST_BOOT_IMAGE, guest_root_image)
         data += ["@kubevirt_operator_bundle//file", "@kyverno_install//file"]
         env |= {
             "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
