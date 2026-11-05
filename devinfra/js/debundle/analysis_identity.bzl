@@ -75,9 +75,10 @@ def _analysis_identity_impl(ctx):
         dep.link_search_path_files,
         rust.all_files,
         cc.all_files,
-        cc.static_runtime_lib(feature_configuration = features),
-        cc.dynamic_runtime_lib(feature_configuration = features),
     ]
+    static_runtime = cc.static_runtime_lib(feature_configuration = features)
+    dynamic_runtime = cc.dynamic_runtime_lib(feature_configuration = features)
+    transitive.extend([static_runtime, dynamic_runtime])
     for library in dep.transitive_crates.to_list() + [crate]:
         transitive.extend([library.compile_data, library.data])
         files.extend(library.rustc_env_files)
@@ -104,16 +105,44 @@ def _analysis_identity_impl(ctx):
             if file == library.interface_library and library.dynamic_library:
                 files.append(library.dynamic_library)
     inputs = depset(files, transitive = transitive)
+    cached_inputs = depset(transitive = [
+        rust.all_files,
+        cc.all_files,
+        static_runtime,
+        dynamic_runtime,
+    ])
+    all_input_files = inputs.to_list()
+    all_paths = sorted([file.path for file in all_input_files])
+    cached_paths = sorted([file.path for file in cached_inputs.to_list()])
+    cached_path_set = {path: True for path in cached_paths}
+    all_path_set = {path: True for path in all_paths}
+    for path in cached_paths:
+        if path not in all_path_set:
+            fail("analysis identity cached toolchain input is missing from the full closure: {}".format(path))
+    non_cached_inputs = [file for file in all_input_files if file.path not in cached_path_set]
+
+    cached_manifest = ctx.actions.declare_file(ctx.label.name + ".toolchain.manifest.json")
+    cached_records = ctx.actions.declare_file(ctx.label.name + ".toolchain.records.json")
+    ctx.actions.write(cached_manifest, json.encode({"files": cached_paths}))
+    ctx.actions.run(
+        executable = ctx.executable._hasher,
+        arguments = ["cache", cached_manifest.path, cached_records.path],
+        inputs = depset([cached_manifest], transitive = [cached_inputs]),
+        outputs = [cached_records],
+        mnemonic = "DebundleAnalysisIdentityToolchain",
+    )
+
     manifest = ctx.actions.declare_file(ctx.label.name + ".manifest.json")
     output = ctx.actions.declare_file(ctx.label.name + ".rs")
     ctx.actions.write(manifest, json.encode({
         "config": config,
-        "files": sorted([file.path for file in inputs.to_list()]),
+        "files": all_paths,
+        "cached_files": cached_paths,
     }))
     ctx.actions.run(
         executable = ctx.executable._hasher,
-        arguments = [manifest.path, output.path],
-        inputs = depset([manifest], transitive = [inputs]),
+        arguments = ["hash", manifest.path, cached_records.path, output.path],
+        inputs = depset([manifest, cached_records] + non_cached_inputs),
         outputs = [output],
         mnemonic = "DebundleAnalysisIdentity",
     )
