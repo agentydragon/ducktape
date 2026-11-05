@@ -92,7 +92,7 @@ pub(super) struct ValidatedDescribeQuery {
 #[derive(Debug, ClapArgs)]
 pub(super) struct InspectSourceArgs {
     /// Resolve a binding, source unit, atom, proposal, diagnostic, or module ID.
-    #[arg(long, conflicts_with_all = ["source_file", "chunk", "statements", "around_binding"])]
+    #[arg(long, conflicts_with_all = ["source_file", "chunk", "statements", "around_binding", "declarator_binding"])]
     pub id: Option<String>,
 
     /// Dependency graph for --id (or DEBUNDLE_GRAPH).
@@ -120,16 +120,22 @@ pub(super) struct InspectSourceArgs {
     pub chunk: Option<PathBuf>,
 
     /// Select one zero-based statement index or an inclusive `START..END` range.
-    #[arg(long, conflicts_with = "around_binding")]
+    #[arg(long, conflicts_with_all = ["around_binding", "declarator_binding"])]
     pub statements: Option<StatementRange>,
 
     /// Select the unique top-level item declaring this raw input binding.
     /// Resolve readable spec names with --id instead.
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = ["id", "statements", "declarator_binding"])]
     pub around_binding: Option<String>,
 
+    /// Select one top-level variable declarator by a declared raw input name.
+    /// The reported body index is its enclosing raw item; its span and source
+    /// contain only the declarator. Resolve readable spec names with --id instead.
+    #[arg(long, conflicts_with_all = ["id", "statements", "around_binding", "context_statements"])]
+    pub declarator_binding: Option<String>,
+
     /// Neighboring items around --around-binding (default 2) or --id (default 0).
-    #[arg(long = "context-statements")]
+    #[arg(long = "context-statements", conflicts_with = "declarator_binding")]
     pub context_statements: Option<usize>,
 
     /// Show readable SWC output or exact source bytes.
@@ -184,6 +190,8 @@ struct InspectedFile {
 #[derive(Debug, Serialize)]
 struct InspectedStatement {
     index: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    declarator_index: Option<usize>,
     byte_start: usize,
     byte_end: usize,
     start_line: usize,
@@ -586,30 +594,39 @@ pub(super) fn run_inspect_source(
             args.chunk.as_deref(),
         )?;
         let source = PreparedSource::load(&source_file)?;
-        let range = match args.around_binding.as_deref() {
-            Some(binding) => Some(
-                source
-                    .statement_range_around_binding(binding, args.context_statements.unwrap_or(2))
-                    .with_context(|| {
-                        format!(
-                            "--around-binding {binding:?} searches raw input names; \
+        if let Some(binding) = args.declarator_binding.as_deref() {
+            let row =
+                source.variable_declarator_row(binding, matches!(args.view, SourceView::Pretty))?;
+            append_declarator_file(&mut report, &source, row, &args);
+        } else {
+            let range = match args.around_binding.as_deref() {
+                Some(binding) => Some(
+                    source
+                        .statement_range_around_binding(
+                            binding,
+                            args.context_statements.unwrap_or(2),
+                        )
+                        .with_context(|| {
+                            format!(
+                                "--around-binding {binding:?} searches raw input names; \
                                  for a readable spec name, use `inspect-source --id <name>` \
                                  with matching --graph and --modules, or `describe <name>` \
                                  to find its input binding"
-                        )
-                    })?,
-            ),
-            None => args.statements,
-        };
-        let (start, end) = match range {
-            Some(range) => {
-                range.validate(source.statement_count())?;
-                (range.start, range.end + 1)
-            }
-            None => (0, source.statement_count()),
-        };
-        let indices = (start..end).map(|index| (index, BTreeSet::new())).collect();
-        append_file(&mut report, &source, indices, 0, &args)?;
+                            )
+                        })?,
+                ),
+                None => args.statements,
+            };
+            let (start, end) = match range {
+                Some(range) => {
+                    range.validate(source.statement_count())?;
+                    (range.start, range.end + 1)
+                }
+                None => (0, source.statement_count()),
+            };
+            let indices = (start..end).map(|index| (index, BTreeSet::new())).collect();
+            append_file(&mut report, &source, indices, 0, &args)?;
+        }
     }
     let format = OutputFormat::resolve(args.format);
     bound_report(&mut report, format, args.max_output_bytes)?;
@@ -679,6 +696,24 @@ fn append_file(
     Ok(())
 }
 
+fn append_declarator_file(
+    report: &mut InspectSourceReport,
+    source: &PreparedSource,
+    row: StatementRow,
+    args: &InspectSourceArgs,
+) {
+    report.files.push(InspectedFile {
+        source_file: source.path().display().to_string(),
+        total_statements: source.statement_count(),
+        statements: vec![inspected_statement(
+            row,
+            Vec::new(),
+            args.view,
+            args.max_line_bytes,
+        )],
+    });
+}
+
 fn render_inspect_source_text(report: &InspectSourceReport, out: &mut String) {
     out.push_str(&format!("Index: {}\n", report.index_basis));
     out.push_str(&format!(
@@ -707,9 +742,13 @@ fn render_inspect_source_text(report: &InspectSourceReport, out: &mut String) {
             } else {
                 statement.bindings.join(", ")
             };
+            let declarator = statement
+                .declarator_index
+                .map_or_else(String::new, |index| format!(" declarator[{index}]"));
             out.push_str(&format!(
-                "\nbody[{}] bytes={}..{} location={}:{}..{}:{} bindings=[{}] source_units=[{}]\n",
+                "\nbody[{}]{} bytes={}..{} location={}:{}..{}:{} bindings=[{}] source_units=[{}]\n",
                 statement.index,
+                declarator,
                 statement.byte_start,
                 statement.byte_end,
                 statement.start_line,
@@ -757,6 +796,7 @@ fn inspected_statement(
     let source = clip_source_lines(&full_source, max_line_bytes);
     InspectedStatement {
         index: row.index,
+        declarator_index: row.declarator_index,
         byte_start: row.byte_start,
         byte_end: row.byte_end,
         start_line: row.start_line,

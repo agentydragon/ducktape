@@ -24,6 +24,175 @@ fn inspect_source_graph_id_selects_only_its_statement_on_one_line() {
 }
 
 #[test]
+fn inspect_source_selects_a_short_declarator_without_returning_its_large_sibling() {
+    let source = format!("const huge = \"{}\", alias = 7;", "x".repeat(64 * 1024));
+    let fixture = GraphFixture::new(&source, &[]);
+    let path = fixture.source_path();
+    let path = path.to_str().unwrap();
+    let selected = fixture.json(&[
+        "inspect-source",
+        "--source-file",
+        path,
+        "--declarator-binding",
+        "alias",
+        "--view",
+        "raw",
+    ]);
+    let statement = &selected["files"][0]["statements"][0];
+    let start = source.find("alias = 7").unwrap();
+    assert_eq!(statement["index"], 0);
+    assert_eq!(statement["declarator_index"], 1);
+    assert_eq!(statement["byte_start"], start);
+    assert_eq!(statement["byte_end"], start + "alias = 7".len());
+    assert_eq!(statement["bindings"], json!(["alias"]));
+    assert_eq!(statement["source"], "alias = 7");
+    assert_eq!(statement["omitted_source_bytes"], 0);
+
+    let whole = fixture.json(&[
+        "inspect-source",
+        "--source-file",
+        path,
+        "--statements",
+        "0",
+        "--view",
+        "raw",
+        "--max-line-bytes",
+        "0",
+        "--max-output-bytes",
+        "0",
+    ]);
+    let whole_statement = &whole["files"][0]["statements"][0];
+    assert_eq!(whole_statement["source"], source);
+    assert!(whole_statement.get("declarator_index").is_none());
+}
+
+#[test]
+fn inspect_source_declarator_coordinates_and_exported_destructuring_are_exact() {
+    let source = "export const before = \"λ\", { left, right: selected } = build();";
+    let fixture = GraphFixture::new(source, &[]);
+    let path = fixture.source_path();
+    let path = path.to_str().unwrap();
+    let raw = fixture.json(&[
+        "inspect-source",
+        "--source-file",
+        path,
+        "--declarator-binding",
+        "selected",
+        "--view",
+        "raw",
+    ]);
+    let statement = &raw["files"][0]["statements"][0];
+    let expected = "{ left, right: selected } = build()";
+    let start = source.find(expected).unwrap();
+    assert_eq!(statement["index"], 0);
+    assert_eq!(statement["declarator_index"], 1);
+    assert_eq!(statement["byte_start"], start);
+    assert_eq!(statement["byte_end"], start + expected.len());
+    assert_eq!(statement["start_line"], 1);
+    assert_eq!(statement["start_column"], start + 1);
+    assert_eq!(statement["bindings"], json!(["left", "selected"]));
+    assert_eq!(statement["source"], expected);
+
+    let pretty = fixture.json(&[
+        "inspect-source",
+        "--source-file",
+        path,
+        "--declarator-binding",
+        "selected",
+    ]);
+    let source = pretty["files"][0]["statements"][0]["source"]
+        .as_str()
+        .unwrap();
+    assert!(source.contains("export const { left, right: selected } = build();"));
+    assert!(!source.contains("before"));
+}
+
+#[test]
+fn inspect_source_declarator_selection_bounds_output_and_rejects_ambiguous_names() {
+    let source = format!(
+        "const huge = \"{}\", selected = \"{}\";",
+        "x".repeat(8192),
+        "y".repeat(8192)
+    );
+    let fixture = GraphFixture::new(&source, &[]);
+    let path = fixture.source_path();
+    let path = path.to_str().unwrap();
+    let out = fixture.command(&[
+        "inspect-source",
+        "--source-file",
+        path,
+        "--declarator-binding",
+        "selected",
+        "--view",
+        "raw",
+        "--max-line-bytes",
+        "16",
+        "--max-output-bytes",
+        "1200",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(out.stdout.len() <= 1200, "{} bytes", out.stdout.len());
+    let bounded: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let statement = &bounded["files"][0]["statements"][0];
+    assert!(statement["source"].as_str().unwrap().len() <= 16);
+    assert!(statement["omitted_source_bytes"].as_u64().unwrap() > 8000);
+    assert!(statement["byte_end"].as_u64().unwrap() > 16000);
+
+    let duplicate = GraphFixture::new("var selected = 1; var selected = 2;", &[]);
+    let out = duplicate.command(&[
+        "inspect-source",
+        "--source-file",
+        duplicate.source_path().to_str().unwrap(),
+        "--declarator-binding",
+        "selected",
+        "--format",
+        "json",
+    ]);
+    assert!(!out.status.success());
+
+    let non_variable = GraphFixture::new("function selected() {}", &[]);
+    let out = non_variable.command(&[
+        "inspect-source",
+        "--source-file",
+        non_variable.source_path().to_str().unwrap(),
+        "--declarator-binding",
+        "selected",
+        "--format",
+        "json",
+    ]);
+    assert!(!out.status.success());
+}
+
+#[test]
+fn inspect_source_declarator_selection_excludes_other_query_modes() {
+    let fixture = GraphFixture::new("const selected = 1;", &[]);
+    let path = fixture.source_path();
+    let path = path.to_str().unwrap();
+    let cases: [(&[&str], bool); 4] = [
+        (&["--id", "unit:0"], false),
+        (&["--statements", "0"], true),
+        (&["--around-binding", "selected"], true),
+        (&["--context-statements", "0"], true),
+    ];
+    for (selector, needs_source_file) in cases {
+        let mut args = vec!["inspect-source"];
+        if needs_source_file {
+            args.extend(["--source-file", path]);
+        }
+        args.extend_from_slice(selector);
+        args.extend(["--declarator-binding", "selected"]);
+        let out = fixture.command(&args);
+        assert_eq!(out.status.code(), Some(2), "{selector:?}");
+    }
+}
+
+#[test]
 fn inspect_source_unit_id_does_not_read_the_current_module_tree() {
     let fixture = GraphFixture::new("const answer = 42;\n", &[]);
     let spec_root = fixture.root().to_str().unwrap();
