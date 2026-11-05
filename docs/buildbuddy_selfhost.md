@@ -86,66 +86,17 @@ BuildBuddy's Firecracker + snapshot/resume is the most sophisticated option. Bui
 
 # Part 2: GitLab FOSS Migration
 
-## GitLab FOSS vs GitHub Actions
+The repository's GitLab spike owns the working examples:
 
-| Component               | GitHub Actions               | GitLab FOSS                     | What Changes                      |
-| ----------------------- | ---------------------------- | ------------------------------- | --------------------------------- |
-| **CI Orchestrator**     | `.github/workflows/`         | `.gitlab-ci.yml`                | Convert workflow syntax           |
-| **Self-hosted runners** | GHA-runners (`concurrent:1`) | GitLab Runner (same model)      | Deploy `gitlab-runner` in cluster |
-| **Triggers**            | `on: [push, pull_request]`   | `workflow:rules`, `only/except` | Update trigger syntax             |
-| **Jobs**                | `jobs: <name>`               | `stages:`, `job-name:`          | Restructure job hierarchy         |
-| **Matrix**              | `strategy.matrix`            | `parallel:matrix`               | Convert matrix syntax             |
-| **Caching**             | `actions/cache`              | Built-in `cache:`               | Remove actions/cache              |
-| **Docker**              | `container:`, `services:`    | `image:`, `services:`           | Update Docker syntax              |
-| **Remote execution**    | Call `bbr` in steps          | Call `bbr` in script            | Same invocation                   |
+- [Pipeline](../cluster/x/gitlab_spike/.gitlab-ci.yml): Go tests and `ko` image publishing.
+- [Runner chart](../cluster/cdk8s/gitlab_spike/runner.py) and
+  [spike documentation](../cluster/cdk8s/gitlab_spike/README.md): Kubernetes Runner configuration,
+  credentials and isolation boundaries.
+- [Live acceptance evidence](../cluster/debug/gitlab_spike/2026-10-25-live.md#ci-registry-and-flux-delivery):
+  the small Go/`ko` pipeline, private registry and Flux delivery. This does not establish Dockerfile
+  builds or compatibility with general Forgejo/GitHub workflows.
 
-### Workflow Conversion Example
-
-```yaml
-# GitHub Actions (.github/workflows/ci.yml)
-jobs:
-  build:
-    runs-on: [self-hosted, linux]
-    steps:
-      - name: Build
-        run: bbr build //...
-      - name: Test
-        run: bbr test //...
-
-# GitLab CI (.gitlab-ci.yml)
-stages:
-  - build
-  - test
-
-build:
-  stage: build
-  tags: [self-hosted]
-  script:
-    - bbr build //...
-
-test:
-  stage: test
-  tags: [self-hosted]
-  script:
-    - bbr test //...
-  needs: [build]
-```
-
-## GitLab Runner Deployment
-
-```bash
-helm repo add gitlab https://charts.gitlab.io
-
-cat > gitlab-runner-values.yaml <<EOF
-gitlabUrl: https://gitlab.allegedly.works
-runnerRegistrationToken: <your-runner-token>
-concurrent: 1
-EOF
-
-helm install gitlab-runner gitlab/gitlab-runner \
-  --namespace gitlab-runner --create-namespace \
-  --values gitlab-runner-values.yaml
-```
+Workflow, secret, artifact and webhook migration remain cutover gates in Part 6.
 
 ---
 
@@ -164,89 +115,19 @@ helm install gitlab-runner gitlab/gitlab-runner \
 | **Cache**              | Managed remote cache                      | Self-hosted Redis                | Optional: own cache or keep cloud |
 | **Billing**            | Per-invocation + cache storage            | Infra only                       | Eliminates cloud billing          |
 
-## Enterprise Helm Deployment
+## Deployment References
 
-```bash
-helm repo add buildbuddy https://helm.buildbuddy.io
+Self-hosted BuildBuddy executors remain a proposal. Use the
+[upstream Helm chart](https://github.com/buildbuddy-io/buildbuddy-helm) for deployment configuration;
+node privileges, KVM/cgroups setup and resource sizing still need validation against Part 4 before
+production use. The licensing and cutover gates remain prerequisites.
 
-cat > buildbuddy-values.yaml <<EOF
-executor:
-  enabled: true
-  replicas: 3
-  resources:
-    requests:
-      cpu: "2"
-      memory: "8Gi"
-    limits:
-      cpu: "4"
-      memory: "16Gi"
-redis:
-  enabled: true
-config:
-  remote_execution:
-    enable_remote_exec: true
-EOF
-
-helm install buildbuddy buildbuddy/buildbuddy-enterprise \
-  --namespace buildbuddy --create-namespace \
-  --values buildbuddy-values.yaml
-```
-
-FOSS on-prem app server (no executor pool): `gcr.io/flame-public/buildbuddy-app-onprem:latest`, StatefulSet with 10 GiB PVC, ports HTTP (8080) + gRPC (1985).
-
-## Enabling Firecracker on Executors
-
-Create a DaemonSet to configure Firecracker on executor nodes:
-
-```yaml
-apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: buildbuddy-firecracker-setup
-  namespace: buildbuddy
-spec:
-  selector:
-    matchLabels:
-      app: buildbuddy-firecracker-setup
-  template:
-    metadata:
-      labels:
-        app: buildbuddy-firecracker-setup
-    spec:
-      hostPID: true
-      initContainers:
-        - name: enable-firecracker
-          image: alpine:latest
-          securityContext:
-            privileged: true
-          command: ["/bin/sh", "-c"]
-          args:
-            - |
-              apk add --no-cache iproute2 iptables
-              sysctl -w vm.unprivileged_userfaultfd=1
-              echo 1 >/proc/sys/net/ipv4/ip_forward
-              chmod 666 /dev/kvm
-      containers:
-        - name: jailer-setup
-          image: gcr.io/flame-public/buildbuddy-executor-enterprise:latest
-          securityContext:
-            privileged: true
-          command: ["/bin/sh", "-c"]
-          args:
-            - |
-              groupadd -f -r cgroups || true
-              usermod -a -G cgroups $(whoami) || true
-              mkdir -p /sys/fs/cgroup/cpuset/firecracker
-              chmod g+rw /sys/fs/cgroup/cpuset/firecracker
-              mkdir -p /sys/fs/cgroup/firecracker
-              chmod g+rw /sys/fs/cgroup/firecracker
-              chown -R $(whoami):cgroups /sys/fs/cgroup/cpuset/firecracker
-              chown -R $(whoami):cgroups /sys/fs/cgroup/firecracker
-              chmod -R g+rw /sys/fs/cgroup/cpuset/firecracker
-              chmod -R g+rw /sys/fs/cgroup/firecracker
-              setfacl -m u:$(whoami):rw /dev/kvm
-              echo "Firecracker setup complete"
-```
+Current hosted execution is configured by [`.bbrc`](../.bbrc) and
+[GitHub CI](../.github/workflows/ci.yml). Follow the repository's
+[Bazel configuration contract](../devinfra/docs/bazel_configuration.md),
+[environment setup](../devinfra/buildbuddy/docs/integration.md) and
+[`bb remote` mechanics](../devinfra/buildbuddy/docs/remote.md) when changing endpoints or runner
+properties. The examples below describe the proposed self-hosted arrangement.
 
 ## Bazel Configuration for Self-Hosted Executor
 
@@ -354,7 +235,7 @@ iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 setcap CAP_MKNOD,CAP_SYS_ADMIN,CAP_NET_ADMIN+eip <jailer-path>
 ```
 
-Production deployment: wrap in DaemonSet/initContainer pattern (see Part 3).
+Production deployment still needs a validated node setup mechanism; the Helm chart alone does not establish these prerequisites.
 
 ## Firecracker Versions
 
