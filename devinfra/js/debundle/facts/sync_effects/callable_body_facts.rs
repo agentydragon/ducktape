@@ -29,22 +29,6 @@ pub(super) struct ValueFlowProjection {
 #[derive(Debug, Clone)]
 struct CoveredAllocationReturn(ValueExpr);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ValueProjectionCoverage {
-    Complete,
-    Partial,
-}
-
-impl ValueProjectionCoverage {
-    fn from_lowering(covered: bool) -> Self {
-        if covered {
-            Self::Complete
-        } else {
-            Self::Partial
-        }
-    }
-}
-
 impl ValueFlowProjection {
     pub(super) fn returns(&self) -> &[ValueExpr] {
         &self.returns
@@ -88,9 +72,7 @@ impl CallableBodyFacts {
             .direct_return_candidate
             .take()
             .is_some_and(|candidate| candidate == CallSite::from(expression.span()));
-        if exact_direct_return
-            && ValueProjectionCoverage::from_lowering(covered) == ValueProjectionCoverage::Complete
-        {
+        if exact_direct_return && covered {
             self.value_flow.direct_allocation_return = Some(CoveredAllocationReturn(value.clone()));
         }
         value
