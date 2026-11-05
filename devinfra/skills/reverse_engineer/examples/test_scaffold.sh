@@ -13,18 +13,6 @@
 #   VICTIM_MAIN — rlocation path to the garble target source
 set -euo pipefail
 
-# --- begin runfiles.bash initialization v3 ---
-f=bazel_tools/tools/bash/runfiles/runfiles.bash
-source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null \
-  || source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null \
-  || source "$0.runfiles/$f" 2>/dev/null \
-  || source "$(dirname "$0").runfiles/$f" 2>/dev/null \
-  || {
-    echo >&2 "ERROR: cannot find $f"
-    exit 1
-  }
-# --- end runfiles.bash initialization v3 ---
-
 # ── 1. Resolve GOROOT via go_bin_runner ──────────────────────────────────────
 # go_bin_runner needs third_party/go.mod to locate GOROOT.
 mkdir -p "$TEST_TMPDIR/bin"

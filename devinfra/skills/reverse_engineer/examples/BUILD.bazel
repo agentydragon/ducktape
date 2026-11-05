@@ -43,12 +43,12 @@ sh_test(
     data = [
         ":build_v2_garbled",
         ":inline_strings",
-        "@rules_shell//shell/runfiles",
     ],
     env = {
         "INLINE_STRINGS": "$(rlocationpath :inline_strings)",
         "V2_GARBLED": "$(rlocationpath :build_v2_garbled)",
     },
+    use_bash_launcher = True,
 )
 
 go_binary(
@@ -63,12 +63,12 @@ sh_test(
     data = [
         ":build_v2_garbled",
         ":gotypes",
-        "@rules_shell//shell/runfiles",
     ],
     env = {
         "GOTYPES": "$(rlocationpath :gotypes)",
         "V2_GARBLED": "$(rlocationpath :build_v2_garbled)",
     },
+    use_bash_launcher = True,
 )
 
 go_binary(
@@ -86,7 +86,6 @@ sh_test(
         "//third_party:go.mod",
         "//third_party:go.sum",
         "@io_bazel_rules_go//go",
-        "@rules_shell//shell/runfiles",
     ],
     env = {
         "GO": "$(rlocationpath @io_bazel_rules_go//go:go)",
@@ -94,6 +93,7 @@ sh_test(
         "GO_MOD": "$(rlocationpath //third_party:go.mod)",
         "V2_GARBLED": "$(rlocationpath :build_v2_garbled)",
     },
+    use_bash_launcher = True,
 )
 
 sh_test(
@@ -109,7 +109,6 @@ sh_test(
         "@com_github_goretk_redress//:redress",
         "@com_github_mandiant_goresym//:GoReSym",
         "@io_bazel_rules_go//go",
-        "@rules_shell//shell/runfiles",
     ],
     env = {
         "GARBLE": "$(rlocationpath @cc_mvdan_garble//:garble)",
@@ -121,6 +120,7 @@ sh_test(
         "GO_MOD": "$(rlocationpath //third_party:go.mod)",
         "VICTIM_MAIN": "$(rlocationpath //devinfra/skills/reverse_engineer/cmd/garble_target:srcs)",
     },
+    use_bash_launcher = True,
 )
 
 # Build v1_plain (plain go build, symbols intact) as a cached Bazel artifact.
@@ -150,7 +150,6 @@ sh_test(
         "//third_party:go.mod",
         "//third_party:go.sum",
         "@io_bazel_rules_go//go",
-        "@rules_shell//shell/runfiles",
     ],
     env = {
         "GO": "$(rlocationpath @io_bazel_rules_go//go:go)",
@@ -160,4 +159,5 @@ sh_test(
         "V2_GARBLED": "$(rlocationpath :build_v2_garbled)",
         "GO_MOD": "$(rlocationpath //third_party:go.mod)",
     },
+    use_bash_launcher = True,
 )

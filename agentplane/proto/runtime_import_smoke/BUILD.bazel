@@ -16,8 +16,8 @@ sh_test(
     args = ["$(rlocationpath :external_proto_import_probe)"],
     data = [
         ":external_proto_import_probe",
-        "@rules_shell//shell/runfiles",
     ],
+    use_bash_launcher = True,
 )
 
 py_library(
