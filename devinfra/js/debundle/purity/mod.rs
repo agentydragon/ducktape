@@ -42,7 +42,6 @@ pub(crate) use crate::facts::abstract_domain::effect::{
     CoerceSite, Effect, HavocCause, InvokeSite,
 };
 pub(crate) use crate::facts::abstract_domain::primitive::{binary_throws, evaluate};
-pub(crate) use crate::facts::abstract_domain::value::PrimKinds;
 
 mod classifier;
 mod code_graph;

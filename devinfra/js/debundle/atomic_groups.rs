@@ -27,6 +27,7 @@
 //!   another constraining edge runs the reverse direction —
 //!   Tarjan's SCC handles that automatically.
 
+use analysis_model::DepKind;
 use std::collections::BTreeSet;
 
 use petgraph::algo::tarjan_scc;
@@ -37,7 +38,7 @@ use source_identity::SourceUnitId;
 use crate::analysis_inputs::ResolvedCommutingStatements;
 use crate::facts::StatementFacts;
 use crate::graph::{
-    DepKind, DependencyGraph, DependencyGraphBuildError, GraphOptions, build_dependency_graph_with,
+    DependencyGraph, DependencyGraphBuildError, GraphOptions, build_dependency_graph_with,
 };
 
 /// One atomic factor group: a set of source units that any valid

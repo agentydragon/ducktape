@@ -9,10 +9,11 @@
 //! an authoring decision surfaced by `debundle coverage`.
 //! See `docs/design.md` §"Assignment assembly inside `debundle run`".
 
+use analysis_model::DepKind;
 use std::collections::{BTreeSet, HashMap};
 
 use crate::atomic_groups::AtomicGroup;
-use crate::graph::{DepKind, DependencyGraph};
+use crate::graph::DependencyGraph;
 use crate::ids::{BindingKind, EntryDestination, LocalBindings, ModuleId, PlannedModule};
 use crate::module_assignment::ModuleAssignment;
 use serde::Serialize;

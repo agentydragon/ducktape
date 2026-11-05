@@ -1,3 +1,4 @@
+use analysis_model::DepKind;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::incremental_quotient::{
@@ -9,7 +10,7 @@ use analysis::facts::analyze_chunk;
 use analysis::graph::{EdgeRole, build_dependency_graph_with};
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
-use analysis::{AnalysisInputs, DepKind, DependencyGraph};
+use analysis::{AnalysisInputs, DependencyGraph};
 use petgraph::visit::IntoNeighbors;
 use report_fixtures::{
     active_source_unit, dependency_edge, promoted_dependency_edge, residual_source_unit,

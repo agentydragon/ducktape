@@ -21,12 +21,13 @@
 //! It runs after chunk analysis and graph build (`build_chunk_graph`) and after
 //! the assignment's seed phases, but before module emission.
 
+use analysis_model::DepKind;
 use std::collections::HashMap;
 
 use swc_ecma_ast::Id;
 
 use analysis::atomic_groups::DependencyGraphAndAtomicGroups;
-use analysis::graph::{DepKind, SourceUnitClass};
+use analysis::graph::SourceUnitClass;
 
 /// One rebind-fold decision: a binding that should be (re)routed
 /// from its current plan to `dest`.

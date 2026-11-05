@@ -6,7 +6,8 @@
 //! graph on demand. Blocked or size-capped frontier states are
 //! diagnostics, not proposals.
 
-use analysis::{DepKind, DependencyGraphInput};
+use analysis::DependencyGraphInput;
+use analysis_model::DepKind;
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use peel::propose::{PeelCandidateStatus, ProposalsReport, propose};

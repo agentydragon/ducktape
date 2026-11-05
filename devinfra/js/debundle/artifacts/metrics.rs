@@ -5,15 +5,15 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
 
-use analysis::DepKind;
+use analysis_model::DepKind;
 use anyhow::Result;
 use rayon::prelude::*;
 use serde::Serialize;
 
-use crate::ChunkId;
 use crate::paths::{join_module_path, module_path_dirname};
 use crate::reports::{ChunkDecompositionOutput, ModuleRef, SelectedModuleLowering, write_json};
 use output_layout::{report_path_for_directory, report_path_for_file};
+use source_identity::ChunkId;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct OutputMetrics {

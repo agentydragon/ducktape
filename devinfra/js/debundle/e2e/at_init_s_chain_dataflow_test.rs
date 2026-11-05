@@ -10,7 +10,8 @@
 //! cross-module inits of a local class whose constructor only touches
 //! `this`.
 
-use analysis::{DepKind, DependencyGraphReport};
+use analysis::DependencyGraphReport;
+use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 

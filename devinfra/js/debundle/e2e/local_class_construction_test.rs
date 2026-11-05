@@ -379,9 +379,8 @@ fn asserted_pure_field_calls_do_not_supply_a_heap_certificate() {
         })
         .unwrap();
     assert!(construction.purity.is_pure());
-    assert!(graph.edges.iter().any(
-        |edge| edge.source == construction.id && edge.edge_kind == analysis::DepKind::Sequenced
-    ));
+    assert!(graph.edges.iter().any(|edge| edge.source == construction.id
+        && edge.edge_kind == analysis_model::DepKind::Sequenced));
     assert!(!rejected.cycles().is_empty());
 }
 
@@ -421,7 +420,7 @@ fn certified_new_keeps_other_same_statement_constructor_and_argument_effects() {
         .unwrap();
     assert!(graph.edges.iter().any(|edge| edge.source == mutation.id
         && edge.target == observation.id
-        && edge.edge_kind == analysis::DepKind::Sequenced));
+        && edge.edge_kind == analysis_model::DepKind::Sequenced));
 }
 
 #[test]

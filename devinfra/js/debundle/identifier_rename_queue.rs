@@ -39,6 +39,7 @@
 //! Rendered as `"<chunk_id>:<owner_file>:<ordinal>"` for human-readable
 //! diffing across runs.
 
+use source_identity::ChunkId;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use anyhow::Result;
@@ -51,7 +52,7 @@ use swc_ecma_ast::{
 use swc_ecma_visit::{Visit, VisitWith};
 
 use artifact::reports::ChunkDecompositionOutput;
-use artifact::{ChunkBundle, ChunkId, EmissionFiles};
+use artifact::{ChunkBundle, EmissionFiles};
 use js_ast::ParsedJsModule;
 
 /// One entry in the priority queue: a still-unrenamed top-level symbol

@@ -1,6 +1,6 @@
 //! Explicit root/key contracts narrow host membership protocol reentry only.
 
-use analysis::DepKind;
+use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 

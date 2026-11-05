@@ -7,14 +7,15 @@
 //! A gate-rejected program is frozen as a [`RejectedPlan`] instead, which only
 //! the marked reading-only tree writer consumes.
 
+use source_identity::ChunkId;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail, ensure};
+use artifact::EmissionFiles;
 use artifact::reports::write_json;
-use artifact::{ChunkId, EmissionFiles};
 use serde::Serialize;
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{

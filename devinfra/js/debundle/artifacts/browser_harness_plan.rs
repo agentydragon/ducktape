@@ -1,5 +1,6 @@
 //! Browser loading decisions prepared before final program acceptance.
 
+use source_identity::ChunkId;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -9,7 +10,7 @@ use anyhow::{Context, Result, bail};
 use artifact::paths::{
     chunk_id_for_js_path, module_path_from_path, normalize_module_path, path_from_module_path,
 };
-use artifact::{ChunkBundle, ChunkId, get_chunk_entry_path};
+use artifact::{ChunkBundle, get_chunk_entry_path};
 use lol_html::{RewriteStrSettings, element, end, end_tag, html_content::ContentType, rewrite_str};
 use output_layout::DebundleOutputLayout;
 use serde::Deserialize;

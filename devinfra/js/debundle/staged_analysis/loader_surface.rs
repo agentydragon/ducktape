@@ -1,6 +1,7 @@
 //! Source facts and report shapes for the loader-closed derivation of the
 //! export-reentry policy (SPEC.md § Host behavior).
 
+use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey};
@@ -13,7 +14,7 @@ use artifact::reports::{
     ImportSpecifierKind, InteropUseKind, LoaderBinding, LoaderBindingUse, LoaderUseConsumer,
     SitePhase, StaticModuleRequestMode,
 };
-use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, ResolvedImportReference};
+use artifact::{ArtifactIndexes, ChunkBundle, ResolvedImportReference};
 use serde::{Deserialize, Serialize};
 use swc_common::Span;
 

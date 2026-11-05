@@ -2,12 +2,13 @@
 //! --analysis` reproduce `debundle run` exactly, and an artifact stays valid
 //! across exactly the spec edits analysis does not read.
 
+use analysis_model::DepKind;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use analysis::{DepKind, DependencyGraphReport};
+use analysis::DependencyGraphReport;
 use debundle_e2e_support::*;
 use debundle_e2e_support::{TreeFixture, TreeRun, run_tree_graph_fixture};
 use serde_json::{Value, json};

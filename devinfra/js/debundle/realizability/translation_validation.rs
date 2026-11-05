@@ -17,16 +17,17 @@
 //! beside it, and only the violated forward edges count toward the verdict,
 //! as they do for the gate.
 
+use analysis_model::DepKind;
 use std::collections::{BTreeMap, BTreeSet};
 
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 use source_identity::SourceUnitOrdinal;
 
+use analysis::DependencyGraph;
 use analysis::graph::{DependencyEdgeId, chunk_constraining_module_edges};
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
-use analysis::{DepKind, DependencyGraph};
 use source_identity::SourceUnitId;
 use spec::ModulePath;
 

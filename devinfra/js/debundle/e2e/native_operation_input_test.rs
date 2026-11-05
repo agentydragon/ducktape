@@ -1,7 +1,8 @@
 //! A narrowly selected native call can retain the existing call model while
 //! unknown receiver writes elsewhere in the provider remain visible.
 
-use analysis::{DepKind, StatementKind};
+use analysis::StatementKind;
+use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 use serde_json::Value;

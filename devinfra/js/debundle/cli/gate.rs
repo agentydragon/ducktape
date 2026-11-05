@@ -25,6 +25,7 @@
 //! arbitrary cycles, of which a single SCC can contain exponentially
 //! many.
 
+use analysis_model::DepKind;
 use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
@@ -34,7 +35,7 @@ use ::gate::{
     render_explanations,
 };
 use analysis::{
-    CallbackFactoryBarrierReport, CallbackFactoryRejectionReport, DepKind, DependencyEdgeId,
+    CallbackFactoryBarrierReport, CallbackFactoryRejectionReport, DependencyEdgeId,
     DependencyGraphInput, EdgeRole, EdgeRoleReport, ModuleKey, Purity, SequencedSourceUnitCause,
     SourceUnitReport,
 };

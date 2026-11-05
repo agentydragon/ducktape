@@ -10,11 +10,12 @@ use analysis_codec::ContextOrdinals;
 use anyhow::{Context, Result, bail, ensure};
 use artifact::paths::normalize_module_path;
 use artifact::reports::{StaticModuleRequest, StaticModuleRequestMode};
-use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, JsFile};
+use artifact::{ArtifactIndexes, ChunkBundle, JsFile};
 use chunk_facts::{analyze_logical_chunk, chunk_runtime_entry};
 use graph_provenance::GraphProvenance;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::GLOBALS;
 

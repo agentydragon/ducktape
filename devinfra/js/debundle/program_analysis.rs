@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use analysis::cross_module_purity::StableExportValue;
 use analysis::facts::abstract_domain::primitive::{NoBindings, evaluate};
-use analysis::facts::abstract_domain::value::PrimKinds;
 use analysis::facts::module_has_top_level_await;
+use analysis_model::PrimKinds;
+use analysis_model::StableExportValue;
 use swc_common::{Span, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};

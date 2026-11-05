@@ -1,3 +1,4 @@
+use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -11,7 +12,7 @@ use analysis::reports::author_inputs::AuthorInputLocations;
 
 use artifact::paths::normalize_module_path;
 use artifact::reports::SelectedModuleLowering;
-use artifact::{ArtifactIndexes, ChunkBundle, ChunkId};
+use artifact::{ArtifactIndexes, ChunkBundle};
 use gate::CandidateRelocationAssessmentReport;
 
 use output_layout::MODULES_REPORT;

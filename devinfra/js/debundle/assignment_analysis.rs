@@ -1,3 +1,5 @@
+use analysis_model::DepKind;
+use source_identity::ChunkId;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, OnceLock};
 
@@ -7,11 +9,11 @@ use thiserror::Error;
 use crate::report_builders::build_dependency_graph_report;
 use analysis::assignment_assembly::{AtomicGroupConflict, assemble_assignment};
 use analysis::atomic_groups::{AtomicGroup, DependencyGraphAndAtomicGroups};
-use analysis::graph::{DepKind, build_module_quotient, chunk_constraining_module_edges};
+use analysis::graph::{build_module_quotient, chunk_constraining_module_edges};
 use analysis::module_assignment::ModuleAssignment;
 use analysis::{
-    BindingCatalogue, BindingScopeError, ChunkId, DependencyGraphReport, EntryDestination,
-    ModuleId, ModuleQuotient, PlannedModule, StructuralPlacementCheck,
+    BindingCatalogue, BindingScopeError, DependencyGraphReport, EntryDestination, ModuleId,
+    ModuleQuotient, PlannedModule, StructuralPlacementCheck,
 };
 use source_identity::SourceUnitId;
 

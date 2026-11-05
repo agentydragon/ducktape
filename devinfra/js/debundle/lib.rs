@@ -52,7 +52,7 @@ pub use facts::{
 };
 pub use graph::{
     BindingTimelineOrder, CellConflict, CellEffectClass, ChunkConstrainingEdgeSet,
-    CommutingStatementsDiagnostic, DepKind, DependencyEdge, DependencyEdgeId, DependencyGraph,
+    CommutingStatementsDiagnostic, DependencyEdge, DependencyEdgeId, DependencyGraph,
     DependencyGraphBuildError, DependencyGraphInput, DuplicateTopLevelDeclaration, EdgeReason,
     EdgeRole, EffectCellReport, GraphOptions, HeapBarrierCause, KnownConflict, ModuleQuotient,
     PremiseVerdict, SequencedCause, SourceUnit, SourceUnitClass, UnresolvedDependencyEdgeEndpoint,
@@ -60,8 +60,8 @@ pub use graph::{
     position_lookup,
 };
 pub use ids::{
-    BindingCatalogue, BindingId, BindingKind, BindingScopeError, ChunkId, ChunkTable,
-    EntryDestination, LocalBindings, ModuleId, ModuleRole, PlannedModule, top_level_id,
+    BindingCatalogue, BindingId, BindingKind, BindingScopeError, EntryDestination, LocalBindings,
+    ModuleId, ModuleRole, PlannedModule, top_level_id,
 };
 pub use module_assignment::ModuleAssignment;
 pub use placement_projection::{

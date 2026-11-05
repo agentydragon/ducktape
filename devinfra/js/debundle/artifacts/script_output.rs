@@ -1,5 +1,6 @@
 //! Render finalized JavaScript artifacts and write script and tree reports.
 
+use source_identity::ChunkId;
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
@@ -11,7 +12,7 @@ use swc_common::GLOBALS;
 use crate::metrics::{OutputFileMetric, OutputMetrics, OutputRole, write_tree_reports};
 use crate::paths::{join_module_path, path_from_module_path};
 use crate::reports::{ChunkDecompositionOutput, ChunkManifest, SelectedModuleLowering, write_json};
-use crate::{ChunkBundle, ChunkId, EmissionFiles, FileRole, JsChunk, list_chunk_file_paths};
+use crate::{ChunkBundle, EmissionFiles, FileRole, JsChunk, list_chunk_file_paths};
 use output_layout::CHUNK_REPORT;
 
 pub struct MaterializedScripts {

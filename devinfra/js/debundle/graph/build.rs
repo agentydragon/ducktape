@@ -1,3 +1,4 @@
+use analysis_model::DepKind;
 use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
@@ -20,7 +21,7 @@ pub struct GraphOptions {
 
 use super::dependency_graph::{AppliedCommutingPremise, DependencyGraph, SourceUnit};
 use super::edge::{
-    BindingTimelineOrder, CellConflict, CellEffectClass, DepKind, DependencyEdge, DependencyEdgeId,
+    BindingTimelineOrder, CellConflict, CellEffectClass, DependencyEdge, DependencyEdgeId,
     EdgeReason, EdgeRole, EffectCellReport, EffectProvenance, HeapBarrierCause, SequencedCause,
 };
 use crate::facts::DataflowOpacityCause;
@@ -607,7 +608,7 @@ pub fn build_dependency_graph_with(
         }
     }
     for (index, (from, _, reason)) in raw_edges.iter().enumerate() {
-        if reason.kind == super::DepKind::EagerUse
+        if reason.kind == DepKind::EagerUse
             && let Some(binding) = reason.binding()
             && shared_vars.contains(binding)
         {
@@ -1123,7 +1124,7 @@ fn emit_heap_content_order(
     }
     let mut sequence_pairs: BTreeSet<_> = raw_edges
         .iter()
-        .filter(|(_, _, reason)| reason.kind == super::DepKind::Sequenced)
+        .filter(|(_, _, reason)| reason.kind == DepKind::Sequenced)
         .map(|(from, to, _)| (*from, *to))
         .collect();
     emit_cell_order_events(
@@ -1336,7 +1337,7 @@ fn emit_s_chain(
     // source unit and become a barrier for subsequent statements.
     let mut sequence_pairs: BTreeSet<(SourceUnitId, SourceUnitId)> = raw_edges
         .iter()
-        .filter(|(_, _, reason)| reason.kind == super::DepKind::Sequenced)
+        .filter(|(_, _, reason)| reason.kind == DepKind::Sequenced)
         .map(|(from, to, _)| (*from, *to))
         .collect();
     emit_cell_order_events(
@@ -1794,7 +1795,7 @@ fn promote_at_init_calls(
     let mut direct_eager_bindings: BTreeSet<(SourceUnitId, SourceUnitId, Id)> = raw_edges
         .iter()
         .filter_map(|(from, to, reason)| {
-            (reason.kind == super::DepKind::EagerUse && reason.role == EdgeRole::Direct)
+            (reason.kind == DepKind::EagerUse && reason.role == EdgeRole::Direct)
                 .then(|| {
                     reason
                         .binding

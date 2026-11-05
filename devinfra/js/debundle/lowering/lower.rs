@@ -4,6 +4,7 @@
 //! level planning and gate checks that wrap this live in `materialize/`.
 
 use js_ast::import_decl_module_item;
+use source_identity::ChunkId;
 use source_identity::StatementId;
 use std::sync::Mutex;
 
@@ -39,7 +40,7 @@ use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::{ModuleId, top_level_id};
 use anyhow::Result;
 use artifact::reports::SelectedModuleLowering;
-use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileMetadata, FileRole, JsFile, JsFileBody};
+use artifact::{ArtifactIndexes, ChunkBundle, FileMetadata, FileRole, JsFile, JsFileBody};
 use frontend_elaboration::chunk_ast::{TopLevelDecl, top_level_declaration_names};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
 use js_ast::ParsedJsModule;

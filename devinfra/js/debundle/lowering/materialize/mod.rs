@@ -9,6 +9,7 @@ mod plan_builder;
 
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
+use source_identity::ChunkId;
 use staged_analysis::ResolvedMemberSite;
 use staged_analysis::chunk_facts::{ChunkFacts, ChunkFactsContext, compute_logical_chunk_facts};
 use staged_analysis::progress::emit_debundle_progress;
@@ -40,7 +41,7 @@ use analysis::{
 use anyhow::{Context, Result, bail, ensure};
 use artifact::paths::join_module_path;
 use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, SelectedModuleLowering};
-use artifact::{ArtifactIndexes, ChunkBundle, ChunkId, FileRole, JsFile};
+use artifact::{ArtifactIndexes, ChunkBundle, FileRole, JsFile};
 use chunk_analysis::build_chunk_graph;
 use frontend_elaboration::chunk_ast::ChunkAstAnalysis;
 use frontend_elaboration::{FrontendChunk, MemberClaimProjection};
@@ -1111,7 +1112,7 @@ struct GraphSummary<'a> {
     ownership_subset: Option<&'a BTreeSet<spec::ModulePath>>,
     source_units: usize,
     edges: usize,
-    edge_kinds: std::collections::BTreeMap<analysis::DepKind, usize>,
+    edge_kinds: std::collections::BTreeMap<analysis_model::DepKind, usize>,
     atomic_groups: usize,
     atomic_group_conflicts: usize,
     cycles: usize,

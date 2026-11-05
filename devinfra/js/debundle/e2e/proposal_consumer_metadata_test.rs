@@ -232,9 +232,9 @@ fn cross_owner_write_is_not_reported_for_added_merge_units() {
         .unwrap_or_else(|| panic!("cross-owner write edge missing: {graph:#?}"));
     assert!(matches!(
         write.edge_kind,
-        analysis::DepKind::EagerRebind
-            | analysis::DepKind::LazyRebind
-            | analysis::DepKind::DeferredRebind
+        analysis_model::DepKind::EagerRebind
+            | analysis_model::DepKind::LazyRebind
+            | analysis_model::DepKind::DeferredRebind
     ));
     assert_eq!(
         proposal["observed_consumers"]["writes"]["total_edges"], 0,
