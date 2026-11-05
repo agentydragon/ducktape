@@ -1590,9 +1590,9 @@ py_library(
         ":manifest_roots",
         ":service_ref",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//devinfra/bazel:runfiles",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
+        "@rules_python//python/runfiles",
     ],
 )
 

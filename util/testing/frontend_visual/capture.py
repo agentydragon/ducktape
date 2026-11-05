@@ -22,8 +22,9 @@ from urllib.parse import urlencode
 from more_itertools import one
 from playwright.async_api import BrowserContext, Locator, Page, Playwright, Route
 from pydantic import JsonValue, TypeAdapter
+from python.runfiles import Runfiles
 
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
+from devinfra.bazel.runfiles import get_required_path
 from devinfra.testing.output_writer import BoundTestOutputs
 from util.testing.frontend_visual.context import DISABLE_ANIMATIONS_CSS, FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.frontend_visual.page_capture import (
@@ -110,8 +111,8 @@ async def playwright_trace(
 
 # Keep the browser-side snapshot in a linted JS file. It records geometry and selection positions,
 # never page text, input values, URLs, or accessible names.
-_CAPTURE_DIAGNOSTICS_JS = get_required_path(
-    own_repo_rlocation("util/testing/frontend_visual/assets/capture_diagnostics.js")
+_CAPTURE_DIAGNOSTICS_JS = (
+    Runfiles.CreateOrRaise().root() / "ducktape/util/testing/frontend_visual/assets/capture_diagnostics.js"
 ).read_text(encoding="utf-8")
 
 

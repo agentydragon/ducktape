@@ -23,6 +23,7 @@ import os
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
 from fastmcp import FastMCP
@@ -57,26 +58,26 @@ _TOOLS = Gauge("grocy_mcp_tools", "Number of tools advertised by the Grocy MCP s
 ROUTE_MAPS = [RouteMap(pattern=r".*", mcp_type=MCPType.TOOL)]
 
 
-def _load_openapi_spec() -> dict[str, object]:
+def _load_openapi_spec(assets_dir: Path) -> dict[str, object]:
     """Return the pre-fixed Grocy OpenAPI 3.1 spec.
 
     The raw upstream spec has issues (empty enums, dangling $refs for
     entity path parameters) that are fixed at build time by the
     :grocy_openapi_fixed genrule. See <fix_openapi_spec.py>.
     """
-    spec_path = Runfiles.CreateOrRaise().root() / "ducktape/grocy_mcp/grocy.openapi.fixed.json"
+    spec_path = assets_dir / "grocy.openapi.fixed.json"
     result: dict[str, object] = json.loads(spec_path.read_text())
     return result
 
 
-def _load_server_instructions() -> str:
+def _load_server_instructions(assets_dir: Path) -> str:
     """Return the shared cross-cutting-conventions markdown.
 
     Delivered to MCP clients via the `initialize.instructions` field. See
     <server_instructions.md> for the content; the file is data-dep'd into
     the server target.
     """
-    return (Runfiles.CreateOrRaise().root() / "ducktape/grocy_mcp/server_instructions.md").read_text()
+    return (assets_dir / "server_instructions.md").read_text()
 
 
 def _authentik_client_provider(
@@ -106,7 +107,8 @@ def build_mcp(settings: ServerSettings, *, client_provider: HTTPClientProvider[G
     Production resolves an authenticated client per invocation; tests and local
     tooling may adapt a caller-owned client with ``borrowed_http_client_provider``.
     """
-    spec = _load_openapi_spec()
+    assets_dir = Runfiles.CreateOrRaise().root() / "ducktape/grocy_mcp"
+    spec = _load_openapi_spec(assets_dir)
 
     def _filter_disabled(route: HTTPRoute, mcp_type: MCPType) -> MCPType | None:
         override = TOOL_OVERRIDES.get((route.method, route.path))
@@ -134,7 +136,7 @@ def build_mcp(settings: ServerSettings, *, client_provider: HTTPClientProvider[G
         openapi_spec=spec, route_maps=ROUTE_MAPS, route_map_fn=_filter_disabled, mcp_component_fn=_customize_component
     )
     openapi_provider.add_transform(RequestScopedOpenAPIClients(client_provider))
-    mcp = FastMCP(name="Grocy", instructions=_load_server_instructions(), providers=[openapi_provider])
+    mcp = FastMCP(name="Grocy", instructions=_load_server_instructions(assets_dir), providers=[openapi_provider])
     register_batch_tools(mcp, settings, client_provider=client_provider)
     return mcp
 

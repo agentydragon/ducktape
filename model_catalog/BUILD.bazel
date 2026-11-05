@@ -38,8 +38,8 @@ py_test(
     deps = [
         ":nix",
         "//:conftest",
-        "//devinfra/bazel:runfiles",
         "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
     ],
 )
 

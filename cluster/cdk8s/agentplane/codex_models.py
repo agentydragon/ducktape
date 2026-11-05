@@ -4,8 +4,9 @@ import json
 from collections.abc import Sequence
 from typing import Any
 
+from python.runfiles import Runfiles
+
 from cluster.cdk8s.agentplane.model_selections import RUNNER_CONTEXT_OVERRIDES
-from devinfra.bazel.runfiles import get_required_path, own_repo_rlocation
 from model_catalog.catalog import Provider, Route
 
 _UPSTREAM_MODELS = "cluster/cdk8s/agentplane/codex_upstream_models.json"
@@ -21,9 +22,9 @@ def codex_catalog(routes: Sequence[Route]) -> str | None:
     route gets an entry only where `RUNNER_CONTEXT_OVERRIDES` sets its window. A route without an entry keeps
     the metadata Codex falls back to for an unknown slug.
     """
+    root = Runfiles.CreateOrRaise().root()
     upstream = {
-        entry["slug"]: entry
-        for entry in json.loads(get_required_path(own_repo_rlocation(_UPSTREAM_MODELS)).read_text())["models"]
+        entry["slug"]: entry for entry in json.loads((root / f"ducktape/{_UPSTREAM_MODELS}").read_text())["models"]
     }
     entries = []
     for route in sorted(routes, key=lambda route: route.id):
@@ -32,18 +33,17 @@ def codex_catalog(routes: Sequence[Route]) -> str | None:
                 raise ValueError(f"The pinned Codex has no bundled entry for {route.model.id=}")
             entries.append({**entry, "slug": route.id})
         elif (window := RUNNER_CONTEXT_OVERRIDES.get(route)) is not None:
-            entries.append(_context_window_entry(route, window))
+            instructions = (root / f"ducktape/{_BASE_INSTRUCTIONS}").read_text()
+            entries.append(_context_window_entry(route, window, instructions))
     return json.dumps({"models": entries}, indent=2, sort_keys=True) if entries else None
 
 
-def _context_window_entry(route: Route, window: int) -> dict[str, Any]:
+def _context_window_entry(route: Route, window: int, instructions: str) -> dict[str, Any]:
     """What Codex uses for a slug it has no entry for (`model_info_from_slug`), with `window`."""
     return {
         "slug": route.id,
         "display_name": route.id,
-        "model_messages": {
-            "instructions_template": get_required_path(own_repo_rlocation(_BASE_INSTRUCTIONS)).read_text()
-        },
+        "model_messages": {"instructions_template": instructions},
         "supported_reasoning_levels": [],
         "shell_type": "unified_exec",
         "visibility": "none",
