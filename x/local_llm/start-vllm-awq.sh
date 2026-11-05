@@ -43,31 +43,10 @@ PORT="${PORT:-8000}"
 # HuggingFace cache directory
 HF_CACHE="${HF_CACHE:-/wyrmhdd/huggingface}"
 
-echo "Starting vLLM server (AWQ 4-bit, FP8 KV)..."
-echo "  Model: $MODEL"
-echo "  Context: $MAX_MODEL_LEN tokens"
-echo "  KV cache: $KV_CACHE_DTYPE"
-echo "  Tensor parallel: 2 GPUs"
-echo "  GPU memory util: $GPU_MEM_UTIL"
-echo "  Max sequences: $MAX_NUM_SEQS"
-echo "  API endpoint: http://localhost:$PORT/v1"
-echo ""
+VLLM_START_MESSAGE="Starting vLLM server (AWQ 4-bit, FP8 KV)..."
+VLLM_IMAGE="vllm/vllm-openai:latest"
+VLLM_SERVED_MODEL_NAME="qwen3-coder-awq"
+VLLM_TOOL_CALL_PARSER="qwen3_coder"
+VLLM_EXTRA_FLAGS=()
 
-# Remove any existing container
-podman rm -f vllm 2>/dev/null || true
-
-exec podman run --rm --name vllm \
-  --device nvidia.com/gpu=all \
-  -v "$HF_CACHE:/root/.cache/huggingface" \
-  -p "$PORT:8000" \
-  vllm/vllm-openai:latest \
-  --model "$MODEL" \
-  --served-model-name qwen3-coder-awq \
-  --tensor-parallel-size 2 \
-  --max-model-len "$MAX_MODEL_LEN" \
-  --kv-cache-dtype "$KV_CACHE_DTYPE" \
-  --gpu-memory-utilization "$GPU_MEM_UTIL" \
-  --max-num-seqs "$MAX_NUM_SEQS" \
-  --enable-auto-tool-choice \
-  --tool-call-parser qwen3_coder \
-  "$@"
+source "$(dirname "${BASH_SOURCE[0]}")/start-vllm-podman.sh"
