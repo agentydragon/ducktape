@@ -71,7 +71,7 @@ def test_observed_account_has_compact_expiries_and_broad_promo_scope_only_in_det
     assert "scope:" not in default
     assert "managed-agents-onprem" in detailed
     for date in ("Nov 25", "Dec 1", "Jan 1, 2027", "Feb 1, 2027", "Jul 1, 2027"):
-        assert f"expires {date}\n" in default
+        assert any(line.endswith(f"expires {date}") for line in default.splitlines())
 
 
 def test_paid_mode_keeps_each_window_row_and_marks_actionable_state() -> None:
