@@ -12958,8 +12958,11 @@ pub(crate) fn annotate_synchronous_calls(
             .filter(|binding| proofs.graph.is_plain_data(binding.0.as_ref()))
             .cloned(),
     );
-    let needed =
-        close_prefix_needed_bindings(&needed, &dependencies, &member_write_receivers, flow);
+    needed = close_prefix_needed_bindings(&needed, &dependencies, &member_write_receivers, flow);
+    // These indexes only build the needed-binding closure. Release them before
+    // retaining the interpreter's prefix state and per-statement outcomes.
+    drop(dependencies);
+    drop(member_write_receivers);
     let mut writers = BTreeMap::<&Id, BTreeSet<SourceUnitOrdinal>>::new();
     for fact in facts.iter() {
         for binding in fact
