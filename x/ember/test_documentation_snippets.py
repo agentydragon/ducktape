@@ -26,10 +26,7 @@ def _embedded_text(relative: str) -> str:
 
 
 def test_python_session_demo_scripts_are_embedded_and_work(
-    tmp_path: Path,
-    runfiles: Runfiles,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path, runfiles: Runfiles, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     prompt = load_system_prompt()
     demo_relative = "examples/python_session/demo.sh"
