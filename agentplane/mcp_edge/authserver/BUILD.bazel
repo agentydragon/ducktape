@@ -67,6 +67,7 @@ go_test(
     data = [":sdk_dcr_client_bin"],
     embed = [":authserver"],
     tags = ["requires_docker"],
+    x_defs = {"github.com/agentydragon/ducktape/agentplane/mcp_edge/authserver.sdkDCRClientRlocation": "$(rlocationpath :sdk_dcr_client_bin)"},
     deps = [
         "//agentplane/mcp_edge:connection_service_go_proto",
         "//agentplane/mcp_edge/connections",

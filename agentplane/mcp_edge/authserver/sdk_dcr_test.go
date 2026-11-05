@@ -12,6 +12,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/mcpserver"
 )
 
+var sdkDCRClientRlocation string
+
 func TestPythonSDKRegistersAgainstProductionHandlers(t *testing.T) {
 	h := startWithResource(t, func(server *Server) http.Handler {
 		// Registration stops before authorization. The production auth middleware
@@ -20,7 +22,7 @@ func TestPythonSDKRegistersAgainstProductionHandlers(t *testing.T) {
 			ResourceMetadataURL: server.ResourceMetadataURL(),
 		})
 	})
-	binary, err := runfiles.Rlocation("ducktape/agentplane/mcp_edge/authserver/sdk_dcr_client_bin")
+	binary, err := runfiles.Rlocation(sdkDCRClientRlocation)
 	if err != nil {
 		t.Fatal(err)
 	}

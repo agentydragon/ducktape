@@ -67,6 +67,7 @@ go_test(
     ],
     data = ["//agentplane/action_service/catalog:golden.json"],
     embed = [":api"],
+    x_defs = {"github.com/agentydragon/ducktape/agentplane/action_service/api.catalogGoldenRlocation": "$(rlocationpath //agentplane/action_service/catalog:golden.json)"},
     deps = [
         "//agentplane/action_service:action_service_go_proto",
         "//agentplane/action_service/catalog",
