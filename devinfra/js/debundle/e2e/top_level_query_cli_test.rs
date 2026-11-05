@@ -578,24 +578,17 @@ fn describe_text_includes_binding_home_module_paths() {
     assert_eq!(report["binding_homes"][0]["path"], "runtime/plugins");
 }
 
-const PATCHED_SOURCE: &str =
-    "const ZZ = class PaymentError {};\nconst aa = ZZ;\nconst bb = 2;\nconst cc = ZZ;\n";
+const QUERY_SOURCE: &str = "const primary = class Primary {};\nconst firstAlias = primary;\nconst middle = 2;\nconst secondAlias = primary;\n";
 
-/// `ZZ` carries a binding patch and is read at init by `aa` and `cc`; `bb` is
-/// claimed (and renamed) by a module. The residual owners are `ZZ`, `aa`, `cc`.
-fn patched_fixture() -> GraphFixture {
+/// `primary` is read at init by both aliases; `middle` is claimed by a module.
+/// The residual owners are `primary`, `firstAlias`, and `secondAlias`.
+fn module_home_fixture() -> GraphFixture {
     GraphFixture::new(
-        PATCHED_SOURCE,
-        &[
-            (
-                "../binding_patches.yaml",
-                "members:\n  - name: PaymentError\n    selector:\n      binding:\n        name: ZZ\n",
-            ),
-            (
-                "home/bb.yaml",
-                "members: [{name: Beta, selector: {binding: {name: bb}}}]\n",
-            ),
-        ],
+        QUERY_SOURCE,
+        &[(
+            "home/middle.yaml",
+            "members: [{name: Middle, selector: {binding: {name: middle}}}]\n",
+        )],
     )
 }
 
@@ -621,11 +614,14 @@ fn atomic_group_bindings(report: &Value) -> Vec<&str> {
 
 #[test]
 fn atoms_filters_residual_and_renamed_atomic_groups_and_groups_them_by_destination() {
-    let fixture = patched_fixture();
+    let fixture = module_home_fixture();
     let cases: [(&[&str], &[&str]); 4] = [
-        (&[], &["ZZ", "aa", "bb", "cc"]),
-        (&["--residual-only"], &["ZZ", "aa", "cc"]),
-        (&["--readable-only"], &["bb"]),
+        (&[], &["primary", "firstAlias", "middle", "secondAlias"]),
+        (
+            &["--residual-only"],
+            &["primary", "firstAlias", "secondAlias"],
+        ),
+        (&["--readable-only"], &["middle"]),
         (&["--residual-only", "--readable-only"], &[]),
     ];
     for (flags, expected) in cases {
@@ -648,7 +644,7 @@ fn atoms_filters_residual_and_renamed_atomic_groups_and_groups_them_by_destinati
         })
         .collect();
     assert_eq!(groups.len(), 2);
-    assert_eq!(groups["home/bb"], &json!(["atomic:2"]));
+    assert_eq!(groups["home/middle"], &json!(["atomic:2"]));
     assert!(
         groups
             .values()
@@ -658,8 +654,8 @@ fn atoms_filters_residual_and_renamed_atomic_groups_and_groups_them_by_destinati
 }
 
 #[test]
-fn coverage_matches_proposals_to_patch_sets_only_on_request() {
-    let fixture = patched_fixture();
+fn coverage_matches_proposals_to_module_claims_only_on_request() {
+    let fixture = module_home_fixture();
     let row = |report: &Value, path: &str| {
         report["rows"]
             .as_array()
@@ -671,26 +667,24 @@ fn coverage_matches_proposals_to_patch_sets_only_on_request() {
     };
 
     let plain = fixture.json(&["coverage"]);
-    let patch_row = row(&plain, "binding_patches");
-    assert_eq!(patch_row["status"], "complete_atomic_groups");
-    assert_eq!(patch_row["complete_atomic_group_ids"], json!(["atomic:0"]));
-    assert!(patch_row.get("matching_proposal_ids").is_none());
+    assert_eq!(field_of_each(&plain, "rows", "path"), ["home/middle"]);
+    assert!(
+        row(&plain, "home/middle")
+            .get("matching_proposal_ids")
+            .is_none()
+    );
 
     let proposed = fixture.json(&["coverage", "--include-proposals"]);
     assert_eq!(
-        row(&proposed, "binding_patches")["matching_proposal_ids"],
-        json!(["auto_partition_0000"])
-    );
-    assert_eq!(
-        row(&proposed, "home/bb")["matching_proposal_ids"],
+        row(&proposed, "home/middle")["matching_proposal_ids"],
         json!([])
     );
 }
 
 #[test]
 fn describe_joins_graph_and_spec_context_and_runs_the_proposer_only_on_request() {
-    let fixture = patched_fixture();
-    let report = fixture.json(&["describe", "ZZ"]);
+    let fixture = module_home_fixture();
+    let report = fixture.json(&["describe", "primary"]);
     assert_eq!(report["source_unit_ids"], json!(["unit:0"]));
     assert_eq!(
         field_of_each(&report, "incoming_edges", "source"),
@@ -700,12 +694,12 @@ fn describe_joins_graph_and_spec_context_and_runs_the_proposer_only_on_request()
         field_of_each(&report, "neighbor_source_units", "id"),
         ["unit:1", "unit:3"]
     );
-    assert_eq!(report["binding_homes"][0]["source_kind"], "binding_patch");
+    assert_eq!(report["binding_homes"], json!([]));
     assert_eq!(report["atomic_groups"][0]["id"], "atomic:0");
     assert!(report.get("module_proposals").is_none());
     assert!(report.get("module_proposal_diagnostics").is_none());
 
-    let report = fixture.json(&["describe", "ZZ", "--include-proposals"]);
+    let report = fixture.json(&["describe", "primary", "--include-proposals"]);
     assert_eq!(
         report["module_proposals"][0]["proposed_module_id"],
         "auto_partition_0000"
@@ -715,7 +709,7 @@ fn describe_joins_graph_and_spec_context_and_runs_the_proposer_only_on_request()
 
 #[test]
 fn describe_limit_truncates_each_section_and_reports_its_total() {
-    let report = patched_fixture().json(&["describe", "ZZ", "--limit", "1"]);
+    let report = module_home_fixture().json(&["describe", "primary", "--limit", "1"]);
     assert_eq!(report["limits"]["limit"], 1);
     let sections = &report["limits"]["sections"];
     for section in ["incoming_edges", "neighbor_source_units"] {
@@ -966,11 +960,11 @@ fn describe_requires_all_instead_of_a_zero_limit_and_rejects_limit_with_all() {
 
 #[test]
 fn inspect_source_context_is_clamped_to_the_source_file() {
-    let fixture = patched_fixture();
+    let fixture = module_home_fixture();
     for (id, context, indices) in [
-        ("aa", "0", vec![1]),
-        ("aa", "1", vec![0, 1, 2]),
-        ("ZZ", "5", vec![0, 1, 2, 3]),
+        ("firstAlias", "0", vec![1]),
+        ("firstAlias", "1", vec![0, 1, 2]),
+        ("primary", "5", vec![0, 1, 2, 3]),
     ] {
         let report = fixture.json(&[
             "inspect-source",
@@ -991,7 +985,7 @@ fn inspect_source_context_is_clamped_to_the_source_file() {
 
 #[test]
 fn modules_propose_limit_keeps_a_prefix_and_reports_the_total() {
-    let fixture = patched_fixture();
+    let fixture = module_home_fixture();
     // A one-line cap keeps the three residual owners in separate proposals.
     let args = ["modules", "propose", "--size-cap-lines", "1"];
     let all = fixture.json(&args);

@@ -7,15 +7,12 @@ use serde::Deserialize;
 use output_layout::DebundleOutputLayout;
 use spec::{
     BundledPartialSwapBundle, BundledPartialSwapMark, BundledPartialSwapPackage, ChunkExportPurity,
-    ChunkRenameMember, ChunkRenameSelector, ChunkRenames, DependencyGraphOptions,
-    EmitBrowserHarnessConfig, LoadJsChunksArgs, LogicalModule, MaterializeLogicalModulesConfig,
-    Member, ModulePath, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark,
-    SwapVendorChunksConfig, TransformSpec, UnassignedMode, VendorLevel, VendorMark, VendorRole,
-    WrapperShape, WriteJsTreeConfig,
+    ChunkRenames, DependencyGraphOptions, EmitBrowserHarnessConfig, LoadJsChunksArgs,
+    LogicalModule, MaterializeLogicalModulesConfig, ModulePath, PartialSwapMark,
+    PartialSwapPackage, PartialSwapSymbol, SwapMark, SwapVendorChunksConfig, TransformSpec,
+    UnassignedMode, VendorLevel, VendorMark, VendorRole, WrapperShape, WriteJsTreeConfig,
 };
-use spec_modules::{
-    collect_module_files, load_binding_patch_members, module_path_from_file, read_module_file,
-};
+use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompileSpecTreeOptions {
@@ -70,8 +67,7 @@ struct AuthoringConfig {
     #[serde(default)]
     chunk_export_purity: BTreeMap<String, ChunkExportPurity>,
     /// Canonical per-chunk in-place renames from `TransformSpec`.
-    /// Entries may target any configured input chunk. The main chunk may
-    /// instead use the existing spec-root `binding_patches.yaml` source.
+    /// Entries may target any configured input chunk.
     #[serde(default)]
     chunk_renames: BTreeMap<String, ChunkRenames>,
 }
@@ -81,14 +77,12 @@ struct AuthoringConfig {
 #[derive(Debug, Clone)]
 pub struct ModuleTreeScope {
     roots: Vec<PathBuf>,
-    includes_binding_patches: bool,
 }
 
 impl ModuleTreeScope {
     pub fn from_config(config_path: &Path, chunk_id: &str) -> Result<Self> {
         let config: AuthoringConfig = read_yaml(config_path)?;
         validate_module_roots(&config.module_roots)?;
-        let includes_binding_patches = config.main_chunk_id == chunk_id;
         let roots = if config.module_roots.is_empty() {
             if config.main_chunk_id != chunk_id {
                 bail!("tree config has no module root for graph chunk {chunk_id:?}");
@@ -104,18 +98,11 @@ impl ModuleTreeScope {
         if roots.is_empty() {
             bail!("tree config has no module root for graph chunk {chunk_id:?}");
         }
-        Ok(Self {
-            roots,
-            includes_binding_patches,
-        })
+        Ok(Self { roots })
     }
 
     pub fn roots(&self) -> &[PathBuf] {
         &self.roots
-    }
-
-    pub fn includes_binding_patches(&self) -> bool {
-        self.includes_binding_patches
     }
 
     pub fn contains(&self, path: &Path) -> bool {
@@ -262,13 +249,6 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         &config.main_chunk_id,
         &config.module_roots,
     )?;
-    let binding_patch_members = load_binding_patch_members(&options.modules_root)?;
-    let chunk_renames = tree_chunk_renames_map(
-        &config.main_chunk_id,
-        config.chunk_renames,
-        binding_patch_members,
-    )?;
-
     Ok(TransformSpec {
         host_behavior: config.host_behavior,
         program_premises: config.program_premises,
@@ -282,7 +262,7 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
             source_root,
         )?,
         logical_modules: logical_modules_map(module_sources)?,
-        chunk_renames,
+        chunk_renames: config.chunk_renames,
         unassigned_mode: config.unassigned_mode,
         chunk_analysis_options: config.chunk_analysis_options,
         chunk_export_purity: config.chunk_export_purity,
@@ -449,17 +429,6 @@ fn load_chunk_modules(
     }
     active.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(active)
-}
-
-fn is_trivial_binding_patch(member: &Member) -> bool {
-    let Some(binding) = &member.selector.binding else {
-        return false;
-    };
-    let binding_name = &binding.name;
-    member
-        .name
-        .as_ref()
-        .is_none_or(|export_name| export_name == binding_name)
 }
 
 fn vendor_map(
@@ -699,53 +668,6 @@ fn logical_modules_map(
     Ok(out)
 }
 
-fn chunk_renames_map(
-    main_chunk_id: &str,
-    binding_patch_members: Vec<Member>,
-) -> BTreeMap<String, ChunkRenames> {
-    let members = binding_patch_members
-        .into_iter()
-        .map(|member| ChunkRenameMember {
-            name: member.name,
-            selector: ChunkRenameSelector {
-                binding: member
-                    .selector
-                    .binding
-                    .expect("validated binding patch selector"),
-            },
-        })
-        .collect::<Vec<_>>();
-    if members.is_empty() {
-        return BTreeMap::new();
-    }
-    BTreeMap::from([(
-        main_chunk_id.to_string(),
-        ChunkRenames {
-            members,
-            annotations: BTreeMap::new(),
-        },
-    )])
-}
-
-fn tree_chunk_renames_map(
-    main_chunk_id: &str,
-    mut chunk_renames: BTreeMap<String, ChunkRenames>,
-    binding_patch_members: Vec<Member>,
-) -> Result<BTreeMap<String, ChunkRenames>> {
-    if chunk_renames.contains_key(main_chunk_id) && !binding_patch_members.is_empty() {
-        bail!(
-            "tree config `chunk_renames` entry for main_chunk_id {main_chunk_id:?} conflicts with nonempty spec-root `binding_patches.yaml`; author the main chunk in one source"
-        );
-    }
-
-    let binding_patch_members = binding_patch_members
-        .into_iter()
-        .filter(|member| !is_trivial_binding_patch(member))
-        .collect();
-    chunk_renames.extend(chunk_renames_map(main_chunk_id, binding_patch_members));
-    Ok(chunk_renames)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -773,6 +695,14 @@ browser_harness:
 unassigned_mode:
   static/main:
     kind: inline_in_entry
+chunk_renames:
+  static/main:
+    members:
+      - name: PatchedThing
+        selector:
+          binding:
+            name: d
+            kind: function_declaration
 "#,
         );
         write_file(
@@ -798,16 +728,6 @@ unassigned_mode:
         kind: variable_declarator
 "#,
         );
-        write_file(
-            &root.join("binding_patches.yaml"),
-            r#"members:
-  - name: PatchedThing
-    selector:
-      binding:
-        name: d
-        kind: function_declaration
-"#,
-        );
         CompileSpecTreeOptions {
             config_path: config,
             modules_root: modules,
@@ -818,7 +738,7 @@ unassigned_mode:
     }
 
     #[test]
-    fn legacy_single_chunk_tree_compiles_unchanged() {
+    fn single_chunk_tree_compiles_canonical_chunk_renames() {
         let temp = tempfile::tempdir().unwrap();
         let spec = compile_spec_tree(&fixture(temp.path())).unwrap();
 
@@ -1025,35 +945,6 @@ unassigned_mode:
                 "module_roots entries `left` and `right` both define module `shared` of chunk `cli`"
             ),
             "{error:#}"
-        );
-    }
-
-    #[test]
-    fn drops_trivial_binding_patches() {
-        let temp = tempfile::tempdir().unwrap();
-        let options = fixture(temp.path());
-        write_file(
-            &temp.path().join("binding_patches.yaml"),
-            r#"members:
-  - name: same
-    selector:
-      binding:
-        name: same
-        kind: variable_declarator
-  - name: UsefulName
-    selector:
-      binding:
-        name: min
-        kind: function_declaration
-"#,
-        );
-
-        let spec = compile_spec_tree(&options).unwrap();
-
-        assert_eq!(spec.chunk_renames["static/main"].members.len(), 1);
-        assert_eq!(
-            spec.chunk_renames["static/main"].members[0].name.as_deref(),
-            Some("UsefulName")
         );
     }
 
