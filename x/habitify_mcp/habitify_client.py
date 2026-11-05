@@ -119,7 +119,8 @@ class HabitifyClient:
     ) -> list[Habit]:
         """GET /journal: filter habits for a date (today by default).
 
-        Filter/order values and examples live in api_reference/get_journal{,_filtered}.yaml.
+        Filter/order values: api_reference/API_REFERENCE.md.
+        Request examples: api_reference/get_journal{,_filtered}.yaml.
         """
         target_date = format_date_for_api(date)
 
