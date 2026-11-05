@@ -249,7 +249,7 @@ func exchangeInnerGET(t *testing.T, conn net.Conn, reader *bufio.Reader, target,
 }
 
 type ironProxyConfig struct {
-	binary          string
+	binaryRlocation string
 	caCert          string
 	caKey           string
 	upstreamCA      string
@@ -258,21 +258,12 @@ type ironProxyConfig struct {
 
 func startIronProxy(t *testing.T, transformAddress string) string {
 	t.Helper()
-	return startConfiguredIronProxy(t, transformAddress, ironProxyConfig{binary: "binary", sendRequestBody: true})
+	return startConfiguredIronProxy(t, transformAddress, ironProxyConfig{binaryRlocation: ironProxyBinaryRlocation, sendRequestBody: true})
 }
 
 func startConfiguredIronProxy(t *testing.T, transformAddress string, settings ironProxyConfig) string {
 	t.Helper()
-	var binaryRlocation string
-	switch settings.binary {
-	case "binary":
-		binaryRlocation = ironProxyBinaryRlocation
-	case "patched_binary":
-		binaryRlocation = ironProxyPatchedBinaryRlocation
-	default:
-		t.Fatalf("unknown iron proxy binary %q", settings.binary)
-	}
-	binary, err := runfiles.Rlocation(binaryRlocation)
+	binary, err := runfiles.Rlocation(settings.binaryRlocation)
 	if err != nil {
 		t.Fatal(err)
 	}
