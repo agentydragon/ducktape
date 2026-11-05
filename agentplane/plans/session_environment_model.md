@@ -1444,9 +1444,12 @@ account exists only while a binding grants that identity Kubernetes access. Poli
 Kubernetes. The operator then rejected a ServiceAccount derived per identity: two identities must be able to
 act as one shared account, a default low-privilege account for every agent with separate, possibly
 temporary accounts on request, and grants must attach by binding objects rather than fields on the
-account so Flux and runtime writers can share one. The resulting proposal, `Identity` and
-`KubernetesAccount` as `PolicyBinding` subject kinds, SVIDs on the egress hop, impersonation or
-TokenRequest at the proxy, lifetimes, migration and open questions, is in
+account so Flux and runtime writers can share one. On the walkthrough's comment threads the
+operator then chose separate kinds for the Agentplane binding and the Kubernetes grant, since no
+rule type is meaningful on both subjects, and asked whether a dedicated account object is needed at
+all; the plan keeps it only for accounts Agentplane creates. The resulting proposal, `Identity` as
+the `PolicyBinding` subject, `KubernetesAccountGrant` for ServiceAccounts, SVIDs on the egress hop,
+impersonation or TokenRequest at the proxy, lifetimes, cutover and open questions, is in
 [identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md).
 Recorded in `NETWORK_WORKLOAD_IDENTITY` and `AGENT_PRINCIPAL_MODEL_DESIGN`; the object shapes are a
 proposal, not a decision, and the SA-first direction of 2026-11-04 stands until the cutover. The

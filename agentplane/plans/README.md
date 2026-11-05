@@ -44,7 +44,8 @@ launch-UX improvements alongside. Component TODOs and research plans do not set 
 - [Claude RemoteIO transport](claude_remote_io.md) — evaluate an optional `--sdk-url` bridge through Agentplane egress, including compaction-summary value and recovery gates
 - [Identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md) —
   proposal under the 2026-11-05 direction: `Identity` as the policy subject, SVIDs on the egress hop,
-  `KubernetesAccount` as a shared resource granted by bindings, lifetimes, migration and open questions
+  a separate Kubernetes grant kind for ServiceAccounts several identities may act as, lifetimes, cutover
+  and open questions
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access
   choices and broader authorization-system evaluation, separate from multiagent implementation
 - [Cross-agent communication and authorization](multiagent_communication.md) — agreed requirements

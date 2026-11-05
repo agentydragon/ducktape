@@ -981,10 +981,11 @@ paused and is not a prerequisite; `LOCAL_BAZEL` independently proves the VM-base
 ServiceAccount.** An agent's permission subject is an Agentplane identity, not a Kubernetes
 ServiceAccount, and an agent workload gets no ServiceAccount unless a binding grants it Kubernetes
 access; `NETWORK_WORKLOAD_IDENTITY` supplies the workload authentication this needs. Kubernetes is
-a downstream system: PolicyBindings attach PolicySets to the identity, the Policy Controller
-provisions the account and its RoleBindings while such a binding is live and removes them when
-none is, and the egress proxy substitutes a short-lived token for that account under the existing
-kubeconfig placeholder. The SA-first direction of 2026-11-04 is what exists until the cutover, not
+a downstream system with its own grant kind: `PolicyBinding` binds Agentplane rules to an identity,
+a separate Kubernetes grant binds role sets to a ServiceAccount on a named apiserver, the Policy
+Controller keeps those RoleBindings and creates accounts only where Agentplane must own one, and
+the egress proxy acts as the account under the existing kubeconfig placeholder (operator, 2026-11-05:
+separate kinds, since no rule type is meaningful on both subjects). The SA-first direction of 2026-11-04 is what exists until the cutover, not
 the identity: Session/Environment separation still proceeds on SAs, and this cutover is not its
 prerequisite, but no new SA-keyed contract should land that the cutover would undo. The cutover is
 one incompatible change with accepted downtime, not a staged migration (operator, 2026-11-05). The object
