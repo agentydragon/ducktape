@@ -851,6 +851,12 @@ globalThis`) marks the bindings it flows into (transitively,
   incomplete synchronous execution continue to emit their own barriers.
   Purity and synchronous-call completeness alone do not discharge the bit.
 
+  The exact private frozen-namespace shape supplies root-effect coverage only
+  with its native slot dependencies and intact Object.prototype. The latter
+  excludes inherited descriptor getters during `Object.defineProperty`.
+  Source identity, normal completion and initialized bindings still seal the
+  receipt; callback retention and explicit binding reads remain independent.
+
   The lexical dataflow bit is `dataflow_summarizable` in
   `facts/statement_facts.rs`. Only the bailing statements pay the conservative
   cost, so the mode is safe
