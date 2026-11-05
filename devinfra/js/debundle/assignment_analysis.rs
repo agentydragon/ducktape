@@ -20,11 +20,12 @@ use crate::esm_import_order::EsmImportOrder;
 use crate::realizability::CrossRebindEdge;
 use crate::realizability::{
     CandidateEmittedOrder, EffectConflictDiagnosticRow, EffectRelocationAssessment,
-    EffectTranslationValidationInputs, EffectTranslationValidationResult, SccRejection,
-    TranslationValidationEvidenceReport, TranslationValidationReport, TranslationValidationResult,
-    effect_translation_assess, translation_validate,
+    EffectTranslationValidationInputs, EffectTranslationValidationResult, RealizabilityVerdict,
+    SccRejection, TranslationValidationEvidenceReport, TranslationValidationReport,
+    TranslationValidationResult, check_realizability, effect_translation_assess,
+    translation_validate,
 };
-use crate::validation::{AssignmentReport, AssignmentValidation, validate_assignment_with_verdict};
+use crate::validation::{AssignmentReport, AssignmentValidation, validation_from_verdict};
 
 #[derive(Debug, Error)]
 pub enum AssignmentAnalysisBuildError {
@@ -78,6 +79,9 @@ pub struct AssignmentAnalysis {
     /// realizability gate's evaluation simulator mirrors. See
     /// `esm_import_order::EsmImportOrder`.
     import_order: EsmImportOrder,
+    /// Planning and final validation share this verdict for the immutable
+    /// graph/assignment pair. A rebuilt assignment starts with an empty cache.
+    realizability: OnceLock<RealizabilityVerdict>,
 }
 
 /// An immutable assignment whose atomic-group, schedule, and rebinding checks
@@ -572,6 +576,7 @@ impl AssignmentAnalysis {
             module_quotient,
             module_quotient_sccs,
             import_order,
+            realizability: OnceLock::new(),
         })
     }
 
@@ -601,10 +606,11 @@ impl AssignmentAnalysis {
     /// callers that must make a typed gate decision or pair it with another
     /// in-memory analysis of this assignment.
     pub fn validate_with_verdict(&self) -> AssignmentValidation {
-        let mut validation = validate_assignment_with_verdict(
+        let mut validation = validation_from_verdict(
             self.inputs.dependency_graph(),
             &self.assignment,
             &|id| self.module_path(id),
+            self.realizability_verdict().clone(),
         );
         validation.report.atomic_group_conflicts = self.assembly_conflicts.clone();
         validation.report.linker_order = self
@@ -614,6 +620,11 @@ impl AssignmentAnalysis {
             .map(|id| self.module_path(*id))
             .collect();
         validation
+    }
+
+    pub fn realizability_verdict(&self) -> &RealizabilityVerdict {
+        self.realizability
+            .get_or_init(|| check_realizability(self.inputs.dependency_graph(), &self.assignment))
     }
 
     /// Project one immutable candidate through the emitter's exact ESM loader

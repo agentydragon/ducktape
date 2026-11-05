@@ -635,6 +635,15 @@ pub fn validate_assignment_with_verdict(
     module_path: &dyn Fn(ModuleId) -> ModulePath,
 ) -> AssignmentValidation {
     let verdict = check_realizability(dependency_graph, assignment);
+    validation_from_verdict(dependency_graph, assignment, module_path, verdict)
+}
+
+pub(crate) fn validation_from_verdict(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+    module_path: &dyn Fn(ModuleId) -> ModulePath,
+    verdict: RealizabilityVerdict,
+) -> AssignmentValidation {
     let cross_rebinds = render_cross_rebinds(dependency_graph, &verdict, module_path);
     if verdict.unrealizable_sccs.is_empty() {
         return AssignmentValidation {
