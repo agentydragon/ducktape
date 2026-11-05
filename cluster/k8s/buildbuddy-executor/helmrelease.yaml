@@ -54,7 +54,8 @@ spec:
                 path: /spec/template/spec/automountServiceAccountToken
                 value: false
   values:
-    replicas: 1
+    # Disable the pod pool while retaining Helm reconciliation; suspend leaves pods running.
+    replicas: 0
     poolName: wyrm2-kvm
     strategy:
       type: Recreate

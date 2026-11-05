@@ -23,7 +23,7 @@ K3S_PERSISTENCE_PROPERTIES = {
 # Match the dedicated VM worker's four-vCPU budget.
 KVM_EXEC_PROPERTIES = {
     "test.EstimatedComputeUnits": "4",
-    "test.Pool": "wyrm2-kvm-vm",
+    "test.Pool": "kvm-vm",
     "test.init-dockerd": "false",
     "test.recycle-runner": "false",
     "test.use-self-hosted-executors": "true",

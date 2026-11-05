@@ -23,7 +23,7 @@ go_test(
     ],
     exec_properties = {
         "test.EstimatedComputeUnits": "1",
-        "test.Pool": "wyrm2-kvm-vm",
+        "test.Pool": "kvm-vm",
         "test.init-dockerd": "false",
         "test.recycle-runner": "false",
         "test.use-self-hosted-executors": "true",

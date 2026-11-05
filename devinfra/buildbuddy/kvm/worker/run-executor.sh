@@ -32,7 +32,7 @@ exec /usr/bin/docker run \
   --pull=missing \
   --network host \
   --env MY_HOSTNAME=buildbuddy-kvm-worker \
-  --env MY_POOL=wyrm2-kvm-vm \
+  --env MY_POOL=kvm-vm \
   --env-file "$environment_file" \
   --volume /etc/buildbuddy/executor.yaml:/config.yaml:ro \
   --volume /var/run/docker.sock:/var/run/docker.sock \

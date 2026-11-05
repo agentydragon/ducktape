@@ -1,7 +1,7 @@
 # Static KVM worker
 
 One always-running KubeVirt VM contains the BuildBuddy executor for the manual
-`wyrm2-kvm-vm` pool. It boots KubeVirt's digest-pinned Ubuntu 24.04 cloud image, with four
+`kvm-vm` pool. It boots KubeVirt's digest-pinned Ubuntu 24.04 cloud image, with four
 vCPUs, 16 GiB RAM and an 80 GiB `emptyDisk` for Docker layers, action workspaces and cache.
 Cloud-init installs Ubuntu's Docker package and the native
 [worker configuration](../../../devinfra/buildbuddy/kvm/worker/). There is no custom guest
@@ -36,8 +36,8 @@ executor starts. The VM selects nodes whose KubeVirt CPU feature labels advertis
 `svm` or `vmx`; its guest loads the corresponding KVM driver. The worker may run on any node,
 including control-plane nodes, that advertises either CPU feature and has capacity for
 the 4-CPU, 16-GiB reservation. It has no hostname, region or explicit OS selector. The executor advertises four CPUs and 14 GiB, leaving
-2 GiB for the guest OS and Docker. KVM test actions request four compute units. The historical
-`wyrm2-kvm-vm` pool name is retained independently of the node placement.
+2 GiB for the guest OS and Docker. KVM test actions request four compute units. The
+`kvm-vm` pool name is independent of the node placement.
 The labels describe hypervisor CPU features, and the guest bootstrap fails if no KVM device
 is available; verify nested execution after moving the VM.
 Verify guest boot, the outer network fence and these manual checks:
