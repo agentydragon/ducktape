@@ -34,6 +34,21 @@ from openai_utils.model import (
 logger = logging.getLogger(__name__)
 
 
+def _make_response(*items: ResponseOutItem) -> ResponsesResult:
+    out_tokens = sum(max(1, len(it.text)) for it in items if isinstance(it, AssistantMessageOut))
+    return ResponsesResult(
+        id="resp_generic",
+        usage=ResponseUsage(
+            input_tokens=0,
+            input_tokens_details=InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
+            output_tokens=(1 if out_tokens else 0),
+            output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
+            total_tokens=(1 if out_tokens else 0),
+        ),
+        output=list(items),
+    )
+
+
 class ResponsesFactory(ItemFactory):
     """Convenience adapter response builders bound to a model name.
 
@@ -63,18 +78,7 @@ class ResponsesFactory(ItemFactory):
         return self.make(self.tool_call(name, arguments, call_id))
 
     def make(self, *items: ResponseOutItem) -> ResponsesResult:
-        out_tokens = sum(max(1, len(it.text)) for it in items if isinstance(it, AssistantMessageOut))
-        return ResponsesResult(
-            id="resp_generic",
-            usage=ResponseUsage(
-                input_tokens=0,
-                input_tokens_details=InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
-                output_tokens=(1 if out_tokens else 0),
-                output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-                total_tokens=(1 if out_tokens else 0),
-            ),
-            output=list(items),
-        )
+        return _make_response(*items)
 
 
 def extract_call_output[T](req: ResponsesRequest, call: FunctionCallItem, output_type: type[T]) -> T:
@@ -144,18 +148,7 @@ class GeneratorMock(ItemFactory, OpenAIModelProto):
 
     def _make(self, *items: ResponseOutItem) -> ResponsesResult:
         """Create ResponsesResult from items."""
-        out_tokens = sum(max(1, len(it.text)) for it in items if isinstance(it, AssistantMessageOut))
-        return ResponsesResult(
-            id="resp_generic",
-            usage=ResponseUsage(
-                input_tokens=0,
-                input_tokens_details=InputTokensDetails(cached_tokens=0, cache_write_tokens=0),
-                output_tokens=(1 if out_tokens else 0),
-                output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-                total_tokens=(1 if out_tokens else 0),
-            ),
-            output=list(items),
-        )
+        return _make_response(*items)
 
 
 class DecoratorMock(GeneratorMock):
