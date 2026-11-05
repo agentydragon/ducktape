@@ -2818,12 +2818,16 @@ All saved SWC bindings, including statement sets, nested execution effects,
 effect-coverage receipts, and program-summary inputs, use named
 symbol/context-ordinal fields.
 
-Unchanged Id-free facts and summary fields are borrowed during writing rather
-than cloned. They still pass through the existing codec, including its
-remaining contextual report-field handling; moving those fields to explicit
-saved types is subsequent work. There is no compatibility reader: the compiled
-engine digest already invalidates artifacts produced by another
-implementation.
+Trusted callable dependencies and source spans also use explicit saved records.
+The saved native census composes its span-bearing witnesses, and saved execution
+records carry their call-site spans. Runtime report Serde has fixed field
+selection. Nullable saved metadata fields require an explicit value, so an
+incomplete artifact cannot silently lose them.
+
+Many unchanged Id-free facts and summary fields borrow their storage during
+writing. The codec uses ordinary named MessagePack and zstd. The compiled engine
+digest invalidates artifacts from another implementation; readers require the
+matching engine.
 
 The reason to call this out: every diagnostic in §"Two classes of
 atom" lives in materialization (it depends on the spec's quotient), but
