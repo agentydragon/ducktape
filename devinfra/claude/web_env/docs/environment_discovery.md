@@ -991,8 +991,8 @@ The proxy strictly validates:
 - Does not support HTTP CONNECT tunneling
 - Cannot be used to reach arbitrary URLs
 
-The proxy authenticates Git operations through session ingress, which can log activity,
-restrict branches (for example, to `claude/*`), and allow only pre-authorized repositories.
+The proxy authenticates and logs all Git activity through session ingress; it can restrict
+branch names (for example, to `claude/*`) and permits only pre-authorized repositories.
 
 ## Installed Tools
 
