@@ -265,6 +265,17 @@ vitest_test(
 )
 
 ts_library(
+    name = "tooltip_interaction",
+    srcs = ["tooltip_interaction.ts"],
+    tsconfig = ":tsconfig",
+    visibility = ["//finance:__subpackages__"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "help_tooltip",
     srcs = ["help_tooltip.tsx"],
     tsconfig = ":tsconfig",
@@ -273,6 +284,7 @@ ts_library(
         "//finance:__subpackages__",
     ],
     deps = [
+        ":tooltip_interaction",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
