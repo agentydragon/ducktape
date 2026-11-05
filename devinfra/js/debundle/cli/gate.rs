@@ -1318,8 +1318,9 @@ fn recompute_evidence(
                     Some(EdgeRoleReport::PromotedAtInit { callee_source_unit }) => {
                         AtInitReadPosition::PromotedAtInit {
                             callee_source_unit: callee_source_unit.clone(),
-                            callee_binding: source_units
-                                .get(callee_source_unit.as_str())
+                            callee_binding: input
+                                .source_unit_id(callee_source_unit)
+                                .and_then(|id| source_units.get(&id))
                                 .and_then(|(callee, _)| callee.declared_bindings.first())
                                 .map(|binding| binding.binding.clone()),
                         }
