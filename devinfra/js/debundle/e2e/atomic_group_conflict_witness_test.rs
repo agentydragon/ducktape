@@ -68,6 +68,7 @@ fn symmetric_rebind_path_excludes_lazy_and_hoisted_uses() {
         assert_eq!(step["projection"], "symmetric_colocation", "{step}");
         assert_eq!(step["orientation"], orientation, "{step}");
         assert_eq!(step["edge"]["edge_kind"], "lazy_rebind", "{step}");
+        assert_eq!(step["edge"]["binding"], "alpha", "{step}");
         assert_ne!(step["edge"]["edge_kind"], "lazy_use", "{step}");
         assert_ne!(step["edge"]["edge_kind"], "hoisted_use", "{step}");
     }

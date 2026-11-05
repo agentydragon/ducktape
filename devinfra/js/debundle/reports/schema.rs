@@ -1615,6 +1615,7 @@ fn atomic_group_conflict_witness(
     conflict: &AtomicGroupConflict,
     module_path: &dyn Fn(ModuleId) -> spec::ModulePath,
     dependency_graph: &crate::DependencyGraph,
+    edge_report: &dyn Fn(DependencyEdgeId) -> DependencyEdgeReport,
 ) -> AtomicGroupConflictWitness {
     let first = conflict
         .claims
@@ -1643,12 +1644,14 @@ fn atomic_group_conflict_witness(
                 &members,
                 first.source_unit,
                 second.source_unit,
+                edge_report,
             ),
             atomic_group_witness_path(
                 dependency_graph,
                 &members,
                 second.source_unit,
                 first.source_unit,
+                edge_report,
             ),
         ],
     }
@@ -1659,6 +1662,7 @@ fn atomic_group_witness_path(
     members: &BTreeSet<SourceUnitId>,
     from: SourceUnitId,
     to: SourceUnitId,
+    edge_report: &dyn Fn(DependencyEdgeId) -> DependencyEdgeReport,
 ) -> AtomicGroupWitnessPath {
     let mut parents =
         HashMap::<SourceUnitId, Option<AtomicGroupPathParent>>::with_capacity(members.len());
@@ -1714,7 +1718,7 @@ fn atomic_group_witness_path(
         .take(ATOMIC_GROUP_WITNESS_STEP_LIMIT)
         .map(
             |(edge_id, projection, orientation)| AtomicGroupWitnessStep {
-                edge: DependencyEdgeReport::from_edge(dependency_graph.edge(edge_id)),
+                edge: edge_report(edge_id),
                 projection,
                 orientation,
             },
@@ -1789,6 +1793,9 @@ impl AtomicGroupConflictReport {
         conflicts: &[AtomicGroupConflict],
         module_path: &dyn Fn(ModuleId) -> spec::ModulePath,
         dependency_graph: &crate::DependencyGraph,
+        // Graph-query inputs retain canonical display labels separately from
+        // topology; do not invent hygienic binding IDs to reconstruct them.
+        edge_report: &dyn Fn(DependencyEdgeId) -> DependencyEdgeReport,
     ) -> Vec<Self> {
         conflicts
             .iter()
@@ -1808,7 +1815,12 @@ impl AtomicGroupConflictReport {
                         module: module_path(claim.module),
                     })
                     .collect(),
-                witness: atomic_group_conflict_witness(conflict, module_path, dependency_graph),
+                witness: atomic_group_conflict_witness(
+                    conflict,
+                    module_path,
+                    dependency_graph,
+                    edge_report,
+                ),
                 causes: conflict.causes.iter().copied().collect(),
                 sequenced_source_units: sequenced_source_unit_causes(
                     dependency_graph,

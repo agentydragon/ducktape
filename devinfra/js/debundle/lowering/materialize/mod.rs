@@ -1328,6 +1328,11 @@ fn emit_reports_and_resolve_gate<'a>(
                 &assignment_report.atomic_group_conflicts,
                 &|id| assignment_analysis.module_path(id),
                 assignment_analysis.inputs().dependency_graph(),
+                &|id| {
+                    ::analysis::DependencyEdgeReport::from_edge(
+                        assignment_analysis.inputs().dependency_graph().edge(id),
+                    )
+                },
             );
             write_chunk_report_json(
                 report_out_dir,
