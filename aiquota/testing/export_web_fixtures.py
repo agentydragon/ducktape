@@ -6,11 +6,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from aiquota.testing.quota_fixtures import DEFAULT_NOW, FIXTURE_NAMES, load_quota_view_fixture
+from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_view_fixture
 from devinfra.bazel.runfiles import get_required_path
 
 
-def scene_payloads(*, now: datetime = DEFAULT_NOW) -> dict[str, Any]:
+def scene_payloads(*, now: datetime | None = None) -> dict[str, Any]:
     return {name: load_quota_view_fixture(_fixture_path(name), now=now) for name in FIXTURE_NAMES}
 
 

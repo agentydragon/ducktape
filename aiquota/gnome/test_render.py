@@ -100,6 +100,7 @@ def session(
         destination=_TEST_DBUS_DEST,
         object_path=_TEST_DBUS_PATH,
         environment={"AI_QUOTA_FIXTURE": f"/fixtures/{FIXTURE_NAMES[0]}.json"},
+        display_size=(1280, 1024),
     ) as session:
         yield session
 
@@ -234,6 +235,14 @@ def test_render(session: GnomeSession, undeclared_dir: Path, fixture_name: str, 
             assert "Paid credits:" in balances
             assert "Banked resets: 0" in resets
             assert "⚡" in string_reply(session.call("GetPanelText", "codex"))
+        elif fixture_name == "observed_account_2026_11_04":
+            assert len(json.loads(string_reply(session.call("GetWindowRows", "claude")))) == 1
+            assert len(json.loads(string_reply(session.call("GetWindowRows", "codex")))) == 1
+            assert "Paid credits:" in string_reply(session.call("GetBalanceText", "codex"))
+            assert len(string_reply(session.call("GetGrantText", "openai_platform")).splitlines()) == 3
+            grants = string_reply(session.call("GetGrantText", "anthropic_platform"))
+            assert len(grants.splitlines()) == 2
+            assert "managed-agents-onprem" in grants
         geometry = session.open_menu()
         try:
             capture_menu.capture(geometry, label=fixture_name.replace("_", " "))

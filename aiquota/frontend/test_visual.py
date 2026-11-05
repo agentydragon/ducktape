@@ -41,7 +41,7 @@ async def view(
     ]
     + [
         pytest.param(scene, "dark", Viewport(width=420, height=900, device_scale_factor=2), id=f"{scene}-dark-narrow")
-        for scene in ("hot", "paid_credits")
+        for scene in ("hot", "paid_credits", "observed_account_2026_11_04")
     ],
 )
 async def test_dashboard(view: VisualPage, scene: str) -> None:
@@ -111,6 +111,10 @@ async def test_dashboard(view: VisualPage, scene: str) -> None:
         claude = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
         await expect(claude.get_by_text("Data stale", exact=False)).to_be_visible()
         await expect(claude.locator(".aiquota-error-details")).to_have_count(0)
+    if scene == "observed_account_2026_11_04":
+        await expect(view.page.locator(".aiquota-window")).to_have_count(2)
+        await expect(view.page.locator(".aiquota-reading-row .aiquota-details")).to_have_count(5)
+        await expect(view.page.get_by_text("managed-agents-onprem", exact=False)).to_be_visible()
     await view.capture(target=view.page.locator("#app"))
 
 

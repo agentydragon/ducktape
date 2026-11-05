@@ -171,9 +171,12 @@ def gnome_session(
     destination: str,
     object_path: str,
     environment: Mapping[str, str],
+    display_size: tuple[int, int] = (1920, 500),
 ) -> Iterator[GnomeSession]:
     screenshot_dir.chmod(0o777)  # GNOME writes screenshots as a different uid.
     container = DockerContainer(image)
+    container.with_env("RENDER_WIDTH", str(display_size[0]))
+    container.with_env("RENDER_HEIGHT", str(display_size[1]))
     container.with_volume_mapping(str(extension_dir), f"/usr/share/gnome-shell/extensions/{extension}", "ro")
     container.with_volume_mapping(str(fixture_dir), "/fixtures", "ro")
     container.with_volume_mapping(str(fake_daemon_script), "/fake-daemon.js", "ro")

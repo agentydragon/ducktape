@@ -1,6 +1,6 @@
 """Shared aiquota render test fixtures, validated as production quota models."""
 
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -28,8 +28,8 @@ FIXTURE_NAMES = (
     "wire_fields",
     "reset_pending",
     "stale_observation",
+    "observed_account_2026_11_04",
 )
-DEFAULT_NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 
 
 def load_quota_fixture(path: Path) -> AllQuotas:

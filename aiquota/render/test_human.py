@@ -172,7 +172,8 @@ def test_reset_credit_summary_is_compact_by_default_and_lists_all_expiries_in_de
 
 @pytest.mark.parametrize("fixture_name", FIXTURE_NAMES)
 def test_renders_shared_fixture(fixture_name: str, snapshot: SnapshotAssertion) -> None:
-    assert human.render(_fixture(fixture_name), now=_NOW, tz=UTC) == snapshot
+    quotas = _fixture(fixture_name)
+    assert human.render(quotas, now=quotas.fetched_at, tz=UTC) == snapshot
 
 
 def test_terminal_window_keeps_shared_tint() -> None:
