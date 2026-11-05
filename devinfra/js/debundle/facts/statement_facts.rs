@@ -201,29 +201,23 @@ pub struct CallbackFactoryWriteWitness {
     pub property: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct SynchronousCalls {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initializer_binding_effects:
         Option<Box<crate::reports::schema::InitializerBindingEffectsUse>>,
     /// Whole-original-owner coverage, sealed after its checked root evaluation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) completed_initialization:
         Option<super::sync_effects::noninvoking_initialization::CompletedInitialization>,
     /// Report-only reason the original owner's whole-initialization proof was
     /// refused. This never changes the conservative effect projection.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) initialization_coverage_refusal:
         Option<crate::facts::OwnerInitializationCoverageRefusalReason>,
     /// Report-only, source-site may-accesses; never a legacy graph input.
     pub(crate) evaluation_effects: super::evaluation_effects::EvaluationEffects,
     // SavedSynchronousCalls transports both verdicts through the artifact's
     // shared purity graph; the report projects this runtime field separately.
-    #[serde(skip)]
     pub purity_disagreement: Option<crate::reports::schema::PurityCompletionDisagreement>,
-    #[serde(skip)]
     pub local_record_factory_uses: Vec<crate::reports::schema::LocalRecordFactoryUse>,
-    #[serde(skip)]
     pub local_record_factory_rejections: Vec<crate::reports::schema::LocalRecordFactoryRejection>,
     /// Internal call-site certificate produced only after the checked local
     /// constructor-factory proof and ordinary synchronous execution both
@@ -242,9 +236,9 @@ pub(crate) struct SynchronousCalls {
     pub fallback_only: FallbackOnlyEffects,
     pub complete: bool,
     /// Engine-owned authority transported with staged `ChunkFactAnalysis`.
-    /// This field intentionally has no serde default: a cache missing its
-    /// typed authority is rejected rather than regaining `.complete` as
-    /// legacy authority. Public report DTOs are separate diagnostics.
+    /// Its saved representation requires this field so a cache missing typed
+    /// authority cannot regain `.complete` as legacy authority. Public report
+    /// DTOs are separate diagnostics.
     pub(crate) binding_effect_coverage: super::sync_effects::BindingEffectCoverage,
     /// What each plain-array binding the statement reads holds at its program
     /// point, when its elements are known.
@@ -259,18 +253,15 @@ pub(crate) struct SynchronousCalls {
     /// path. This is a subset of `heap_contents` and is used only to check
     /// explicit commuting premises; the conservative heap order uses all cells.
     pub(crate) non_assumed_heap_accesses: HeapContentAccesses,
-    #[serde(skip)]
     pub precision_losses: Vec<crate::reports::schema::ExecutionPrecisionLoss>,
     pub native_integrity_checks: Vec<crate::reports::schema::NativeIntegrityCheck>,
     pub native_prototype_property_checks: Vec<crate::reports::schema::NativePrototypePropertyCheck>,
     pub native_prefix_observations: Vec<crate::reports::schema::NativePrefixObservation>,
     pub native_integrity_uses: Vec<crate::reports::schema::NativeIntegrityUse>,
-    #[serde(skip)]
     pub native_operation_input_uses: Vec<crate::reports::schema::NativeOperationInputUse>,
     pub inference_uses: Vec<crate::analysis_provenance::InferenceUse>,
     pub callback_factory_uses: Vec<CallbackFactoryUseFact>,
     pub returned_record_uses: Vec<ReturnedRecordUseFact>,
-    #[serde(skip)]
     pub author_host_contract_uses: Vec<crate::reports::schema::ReentryFreeOperationUse>,
 }
 
@@ -817,7 +808,7 @@ impl StructuralStatementFacts {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct ConstructorFacts {
     pub reads: BTreeSet<Id>,
     pub rebinds: BTreeSet<Id>,

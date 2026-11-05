@@ -102,6 +102,7 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:rmp-serde",
         "@crates//:serde",
+        "@crates//:swc_atoms",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
