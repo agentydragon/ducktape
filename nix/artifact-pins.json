@@ -29,8 +29,8 @@
       "sha256": "GJV1+An3/C4rPUvPbfmpPk5CePLm1vmuetHnQDOznQs="
     },
     "gmail-archiver": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/gmail-archiver-eef742f6722a/gmail_archiver-0.1.0-py3-none-any.whl",
-      "sha256": "7vdC9nIqeJ2sRm+PiAlyNrdQhb3im9VaQFB/nJfOkyw="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/gmail-archiver-2ad9b7c47f9f/gmail_archiver-0.1.0-py3-none-any.whl",
+      "sha256": "Ktm3xH+f8vLIFVz56rnaR9ffAb9SMuw44O2wwY0DKt0="
     },
     "vm-interact": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/vm-interact-beb3ac8bc322/vm_interact-0.1.0-py3-none-any.whl",
@@ -61,8 +61,8 @@
       "sha256": "ScYL50jt+e5dPPtbXCPi+/IrDw5dLaVxzwXcM/Zydq0="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-f6b30d0ef71a/debundle",
-      "sha256": "9rMNDvcatVqQ0XyQZfupM0NKFrnj4FfQMrlFZJbvoQw="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-f7031a3d6e6c/debundle",
+      "sha256": "9wMaPW5shh4TtnQBLmXByOHhIFfYLp6ashH6gd7ubcg="
     },
     "skill-cluster_health": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cluster_health-fe760eac7e67/cluster_health.skill",
