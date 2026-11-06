@@ -19,6 +19,34 @@ are in the guest's memory and disappear when the VM is deleted.
 The exact pending shutdown job is still unknown as of the experiments below. A missing proof receipt does not by itself
 identify the proof unit as the blocker.
 
+## Historical target boundary
+
+The earliest verified **post-ACPI, missing-proof, forced-kill** case in the indexed VM
+target history is [October 30, 2026, 22:41 UTC](https://app.buildbuddy.io/invocation/ca76018e-1c98-5b86-9b03-ecba43ed672b)
+(`b13094a1ded74565a8f227cdfc986d4a788758e7`). VM 1 logged `acpid: poweroff`
+at 22:45:41.489 UTC and `AGENTPLANE_GUEST_SHUTDOWN_REQUESTED` at 22:45:41.547;
+`/state/workspaces` unmounted at 22:45:44.533, but neither `/state` unmount nor the
+shutdown proof appeared. The launcher recorded QEMU termination by `virtqemud` at
+22:46:11.495 and the domain as destroyed at 22:46:11.700. This predates the failure
+above, whose guest reached `/state` unmount.
+
+The target moved from `//agentplane/acceptance:test_vm_sandbox_k3s_vm` to
+`//agentplane/system_tests:test_vm_sandbox_vm` in [the October 21 source move](https://github.com/agentydragon/ducktape/commit/e8d9243e60dbfcfe7cf08aae9bf013ba758df537),
+then to `//agentplane/system_tests/suites:test_vm` in [the October 30 suite change](https://github.com/agentydragon/ducktape/commit/c70cebc9e3e77a5b5daf972fa9eb56253645b2ea).
+The earliest indexed comparable emulated-k3s result is [an October 21, 20:53 UTC
+pass](https://app.buildbuddy.io/invocation/c365d152-3367-5325-8a4f-14819da33820)
+under the acceptance label. The system-tests predecessor has indexed results from
+[October 21, 23:03 UTC](https://app.buildbuddy.io/invocation/f29c4735-bbdc-5dac-b31e-a37e25604aa6)
+through October 30. Its [October 28, 12:45](https://app.buildbuddy.io/invocation/d14c7573-2262-5af0-80f6-06684a9c2d5a),
+[October 28, 17:06](https://app.buildbuddy.io/invocation/d1812d01-be9a-5ed8-a437-21c80e3469a8),
+and [October 29, 19:22](https://app.buildbuddy.io/invocation/509add06-88ea-55b6-8a3c-47c0d430b2f8)
+failed actions were turn failures; all nine retained guest consoles show `/state`
+unmounted, shutdown proof, and powerdown. The [October 22](https://app.buildbuddy.io/invocation/71ba571f-c230-5c29-9120-983b592877c6)
+and [October 24](https://app.buildbuddy.io/invocation/8799ddd7-c3b9-54c9-a6c7-e2f18bd94965)
+turn failures have no retained guest consoles, so their shutdown phase cannot be
+verified or excluded. This history bounds the first _observed_ instance; it does
+not identify an introducing commit.
+
 ## Collection constraints
 
 - Retain the native journal files already written through `/state/systemd-journal` from the
