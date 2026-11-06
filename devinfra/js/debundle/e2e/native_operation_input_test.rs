@@ -12,7 +12,6 @@ use std::collections::BTreeSet;
 const SOURCE: &str = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst marker = Symbol('marker');\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconst made = factory();\nglobalThis.unrelatedKey = 'safe';\nconsole.log(marker.description, made.name, globalThis.unrelatedKey);\nexport { marker, factory, LaterError, reflect };\n";
 const REFLECT_SOURCE: &str = "export function reflect(receiver, key) { Object.defineProperty(Object.getPrototypeOf(receiver), key, { value: 'changed', configurable: true }); }\n";
 const REFLECT_CHUNKS: &[(&str, &str)] = &[("static/reflect", REFLECT_SOURCE)];
-const BASELINE_CONFLICT_MODULES: &[&str] = &["marker", "later"];
 
 fn source_hash(source: &str) -> String {
     Sha256::digest(source.as_bytes())
@@ -1092,6 +1091,39 @@ fn has_unknown_call_target(node: &Value) -> bool {
         })
 }
 
+fn assert_source_side_effect_order(fixture: &Fixture) {
+    let graph = fixture.dependency_graph();
+    let mut source_order: Vec<_> = graph
+        .nodes
+        .iter()
+        .filter(|node| node.statement_kind == StatementKind::SideEffect)
+        .map(|node| (node.statement_ordinal.0, node.id.as_str().to_string()))
+        .collect();
+    source_order.sort_by_key(|(ordinal, _)| *ordinal);
+    let expected: Vec<_> = source_order
+        .iter()
+        .map(|(ordinal, _)| u64::from(*ordinal))
+        .collect();
+    assert!(
+        expected.len() > 1,
+        "the accepted fixture must exercise multiple source effects: {graph:#?}"
+    );
+
+    let assessment = fixture.candidate_relocation_assessment();
+    let emitted_order = assessment["emitted_order"]
+        .as_array()
+        .expect("candidate emitted order");
+    let emitted_effects: Vec<_> = emitted_order
+        .iter()
+        .filter_map(Value::as_u64)
+        .filter(|unit| expected.contains(unit))
+        .collect();
+    assert_eq!(
+        emitted_effects, expected,
+        "the accepted verdict must retain source effect order: {assessment:#}"
+    );
+}
+
 fn unknown_receiver_witness(program_graph: &Value) -> &Value {
     program_graph["native_integrity_witnesses"]
         .as_array()
@@ -1111,25 +1143,37 @@ fn unknown_receiver_witness(program_graph: &Value) -> &Value {
 
 #[test]
 fn selected_symbol_call_removes_only_its_synthetic_reentry_barrier() {
-    let control = run_rejection_fixture(split_opts(None));
+    let control = run_fixture(split_opts(None));
+    assert_preserved_entry_output(&control, "marker LaterError safe\n");
     let control_graph = serde_json::to_value(control.dependency_graph()).unwrap();
     unknown_receiver_witness(&serde_json::to_value(control.program_graph()).unwrap());
-    let conflicts = control.atomic_group_conflicts();
+    assert!(native_input_uses(&control_graph).is_empty());
+    let control_marker = node_for_binding(&control_graph, "marker");
     assert!(
-        conflicts.iter().any(|conflict| {
-            let claims = conflict["claims"].as_array().expect("conflict claims");
-            BASELINE_CONFLICT_MODULES.iter().all(|module| {
-                claims
-                    .iter()
-                    .any(|claim| claim["module"].as_str() == Some(*module))
-            })
-        }),
-        "unexpected no-input atomic-group conflicts: {conflicts:#?}"
-    );
-    assert!(
-        has_unknown_call_target(node_for_binding(&control_graph, "marker")),
+        has_unknown_call_target(control_marker),
         "without the input, the selected initializer retains its unknown-call precision loss: {control_graph}"
     );
+    let control_execution = &control_marker["synchronous_execution"];
+    assert_eq!(control_execution["complete"], false, "{control_execution}");
+    assert_eq!(
+        control_execution["binding_effect_authority"]["authority"], "legacy_execution",
+        "{control_execution}"
+    );
+    assert_eq!(
+        control_execution["binding_effect_authority"]["complete"], false,
+        "{control_execution}"
+    );
+    let control_effects = control.effect_translation_validation();
+    assert_eq!(
+        control_effects["decision"]["status"], "accepted",
+        "{control_effects}"
+    );
+    assert_eq!(
+        control_effects["decision"]["scope"], "statement_order_commutation",
+        "{control_effects}"
+    );
+    assert_eq!(control_effects["counts"]["pairs"], 0, "{control_effects}");
+    assert_source_side_effect_order(&control);
 
     let fixture = run_fixture(split_opts(Some(marker_input(SOURCE))));
     assert_preserved_entry_output(&fixture, "marker LaterError safe\n");
@@ -1172,6 +1216,64 @@ fn selected_symbol_call_removes_only_its_synthetic_reentry_barrier() {
                 .iter()
                 .any(|slot| { slot["receiver"] == "unknown" && slot["key"] == "unknown" })),
         "the opaque reflective write must retain its unknown slot witness: {graph}"
+    );
+}
+
+#[test]
+fn no_input_symbol_initializer_cannot_cross_an_effectful_global_write() {
+    let source = SOURCE.replacen(
+        "import { reflect } from './reflect.js';\n",
+        "import { reflect } from './reflect.js';\nglobalThis.marker = 'before';\n",
+        1,
+    );
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module_with_anon(
+                    "marker",
+                    &[Member::new("marker")],
+                    &["globalThis.saved = () => factory();"],
+                ),
+                logical_module("factory", &[Member::new("factory")]),
+                logical_module("later", &[Member::new("LaterError")]),
+            ],
+        )
+        .with_extra_chunks(REFLECT_CHUNKS)
+        .with_extra_files(&[("static/reflect.js", REFLECT_SOURCE)]),
+    );
+
+    let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
+    let marker = node_for_binding(&graph, "marker");
+    assert!(has_unknown_call_target(marker), "{graph}");
+    assert_eq!(
+        marker["synchronous_execution"]["complete"], false,
+        "{graph}"
+    );
+    assert_eq!(
+        marker["synchronous_execution"]["binding_effect_authority"]["authority"],
+        "legacy_execution",
+        "{graph}"
+    );
+    assert!(native_input_uses(&graph).is_empty());
+
+    let report = rejected.effect_translation_validation();
+    assert_eq!(report["decision"]["status"], "incomplete", "{report:#}");
+    assert_eq!(report["decision"]["uncovered_havoc"], true, "{report:#}");
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    assert!(
+        report["counts"]["havoc_pairs"].as_u64().unwrap() > 0,
+        "{report:#}"
+    );
+    assert_eq!(report["legacy_gate_accepts"], false, "{report:#}");
+    assert!(
+        report["examples"].as_array().unwrap().iter().any(|pair| {
+            pair["runs_first"]["unit"] == 3
+                && pair["runs_later"]["unit"] == 1
+                && pair["havoc"] == true
+                && pair["disposition"] == "uncovered"
+        }),
+        "the candidate's incomplete Symbol initializer at unit 3 must remain an uncovered effect before source unit 1's global write: {report:#}"
     );
 }
 
