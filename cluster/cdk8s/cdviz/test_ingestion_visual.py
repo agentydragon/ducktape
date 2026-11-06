@@ -325,6 +325,10 @@ async def _capture_dashboard(
     await expect(page.get_by_text(first_panel["title"], exact=True).first).to_be_visible(timeout=30000)
     await capture_dashboard(visual, checkpoint=view_name)
     await expect(page.get_by_text("No data", exact=True)).to_have_count(0, timeout=10000)
+    if feedback and filtered:
+        repaired_then_failed = page.get_by_role("row").filter(has=page.get_by_text("207", exact=True))
+        await expect(repaired_then_failed.get_by_text("6.0 mins", exact=True)).to_be_visible()
+        await expect(repaired_then_failed.get_by_text("4.0 mins", exact=True)).to_have_count(2)
 
 
 _UNRESOLVED_DASHBOARD_VARIABLE = re.compile(
