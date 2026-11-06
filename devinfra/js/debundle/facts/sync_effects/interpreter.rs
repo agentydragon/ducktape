@@ -8013,7 +8013,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// is covered only by its exact normal-selection transfer; other uses
     /// still execute the ordinary conservative binding/member operations.
     fn ordered_import_binding(&self, binding: &Id) -> bool {
-        self.ordered_foreign_call(CallKind::Call, &ValueExpr::Binding(binding.clone()))
+        self.inputs.imported_primitive_read(binding).is_some()
+            || self.ordered_foreign_call(CallKind::Call, &ValueExpr::Binding(binding.clone()))
             || self.ordered_foreign_call(CallKind::New, &ValueExpr::Binding(binding.clone()))
             || self
                 .inputs
@@ -12389,7 +12390,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     && body.free_reads().iter().all(|binding| {
                         env.contains_key(binding)
                             || self.inputs.top_bindings.contains(binding)
-                            || self.inputs.imported_primitive_read(binding).is_some()
                             || self.ordered_import_binding(binding)
                             || (!self.inputs.flow.is_declared(binding)
                                 && !self.inputs.shadowed.contains(binding.0.as_ref())
@@ -12465,7 +12465,6 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && body.free_reads().iter().all(|binding| {
                 env.contains_key(binding)
                     || self.inputs.top_bindings.contains(binding)
-                    || self.inputs.imported_primitive_read(binding).is_some()
                     || self.ordered_import_binding(binding)
                     || (!self.inputs.flow.is_declared(binding)
                         && !self.inputs.shadowed.contains(binding.0.as_ref())
