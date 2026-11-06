@@ -78,11 +78,12 @@ def gitops_workspace(
     schema: str,
     directory: str,
     management_policies: Sequence[str],
+    external_name: str = "default",
     kubernetes_identity: str | None = None,
     variables: Sequence[WorkspaceSpecForProviderVars] = (),
     env: Sequence[WorkspaceSpecForProviderEnv] = (),
 ) -> Workspace:
-    """Use existing PostgreSQL/default state; callers choose lifecycle and Kubernetes identity."""
+    """Use PostgreSQL state; callers choose the workspace, lifecycle and Kubernetes identity."""
     configuration = 'terraform {\n  backend "pg" {}\n}\n'
     if kubernetes_identity is not None:
         configuration += (
@@ -100,7 +101,7 @@ def gitops_workspace(
     return Workspace(
         scope,
         id,
-        metadata=ApiObjectMetadata(name=name, annotations={"crossplane.io/external-name": "default"}),
+        metadata=ApiObjectMetadata(name=name, annotations={"crossplane.io/external-name": external_name}),
         spec=WorkspaceSpec(
             deletion_policy="Orphan",
             management_policies=management_policies,

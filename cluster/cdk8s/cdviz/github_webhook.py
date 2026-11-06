@@ -46,6 +46,8 @@ def chart(app: App) -> Chart:
         schema=terraform.gitops_state_schema(NAME),
         directory=f"tf/gitops/{NAME}",
         management_policies=["Observe", "Create", "Update"],
+        # Creating a named workspace initializes backend state before the provider's first state-list observation.
+        external_name=NAME,
         kubernetes_identity=KUBERNETES_IDENTITY,
         variables=[WorkspaceSpecForProviderVars(key=key, value=value) for key, value in variables.model_dump().items()],
     )
