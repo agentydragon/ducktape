@@ -5,6 +5,40 @@ use debundle_e2e_support::*;
 use std::fs;
 
 #[test]
+fn acyclic_import_chains_prefer_source_order_between_independent_arrays() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const first = [1];\nconst firstRead = first[0];\nconst second = [2];\nconst secondRead = second[0];\nconsole.log(firstRead, secondRead);\n",
+        vec![
+            logical_module("z_first", &[Member::new("first")]),
+            logical_module("z_first_read", &[Member::new("firstRead")]),
+            logical_module("a_second", &[Member::new("second")]),
+            logical_module("a_second_read", &[Member::new("secondRead")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "1 2\n");
+    assert_eq!(fixture.effect_translation_validation()["swapped_pairs"], 0);
+    assert_eq!(
+        node_module_evaluation_order(
+            &fixture,
+            &[
+                "z_first",
+                "z_first_read",
+                "a_second",
+                "a_second_read",
+                "entry"
+            ],
+        ),
+        [
+            "z_first",
+            "z_first_read",
+            "a_second",
+            "a_second_read",
+            "entry"
+        ],
+    );
+}
+
+#[test]
 fn anonymous_context_selects_only_final_statement() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const first = "first";
@@ -55,6 +89,14 @@ console.log("same");"#],
         &["const first", "const second"],
     );
     assert_preserved_entry_output(&fixture, "same\nsame\n");
+    assert_eq!(fixture.effect_translation_validation()["swapped_pairs"], 0);
+    assert_eq!(
+        node_module_evaluation_order(
+            &fixture,
+            &["context", "selected", "residual/unhandled", "entry"],
+        ),
+        ["context", "selected", "residual/unhandled", "entry"],
+    );
 }
 
 #[test]

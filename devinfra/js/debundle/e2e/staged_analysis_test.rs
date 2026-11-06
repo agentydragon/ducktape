@@ -2600,7 +2600,7 @@ fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
     let staged = staged_tree(
         &[(
             "main",
-            "function first() { return \"first\"; }\n\
+            "function first() { second(); return \"first\"; }\n\
              function second() { return \"second\"; }\n\
              console.log(first(), second());\n",
         )],
@@ -2759,7 +2759,7 @@ fn modules_apply_assessment_matches_the_selected_residual_candidate() {
     let staged = staged_tree(
         &[(
             "main",
-            "function first() { return \"first\"; }\n\
+            "function first() { second(); return \"first\"; }\n\
              function second() { return \"second\"; }\n\
              console.log(first(), second());\n",
         )],
@@ -3342,7 +3342,7 @@ fn modules_refine_assessment_matches_staged_run_for_its_candidate_plan() {
     let staged = staged_tree(
         &[(
             "main",
-            "function first() { return \"first\"; }\n\
+            "function first() { second(); return \"first\"; }\n\
              function second() { return \"second\"; }\n\
              console.log(first(), second());\n",
         )],

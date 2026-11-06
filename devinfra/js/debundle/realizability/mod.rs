@@ -40,7 +40,7 @@ use rustc_hash::FxHashMap;
 use analysis::graph::{
     ChunkConstrainingEdgeSet, DependencyEdgeId, DependencyGraph, chunk_constraining_module_edges,
 };
-use analysis::ids::{EntryDestination, ModuleId};
+use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
 use analysis::reports::SccCore;
 use source_identity::SourceUnitId;
@@ -53,6 +53,7 @@ mod esm_simulator;
 mod incremental_quotient;
 mod translation_validation;
 
+use crate::esm_import_order::EsmImportOrder;
 pub use effect_translation_validation::{
     EffectConflictCell, EffectConflictDiagnosticRow, EffectConflictDisposition, EffectConflictRow,
     EffectCoverageReport, EffectOpacity, EffectRelocationAcceptanceScope,
@@ -63,7 +64,7 @@ pub use effect_translation_validation::{
 pub(crate) use effect_translation_validation::{
     EffectTranslationValidationInputs, effect_translation_assess,
 };
-use esm_simulator::EsmEvaluationSimulator;
+use esm_simulator::{EsmEvaluationSimulator, simulate_esm_post_order};
 use incremental_quotient::{IncrementalQuotient, QuotientOverlay};
 pub use incremental_quotient::{LadderDecision, ModuleAssignmentDelta};
 pub(crate) use translation_validation::CandidateEmittedOrder;
@@ -412,25 +413,37 @@ pub fn check_realizability_touching(
     }
 }
 
-/// Simulator-predicted ECMA-262 Phase-2 evaluation post-order for a
-/// assignment's emitted module tree: lower index = body evaluates
-/// earlier; modules unreachable from entry are absent. Consumes the canonical
-/// quotient for the same assignment as `entry_destination`. Used by coarse
-/// residual planning and
+/// Simulator-predicted ECMA-262 Phase-2 evaluation post-order for an
+/// assignment's emitted module tree: lower index = body evaluates earlier.
+/// Derives the emitted module universe from assigned destinations plus entry,
+/// then applies the same source-order preference as the materializer before
+/// simulating entry fanout and intra-module imports. This predicts actual
+/// emission order; `check_realizability` retains its separate base-order
+/// simulator for the legacy constraint gate. Used by coarse residual planning and
 /// Node-differential pins (`e2e/simulator_node_differential_sweep_test`)
 /// that compare this prediction against the evaluation order Node
 /// actually produces for the emitted tree.
 pub fn simulated_evaluation_post_order(
     canonical: &ChunkConstrainingEdgeSet,
-    entry_destination: EntryDestination,
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
 ) -> BTreeMap<ModuleId, usize> {
-    let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
-    EsmEvaluationSimulator::build(
+    let entry = assignment.entry_destination().module_id();
+    let mut emitted_modules: BTreeSet<ModuleId> =
+        assignment.iter().map(|(_, module)| module).collect();
+    emitted_modules.insert(entry);
+    let import_order = EsmImportOrder::build_for_assignment(
+        canonical,
+        dependency_graph,
+        assignment,
+        &emitted_modules,
+    );
+    simulate_esm_post_order(
+        entry,
         &canonical.i_successors,
-        &constraining_pairs,
-        entry_destination.module_id(),
+        &emitted_modules,
+        &import_order,
     )
-    .post_order
 }
 
 /// Mutable index over a working assignment: the incremental form of the

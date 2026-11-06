@@ -1358,10 +1358,8 @@ impl ChunkPlanBuilder {
         )?
         .assignment;
         let canonical_edges = chunk_constraining_module_edges(dependency_graph, &assignment);
-        let evaluation_order = simulated_evaluation_post_order(
-            &canonical_edges,
-            EntryDestination::from_module_id(entry_module),
-        );
+        let evaluation_order =
+            simulated_evaluation_post_order(&canonical_edges, dependency_graph, &assignment);
         let mut successors = BTreeMap::<ModuleId, BTreeSet<ModuleId>>::new();
         for &(from, to) in canonical_edges.edges.keys() {
             successors.entry(from).or_default().insert(to);
@@ -1386,14 +1384,14 @@ impl ChunkPlanBuilder {
             BTreeMap::<(usize, BTreeSet<ModuleId>), BTreeSet<SourceUnitId>>::new();
         let mut groups = Vec::new();
         for (virtual_module, members) in candidate_modules {
-            // The simulator omits isolated modules because they cannot affect
-            // its verdict. Keep those atomic groups intact without inventing
-            // an evaluation position for the coarsening heuristic.
-            let Some(position) = evaluation_order.get(&virtual_module) else {
-                groups.push(members.clone());
-                continue;
-            };
-            let interval = fixed_positions.partition_point(|fixed| fixed < position);
+            // Entry imports every assigned destination, so source-aware
+            // simulation includes isolated candidate modules in the same
+            // evaluation order as the emitted tree. Every virtual module has
+            // at least one assigned source unit and must therefore appear.
+            let position = *evaluation_order
+                .get(&virtual_module)
+                .expect("assigned virtual residual module is imported from entry");
+            let interval = fixed_positions.partition_point(|fixed| *fixed < position);
             let mut reachable = BTreeSet::new();
             let mut visited = BTreeSet::from([virtual_module]);
             let mut pending = VecDeque::from([virtual_module]);

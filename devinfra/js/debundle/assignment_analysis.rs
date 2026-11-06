@@ -539,13 +539,10 @@ impl AssignmentAnalysis {
         // simulator share one source of truth — see
         // `graph::chunk_constraining_module_edges` for the invariant doc.
         let canonical_edges = chunk_constraining_module_edges(&dependency_graph, &assignment);
-        // Every output module and the entry destination need a deterministic
-        // source-order slot for emit stability, even singletons that don't
-        // participate in any canonical edge.
-        let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical_edges.pairs().collect();
-        let import_order = EsmImportOrder::build(
-            &constraining_pairs,
-            &canonical_edges.i_successors,
+        let import_order = EsmImportOrder::build_for_assignment(
+            &canonical_edges,
+            &dependency_graph,
+            &assignment,
             &emitted_modules(planned_modules.len(), entry_module_id),
         );
         let inputs = Arc::new(AssignmentInputs::build(
@@ -577,8 +574,8 @@ impl AssignmentAnalysis {
     }
 
     /// Shared per-module ESM import ordering. The emitter renders
-    /// every import-directive list through this; the realizability
-    /// gate's evaluation simulator applies the same ordering rules
+    /// every import-directive list through this; the candidate's exact
+    /// emitted-order simulation consumes this same object
     /// (see `esm_import_order::EsmImportOrder` for the contract).
     pub fn import_order(&self) -> &EsmImportOrder {
         &self.import_order
