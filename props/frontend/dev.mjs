@@ -3,7 +3,7 @@
 
 import { spawn } from "child_process";
 import esbuild from "esbuild";
-import { createServer } from "http";
+import { createServer, request } from "http";
 import { readFile } from "fs/promises";
 import { fileURLToPath } from "url";
 import { delimiter, dirname, extname, join, resolve } from "path";
@@ -168,6 +168,25 @@ function resolveSafe(root, urlPath) {
 // Start HTTP server
 const server = createServer(async (req, res) => {
   let urlPath = req.url.split("?")[0];
+
+  // The browser uses same-origin API and auth URLs. Forward them before the
+  // SPA fallback so that the backend sees the original method, URL and headers.
+  if (["/api", "/auth"].some((prefix) => urlPath === prefix || urlPath.startsWith(`${prefix}/`))) {
+    const upstream = request(
+      { hostname: "127.0.0.1", port: BACKEND_PORT, method: req.method, path: req.url, headers: req.headers },
+      (response) => {
+        res.writeHead(response.statusCode, response.headers);
+        response.pipe(res);
+      }
+    );
+    upstream.on("error", (err) => {
+      console.error(`[dev-server] Backend request failed: ${err.message}`);
+      if (!res.headersSent) res.writeHead(502);
+      res.end();
+    });
+    req.pipe(upstream);
+    return;
+  }
 
   // Serve index.html for root and all routes (SPA behavior)
   if (urlPath === "/" || !urlPath.includes(".")) {
