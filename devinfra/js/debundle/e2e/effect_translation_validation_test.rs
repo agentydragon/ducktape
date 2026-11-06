@@ -3565,9 +3565,21 @@ fn returned_callable_operation_coverage_discharges_only_its_dataflow_barrier() {
 #[test]
 fn operation_coverage_does_not_change_strict_callable_purity() {
     let rejected = run_rejection_fixture(returned_callable_commutation_fixture());
+    let graph = rejected.dependency_graph();
+    let result_id = source_unit_for_binding(&graph, "result");
+    let result = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == result_id)
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&result.purity).unwrap()["kind"],
+        "not_pure"
+    );
     assert!(
-        rejected.stderr.contains("strict S-chain"),
-        "{}",
-        rejected.stderr
+        graph.edges.iter().any(|edge| {
+            serde_json::to_value(&edge.sequenced_cause).unwrap()["rule"] == "strict_chain"
+        }),
+        "strict-mode rejection must retain the strict chain: {graph:#?}"
     );
 }
