@@ -30,7 +30,7 @@ fn terminal_read_only_body(body: &LocalBody) -> bool {
     if !body.bindings.is_empty() || !body.parameters.is_empty() {
         return false;
     }
-    let [LocalOperation::Return(Some(expression))] = body.operations.as_ref() else {
+    let [LocalOperation::Return(Some(expression), _)] = body.operations.as_ref() else {
         return false;
     };
     read_only_expression(expression)

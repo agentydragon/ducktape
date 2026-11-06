@@ -8,14 +8,14 @@ use super::super::descriptor_transfer::{
 };
 use super::super::effect_coverage::{
     BindingEffectCoverage, EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt,
-    NativeCalleeSelection, RootEffectIdentity, RootEffectSource,
+    NativeCalleeSelection, RootEffectIdentity, RootEffectSource, SkippedCallReceipt,
 };
 use super::super::local_operations::{
     LocalBinding, LocalBody, LocalCallee, LocalExpression, LocalOperation,
 };
 use super::super::local_transfer::{
-    self, BindingOperation, CallableSelection, EvaluatedCallee, LocalContext, LocalFrame,
-    LocalValueResult, SelectedValue,
+    self, BindingOperation, CallableSelection, EvaluatedCallee, KnownThrow, LocalContext,
+    LocalFrame, LocalValueResult, SelectedValue,
 };
 use super::super::noninvoking_initialization::{
     CompletedInitialization, NativeConstructorCandidate, NativeConstructorForm,
@@ -52,7 +52,7 @@ use crate::analysis_provenance::InferenceRule;
 use crate::execution_evidence::{
     AssumedEffectReason, ConstructionRejection, ExecutionOperation, ExecutionPrecisionLoss,
     ExecutionPrecisionLossReason, GlobalReachCause, HavocReach, OrderedCallAdmissionRefusal,
-    OrderedFieldReadRefusal, PossibleGetterLookupSite, PossibleGetterPromotion,
+    OrderedFieldReadRefusal, PossibleGetterLookupSite, PossibleGetterPromotion, SkippedCallReason,
 };
 use crate::facts::ExportReentryPolicy;
 use crate::facts::StableArraySpreadShapes;
@@ -148,6 +148,7 @@ pub(super) struct Outcome {
     /// never carry a root identity and cannot seal their parent's effects.
     root_effect_identity: Option<RootEffectIdentity>,
     returns: Values,
+    thrown: Option<KnownThrow>,
     return_selection: Option<CallableSelection>,
     return_postcondition: Option<Box<NativeObjectPostcondition>>,
     complete: bool,
@@ -2297,8 +2298,12 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         frame: &LocalFrame,
         operation: BindingOperation,
     ) -> EffectCoverageFragment {
-        let Some(kind @ (LocalBinding::Parameter | LocalBinding::Let | LocalBinding::Const)) =
-            self.body.bindings.get(binding)
+        let Some(
+            kind @ (LocalBinding::Parameter
+            | LocalBinding::Let
+            | LocalBinding::Const
+            | LocalBinding::CatchParameter),
+        ) = self.body.bindings.get(binding)
         else {
             return EffectCoverageFragment::default();
         };
@@ -2344,7 +2349,10 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             }
             BindingOperation::Store
                 if cell.initialization == CellInitialization::Initialized
-                    && matches!(kind, LocalBinding::Parameter | LocalBinding::Let) =>
+                    && matches!(
+                        kind,
+                        LocalBinding::Parameter | LocalBinding::Let | LocalBinding::CatchParameter
+                    ) =>
             {
                 self.outcome
                     .effects
@@ -2359,6 +2367,10 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     fn instantiate_bindings(&mut self, frame: &mut LocalFrame) {
         let mut allocated = false;
         for (binding, kind) in &self.body.bindings {
+            if *kind == LocalBinding::CatchParameter {
+                self.executor.state.active_cells.remove(binding);
+                continue;
+            }
             if matches!(kind, LocalBinding::NamedSelf(_))
                 && frame.initialized_bindings.contains(binding)
             {
@@ -2397,7 +2409,9 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                     | LocalBinding::Var
                     | LocalBinding::NamedSelf(_)
                     | LocalBinding::HoistedFunction(_) => CellInitialization::Initialized,
-                    LocalBinding::Let | LocalBinding::Const => CellInitialization::Uninitialized,
+                    LocalBinding::Let | LocalBinding::Const | LocalBinding::CatchParameter => {
+                        CellInitialization::Uninitialized
+                    }
                 },
             });
             self.executor
@@ -2917,6 +2931,25 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         self.outcome.unknown_call |= outcome.unknown_call;
         self.outcome
             .inherit_completeness(outcome.complete, outcome.effects.precision_losses);
+        if complete
+            && let Some(thrown) = outcome.thrown.take()
+            && outcome.returns.is_empty()
+            && outcome
+                .effect_coverage
+                .known_abrupt_dependencies()
+                .is_some()
+        {
+            frame.inputs.extend(thrown.value.values.iter().cloned());
+            frame.thrown = Some(thrown);
+            return Some(LocalValueResult {
+                allocation: super::super::allocation_transfer::AllocationValue::opaque(
+                    Values::new(),
+                ),
+                effects: outcome.effect_coverage,
+                selection: None,
+                postcondition: None,
+            });
+        }
         if let CallTransfer::Values(values) = transfer {
             frame.inputs.extend(values.iter().cloned());
             frame
@@ -2925,7 +2958,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             let terminal_position = match self.scope {
                 LocalExecutionScope::Callable(_) => matches!(
                     self.body.operations.last(),
-                    Some(LocalOperation::Return(Some(LocalExpression::Call(call)))) if call.span == span
+                    Some(LocalOperation::Return(Some(LocalExpression::Call(call)), _)) if call.span == span
                 ),
                 LocalExecutionScope::Root => self.body.terminal_call_root() == Some(span),
             };
@@ -3215,6 +3248,93 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             values,
             ClassMembersPublicationWriter::ThrowValuePublication,
             None,
+        );
+    }
+    fn skipped_region(
+        &mut self,
+        frame: &mut LocalFrame,
+        region: Span,
+        frontier: Span,
+        reason: SkippedCallReason,
+    ) -> bool {
+        let caller = match self.scope {
+            LocalExecutionScope::Callable(key) => LocalBodyIdentity::Callable {
+                key,
+                owner: self.executor.inputs.index.callables[&key].owner,
+            },
+            LocalExecutionScope::Root => match &self.outcome.root_effect_identity {
+                Some(identity) => identity.body_identity(),
+                None => return false,
+            },
+        };
+        let dependencies = match reason {
+            SkippedCallReason::KnownThrow => frame.effect_coverage.known_abrupt_dependencies(),
+            SkippedCallReason::KnownReturn | SkippedCallReason::HandlerNotEntered => {
+                frame.effect_coverage.closed_effect_dependencies()
+            }
+        };
+        let Some(dependencies) = dependencies else {
+            return false;
+        };
+        let skipped: Vec<_> = self
+            .calls()
+            .iter()
+            .filter(|call| {
+                matches!(call.kind, CallKind::Call | CallKind::New)
+                    && region.lo <= call.span.lo
+                    && call.span.hi <= region.hi
+                    && !frame.effect_coverage.has_local_call(&caller, call.span)
+            })
+            .map(|call| call.span)
+            .collect();
+        for call_span in skipped {
+            frame
+                .effect_coverage
+                .skipped_local_call(SkippedCallReceipt {
+                    caller: caller.clone(),
+                    call_span,
+                    region_span: region,
+                    frontier_span: frontier,
+                    reason,
+                    dependencies: Box::new(dependencies.clone()),
+                });
+        }
+        true
+    }
+    fn instantiate_catch_binding(&mut self, binding: &Id, frame: &LocalFrame) {
+        if self
+            .executor
+            .inputs
+            .captured_local_bindings
+            .contains(binding)
+        {
+            let cell = self.executor.state.lexical_cells.insert(LexicalCell {
+                values: frame.environment[binding].clone(),
+                selection: None,
+                kind: LocalBinding::CatchParameter,
+                initialization: CellInitialization::Uninitialized,
+            });
+            self.executor
+                .state
+                .active_cells
+                .insert(binding.clone(), cell);
+            self.executor.state.prefix_revision =
+                self.executor.state.prefix_revision.wrapping_add(1);
+        }
+    }
+    fn leave_catch_binding(&mut self, binding: &Id) {
+        self.executor.state.active_cells.remove(binding);
+    }
+    fn unproved_control_flow(&mut self, frame: &LocalFrame, span: Span) {
+        self.fallback(
+            frame,
+            Values::new(),
+            ExecutionPrecisionLossReason::UnsupportedOperation {
+                operation: ExecutionOperation::OpaqueExecution,
+                ordered_field_read_refusal: None,
+                ordered_call_admission_refusal: None,
+            },
+            span,
         );
     }
 }
@@ -11912,6 +12032,41 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if let Some(coverage) = coverage {
             outcome.effect_coverage = coverage.effects;
         }
+        if body.operations.iter().any(|operation| {
+            matches!(
+                operation,
+                LocalOperation::Throw(..) | LocalOperation::TryCatch { .. }
+            )
+        }) {
+            let (identity, calls) = match scope {
+                LocalExecutionScope::Callable(key) => (
+                    LocalBodyIdentity::Callable {
+                        key,
+                        owner: self.inputs.index.callables[&key].owner,
+                    },
+                    self.inputs.index.callables[&key].calls.as_slice(),
+                ),
+                LocalExecutionScope::Root => (
+                    outcome
+                        .root_effect_identity
+                        .as_ref()
+                        .expect("ordered root identity")
+                        .body_identity(),
+                    self.inputs.index.top_calls[owner.0].as_slice(),
+                ),
+            };
+            let expected = calls
+                .iter()
+                .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
+                .map(|call| (call.span.lo.0, call.span.hi.0))
+                .collect();
+            if !outcome
+                .effect_coverage
+                .has_call_inventory(&identity, &expected)
+            {
+                outcome.effect_coverage.uncertain_completion();
+            }
+        }
         // A root initializer's synthetic return initializes its lexical cell;
         // only an actual callable return crosses this escape boundary.
         if !retaining && matches!(scope, LocalExecutionScope::Callable(_)) {
@@ -11922,6 +12077,14 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
         }
         outcome.returns.extend(frame.returns);
+        outcome.thrown = frame.thrown;
+        if outcome.thrown.is_some() {
+            // Legacy callers still consume the undifferentiated abrupt marker.
+            // Only the selected ordered-call transfer extracts the known value.
+            outcome
+                .returns
+                .insert(AbstractValue::Value(Value::Unavailable));
+        }
         outcome.return_selection = frame
             .return_selection
             .filter(|selection| selection.matches(&outcome.returns));
@@ -13864,7 +14027,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         outcome.effect_coverage = effect_coverage;
                     }
                     if needs_value {
-                        result_values.extend(nested.returns.iter().cloned());
+                        if single_target
+                            && coverage_target.is_some()
+                            && nested.complete
+                            && !nested.unknown_call
+                            && nested.body_invoked
+                            && nested.thrown.is_some()
+                            && nested.returns
+                                == Values::from([AbstractValue::Value(Value::Unavailable)])
+                            && nested.effect_coverage.known_abrupt_dependencies().is_some()
+                        {
+                            outcome.thrown = nested.thrown.take();
+                        } else {
+                            result_values.extend(nested.returns.iter().cloned());
+                        }
                     }
                     self.apply_rebind_effects(&nested);
                     outcome
@@ -13898,7 +14074,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         outcome.effect_coverage = effect_coverage;
                     }
                     if needs_value {
-                        result_values.extend(nested.returns.iter().cloned());
+                        if single_target
+                            && coverage_target.is_some()
+                            && nested.complete
+                            && !nested.unknown_call
+                            && nested.body_invoked
+                            && nested.thrown.is_some()
+                            && nested.returns
+                                == Values::from([AbstractValue::Value(Value::Unavailable)])
+                            && nested.effect_coverage.known_abrupt_dependencies().is_some()
+                        {
+                            outcome.thrown = nested.thrown.take();
+                        } else {
+                            result_values.extend(nested.returns.iter().cloned());
+                        }
                     }
                     self.apply_rebind_effects(&nested);
                     outcome
@@ -15423,9 +15612,10 @@ impl Executor<'_, '_> {
                         || ordered_native_initializer
                         || matches!(
                             body.operations.as_ref(),
-                            [LocalOperation::Return(Some(
-                                LocalExpression::ReadField { .. }
-                            ))]
+                            [LocalOperation::Return(
+                                Some(LocalExpression::ReadField { .. }),
+                                _
+                            )]
                         )
                         || body.closure_candidate_syntax()
                         || calls
