@@ -1,0 +1,19 @@
+--- a/guest.sh
++++ b/guest.sh
+@@ -59,8 +59,16 @@
+ # This only probes TCG guest boot/ACPI plumbing, not reproduction of the shutdown stall.
+ (
+   sleep 60
++  yes >/dev/null &
++  pressure_pid=$!
++  echo "CPU_PRESSURE_STARTED pid=$pressure_pid" >&2
++  trap 'kill "$pressure_pid" 2>/dev/null || true' EXIT HUP INT TERM
+   printf 'info status\ninfo kvm\ninfo cpus\nsystem_powerdown\n'
+   sleep 30
++  kill "$pressure_pid" 2>/dev/null || true
++  wait "$pressure_pid" 2>/dev/null || true
++  echo "CPU_PRESSURE_STOPPED" >&2
++  trap - EXIT HUP INT TERM
+   printf 'info status\nquit\n'
+ ) | "$QEMU" \
+   -name agentplane-vm-tcg-smoke \
