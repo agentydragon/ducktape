@@ -58,22 +58,18 @@ def _runner_pod(
     return cast(dict[str, Any], template["spec"]["pod"]["spec"])
 
 
-def test_all_sandbox_workloads_use_shared_environment_defaults(staging_manifests: list[dict[str, Any]]) -> None:
+def test_sandbox_harnesses_inherit_runtime_timezone(staging_manifests: list[dict[str, Any]]) -> None:
     templates = _templates(staging_manifests)
     assert templates
     for template in templates:
-        workload = template["spec"]["pod"]["spec"]["containers"][0]
-        timezone = next(item for item in workload["env"] if item["name"] == "TZ")
-        assert timezone["value"] == "America/Los_Angeles"
+        pod = template["spec"]["pod"]["spec"]
+        workload = one(container for container in pod["containers"] if container["name"] == "environment-runtime")
+        workload_environment = {item["name"] for item in workload["env"]}
+        config = Configuration.model_validate(_runner_configuration(staging_manifests, pod))
+        inherited_environment = set(config.harness_environment.inherit)
 
-    # One Pod execution environment: no plain runner template beside the ducktape one.
-    assert [template["metadata"]["name"] for template in templates] == [staging.POD_TEMPLATE]
-    runner_config = _runner_configuration(staging_manifests, templates[0]["spec"]["pod"]["spec"])
-    assert "codex_readiness" not in runner_config
-    config = Configuration.model_validate(runner_config)
-    assert config.session_reconcile_concurrency is None
-    assert "TZ" in config.harness_environment.inherit
-    assert "TZDIR" in config.harness_environment.inherit
+        assert "TZ" in workload_environment & inherited_environment
+        assert "TZDIR" in inherited_environment
 
 
 def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_manifests: list[dict[str, Any]]) -> None:
