@@ -1,43 +1,35 @@
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 
 from aiquota.providers.zai import ZaiSettings, _QuotaResponse, _resolve_api_key, _to_success
 
 
-def test_resolve_api_key_from_file(tmp_path):
-    key_file = tmp_path / "key"
-    key_file.write_text("file-key\n")
-    assert _resolve_api_key(ZaiSettings(api_key_path=key_file)) == "file-key"
-
-
-def test_resolve_api_key_env_fallback(monkeypatch):
-    monkeypatch.setenv("ZAI_API_KEY", "env-key")
-    assert _resolve_api_key(ZaiSettings(api_key_path=None)) == "env-key"
-
-
-def test_resolve_api_key_file_takes_precedence(tmp_path, monkeypatch):
-    monkeypatch.setenv("ZAI_API_KEY", "env-key")
-    key_file = tmp_path / "key"
-    key_file.write_text("file-key")
-    assert _resolve_api_key(ZaiSettings(api_key_path=key_file)) == "file-key"
-
-
-def test_resolve_api_key_empty_file_falls_back_to_env(tmp_path, monkeypatch):
-    monkeypatch.setenv("ZAI_API_KEY", "env-key")
-    key_file = tmp_path / "key"
-    key_file.write_text("   \n")
-    assert _resolve_api_key(ZaiSettings(api_key_path=key_file)) == "env-key"
-
-
-def test_resolve_api_key_missing_file_falls_back_to_env(tmp_path, monkeypatch):
-    monkeypatch.setenv("ZAI_API_KEY", "env-key")
-    assert _resolve_api_key(ZaiSettings(api_key_path=tmp_path / "missing")) == "env-key"
-
-
-def test_resolve_api_key_none_when_no_source(monkeypatch):
+@pytest.mark.parametrize(
+    ("file_contents", "missing_file", "env_key", "expected"),
+    [
+        pytest.param("file-key\n", False, None, "file-key", id="configured-file"),
+        pytest.param(None, False, "env-key", "env-key", id="environment-fallback"),
+        pytest.param("file-key", False, "env-key", "file-key", id="file-takes-precedence"),
+        pytest.param("   \n", False, "env-key", "env-key", id="blank-file-falls-back"),
+        pytest.param(None, True, "env-key", "env-key", id="missing-file-falls-back"),
+        pytest.param(None, False, None, None, id="no-source"),
+    ],
+)
+def test_resolve_api_key(tmp_path, monkeypatch, file_contents, missing_file, env_key, expected):
     monkeypatch.delenv("ZAI_API_KEY", raising=False)
-    assert _resolve_api_key(ZaiSettings(api_key_path=None)) is None
+    if env_key is not None:
+        monkeypatch.setenv("ZAI_API_KEY", env_key)
+
+    api_key_path = None
+    if missing_file:
+        api_key_path = tmp_path / "missing"
+    elif file_contents is not None:
+        api_key_path = tmp_path / "key"
+        api_key_path.write_text(file_contents)
+
+    assert _resolve_api_key(ZaiSettings(api_key_path=api_key_path)) == expected
 
 
 def test_raw_quota_fixture_preserves_provider_windows() -> None:
