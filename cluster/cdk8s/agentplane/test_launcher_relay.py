@@ -79,11 +79,7 @@ def policy() -> dict:
 def test_tls_injection_can_read_only_the_sandbox_in_its_namespace() -> None:
     chart = Chart(App(), "test-tls-reader")
     LauncherRelayPolicy(
-        chart,
-        "policy",
-        namespace=NAMESPACE,
-        runner_pod=deepcopy(RUNNER_POD),
-        settings_config_map=RELAY_SETTINGS,
+        chart, "policy", namespace=NAMESPACE, runner_pod=deepcopy(RUNNER_POD), settings_config_map=RELAY_SETTINGS
     )
     documents = Cdk8sTesting.synth(chart)
     role = one(doc for doc in documents if doc["kind"] == "Role")

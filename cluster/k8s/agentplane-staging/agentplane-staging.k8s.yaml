@@ -5769,6 +5769,34 @@ spec:
       - expression: "request.namespace == 'agentplane-staging' && (request.operation == 'CREATE' ? (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher') : (has(object.spec.volumes) && (object.spec.volumes.exists(v, v.name == 'egress-token') || object.spec.volumes.exists(v, v.name == 'agentplane-runner-relay-tls'))))"
         name: launcher-or-relay-credential-volume
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: launcher-relay-sandbox-reader
+  namespace: agentplane-staging
+rules:
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxes
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: launcher-relay-sandbox-reader
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: launcher-relay-sandbox-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: kyverno-admission-controller
+    namespace: kyverno
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
