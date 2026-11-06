@@ -2096,6 +2096,40 @@ fn native_source_match_notes_keep_analysis_identity() {
 }
 
 #[test]
+fn analyze_refuses_provider_source_changed_after_site_projection() {
+    let fixture = write_validate_fixture_spec(native_member_fixture());
+    let root = fixture.spec_path.parent().unwrap().to_path_buf();
+    let staged = Staged {
+        spec: fixture.spec_path.clone(),
+        projection: root.join("analysis.projection"),
+        artifact: root.join("analysis.dba"),
+    };
+    assert_ok(
+        &staged.project(&staged.projection),
+        "project native source sites",
+    );
+
+    let provider_source = root.join("snapshot/static/app.js");
+    let mut changed_source = fs::read_to_string(&provider_source).unwrap();
+    changed_source.push_str("// changed after source-site projection\n");
+    fs::write(&provider_source, changed_source).unwrap();
+
+    let refused = staged.analyze();
+    assert_eq!(refused.status.code(), Some(1), "{}", refused.stderr);
+    assert!(
+        refused
+            .stderr
+            .contains("analysis source-site provider static/app has stale parser input"),
+        "expected source-site provenance refusal:\n{}",
+        refused.stderr
+    );
+    assert!(
+        !staged.artifact.exists(),
+        "stale source sites wrote an artifact"
+    );
+}
+
+#[test]
 fn resolved_member_retargeting_refuses_saved_analysis() {
     let (staged, _fixture) = staged(native_member_fixture());
     let mut spec: serde_yaml::Value =

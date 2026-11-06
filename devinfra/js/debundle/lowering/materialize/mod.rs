@@ -8,9 +8,9 @@ mod outcome_sink;
 mod plan_builder;
 
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
+use frontend_elaboration::ResolvedMemberSite;
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
 use source_identity::ChunkId;
-use staged_analysis::ResolvedMemberSite;
 use staged_analysis::chunk_facts::{ChunkFacts, ChunkFactsContext, compute_logical_chunk_facts};
 use staged_analysis::progress::emit_debundle_progress;
 
@@ -38,6 +38,7 @@ use analysis::{
     BindingCatalogue, BindingId, BindingKind, DependencyGraphAndAtomicGroups, EntryDestination,
     ModuleId, ModuleRole, PlacementProjectionInput, PlannedModule, SourceUnitLayout, top_level_id,
 };
+use analysis_projection::{AnalysisProjection, ChunkGraphInputs};
 use anyhow::{Context, Result, bail, ensure};
 use artifact::paths::join_module_path;
 use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, SelectedModuleLowering};
@@ -60,7 +61,6 @@ use output_layout::{
 use reconstruction::{ChunkGateRejection, GateVerdict};
 use spec::{ChunkRenames, UnassignedMode};
 use spec_resolution::LogicalRequest;
-use staged_analysis::analysis_projection::{AnalysisProjection, ChunkGraphInputs};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 

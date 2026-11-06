@@ -3,10 +3,10 @@
 //! Everything that computes, encodes or loads saved facts belongs to this
 //! closure. Ownership planning, lowering and output reports depend on it.
 
-use analysis::analysis_inputs::SourceDeclaration;
 use analysis::facts::ExportReentryPolicy;
 use analysis_artifact::{AnalysisArtifactBody, AnalysisArtifactHeader};
 use analysis_codec::ContextOrdinals;
+use analysis_projection::AnalysisSpec;
 use anyhow::{Context, Result, bail, ensure};
 use artifact::paths::normalize_module_path;
 use artifact::reports::{StaticModuleRequest, StaticModuleRequestMode};
@@ -20,7 +20,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use swc_common::GLOBALS;
 
 pub mod analysis_artifact;
-pub mod analysis_projection;
 pub mod chunk_facts;
 pub mod export_policies;
 pub mod loader_surface;
@@ -28,20 +27,11 @@ pub mod program_summary;
 pub mod progress;
 mod request;
 mod saved_program_summary;
-pub use analysis_projection::AnalysisSpec;
 pub use loader_surface::{
     ExportReentryLoaderDerivation, ExportReentryLoaderFailure, ExportReentryLoaderRequest,
     LoaderRequestReportTarget, LoaderSite, LoaderSiteWitness,
 };
 pub use request::{AnalyzeRequest, analyze_from_projection};
-
-#[derive(Debug, Clone)]
-pub struct ResolvedMemberSite {
-    pub provider_chunk: String,
-    pub module: String,
-    pub name: String,
-    pub declaration: Option<SourceDeclaration>,
-}
 
 /// Why the unknown-call fallback includes the chunk's export surface.
 /// The policy remains conservative whenever either blocker list is non-empty
@@ -278,7 +268,7 @@ pub fn analyze_program(
         .iter()
         .map(|(chunk_id, report)| (*chunk_id, report.policy.clone()))
         .collect();
-    let program_summary_chunk_closure = program_summary::selected_static_import_closure(
+    let program_summary_chunk_closure = analysis_projection::selected_static_import_closure(
         &artifact,
         &artifact_indexes,
         &selected_chunk_ids,

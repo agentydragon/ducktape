@@ -9,6 +9,7 @@ use swc_common::GLOBALS;
 
 use analysis::RedundantPurityHint;
 use analysis::reports::author_inputs::AuthorInputLocations;
+use analysis_projection::AnalysisSpec;
 
 use artifact::paths::normalize_module_path;
 use artifact::reports::SelectedModuleLowering;
@@ -58,8 +59,8 @@ use materialize::{
     finish_logical_chunk, prepare_logical_chunk,
 };
 use staged_analysis::{
-    AnalysisSpec, ExportReentryReport, export_policies, export_reentry_reports, load_analysis,
-    loader_surface, normalized_chunk_ids, program_summary, prune_artifact_to_chunk_ids,
+    ExportReentryReport, export_policies, export_reentry_reports, load_analysis, loader_surface,
+    normalized_chunk_ids, program_summary, prune_artifact_to_chunk_ids,
 };
 
 use util::normalize_optional_relative_dir;
@@ -355,7 +356,7 @@ pub fn materialize_logical_modules(
     // function bindings, consumed per chunk via
     // `AnalysisInputs::imported_purities`. Vendor-swapped providers take part
     // through their bundled bodies (SPEC.md § Vendor swap equivalence).
-    let program_summary_chunk_closure = program_summary::selected_static_import_closure(
+    let program_summary_chunk_closure = analysis_projection::selected_static_import_closure(
         &artifact,
         &artifact_indexes,
         &selected_chunk_ids,
@@ -443,6 +444,7 @@ pub fn materialize_logical_modules(
             chunk_renames,
             unassigned_mode,
             chunk_analysis_options,
+            graph_provenance: options.graph_provenance.as_ref(),
             chunk_export_purity,
             host_behavior,
             intrinsics_never_written: program_premises.intrinsics_never_written.as_ref(),

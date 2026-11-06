@@ -36,9 +36,6 @@ use artifact::{ArtifactIndexes, ChunkBundle};
 use graph_provenance::GraphProvenance;
 use js_ast::ParsedJsModule;
 use program_analysis::analyze_program_shallow;
-use selector_outcome::Outcome as SelectorOutcome;
-use selector_resolve::{Chunk as SelectorChunk, EntityIndex};
-use source_match::source_match_claim_member_selectors;
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::{
     ArrowExpr, CallExpr, Callee, Constructor, Decl, Function, GetterProp, MemberProp, Module,
@@ -46,91 +43,9 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use super::analysis_projection::{
-    AnalysisNativeOperationInput, AnalysisProjection, ChunkAnalysisInputs,
-    NativeOperationSourceSelector,
+use analysis_projection::{
+    AnalysisNativeOperationInput, AnalysisProjection, AnalysisSourceSites, ChunkAnalysisInputs,
 };
-
-/// Resolve a one-binding `source_match` through the selector engine and
-/// return the declaring statement the template matched, with the source
-/// binding it declares there. The engine canonicalizes a repeated `var` to
-/// its first declaration site (SPEC.md § Repeated `var` declarations), which
-/// is right for a member claim (assigning the binding claims every site) but
-/// not for a source-unit endpoint: the author's template pins one statement,
-/// and that statement's declarator is the selected unit. The matched site is
-/// read back from the matcher's candidates for the resolved binding; a
-/// template matching several of the binding's sites is rejected.
-pub fn select_one_declared_binding(
-    selector_chunk: &SelectorChunk<'_>,
-    request_id: &str,
-    claim: &spec::SourceMatchClaim,
-) -> Result<(usize, String)> {
-    ensure!(
-        claim.bindings.len() == 1,
-        "{request_id}.source_match must select exactly one declared binding"
-    );
-    let spec::SourceMatchBinding::Local(local) = &claim.bindings[0] else {
-        bail!("{request_id}.source_match does not accept detailed name/rename payloads");
-    };
-    let mut selectors = source_match_claim_member_selectors(request_id, claim)?;
-    ensure!(
-        selectors.len() == 1,
-        "{request_id}.source_match must produce one selector"
-    );
-    let selector = selectors.pop().expect("one selector was checked");
-    ensure!(
-        selector
-            .parsed_selector
-            .declared_binding_names()
-            .iter()
-            .any(|name| name == local),
-        "{request_id}.source_match binding `{local}` must be declared by its pattern"
-    );
-    let parsed_selector = selector.parsed_selector.clone();
-    let selector_module = spec_resolution::spec_module(
-        request_id.to_owned(),
-        vec![spec_resolution::member_from_source_match(
-            selector.export_name,
-            selector.parsed_selector,
-        )],
-        Vec::new(),
-    );
-    let resolution = selector_chunk.resolve(&[selector_module])?;
-    let outcome = resolution
-        .outcome(0, EntityIndex::Member(0))
-        .with_context(|| format!("{request_id}.source_match produced no selector outcome"))?;
-    let (representative, binding) = match &outcome.outcome {
-        SelectorOutcome::Resolved {
-            body_index,
-            binding: Some(binding),
-            ..
-        } => (*body_index, binding.clone()),
-        other => bail!(
-            "{request_id}.source_match must select exactly one declared binding; selector result: {other:?}"
-        ),
-    };
-    let mut sites = selector_chunk
-        .matcher()
-        .member_candidates(request_id, &parsed_selector)?
-        .into_iter()
-        .filter(|matched| matched.binding.binding_name == binding)
-        .map(|matched| matched.body_idx)
-        .collect::<BTreeSet<_>>();
-    match sites.len() {
-        1 => Ok((sites.pop_first().expect("one site"), binding)),
-        0 => bail!(
-            "{request_id}.source_match resolved `{binding}` to statement #{representative} but its template matches none of the binding's declaration sites"
-        ),
-        _ => bail!(
-            "{request_id}.source_match matches `{binding}` at several declaration sites (statements {}); a source-unit endpoint must pin one",
-            sites
-                .iter()
-                .map(|site| format!("#{site}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-    }
-}
 
 /// Binding names introduced by an exported declaration (`export function`/
 /// `export const`/`export class`), whose export name equals the local name.
@@ -210,54 +125,61 @@ pub struct ProgramSummary {
     pub namespace_independent_members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
 }
 
-/// Static-import chunk closure for program-level purity analysis.
-///
-/// Starts from the user-selected chunks and follows each retained chunk's
-/// shallow-analysis import records through the same artifact-index resolver used
-/// by emission. Vendor-swapped chunks are traversed like any other: their
-/// bundled bodies stand for the replacement (SPEC.md § Vendor swap equivalence).
-pub fn selected_static_import_closure(
-    artifact: &ChunkBundle,
-    indexes: &ArtifactIndexes,
-    selected_chunk_ids: &[String],
-) -> Result<BTreeSet<ChunkId>> {
-    let mut closure = BTreeSet::new();
-    let mut pending = Vec::new();
-    for chunk_id in selected_chunk_ids {
-        let interned = artifact
-            .chunk_table
-            .get(chunk_id)
-            .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
-        if closure.insert(interned) {
-            pending.push(interned);
-        }
-    }
-
-    while let Some(chunk_id) = pending.pop() {
-        let Some(chunk_artifact) = artifact.find_chunk(chunk_id) else {
-            continue;
-        };
-        let entry_file = &chunk_artifact.analysis.entry_file;
-        for import in &chunk_artifact.analysis.imports {
-            let Some(target) = indexes.resolve_runtime_import_reference(
-                &import.source,
-                chunk_id,
-                entry_file,
-                &artifact.chunk_table,
-            ) else {
-                continue;
-            };
-            if closure.insert(target.target_chunk_id) {
-                pending.push(target.target_chunk_id);
-            }
-        }
-    }
-
-    Ok(closure)
-}
-
 fn chunk_allowed(chunk_id: ChunkId, chunk_filter: Option<&BTreeSet<ChunkId>>) -> bool {
     chunk_filter.is_none_or(|filter| filter.contains(&chunk_id))
+}
+
+fn validate_analysis_source_sites(
+    artifact: &ChunkBundle,
+    source_sites: &AnalysisSourceSites,
+    native_operation_inputs: &BTreeMap<String, Vec<AnalysisNativeOperationInput>>,
+    graph_provenance: Option<&GraphProvenance>,
+    chunk_filter: Option<&BTreeSet<ChunkId>>,
+) -> Result<()> {
+    let mut site_chunks = BTreeSet::new();
+    site_chunks.extend(source_sites.value_inputs.keys());
+    site_chunks.extend(source_sites.native_call_identity_inputs.keys());
+    site_chunks.extend(source_sites.argument_inputs.keys());
+    site_chunks.extend(source_sites.no_accessor_install_callables.keys());
+    site_chunks.extend(native_operation_inputs.keys());
+    ensure!(
+        site_chunks.iter().copied().collect::<BTreeSet<_>>()
+            == source_sites.source_sha256.keys().collect::<BTreeSet<_>>(),
+        "analysis projection source-site chunks do not match their source digests"
+    );
+    if site_chunks.is_empty() {
+        return Ok(());
+    }
+    let provenance =
+        graph_provenance.context("analysis source sites require parser-input provenance")?;
+    for chunk_name in site_chunks {
+        let chunk = artifact
+            .chunks
+            .iter()
+            .find(|chunk| artifact.chunk_table.name(chunk.chunk_id) == chunk_name)
+            .with_context(|| {
+                format!("analysis source sites name no loaded provider chunk {chunk_name}")
+            })?;
+        ensure!(
+            chunk_allowed(chunk.chunk_id, chunk_filter),
+            "analysis source-site provider {chunk_name} is outside the analyzed import closure"
+        );
+        let source = provenance
+            .chunk_sources
+            .iter()
+            .find(|source| source.chunk_id == *chunk_name)
+            .with_context(|| {
+                format!("analysis source-site provider {chunk_name} has no parser-input provenance")
+            })?;
+        let expected = &source_sites.source_sha256[chunk_name];
+        ensure!(
+            &source.sha256 == expected,
+            "analysis source-site provider {chunk_name} has stale parser input: expected {}, found {}",
+            expected,
+            source.sha256
+        );
+    }
+    Ok(())
 }
 
 fn resolved_target_is_entry(
@@ -506,10 +428,18 @@ pub fn collect_program_summary(
         }
     }
     let export_values = resolve_export_values(export_value_sources);
+    validate_analysis_source_sites(
+        artifact,
+        &projection.source_sites,
+        &projection.native_operation_inputs,
+        graph_provenance,
+        chunk_filter,
+    )?;
     let value_inputs = resolve_value_inputs(
         artifact,
         &modules,
         chunk_analysis_inputs,
+        &projection.source_sites.value_inputs,
         graph_provenance,
         chunk_filter,
     )?;
@@ -520,11 +450,13 @@ pub fn collect_program_summary(
         graph_provenance,
         chunk_filter,
         &projection.native_operation_inputs,
+        &projection.source_sites,
     )?;
     let argument_inputs = resolve_argument_inputs(
         artifact,
         &modules,
         chunk_analysis_inputs,
+        &projection.source_sites.argument_inputs,
         graph_provenance,
         chunk_filter,
     )?;
@@ -532,6 +464,7 @@ pub fn collect_program_summary(
         artifact,
         &modules,
         chunk_analysis_inputs,
+        &projection.source_sites.no_accessor_install_callables,
         chunk_filter,
     )?;
     let asserted_pure: BTreeMap<String, BTreeSet<String>> = chunk_export_purity
@@ -753,6 +686,7 @@ fn resolve_value_inputs(
     artifact: &ChunkBundle,
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     options: &BTreeMap<String, ChunkAnalysisInputs>,
+    selected_sites: &BTreeMap<String, Vec<analysis::analysis_inputs::SourceDeclaration>>,
     graph_provenance: Option<&GraphProvenance>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<BTreeMap<String, Vec<SelectedBindingValueInput>>> {
@@ -761,6 +695,7 @@ fn resolve_value_inputs(
         if options.value_inputs.is_empty() {
             continue;
         }
+        let prefix = format!("chunk_analysis_options.{chunk_name}.value_inputs");
         let chunk = artifact
             .chunks
             .iter()
@@ -795,17 +730,17 @@ fn resolve_value_inputs(
                     "chunk_analysis_options.{chunk_name}.value_inputs requires explicit graph parser-input provenance"
                 )
             })?;
-        let module = Module {
-            span: Default::default(),
-            body: facts.body.to_vec(),
-            shebang: None,
-        };
-        // Build the canonical structural index once for this provider. Each
-        // authored input below contributes only a selector claim against it.
-        let structural = analysis::facts::collect_chunk_source_facts(&module, None, |_| None);
-        let selector_chunk = SelectorChunk::new(chunk_name, &module, structural);
+        let declarations = selected_sites
+            .get(chunk_name)
+            .with_context(|| format!("{prefix} has no frontend-resolved source sites"))?;
+        ensure!(
+            declarations.len() == options.value_inputs.len(),
+            "{prefix} source-site count does not match authored inputs"
+        );
         let mut chunk_inputs = Vec::with_capacity(options.value_inputs.len());
-        for (input_index, contract) in options.value_inputs.iter().enumerate() {
+        for (input_index, (contract, declaration)) in
+            options.value_inputs.iter().zip(declarations).enumerate()
+        {
             ensure!(
                 contract.audited_source_sha256.len() == 64
                     && contract
@@ -820,56 +755,10 @@ fn resolve_value_inputs(
                 source.sha256,
                 contract.audited_source_sha256
             );
-            ensure!(
-                contract.source_match.bindings.len() == 1,
-                "chunk_analysis_options.{chunk_name}.value_inputs[{input_index}].source_match must select exactly one declared binding"
-            );
-            let spec::SourceMatchBinding::Local(local) = &contract.source_match.bindings[0] else {
-                bail!(
-                    "chunk_analysis_options.{chunk_name}.value_inputs[{input_index}].source_match does not accept detailed name/rename payloads"
-                );
-            };
             let request_id =
                 format!("chunk_analysis_options.{chunk_name}.value_inputs[{input_index}]");
-            let mut selectors =
-                source_match_claim_member_selectors(&request_id, &contract.source_match)?;
-            ensure!(
-                selectors.len() == 1,
-                "{request_id}.source_match did not produce one selector"
-            );
-            let selector = selectors.pop().expect("one selector was checked");
-            ensure!(
-                selector
-                    .parsed_selector
-                    .declared_binding_names()
-                    .iter()
-                    .any(|name| name == local),
-                "{request_id}.source_match binding `{local}` must be declared by its pattern; free-reference selection is unsupported"
-            );
-            let selector_module = spec_resolution::spec_module(
-                format!("value_input_{input_index}"),
-                vec![spec_resolution::member_from_source_match(
-                    selector.export_name,
-                    selector.parsed_selector,
-                )],
-                Vec::new(),
-            );
-            let resolution = selector_chunk.resolve(&[selector_module])?;
-            let outcome = resolution
-                .outcome(0, EntityIndex::Member(0))
-                .with_context(|| {
-                    format!("{request_id}.source_match produced no selector outcome")
-                })?;
-            let (body_index, selected_binding) = match &outcome.outcome {
-                SelectorOutcome::Resolved {
-                    body_index,
-                    binding: Some(binding),
-                    ..
-                } => (*body_index, binding.clone()),
-                other => bail!(
-                    "{request_id}.source_match must select exactly one declared binding; selector result: {other:?}"
-                ),
-            };
+            let body_index = declaration.body_index;
+            let selected_binding = declaration.binding.clone();
             if let Some(export_name) = &contract.expected_export {
                 ensure!(
                     facts
@@ -923,6 +812,7 @@ fn resolve_native_operation_inputs(
     graph_provenance: Option<&GraphProvenance>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
     projected_inputs: &BTreeMap<String, Vec<AnalysisNativeOperationInput>>,
+    source_sites: &analysis_projection::AnalysisSourceSites,
 ) -> Result<BTreeMap<String, Vec<SelectedNativeOperationInput>>> {
     let mut resolved = BTreeMap::new();
     // Native operation inputs have their own projection, so their chunks may
@@ -973,13 +863,14 @@ fn resolve_native_operation_inputs(
                     "chunk_analysis_options.{chunk_name}.native_operation_inputs requires explicit graph parser-input provenance"
                 )
             })?;
-        let module = Module {
-            span: Default::default(),
-            body: facts.body.to_vec(),
-            shebang: None,
-        };
-        let structural = analysis::facts::collect_chunk_source_facts(&module, None, |_| None);
-        let selector_chunk = SelectorChunk::new(chunk_name, &module, structural);
+        let call_identity_sites = source_sites
+            .native_call_identity_inputs
+            .get(chunk_name)
+            .map_or(&[][..], Vec::as_slice);
+        ensure!(
+            call_identity_sites.len() == native_call_identity_inputs.len(),
+            "chunk_analysis_options.{chunk_name}.native_call_identity_inputs source-site count does not match authored inputs"
+        );
         let contracts = operation_inputs
             .iter()
             .enumerate()
@@ -987,6 +878,7 @@ fn resolve_native_operation_inputs(
                 (
                     index,
                     format!("chunk_analysis_options.{chunk_name}.native_operation_inputs[{index}]"),
+                    contract.declaration.clone(),
                     contract.selector.clone(),
                     &contract.audited_source_sha256,
                     NativeInputKind::Operation(contract.operation),
@@ -997,7 +889,8 @@ fn resolve_native_operation_inputs(
                     (
                         operation_inputs.len() + index,
                         format!("chunk_analysis_options.{chunk_name}.native_call_identity_inputs[{index}]"),
-                        NativeOperationSourceSelector::SourceMatch(contract.source_match.clone()),
+                        call_identity_sites[index].clone(),
+                        NativeOperationSelectorProvenance::SourceMatch(contract.source_match.clone()),
                         &contract.audited_source_sha256,
                         NativeInputKind::CallIdentity(contract.callee),
                     )
@@ -1005,7 +898,15 @@ fn resolve_native_operation_inputs(
             ));
         let mut chunk_inputs =
             Vec::with_capacity(operation_inputs.len() + native_call_identity_inputs.len());
-        for (input_index, request_id, selector, audited_source_sha256, operation) in contracts {
+        for (
+            input_index,
+            request_id,
+            declaration,
+            selector_provenance,
+            audited_source_sha256,
+            operation,
+        ) in contracts
+        {
             ensure!(
                 audited_source_sha256.len() == 64
                     && audited_source_sha256
@@ -1019,22 +920,8 @@ fn resolve_native_operation_inputs(
                 source.sha256,
                 audited_source_sha256
             );
-            let (body_index, selected_binding, selector_provenance) = match selector {
-                NativeOperationSourceSelector::SourceMatch(source_match) => {
-                    let (body_index, binding) =
-                        select_one_declared_binding(&selector_chunk, &request_id, &source_match)?;
-                    (
-                        body_index,
-                        binding,
-                        NativeOperationSelectorProvenance::SourceMatch(source_match),
-                    )
-                }
-                NativeOperationSourceSelector::Declaration(declaration) => (
-                    declaration.body_index,
-                    declaration.binding.clone(),
-                    NativeOperationSelectorProvenance::Declaration(declaration),
-                ),
-            };
+            let body_index = declaration.body_index;
+            let selected_binding = declaration.binding;
             let selected_statement_span = facts
                 .body
                 .get(body_index)
@@ -1074,6 +961,7 @@ fn resolve_argument_inputs(
     artifact: &ChunkBundle,
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     options: &BTreeMap<String, ChunkAnalysisInputs>,
+    selected_sites: &BTreeMap<String, Vec<analysis::analysis_inputs::SourceDeclaration>>,
     graph_provenance: Option<&GraphProvenance>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<BTreeMap<String, Vec<ResolvedArgumentInput>>> {
@@ -1106,6 +994,13 @@ fn resolve_argument_inputs(
             .iter()
             .find(|entry| entry.chunk_id == *chunk_name)
             .with_context(|| format!("{prefix} has no parser-input provenance"))?;
+        let declarations = selected_sites
+            .get(chunk_name)
+            .with_context(|| format!("{prefix} has no frontend-resolved source sites"))?;
+        ensure!(
+            declarations.len() == options.argument_inputs.len(),
+            "{prefix} source-site count does not match authored inputs"
+        );
         let module = Module {
             span: Default::default(),
             body: facts.body.to_vec(),
@@ -1113,9 +1008,10 @@ fn resolve_argument_inputs(
         };
         let source_facts = analysis::facts::collect_chunk_source_facts(&module, None, |_| None);
         let source_contradictions = source_facts.per_statement.clone();
-        let selector_chunk = SelectorChunk::new(chunk_name, &module, source_facts);
         let mut selected = Vec::new();
-        for (input_index, contract) in options.argument_inputs.iter().enumerate() {
+        for (input_index, (contract, declaration)) in
+            options.argument_inputs.iter().zip(declarations).enumerate()
+        {
             let request_id = format!("{prefix}[{input_index}]");
             ensure!(
                 contract.audited_source_sha256.len() == 64
@@ -1135,8 +1031,8 @@ fn resolve_argument_inputs(
                 contract.parameter_index < contract.exact_arity,
                 "{request_id} parameter_index exceeds exact_arity"
             );
-            let (body_index, selected_binding) =
-                select_one_declared_binding(&selector_chunk, &request_id, &contract.source_match)?;
+            let body_index = declaration.body_index;
+            let selected_binding = declaration.binding.clone();
             let item = facts
                 .body
                 .get(body_index)
@@ -1209,6 +1105,7 @@ fn resolve_no_accessor_install_callables(
     artifact: &ChunkBundle,
     modules: &BTreeMap<String, ModulePurityFacts<'_>>,
     options: &BTreeMap<String, ChunkAnalysisInputs>,
+    selected_sites: &BTreeMap<String, Vec<analysis::analysis_inputs::SourceDeclaration>>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
 ) -> Result<BTreeMap<String, Vec<ResolvedNoAccessorInstall>>> {
     let mut resolved = BTreeMap::new();
@@ -1229,22 +1126,20 @@ fn resolve_no_accessor_install_callables(
         let facts = modules
             .get(chunk_name)
             .with_context(|| format!("{prefix} has no analyzed provider"))?;
-        let module = Module {
-            span: Default::default(),
-            body: facts.body.to_vec(),
-            shebang: None,
-        };
-        let source_facts = analysis::facts::collect_chunk_source_facts(&module, None, |_| None);
-        let selector_chunk = SelectorChunk::new(chunk_name, &module, source_facts);
+        let declarations = selected_sites
+            .get(chunk_name)
+            .with_context(|| format!("{prefix} has no frontend-resolved source sites"))?;
+        ensure!(
+            declarations.len() == options.no_accessor_install_callables.len(),
+            "{prefix} source-site count does not match authored inputs"
+        );
         let mut selected = Vec::new();
-        for (input_index, contract) in options.no_accessor_install_callables.iter().enumerate() {
+        for (input_index, declaration) in declarations.iter().enumerate() {
             let request_id = format!("{prefix}[{input_index}]");
-            let (body_index, _) =
-                select_one_declared_binding(&selector_chunk, &request_id, &contract.source_match)?;
             let mut callables = SelectedCallables::default();
             facts
                 .body
-                .get(body_index)
+                .get(declaration.body_index)
                 .context("selected source item is missing")?
                 .visit_with(&mut callables);
             let [function_span] = callables.outermost[..] else {
@@ -1483,7 +1378,8 @@ mod tests {
                     &host_behavior,
                     None,
                     BTreeMap::new(),
-                    &BTreeMap::new(),
+                    analysis_projection::AnalysisSourceSites::default(),
+                    BTreeMap::new(),
                 )
                 .expect("empty projection is valid"),
                 ProgramSummaryOptions {
@@ -1546,7 +1442,8 @@ mod tests {
                     &host_behavior,
                     None,
                     BTreeMap::new(),
-                    &BTreeMap::new(),
+                    analysis_projection::AnalysisSourceSites::default(),
+                    BTreeMap::new(),
                 )
                 .expect("empty projection is valid"),
                 ProgramSummaryOptions {

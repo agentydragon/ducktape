@@ -131,11 +131,11 @@ pub fn read_body(body: &[u8], ordinals: &ContextOrdinals) -> Result<AnalysisArti
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis_projection::AnalysisProjection;
     use crate::program_summary::{
         ProgramSummaryOptions, collect_program_summary, reparse_unretained_entries,
     };
     use analysis::AnalysisInputs;
+    use analysis_projection::AnalysisProjection;
     use artifact::reports::{ChunkAnalysisReport, ChunkFileRecord};
     use artifact::{
         ArtifactIndexes, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
@@ -259,7 +259,8 @@ mod tests {
                 &host_behavior,
                 None,
                 BTreeMap::new(),
-                &BTreeMap::new(),
+                analysis_projection::AnalysisSourceSites::default(),
+                BTreeMap::new(),
             )
             .expect("empty projection is valid"),
             ProgramSummaryOptions {
