@@ -428,9 +428,6 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                 name=f"cdviz-github-fixture-{uuid.uuid4().hex[:8]}",
                 network=network_name,
                 ports={"8081/tcp": None},
-                networking_config=client.api.create_networking_config(
-                    {network_name: client.api.create_endpoint_config(aliases=["cdviz-github-fixture"])}
-                ),
                 volumes={str(fixture_dir): {"bind": "/fixture", "mode": "ro"}},
                 detach=True,
             )
@@ -443,7 +440,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
             config_text = (
                 (source / "collector.toml")
                 .read_text()
-                .replace("https://api.github.com", "http://cdviz-github-fixture:8081")
+                .replace("https://api.github.com", f"http://{poll_server.name}:8081")
             )
             config_text = config_text.replace('polling_interval = "15m"', 'polling_interval = "1s"')
             (config_dir / "collector.toml").write_text(config_text)
@@ -555,7 +552,9 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
             assert pipeline_rows[polled_id][0]["outcome"] == "success"
             _stage("checking reader permissions and database extension")
             with psycopg.connect(reader_url, autocommit=True) as reader:
-                assert reader.execute("SELECT count(*) FROM cdviz.cdevents_lake").fetchone()[0] > 0
+                count = reader.execute("SELECT count(*) FROM cdviz.cdevents_lake").fetchone()
+                assert count is not None
+                assert count[0] > 0
                 with pytest.raises(psycopg.errors.InsufficientPrivilege) as denied:
                     reader.execute("INSERT INTO cdviz.pipelinerun DEFAULT VALUES")
                 assert denied.value.sqlstate == "42501"

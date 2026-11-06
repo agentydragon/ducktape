@@ -122,6 +122,16 @@ py_test(
     name = "test_ingestion_visual",
     size = "medium",
     srcs = ["test_ingestion_visual.py"],
+    data = [
+        "collector.toml",
+        "github_webhook.vrl",
+        "github_workflow_runs.vrl",
+        "grants.sql",
+        "pipelines.json",
+        "tasks.json",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     requires_docker = True,
     tags = ["visual"],
     deps = [
