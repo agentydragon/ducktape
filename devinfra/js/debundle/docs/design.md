@@ -849,6 +849,21 @@ globalThis`) marks the bindings it flows into (transitively,
   callee, argument evaluation, or unrelated operations in that statement.
   Deferred methods, callbacks and getters retain their later-use obligations.
 
+  The shared native kernel also checks FinalizationRegistry construction with
+  one known ordinary source callable. Exact native NewTarget identity makes
+  its nonconfigurable, nonwritable own prototype data property inert. The body
+  checks callability and writes only fresh internal slots. Its job-callback
+  hook captures execution metadata without invoking the callback; the admitted
+  ordinary callback establishes its own script context when invoked, and
+  builtin eval is excluded. The
+  [ECMAScript constructor](https://tc39.es/ecma262/multipage/managing-memory.html#sec-finalization-registry-cleanup-callback),
+  [default host hook](https://tc39.es/ecma262/multipage/executable-code-and-execution-contexts.html#sec-hostmakejobcallback)
+  and [HTML host hook](https://html.spec.whatwg.org/multipage/webappapis.html#hostmakejobcallback)
+  ground this scoped operation. It composes native construction receipts with
+  actual callee/operand effects while leaving the general table body flag
+  unknown. Returned values keep the existing opaque retained-callback carrier;
+  an effect receipt cannot erase it or supply an ordinary-object shape.
+
   The legacy own-syntax opacity bit can also be omitted when the statement
   carries a `CompletedInitialization` receipt for that exact source owner. The
   shared interpreter creates this receipt for the matching root initializer
