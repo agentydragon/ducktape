@@ -19,6 +19,8 @@ This directory owns the tools and integration code specific to that service.
   for individual build and test actions. Each keeps experiments in its `x/`.
 - [`docs/`](docs/) explains [setup](docs/integration.md),
   [remote execution](docs/remote.md), and [RBE workflows](docs/rbe_workflows.md).
+  [Service reuse](docs/service_reuse.md) covers recycling, snapshot publication,
+  service compatibility, fresh test state, and local fixture lifecycles.
   [`debug/`](debug/) holds investigations; [`x/`](x/) holds experimental tools.
 - [Snapshot reuse plan](plans/snapshot-reuse/README.md) records checked BuildBuddy
   defaults and an approval-gated validation proposal.
