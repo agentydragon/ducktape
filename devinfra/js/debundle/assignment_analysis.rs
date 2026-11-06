@@ -591,8 +591,8 @@ impl AssignmentAnalysis {
     }
 
     /// Shared per-module ESM import ordering. The emitter renders
-    /// every import-directive list through this; the realizability
-    /// gate's evaluation simulator applies the same ordering rules
+    /// every import-directive list through this; the candidate's exact
+    /// emitted-order simulation consumes this same object
     /// (see `esm_import_order::EsmImportOrder` for the contract).
     pub fn import_order(&self) -> &EsmImportOrder {
         &self.import_order

@@ -1,8 +1,8 @@
 //! Single source of truth for per-module ESM import-directive
-//! ordering, shared by the emitter (`lowering`) and the
-//! realizability gate's ESM evaluation simulator (`realizability`).
+//! ordering, shared by the emitter (`lowering`) and the candidate's
+//! exact emitted-order simulation (`realizability`).
 //!
-//! Both consumers must order import targets identically or the gate's
+//! Both consumers must order import targets identically or the candidate's
 //! verdict stops describing the bundle the emitter produces: the
 //! simulator would predict one ECMA-262 Phase-2 evaluation order while
 //! the emitted source steers the runtime linker DFS into another, and
@@ -26,8 +26,11 @@
 //!   `ModuleId` ascending on ties.
 //!
 //! The emitter renders import declarations in exactly these orders
-//! (`lowering/lower.rs`); the simulator uses the same orders as DFS
-//! neighbor order (`realizability::EsmIGraph`). Do not reintroduce
+//! (`lowering/lower.rs`); the candidate uses the same orders as DFS
+//! neighbor order. The legacy graph gate uses the base order without the
+//! entry-only leaf preference: those leaves cannot change other modules'
+//! relative evaluation order, and every constraint into one comes from entry,
+//! which always evaluates last. Do not reintroduce
 //! per-side ordering rules (e.g. "phantom imports first") — encode
 //! any ordering requirement here so both sides inherit it.
 

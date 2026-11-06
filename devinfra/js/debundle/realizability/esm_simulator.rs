@@ -15,7 +15,7 @@ use crate::esm_import_order::EsmImportOrder;
 /// decide whether Lemma 2's source-import reversal actually rescues
 /// a candidate asymmetric I-SCC at runtime.
 ///
-/// The simulator models the **same** import-ordering decisions the
+/// The simulator models the graph-constrained import-ordering decisions the
 /// materializer makes, via the shared `EsmImportOrder` (the single
 /// source of truth both sides consume — see `esm_import_order`):
 ///   - the chunk's emitted entry file imports **every**
@@ -35,6 +35,9 @@ use crate::esm_import_order::EsmImportOrder;
 /// source `M`. Equivalent to asking whether the emitted ESM bundle
 /// would actually execute without TDZ on the constraining edges in
 /// the candidate SCC.
+/// Entry-only leaves may be interleaved by source order in the candidate.
+/// They have no outgoing imports or non-entry importers, so this base-order
+/// simulation preserves every module-edge ordering check without that hint.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(super) struct EsmEvaluationSimulator {
     /// Post-order index per module after DFS from entry. Lower
