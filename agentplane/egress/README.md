@@ -52,8 +52,8 @@ Also here:
 - `sidecar/`: the Go runtime behind image `agentplane-egress-sidecar`. Sandbox/launcher instances
   present the shared runner SVID to central and pin its SPIFFE URI. New handshakes reload rotated
   certificate/roots; expiry closes persistent connections so they reconnect with current material.
-  It also hosts direct generic gRPC routes to Agentplane services, replacing authorization with
-  that service's projected token on every call. The runtime uses no Python interpreter. Its
+  Exact first-party HTTP and gRPC routes terminate workload TLS at the destination service,
+  which independently verifies the same runner SVID. The runtime uses no Python interpreter. Its
   settings come only from the YAML file named by `AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE`, which it
   refuses to start without; it reads no per-setting env and accepts no flags.
 - `sidecar_config.py` and `platform_routes.py`: Python settings and route models cdk8s renders each

@@ -1554,9 +1554,11 @@ runner ingress) need a replacement the destination verifies itself, never a prox
 design that before removing the projected tokens. Consequence for `AGENT_PRINCIPAL_MODEL_DESIGN`:
 the Pod's ServiceAccount stops being what authenticates an agent, and no agent is provisioned one by
 default. Costs that stand: a second authentication scheme in each agent-facing service during the
-migration. Active non-Sandbox callers need the separate authentication design below; stopped
-OpenClaw instances require no compatibility surface. **Exit:** `SVID_PLATFORM_ROUTES` in
-[section 14](#14-identity-and-kubernetes-accounts-cutover); the Gateway path is already covered.
+migration. The Sandbox SVID hop and service boundaries are implemented and exercised in k3s;
+the Sandbox's own ServiceAccount remains the policy subject. The staging flip stays draft under
+`NON_SANDBOX_PROXY_AUTH` in [section 14](#14-identity-and-kubernetes-accounts-cutover): active Action
+command boxes and Haku UI still need an authentication design. Stopped OpenClaw instances require
+no compatibility surface and do not block this flip. The Gateway path is already covered.
 
 ## 7. Our own Sandbox resource: Sessions that outlive their Pod
 
@@ -2965,10 +2967,8 @@ flowchart LR
     IDENTITY_KINDS --> SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
     IDENTITY_KINDS --> IDENTITY_CATALOG[Blocked: catalog and RBAC in cdk8s]
     IDENTITY_KINDS --> APP_IDENTITIES_UI[Blocked: identities in the app]
-    SVID_PLATFORM_ROUTES[In flight: services verify SVIDs]
-    NON_SANDBOX_PROXY_AUTH[Decision: non-Sandbox proxy authentication] -. operational merge hold .-> SVID_PLATFORM_ROUTES
-    SVID_PLATFORM_ROUTES --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
-    POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS
+    NON_SANDBOX_PROXY_AUTH[Decision: non-Sandbox proxy authentication]
+    POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS
     SERVICES_IDENTITY_PRINCIPAL --> IDENTITY_SYSTEM_TESTS
     SANDBOX_IDENTITY_SPEC --> IDENTITY_SYSTEM_TESTS
@@ -2997,23 +2997,6 @@ until there is a concrete caller, so it requires no compatibility surface and do
 flip. **Exit:** the active non-Sandbox callers' contract is implemented and exercised before the
 staging flip merges. This is an operational hold, not a prerequisite for drafting the five
 service-owned SVID boundaries.
-
-### `SVID_PLATFORM_ROUTES` — first-party services verify SVIDs themselves
-
-**In flight; Codex, 2026-11-05.** The hop implementation is complete and its finished node is
-removed; validation and rollback live in the egress docs and PRs. The Rules API is the first
-service-owned SVID boundary in the flip. History runner ingress now verifies SVIDs directly;
-Notification, Dispatcher, Action and LLM also verify SVIDs directly. End-to-end acceptance remains pending. The whole stack is
-operationally held by `NON_SANDBOX_PROXY_AUTH`. Decided 2026-11-05: the proxy tunnels the TLS connection through
-and each of Notification, Dispatcher, runner ingress, the Action Service and LLM ingress verifies
-the client certificate with the shared transport package and resolves the identity through the
-live Sandbox; the proxy never asserts an identity. Each service drops its Pod-bound projected-token
-path for sandbox callers and keeps its own authorization as the whole gate; `authenticatedWorkloadToken`
-and the per-audience `projectedWorkloadToken` entries go. The central sampler's zero-environment
-path keeps its existing delegated ServiceAccount authentication and holds no SVID; changing its
-principal belongs to the later `SERVICES_IDENTITY_PRINCIPAL` cutover. **Exit:** one
-platform route per service authenticates an SVID end to end in the k3s stack, and a forged or
-expired leaf is refused before any handler runs.
 
 ### `POLICY_GRANTS` — grants, role sets and managed ServiceAccounts
 
@@ -3090,7 +3073,7 @@ deleted.
 
 ### `IDENTITY_SYSTEM_TESTS` — cutover acceptance scenarios
 
-**Blocked on `SVID_PLATFORM_ROUTES`, `POLICY_GRANTS`, `EGRESS_IDENTITY_RULES`,
+**Blocked on `POLICY_GRANTS`, `EGRESS_IDENTITY_RULES`,
 `SERVICES_IDENTITY_PRINCIPAL`, `SANDBOX_IDENTITY_SPEC` and `IDENTITY_CATALOG`.** k3s scenarios for
 the plan's exit checks: an SVID-authenticated egress hop and one platform route; a Sandbox with no
 Kubernetes use rule has no ServiceAccount and `kubectl` fails closed at the proxy; two identities act

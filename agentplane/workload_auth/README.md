@@ -24,6 +24,21 @@ channel for its SVID HTTP listener. It carries the service-verified TLS peer in 
 runs the same method interceptors as native gRPC, and preserves streaming revalidation. No caller
 assertion crosses a socket or header. Backend HTTP gateways keep their existing token path.
 
+History runner ingress, Notification, Dispatcher, Action Service, LLM ingress and the Rules API
+terminate their workload TLS themselves. The proxy tunnels their encrypted traffic without
+asserting a caller. The central sampler retains its delegated ServiceAccount path and holds no SVID.
+
+The k3s `test_pod`, `mcp:test_actions`, `mcp:test_parent_delegation` and `test_real_model` suites
+exercise these service boundaries together, including History after runner replacement, messaging,
+native Dispatcher CLI access, Action authorization, Rules discovery and Claude/Codex model calls.
+All four suites passed at implementation commit `b1e4e7460626af9a604ec76c66ec3b2ba6ba6a5d`
+([BuildBuddy](https://app.buildbuddy.io/invocation/8faaf35b-bd60-4f31-9aa5-1d47a024c642)).
+The resolver, facade and each service's focused integration tests cover forged/expired leaves and
+live Sandbox revocation before handlers run
+([focused tests](https://app.buildbuddy.io/invocation/61cc4155-9a41-46fd-b999-56bc8eea7701)).
+This is implementation acceptance; the staging flip remains draft under
+[`NON_SANDBOX_PROXY_AUTH`](../plans/task_dag.md#non_sandbox_proxy_auth--separate-caller-authentication-before-merging-the-flip).
+
 `ResolveServiceAccountToken` returns a `ServiceAccountPrincipal` for destinations whose authority
 belongs to the account alone. It requires a ServiceAccount UID and accepts either no Pod binding
 claims or one complete Pod name and UID pair. Partial or repeated claims are rejected. The Action
