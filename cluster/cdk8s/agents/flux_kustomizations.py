@@ -4,40 +4,8 @@ from __future__ import annotations
 
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
-from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s.flux import (
-    SOPS_DECRYPTION,
-    Kustomization,
-    RenderedDirectory,
-    flux_kustomization,
-    flux_kustomization_depends_on,
-    flux_kustomization_depends_on_many,
-)
-
-
-def plaid_mcp(
-    chart: Chart,
-    artifact: ArtifactGeneratorSpecArtifacts,
-    cnpg: Kustomization,
-    external_secrets_operator: Kustomization,
-    authentik: Kustomization,
-    seaweedfs_operator: Kustomization,
-) -> Kustomization:
-    name = "plaid-mcp"
-    return flux_kustomization(
-        chart,
-        name,
-        artifact,
-        timeout="10m",
-        decryption=SOPS_DECRYPTION,
-        # Web OIDC credentials are supplied by an ExternalSecret and required by
-        # the pods at startup; wait=True tracks their readiness. Unrelated
-        # Authentik Terraform projects must not block app image/config updates.
-        # Finance spend policy reconciles independently; its Secret copy and
-        # workload become ready once that configuration arrives.
-        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, authentik, seaweedfs_operator),
-    )
+from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 
 
 def plaid_spend_policy(chart: Chart) -> Kustomization:
