@@ -6,6 +6,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from itertools import chain
 from pathlib import Path
 from typing import Any, cast
 from uuid import UUID, uuid4
@@ -1149,9 +1150,4 @@ def _validated_payload[PayloadT: BaseModel](model_type: type[PayloadT], value: P
 
 
 def _merge_products(*groups: list[str]) -> list[str]:
-    merged: list[str] = []
-    for group in groups:
-        for product in group:
-            if product not in merged:
-                merged.append(product)
-    return merged
+    return list(dict.fromkeys(chain.from_iterable(groups)))
