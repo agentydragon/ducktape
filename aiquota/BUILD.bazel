@@ -144,12 +144,10 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":cache",
-        ":clickhouse",
         ":config",
         ":models",
         "//aiquota/providers:base",
         "//aiquota/render:view_model_lib",
-        "@rules_python//python/runfiles",
         "@pypi//authlib",
         # keep: the pinned Gazelle parser does not accept api.py's Python 3.14 syntax.
         "@pypi//anyio",
@@ -160,8 +158,6 @@ py_library(
         "@pypi//itsdangerous",
         "@pypi//prometheus_client",
         "@pypi//starlette",
-        "@pypi//uvicorn",
-        ":settings",
     ],
 )
 
@@ -189,21 +185,32 @@ py_binary(
     ],
 )
 
-py_binary(
-    name = "server",
-    # keep: the SPA aiquota.api mounts from runfiles; no module imports it.
+py_library(
+    name = "server_main",
+    srcs = ["server_main.py"],
     data = ["//aiquota/frontend:bundle"],
     imports = [".."],
-    main_module = "aiquota.api",
+    deps = [
+        ":api",
+        ":clickhouse",
+        ":config",
+        ":settings",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "server",
+    imports = [".."],
+    main_module = "aiquota.server_main",
     visibility = ["//visibility:public"],
-    deps = [":api"],
+    deps = [":server_main"],
 )
 
 aspect_py_binary(
     name = "server_bin",
-    data = ["//aiquota/frontend:bundle"],
-    main = "api.py",
-    deps = [":api"],
+    main = "server_main.py",
+    deps = [":server_main"],
 )
 
 # Prints the OpenAPI schema artifact consumed by the frontend's file-input converter.
@@ -333,6 +340,7 @@ py_test(
         ":api",
         ":config",
         ":models",
+        ":server_main",
         ":settings",
         "//:conftest",
         "//aiquota/render:view_model_lib",
