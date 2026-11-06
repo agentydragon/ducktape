@@ -891,6 +891,18 @@ compatibility path until separate parameter and body environments are modeled.
 Rest/destructuring, `arguments`, async and generator
 prologues remain outside this receipt family. Argument evaluation keeps its
 own effects, including surplus arguments.
+An ordinary named function expression transports its actual invoked function
+value, with its original captured-cell identities, into the immutable name
+environment before parameter defaults execute. The shared kernel records this
+establishment separately from parameter initialization. A captured name uses an
+immutable activation view containing that same function value; it does not
+recursively add the view to the function's identity. Initialized reads and
+deferred captures use the existing lexical-cell transfers. Shadowing parameters
+retain distinct bindings, and assignment to the name remains abrupt. Source
+identity alone, strict provider queries and retained-only queries do not
+establish this environment or supply a receipt. This models the immutable name
+environment initialized with the closure by
+[named function expression evaluation](https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#sec-function-definitions-runtime-semantics-instantiateordinaryfunctionexpression).
 The root checks that its exact root call-site set matches and that the flat
 call edges connect back to its exact body without expanding root-to-leaf paths.
 

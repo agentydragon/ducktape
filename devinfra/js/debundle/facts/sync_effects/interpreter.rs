@@ -2222,6 +2222,74 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 self.executor.state.prefix_revision.wrapping_add(1);
         }
     }
+    fn named_self_binding(
+        &mut self,
+        binding: &Id,
+        frame: &LocalFrame,
+    ) -> Option<EffectCoverageFragment> {
+        let LocalExecutionScope::Callable(callable) = self.scope else {
+            return None;
+        };
+        if self.retained_query.is_some()
+            || self.body.bindings.get(binding) != Some(&LocalBinding::NamedSelf(callable))
+            || self.executor.inputs.index.callables[&callable]
+                .self_binding
+                .as_ref()
+                != Some(binding)
+        {
+            return None;
+        }
+        let values = frame.environment.get(binding)?;
+        if values.len() != 1
+            || !matches!(values.first(),
+                Some(AbstractValue::Closure(key, _)
+                | AbstractValue::Value(Value::Alloc(Kind::Function, key))) if *key == callable)
+        {
+            return None;
+        }
+        if self
+            .executor
+            .inputs
+            .captured_local_bindings
+            .contains(binding)
+        {
+            let origin = *self
+                .executor
+                .inputs
+                .index
+                .lexical_cell_origins
+                .get(binding)?;
+            // An activation view of the immutable name cell contains the
+            // original selected function, never a newly captured self cycle.
+            let cell = self.executor.state.lexical_cells.insert(LexicalCell {
+                values: values.clone(),
+                selection: CallableSelection::observed(
+                    values,
+                    self.executor.boxed_settled_prefix_dependencies(),
+                ),
+                kind: LocalBinding::NamedSelf(callable),
+                initialization: CellInitialization::Initialized,
+            });
+            self.executor
+                .state
+                .active_cells
+                .insert(binding.clone(), cell);
+            self.executor.state.prefix_revision =
+                self.executor.state.prefix_revision.wrapping_add(1);
+            let addressed = EffectCell::LexicalCell(origin);
+            self.outcome
+                .effects
+                .heap_contents
+                .allocations
+                .insert(addressed);
+            self.outcome
+                .effects
+                .record_heap_write(addressed, self.executor.state.assumption.is_none());
+        }
+        let mut effects = EffectCoverageFragment::no_effects();
+        effects.depend_on(&self.executor.settled_prefix_dependencies());
+        Some(effects)
+    }
     fn declarative_binding_operation(
         &mut self,
         binding: &Id,
@@ -2290,6 +2358,11 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     fn instantiate_bindings(&mut self, frame: &mut LocalFrame) {
         let mut allocated = false;
         for (binding, kind) in &self.body.bindings {
+            if matches!(kind, LocalBinding::NamedSelf(_))
+                && frame.initialized_bindings.contains(binding)
+            {
+                continue;
+            }
             if *kind == LocalBinding::Parameter && frame.parameter_inputs.is_some() {
                 // The parameter environment already exists, including cells
                 // captured while a default expression was evaluated.
@@ -12078,6 +12151,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             return Outcome::default();
         };
         let mut env = captured_context.clone();
+        if let Some(binding) = &callable.self_binding {
+            // This is the actual selected callee, including its original
+            // captured cells. Materializing captures must not change identity.
+            let value = captured.clone().map_or_else(
+                || AbstractValue::Value(Value::Alloc(Kind::Function, key)),
+                |captured| AbstractValue::Closure(key, captured),
+            );
+            env.insert(binding.clone(), Values::from([value]));
+        }
         let ordered_prologue = covered_prologue
             && !unsupported_inputs
             && self.state.array_iteration_depth == 0
