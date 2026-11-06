@@ -23,7 +23,13 @@ from airlock.settings import Settings
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
-from cluster.cdk8s.flux import ConfigMapArgs
+from cluster.cdk8s.flux import (
+    ConfigMapArgs,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on,
+)
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -149,6 +155,17 @@ CONFIG_MAP = ConfigMapArgs(
     namespace=NAME,
     data={_CONFIG_FILE: yaml_config(validate_settings_fragment(Settings, _CONFIG_DATA))},
 )
+
+
+def airlock(chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        directory,
+        suspend=False,
+        timeout="5m",
+        depends_on=[flux_kustomization_depends_on(external_secrets_operator)],
+    )
 
 
 def _probe(path: str, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:

@@ -17,6 +17,8 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.egress.resources import placeholder_of
@@ -24,6 +26,13 @@ from cluster.cdk8s import agent_access_profiles as access, namespaces
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
+from cluster.cdk8s.flux import (
+    SOPS_DECRYPTION,
+    Kustomization,
+    RenderedDirectory,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, PARKED_ROOT
@@ -735,3 +744,49 @@ APP_DIR = f"{PARKED_ROOT}/public-coder-agent/app"
 
 def write_manifests(root: Path) -> None:
     write_charts(root, APP_DIR, chart, app_chart)
+
+
+def public_coder_agent_access(chart: Chart, directory: RenderedDirectory) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        "public-coder-agent-access",
+        directory,
+        wait=None,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        description=(
+            "The public-coder-agent namespace, which holds the parked OpenClaw instance's PVCs, and the Roles "
+            "and bindings that Haku and Agentplane Sandboxes still use against it."
+        ),
+    )
+
+
+def public_coder_agent_app(
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    external_secrets_operator: Kustomization,
+    agentplane_staging: Kustomization,
+) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        "public-coder-agent-app",
+        artifact,
+        wait=None,
+        annotations={"ducktape.org/parked": "true"},
+        # The parked app artifact is intentionally omitted. Keep its inventory orphanable so
+        # the retained OpenClaw PVCs and state survive while the app is offline.
+        suspend=True,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        decryption=SOPS_DECRYPTION,
+        timeout="5m",
+        # Runtime credentials and services can reconcile after the namespace and workload land.
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, agentplane_staging),
+        health_checks=[
+            KustomizationSpecHealthChecks(
+                api_version="apps/v1", kind="Deployment", name="public-coder-agent", namespace="public-coder-agent"
+            )
+        ],
+        description=(
+            "OpenClaw coder agent application; its state and retained SSH audit recordings stay "
+            "in the parked namespace. Backups reconcile separately."
+        ),
+    )
