@@ -137,16 +137,20 @@ console.log(later);
 
 #[test]
 fn throw_only_initializer_does_not_supply_a_normal_stored_value() {
-    let fixture = run_fixture(FixtureOpts::new(
-        "const dynamic = (() => { throw new TypeError('stopped'); })(); const later = dynamic; console.log(later);\n",
-        vec![],
-    ));
-    assert_preserved_entry_error(&fixture, "TypeError");
-    let later = binding_execution_report(&fixture, "later");
-    assert_ne!(
-        later["binding_effect_authority"]["authority"], "operation_receipt",
-        "a throw-only initializer cannot certify its sequel: {later:#}"
-    );
+    for initializer in [
+        "(() => { throw new TypeError('stopped'); })()",
+        "(function stop() { throw new TypeError('stopped'); })()",
+    ] {
+        let source =
+            format!("const dynamic = {initializer}; const later = dynamic; console.log(later);\n");
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_error(&fixture, "TypeError");
+        let later = binding_execution_report(&fixture, "later");
+        assert_ne!(
+            later["binding_effect_authority"]["authority"], "operation_receipt",
+            "a throw-only initializer cannot certify its sequel: {later:#}"
+        );
+    }
 }
 
 #[test]

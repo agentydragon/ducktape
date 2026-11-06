@@ -912,6 +912,10 @@ binding initialized. Prebound values do not establish these receipts. Local
 declaration receipts do not certify `var`/function hoisting
 or an initializer's other effects, and cannot manufacture callable
 selection evidence from a stored value.
+A terminal source `throw` contributes no implicit fall-through `undefined` to
+the callable's return projection. Explicit normal return alternatives remain
+separate from throwing outcomes and incomplete body effects. An unavailable
+initializer cannot manufacture a normally stored value for a later alias read.
 Default-bearing bodies with body `var` or function declarations retain the
 compatibility path until separate parameter and body environments are modeled.
 Rest/destructuring, `arguments`, async and generator
