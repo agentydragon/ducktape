@@ -110,6 +110,23 @@ fn assert_imported_read_receipt(fixture: &Fixture, binding: &str) {
 }
 
 #[test]
+fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
+    let source = "import { limit as bytes } from './peer.js';\nconst anchor = 0;\nconst computed = 4 * bytes + 256;\nconsole.log(anchor, computed);\nexport { anchor, computed };\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("compute", &[Member::new("computed")]),
+                logical_module("anchor", &[Member::new("anchor")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
+    );
+    assert_preserved_entry_output(&fixture, "0 264\n");
+    assert_imported_read_receipt(&fixture, "computed");
+}
+
+#[test]
 fn direct_literal_const_import_does_not_promote_unrelated_callbacks() {
     let fixture = assert_primitive(
         "export const limit = 2;\n",
