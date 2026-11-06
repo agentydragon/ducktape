@@ -14,7 +14,6 @@ READINESS_PATH = "/readyz"
 READINESS_HOST = "0.0.0.0"
 READINESS_PORT = 3129
 READINESS_LISTEN_ADDRESS = f"{READINESS_HOST}:{READINESS_PORT}"
-RUNNER_TLS_MOUNT_PATH = "/run/agentplane/environment-runtime-tls"
 ProxyMode = Literal["token", "mtls"]
 
 

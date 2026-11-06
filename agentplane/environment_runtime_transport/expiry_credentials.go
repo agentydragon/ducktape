@@ -28,6 +28,24 @@ func newExpiringCredentials(config *tls.Config) credentials.TransportCredentials
 	return &expiringCredentials{config: grpcTLSDefaults(config)}
 }
 
+// ClientTLSConnection handshakes with the supplied verified TLS configuration
+// and closes the connection when either selected leaf expires. Proxy clients use
+// it so a persistent HTTP connection reconnects with rotated file credentials.
+func ClientTLSConnection(ctx context.Context, raw net.Conn, security *tls.Config) (net.Conn, error) {
+	config, selected := trackedTLSConfig(security)
+	connection := tls.Client(raw, config)
+	if err := connection.HandshakeContext(ctx); err != nil {
+		_ = connection.Close()
+		return nil, err
+	}
+	localNotAfter, err := selected.notAfter()
+	if err != nil {
+		_ = connection.Close()
+		return nil, err
+	}
+	return &expiringConn{Conn: connection, cancelExpiry: CloseTLSConnAtCertificateExpiry(connection, localNotAfter)}, nil
+}
+
 func (c *expiringCredentials) Info() credentials.ProtocolInfo {
 	return credentials.ProtocolInfo{SecurityProtocol: "tls", SecurityVersion: "1.2", ServerName: c.config.ServerName}
 }

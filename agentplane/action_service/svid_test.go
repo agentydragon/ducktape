@@ -20,6 +20,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 func TestSVIDListenerPreservesCallerLabelsAndRequestOwnership(t *testing.T) {
@@ -86,12 +87,36 @@ func TestSVIDListenerPreservesCallerLabelsAndRequestOwnership(t *testing.T) {
 			t.Fatalf("HTTP SVID ownership status=%d body=%v error=%v", result.StatusCode, body, err)
 		}
 		if i == 0 {
+			watch, err := action_servicepb.NewActionServiceClient(conn).WatchActionRequests(ctx, &action_servicepb.WatchActionRequestsRequest{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for {
+				frame, err := watch.Recv()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if frame.GetSnapshotComplete() != nil {
+					break
+				}
+			}
 			if err := workload.Objects.Delete(t.Context(), workload.Sandbox); err != nil {
 				t.Fatal(err)
 			}
 			_, err = action_servicepb.NewActionServiceClient(conn).ListActionRequests(ctx, &action_servicepb.ListActionRequestsRequest{})
 			if status.Code(err) != codes.Unauthenticated {
 				t.Fatalf("deleted Sandbox on existing TLS connection: %v", err)
+			}
+			if _, err := watch.Recv(); status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("deleted Sandbox on existing watch: %v", err)
+			}
+		} else {
+			setCallerLabel(t, workload.Principal.Account, false)
+			if err := wait.PollUntilContextTimeout(ctx, 20*time.Millisecond, 5*time.Second, true, func(ctx context.Context) (bool, error) {
+				_, err := action_servicepb.NewActionServiceClient(conn).ListActionRequests(ctx, &action_servicepb.ListActionRequestsRequest{})
+				return status.Code(err) == codes.Unauthenticated, nil
+			}); err != nil {
+				t.Fatal("SVID caller retained access after caller-label removal", err)
 			}
 		}
 	}

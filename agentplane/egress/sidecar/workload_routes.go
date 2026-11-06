@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
@@ -125,7 +127,28 @@ func (s *sidecar) dialWorkloadRoute(ctx context.Context, target string, security
 		return nil, fmt.Errorf("central proxy refused workload CONNECT: %s", response.Status)
 	}
 	tracked := &trackedWorkloadConnection{Conn: &bufferedWorkloadConnection{Conn: connection, reader: reader}, sidecar: s}
-	inner := tls.Client(tracked, security.Clone())
+	configuration := security.Clone()
+	getCertificate := configuration.GetClientCertificate
+	if getCertificate == nil {
+		return nil, errors.New("workload route requires a rotating client certificate source")
+	}
+	var localNotAfter time.Time
+	configuration.GetClientCertificate = func(info *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		certificate, err := getCertificate(info)
+		if err != nil {
+			return nil, err
+		}
+		if certificate == nil || len(certificate.Certificate) == 0 {
+			return nil, errors.New("workload route selected no client leaf")
+		}
+		leaf, err := x509.ParseCertificate(certificate.Certificate[0])
+		if err != nil {
+			return nil, err
+		}
+		localNotAfter = leaf.NotAfter
+		return certificate, nil
+	}
+	inner := tls.Client(tracked, configuration)
 	if err := inner.HandshakeContext(ctx); err != nil {
 		return nil, fmt.Errorf("workload service TLS: %w", err)
 	}
@@ -133,6 +156,7 @@ func (s *sidecar) dialWorkloadRoute(ctx context.Context, target string, security
 		return nil, err
 	}
 	s.track(tracked, true)
+	tracked.setExpiry(environment_runtime_transport.CloseTLSConnAtCertificateExpiry(inner, localNotAfter))
 	complete = true
 	return inner, nil
 }
@@ -146,12 +170,31 @@ func (c *bufferedWorkloadConnection) Read(p []byte) (int, error) { return c.read
 
 type trackedWorkloadConnection struct {
 	net.Conn
-	sidecar *sidecar
+	sidecar      *sidecar
+	mu           sync.Mutex
+	closed       bool
+	cancelExpiry func()
 }
 
 func (c *trackedWorkloadConnection) Close() error {
+	c.mu.Lock()
+	c.closed = true
+	if c.cancelExpiry != nil {
+		c.cancelExpiry()
+	}
+	c.mu.Unlock()
 	c.sidecar.track(c, false)
 	return c.Conn.Close()
+}
+
+func (c *trackedWorkloadConnection) setExpiry(cancel func()) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		cancel()
+		return
+	}
+	c.cancelExpiry = cancel
 }
 
 // exchangeWorkloadRoute uses the normal HTTP transport for body framing,

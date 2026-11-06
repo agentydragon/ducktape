@@ -34,7 +34,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
@@ -255,7 +254,7 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 		if err != nil {
 			return err
 		}
-		security, err := c.Ingress.WorkloadTLS.WorkloadServerTLSConfig(environment_runtime_transport.HistoryIngressURI)
+		security, err := c.Ingress.WorkloadTLS.WorkloadServerCredentials(environment_runtime_transport.HistoryIngressURI)
 		if err != nil {
 			return err
 		}
@@ -267,7 +266,7 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 		securedWriter := writerAuth.WithSVID(svids)
 		methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnyAccount(securedWriter)}
 		options := methods.ServerOptions(seconds(c.RequestTimeoutSeconds))
-		workloadServer = grpc.NewServer(append(options, grpc.Creds(credentials.NewTLS(security)), observability.GRPCServerOption())...)
+		workloadServer = grpc.NewServer(append(options, grpc.Creds(security), observability.GRPCServerOption())...)
 		session_ingresspb.RegisterSessionJournalIngressServer(workloadServer, &ingress.Service{
 			Principals: securedWriter, SandboxUIDs: ingress.NewServiceAccountSandboxUIDResolver(kube),
 			History: storage.NewStore(ingressDB, c.Ingress.SettleDeltas),

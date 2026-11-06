@@ -309,6 +309,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 			return err
 		}
 		workloadServer = &http.Server{
+			ConnState: environment_runtime_transport.HTTPServerTLSExpiryConnState(nil),
 			TLSConfig: tlsConfig, ReadHeaderTimeout: readHeaderTimeout,
 			Handler: observability.HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
