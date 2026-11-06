@@ -1097,12 +1097,12 @@ fn assert_source_side_effect_order(fixture: &Fixture) {
         .nodes
         .iter()
         .filter(|node| node.statement_kind == StatementKind::SideEffect)
-        .map(|node| (node.statement_ordinal.0, node.id.as_str().to_string()))
+        .map(|node| node.statement_ordinal.0)
         .collect();
-    source_order.sort_by_key(|(ordinal, _)| *ordinal);
+    source_order.sort_unstable();
     let expected: Vec<_> = source_order
         .iter()
-        .map(|(ordinal, _)| u64::from(*ordinal))
+        .map(|ordinal| u64::try_from(*ordinal).unwrap())
         .collect();
     assert!(
         expected.len() > 1,
