@@ -30,10 +30,12 @@ use crate::plans::ModulePlan;
 use crate::rebind_fold::compute_rebind_folds;
 use crate::rename_ledger::{RenameLedger, SealValidation};
 use crate::{
-    ChunkModulesCounts, ChunkModulesReport, ExportReentryReport, FinalModuleContent,
-    GateRejectionPolicy, GraphReportSelection, ReportEmission, RequestedLogicalModule,
+    BindingSourceUnitAssociation, ChunkModulesCounts, ChunkModulesReport, ExportReentryReport,
+    FinalModuleContent, GateRejectionPolicy, GraphReportSelection, ReportEmission,
+    RequestedLogicalModule,
 };
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
+use analysis::reports::source_unit_key;
 use analysis::{
     BindingCatalogue, BindingId, BindingKind, DependencyGraphAndAtomicGroups, EntryDestination,
     ModuleId, ModuleRole, PlacementProjectionInput, PlannedModule, SourceUnitLayout, top_level_id,
@@ -1471,8 +1473,30 @@ fn build_final_module_report(
                 .inputs()
                 .source_unit_report_ids_for_bindings(binding_ids.iter())
                 .expect("module report bindings belong to the analysis chunk");
+            let binding_source_units = sorted
+                .iter()
+                .map(|(binding_name, _)| {
+                    let binding_id = BindingId::new(
+                        chunk_identity,
+                        top_level_id(binding_name, chunk_top_level_mark),
+                    );
+                    let source_unit_ids = assignment_analysis
+                        .inputs()
+                        .source_unit_ids_for_binding(&binding_id)
+                        .expect("module report bindings belong to the analysis chunk")
+                        .iter()
+                        .copied()
+                        .map(source_unit_key)
+                        .collect();
+                    BindingSourceUnitAssociation {
+                        binding_name: (*binding_name).clone(),
+                        source_unit_ids,
+                    }
+                })
+                .collect();
             FinalModuleContent {
                 binding_names,
+                binding_source_units,
                 file: plan.target_file.clone(),
                 member_names,
                 path: spec::ModulePath::parse(&plan.target_path, "")

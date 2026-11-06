@@ -125,6 +125,8 @@ pub struct ChunkModulesCounts {
 #[derive(Debug, Clone, Serialize)]
 pub struct FinalModuleContent {
     pub binding_names: Vec<String>,
+    /// Declaration source units for each input binding, in `binding_names` order.
+    pub binding_source_units: Vec<BindingSourceUnitAssociation>,
     pub file: String,
     pub member_names: Vec<String>,
     /// Canonical [`spec::ModulePath`] (the report is per-chunk, so
@@ -133,6 +135,14 @@ pub struct FinalModuleContent {
     pub source_unit_ids: Vec<String>,
     /// True for a planned output with `ModuleRole::Unassigned`, never entry.
     pub residual: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BindingSourceUnitAssociation {
+    /// Original input binding name from the module plan.
+    pub binding_name: String,
+    /// Sorted chunk-local graph IDs of source units declaring this binding.
+    pub source_unit_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

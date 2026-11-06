@@ -174,6 +174,16 @@ selects full graphs independently of diagnostic detail and effect-conflict
 streams. Both selections retain all analysis facts, generated edges, premises,
 gate/TV checks and final reconstructed-program validation.
 
+Every `final_module_contents` row in the per-chunk `modules.json` report includes
+`binding_source_units`: one row per `binding_names` entry, in the same input-name
+order. Each row maps that input binding name to sorted `unit:N` IDs of source
+units that declare it. Redeclaration sites all appear, and IDs follow the
+analysis's source-unit boundaries, including units created by splitting a
+comma-list declaration. Reads, writes, and calls do not count as declarations.
+The existing module-level `source_unit_ids` remains the sorted union of
+declaration IDs for the row's named bindings; `member_names` remains
+positionally aligned with `binding_names`.
+
 For a rejected assignment, `atomic_group_conflicts.json` and `cycles.json` are
 each emitted when their corresponding evidence is nonempty, and may coexist.
 An atomic-group conflict remains the primary gate verdict when both are present;

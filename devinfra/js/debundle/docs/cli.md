@@ -445,9 +445,13 @@ For bulk name recovery of module claims, use the matching per-chunk `modules.jso
 each `final_module_contents` row has positionally aligned `binding_names`
 (input names) and `member_names` (emitted names), sorted together by input
 name. Pair these arrays within the row's `path` instead of describing every
-binding separately. `source_unit_ids` is an aggregate set for the module and
-is not positionally aligned with those arrays. Use the report for the same
-source/spec/engine snapshot; it does not resolve later spec edits.
+binding separately. Use the row's sorted `binding_source_units` entries to map
+each `binding_name` to its declaration `source_unit_ids`. These IDs include
+redeclaration sites, do not include units that only read/write/call the binding,
+and use the same chunk-local `unit:N` identities as the graph report. The
+module-level `source_unit_ids` remains an aggregate and is not positionally
+aligned with the binding arrays. Use the report for the same source/spec/engine
+snapshot; it does not resolve later spec edits.
 
 `describe` and `inspect-source --id` take any ID kind and dispatch on shape:
 bindings (minified or readable), module paths (`runtime/plugins`) or
