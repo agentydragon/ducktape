@@ -874,6 +874,72 @@ fn single_local_call_seals_real_lexical_read_and_call_receipts() {
 }
 
 #[test]
+fn inline_callee_creation_executes_with_exact_operation_receipts() {
+    for (case, expression) in [
+        ("arrow", "((value) => value)((() => 42)())"),
+        (
+            "anonymous function",
+            "(function(value) { return value; })((function() { return 42; })())",
+        ),
+        (
+            "named function",
+            "(function identity(value) { return value; })((function constant() { return 42; })())",
+        ),
+    ] {
+        let source = format!("const result = {expression};\nconsole.log(result);\n");
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_preserved_entry_output(&fixture, "42\n");
+        let receipt = assert_operation_receipt(&fixture, "result", 2);
+        assert_eq!(
+            receipt["calls"].as_array().unwrap().len(),
+            2,
+            "both immediate calls must be represented for {case}: {receipt:#}"
+        );
+    }
+}
+
+#[test]
+fn inline_callee_invocation_keeps_captured_reads_and_refuses_unsupported_bodies() {
+    let captured = run_fixture(
+        FixtureOpts::new(
+            "const seed = 41;\nconst result = ((value) => value)((() => seed)());\nconsole.log(result);\n",
+            vec![],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&captured, "41\n");
+    assert_operation_receipt(&captured, "result", 2);
+    let graph = captured.dependency_graph();
+    let result = source_unit_for_binding(&graph, "result");
+    let seed = source_unit_for_binding(&graph, "seed");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == result
+                && edge.target == seed
+                && edge.binding.as_deref() == Some("seed")
+                && edge.constrains_init_order
+        }),
+        "invoking the inline arrow must retain its captured read: {graph:#?}"
+    );
+
+    let unsupported = run_fixture(
+        FixtureOpts::new(
+            "const result = ((value) => value)((() => { for (let index = 0; index < 1; index++) {} return 42; })());\nconsole.log(result);\n",
+            vec![],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&unsupported, "42\n");
+    let execution = binding_execution_report(&unsupported, "result");
+    assert_ne!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "unsupported callable syntax must keep the root from receiving local-operation authority: {execution:#}"
+    );
+}
+
+#[test]
 fn single_aliased_call_keeps_complete_but_uncovered_fallback() {
     let fixture = run_fixture(FixtureOpts::new(
         "const seed = 41;\nconst later = 99;\nfunction readSeed() { return seed; }\nconst alias = { run: readSeed, dormant: () => later }.run;\nvar result = alias();\nconsole.log(result);\n",

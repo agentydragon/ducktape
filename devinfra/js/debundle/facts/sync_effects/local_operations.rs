@@ -25,11 +25,45 @@ pub(super) enum LocalBinding {
 #[derive(Debug, Clone)]
 pub(super) enum LocalCallee {
     Binding(Id),
+    /// A direct closure expression is created before its arguments are
+    /// evaluated. Creating it does not execute the body or its defaults.
+    Creation(DeferredCallableCreation),
     Member {
         receiver: Id,
         property: String,
         span: Span,
     },
+}
+
+impl LocalCallee {
+    fn lower(expression: &Expr, class_template: bool) -> Option<Self> {
+        match expression.unwrap_parens() {
+            // A direct eval reference can enter dynamic scope.
+            Expr::Ident(binding) if binding.sym != "eval" => Some(Self::Binding(binding.to_id())),
+            Expr::Fn(_) | Expr::Arrow(_) => {
+                let LocalExpression::Closure(creation) =
+                    LocalExpression::lower(expression, class_template)?
+                else {
+                    return None;
+                };
+                Some(Self::Creation(creation))
+            }
+            Expr::Member(member) => {
+                let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
+                    return None;
+                };
+                let MemberProp::Ident(property) = &member.prop else {
+                    return None;
+                };
+                Some(Self::Member {
+                    receiver: receiver.to_id(),
+                    property: property.sym.to_string(),
+                    span: member.span,
+                })
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Home-object sites express source containment, never receiver ownership.
@@ -395,26 +429,7 @@ impl LocalExpression {
                 let Callee::Expr(callee) = &call.callee else {
                     return None;
                 };
-                let callee = match callee.unwrap_parens() {
-                    // A direct eval reference can enter dynamic scope.
-                    Expr::Ident(binding) if binding.sym != "eval" => {
-                        LocalCallee::Binding(binding.to_id())
-                    }
-                    Expr::Member(member) => {
-                        let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
-                            return None;
-                        };
-                        let MemberProp::Ident(property) = &member.prop else {
-                            return None;
-                        };
-                        LocalCallee::Member {
-                            receiver: receiver.to_id(),
-                            property: property.sym.to_string(),
-                            span: member.span,
-                        }
-                    }
-                    _ => return None,
-                };
+                let callee = LocalCallee::lower(callee, class_template)?;
                 Some(Self::Call {
                     callee,
                     arguments: call
@@ -513,11 +528,17 @@ impl LocalExpression {
             Self::Call {
                 callee, arguments, ..
             } => {
-                let (LocalCallee::Binding(binding)
-                | LocalCallee::Member {
-                    receiver: binding, ..
-                }) = callee;
-                reads.insert(binding.clone());
+                match callee {
+                    LocalCallee::Binding(binding)
+                    | LocalCallee::Member {
+                        receiver: binding, ..
+                    } => {
+                        reads.insert(binding.clone());
+                    }
+                    // Capturing a cell does not GetValue it. The invoked body
+                    // owns its actual reads and effects.
+                    LocalCallee::Creation(_) => {}
+                }
                 for argument in arguments.iter() {
                     argument.reads(reads);
                 }
