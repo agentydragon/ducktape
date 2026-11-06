@@ -28,22 +28,17 @@ def _strip_path_prefix(path: str) -> str:
 
 def parse_unified_diff(diff_output: str) -> list[FileChange]:
     """Parse unified diff format to extract file change statistics."""
-    patch_set = PatchSet(diff_output)
-    changes = []
-
-    for patched_file in patch_set:
-        if patched_file.target_file == "/dev/null":
-            path = _strip_path_prefix(patched_file.source_file)
-        else:
-            path = _strip_path_prefix(patched_file.target_file)
-
-        is_binary = patched_file.is_binary_file
-        additions = patched_file.added
-        deletions = patched_file.removed
-
-        changes.append(FileChange(path=path, additions=additions, deletions=deletions, is_binary=is_binary))
-
-    return changes
+    return [
+        FileChange(
+            path=_strip_path_prefix(
+                patched_file.source_file if patched_file.target_file == "/dev/null" else patched_file.target_file
+            ),
+            additions=patched_file.added,
+            deletions=patched_file.removed,
+            is_binary=patched_file.is_binary_file,
+        )
+        for patched_file in PatchSet(diff_output)
+    ]
 
 
 def parse_git_diff(diff_args: list[str] | None = None) -> list[FileChange]:

@@ -125,14 +125,7 @@ class ClaudeHistoryReader:
 
     @staticmethod
     def path_to_project_name(path: str | Path) -> str:
-        """Convert absolute path to Claude project name.
-
-        Examples:
-            /home/agentydragon/code/ducktape -> -home-agentydragon-code-ducktape
-            ~/code/ducktape -> -home-agentydragon-code-ducktape
-            /tmp/claude -> -tmp-claude
-
-        """
+        """Encode expanded absolute paths as Claude project names by replacing slashes with hyphens."""
         path = Path(path).expanduser().absolute()
         # Convert path to project name by replacing / with -
         # and prepending - to make it match Claude's convention
@@ -142,29 +135,12 @@ class ClaudeHistoryReader:
         return "-" + "-".join(parts)
 
     def get_project_path(self, project_or_path: str) -> Path | None:
-        """Get project path from either a project name or absolute path.
-
-        Args:
-            project_or_path: Either a project name like "-home-agentydragon-code-ducktape"
-                           or an absolute path like "/home/agentydragon/code/ducktape"
-
-        Returns:
-            Path to the project directory in ~/.claude/projects/ or None if not found
-
-        """
-        # Check if it's already a project name
-        if project_or_path.startswith("-"):
-            project_path = self.claude_dir / project_or_path
-            if project_path.exists():
-                return project_path
-        else:
-            # Try to convert path to project name
-            project_name = self.path_to_project_name(project_or_path)
-            project_path = self.claude_dir / project_name
-            if project_path.exists():
-                return project_path
-
-        return None
+        """Resolve a project name or path under claude_dir, returning None when missing."""
+        project_name = (
+            project_or_path if project_or_path.startswith("-") else self.path_to_project_name(project_or_path)
+        )
+        project_path = self.claude_dir / project_name
+        return project_path if project_path.exists() else None
 
     def parse_session(self, session_file: Path) -> SessionData:
         """Parse a single session JSONL file"""

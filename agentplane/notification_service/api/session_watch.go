@@ -396,20 +396,17 @@ func (s *Notifications) WatchSubscriptions(request *pb.WatchSubscriptionsRequest
 		}
 		delta := &pb.SubscriptionDelta{}
 		old := make(map[string]*pb.Subscription, len(previous.Subscriptions))
-		fresh := make(map[string]*pb.Subscription, len(snapshot.Subscriptions))
 		for _, sub := range previous.Subscriptions {
 			old[sub.Id] = sub
 		}
 		for _, sub := range snapshot.Subscriptions {
-			fresh[sub.Id] = sub
 			if !proto.Equal(old[sub.Id], sub) {
 				delta.Upserted = append(delta.Upserted, sub)
 			}
+			delete(old, sub.Id)
 		}
-		for _, sub := range previous.Subscriptions {
-			if fresh[sub.Id] == nil {
-				delta.RemovedIds = append(delta.RemovedIds, sub.Id)
-			}
+		for id := range old {
+			delta.RemovedIds = append(delta.RemovedIds, id)
 		}
 		slices.Sort(delta.RemovedIds)
 		previous = snapshot

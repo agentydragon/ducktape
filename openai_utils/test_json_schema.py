@@ -85,25 +85,16 @@ def test_inline_ref_conflict_raises():
         _inline_refs_with_siblings(schema)
 
 
-def test_inline_ref_unknown_def_left_alone():
-    """$ref pointing to a non-existent def is left unchanged."""
-    schema: dict[str, Any] = {
-        "type": "object",
-        "properties": {"x": {"$ref": "#/$defs/Missing", "description": "hmm"}},
-        "$defs": {},
-    }
+@pytest.mark.parametrize(
+    ("reference", "description", "extra_schema"),
+    [("#/$defs/Missing", "hmm", {"$defs": {}}), ("https://example.com/schema.json", "external", {})],
+    ids=["missing-local-definition", "external-reference"],
+)
+def test_unresolvable_ref_is_unchanged(reference: str, description: str, extra_schema: dict[str, Any]) -> None:
+    expected = {"$ref": reference, "description": description}
+    schema: dict[str, Any] = {"type": "object", "properties": {"x": expected.copy()}, **extra_schema}
     _inline_refs_with_siblings(schema)
-    assert schema["properties"]["x"] == {"$ref": "#/$defs/Missing", "description": "hmm"}
-
-
-def test_inline_ref_non_defs_path_left_alone():
-    """$ref with a non-#/$defs/ path is not inlined even with siblings."""
-    schema: dict[str, Any] = {
-        "type": "object",
-        "properties": {"x": {"$ref": "https://example.com/schema.json", "description": "external"}},
-    }
-    _inline_refs_with_siblings(schema)
-    assert schema["properties"]["x"]["$ref"] == "https://example.com/schema.json"
+    assert schema["properties"]["x"] == expected
 
 
 # ---------------------------------------------------------------------------

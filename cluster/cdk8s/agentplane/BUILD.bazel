@@ -660,6 +660,7 @@ py_test(
         ":staging_config",
         "//:conftest",
         "@pypi//more_itertools",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],

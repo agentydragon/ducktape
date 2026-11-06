@@ -289,19 +289,15 @@ def _fixed_contribution(fixed: FixedPortfolioSourceConfig) -> _PortfolioContribu
 
 
 def _merge_contributions(contributions: tuple[_PortfolioContribution, ...]) -> PortfolioConfig:
-    accounts: list[PortfolioAccountConfig] = []
+    accounts: dict[AccountId, PortfolioAccountConfig] = {}
     holdings: list[HoldingPositionConfig] = []
     bonds: list[BondHoldingConfig] = []
-    account_ids: set[AccountId] = set()
     for contribution in contributions:
         for account in contribution.accounts:
-            if account.account_id in account_ids:
-                continue
-            accounts.append(account)
-            account_ids.add(account.account_id)
+            accounts.setdefault(account.account_id, account)
         holdings.extend(contribution.holdings)
         bonds.extend(contribution.bonds)
-    return PortfolioConfig(accounts=tuple(accounts), holdings=tuple(holdings), bonds=tuple(bonds))
+    return PortfolioConfig(accounts=tuple(accounts.values()), holdings=tuple(holdings), bonds=tuple(bonds))
 
 
 def _merged_as_of_date(contributions: tuple[_PortfolioContribution, ...]) -> str:

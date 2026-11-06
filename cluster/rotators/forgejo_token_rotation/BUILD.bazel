@@ -35,6 +35,7 @@ py_test(
         ":rotate",
         "//:conftest",
         "@pypi//httpx",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

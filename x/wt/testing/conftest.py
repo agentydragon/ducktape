@@ -54,11 +54,7 @@ def wt_test_mode():
 
 @pytest.fixture
 def write_pr_fixtures():
-    """Write typed PR fixtures to $WT_DIR/pr_fixtures.json.
-
-    Example:
-        write_pr_fixtures(config, {"feature-x": PRFixtureEntry(number=123, ...)})
-    """
+    """Write typed PR fixtures to $WT_DIR/pr_fixtures.json."""
 
     return write_pr_fixtures_file
 
@@ -86,18 +82,7 @@ def repo_factory(tmp_path: Path):
 
 @pytest.fixture
 def pygit2_repo(real_temp_repo) -> pygit2.Repository:
-    """Provide a pygit2.Repository instance for the test's real_temp_repo.
-
-    Use this fixture when you need to perform multiple pygit2 operations
-    on the same repository, avoiding repeated Repository instantiation.
-
-    Example:
-        def test_something(pygit2_repo, real_temp_repo):
-            # Use pygit2_repo for git operations
-            branch = pygit2_repo.head.shorthand
-            # Use real_temp_repo for path operations
-            (real_temp_repo / "file.txt").write_text("content")
-    """
+    """Return the pygit2.Repository for this test's real_temp_repo."""
     return pygit2.Repository(real_temp_repo)
 
 
@@ -130,11 +115,7 @@ def daemon_config_factory(tmp_path: Path):
 
 @pytest.fixture
 def cli_test_env(repo_factory, config_factory):
-    """Create test environment for CLI integration tests.
-
-    Returns the WT_DIR path that can be used with patch.dict for environment setup.
-    CLI tests use this to set up proper configuration without external dependencies.
-    """
+    """Return the configured .wt path for CLI integration tests."""
     # Create repo and config using factories
     repo_path = repo_factory.create_repo()
     factory = config_factory(repo_path)
@@ -146,10 +127,7 @@ def cli_test_env(repo_factory, config_factory):
 
 @pytest.fixture
 def wt_env(cli_test_env, monkeypatch):
-    """Set WT_DIR to the per-test cli_test_env path and return it.
-
-    Use in CLI tests to avoid repeating monkeypatch code.
-    """
+    """Set WT_DIR to cli_test_env and return that path."""
     monkeypatch.setenv("WT_DIR", str(cli_test_env))
     return cli_test_env
 

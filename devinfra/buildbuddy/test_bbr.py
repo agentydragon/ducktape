@@ -207,18 +207,6 @@ class TestBuildCommand:
             "//foo",
         ]
 
-    def test_remote_flags_before_verb(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        cmd, inv_id = self._build(["--timeout=10m", "test", "//foo"], monkeypatch)
-        assert cmd == [
-            BB,
-            "remote",
-            "--disable_retry=true",
-            "--timeout=10m",
-            "test",
-            f"--invocation_id={inv_id}",
-            "//foo",
-        ]
-
     def test_all_layers(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Remote flags precede the verb; session metadata precedes user Bazel flags."""
         rc = tmp_path / "bbr.bazelrc"

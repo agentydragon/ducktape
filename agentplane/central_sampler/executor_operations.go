@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"time"
 
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
@@ -685,9 +686,7 @@ func (e *Executor) rpc(ctx context.Context, method executionMethod, params any, 
 		return nil, errors.Join(frameJournalErr, err, finishErr)
 	}
 	evidenceResult := make(map[string]any, len(result))
-	for key, value := range result {
-		evidenceResult[key] = value
-	}
+	maps.Copy(evidenceResult, result)
 	if resultEvidence != nil {
 		evidenceResult = resultEvidence(result)
 	}
