@@ -644,6 +644,15 @@ statements declare. Unknown or repeated names fail. This option selects
 ownership claims; the ordinary source-unit placement and gate still decide
 whether a partial selection is realizable.
 
+Build allowlists from the authored member names: the `readable_name` in
+`bindings list` or the member's effective `name:`/default export name. In
+`modules.json`, `final_module_contents[].member_names` shows emitted names and
+`binding_names` shows input binding spellings; do not use `binding_names` as
+allowlist names. Final module rows can also contain bindings pulled in by
+whole-statement placement, so check a candidate name against the authored
+claims before counting it. When combining source-unit rows from multiple
+chunk reports, identify a unit by both `chunk_id` and its `unit:N` ID.
+
 ```sh
 debundle run <full tree args> --analysis analysis.dba \
   --ownership-subset retained.json
