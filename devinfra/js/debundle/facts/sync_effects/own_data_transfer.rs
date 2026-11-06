@@ -16,8 +16,9 @@ pub(super) trait OwnDataContext {
     fn property_is_accessor(&self, allocation: u32, property: &str) -> bool;
     fn property_is_writable(&self, allocation: u32, property: &str) -> bool;
 
-    /// Only an application prefix with the first uninterrupted dense array
-    /// literal execution provides this current length.
+    /// Only contexts with a current first-generation array-literal witness
+    /// provide this length. Provider-only and retained queries stay
+    /// conservative until they carry the same prefix state.
     fn first_generation_dense_array_length(&self, _allocation: u32) -> Option<u32> {
         None
     }
@@ -43,8 +44,9 @@ pub(super) struct OwnDataRead {
     pub(super) cell: EffectCell,
 }
 
-/// A checked present own-data read. The variant keeps the array proof separate
-/// so only it can bypass consumers' ordinary-record restriction.
+/// A checked present own-data read. The variant retains which shape proof
+/// admitted the read so callers with additional ordinary-record restrictions
+/// can keep those restrictions without rejecting proved array slots.
 pub(super) enum PresentOwnDataSlot {
     OrdinaryRecord(OwnDataSlot),
     ArrayIndex(OwnDataSlot),
@@ -57,6 +59,12 @@ impl PresentOwnDataSlot {
             Self::OrdinaryRecord(slot) | Self::ArrayIndex(slot) | Self::ArrayLength(slot) => {
                 slot.object
             }
+        }
+    }
+
+    pub(super) fn property(&self) -> &str {
+        match self {
+            Self::OrdinaryRecord(slot) | Self::ArrayIndex(slot) | Self::ArrayLength(slot) => &slot.property,
         }
     }
 

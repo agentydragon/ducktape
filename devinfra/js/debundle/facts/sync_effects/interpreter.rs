@@ -1602,6 +1602,14 @@ impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
     fn property_is_writable(&self, allocation: u32, property: &str) -> bool {
         self.executor.property_is_writable(allocation, property)
     }
+
+    fn first_generation_dense_array_length(&self, allocation: u32) -> Option<u32> {
+        if self.retained_query.is_some() {
+            return None;
+        }
+        self.executor
+            .first_generation_dense_array_length(allocation)
+    }
 }
 
 impl<'source> LocalExecutionContext<'_, 'source, '_> {
@@ -10710,17 +10718,17 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             OwnDataOwnership::CurrentPrefix,
         )
         .ok()?;
-        if !slot.is_array_specific()
+        if (!slot.is_array_specific()
             && !self
                 .inputs
                 .index
                 .plain_data_objects
-                .contains(&slot.object())
+                .contains(&slot.object()))
             || self
                 .state
                 .applied_accessors
                 .get(&slot.object())
-                .is_some_and(|accessors| accessors.contains_key(property))
+                .is_some_and(|accessors| accessors.contains_key(slot.property()))
         {
             return None;
         }
