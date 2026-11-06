@@ -430,7 +430,7 @@
           "editorMode": "code",
           "rawQuery": true,
           "format": "time_series",
-          "rawSql": "WITH feedback AS (\n  SELECT *\n  FROM cdviz.ci_feedback($__timeFrom(), $__timeTo())\n  WHERE (\n    ${scope:sqlstring} = 'all'\n    OR (${scope:sqlstring} = 'PR' AND pr IS NOT NULL)\n    OR (${scope:sqlstring} = 'devel' AND pr IS NULL AND branch IN ('devel', 'main'))\n  )\n    AND (${clock:sqlstring} = 'all' OR clock = ${clock:sqlstring})\n)\nSELECT\n  DATE_BIN(${bucket:sqlstring}::interval, arrived_at, TIMESTAMPTZ '2000-01-03 00:00:00+00') AS time,\n  PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'red' AND first_verdict_seconds IS NOT NULL) AS \"Red p50\",\n  PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'red' AND first_verdict_seconds IS NOT NULL) AS \"Red p90\",\n  PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'green' AND first_verdict_seconds IS NOT NULL) AS \"Green p50\",\n  PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'green' AND first_verdict_seconds IS NOT NULL) AS \"Green p90\"\nFROM feedback\nWHERE first_verdict_seconds IS NOT NULL\nGROUP BY 1\nORDER BY 1"
+          "rawSql": "WITH feedback AS (\n  SELECT *\n  FROM cdviz.ci_feedback($__timeFrom(), $__timeTo())\n  WHERE (\n    ${scope:sqlstring} = 'all'\n    OR (${scope:sqlstring} = 'PR' AND pr IS NOT NULL)\n    OR (${scope:sqlstring} = 'devel' AND pr IS NULL AND branch IN ('devel', 'main'))\n  )\n    AND (${clock:sqlstring} = 'all' OR clock = ${clock:sqlstring})\n)\nSELECT\n  GREATEST(DATE_BIN(${bucket:sqlstring}::interval, arrived_at, TIMESTAMPTZ '2000-01-03 00:00:00+00'), $__timeFrom()::timestamptz) AS time,\n  PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'red' AND first_verdict_seconds IS NOT NULL) AS \"Red p50\",\n  PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'red' AND first_verdict_seconds IS NOT NULL) AS \"Red p90\",\n  PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'green' AND first_verdict_seconds IS NOT NULL) AS \"Green p50\",\n  PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'green' AND first_verdict_seconds IS NOT NULL) AS \"Green p90\"\nFROM feedback\nWHERE first_verdict_seconds IS NOT NULL\nGROUP BY 1\nORDER BY 1"
         }
       ],
       "fieldConfig": {
@@ -515,7 +515,7 @@
           "mode": "multi"
         }
       },
-      "description": "Arrival cohorts grouped by Bucket size, aligned to UTC midnight with weeks beginning Monday. Only observed red/green verdicts contribute; missing buckets mean no samples, not zero latency."
+      "description": "Arrival cohorts grouped by Bucket size, aligned to UTC midnight with weeks beginning Monday. Only observed red/green verdicts contribute; missing buckets mean no samples, not zero latency. The first partial bucket is plotted at the range start so large buckets remain visible."
     },
     {
       "id": 5,
