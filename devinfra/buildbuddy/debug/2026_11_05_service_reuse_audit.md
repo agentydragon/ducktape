@@ -261,3 +261,118 @@ have manual coverage, and fresh VM supervision/recovery scenarios cannot simply
 be retained away. No claim here shortens every PR's critical path. The proposed
 lifecycle keeps a cold local fixture path; current Docker/browser-on-RBE policy
 and local-host validation remain separate from that portability design.
+
+## Follow-up: coverage, normal CI and registry state
+
+The follow-up inspected `devel` at `ed29e38cdbc91bc3b0ccc41e9d8a36546446aebc`.
+Image profiles have merged: [#14514](https://github.com/agentydragon/ducktape/pull/14514)
+for ten Props E2E targets and [#14516](https://github.com/agentydragon/ducktape/pull/14516)
+for twelve PostgreSQL consumers. [#14524](https://github.com/agentydragon/ducktape/pull/14524)
+adds four actual stock-PostgreSQL Props consumers: critic SQL integration,
+reported-issue constraints, grading-edge constraints and matchable occurrences.
+Browser, pgvector and native bridge platform differences remain explicit.
+
+### Ordinary CI observations
+
+Frozen 21 GitHub `CI` runs created 2026-11-06 01:57:22–02:25:24 UTC. Their initial
+execution-list snapshot contained fifteen distinct completed `NEW` test actions
+with the intended actual Action platform keys:
+
+| Group                                                                                               | Actions | No infrastructure imports | Recorded restore lineage | Passed cases |
+| --------------------------------------------------------------------------------------------------- | ------: | ------------------------: | -----------------------: | -----------: |
+| [Props E2E](https://app.buildbuddy.io/invocation/8ca1606d-6baa-5d25-b621-ad7ce80116ea)              |      10 |                         9 |                        9 |           13 |
+| [Session-export web](https://app.buildbuddy.io/invocation/99d11c51-65ca-58e6-a4f4-76dda36792e9)     |       1 |                         1 |                        1 |            9 |
+| [New Props SQL coverage](https://app.buildbuddy.io/invocation/69dcd2d3-e5d6-5761-8863-0e6172258dd1) |       4 |                         0 |                        0 |           23 |
+
+All 45 cases passed without skips. The clustering action's snapshot origin
+resolved to `//props/agents/grader:test_e2e_sleep_wake`, proving a cross-target
+handoff inside the family. The cold E2E action imported three images; the four
+new SQL actions each imported Ryuk and PostgreSQL. A first placement can be cold
+even with the intended key. Missing lineage alone is unknown.
+
+These actions came from three invocations. Five cohort runs lacked an invocation;
+three initially partial statuses were refreshed later, but their execution
+lists were not. This is not a final census of every action in the cohort. The
+other eleven original PostgreSQL labels had no selected fresh execution. This
+small sample establishes reuse behavior, not a fleet hit rate or feedback saving.
+
+### Optimize profiles and the selected state boundary
+
+Two actual Optimize runs at `c380e6cfd87214ac1b465f285953bafb9d576463` used the
+same Action digest and application manifests. Both restored the same older CI
+seed, imported no infrastructure images, and passed the existing orchestration
+case. [First profile](https://app.buildbuddy.io/invocation/2adc54ce-9926-422a-b47f-da2e0d264e4c):
+138.3 s process, 242.3 CPU-seconds, 16.1 s serial pushes, 33.2 s concurrent-pull
+envelope, PostgreSQL ready in 4.8 s.
+[Repeat](https://app.buildbuddy.io/invocation/d71b44f3-5e9a-4536-982c-eb5d157d2627):
+106.1 s process, 202.2 CPU-seconds, 17.6 s pushes, 16.6 s pull envelope, PostgreSQL
+ready in 5.4 s. Existing OTel spans and INFO records supply these phases; nested
+spans are not additive. The first Bazel profile also rebuilt application-layer
+Tar prerequisites outside the test process; the repeat had one remote action.
+
+The seed predates these application images, and the repeat restored that seed
+again. Infrastructure image reuse does not imply an updated application-image
+baseline under the local-only default. Do not rotate the infrastructure family
+for every application revision or restore forced saves to refresh it.
+
+The selected experiment retains registry content while creating fresh services.
+Live PostgreSQL would avoid only the measured 4–5 s startup, with additional
+role/slot/reaper ownership work. The registry process itself costs about 1–2 s;
+repeated blob uploads are the useful state boundary.
+
+### Registry blob prototype
+
+[#14548](https://github.com/agentydragon/ducktape/pull/14548) is the bounded
+Optimize-only prototype. A lease and registry-image/reset fingerprint own one
+volume. Every attach clears manifests and unfinished uploads before starting a
+new registry; release stops it and clears that metadata again. Content-addressed
+blobs and repository layer links survive. Real proxy authentication, manifest
+publication, image-definition recording and fresh test databases still run.
+
+The first design, mounting blobs and repository links separately, failed real
+upload commit with `invalid cross-device link`. Distribution's filesystem
+[Move](https://github.com/distribution/distribution/blob/v3.0.0/registry/storage/driver/filesystem/driver.go#L242)
+renames uploads into the blob store. Both paths must use one filesystem.
+The corrected [lifecycle run](https://app.buildbuddy.io/invocation/1d177d6f-a668-4fb2-9153-97558304e969)
+passed both pytest cases: fresh container identity, retained blob access,
+manifest-by-tag and by-digest reset, stale-upload rejection, manifest repush,
+foreign-volume preservation, owned cleanup and nonblocking lease collision.
+
+Candidate source `8922a49ff99f1779119935d98a431ea9bb877db2` and strict control
+`24ef5b0e6a960a1d30534dcb8ca8ed95d07f9848` have identical Action input-root
+digests, arguments and command environment. The Command differs only in its
+platform; platform differences are the family key and explicit cache opt-in.
+Both use the same VM configuration, but different workers. All application
+manifest digests match across arms.
+
+| Warm arm                                                                               | Process |     CPU | Serial image pushes | Pull envelope |
+| -------------------------------------------------------------------------------------- | ------: | ------: | ------------------: | ------------: |
+| [Control 1](https://app.buildbuddy.io/invocation/73304db2-1ff7-457e-92ff-3ec4381a8be6) |  74.6 s | 106.4 s |              12.6 s |        0.16 s |
+| [Control 2](https://app.buildbuddy.io/invocation/a7092257-0e02-46e3-b54b-a7fcb936743a) |  80.9 s | 118.6 s |              15.5 s |        0.17 s |
+| [Cached 1](https://app.buildbuddy.io/invocation/5527b6a1-e857-4cc5-a4d6-ea742fa1ca29)  |  68.8 s |  75.8 s |               1.0 s |        0.17 s |
+| [Cached 2](https://app.buildbuddy.io/invocation/75b82427-628c-41bc-a7fa-572b237632e0)  |  57.3 s |  65.2 s |               0.8 s |        0.15 s |
+
+Both warm candidate actions name their exact cold seed
+[`f0593b77`](https://app.buildbuddy.io/invocation/f0593b77-5156-42cc-8569-50684e0c7c04)
+as their origin and import no infrastructure images. Both controls restore their
+own seed with no imports. The same Optimize case passes in every run. Earlier
+controls without the new helper ran in 72.0/72.2 s; they are retained as context,
+not substituted for the strict comparison. These are bounded process/CPU and
+phase observations on two workers, not fleet or PR-feedback savings.
+
+The cache uses about 550 MiB before release; that measurement can include the
+final test's manifests/uploads, which release subsequently removes. It is not
+snapshot-upload bytes. Defaults remain local-only for these ordinary actions:
+no remote eligibility or forced-save override was added. Keep the trial scoped
+to Optimize until normal-CI reuse and storage cost justify wider enrollment.
+No local-host Docker validation or shared-daemon rollout is claimed.
+
+The final prototype head `dd5b32f1f3d57f7b4df377895ada9e1dccf023ef` additionally
+refuses reset when another container still references the volume. The
+[lifecycle check](https://app.buildbuddy.io/invocation/f9e16079-18dd-446a-9b6d-7e81204e68d9)
+constructs that leftover mount and verifies it is preserved and rejected;
+it does not claim an exhaustive process-kill test. A separate actual
+[final-head Optimize run](https://app.buildbuddy.io/invocation/f991d7f4-4622-4571-82e6-902429343eb8)
+passed in 65.8 s, with zero infrastructure imports and the same seed/volume
+recipe. All four candidate receipts name distinct registry containers while
+retaining the same volume and 577,041,306-byte pre-release usage sample.

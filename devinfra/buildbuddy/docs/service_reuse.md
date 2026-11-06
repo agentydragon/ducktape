@@ -12,7 +12,9 @@ workflow, or snapshot policy.
 Image-family implementation and cold/restored validation are tracked in the
 [audit](../debug/2026_11_05_service_reuse_audit.md#implementation-validation).
 Those changes cache images while preserving the existing service lifetimes;
-the daemon lifecycle below remains a separate proposal.
+the daemon lifecycle below remains a separate proposal. The audit also records
+ordinary-CI reuse and a bounded registry-blob prototype; retaining a cache does
+not require retaining its service process.
 
 ## Current configuration and the save-policy change
 
@@ -129,6 +131,22 @@ recording and per-test manifest deletion. Retaining registry blobs may be useful
 skipping the push/proxy path would remove coverage. Its backend, fake upstream
 and agent state remain test fixtures. Digest-cached images are the first step;
 live PostgreSQL/registry retention is a separate experiment.
+
+The tested registry-blob prototype in
+[#14548](https://github.com/agentydragon/ducktape/pull/14548) keeps one owned
+filesystem volume and starts a fresh registry. Upload commit uses a rename, so
+separate mounts for uploads and blobs fail. Reset manifests and unfinished
+uploads before startup and after shutdown, under the same lease; keep only
+content-addressed blobs and repository layer links reusable. Refuse storage
+still attached to another container. A process crash releases a file lock without
+proving that Docker resources are gone. Keep retention off locally by default.
+
+The prototype's measured Optimize runs reduced serial image pushes from
+12.6–15.5 s to 0.8–1.0 s, with about 550 MiB of volume data before release.
+That storage sample is not snapshot-upload bytes, and two worker-local pairs
+do not establish fleet or PR-feedback savings. Keep the first enrollment scoped
+to Optimize while measuring normal-CI reuse and storage cost; no PostgreSQL
+daemon-retention inference follows from this result.
 
 Testcontainers currently owns many containers through context exit and Ryuk.
 Changing an execution property cannot override those lifetimes. Any retained
