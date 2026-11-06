@@ -13,6 +13,7 @@ import pytest_bazel
 from pydantic import BaseModel
 from python.runfiles import Runfiles
 
+from cluster.cdk8s.cdviz.github_webhook import CdvizGithubWebhookVars
 from cluster.cdk8s.forgejo_registry.chart import ForgejoImagesVars
 from cluster.cdk8s.monitoring.home_switch import HomeSwitchVars
 from cluster.cdk8s.route53_domain_delegation import Route53DomainDelegationVars
@@ -24,6 +25,7 @@ from cluster.cdk8s.route53_domain_delegation import Route53DomainDelegationVars
         (Route53DomainDelegationVars, "route53-domain-delegation"),
         (ForgejoImagesVars, "forgejo-images"),
         (HomeSwitchVars, "home-switch"),
+        (CdvizGithubWebhookVars, "cdviz-github-webhook"),
     ],
 )
 def test_vars_model_matches_module(runfiles: Runfiles, model: type[BaseModel], module: str) -> None:

@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - dashboards.k8s.yaml
+configMapGenerator:
+  - name: cdviz-pipelines
+    namespace: monitoring
+    files:
+      - pipelines.json
+  - name: cdviz-tasks
+    namespace: monitoring
+    files:
+      - tasks.json
+configurations:
+  - kustomizeconfig

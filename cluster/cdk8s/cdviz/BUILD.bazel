@@ -1,0 +1,148 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//cluster/cdk8s:__subpackages__"])
+
+py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s:service_ref",
+    ],
+)
+
+py_library(
+    name = "namespace",
+    srcs = ["namespace.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        ":config",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:namespaces",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "github_webhook",
+    srcs = ["github_webhook.py"],
+    data = ["//tf/gitops/cdviz-github-webhook:inline_source"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        ":config",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:opentofu",
+        "//cluster/cdk8s:terraform",
+        "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
+        "@pypi//cdk8s",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "collector",
+    srcs = ["collector.py"],
+    data = [
+        "collector.toml",
+        "github_webhook.vrl",
+        "github_workflow_runs.vrl",
+        "grants.sql",
+    ],
+    deps = [
+        ":config",
+        ":timescale",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:gateway",
+        "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:pod_policy",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
+        "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "dashboards",
+    srcs = ["dashboards.py"],
+    data = [
+        "pipelines.json",
+        "tasks.json",
+    ],
+    deps = [
+        ":config",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:grafana_dashboards",
+        "//cluster/cdk8s/external_secrets:single_secret_store",
+        "//cluster/cdk8s/providers/external_secrets:external_secret",
+        "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",
+        "//cluster/cdk8s/providers/grafana_operator:grafana_datasource",
+        "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
+        "//cluster/cdk8s/providers/grafana_operator:grafanadatasource",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
+)
+
+py_library(
+    name = "database",
+    srcs = ["database.py"],
+    deps = [
+        ":config",
+        ":timescale",
+        "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:cnpg_backup",
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:generation",
+        "//cluster/cdk8s/external_secrets:minted_secret",
+        "//cluster/cdk8s/providers/cnpg:cluster",
+        "//cluster/cdk8s/providers/cnpg:cnpg_database",
+        "//cluster/cdk8s/providers/cnpg:database",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "timescale",
+    srcs = ["timescale.py"],
+    deps = ["//cluster/cdk8s/providers/cnpg:cluster"],
+)
+
+py_test(
+    name = "test_ingestion_visual",
+    size = "medium",
+    srcs = ["test_ingestion_visual.py"],
+    requires_docker = True,
+    tags = ["visual"],
+    deps = [
+        "//:conftest",
+        "//cluster/cdk8s:conftest",
+        "//devinfra/oci",
+        "//devinfra/testing:output_writer",
+        "//devinfra/testing:undeclared_outputs",
+        "//third_party/containers:cdviz_collector",
+        "//third_party/containers:cdviz_db_migration",
+        "//third_party/containers:grafana_visual",
+        "//third_party/containers:python_3_14_slim",
+        "//third_party/containers:timescaledb",
+        "//util/testing/frontend_visual:capture",
+        "//util/testing/frontend_visual:context",
+        "@pypi//docker",
+        "@pypi//httpx",
+        "@pypi//playwright",
+        "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)

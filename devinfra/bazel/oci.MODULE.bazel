@@ -387,3 +387,27 @@ apt.install(
     ],
 )
 use_repo(apt, "gnome_shell_test", "trixie_authentik_rotation", "trixie_budget_exporter", "trixie_cpap_sync", "trixie_e2e", "trixie_erofs_utils", "trixie_fc_vm_pod", "trixie_runner_tools", "trixie_vm_guest", "trixie_vm_perf", "trixie_wayback_cache", "wt_shell_test")
+
+# CDviz collector, migration runner, and CNPG TimescaleDB extension test fixtures.
+oci.pull(
+    name = "cdviz_collector",
+    digest = "sha256:7d69848b44d608e56db67b8af6b28885071ae593bcda35bf23cdb220ae45dab8",
+    image = "ghcr.io/cdviz-dev/cdviz-collector",
+    platforms = ["linux/amd64"],
+    tag = "0.53.1",
+)
+oci.pull(
+    name = "cdviz_db_migration",
+    digest = "sha256:6bbc4e2b9e3bfbe283571e80eff2d59ca2e9ecb5d50d51f174535af073b2fb1d",
+    image = "ghcr.io/cdviz-dev/cdviz-db-migration",
+    platforms = ["linux/amd64"],
+    tag = "1.5.0",
+)
+oci.pull(
+    name = "timescaledb_oss",
+    digest = "sha256:74f87f5d049df4a302c32240e741fc0aff5bf3a3a9cbe84f2959d37e5b24f1f2",
+    image = "ghcr.io/cloudnative-pg/timescaledb-oss",
+    platforms = ["linux/amd64"],
+    tag = "2.31.0-18-trixie",
+)
+use_repo(oci, "cdviz_collector", "cdviz_collector_linux_amd64", "cdviz_db_migration", "cdviz_db_migration_linux_amd64", "timescaledb_oss", "timescaledb_oss_linux_amd64")

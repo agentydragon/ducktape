@@ -556,6 +556,31 @@ spec:
       name: flux-webhook
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/cdviz/namespace/**"
+          to: "@artifact/cluster/generated/cdviz/namespace/"
+      name: cdviz-namespace
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/cdviz/database/**"
+          to: "@artifact/cluster/generated/cdviz/database/"
+      name: cdviz-database
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/github-tf/crossplane-cdviz-github-webhook/**"
+          to: "@artifact/cluster/generated/github-tf/crossplane-cdviz-github-webhook/"
+      name: crossplane-cdviz-github-webhook
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/cdviz/collector/**"
+          to: "@artifact/cluster/generated/cdviz/collector/"
+      name: cdviz-collector
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/cdviz/dashboards/**"
+          to: "@artifact/cluster/generated/cdviz/dashboards/"
+      name: cdviz-dashboards
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/forgejo/gitops/**"
           to: "@artifact/cluster/generated/forgejo/gitops/"
       name: forgejo-gitops

@@ -49,15 +49,20 @@
 # gazelle:resolve py skills.freecad.eval.freecad_test_image //skills/freecad/eval:freecad_test_image
 # gazelle:resolve py third_party.cli_proxy_api_tests.cli_proxy_api_image //third_party/cli_proxy_api_tests:cli_proxy_api_image
 # gazelle:resolve py third_party.containers.blackbox_exporter //third_party/containers:blackbox_exporter
+# gazelle:resolve py third_party.containers.cdviz_collector //third_party/containers:cdviz_collector
+# gazelle:resolve py third_party.containers.cdviz_db_migration //third_party/containers:cdviz_db_migration
 # gazelle:resolve py third_party.containers.debian_slim //third_party/containers:debian_slim
 # gazelle:resolve py third_party.containers.electric_1_8_1 //third_party/containers:electric_1_8_1
+# gazelle:resolve py third_party.containers.grafana_visual //third_party/containers:grafana_visual
 # gazelle:resolve py third_party.containers.grocy //third_party/containers:grocy
 # gazelle:resolve py third_party.containers.nginx_unprivileged //third_party/containers:nginx_unprivileged
 # gazelle:resolve py third_party.containers.pgvector_pg18 //third_party/containers:pgvector_pg18
 # gazelle:resolve py third_party.containers.postgres_18 //third_party/containers:postgres_18
+# gazelle:resolve py third_party.containers.postgres_18_minimal //third_party/containers:postgres_18_minimal
 # gazelle:resolve py third_party.containers.python_3_14_slim //third_party/containers:python_3_14_slim
 # gazelle:resolve py third_party.containers.registry_3 //third_party/containers:registry_3
 # gazelle:resolve py third_party.containers.ryuk //third_party/containers:ryuk
+# gazelle:resolve py third_party.containers.timescaledb_oss //third_party/containers:timescaledb_oss
 #
 # Bazel-provided libraries (not from PyPI)
 # gazelle:resolve py rules_python.python.runfiles @rules_python//python/runfiles

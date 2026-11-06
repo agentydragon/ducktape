@@ -1,0 +1,483 @@
+# Convert [github events](https://docs.github.com/en/developers/webhooks-and-events/webhooks/webhook-events-and-payloads)
+# to [cdevents](https://cdevents.dev)
+#
+# | done | Gihub Event | cdevent |
+# | --- | --- | --- |
+# | [x] | package:published | artifact:published |
+# | [ ] | package:updated | artifact:published |
+# | [x] | release:published | artifact:published |
+# | [x] | release:published/assets | artifact:published |
+# | [ ] | release:unpublished | artifact:deleted |
+# | [ ] | release:unpublished/assets | artifact:deleted |
+# | [x] | workflow_run:requested | pipelineRun:queued |
+# | [x] | workflow_run:in_progress | pipelineRun:started |
+# | [x] | workflow_run:completed | pipelineRun:finished |
+# | [x] | workflow_job:in_progress | taskRun:started |
+# | [x] | workflow_job:completed | taskRun:finished |
+# | [x] | issue:opened | ticket:created |
+# | [x] | issue:closed | ticket:closed |
+# | [x] | issue:* | ticket:updated |
+# | [x] | branch | branch:created |
+# | [x] | pull_request:opened | change:created |
+# | [x] | pull_request:closed | change:merged change:abandoned |
+# | [x] | pull_request:* | change:updated |
+# | [x] | pull_request_review:submitted | change:reviewed |
+#
+# ## Rules:
+#
+# - `context.id` is computed by the collector (using content id, CID computed)
+# - `subject.id` is the api url of the entity, except for artifacts usiong the package url (PURL)
+# - `subject.source` is empty, all information are in the `subject.id` (global id)
+# - `customData.github` follow the hierarchy of the github event, but only provides few fields
+# - `customData.links` provides links to related subjects
+#
+
+bodies = []
+sender = .body.sender.login
+repo_url = to_string(.body.repository.url) ?? ""
+custom_data = {
+  "links": [
+    {
+      "linkKind": "storedAt",
+      "target": {
+        "subject": {
+          "type": "repository",
+          "id": repo_url,
+        }
+      }
+    }
+  ],
+  "github": .body
+}
+
+# test existance of a field to determine the event type (alternative: .headers["X-GitHub-Event"])
+if exists(.body.package) {
+  if .body.action == "published" {
+    ts = parse_timestamp(.body.package.updated_at, "%+") ?? now()
+    ts = format_timestamp!(ts, format: "%+")
+    name = .body.package.name || "noname"
+    namespace = string(.body.package.namespace) ?? "nonamespace"
+    # [purl-spec/PURL-TYPES.rst at master · package-url/purl-spec](https://github.com/package-url/purl-spec/blob/master/PURL-TYPES.rst)
+    pkgs = []
+    # the case of the value seems inconsitent
+    # see [List packages for an organization](https://docs.github.com/en/rest/packages/packages?apiVersion=2022-11-28#list-packages-for-an-organization)
+    # see https://github.com/octokit/webhooks.net/blob/main/src/Octokit.Webhooks/Models/PackageType.cs
+    package_type = downcase(.body.package.package_type) ?? .body.package.package_type
+    if package_type == "container" && .body.package.package_version.container_metadata.tag.name != "" {
+      # [Container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)
+      # if no tag, it could be an intermediate layer => no package
+      # github generate 1 event per tag
+      digest = (.body.package.package_version.container_metadata.tag.digest || .body.package.package_version.version)
+      tag_name = .body.package.package_version.container_metadata.tag.name
+      purl_obj = {
+        "type": "oci",
+        "name": name,
+        "version": digest,
+        "qualifiers": {"repository_url": "ghcr.io/" + namespace, "tag": tag_name}
+      }
+      pkgs = [purl_to_string(purl_obj)] ?? []
+    } else if package_type == "docker" {
+      # if no tag, it could be an intermediate layer => no package
+      # [Docker registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-docker-registry)
+      version = .body.package.package_version.version
+      tag_names = filter(array!(.body.package.package_version.docker_metadata.tags || [])) -> |_index, tag_name| {
+        !is_nullish(tag_name)
+      }
+      pkgs = map_values(tag_names) -> |tag_name|{
+        purl_obj = {
+          "type": "oci",
+          "name": name,
+          "version": version,
+          "qualifiers": {"repository_url": "ghcr.io/"+ namespace, "tag": tag_name}
+        }
+        purl_to_string!(purl_obj)
+      }
+      pkgs = filter(pkgs) -> |_index, pkg| {
+        !is_nullish(pkg)
+      }
+    } else if package_type == "maven" {
+      # [Apache Maven registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry)
+      # [Gradle registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-gradle-registry)
+      repo_full_name = string!(.body.repository.full_name)
+      version = .body.package.package_version.version
+      purl_obj = {
+        "type": "maven",
+        "namespace": namespace,
+        "name": name,
+        "version": version,
+        "qualifiers": {"repository_url": "https://maven.pkg.github.com/" + repo_full_name}
+      }
+      pkgs = [purl_to_string!(purl_obj)]
+    } else if package_type == "npm" && .body.package.package_version.npm_metadata.tag.name != "" {
+      # [npm registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry)
+      version = (.body.package.package_version.npm_metadata.version || .body.package.package_version.npm_metadata.npm_version || .body.package.package_version.version)
+      purl_obj = {
+        "type": "npm",
+        "namespace": namespace,
+        "name": name,
+        "version": version,
+        "qualifiers": {"repository_url": "https://npm.pkg.github.com"}
+      }
+      pkgs = [purl_to_string!(purl_obj)]
+    } else if package_type == "nuget" {
+      # [NuGet registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-nuget-registry)
+      version = .body.package.package_version.version
+      purl_obj = {
+        "type": "nuget",
+        "name": name,
+        "version": version,
+        "qualifiers": {"repository_url": "https://nuget.pkg.github.com/"+ namespace }
+      }
+      pkgs = [purl_to_string!(purl_obj)]
+    } else if package_type == "rubygems" {
+      # [RubyGems registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-rubygems-registry)
+      version = (.body.package.package_version.rugygems_metadata.version_info.version || .body.package.package_version.version)
+      purl_obj = {
+        "type": "gem",
+        "name": name,
+        "version": version,
+        "qualifiers": {"repository_url": "https://rubygems.pkg.github.com/{{ namespace }}"}
+      }
+      pkgs = [purl_to_string!(purl_obj)]
+    }
+    custom_data.github.package = {
+      "package_version" : {
+        "package_url" : .body.package.package_version.package_url
+      }
+    }
+    bodies = map_values(pkgs) -> |pkg|{
+      {
+        "context": {
+          "specversion": "0.5.0",
+          "type": "dev.cdevents.artifact.published.0.3.0",
+          "timestamp": ts,
+          # "chainId": ??
+          # "links": ??
+        },
+        "subject": {
+          "id": pkg,
+          "content": {
+            "user": sender,
+          }
+        },
+        "customData": custom_data,
+      }
+    }
+  }
+} else if exists(.body.release) {
+  if .body.action == "published" {
+    ts = parse_timestamp(.body.release.published_at, "%+") ?? now()
+    ts = format_timestamp!(ts, format: "%+")
+    repo_full_name = string!(.body.repository.full_name)
+    version = .body.release.tag_name
+    version_s = to_string(.body.release.tag_name) ?? ""
+    repo_parts = split(repo_full_name, "/")
+    owner = string(repo_parts[0]) ?? "unknown"
+    repo_name = string(repo_parts[1]) ?? "unknown"
+    purl_obj = {
+      "type": "github",
+      "namespace": owner,
+      "name": repo_name,
+      "version": version
+    }
+    pkg = purl_to_string(purl_obj) ?? ""
+    custom_data.github.release = {
+      "url": .body.release.url,
+      # "tag_name": version,
+      # "name": .body.release.name,
+      # "description": .body.release.body,
+      # "draft": bool!(.body.release.draft || false),
+      # "prerelease": bool!(.body.release.prerelease || false),
+    }
+    release_body = {
+      "context": {
+        "specversion": "0.5.0",
+        "type": "dev.cdevents.artifact.published.0.3.0",
+        "timestamp": ts,
+        # "chainId": ??
+        # "links": ??
+      },
+      "subject": {
+        "id": pkg,
+        "content": {
+          "user": sender,
+        }
+      },
+      "customData": custom_data,
+    }
+    # one artifact.published per release asset; the asset file name keeps each asset a
+    # distinct PURL coordinate (download_url/checksum are qualifiers, NOT part of identity,
+    # so without the file name all assets would collapse to pkg:generic/{repo}@{tag})
+    asset_bodies = map_values(array(.body.release.assets) ?? []) -> |asset| {
+      asset_ts = parse_timestamp(asset.created_at, "%+") ?? parse_timestamp(.body.release.published_at, "%+") ?? now()
+      asset_ts = format_timestamp!(asset_ts, format: "%+")
+      qualifiers = { "download_url": to_string!(asset.browser_download_url) }
+      if !is_nullish(asset.digest) {
+        # asset.digest is already "sha256:...", the PURL checksum format
+        qualifiers.checksum = to_string!(asset.digest)
+      }
+      asset_purl_obj = {
+        "type": "generic",
+        "namespace": owner + "/" + repo_name,
+        "name": to_string!(asset.name),
+        "version": version_s,
+        "qualifiers": qualifiers,
+      }
+      asset_cd = custom_data
+      asset_cd.github.asset = {
+        "name": asset.name,
+        "content_type": asset.content_type,
+        "size": asset.size,
+        "browser_download_url": asset.browser_download_url,
+        "digest": asset.digest,
+      }
+      {
+        "context": {
+          "specversion": "0.5.0",
+          "type": "dev.cdevents.artifact.published.0.3.0",
+          "timestamp": asset_ts,
+        },
+        "subject": {
+          "id": purl_to_string!(asset_purl_obj),
+          "content": {
+            "user": sender,
+          }
+        },
+        "customData": asset_cd,
+      }
+    }
+    bodies = flatten([[release_body], asset_bodies])
+  }
+} else if exists(.body.workflow_run) {
+  # https://docs.github.com/en/webhooks/webhook-events-and-payloads#workflow_run
+  ts = parse_timestamp(.body.workflow_run.updated_at, "%+") ?? now()
+  ts = format_timestamp!(ts, format: "%+")
+  repo_full_name = string!(.body.repository.full_name)
+  body = {
+    "context": {
+      "specversion": "0.5.0",
+      "timestamp": ts,
+    },
+    "subject": {
+      "id": to_string!(.body.workflow_run.url) + "/attempts/" + to_string!(.body.workflow_run.run_attempt), # or .body.workflow_run.workflow_id, integration of run_number ?
+      "content": {
+        "pipelineName": (repo_full_name + "/" + .body.workflow_run.name) ?? "",
+        "uri": to_string!(.body.workflow_run.html_url) + "/attempts/" + to_string!(.body.workflow_run.run_attempt),
+      }
+    },
+    "customData": custom_data,
+  }
+  if .body.action == "requested" {
+    body.context.type = "dev.cdevents.pipelinerun.queued.0.3.0"
+    bodies = [body]
+  } else if .body.action == "in_progress" {
+    body.context.type = "dev.cdevents.pipelinerun.started.0.3.0"
+    bodies = [body]
+  } else if .body.action == "completed" {
+    body.context.type = "dev.cdevents.pipelinerun.finished.0.3.0"
+    outcome = .body.workflow_run.conclusion # action_required, cancelled, failure, neutral, skipped, stale, success, timed_out, startup_failure, null
+    outcome_mapping = {
+      "cancelled": "cancel", "skipped": "cancel", "stale": "cancel",
+      "timed_out": "error", "startup_failure": "error", "action_required": "error",
+      "success": "success", "neutral": "success",
+      "failure": "failure"
+    }
+    mapped = get(outcome_mapping, [outcome]) ?? null
+    if !is_null(mapped) { body.subject.content.outcome = string!(mapped) }
+    bodies = [body]
+  }
+} else if exists(.body.workflow_job) {
+  # https://docs.github.com/en/webhooks/webhook-events-and-payloads#workflow_job
+  repo_full_name = string!(.body.repository.full_name)
+  pipeline_run_id = to_string!(.body.workflow_job.run_url) + "/attempts/" + to_string!(.body.workflow_job.run_attempt)
+  custom_data.links = push(custom_data.links, {
+    "linkKind": "runsIn",
+    "target": {
+      "subject": {
+        "type": "pipelinerun",
+        "id": pipeline_run_id,
+      }
+    }
+  })
+  body = {
+    "context": {
+      "specversion": "0.5.0",
+    },
+    "subject": {
+      "id": .body.workflow_job.url,
+      "content": {
+        # define an "absolute" name to avoid conflicts with other entities from other contexts
+        "taskName": (repo_full_name + "/" + .body.workflow_job.workflow_name + "/" + .body.workflow_job.name) ?? .body.workflow_job.name,
+        "uri": .body.workflow_job.html_url,
+        "pipelineRun": {
+          "id": pipeline_run_id,
+        }
+      }
+    },
+    "customData": custom_data,
+  }
+  if .body.action == "in_progress" {
+    ts = parse_timestamp(.body.workflow_job.started_at, "%+") ?? now()
+    ts = format_timestamp!(ts, format: "%+")
+    body.context.timestamp = ts
+    body.context.type = "dev.cdevents.taskrun.started.0.3.0"
+    bodies = [body]
+  } else if .body.action == "completed" {
+    ts = parse_timestamp(.body.workflow_job.completed_at, "%+") ?? now()
+    ts = format_timestamp!(ts, format: "%+")
+    body.context.timestamp = ts
+    body.context.type = "dev.cdevents.taskrun.finished.0.3.0"
+    outcome = .body.workflow_job.conclusion # success, failure, null, skipped, cancelled, action_required, neutral, timed_out
+    outcome_mapping = {
+      "cancelled": "cancel", "skipped": "cancel", "stale": "cancel",
+      "timed_out": "error", "startup_failure": "error", "action_required": "error",
+      "success": "success", "neutral": "success",
+      "failure": "failure"
+    }
+    mapped = get(outcome_mapping, [outcome]) ?? null
+    if !is_null(mapped) { body.subject.content.outcome = string!(mapped) }
+    bodies = [body]
+  }
+} else if exists(.body.issue) {
+  # !! field "issue" is present for issue & issue_comment events and some actions are shared
+  # ignore if draft or not
+  body = {
+    "context": {
+      "specversion": "0.5.0",
+    },
+    "subject": {
+      "id": .body.issue.url,
+      "content": {
+        "summary": .body.issue.title,
+        "ticketType": .body.issue.type.name,
+        # group\": \"security\",
+        "creator": .body.issue.user.login,
+        "assignees": map_values(array!(.body.issue.assignees || [])) -> |assignee| {
+          assignee.login
+        },
+        #"priority": "high",
+        "labels": map_values(array!(.body.issue.labels || [])) -> |label| {
+          label.name
+        },
+        "milestone": .body.issue.milestone.title,
+        "uri": .body.issue.html_url,
+      }
+    },
+    "customData": custom_data,
+  }
+  if .body.action == "opened" {
+    ts = parse_timestamp(.body.issue.created_at, "%+") ?? now()
+    ts = format_timestamp!(ts, format: "%+")
+    body.context.type = "dev.cdevents.ticket.created.0.2.0"
+    body.context.timestamp = ts
+    bodies = [body]
+  } else if .body.action == "closed" {
+    ts = parse_timestamp(.body.issue.closed_at, "%+") ?? now()
+    ts = format_timestamp!(ts, format: "%+")
+    body.context.type = "dev.cdevents.ticket.closed.0.2.0"
+    body.context.timestamp = ts
+    body.subject.content.updatedBy = .body.sender.login
+    body.subject.content.resolution = .body.issue.state_reason # completed, cancelled, duplicate, not_planned, fixed, invalid, wont_fix
+    bodies = [body]
+  } else {
+    ts = parse_timestamp(.body.issue.updated_at, "%+") ?? now()
+    ts = format_timestamp!(ts, format: "%+")
+    body.context.type = "dev.cdevents.ticket.updated.0.2.0"
+    body.context.timestamp = ts
+    body.subject.content.updatedBy = .body.sender.login
+    body.customData.github.action = .body.action # edited, transferred, reopened, locked, unlocked, milestoned, demilestoned
+    bodies = [body]
+  }
+} else if exists(.body.ref) {
+  if bool!(.body.created || false) {
+    body = {
+      "context": {
+        "specversion": "0.5.0",
+      },
+      "subject": {
+        "id": (.body.repository.url + "/branches/" + replace(.body.ref, "refs/heads/", "")) ?? .body.ref,
+        "content": {
+          "repository": {
+            "id": .body.repository.url,
+          }
+        }
+      },
+      "customData": custom_data,
+    }
+    ts = parse_timestamp(.body.head_commit.timestamp, "%+") ?? now()
+    ts = format_timestamp!(ts, format: "%+")
+    body.context.type = "dev.cdevents.branch.created.0.3.0"
+    body.context.timestamp = ts
+    bodies = [body]
+  # } else if .body.deleted {
+  #   # ts is not available in the payload => no reproduction => failed to compute unique id/CID for the event
+  #   ts = now()
+  #   ts = format_timestamp!(ts, format: "%+")
+  #   body.context.type = "dev.cdevents.branch.deleted.0.3.0"
+  #   body.context.timestamp = ts
+  #   bodies = [body]
+  }
+} else if exists(.body.pull_request) {
+  body = {
+    "context": {
+      "specversion": "0.5.0",
+    },
+    "subject": {
+      "id": .body.pull_request.url,
+      "content": {
+        "repository": {
+          "id": .body.repository.url,
+        }
+      }
+    },
+    "customData": custom_data,
+  }
+  if exists(.body.review) {
+    if .body.action == "submitted" && .body.review.state != "approved" {
+      ts = parse_timestamp(.body.review.submitted_at, "%+") ?? now()
+      ts = format_timestamp!(ts, format: "%+")
+      body.context.timestamp = ts
+      body.context.type = "dev.cdevents.change.reviewed.0.3.0"
+      body.customData.github.action = .body.action # submitted, dismissed, edited
+      body.customData.github.review = {
+        "state": .body.review.state, # approved, changes_requested, dismissed
+        "author": .body.review.user.login,
+        "url": .body.review.html_url
+      }
+      bodies = [body]
+    }
+    # other actions / states related to reviews are not supported by cdevents
+  } else if .body.action == "opened" {
+    ts = parse_timestamp(.body.pull_request.created_at, "%+") ?? now()
+    ts = format_timestamp!(ts, format: "%+")
+    body.context.timestamp = ts
+    body.context.type = "dev.cdevents.change.created.0.3.0"
+    body.subject.content.description = .body.pull_request.title # ?? concatenate with body ?
+    bodies = [body]
+  } else if .body.action == "closed" {
+    ts = parse_timestamp(.body.pull_request.closed_at, "%+") ?? now()
+    ts = format_timestamp!(ts, format: "%+")
+    body.context.timestamp = ts
+    if bool!(.body.pull_request.merged) {
+      body.context.type = "dev.cdevents.change.merged.0.3.0"
+    } else {
+      body.context.type = "dev.cdevents.change.abandoned.0.3.0"
+    }
+    bodies = [body]
+  } else {
+    ts = parse_timestamp(.body.pull_request.updated_at, "%+") ?? now()
+    ts = format_timestamp!(ts, format: "%+")
+    body.context.timestamp = ts
+    body.context.type = "dev.cdevents.change.updated.0.3.0"
+    body.customData.github.action = .body.action
+    bodies = [body]
+  }
+}
+
+map_values(bodies) -> |body| {
+  {
+    "metadata": .metadata,
+    "headers": .headers,
+    "body": body
+  }
+}

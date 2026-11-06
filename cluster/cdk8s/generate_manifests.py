@@ -110,6 +110,13 @@ from cluster.cdk8s.authentik import (
     sso_providers,
     tf as authentik_tf,
 )
+from cluster.cdk8s.cdviz import (
+    collector as cdviz_collector,
+    dashboards as cdviz_dashboards,
+    database as cdviz_database,
+    github_webhook as cdviz_github_webhook,
+    namespace as cdviz_namespace,
+)
 from cluster.cdk8s.cert_manager import (
     app as cert_manager_app,
     cluster_ca as cert_manager_cluster_ca,
@@ -618,6 +625,7 @@ def generate_manifests(root: Path) -> None:
                     github_branch_protection.KUBERNETES_IDENTITY,
                     github_secrets_sync_workspace.KUBERNETES_IDENTITY,
                     flux_webhook_token.KUBERNETES_IDENTITY,
+                    cdviz_github_webhook.KUBERNETES_IDENTITY,
                 ),
             ),
         ),
@@ -1358,6 +1366,55 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
         flux_webhook_token_kustomization,
     )
+    cdviz_namespace_artifact = artifact("cdviz-namespace", cdviz_namespace.OUTPUT_DIR)
+    cdviz_namespace_kustomization = cdviz_namespace.cdviz_namespace(
+        flux_chart, write_directory(root, cdviz_namespace_artifact, cdviz_namespace.chart)
+    )
+    cdviz_database_artifact = artifact("cdviz-database", cdviz_database.OUTPUT_DIR)
+    cdviz_database_kustomization = cdviz_database.cdviz_database(
+        flux_chart,
+        write_directory(root, cdviz_database_artifact, cdviz_database.chart),
+        cdviz_namespace_kustomization,
+        cnpg_kustomization,
+        external_secrets_operator_kustomization,
+        seaweedfs_operator_kustomization,
+    )
+    cdviz_webhook_artifact = artifact(cdviz_github_webhook.WORKSPACE_NAME, cdviz_github_webhook.OUTPUT_DIR)
+    cdviz_webhook_kustomization = opentofu.workspace_kustomization(
+        flux_chart,
+        cdviz_github_webhook.WORKSPACE_NAME,
+        write_directory(root, cdviz_webhook_artifact, cdviz_github_webhook.chart),
+        github_tf_artifact,
+        depends_on=[
+            crossplane_opentofu_provider_kustomization,
+            tofu_state_db_kustomization,
+            github_secrets_sync_secrets_kustomization,
+            cdviz_namespace_kustomization,
+        ],
+    )
+    cdviz_collector_artifact = artifact("cdviz-collector", cdviz_collector.OUTPUT_DIR)
+    cdviz_collector_kustomization = cdviz_collector.cdviz_collector(
+        flux_chart,
+        write_directory(root, cdviz_collector_artifact, cdviz_collector.chart),
+        cdviz_database_kustomization,
+        cdviz_webhook_kustomization,
+        monitoring_crds_kustomization,
+    )
+    cdviz_dashboards_artifact = artifact("cdviz-dashboards", cdviz_dashboards.OUTPUT_DIR)
+    cdviz_dashboards.cdviz_dashboards(
+        flux_chart,
+        write_directory(
+            root,
+            cdviz_dashboards_artifact,
+            cdviz_dashboards.chart,
+            config_map_generator=grafana_dashboards.config_map_generator(
+                root, cdviz_dashboards.OUTPUT_DIR, cdviz_dashboards.DASHBOARDS
+            ),
+            configurations=[grafana_dashboards.write_kustomize_config(root, cdviz_dashboards.OUTPUT_DIR)],
+        ),
+        cdviz_collector_kustomization,
+        grafana_operator_kustomization,
+    )
     haku_ci_artifact = artifact("haku-ci", haku_ci_runner.OUTPUT_DIR)
     haku_ci_kustomization = haku_ci_runner.haku_ci(
         flux_chart,
@@ -2070,6 +2127,11 @@ def generate_manifests(root: Path) -> None:
             flux_annotations_artifact,
             flux_image_automation_forgejo_artifact,
             flux_webhook_artifact,
+            cdviz_namespace_artifact,
+            cdviz_database_artifact,
+            cdviz_webhook_artifact,
+            cdviz_collector_artifact,
+            cdviz_dashboards_artifact,
             forgejo_gitops_artifact,
             budget_namespace_artifact,
             gaffer_private_source_artifact,

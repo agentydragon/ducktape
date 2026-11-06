@@ -38,6 +38,20 @@ oci_layout_py(
     visibility = ["//visibility:public"],
 )
 
+oci_layout_py(
+    name = "cdviz_collector",
+    testonly = True,
+    image = "@cdviz_collector_linux_amd64",
+    visibility = ["//visibility:public"],
+)
+
+oci_layout_py(
+    name = "cdviz_db_migration",
+    testonly = True,
+    image = "@cdviz_db_migration_linux_amd64",
+    visibility = ["//visibility:public"],
+)
+
 py_library(
     name = "fixtures",
     testonly = True,
@@ -54,6 +68,13 @@ oci_layout_py(
     name = "postgres_18",
     testonly = True,
     image = "@postgres_18_linux_amd64",
+    visibility = ["//visibility:public"],
+)
+
+oci_layout_py(
+    name = "postgres_18_minimal",
+    testonly = True,
+    image = "@postgres_18_minimal_linux_amd64",
     visibility = ["//visibility:public"],
 )
 
@@ -78,6 +99,26 @@ oci_layout_py(
     testonly = True,
     image = "@pgvector_pg18_linux_amd64",
     visibility = ["//visibility:public"],
+)
+
+oci_layout_py(
+    name = "timescaledb_oss",
+    testonly = True,
+    image = "@timescaledb_oss_linux_amd64",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "timescaledb",
+    testonly = True,
+    srcs = ["timescaledb.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/oci",
+        "//devinfra/testing:undeclared_outputs",
+        "//third_party/containers:postgres_18_minimal",
+        "//third_party/containers:timescaledb_oss",
+    ],
 )
 
 oci_layout_py(

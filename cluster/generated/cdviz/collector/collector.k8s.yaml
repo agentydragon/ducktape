@@ -1,0 +1,1030 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: collector-config
+  namespace: cdviz
+data:
+  collector.toml: |
+    # CDviz Collector 0.53.1. Secret *_file keys are expanded by the pinned
+    # file-provider adapter before TOML deserialization; no shell interpolation is used.
+    [state]
+    kind = "fs"
+
+    [state.parameters]
+    root = "/var/lib/cdviz/state"
+
+    [http]
+    host = "0.0.0.0"
+    port = 8080
+
+    [pipeline]
+    queue_capacity = 1000
+
+    [sinks.database]
+    enabled = true
+    type = "db"
+    url_file = "/var/run/secrets/database/DATABASE_URL"
+    pool_connections_min = 0
+    pool_connections_max = 2
+    batch_max_size = 10
+    batch_max_wait = "1s"
+    batch_spool_dir = "/var/lib/cdviz/spool"
+
+    [sources.github_webhook]
+    enabled = true
+    transformer_refs = ["github_events"]
+
+    [sources.github_webhook.extractor]
+    type = "webhook"
+    id = "github"
+    headers_to_keep = ["X-GitHub-Event"]
+
+    [sources.github_webhook.extractor.headers]
+    "X-Hub-Signature-256" = { type = "signature", token_file = "/var/run/secrets/webhook/token", signature_prefix = "sha256=", signature_on = "body", signature_encoding = "hex" }
+
+    [sources.github_poll]
+    enabled = true
+    transformer_refs = ["github_workflow_runs"]
+
+    [sources.github_poll.extractor]
+    type = "http_polling"
+    polling_interval = "15m"
+    total_duration_of_retries = "30s"
+    request_timeout = "20s"
+    max_requests = 1
+    max_depth = 1
+    max_concurrency = 1
+    parser = "json"
+    on_status = { "403" = "hold", "429" = "hold", "5xx" = "hold" }
+    driver_vrl = '''
+    if .response == null {
+      .requests = [{
+        "url": "https://api.github.com/repos/agentydragon/ducktape/actions/runs",
+        "query": {"per_page": "100"},
+        "parser": "json"
+      }]
+    } else {
+      .requests = []
+    }
+    '''
+
+    [transformers.github_events]
+    type = "vrl"
+    template_file = "/etc/cdviz/github_webhook.vrl"
+
+    [transformers.github_workflow_runs]
+    type = "vrl"
+    template_file = "/etc/cdviz/github_workflow_runs.vrl"
+  github_webhook.vrl: |
+    # Convert [github events](https://docs.github.com/en/developers/webhooks-and-events/webhooks/webhook-events-and-payloads)
+    # to [cdevents](https://cdevents.dev)
+    #
+    # | done | Gihub Event | cdevent |
+    # | --- | --- | --- |
+    # | [x] | package:published | artifact:published |
+    # | [ ] | package:updated | artifact:published |
+    # | [x] | release:published | artifact:published |
+    # | [x] | release:published/assets | artifact:published |
+    # | [ ] | release:unpublished | artifact:deleted |
+    # | [ ] | release:unpublished/assets | artifact:deleted |
+    # | [x] | workflow_run:requested | pipelineRun:queued |
+    # | [x] | workflow_run:in_progress | pipelineRun:started |
+    # | [x] | workflow_run:completed | pipelineRun:finished |
+    # | [x] | workflow_job:in_progress | taskRun:started |
+    # | [x] | workflow_job:completed | taskRun:finished |
+    # | [x] | issue:opened | ticket:created |
+    # | [x] | issue:closed | ticket:closed |
+    # | [x] | issue:* | ticket:updated |
+    # | [x] | branch | branch:created |
+    # | [x] | pull_request:opened | change:created |
+    # | [x] | pull_request:closed | change:merged change:abandoned |
+    # | [x] | pull_request:* | change:updated |
+    # | [x] | pull_request_review:submitted | change:reviewed |
+    #
+    # ## Rules:
+    #
+    # - `context.id` is computed by the collector (using content id, CID computed)
+    # - `subject.id` is the api url of the entity, except for artifacts usiong the package url (PURL)
+    # - `subject.source` is empty, all information are in the `subject.id` (global id)
+    # - `customData.github` follow the hierarchy of the github event, but only provides few fields
+    # - `customData.links` provides links to related subjects
+    #
+
+    bodies = []
+    sender = .body.sender.login
+    repo_url = to_string(.body.repository.url) ?? ""
+    custom_data = {
+      "links": [
+        {
+          "linkKind": "storedAt",
+          "target": {
+            "subject": {
+              "type": "repository",
+              "id": repo_url,
+            }
+          }
+        }
+      ],
+      "github": .body
+    }
+
+    # test existance of a field to determine the event type (alternative: .headers["X-GitHub-Event"])
+    if exists(.body.package) {
+      if .body.action == "published" {
+        ts = parse_timestamp(.body.package.updated_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        name = .body.package.name || "noname"
+        namespace = string(.body.package.namespace) ?? "nonamespace"
+        # [purl-spec/PURL-TYPES.rst at master · package-url/purl-spec](https://github.com/package-url/purl-spec/blob/master/PURL-TYPES.rst)
+        pkgs = []
+        # the case of the value seems inconsitent
+        # see [List packages for an organization](https://docs.github.com/en/rest/packages/packages?apiVersion=2022-11-28#list-packages-for-an-organization)
+        # see https://github.com/octokit/webhooks.net/blob/main/src/Octokit.Webhooks/Models/PackageType.cs
+        package_type = downcase(.body.package.package_type) ?? .body.package.package_type
+        if package_type == "container" && .body.package.package_version.container_metadata.tag.name != "" {
+          # [Container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)
+          # if no tag, it could be an intermediate layer => no package
+          # github generate 1 event per tag
+          digest = (.body.package.package_version.container_metadata.tag.digest || .body.package.package_version.version)
+          tag_name = .body.package.package_version.container_metadata.tag.name
+          purl_obj = {
+            "type": "oci",
+            "name": name,
+            "version": digest,
+            "qualifiers": {"repository_url": "ghcr.io/" + namespace, "tag": tag_name}
+          }
+          pkgs = [purl_to_string(purl_obj)] ?? []
+        } else if package_type == "docker" {
+          # if no tag, it could be an intermediate layer => no package
+          # [Docker registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-docker-registry)
+          version = .body.package.package_version.version
+          tag_names = filter(array!(.body.package.package_version.docker_metadata.tags || [])) -> |_index, tag_name| {
+            !is_nullish(tag_name)
+          }
+          pkgs = map_values(tag_names) -> |tag_name|{
+            purl_obj = {
+              "type": "oci",
+              "name": name,
+              "version": version,
+              "qualifiers": {"repository_url": "ghcr.io/"+ namespace, "tag": tag_name}
+            }
+            purl_to_string!(purl_obj)
+          }
+          pkgs = filter(pkgs) -> |_index, pkg| {
+            !is_nullish(pkg)
+          }
+        } else if package_type == "maven" {
+          # [Apache Maven registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-apache-maven-registry)
+          # [Gradle registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-gradle-registry)
+          repo_full_name = string!(.body.repository.full_name)
+          version = .body.package.package_version.version
+          purl_obj = {
+            "type": "maven",
+            "namespace": namespace,
+            "name": name,
+            "version": version,
+            "qualifiers": {"repository_url": "https://maven.pkg.github.com/" + repo_full_name}
+          }
+          pkgs = [purl_to_string!(purl_obj)]
+        } else if package_type == "npm" && .body.package.package_version.npm_metadata.tag.name != "" {
+          # [npm registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry)
+          version = (.body.package.package_version.npm_metadata.version || .body.package.package_version.npm_metadata.npm_version || .body.package.package_version.version)
+          purl_obj = {
+            "type": "npm",
+            "namespace": namespace,
+            "name": name,
+            "version": version,
+            "qualifiers": {"repository_url": "https://npm.pkg.github.com"}
+          }
+          pkgs = [purl_to_string!(purl_obj)]
+        } else if package_type == "nuget" {
+          # [NuGet registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-nuget-registry)
+          version = .body.package.package_version.version
+          purl_obj = {
+            "type": "nuget",
+            "name": name,
+            "version": version,
+            "qualifiers": {"repository_url": "https://nuget.pkg.github.com/"+ namespace }
+          }
+          pkgs = [purl_to_string!(purl_obj)]
+        } else if package_type == "rubygems" {
+          # [RubyGems registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-rubygems-registry)
+          version = (.body.package.package_version.rugygems_metadata.version_info.version || .body.package.package_version.version)
+          purl_obj = {
+            "type": "gem",
+            "name": name,
+            "version": version,
+            "qualifiers": {"repository_url": "https://rubygems.pkg.github.com/{{ namespace }}"}
+          }
+          pkgs = [purl_to_string!(purl_obj)]
+        }
+        custom_data.github.package = {
+          "package_version" : {
+            "package_url" : .body.package.package_version.package_url
+          }
+        }
+        bodies = map_values(pkgs) -> |pkg|{
+          {
+            "context": {
+              "specversion": "0.5.0",
+              "type": "dev.cdevents.artifact.published.0.3.0",
+              "timestamp": ts,
+              # "chainId": ??
+              # "links": ??
+            },
+            "subject": {
+              "id": pkg,
+              "content": {
+                "user": sender,
+              }
+            },
+            "customData": custom_data,
+          }
+        }
+      }
+    } else if exists(.body.release) {
+      if .body.action == "published" {
+        ts = parse_timestamp(.body.release.published_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        repo_full_name = string!(.body.repository.full_name)
+        version = .body.release.tag_name
+        version_s = to_string(.body.release.tag_name) ?? ""
+        repo_parts = split(repo_full_name, "/")
+        owner = string(repo_parts[0]) ?? "unknown"
+        repo_name = string(repo_parts[1]) ?? "unknown"
+        purl_obj = {
+          "type": "github",
+          "namespace": owner,
+          "name": repo_name,
+          "version": version
+        }
+        pkg = purl_to_string(purl_obj) ?? ""
+        custom_data.github.release = {
+          "url": .body.release.url,
+          # "tag_name": version,
+          # "name": .body.release.name,
+          # "description": .body.release.body,
+          # "draft": bool!(.body.release.draft || false),
+          # "prerelease": bool!(.body.release.prerelease || false),
+        }
+        release_body = {
+          "context": {
+            "specversion": "0.5.0",
+            "type": "dev.cdevents.artifact.published.0.3.0",
+            "timestamp": ts,
+            # "chainId": ??
+            # "links": ??
+          },
+          "subject": {
+            "id": pkg,
+            "content": {
+              "user": sender,
+            }
+          },
+          "customData": custom_data,
+        }
+        # one artifact.published per release asset; the asset file name keeps each asset a
+        # distinct PURL coordinate (download_url/checksum are qualifiers, NOT part of identity,
+        # so without the file name all assets would collapse to pkg:generic/{repo}@{tag})
+        asset_bodies = map_values(array(.body.release.assets) ?? []) -> |asset| {
+          asset_ts = parse_timestamp(asset.created_at, "%+") ?? parse_timestamp(.body.release.published_at, "%+") ?? now()
+          asset_ts = format_timestamp!(asset_ts, format: "%+")
+          qualifiers = { "download_url": to_string!(asset.browser_download_url) }
+          if !is_nullish(asset.digest) {
+            # asset.digest is already "sha256:...", the PURL checksum format
+            qualifiers.checksum = to_string!(asset.digest)
+          }
+          asset_purl_obj = {
+            "type": "generic",
+            "namespace": owner + "/" + repo_name,
+            "name": to_string!(asset.name),
+            "version": version_s,
+            "qualifiers": qualifiers,
+          }
+          asset_cd = custom_data
+          asset_cd.github.asset = {
+            "name": asset.name,
+            "content_type": asset.content_type,
+            "size": asset.size,
+            "browser_download_url": asset.browser_download_url,
+            "digest": asset.digest,
+          }
+          {
+            "context": {
+              "specversion": "0.5.0",
+              "type": "dev.cdevents.artifact.published.0.3.0",
+              "timestamp": asset_ts,
+            },
+            "subject": {
+              "id": purl_to_string!(asset_purl_obj),
+              "content": {
+                "user": sender,
+              }
+            },
+            "customData": asset_cd,
+          }
+        }
+        bodies = flatten([[release_body], asset_bodies])
+      }
+    } else if exists(.body.workflow_run) {
+      # https://docs.github.com/en/webhooks/webhook-events-and-payloads#workflow_run
+      ts = parse_timestamp(.body.workflow_run.updated_at, "%+") ?? now()
+      ts = format_timestamp!(ts, format: "%+")
+      repo_full_name = string!(.body.repository.full_name)
+      body = {
+        "context": {
+          "specversion": "0.5.0",
+          "timestamp": ts,
+        },
+        "subject": {
+          "id": to_string!(.body.workflow_run.url) + "/attempts/" + to_string!(.body.workflow_run.run_attempt), # or .body.workflow_run.workflow_id, integration of run_number ?
+          "content": {
+            "pipelineName": (repo_full_name + "/" + .body.workflow_run.name) ?? "",
+            "uri": to_string!(.body.workflow_run.html_url) + "/attempts/" + to_string!(.body.workflow_run.run_attempt),
+          }
+        },
+        "customData": custom_data,
+      }
+      if .body.action == "requested" {
+        body.context.type = "dev.cdevents.pipelinerun.queued.0.3.0"
+        bodies = [body]
+      } else if .body.action == "in_progress" {
+        body.context.type = "dev.cdevents.pipelinerun.started.0.3.0"
+        bodies = [body]
+      } else if .body.action == "completed" {
+        body.context.type = "dev.cdevents.pipelinerun.finished.0.3.0"
+        outcome = .body.workflow_run.conclusion # action_required, cancelled, failure, neutral, skipped, stale, success, timed_out, startup_failure, null
+        outcome_mapping = {
+          "cancelled": "cancel", "skipped": "cancel", "stale": "cancel",
+          "timed_out": "error", "startup_failure": "error", "action_required": "error",
+          "success": "success", "neutral": "success",
+          "failure": "failure"
+        }
+        mapped = get(outcome_mapping, [outcome]) ?? null
+        if !is_null(mapped) { body.subject.content.outcome = string!(mapped) }
+        bodies = [body]
+      }
+    } else if exists(.body.workflow_job) {
+      # https://docs.github.com/en/webhooks/webhook-events-and-payloads#workflow_job
+      repo_full_name = string!(.body.repository.full_name)
+      pipeline_run_id = to_string!(.body.workflow_job.run_url) + "/attempts/" + to_string!(.body.workflow_job.run_attempt)
+      custom_data.links = push(custom_data.links, {
+        "linkKind": "runsIn",
+        "target": {
+          "subject": {
+            "type": "pipelinerun",
+            "id": pipeline_run_id,
+          }
+        }
+      })
+      body = {
+        "context": {
+          "specversion": "0.5.0",
+        },
+        "subject": {
+          "id": .body.workflow_job.url,
+          "content": {
+            # define an "absolute" name to avoid conflicts with other entities from other contexts
+            "taskName": (repo_full_name + "/" + .body.workflow_job.workflow_name + "/" + .body.workflow_job.name) ?? .body.workflow_job.name,
+            "uri": .body.workflow_job.html_url,
+            "pipelineRun": {
+              "id": pipeline_run_id,
+            }
+          }
+        },
+        "customData": custom_data,
+      }
+      if .body.action == "in_progress" {
+        ts = parse_timestamp(.body.workflow_job.started_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.timestamp = ts
+        body.context.type = "dev.cdevents.taskrun.started.0.3.0"
+        bodies = [body]
+      } else if .body.action == "completed" {
+        ts = parse_timestamp(.body.workflow_job.completed_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.timestamp = ts
+        body.context.type = "dev.cdevents.taskrun.finished.0.3.0"
+        outcome = .body.workflow_job.conclusion # success, failure, null, skipped, cancelled, action_required, neutral, timed_out
+        outcome_mapping = {
+          "cancelled": "cancel", "skipped": "cancel", "stale": "cancel",
+          "timed_out": "error", "startup_failure": "error", "action_required": "error",
+          "success": "success", "neutral": "success",
+          "failure": "failure"
+        }
+        mapped = get(outcome_mapping, [outcome]) ?? null
+        if !is_null(mapped) { body.subject.content.outcome = string!(mapped) }
+        bodies = [body]
+      }
+    } else if exists(.body.issue) {
+      # !! field "issue" is present for issue & issue_comment events and some actions are shared
+      # ignore if draft or not
+      body = {
+        "context": {
+          "specversion": "0.5.0",
+        },
+        "subject": {
+          "id": .body.issue.url,
+          "content": {
+            "summary": .body.issue.title,
+            "ticketType": .body.issue.type.name,
+            # group\": \"security\",
+            "creator": .body.issue.user.login,
+            "assignees": map_values(array!(.body.issue.assignees || [])) -> |assignee| {
+              assignee.login
+            },
+            #"priority": "high",
+            "labels": map_values(array!(.body.issue.labels || [])) -> |label| {
+              label.name
+            },
+            "milestone": .body.issue.milestone.title,
+            "uri": .body.issue.html_url,
+          }
+        },
+        "customData": custom_data,
+      }
+      if .body.action == "opened" {
+        ts = parse_timestamp(.body.issue.created_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.type = "dev.cdevents.ticket.created.0.2.0"
+        body.context.timestamp = ts
+        bodies = [body]
+      } else if .body.action == "closed" {
+        ts = parse_timestamp(.body.issue.closed_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.type = "dev.cdevents.ticket.closed.0.2.0"
+        body.context.timestamp = ts
+        body.subject.content.updatedBy = .body.sender.login
+        body.subject.content.resolution = .body.issue.state_reason # completed, cancelled, duplicate, not_planned, fixed, invalid, wont_fix
+        bodies = [body]
+      } else {
+        ts = parse_timestamp(.body.issue.updated_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.type = "dev.cdevents.ticket.updated.0.2.0"
+        body.context.timestamp = ts
+        body.subject.content.updatedBy = .body.sender.login
+        body.customData.github.action = .body.action # edited, transferred, reopened, locked, unlocked, milestoned, demilestoned
+        bodies = [body]
+      }
+    } else if exists(.body.ref) {
+      if bool!(.body.created || false) {
+        body = {
+          "context": {
+            "specversion": "0.5.0",
+          },
+          "subject": {
+            "id": (.body.repository.url + "/branches/" + replace(.body.ref, "refs/heads/", "")) ?? .body.ref,
+            "content": {
+              "repository": {
+                "id": .body.repository.url,
+              }
+            }
+          },
+          "customData": custom_data,
+        }
+        ts = parse_timestamp(.body.head_commit.timestamp, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.type = "dev.cdevents.branch.created.0.3.0"
+        body.context.timestamp = ts
+        bodies = [body]
+      # } else if .body.deleted {
+      #   # ts is not available in the payload => no reproduction => failed to compute unique id/CID for the event
+      #   ts = now()
+      #   ts = format_timestamp!(ts, format: "%+")
+      #   body.context.type = "dev.cdevents.branch.deleted.0.3.0"
+      #   body.context.timestamp = ts
+      #   bodies = [body]
+      }
+    } else if exists(.body.pull_request) {
+      body = {
+        "context": {
+          "specversion": "0.5.0",
+        },
+        "subject": {
+          "id": .body.pull_request.url,
+          "content": {
+            "repository": {
+              "id": .body.repository.url,
+            }
+          }
+        },
+        "customData": custom_data,
+      }
+      if exists(.body.review) {
+        if .body.action == "submitted" && .body.review.state != "approved" {
+          ts = parse_timestamp(.body.review.submitted_at, "%+") ?? now()
+          ts = format_timestamp!(ts, format: "%+")
+          body.context.timestamp = ts
+          body.context.type = "dev.cdevents.change.reviewed.0.3.0"
+          body.customData.github.action = .body.action # submitted, dismissed, edited
+          body.customData.github.review = {
+            "state": .body.review.state, # approved, changes_requested, dismissed
+            "author": .body.review.user.login,
+            "url": .body.review.html_url
+          }
+          bodies = [body]
+        }
+        # other actions / states related to reviews are not supported by cdevents
+      } else if .body.action == "opened" {
+        ts = parse_timestamp(.body.pull_request.created_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.timestamp = ts
+        body.context.type = "dev.cdevents.change.created.0.3.0"
+        body.subject.content.description = .body.pull_request.title # ?? concatenate with body ?
+        bodies = [body]
+      } else if .body.action == "closed" {
+        ts = parse_timestamp(.body.pull_request.closed_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.timestamp = ts
+        if bool!(.body.pull_request.merged) {
+          body.context.type = "dev.cdevents.change.merged.0.3.0"
+        } else {
+          body.context.type = "dev.cdevents.change.abandoned.0.3.0"
+        }
+        bodies = [body]
+      } else {
+        ts = parse_timestamp(.body.pull_request.updated_at, "%+") ?? now()
+        ts = format_timestamp!(ts, format: "%+")
+        body.context.timestamp = ts
+        body.context.type = "dev.cdevents.change.updated.0.3.0"
+        body.customData.github.action = .body.action
+        bodies = [body]
+      }
+    }
+
+    map_values(bodies) -> |body| {
+      {
+        "metadata": .metadata,
+        "headers": .headers,
+        "body": body
+      }
+    }
+  github_workflow_runs.vrl: |
+    # Convert GitHub REST API /repos/{owner}/{repo}/actions/runs response to CDEvents
+    #
+    # Input: paginated response from GET /repos/{owner}/{repo}/actions/runs
+    #   .body = { "total_count": N, "workflow_runs": [...] }
+    #
+    # | done | GitHub REST field     | CDEvent(s) emitted                              |
+    # | ---- | --------------------- | ----------------------------------------------- |
+    # | [x]  | status == queued      | pipelineRun:queued                              |
+    # | [x]  | status == in_progress | pipelineRun:queued + started                    |
+    # | [x]  | status == completed   | pipelineRun:queued + started + finished         |
+    #
+    # Rules:
+    # - context.id is computed by the collector (content-based CID)
+    # - subject.id = run.url + "/attempts/" + run.run_attempt (API URL)
+    # - Each phase uses its own timestamp for idempotent backfill (see RULES.md)
+    # - customData.github only includes fields stable at each phase (no status/conclusion for queued/started)
+
+    outcome_mapping = {
+      "cancelled": "cancel", "skipped": "cancel", "stale": "cancel",
+      "timed_out": "error", "startup_failure": "error", "action_required": "error",
+      "success": "success", "neutral": "success",
+      "failure": "failure"
+    }
+
+    items = array(.body.workflow_runs) ?? []
+    events = map_values(items) -> |run| {
+      if run.status != "queued" && run.status != "waiting" && run.status != "requested" && run.status != "pending" && run.status != "in_progress" && run.status != "completed" {
+        []
+      } else {
+        attempt = to_string!(run.run_attempt)
+        repo_url = to_string(run.repository.url) ?? ""
+        subject = {
+          "id": to_string!(run.url) + "/attempts/" + attempt,
+          "content": {
+            "pipelineName": to_string!(run.repository.full_name) + "/" + to_string!(run.name),
+            "uri": to_string!(run.html_url) + "/attempts/" + attempt,
+          },
+        }
+        links = [{ "linkKind": "storedAt", "target": { "subject": { "type": "repository", "id": repo_url } } }]
+
+        # queued — emitted for all statuses; customData excludes volatile fields (status, conclusion)
+        queued_ts = format_timestamp!(parse_timestamp(run.created_at, "%+") ?? now(), format: "%+")
+        queued_event = {
+          "context": { "specversion": "0.5.0", "type": "dev.cdevents.pipelinerun.queued.0.3.0", "timestamp": queued_ts },
+          "subject": subject,
+          "customData": {
+            "links": links,
+            "github": { "workflow_run": { "id": run.id, "name": run.name, "url": run.url, "head_branch": run.head_branch, "head_sha": run.head_sha, "created_at": run.created_at } },
+          },
+        }
+
+        # started — emitted for in_progress and completed
+        started_events = if run.status == "in_progress" || run.status == "completed" {
+          started_ts = format_timestamp!(parse_timestamp(run.run_started_at, "%+") ?? now(), format: "%+")
+          [{
+            "context": { "specversion": "0.5.0", "type": "dev.cdevents.pipelinerun.started.0.3.0", "timestamp": started_ts },
+            "subject": subject,
+            "customData": {
+              "links": links,
+              "github": { "workflow_run": { "id": run.id, "name": run.name, "url": run.url, "head_branch": run.head_branch, "head_sha": run.head_sha, "created_at": run.created_at, "run_started_at": run.run_started_at } },
+            },
+          }]
+        } else { [] }
+
+        # finished — emitted only when completed; conclusion is stable at this point
+        finished_events = if run.status == "completed" {
+          finished_ts = format_timestamp!(parse_timestamp(run.updated_at, "%+") ?? now(), format: "%+")
+          mapped = get(outcome_mapping, [to_string!(run.conclusion)]) ?? null
+          finished_subject = subject
+          if !is_null(mapped) { finished_subject.content.outcome = string!(mapped) }
+          [{
+            "context": { "specversion": "0.5.0", "type": "dev.cdevents.pipelinerun.finished.0.3.0", "timestamp": finished_ts },
+            "subject": finished_subject,
+            "customData": {
+              "links": links,
+              "github": { "workflow_run": { "id": run.id, "name": run.name, "url": run.url, "head_branch": run.head_branch, "head_sha": run.head_sha, "conclusion": run.conclusion, "run_started_at": run.run_started_at, "updated_at": run.updated_at } },
+            },
+          }]
+        } else { [] }
+
+        flatten([[queued_event], started_events, finished_events])
+      }
+    }
+    bodies = flatten(events)
+    bodies = filter(bodies) -> |_index, body| { !is_null(body) }
+
+    map_values(bodies) -> |body| {
+      { "metadata": .metadata, "headers": .headers, "body": body }
+    }
+  grants.sql: |
+    GRANT CONNECT ON DATABASE cdviz TO cdviz_collector, cdviz_reader;
+    GRANT USAGE ON SCHEMA cdviz TO cdviz_collector, cdviz_reader;
+    GRANT SELECT ON ALL TABLES IN SCHEMA cdviz TO cdviz_reader;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA cdviz TO cdviz_collector;
+    GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA cdviz TO cdviz_collector;
+    GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA cdviz TO cdviz_collector;
+    GRANT EXECUTE ON ALL PROCEDURES IN SCHEMA cdviz TO cdviz_collector;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA cdviz GRANT SELECT ON TABLES TO cdviz_reader;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA cdviz GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO cdviz_collector;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA cdviz GRANT USAGE, SELECT ON SEQUENCES TO cdviz_collector;
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: collector-spool
+  namespace: cdviz
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: seaweedfs-ovh-ssd
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collector
+  namespace: cdviz
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cdviz-collector
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cdviz-collector
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - args:
+            - connect
+            - --config
+            - /etc/cdviz/collector.toml
+          image: ghcr.io/cdviz-dev/cdviz-collector:0.53.1@sha256:7d69848b44d608e56db67b8af6b28885071ae593bcda35bf23cdb220ae45dab8
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+          name: collector
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /etc/cdviz
+              name: config
+              readOnly: true
+            - mountPath: /var/lib/cdviz
+              name: spool
+            - mountPath: /var/run/secrets/database
+              name: database
+              readOnly: true
+            - mountPath: /var/run/secrets/webhook
+              name: webhook
+              readOnly: true
+      initContainers:
+        - args:
+            - -database
+            - $(DATABASE_URL)
+            - -path
+            - /migrations/
+            - up
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: db-app
+          image: ghcr.io/cdviz-dev/cdviz-db-migration:1.5.0@sha256:6bbc4e2b9e3bfbe283571e80eff2d59ca2e9ecb5d50d51f174535af073b2fb1d
+          name: migrate
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+        - args:
+            - --no-psqlrc
+            - --set=ON_ERROR_STOP=1
+            - --file=/etc/cdviz/grants.sql
+          command:
+            - psql
+          env:
+            - name: PGHOST
+              value: db-rw.cdviz.svc
+            - name: PGPORT
+              value: "5432"
+            - name: PGDATABASE
+              value: cdviz
+            - name: PGUSER
+              value: cdviz
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: password
+                  name: db-app
+          image: ghcr.io/cloudnative-pg/postgresql:18.6-minimal-trixie@sha256:e5fffed938c8b55b41d9a6a88a47424d46f90aa15d807aa60348b85ea5bd498f
+          name: grants
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - mountPath: /etc/cdviz
+              name: config
+              readOnly: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - configMap:
+            name: collector-config
+          name: config
+        - name: spool
+          persistentVolumeClaim:
+            claimName: collector-spool
+        - name: database
+          secret:
+            secretName: collector-db
+        - name: webhook
+          secret:
+            secretName: github-webhook
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: cdviz-collector
+  name: collector
+  namespace: cdviz
+spec:
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app.kubernetes.io/name: cdviz-collector
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: collector
+  namespace: cdviz
+spec:
+  endpoints:
+    - path: /metrics
+      port: http
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cdviz-collector
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: github-webhook
+  namespace: cdviz
+spec:
+  hostnames:
+    - cdviz-webhook.allegedly.works
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+      sectionName: https-wildcard
+  rules:
+    - backendRefs:
+        - name: collector
+          port: 8080
+      filters:
+        - responseHeaderModifier:
+            set:
+              - name: Strict-Transport-Security
+                value: max-age=31536000
+          type: ResponseHeaderModifier
+      matches:
+        - path:
+            type: Exact
+            value: /webhook/github
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: collector
+  namespace: cdviz
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchName: api.github.com
+              - matchPattern: "**.cluster.local"
+    - toEndpoints:
+        - matchLabels:
+            cnpg.io/cluster: db
+            k8s:io.kubernetes.pod.namespace: cdviz
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toFQDNs:
+        - matchName: api.github.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+          serverNames:
+            - api.github.com
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: cdviz-collector
+  ingress:
+    - fromEntities:
+        - ingress
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: retention
+  namespace: cdviz
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: cdviz-retention
+        spec:
+          automountServiceAccountToken: false
+          containers:
+            - args:
+                - --no-psqlrc
+                - --set=ON_ERROR_STOP=1
+                - --command=CALL cdviz.apply_retention(INTERVAL '90 days');
+              command:
+                - psql
+              env:
+                - name: PGHOST
+                  value: db-rw.cdviz.svc
+                - name: PGPORT
+                  value: "5432"
+                - name: PGDATABASE
+                  value: cdviz
+                - name: PGUSER
+                  value: cdviz
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: password
+                      name: db-app
+              image: ghcr.io/cloudnative-pg/postgresql:18.6-minimal-trixie@sha256:e5fffed938c8b55b41d9a6a88a47424d46f90aa15d807aa60348b85ea5bd498f
+              name: retention
+              resources:
+                limits:
+                  memory: 128Mi
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+          nodeSelector:
+            topology.kubernetes.io/zone: hil-ovh
+          restartPolicy: Never
+          securityContext:
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+  schedule: 30 4 * * *
+  successfulJobsHistoryLimit: 1
+  timeZone: Etc/UTC
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: retention
+  namespace: cdviz
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            cnpg.io/cluster: db
+            k8s:io.kubernetes.pod.namespace: cdviz
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: cdviz-retention

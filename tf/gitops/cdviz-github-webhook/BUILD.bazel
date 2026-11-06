@@ -1,0 +1,34 @@
+load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
+
+exports_files(
+    ["variables.tf"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+)
+
+tf_providers_versions(
+    name = "providers",
+    providers = {
+        "github": "integrations/github:~>6.6",
+        "kubernetes": "hashicorp/kubernetes:~>3.0",
+        "random": "hashicorp/random:~>3.9.0",
+    },
+    tf_version = "1.12.6",
+)
+
+tf_module(
+    name = "cdviz-github-webhook",
+    providers = [
+        "github",
+        "kubernetes",
+        "random",
+    ],
+    providers_versions = ":providers",
+    tflint_config = "//cluster:.tflint.hcl",
+)
+
+# Native HCL assembled by cdk8s into the Inline Workspace.
+filegroup(
+    name = "inline_source",
+    srcs = glob(["*.tf"]),
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)

@@ -1,0 +1,89 @@
+# Convert GitHub REST API /repos/{owner}/{repo}/actions/runs response to CDEvents
+#
+# Input: paginated response from GET /repos/{owner}/{repo}/actions/runs
+#   .body = { "total_count": N, "workflow_runs": [...] }
+#
+# | done | GitHub REST field     | CDEvent(s) emitted                              |
+# | ---- | --------------------- | ----------------------------------------------- |
+# | [x]  | status == queued      | pipelineRun:queued                              |
+# | [x]  | status == in_progress | pipelineRun:queued + started                    |
+# | [x]  | status == completed   | pipelineRun:queued + started + finished         |
+#
+# Rules:
+# - context.id is computed by the collector (content-based CID)
+# - subject.id = run.url + "/attempts/" + run.run_attempt (API URL)
+# - Each phase uses its own timestamp for idempotent backfill (see RULES.md)
+# - customData.github only includes fields stable at each phase (no status/conclusion for queued/started)
+
+outcome_mapping = {
+  "cancelled": "cancel", "skipped": "cancel", "stale": "cancel",
+  "timed_out": "error", "startup_failure": "error", "action_required": "error",
+  "success": "success", "neutral": "success",
+  "failure": "failure"
+}
+
+items = array(.body.workflow_runs) ?? []
+events = map_values(items) -> |run| {
+  if run.status != "queued" && run.status != "waiting" && run.status != "requested" && run.status != "pending" && run.status != "in_progress" && run.status != "completed" {
+    []
+  } else {
+    attempt = to_string!(run.run_attempt)
+    repo_url = to_string(run.repository.url) ?? ""
+    subject = {
+      "id": to_string!(run.url) + "/attempts/" + attempt,
+      "content": {
+        "pipelineName": to_string!(run.repository.full_name) + "/" + to_string!(run.name),
+        "uri": to_string!(run.html_url) + "/attempts/" + attempt,
+      },
+    }
+    links = [{ "linkKind": "storedAt", "target": { "subject": { "type": "repository", "id": repo_url } } }]
+
+    # queued — emitted for all statuses; customData excludes volatile fields (status, conclusion)
+    queued_ts = format_timestamp!(parse_timestamp(run.created_at, "%+") ?? now(), format: "%+")
+    queued_event = {
+      "context": { "specversion": "0.5.0", "type": "dev.cdevents.pipelinerun.queued.0.3.0", "timestamp": queued_ts },
+      "subject": subject,
+      "customData": {
+        "links": links,
+        "github": { "workflow_run": { "id": run.id, "name": run.name, "url": run.url, "head_branch": run.head_branch, "head_sha": run.head_sha, "created_at": run.created_at } },
+      },
+    }
+
+    # started — emitted for in_progress and completed
+    started_events = if run.status == "in_progress" || run.status == "completed" {
+      started_ts = format_timestamp!(parse_timestamp(run.run_started_at, "%+") ?? now(), format: "%+")
+      [{
+        "context": { "specversion": "0.5.0", "type": "dev.cdevents.pipelinerun.started.0.3.0", "timestamp": started_ts },
+        "subject": subject,
+        "customData": {
+          "links": links,
+          "github": { "workflow_run": { "id": run.id, "name": run.name, "url": run.url, "head_branch": run.head_branch, "head_sha": run.head_sha, "created_at": run.created_at, "run_started_at": run.run_started_at } },
+        },
+      }]
+    } else { [] }
+
+    # finished — emitted only when completed; conclusion is stable at this point
+    finished_events = if run.status == "completed" {
+      finished_ts = format_timestamp!(parse_timestamp(run.updated_at, "%+") ?? now(), format: "%+")
+      mapped = get(outcome_mapping, [to_string!(run.conclusion)]) ?? null
+      finished_subject = subject
+      if !is_null(mapped) { finished_subject.content.outcome = string!(mapped) }
+      [{
+        "context": { "specversion": "0.5.0", "type": "dev.cdevents.pipelinerun.finished.0.3.0", "timestamp": finished_ts },
+        "subject": finished_subject,
+        "customData": {
+          "links": links,
+          "github": { "workflow_run": { "id": run.id, "name": run.name, "url": run.url, "head_branch": run.head_branch, "head_sha": run.head_sha, "conclusion": run.conclusion, "run_started_at": run.run_started_at, "updated_at": run.updated_at } },
+        },
+      }]
+    } else { [] }
+
+    flatten([[queued_event], started_events, finished_events])
+  }
+}
+bodies = flatten(events)
+bodies = filter(bodies) -> |_index, body| { !is_null(body) }
+
+map_values(bodies) -> |body| {
+  { "metadata": .metadata, "headers": .headers, "body": body }
+}
