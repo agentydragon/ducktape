@@ -199,7 +199,11 @@ fn assert_called_operation_receipt(fixture: &Fixture, binding: &str, callee: &st
 
 #[test]
 fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
-    for (initializer, expected) in [("read()", "0 2 1\n"), ("4 * bytes + 256", "0 264 1\n")] {
+    for (initializer, expected) in [
+        ("read()", "0 2 1\n"),
+        ("4 * bytes + 256", "0 264 1\n"),
+        ("`${bytes}`", "0 2 1\n"),
+    ] {
         let source = format!(
             "import {{ limit as bytes }} from './peer.js';\nconst before = 0;\nfunction read() {{ return bytes; }}\nconst computed = {initializer};\nconst after = 1;\nconsole.log(before, computed, after);\n"
         );
@@ -463,6 +467,64 @@ fn direct_literal_const_import_does_not_promote_unrelated_callbacks() {
         "4 * bytes + 256",
         "0 264 1 0\n",
     );
+}
+
+#[test]
+fn template_substitutions_compose_parameter_stores_in_source_order() {
+    let source = "import { limit as bytes } from './peer.js';\n\
+                  const before = 0;\n\
+                  function render(value) { return `${value = 1}:${value = 2}:${value}`; }\n\
+                  const computed = render(bytes);\nconst after = 1;\n\
+                  console.log(before, computed, after);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            primitive_modules(&[Member::new("render"), Member::new("computed")]),
+        )
+        .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
+    );
+    assert_preserved_entry_output(&fixture, "0 1:2:2 1\n");
+    assert_actual_imported_inversion(&fixture, "computed");
+    assert_imported_read_receipt(&fixture, "computed");
+}
+
+#[test]
+fn template_object_coercion_keeps_its_captured_tdz() {
+    let source = "const before = 0;\n\
+                  const item = { [Symbol.toPrimitive](hint) { console.log(hint); return after; } };\n\
+                  const computed = `${item}`;\nconst after = 1;\n\
+                  console.log(before, computed, after);\n";
+    let rejected = run_rejection_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module("compute", &[Member::new("computed")]),
+            logical_module(
+                "anchors",
+                &[
+                    Member::new("before"),
+                    Member::new("item"),
+                    Member::new("after"),
+                ],
+            ),
+        ],
+    ));
+    assert_ne!(
+        rejected.candidate_relocation_assessment()["decision"]["status"],
+        "accepted"
+    );
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "together",
+            &[
+                Member::new("before"),
+                Member::new("item"),
+                Member::new("computed"),
+                Member::new("after"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_error(&fixture, "ReferenceError");
 }
 
 #[test]
@@ -812,6 +874,11 @@ fn throwing_primitive_kinds_keep_the_coercion() {
         ("2n", "4n * bytes + 256n", Ok("264n\n")),
         ("2n", "1n << bytes", Ok("4n\n")),
         ("Symbol.for('limit')", "`${bytes}`", Err("TypeError")),
+        (
+            "Symbol.for('limit')",
+            "`${bytes}${(() => { console.log('suffix'); return 1; })()}`",
+            Err("TypeError"),
+        ),
         ("Symbol.for('limit')", "'prefix:' + bytes", Err("TypeError")),
     ] {
         let source = format!(

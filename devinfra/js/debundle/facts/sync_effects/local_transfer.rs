@@ -732,6 +732,10 @@ fn expression(
             body,
             judgment,
         ),
+        LocalExpression::Template {
+            substitutions,
+            span,
+        } => template_expression(context, substitutions, span, body, frame, judgment),
         LocalExpression::Value(node) => value_expression(context, node, frame, judgment),
         LocalExpression::PrimitiveLiteral(kind) => {
             // The canonical source literal cannot invoke code, access exterior
@@ -766,10 +770,6 @@ fn expression(
         LocalExpression::Sequence(expressions) => {
             sequence_expression(context, expressions, body, frame, judgment)
         }
-        LocalExpression::Template {
-            substitutions,
-            span,
-        } => template_expression(context, substitutions, *span, body, frame, judgment),
         LocalExpression::Closure(callable) => {
             closure_expression(context, callable, frame, judgment)
         }
@@ -867,46 +867,54 @@ fn binary_expression(
 fn template_expression(
     context: &mut impl LocalContext,
     substitutions: &[LocalExpression],
-    span: Span,
+    span: &Span,
     body: &LocalBody,
     frame: &mut LocalFrame,
     judgment: &mut AllocationJudgment,
 ) -> Option<SelectedValue> {
-    let string = Values::from([AbstractValue::Value(Value::Prim(PrimKinds::STRING))]);
     for substitution in substitutions {
         let operand = expression(context, substitution, body, frame, judgment)?;
         if operand.values.is_empty() {
             return Some(operand);
         }
-        // String concatenation has the same primitive ToString result and
-        // abrupt alternatives. Object conversion needs a separate string-hint
-        // proof, so it retains the existing conservative fallback.
-        let values = match allocation_transfer::binary_result(
-            swc_ecma_ast::BinaryOp::Add,
-            &string,
-            &operand.values,
-        ) {
+        // ToString happens before evaluating the following substitution.
+        // A primitive String result never erases operand effects or throws.
+        let values = match allocation_transfer::template_substitution_result(&operand.values) {
             allocation_transfer::PrimitiveOperationResult::Covered(values) => {
-                frame.effect_coverage.compose(&EffectCoverageFragment::no_effects());
+                frame
+                    .effect_coverage
+                    .compose(&EffectCoverageFragment::no_effects());
                 values
             }
             allocation_transfer::PrimitiveOperationResult::MayThrow(values) => {
-                judgment.compose(&AllocationJudgment::Opaque);
-                frame.effect_coverage.compose(&EffectCoverageFragment::default());
+                *judgment = AllocationJudgment::Opaque;
+                frame
+                    .effect_coverage
+                    .compose(&EffectCoverageFragment::default());
                 values
             }
             allocation_transfer::PrimitiveOperationResult::CoercionRequired => {
-                judgment.compose(&AllocationJudgment::Opaque);
-                frame.effect_coverage.compose(&EffectCoverageFragment::default());
-                context.unproved_operator(frame, &operand.values, span);
+                frame
+                    .effect_coverage
+                    .compose(&EffectCoverageFragment::default());
+                context.unproved_operator(frame, &operand.values, *span);
                 return None;
             }
         };
-        if completing(values, frame).is_empty() {
-            return Some(SelectedValue::raw(Values::new()));
+        let converted = completing_selected(SelectedValue::raw(values), frame);
+        if converted.values.is_empty() {
+            return Some(converted);
         }
     }
-    Some(completing_selected(SelectedValue::raw(string), frame))
+    frame
+        .effect_coverage
+        .compose(&EffectCoverageFragment::no_effects());
+    Some(completing_selected(
+        SelectedValue::raw(Values::from([AbstractValue::Value(Value::Prim(
+            PrimKinds::STRING,
+        ))])),
+        frame,
+    ))
 }
 
 fn value_expression(

@@ -163,6 +163,11 @@ pub(super) enum LocalExpression {
         right: Box<Self>,
         span: Span,
     },
+    /// Each substitution is evaluated and converted before the next one.
+    Template {
+        substitutions: Arc<[Self]>,
+        span: Span,
+    },
 
     Value(ValueExpr),
     /// A canonical primitive literal has no coercion or user-code effect.
@@ -170,11 +175,6 @@ pub(super) enum LocalExpression {
     /// The fresh receiver supplied by a checked constructor query.
     This,
     Sequence(Arc<[Self]>),
-    /// Each substitution is evaluated and converted before the next one.
-    Template {
-        substitutions: Arc<[Self]>,
-        span: Span,
-    },
     Record {
         allocation: u32,
         properties: Arc<[PropertyDefinition<Self>]>,
@@ -610,9 +610,6 @@ impl LocalExpression {
                     span: construction.span,
                 }))
             }
-            Expr::Tpl(template) if template.exprs.is_empty() => Some(Self::Value(
-                ValueExpr::NonCallable(analysis_model::PrimKinds::STRING),
-            )),
             Expr::Tpl(template) => Some(Self::Template {
                 substitutions: template
                     .exprs
@@ -951,9 +948,7 @@ impl LocalExpression {
             | Self::Template {
                 substitutions: expressions,
                 ..
-            } => {
-                expressions.iter().any(Self::requires_keyed_collection_new)
-            }
+            } => expressions.iter().any(Self::requires_keyed_collection_new),
             Self::Assign { value, .. }
             | Self::AssignField { value, .. }
             | Self::DefineThisField { value, .. }
@@ -1041,6 +1036,17 @@ impl LocalBody {
         };
         body.operations = Arc::from([LocalOperation::Evaluate(value.clone())]);
         Some(body)
+    }
+
+    pub(super) fn untagged_template_root(&self) -> bool {
+        self.root_expression_span.is_some()
+            && matches!(
+                self.operations.as_ref(),
+                [LocalOperation::Return(
+                    Some(LocalExpression::Template { .. }),
+                    _
+                )]
+            )
     }
 
     /// Exact terminal source call. Its operands retain independent coverage.
