@@ -1,7 +1,9 @@
 # gazelle:exclude testdata/specimens/test-fixtures/*/code
 """Props test fixtures package."""
 
+load("@image_pins//:pins.bzl", "REGISTRY_3_DIGEST", "RYUK_DIGEST")
 load("//devinfra/python:defs.bzl", "py_library")
+load("//props:py_test.bzl", "py_test")
 
 package(default_testonly = True)
 
@@ -70,13 +72,47 @@ py_library(
     srcs = ["e2e_infra.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
+        ":registry_blob_cache",
         "//devinfra/oci",
+        "//devinfra/testing:undeclared_outputs",
         "//props/db:models",
         "//third_party/containers:registry_3",
         "//third_party/containers:ryuk",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_library(
+    name = "registry_blob_cache",
+    srcs = ["registry_blob_cache.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "@pypi//docker",
+        "@pypi//testcontainers",
+    ],
+)
+
+py_test(
+    name = "test_registry_blob_cache",
+    size = "medium",
+    srcs = ["test_registry_blob_cache.py"],
+    exec_properties = {
+        "test.runner-recycling-key": "props-registry-cache-test-" + REGISTRY_3_DIGEST + "-" + RYUK_DIGEST,
+    },
+    requires_docker = True,
+    deps = [
+        ":registry_blob_cache",
+        "//:conftest",
+        "//devinfra/oci",
+        "//props:conftest",
+        "//third_party/containers:registry_3",
+        "//third_party/containers:ryuk",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
         "@pypi//testcontainers",
     ],
 )
