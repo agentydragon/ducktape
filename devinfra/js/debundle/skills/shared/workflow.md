@@ -352,6 +352,14 @@ retention, result and identity obligations; assert only the facts the audit
 supports. Document a new annotation's contract in `SPEC.md` and retain existing
 approved contracts unless a changed assertion is explicitly justified.
 
+Before reusing an older audit, compare its premises with the current spec and
+both original and replacement providers. Fresh allocation alone does not
+establish absence of inherited getters or integrity of the intrinsic operations
+used on the value. Check the relevant property slots and effects;
+an excluded intrinsic family does not supply an integrity promise. If that
+evidence is missing, preserve the passing checkpoint and try another coherent
+ownership boundary before extending a chain of ordering annotations.
+
 Use standing user authorization for scoped model and annotation decisions;
 do not request fresh approval for each choice already within that authority.
 
