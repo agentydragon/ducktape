@@ -187,7 +187,9 @@ async def test_parent_session_delegates_through_the_action_cli(
         guidance_marker=guidance_marker,
     )
     session_actions = {
-        line.split(maxsplit=1)[0].partition("/")[2] for line in sessions_output.splitlines() if line.strip()
+        line.split(maxsplit=1)[0].partition("/")[2]
+        for line in sessions_output.splitlines()
+        if line.startswith("sessions/")
     }
     assert session_actions == _SESSION_ACTIONS
 
