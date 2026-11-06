@@ -104,6 +104,28 @@ k3s_suite(
     ],
 )
 
+# One real guest exercises the ordinary Sandbox deletion and ACPI shutdown path. It still uses
+# the standard VM fixture, but avoids sessions, harnesses and concurrent guests.
+k3s_suite(
+    name = "test_vm_shutdown_diagnostic",
+    srcs = ["test_vm_shutdown_diagnostic.py"],
+    shutdown_diagnostic = True,
+    stack = "vm",
+    tags = ["manual"],
+    deps = [
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/vm:shutdown_diagnostic",
+        "//devinfra/testing:undeclared_outputs",
+        "@pypi//opentelemetry_api",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 k3s_suite(
     name = "test_vm_manual",
     srcs = ["test_vm_manual.py"],

@@ -180,7 +180,7 @@ image_manifest = rule(
     doc = "Write grouped image references and OCI layout runfiles paths to one JSON manifest.",
 )
 
-def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, require_kvm = False, main = None):
+def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_evidence = False, shutdown_diagnostic = False, require_kvm = False, main = None):
     """Run one suite with fresh fixture state and the selected executor lifecycle."""
     if stack not in _STACKS:
         fail("unknown k3s stack: " + stack)
@@ -190,6 +190,8 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         fail("profile_guest requires the VM stack")
     if boot_evidence and stack != "vm":
         fail("boot_evidence requires the VM stack")
+    if shutdown_diagnostic and stack != "vm":
+        fail("shutdown_diagnostic requires the VM stack")
     config = _STACKS[stack]
     runner_disk_image = _DELETION_TEST_DISK_IMAGE if stack == "deletion" else _VM_RUNNER_DISK_IMAGE if config.vm else _RUNNER_DISK_IMAGE
     fixture_images = _merge_image_maps(_SERVICE_IMAGES, config.images, runner_disk_image)
@@ -216,6 +218,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
             "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
             "AGENTPLANE_K3S_REQUIRE_KVM": "1" if require_kvm else "0",
             "AGENTPLANE_VM_BOOT_EVIDENCE": "1" if boot_evidence else "0",
+            "AGENTPLANE_VM_SHUTDOWN_DIAGNOSTIC": "1" if shutdown_diagnostic else "0",
             "K3S_PROFILE_GUEST_ROOT": "1" if profile_guest else "0",
         }
 
