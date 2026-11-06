@@ -1,6 +1,6 @@
 ---
 name: debundle_orchestrator
-description: Drive debundle specs toward readable, idiomatic, runnable output while improving the engine and iteration loop. Use for prioritizing canonical blockers, choosing general inference, sound specific recognition or audited annotations, coordinating authorized workers, and verifying downstream progress.
+description: Drive debundle specs toward readable, runnable output and improve the engine. Choose among passing-baseline extraction, atomic residual decomposition, gate-driven coarsening, targeted spec/tool repair, general inference, sound recognizers or audited annotations. Use for prioritizing blockers, coordinating authorized workers, and verifying downstream progress.
 ---
 
 # Debundle Orchestrator
@@ -25,6 +25,13 @@ obvious inexpensive repair, use the shared workflow's
 [divide-and-conquer strategy](references/skills/shared/workflow.md#start-from-passing-residual-output-and-isolate-failing-assignments)
 to retain useful passing extractions and isolate conflicting additions before
 committing to a long semantic repair.
+
+When separability is unclear, ask planning for
+[atomic residual decomposition and gate-driven coarsening](references/docs/cli.md#refining-existing-modules-modules-decompose),
+or a worker for an isolated
+[`per_atomic_group` emission probe](references/SPEC.md#unassigned-source).
+Use the resulting constraints to choose work; generated fragments are not a
+semantic architecture proposal or proof that rejected splits are impossible.
 
 For delegated rounds, read [coordinate a round](references/skills/shared/workflow.md#coordinate-a-round)
 and the [adapter contract](references/skills/shared/workflow.md#adapter-contract).
