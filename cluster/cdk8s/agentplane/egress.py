@@ -56,7 +56,7 @@ from agentplane.crd_group import GROUP
 from agentplane.egress.settings import PROXY_MTLS_PORT, RULES_WORKLOAD_PORT, RULES_WORKLOAD_URI, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import actions, database, llm_ingress, runner_gateway, session_dispatcher, workload_tls
+from cluster.cdk8s.agentplane import actions, database, llm_ingress, runner_gateway, workload_tls
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.agentplane.environment import Environment
@@ -118,21 +118,6 @@ CA_BUNDLE_KEY = "ca-certificates.crt"
 # The sandbox bundle's roots again, as the PKCS12 trust store a JVM reads.
 JAVA_TRUST_STORE_KEY = "ca-certificates.p12"
 _UPSTREAM_CA_DIR = "/etc/agentplane-egress/upstream-ca"
-_SESSION_DISPATCHER_GRPC_PATHS = (
-    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CreateSession",
-    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
-    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSession",
-    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListSessions",
-    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch",
-    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
-    "/agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn",
-)
-_ENVIRONMENT_SERVICE_GRPC_PATHS = (
-    "/agentplane.environments.v1.EnvironmentService/ListEnvironments",
-    "/agentplane.environments.v1.EnvironmentService/GetEnvironment",
-    "/agentplane.environments.v1.EnvironmentService/WatchEnvironment",
-    "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",
-)
 
 # The egress PolicySets created below that every environment ships. A name is exported
 # because a preset or an explicit grant refers to the policy by name; each lives with the
@@ -244,21 +229,6 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
             "Thread authority."
         ),
         source=Source.authenticated_workload_token(),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-            )
-        ],
-    )
-    EgressCredential(
-        scope,
-        "egresscredential-session-dispatcher-workload",
-        metadata=ApiObjectMetadata(name=session_dispatcher.WORKLOAD_CREDENTIAL, namespace=namespace),
-        description=(
-            "The calling Sandbox Pod's short-lived, Pod-bound identity minted specifically for Session Dispatcher "
-            "and EnvironmentService gRPC calls."
-        ),
-        source=Source.projected_workload_token(audience=session_dispatcher.TOKEN_AUDIENCE),
         targets=[
             EgressCredentialSpecTargets(
                 header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
@@ -427,21 +397,6 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
                 hosts=[llm_ingress.service(namespace).fqdn, actions.service(namespace).fqdn],
                 cluster_internal=True,
                 credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
-            ),
-            # Keep each service's RPC paths explicit even though both share this listener and identity.
-            Rule.egress(
-                hosts=[session_dispatcher.service(namespace).fqdn],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.POST],
-                paths=list(_SESSION_DISPATCHER_GRPC_PATHS),
-                credential_ref=PolicySetSpecRulesCredentialRef(name=session_dispatcher.WORKLOAD_CREDENTIAL),
-            ),
-            Rule.egress(
-                hosts=[session_dispatcher.service(namespace).fqdn],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.POST],
-                paths=list(_ENVIRONMENT_SERVICE_GRPC_PATHS),
-                credential_ref=PolicySetSpecRulesCredentialRef(name=session_dispatcher.WORKLOAD_CREDENTIAL),
             ),
             # These caller-authorized Action adapters use the same Dispatcher/Discovery APIs at the
             # effective caller's own authority. The receivers check the caller UID and resource
@@ -684,7 +639,7 @@ class Egress(Construct):
                 f"{account.namespace}/{account.name}"
                 for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
             ],
-            "projected_token_audiences": [KUBERNETES_AUDIENCE, session_dispatcher.TOKEN_AUDIENCE],
+            "projected_token_audiences": [KUBERNETES_AUDIENCE],
             "tls_passthrough_targets": [
                 f"{service.fqdn}:{service.port.number}"
                 for service in (rules_workload_service(env.namespace), *tls_passthrough_services)
@@ -958,7 +913,7 @@ class Egress(Construct):
                 rules_workload_service(namespace).egress(),
                 llm_ingress.service(namespace).egress(),
                 actions.service(namespace).egress(),
-                session_dispatcher.service(namespace).egress(),
+                runner_gateway.workload_service(namespace).egress(),
                 forgejo.HTTP.egress(),
                 ollama.AUTH_PROXY.egress(),
                 litellm_proxy.service(litellm_spec).egress(),

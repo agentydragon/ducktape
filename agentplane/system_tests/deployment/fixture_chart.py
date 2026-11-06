@@ -457,6 +457,7 @@ def build_chart(
         tls_passthrough_services=[
             history_service.workload_service(env.namespace),
             notifications.workload_service(env.namespace),
+            runner_gateway.workload_service(env.namespace),
         ],
     )
     sandbox_pod.add_tool_config(chart, env)

@@ -5,8 +5,16 @@ It scopes existing Sessions and existing environments; it does not create enviro
 
 ## Caller proof
 
-- The Dispatcher TokenReview audience remains the configured Dispatcher audience. Its resolver serves the
-  Runner Gateway namespace and namespaces containing explicitly configured Dispatcher backend accounts.
+- The public backend listeners keep the configured Dispatcher TokenReview audience, their explicit
+  caller and backend-account allowlists, and delegated authorization. The dedicated workload TLS
+  listener presents `SessionDispatcherURI`; its SVID resolver proves the live Sandbox credential,
+  current Sandbox-owned ServiceAccount UID, and the accepted Pod binding on each call. TLS peers take
+  the SVID path, so bearer metadata cannot replace or override the certificate identity.
+- Sandbox traffic retains the existing `session-dispatcher.<namespace>.svc.cluster.local:8080` gRPC
+  and `:8081` HTTP origins. The credential-holding sidecar maps those exact authorities to the
+  Runner Gateway's `:8082` workload listener through central-proxy CONNECT, then originates TLS with
+  its Runner SVID. Native gRPC frames pass opaquely through the CONNECT tunnel; HTTP/JSON calls use
+  the same listener's generated facade. No Dispatcher-audience token is projected into Sandbox Pods.
 - A normal caller is the ServiceAccount identity returned by TokenReview, including the actual ServiceAccount
   UID. Request fields never assert this identity.
 - The existing configured backend account list remains a privileged compatibility path only when the same
@@ -134,13 +142,12 @@ It scopes existing Sessions and existing environments; it does not create enviro
 
 ## Transport boundary
 
-This change does not add Runner-to-Dispatcher network reachability or project a Dispatcher token into a Runner
-Pod. Managed Runner Pods retain their existing HTTPS proxy-only egress. A follow-on transport change must use the
-sidecar-only projected-token and inert-placeholder pattern used by the Actions CLI: add the configured
-Dispatcher audience to `cluster/cdk8s/agentplane/sandbox_pod.py`, add an exact Dispatcher destination and
-credential rule to `cluster/cdk8s/agentplane/egress.py`, and connect a concrete MCP/client to that proxy route.
-The actual MCP/client and History provenance propagation are outside this foundation. Until they are implemented,
-this change does not claim a complete end-to-end spawning loop.
+Sandbox Pods retain proxy-only egress. Their existing Dispatcher URL now reaches the dedicated workload
+TLS listener through an exact sidecar route and opaque central CONNECT; the listener authenticates the
+Runner SVID before applying the unchanged Dispatcher and EnvironmentService method rules. The configured
+CLI credential string remains inert for compatibility. Backend callers continue to use the existing
+TokenReview listeners and allowlists. A concrete MCP/client and History provenance propagation remain
+outside this transport change.
 
 ## Typed delivery observations
 

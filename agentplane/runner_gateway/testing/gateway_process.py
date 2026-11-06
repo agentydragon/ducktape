@@ -34,6 +34,7 @@ from util.settings_contract import env_name
 
 
 _GATEWAY_BINARY = "ducktape/agentplane/runner_gateway/runner-gateway_/runner-gateway"
+_SESSION_DISPATCHER_URI = "spiffe://agentplane/session-dispatcher"
 
 
 def _wire_database_url(database_url: str) -> str:
@@ -226,14 +227,25 @@ async def run_gateway(
     with ExitStack() as listeners:
         grpc_listener = listeners.enter_context(listen_tcp())
         http_listener = listeners.enter_context(listen_tcp())
+        workload_listener = listeners.enter_context(listen_tcp())
         with tempfile.TemporaryDirectory() as settings_dir, log_path.open("wb") as log_file:
             settings_directory = Path(settings_dir)
             environment_runtime_ca = make_ca("Environment Runtime transport test CA")
             environment_runtime_ca_file, _ = write_ca(
                 environment_runtime_ca, settings_directory, "environment-runtime-ca"
             )
+            gateway_tls_directory = settings_directory / "gateway-tls"
+            gateway_tls_directory.mkdir()
             gateway_cert, gateway_key = issue_workload_leaf(
-                environment_runtime_ca, "spiffe://agentplane/runner-gateway", settings_directory
+                environment_runtime_ca, "spiffe://agentplane/runner-gateway", gateway_tls_directory
+            )
+            workload_tls_directory = settings_directory / "workload-tls"
+            workload_tls_directory.mkdir()
+            workload_cert, workload_key = issue_workload_leaf(
+                environment_runtime_ca, _SESSION_DISPATCHER_URI, workload_tls_directory
+            )
+            workload_tls = TLS(
+                cert_file=str(workload_cert), key_file=str(workload_key), ca_file=str(environment_runtime_ca_file)
             )
             runner_security = MTLS(
                 mode="mtls",
@@ -250,6 +262,8 @@ async def run_gateway(
                 kubeconfig=kubeconfig,
                 listen_address=f"fd:{grpc_listener.socket.fileno()}",
                 http_listen_address=f"fd:{http_listener.socket.fileno()}",
+                workload_listen_address=f"fd:{workload_listener.socket.fileno()}",
+                workload_tls=workload_tls,
                 proxy_port=grpc_listener.port,
                 runner_control_target_template=f"{grpc_listener.host}:{grpc_listener.port}",
                 dispatcher_audience=dispatcher_audience,
@@ -292,7 +306,7 @@ async def run_gateway(
                 # is not dialed: this single-replica fixture sends RPCs to its loopback listener.
                 env_name(Settings, "pod_ip"): "192.0.2.10",
             }
-            pass_fds = [grpc_listener.socket.fileno(), http_listener.socket.fileno()]
+            pass_fds = [grpc_listener.socket.fileno(), http_listener.socket.fileno(), workload_listener.socket.fileno()]
             spawn = asyncio.create_task(
                 asyncio.create_subprocess_exec(
                     binary, env=environment, stdout=log_file, stderr=subprocess.STDOUT, pass_fds=pass_fds
@@ -319,6 +333,7 @@ async def run_gateway(
                 raise
             grpc_listener.socket.close()
             http_listener.socket.close()
+            workload_listener.socket.close()
             service = GatewayProcess(
                 process=process,
                 target=f"{grpc_listener.host}:{grpc_listener.port}",
