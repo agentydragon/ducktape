@@ -460,7 +460,7 @@ class Agent:
         return items
 
     async def _run_one_phase(self):
-        # The first handler returning a decision wins.
+        # Poll handlers in order; the first non-NoAction decision wins.
         decision: LoopDecision = NoAction()
         for h in self._handlers:
             d = h.on_before_sample()
