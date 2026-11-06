@@ -316,7 +316,6 @@ py_library(
 py_binary(
     name = "render_fixture_bin",
     testonly = True,
-    imports = ["../../.."],
     main_module = "agentplane.system_tests.deployment.render_fixture",
     deps = [":render_fixture"],
 )
@@ -338,7 +337,6 @@ py_library(
 py_binary(
     name = "render_mcp_fixture_bin",
     testonly = True,
-    imports = ["../../.."],
     main_module = "agentplane.system_tests.deployment.render_mcp_fixture",
     deps = [":render_mcp_fixture"],
 )
@@ -445,7 +443,6 @@ py_library(
 py_binary(
     name = "render_fixture_variants_for_test_bin",
     testonly = True,
-    imports = ["../../.."],
     main_module = "agentplane.system_tests.deployment.render_fixture_variants_driver",
     deps = [":render_fixture_variants_driver"],
 )

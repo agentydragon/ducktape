@@ -28,7 +28,6 @@ py_library(
     name = "schema",
     srcs = ["schema.py"],
     data = ["schema.sql"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":client",
         "//cluster/cdk8s:flux",

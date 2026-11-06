@@ -54,7 +54,6 @@ py_library(
 py_test(
     name = "test_tmux",
     srcs = ["test_tmux.py"],
-    imports = ["../.."],
     deps = [
         ":tmux_lib",
         ":view_model_lib",

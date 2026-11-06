@@ -7,7 +7,6 @@ py_library(
 
 py_binary(
     name = "erofs_tool_bin",
-    imports = ["../.."],
     main_module = "devinfra.erofs.erofs_tool",
     visibility = ["//visibility:public"],
     deps = [":erofs_tool"],

@@ -8,7 +8,6 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 py_library(
     name = "models",
     srcs = ["models.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pydantic"],
 )
@@ -16,7 +15,6 @@ py_library(
 py_library(
     name = "peak_windows",
     srcs = ["peak_windows.py"],
-    imports = [".."],
     visibility = ["//aiquota:__subpackages__"],
     deps = ["@pypi//pydantic"],
 )
@@ -24,7 +22,6 @@ py_library(
 py_library(
     name = "pace",
     srcs = ["pace.py"],
-    imports = [".."],
     visibility = ["//aiquota:__subpackages__"],
     deps = [":models"],
 )
@@ -32,7 +29,6 @@ py_library(
 py_library(
     name = "cache",
     srcs = ["cache.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         ":config",
@@ -55,7 +51,6 @@ py_library(
 py_library(
     name = "remote",
     srcs = ["remote.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "//aiquota/render:view_model_lib",
@@ -66,7 +61,6 @@ py_library(
 py_library(
     name = "config",
     srcs = ["config.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "//aiquota/providers:anthropic_platform_lib",
@@ -82,7 +76,6 @@ py_library(
 py_library(
     name = "cli_lib",
     srcs = ["cli.py"],
-    imports = [".."],
     deps = [
         ":cache",
         ":config",
@@ -96,7 +89,6 @@ py_library(
 py_library(
     name = "desktop_lib",
     srcs = ["desktop.py"],
-    imports = [".."],
     deps = [
         ":cache",
         ":config",
@@ -113,7 +105,6 @@ py_library(
 py_test(
     name = "test_desktop",
     srcs = ["test_desktop.py"],
-    imports = [".."],
     deps = [
         ":cache",
         ":config",
@@ -140,7 +131,6 @@ py_binary(
 py_library(
     name = "api",
     srcs = ["api.py"],
-    imports = [".."],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":cache",
@@ -189,7 +179,6 @@ py_library(
     name = "server_main",
     srcs = ["server_main.py"],
     data = ["//aiquota/frontend:bundle"],
-    imports = [".."],
     deps = [
         ":api",
         ":clickhouse",
@@ -258,7 +247,6 @@ oci_load(
 py_test(
     name = "test_models",
     srcs = ["test_models.py"],
-    imports = [".."],
     deps = [
         ":models",
         "//:conftest",
@@ -271,7 +259,6 @@ py_test(
 py_test(
     name = "test_peak_windows",
     srcs = ["test_peak_windows.py"],
-    imports = [".."],
     deps = [
         ":peak_windows",
         "//:conftest",
@@ -283,7 +270,6 @@ py_test(
 py_test(
     name = "test_pace",
     srcs = ["test_pace.py"],
-    imports = [".."],
     deps = [
         ":models",
         ":pace",
@@ -295,7 +281,6 @@ py_test(
 py_test(
     name = "test_cache",
     srcs = ["test_cache.py"],
-    imports = [".."],
     deps = [
         ":cache",
         ":models",
@@ -309,7 +294,6 @@ py_test(
 py_test(
     name = "test_remote",
     srcs = ["test_remote.py"],
-    imports = [".."],
     deps = [
         ":remote",
         "//:conftest",
@@ -323,7 +307,6 @@ py_test(
 py_test(
     name = "test_config",
     srcs = ["test_config.py"],
-    imports = [".."],
     deps = [
         ":config",
         "//:conftest",
@@ -335,7 +318,6 @@ py_test(
 py_test(
     name = "test_api",
     srcs = ["test_api.py"],
-    imports = [".."],
     deps = [
         ":api",
         ":config",
@@ -355,7 +337,6 @@ py_test(
 py_test(
     name = "test_clickhouse",
     srcs = ["test_clickhouse.py"],
-    imports = [".."],
     deps = [
         ":api",
         ":clickhouse",

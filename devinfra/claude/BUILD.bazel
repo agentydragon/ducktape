@@ -44,14 +44,12 @@ py_test(
 py_library(
     name = "readonly_commands",
     srcs = ["readonly_commands.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "scan_transcript_permissions",
     srcs = ["scan_transcript_permissions.py"],
-    imports = ["../.."],
     deps = [
         ":readonly_commands",
     ],
