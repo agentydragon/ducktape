@@ -61,6 +61,25 @@ data:
           cluster: cluster
           user: opentofu-budget-ledger
     current-context: root
+  opentofu-cdviz-github-webhook: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-cdviz-github-webhook
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-cdviz-github-webhook
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-cdviz-github-webhook
+    current-context: root
   opentofu-cpap-data: |
     apiVersion: v1
     kind: Config

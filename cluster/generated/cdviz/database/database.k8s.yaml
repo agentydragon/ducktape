@@ -1,0 +1,247 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
+  name: cdviz
+spec: {}
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: collector-db-generator
+  namespace: cdviz
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: collector-db
+  namespace: cdviz
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: collector-db-generator
+  refreshInterval: 8760h
+  target:
+    name: collector-db
+    template:
+      data:
+        DATABASE_URL: postgresql://cdviz_collector:{{ .password }}@db-rw.cdviz.svc:5432/cdviz
+        dbname: cdviz
+        host: db-rw.cdviz.svc
+        password: "{{ .password }}"
+        port: "5432"
+        username: cdviz_collector
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
+      type: kubernetes.io/basic-auth
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: grafana-db-generator
+  namespace: cdviz
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: grafana-db
+  namespace: cdviz
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: grafana-db-generator
+  refreshInterval: 8760h
+  target:
+    name: grafana-db
+    template:
+      data:
+        DATABASE_URL: postgresql://cdviz_reader:{{ .password }}@db-rw.cdviz.svc:5432/cdviz
+        dbname: cdviz
+        host: db-rw.cdviz.svc
+        password: "{{ .password }}"
+        port: "5432"
+        username: cdviz_reader
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
+      type: kubernetes.io/basic-auth
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: db
+  namespace: cdviz
+spec:
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+    podAntiAffinityType: required
+    tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/control-plane
+        operator: Exists
+    topologyKey: kubernetes.io/hostname
+  bootstrap:
+    initdb:
+      database: cdviz
+      owner: cdviz
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.6-minimal-trixie@sha256:e5fffed938c8b55b41d9a6a88a47424d46f90aa15d807aa60348b85ea5bd498f
+  instances: 2
+  managed:
+    roles:
+      - login: true
+        name: cdviz_collector
+        passwordSecret:
+          name: collector-db
+      - login: true
+        name: cdviz_reader
+        passwordSecret:
+          name: grafana-db
+  monitoring:
+    enablePodMonitor: true
+  plugins:
+    - isWALArchiver: true
+      name: barman-cloud.cloudnative-pg.io
+      parameters:
+        barmanObjectName: db
+  postgresql:
+    extensions:
+      - image:
+          reference: ghcr.io/cloudnative-pg/timescaledb-oss:2.31.0-18-trixie@sha256:74f87f5d049df4a302c32240e741fc0aff5bf3a3a9cbe84f2959d37e5b24f1f2
+        name: timescaledb-oss
+    parameters:
+      max_locks_per_transaction: "128"
+      timescaledb.telemetry_level: "off"
+    shared_preload_libraries:
+      - timescaledb
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+  storage:
+    size: 10Gi
+    storageClass: piraeus-ssd-local
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: cdviz
+  namespace: cdviz
+spec:
+  cluster:
+    name: db
+  databaseReclaimPolicy: retain
+  extensions:
+    - ensure: present
+      name: timescaledb
+  name: cdviz
+  owner: cdviz
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for cdviz/db.
+  name: cdviz-db-backups
+  namespace: cdviz
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: cdviz-db-backups
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: cdviz-db-backups
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for cdviz/db.
+  name: cdviz-db-backups
+  namespace: cdviz
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: cdviz-db-backups
+  namespace: cdviz
+spec:
+  identityRef:
+    name: cdviz-db-backups
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: cdviz-db-backups-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  annotations:
+    description: SeaweedFS S3 destination for cdviz/db base backups and WAL.
+  name: db
+  namespace: cdviz
+spec:
+  configuration:
+    data:
+      compression: gzip
+    destinationPath: s3://cdviz-db-backups/
+    endpointURL: http://seaweedfs-s3.seaweedfs.svc:8333
+    s3Credentials:
+      accessKeyId:
+        key: AWS_ACCESS_KEY_ID
+        name: cdviz-db-backups-s3-credentials
+      secretAccessKey:
+        key: AWS_SECRET_ACCESS_KEY
+        name: cdviz-db-backups-s3-credentials
+    wal:
+      compression: gzip
+  retentionPolicy: 30d
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: db
+  namespace: cdviz
+spec:
+  backupOwnerReference: self
+  cluster:
+    name: db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  schedule: 0 37 1 * * *

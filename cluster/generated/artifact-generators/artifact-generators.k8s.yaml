@@ -556,6 +556,16 @@ spec:
       name: flux-webhook
       originRevision: "@repo"
     - copy:
+        - from: "@repo/cluster/generated/cdviz/database/**"
+          to: "@artifact/cluster/generated/cdviz/database/"
+      name: cdviz-database
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/cdviz/app/**"
+          to: "@artifact/cluster/generated/cdviz/app/"
+      name: cdviz
+      originRevision: "@repo"
+    - copy:
         - from: "@repo/cluster/generated/forgejo/gitops/**"
           to: "@artifact/cluster/generated/forgejo/gitops/"
       name: forgejo-gitops

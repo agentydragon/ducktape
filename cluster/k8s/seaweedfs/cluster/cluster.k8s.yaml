@@ -407,6 +407,7 @@ spec:
               - agentplane-staging
               - atuin
               - authentik
+              - cdviz
               - claude-session-sync
               - flux-system
               - forgejo
@@ -438,6 +439,7 @@ spec:
               - agentplane-staging
               - atuin
               - authentik
+              - cdviz
               - claude-session-sync
               - flux-system
               - forgejo
@@ -469,6 +471,7 @@ spec:
               - agentplane-staging
               - atuin
               - authentik
+              - cdviz
               - claude-session-sync
               - flux-system
               - forgejo

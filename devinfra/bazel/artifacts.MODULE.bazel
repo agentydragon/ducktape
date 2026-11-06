@@ -3,6 +3,15 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
+# CDviz's GitHub-to-CDEvents transformers.
+http_archive(
+    name = "cdviz_transformers",
+    build_file_content = 'exports_files(["github_events/to_v0_5.vrl", "github_rest_api/workflow_runs_to_v0_5.vrl", "LICENSE"], visibility = ["//visibility:public"])',
+    sha256 = "c1750714da968ca25aec425c0ce3cfb0828a8f8ed9c4ef68cf502c0f66ff05ac",
+    strip_prefix = "transformers-community-754a167ed781f52ba5cab5bf94a9144918ce0afb",
+    urls = ["https://github.com/cdviz-dev/transformers-community/archive/754a167ed781f52ba5cab5bf94a9144918ce0afb.tar.gz"],
+)
+
 artifact_pins = use_extension("//devinfra:artifact_pins.bzl", "artifact_pins")
 use_repo(artifact_pins, "artifact_pins", "cert_manager_v1_21_2_release", "helm_3_20_2_linux_amd64", "k3s_linux_amd64", "kubevirt_operator_bundle", "kyverno_install", "trust_manager_chart_v0_25_0")
 

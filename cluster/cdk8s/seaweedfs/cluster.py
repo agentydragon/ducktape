@@ -102,6 +102,7 @@ TENANTS = {
     "agentplane-staging",  # agentplane/db_backups.py
     "atuin",  # atuin/server.py
     "authentik",  # authentik/db_backups.py
+    "cdviz",  # cdviz/database.py
     "claude-session-sync",  # claude_session_sync/app.py
     "flux-system",  # seaweedfs/pr_visuals_bucket.py
     "forgejo",  # forgejo/app.py, forgejo/db.py

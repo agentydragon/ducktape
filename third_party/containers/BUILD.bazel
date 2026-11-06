@@ -38,6 +38,20 @@ oci_layout_py(
     visibility = ["//visibility:public"],
 )
 
+oci_layout_py(
+    name = "cdviz_collector",
+    testonly = True,
+    image = "@cdviz_collector_linux_amd64",
+    visibility = ["//visibility:public"],
+)
+
+oci_layout_py(
+    name = "cdviz_db_migration",
+    testonly = True,
+    image = "@cdviz_db_migration_linux_amd64",
+    visibility = ["//visibility:public"],
+)
+
 py_library(
     name = "fixtures",
     testonly = True,
@@ -77,6 +91,13 @@ oci_layout_py(
     name = "pgvector_pg18",
     testonly = True,
     image = "@pgvector_pg18_linux_amd64",
+    visibility = ["//visibility:public"],
+)
+
+oci_layout_py(
+    name = "timescaledb_pg18",
+    testonly = True,
+    image = "@timescaledb_pg18_linux_amd64",
     visibility = ["//visibility:public"],
 )
 

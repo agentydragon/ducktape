@@ -5,7 +5,7 @@ from playwright.async_api import expect
 from util.testing.frontend_visual.capture import VisualPage
 
 
-async def capture_dashboard(view: VisualPage) -> None:
+async def capture_dashboard(view: VisualPage, *, checkpoint: str = "dashboard") -> None:
     """Warm lazy panels, wait for Grafana queries, then capture the full page.
 
     Grafana Image Renderer scrolls the page to activate lazy content, waits for
@@ -44,4 +44,4 @@ async def capture_dashboard(view: VisualPage) -> None:
         await view.check(context="dashboard after resize")
     else:
         raise AssertionError("dashboard height did not stabilize")
-    await view.capture("dashboard", full_page=True, animations="disabled")
+    await view.capture(checkpoint, full_page=True, animations="disabled")

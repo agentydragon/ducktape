@@ -1,0 +1,668 @@
+{
+  "uid": "ducktape-ci",
+  "title": "CI workflow and job timings",
+  "description": "Workflow attempts and jobs from GitHub Actions. Select a workflow, branch, or explicitly associated PR to inspect runtimes.",
+  "schemaVersion": 42,
+  "version": 1,
+  "editable": false,
+  "timezone": "utc",
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "tags": ["ci", "github-actions"],
+  "templating": {
+    "list": [
+      {
+        "name": "workflow",
+        "label": "Workflow",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "cdviz"
+        },
+        "query": "WITH runs AS (\n  SELECT p.*,\n    COALESCE(p.finished_at, p.started_at, p.queued_at) AS observed_at,\n    COALESCE(p.last_payload #>> '{subject,content,pipelineName}', '(unknown)') AS workflow,\n    COALESCE(p.last_payload #>> '{customData,github,workflow_run,head_branch}', '(unknown)') AS branch,\n    p.last_payload #> '{customData,github,workflow_run,pull_requests}' AS prs\n  FROM cdviz.pipelinerun p\n)\nSELECT DISTINCT workflow AS __value, regexp_replace(workflow, '^agentydragon/ducktape/', '') AS __text FROM runs WHERE $__timeFilter(observed_at) ORDER BY __text",
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": true,
+        "allValue": "'__all'",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "branch",
+        "label": "Branch",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "cdviz"
+        },
+        "query": "WITH runs AS (\n  SELECT p.*,\n    COALESCE(p.finished_at, p.started_at, p.queued_at) AS observed_at,\n    COALESCE(p.last_payload #>> '{subject,content,pipelineName}', '(unknown)') AS workflow,\n    COALESCE(p.last_payload #>> '{customData,github,workflow_run,head_branch}', '(unknown)') AS branch,\n    p.last_payload #> '{customData,github,workflow_run,pull_requests}' AS prs\n  FROM cdviz.pipelinerun p\n)\nSELECT DISTINCT branch AS __value FROM runs WHERE $__timeFilter(observed_at) ORDER BY __value",
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": true,
+        "allValue": "'__all'",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "pr",
+        "label": "PR number",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Workflow attempts",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdviz"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdviz"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH runs AS (\n  SELECT p.*,\n    COALESCE(p.finished_at, p.started_at, p.queued_at) AS observed_at,\n    COALESCE(p.last_payload #>> '{subject,content,pipelineName}', '(unknown)') AS workflow,\n    COALESCE(p.last_payload #>> '{customData,github,workflow_run,head_branch}', '(unknown)') AS branch,\n    p.last_payload #> '{customData,github,workflow_run,pull_requests}' AS prs\n  FROM cdviz.pipelinerun p\n)\nSELECT COUNT(*) AS attempts\nFROM runs\nWHERE $__timeFilter(observed_at)\n  AND (${workflow:sqlstring} = '__all' OR workflow = ${workflow:sqlstring})\n  AND (${branch:sqlstring} = '__all' OR branch = ${branch:sqlstring})\n  AND (${pr:sqlstring} = '' OR EXISTS (\n    SELECT 1 FROM jsonb_array_elements(COALESCE(prs, '[]'::jsonb)) AS item\n    WHERE item ->> 'number' = ${pr:sqlstring}\n  ))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "description": "Attempts observed in the selected time range, including unfinished attempts."
+    },
+    {
+      "id": 2,
+      "title": "Failure rate",
+      "type": "stat",
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdviz"
+      },
+      "targets": [
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdviz"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH runs AS (\n  SELECT p.*,\n    COALESCE(p.finished_at, p.started_at, p.queued_at) AS observed_at,\n    COALESCE(p.last_payload #>> '{subject,content,pipelineName}', '(unknown)') AS workflow,\n    COALESCE(p.last_payload #>> '{customData,github,workflow_run,head_branch}', '(unknown)') AS branch,\n    p.last_payload #> '{customData,github,workflow_run,pull_requests}' AS prs\n  FROM cdviz.pipelinerun p\n)\nSELECT COALESCE(100.0 * COUNT(*) FILTER (WHERE outcome IN ('fail', 'failure', 'error')) / NULLIF(COUNT(*) FILTER (WHERE finished_at IS NOT NULL), 0), 0) AS failure_rate\nFROM runs\nWHERE $__timeFilter(observed_at)\n  AND (${workflow:sqlstring} = '__all' OR workflow = ${workflow:sqlstring})\n  AND (${branch:sqlstring} = '__all' OR branch = ${branch:sqlstring})\n  AND (${pr:sqlstring} = '' OR EXISTS (\n    SELECT 1 FROM jsonb_array_elements(COALESCE(prs, '[]'::jsonb)) AS item\n    WHERE item ->> 'number' = ${pr:sqlstring}\n  ))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "description": "Failed or errored attempts divided by all finished attempts."
+    },
+    {
+      "id": 3,
+      "title": "P50 workflow runtime",
+      "type": "stat",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdviz"
+      },
+      "targets": [
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdviz"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH runs AS (\n  SELECT p.*,\n    COALESCE(p.finished_at, p.started_at, p.queued_at) AS observed_at,\n    COALESCE(p.last_payload #>> '{subject,content,pipelineName}', '(unknown)') AS workflow,\n    COALESCE(p.last_payload #>> '{customData,github,workflow_run,head_branch}', '(unknown)') AS branch,\n    p.last_payload #> '{customData,github,workflow_run,pull_requests}' AS prs\n  FROM cdviz.pipelinerun p\n)\nSELECT PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at))) FILTER (WHERE finished_at IS NOT NULL AND started_at IS NOT NULL) AS p50_runtime\nFROM runs\nWHERE $__timeFilter(observed_at)\n  AND (${workflow:sqlstring} = '__all' OR workflow = ${workflow:sqlstring})\n  AND (${branch:sqlstring} = '__all' OR branch = ${branch:sqlstring})\n  AND (${pr:sqlstring} = '' OR EXISTS (\n    SELECT 1 FROM jsonb_array_elements(COALESCE(prs, '[]'::jsonb)) AS item\n    WHERE item ->> 'number' = ${pr:sqlstring}\n  ))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "description": "Median started-to-finished duration of completed workflow attempts."
+    },
+    {
+      "id": 4,
+      "title": "P95 workflow runtime",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdviz"
+      },
+      "targets": [
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdviz"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH runs AS (\n  SELECT p.*,\n    COALESCE(p.finished_at, p.started_at, p.queued_at) AS observed_at,\n    COALESCE(p.last_payload #>> '{subject,content,pipelineName}', '(unknown)') AS workflow,\n    COALESCE(p.last_payload #>> '{customData,github,workflow_run,head_branch}', '(unknown)') AS branch,\n    p.last_payload #> '{customData,github,workflow_run,pull_requests}' AS prs\n  FROM cdviz.pipelinerun p\n)\nSELECT PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at))) FILTER (WHERE finished_at IS NOT NULL AND started_at IS NOT NULL) AS p95_runtime\nFROM runs\nWHERE $__timeFilter(observed_at)\n  AND (${workflow:sqlstring} = '__all' OR workflow = ${workflow:sqlstring})\n  AND (${branch:sqlstring} = '__all' OR branch = ${branch:sqlstring})\n  AND (${pr:sqlstring} = '' OR EXISTS (\n    SELECT 1 FROM jsonb_array_elements(COALESCE(prs, '[]'::jsonb)) AS item\n    WHERE item ->> 'number' = ${pr:sqlstring}\n  ))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "description": "95th percentile started-to-finished duration of completed workflow attempts."
+    },
+    {
+      "id": 5,
+      "title": "Workflow runtime over time",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdviz"
+      },
+      "targets": [
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdviz"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "time_series",
+          "rawSql": "WITH runs AS (\n  SELECT p.*,\n    COALESCE(p.finished_at, p.started_at, p.queued_at) AS observed_at,\n    COALESCE(p.last_payload #>> '{subject,content,pipelineName}', '(unknown)') AS workflow,\n    COALESCE(p.last_payload #>> '{customData,github,workflow_run,head_branch}', '(unknown)') AS branch,\n    p.last_payload #> '{customData,github,workflow_run,pull_requests}' AS prs\n  FROM cdviz.pipelinerun p\n)\nSELECT time_bucket('1 hour', finished_at) AS time,\n  PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at))) AS \"P50\",\n  PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (finished_at - started_at))) AS \"P95\"\nFROM runs\nWHERE $__timeFilter(observed_at)\n  AND (${workflow:sqlstring} = '__all' OR workflow = ${workflow:sqlstring})\n  AND (${branch:sqlstring} = '__all' OR branch = ${branch:sqlstring})\n  AND (${pr:sqlstring} = '' OR EXISTS (\n    SELECT 1 FROM jsonb_array_elements(COALESCE(prs, '[]'::jsonb)) AS item\n    WHERE item ->> 'number' = ${pr:sqlstring}\n  ))\n  AND finished_at IS NOT NULL AND started_at IS NOT NULL\nGROUP BY 1\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "always",
+            "pointSize": 5
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Workflow outcomes over time",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 7
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdviz"
+      },
+      "targets": [
+        {
+          "refId": "F",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdviz"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "time_series",
+          "rawSql": "WITH runs AS (\n  SELECT p.*,\n    COALESCE(p.finished_at, p.started_at, p.queued_at) AS observed_at,\n    COALESCE(p.last_payload #>> '{subject,content,pipelineName}', '(unknown)') AS workflow,\n    COALESCE(p.last_payload #>> '{customData,github,workflow_run,head_branch}', '(unknown)') AS branch,\n    p.last_payload #> '{customData,github,workflow_run,pull_requests}' AS prs\n  FROM cdviz.pipelinerun p\n)\nSELECT time_bucket('1 hour', observed_at) AS time,\n  COUNT(*) FILTER (WHERE outcome IN ('pass', 'success')) AS \"Success\",\n  COUNT(*) FILTER (WHERE outcome IN ('fail', 'failure', 'error')) AS \"Failure\",\n  COUNT(*) FILTER (WHERE outcome IN ('cancel', 'cancelled', 'canceled')) AS \"Cancelled\",\n  COUNT(*) FILTER (WHERE finished_at IS NULL AND started_at IS NOT NULL) AS \"Running\",\n  COUNT(*) FILTER (WHERE finished_at IS NULL AND started_at IS NULL) AS \"Queued\"\nFROM runs\nWHERE $__timeFilter(observed_at)\n  AND (${workflow:sqlstring} = '__all' OR workflow = ${workflow:sqlstring})\n  AND (${branch:sqlstring} = '__all' OR branch = ${branch:sqlstring})\n  AND (${pr:sqlstring} = '' OR EXISTS (\n    SELECT 1 FROM jsonb_array_elements(COALESCE(prs, '[]'::jsonb)) AS item\n    WHERE item ->> 'number' = ${pr:sqlstring}\n  ))\nGROUP BY 1\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 75,
+            "lineWidth": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "outcomes"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Recent workflow attempts",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdviz"
+      },
+      "targets": [
+        {
+          "refId": "G",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdviz"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH runs AS (\n  SELECT p.*,\n    COALESCE(p.finished_at, p.started_at, p.queued_at) AS observed_at,\n    COALESCE(p.last_payload #>> '{subject,content,pipelineName}', '(unknown)') AS workflow,\n    COALESCE(p.last_payload #>> '{customData,github,workflow_run,head_branch}', '(unknown)') AS branch,\n    p.last_payload #> '{customData,github,workflow_run,pull_requests}' AS prs\n  FROM cdviz.pipelinerun p\n)\nSELECT\n  regexp_replace(workflow, '^agentydragon/ducktape/', '') AS \"Workflow\",\n  (SELECT string_agg(item ->> 'number', ', ') FROM jsonb_array_elements(COALESCE(prs, '[]'::jsonb)) AS item) AS \"PR\",\n  branch AS \"Branch\",\n  last_payload #>> '{customData,github,workflow_run,run_attempt}' AS \"Attempt\",\n  CASE WHEN outcome IN ('cancel', 'cancelled', 'canceled') THEN 'cancelled' WHEN finished_at IS NULL AND started_at IS NOT NULL THEN 'running' WHEN finished_at IS NULL THEN 'queued' ELSE COALESCE(outcome, 'unknown') END AS \"Outcome\",\n  started_at AS \"Started\",\n  ROUND(EXTRACT(EPOCH FROM (started_at - queued_at))::numeric) AS \"Queue to start\",\n  ROUND(EXTRACT(EPOCH FROM (finished_at - started_at))::numeric) AS \"Runtime\",\n  LEFT(last_payload #>> '{customData,github,workflow_run,head_sha}', 10) AS \"Commit\",\n  COALESCE(last_payload #>> '{subject,content,uri}', last_payload #>> '{subject,content,url}') AS \"URL\"\nFROM runs\nWHERE $__timeFilter(observed_at)\n  AND (${workflow:sqlstring} = '__all' OR workflow = ${workflow:sqlstring})\n  AND (${branch:sqlstring} = '__all' OR branch = ${branch:sqlstring})\n  AND (${pr:sqlstring} = '' OR EXISTS (\n    SELECT 1 FROM jsonb_array_elements(COALESCE(prs, '[]'::jsonb)) AS item\n    WHERE item ->> 'number' = ${pr:sqlstring}\n  ))\nORDER BY observed_at DESC\nLIMIT 100"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "custom": {
+            "minWidth": 60,
+            "width": 90
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Workflow"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open in GitHub",
+                    "url": "${__data.fields[\"URL\"]}",
+                    "targetBlank": true
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 250
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "URL"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Runtime"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Queue to start"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Started"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              },
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Commit"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    },
+    {
+      "id": 8,
+      "title": "Recent jobs",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 24,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "cdviz"
+      },
+      "targets": [
+        {
+          "refId": "H",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "cdviz"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "table",
+          "rawSql": "WITH jobs AS (\n  SELECT t.*,\n    COALESCE(t.finished_at, t.started_at) AS observed_at,\n    COALESCE(p.last_payload #>> '{subject,content,pipelineName}', 'agentydragon/ducktape/' || (t.last_payload #>> '{customData,github,workflow_job,workflow_name}'), '(unknown)') AS workflow,\n    COALESCE(t.last_payload #>> '{customData,github,workflow_job,head_branch}', p.last_payload #>> '{customData,github,workflow_run,head_branch}', '(unknown)') AS branch,\n    p.last_payload #> '{customData,github,workflow_run,pull_requests}' AS prs\n  FROM cdviz.taskrun t\n  LEFT JOIN cdviz.pipelinerun p ON p.subject_id = t.last_payload #>> '{subject,content,pipelineRun,id}'\n)\nSELECT\n  COALESCE(last_payload #>> '{customData,github,workflow_job,name}', last_payload #>> '{subject,content,taskName}') AS \"Job\",\n  regexp_replace(workflow, '^agentydragon/ducktape/', '') AS \"Workflow\",\n  branch AS \"Branch\",\n  last_payload #>> '{customData,github,workflow_job,run_attempt}' AS \"Attempt\",\n  CASE WHEN outcome IN ('cancel', 'cancelled', 'canceled') THEN 'cancelled' WHEN finished_at IS NULL AND started_at IS NOT NULL THEN 'running' WHEN finished_at IS NULL THEN 'queued' ELSE COALESCE(outcome, 'unknown') END AS \"Outcome\",\n  started_at AS \"Started\",\n  ROUND(EXTRACT(EPOCH FROM (finished_at - started_at))::numeric) AS \"Runtime\",\n  LEFT(last_payload #>> '{customData,github,workflow_job,head_sha}', 10) AS \"Commit\",\n  COALESCE(last_payload #>> '{subject,content,uri}', last_payload #>> '{subject,content,url}') AS \"URL\"\nFROM jobs\nWHERE $__timeFilter(observed_at)\n  AND (${workflow:sqlstring} = '__all' OR workflow = ${workflow:sqlstring})\n  AND (${branch:sqlstring} = '__all' OR branch = ${branch:sqlstring})\n  AND (${pr:sqlstring} = '' OR EXISTS (\n    SELECT 1 FROM jsonb_array_elements(COALESCE(prs, '[]'::jsonb)) AS item\n    WHERE item ->> 'number' = ${pr:sqlstring}\n  ))\nORDER BY observed_at DESC\nLIMIT 100"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "custom": {
+            "minWidth": 60,
+            "width": 90
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Job"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open in GitHub",
+                    "url": "${__data.fields[\"URL\"]}",
+                    "targetBlank": true
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "URL"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Runtime"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Queue to start"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Started"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              },
+              {
+                "id": "custom.width",
+                "value": 170
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Workflow"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 240
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Commit"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      }
+    }
+  ]
+}
