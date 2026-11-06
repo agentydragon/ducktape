@@ -415,22 +415,21 @@ class LauncherRelayPolicy(ClusterPolicy):
                 ),
             ],
         )
-        if runner_tls_enabled:
-            # The built-in view role does not cover Agentplane's Sandbox CRD. The
-            # injection reads status to name the accepted Secret; it never reads Secrets.
-            reader = Role(
-                self,
-                "sandbox-reader",
-                metadata=ApiObjectMetadata(name="launcher-relay-sandbox-reader", namespace=namespace),
-                rules=[RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get"])],
+        # The built-in view role does not cover Agentplane's Sandbox CRD. The
+        # injection reads status to name the accepted Secret; it never reads Secrets.
+        reader = Role(
+            self,
+            "sandbox-reader",
+            metadata=ApiObjectMetadata(name="launcher-relay-sandbox-reader", namespace=namespace),
+            rules=[RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get"])],
+        )
+        RoleBinding(
+            self,
+            "sandbox-reader-binding",
+            metadata=ApiObjectMetadata(name="launcher-relay-sandbox-reader", namespace=namespace),
+            role=reader,
+        ).add_subjects(
+            ServiceAccount.from_service_account_name(
+                self, "kyverno-admission", "kyverno-admission-controller", namespace_name="kyverno"
             )
-            RoleBinding(
-                self,
-                "sandbox-reader-binding",
-                metadata=ApiObjectMetadata(name="launcher-relay-sandbox-reader", namespace=namespace),
-                role=reader,
-            ).add_subjects(
-                ServiceAccount.from_service_account_name(
-                    self, "kyverno-admission", "kyverno-admission-controller", namespace_name="kyverno"
-                )
-            )
+        )
