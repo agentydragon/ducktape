@@ -4,13 +4,6 @@ load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 # gazelle:exclude test_ollama_reasoning.py
 
 py_library(
-    name = "pydantic_utils",
-    srcs = ["pydantic_utils.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
     name = "tool_provider",
     srcs = ["tool_provider.py"],
     visibility = ["//visibility:public"],

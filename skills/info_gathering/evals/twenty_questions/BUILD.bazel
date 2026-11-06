@@ -38,7 +38,6 @@ py_library(
     name = "direct_provider",
     srcs = ["direct_provider.py"],
     deps = [
-        "//agent_core:pydantic_utils",
         "//agent_core:tool_provider",
         "//openai_utils:json_schema",
         "@pypi//pydantic",
