@@ -4,6 +4,19 @@ use analysis::reports::schema::{BindingEffectAuthorityReport, SynchronousExecuti
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
+use graph_support::{FixtureGraphExt, source_unit_for_binding};
+
+fn binding_execution_report(fixture: &Fixture, binding: &str) -> serde_json::Value {
+    let graph = fixture.dependency_graph();
+    let unit = source_unit_for_binding(&graph, binding);
+    let node = graph.nodes.iter().find(|node| node.id == unit).unwrap();
+    serde_json::to_value(
+        node.synchronous_execution
+            .as_ref()
+            .expect("execution report"),
+    )
+    .expect("serialize execution report")
+}
 
 fn binding_execution(fixture: &Fixture, binding: &str) -> SynchronousExecutionReport {
     let graph = fixture.dependency_graph();
