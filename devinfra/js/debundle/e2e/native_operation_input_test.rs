@@ -1174,6 +1174,33 @@ fn selected_literal_symbol_for_breaks_order_cycle_with_live_array_contents() {
         0
     );
     assert_eq!(native_input_uses(&graph).len(), 1);
+
+    for (call, description) in [
+        ("Symbol()", "undefined"),
+        ("Symbol('fixture.key')", "fixture.key"),
+    ] {
+        let source = source.replace("Symbol.for('fixture.key')", call);
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, modules())
+                .with_native_operation_inputs("static/app", vec![marker_input(&source)]),
+        );
+        assert_preserved_entry_output(&fixture, "before 0\nafter 1\n");
+        assert_generated_module_after_entry_script(
+            &fixture,
+            "const entry = await import('./static/app/entry.js');\nconsole.log(typeof entry.marker, entry.marker.description, entry.values.join(','));\n",
+            &format!("symbol {description} after\n"),
+        );
+        let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+        let marker = node_for_binding(&graph, "marker");
+        assert_eq!(marker["purity"]["kind"], "pure", "{call}: {graph}");
+        assert_eq!(
+            marker["purity"]["dependencies"]["native_operation_inputs"][0]["input_index"],
+            0
+        );
+        let uses = native_input_uses(&graph);
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0]["evidence"]["operation"], "symbol");
+    }
 }
 
 #[test]
@@ -1213,6 +1240,25 @@ fn selected_symbol_for_rejects_other_callees_and_nonprimitive_conversion() {
             &[expected],
         );
     }
+    for (source, expected) in [
+        (
+            "const marker = Symbol(...['key']);\nexport { marker };\n",
+            "nonspread",
+        ),
+        (
+            "const marker = Symbol({ toString() { return 'key'; } });\nexport { marker };\n",
+            "unsupported Symbol call shape",
+        ),
+        (
+            "const marker = Symbol(unknown);\nexport { marker };\n",
+            "unsupported Symbol call shape",
+        ),
+    ] {
+        expect_rejection_containing_all(
+            rejected_opts(source, "marker", marker_input(source)),
+            &[expected],
+        );
+    }
 }
 
 #[test]
@@ -1244,6 +1290,21 @@ fn primitive_argument_throw_is_preserved_by_selected_symbol_for() {
             .with_native_operation_inputs("static/app", vec![symbol_for_input(source)]),
     );
     assert_preserved_entry_error(&fixture, "TypeError");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    assert_eq!(native_input_uses(&graph).len(), 1);
+    assert_eq!(
+        node_for_binding(&graph, "marker")["purity"]["kind"],
+        "not_pure"
+    );
+
+    let source =
+        "const marker = Symbol(1);\nconsole.log(marker.description);\nexport { marker };\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_native_operation_inputs("static/app", vec![marker_input(source)]),
+    );
+    assert_preserved_entry_output(&fixture, "1\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     assert_eq!(native_input_uses(&graph).len(), 1);
     assert_eq!(

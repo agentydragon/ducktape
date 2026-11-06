@@ -7011,8 +7011,9 @@ impl ExecutionIndex {
             .filter_map(|input| {
                 let (site, slots): (Span, Vec<IntrinsicSlot>) = match input.evidence.operation {
                     // The builtin `Symbol` / `Symbol.for` rows at the call. A
-                    // single literal-string `Symbol.for` argument also makes
-                    // the source unit pure (`symbol_for_literal_proof`).
+                    // zero-argument or literal-string `Symbol` call, or a
+                    // literal-string `Symbol.for` call, also makes the source
+                    // unit pure (`symbol_literal_proof`).
                     NativeInputKind::Operation(Operation::Symbol) => {
                         (input.call_span, vec![Global(Symbol)])
                     }

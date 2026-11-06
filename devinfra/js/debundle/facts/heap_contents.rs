@@ -472,7 +472,7 @@ impl Visit for ArrayContentCollector<'_> {
         }
         // This exact original native call cannot touch array contents or
         // invoke a callback. The same validated site proves item purity.
-        if self.native_facts.symbol_for_literal_proof(node).is_some() {
+        if self.native_facts.symbol_literal_proof(node).is_some() {
             return;
         }
         match &node.callee {
