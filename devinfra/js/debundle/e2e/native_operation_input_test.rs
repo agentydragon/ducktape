@@ -770,6 +770,11 @@ fn source_known_set_construction_protocol_writes_reject_the_input() {
         "const made = new Set([1, 2]);\nconst Set = function replacement() {};\nexport {};\n",
         "const made = new Set([...values]);\nexport {};\n",
         "const made = new Set([unknown]);\nexport {};\n",
+        "var reason = 'safe';\nconst made = new Set([reason]);\n(reason) = {};\nexport {};\n",
+        "var reason = 'safe';\nconst made = new Set([reason]);\n[reason] = [{}];\nexport {};\n",
+        "var reason = 'safe';\nconst made = new Set([reason]);\nfor (reason of [{}]) {}\nexport {};\n",
+        "var reason = 'safe';\nconst made = new Set([reason]);\nfor (reason in { changed: true }) {}\nexport {};\n",
+        "var reason = 'safe';\nconst made = new Set([reason]);\n(reason)++;\nexport {};\n",
     ] {
         expect_rejection_containing_all(
             rejected_opts(source, "made", primitive_set_input(source)),

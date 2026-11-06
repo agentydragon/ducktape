@@ -5821,6 +5821,8 @@ struct ExecutionIndex {
     /// single canonical AST walk is complete.
     direct_primitive_const_bindings: BTreeSet<Id>,
     reassigned_bindings: BTreeSet<Id>,
+    /// Complete target-walker writes for primitive Set operand certification.
+    binding_target_writes: BTreeSet<Id>,
     ordinary_input_refs: BTreeMap<Id, (ValueInputRef, SourceUnitOrdinal)>,
     value_input_evidence: BTreeMap<ValueInputRef, ValueInputEvidence>,
     resolved_value_inputs: Vec<ResolvedBindingValueInput>,
@@ -6020,6 +6022,7 @@ impl Default for ExecutionIndex {
             variable_kind: None,
             direct_primitive_const_bindings: BTreeSet::new(),
             reassigned_bindings: BTreeSet::new(),
+            binding_target_writes: BTreeSet::new(),
             ordinary_input_refs: BTreeMap::new(),
             value_input_evidence: BTreeMap::new(),
             resolved_value_inputs: Vec::new(),
@@ -6778,6 +6781,7 @@ impl ExecutionIndex {
             .is_some_and(|aliases| {
                 aliases.iter().all(|binding| {
                     !self.reassigned_bindings.contains(binding)
+                        && !self.binding_target_writes.contains(binding)
                         && matches!(
                             self.binding_declaration_writes.get(binding).map(Vec::as_slice),
                             Some([source]) if source.direct_top_level
@@ -10934,6 +10938,7 @@ impl ExecutionIndex {
 
 impl binding_targets::TargetAccessRecorder for ExecutionIndex {
     fn record_binding_write(&mut self, id: &Id) {
+        self.binding_target_writes.insert(id.clone());
         if !self.past_await
             && let Some(callable) = self.current.and_then(|key| self.callables.get(&key))
             && !callable.created_after_parent_await
