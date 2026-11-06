@@ -506,6 +506,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":artifact",
+        ":binding_targets",
         "@crates//:swc_atoms",
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",

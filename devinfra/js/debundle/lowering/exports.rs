@@ -136,6 +136,18 @@ impl Visit for TargetedRefCollector<'_> {
 
     fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
 
+    fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        binding_targets::record_assign_target(&node.left, self);
+        node.visit_children_with(self);
+    }
+
+    fn visit_for_head(&mut self, node: &ForHead) {
+        if let ForHead::Pat(pattern) = node {
+            binding_targets::record_pat_write(pattern, self);
+        }
+        node.visit_children_with(self);
+    }
+
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
 
     fn visit_function(&mut self, node: &Function) {
@@ -182,6 +194,14 @@ impl Visit for TargetedRefCollector<'_> {
     fn visit_jsx_element_name(&mut self, _node: &JSXElementName) {}
 
     fn visit_jsx_attr_name(&mut self, _node: &JSXAttrName) {}
+}
+
+impl binding_targets::TargetAccessRecorder for TargetedRefCollector<'_> {
+    fn record_binding_write(&mut self, id: &Id) {
+        if self.targets.contains(&id.0) && !self.is_shadowed(id.0.as_ref()) {
+            self.found.insert(id.0.clone());
+        }
+    }
 }
 
 pub(super) fn export_named_for_bindings(

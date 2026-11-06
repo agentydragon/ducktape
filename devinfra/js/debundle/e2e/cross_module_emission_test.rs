@@ -25,6 +25,39 @@ fn has_named_import(source: &str, expected: &str) -> bool {
 }
 
 #[test]
+fn assignment_only_import_references_preserve_read_only_binding_failures() {
+    for statement in [
+        "target = 1;",
+        "target += 1;",
+        "[target] = [1];",
+        "({ value: target } = { value: 1 });",
+        "({ target } = { target: 1 });",
+        "for (target of [1]) {}",
+        "for (target in { value: 1 }) {}",
+    ] {
+        for extracted in [false, true] {
+            let source = if extracted {
+                format!(
+                    "import {{ value as target }} from './peer.js';\nfunction write() {{ {statement} }}\nwrite();\n"
+                )
+            } else {
+                format!("import {{ value as target }} from './peer.js';\n{statement}\n")
+            };
+            let modules = if extracted {
+                vec![logical_module("writer", &[Member::new("write")])]
+            } else {
+                vec![]
+            };
+            let fixture = run_fixture(FixtureOpts::new(&source, modules).with_extra_chunks(&[(
+                "static/peer",
+                "console.log('peer'); export const value = 0;\n",
+            )]));
+            assert_preserved_entry_error(&fixture, "TypeError");
+        }
+    }
+}
+
+#[test]
 fn extracted_module_imports_unowned_helper_from_residual() {
     // Spec claims only `b`. Its helper `a` is unclaimed, so `a`
     // stays in residual; mod_x imports it (no implicit closure

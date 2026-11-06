@@ -181,7 +181,7 @@ fn resolve_specifier(specifier: &str, importer_abs: &str) -> String {
     join_module_path(&[dir.as_str(), specifier])
 }
 
-/// Every symbol referenced (read) anywhere in a body, honoring shadowing.
+/// Every symbol referenced (read or assigned) anywhere in a body, honoring shadowing.
 /// Mirrors `lowering::exports::TargetedRefCollector`'s binding/shadowing rules,
 /// but collects the full referenced set rather than tracking a candidate quota.
 fn collect_referenced_syms(module: &Module) -> HashSet<Atom> {
@@ -223,6 +223,18 @@ impl Visit for ReferencedSymCollector {
     // Binding sites are not references.
     fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
 
+    fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        binding_targets::record_assign_target(&node.left, self);
+        node.visit_children_with(self);
+    }
+
+    fn visit_for_head(&mut self, node: &ForHead) {
+        if let ForHead::Pat(pattern) = node {
+            binding_targets::record_pat_write(pattern, self);
+        }
+        node.visit_children_with(self);
+    }
+
     // Import binding sites (`import { x }`) are not references; the whole
     // declaration is skipped so the specifier locals never count themselves.
     fn visit_import_decl(&mut self, _node: &ImportDecl) {}
@@ -259,6 +271,14 @@ impl Visit for ReferencedSymCollector {
     fn visit_jsx_element_name(&mut self, _node: &JSXElementName) {}
 
     fn visit_jsx_attr_name(&mut self, _node: &JSXAttrName) {}
+}
+
+impl binding_targets::TargetAccessRecorder for ReferencedSymCollector {
+    fn record_binding_write(&mut self, id: &Id) {
+        if !self.is_shadowed(&id.0) {
+            self.found.insert(id.0.clone());
+        }
+    }
 }
 
 /// Binding-identifier syms a parameter pattern introduces, used to shadow
