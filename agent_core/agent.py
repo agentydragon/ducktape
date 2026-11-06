@@ -1,5 +1,3 @@
-"""Agent on OpenAI Responses API with tool provider abstraction."""
-
 from __future__ import annotations
 
 import contextlib
@@ -60,18 +58,12 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AgentResult:
     text: str
-    # NOTE: We intentionally do NOT return transcript/events in agent result.
-    # Tests or callers that need access to the event sequence should register a handler
-    # (e.g. a test-only RecordingHandler) and pass it via `handlers` argument to Agent.create().
+    # Event access belongs to handlers; AgentResult contains only assembled text.
 
 
 @dataclass
 class StepResult:
-    """Result of one agent step (one LLM call + tool resolution).
-
-    done: True if a handler signaled the agent should stop.
-    To capture agent output, install a BaseHandler and read from it after step() returns.
-    """
+    """`done` reflects handler completion; output remains with handlers."""
 
     done: bool
 
@@ -82,7 +74,6 @@ class CompactionResult:
 
 
 def _make_strict_function_tool(tool_name: str, description: str, input_schema: dict[str, Any]) -> FunctionToolParam:
-    """Create a strict-mode function tool after validating its input schema."""
     validate_openai_strict_mode_schema(input_schema, tool_name)
     return FunctionToolParam(name=tool_name, description=description, parameters=input_schema, strict=True)
 
@@ -103,7 +94,6 @@ def _check_size(result: str) -> None:
 
 
 def _content_is_redundant(content: list[ResultContent], sc: ToolOutputData) -> bool:
-    """Check if content is just JSON serialization of structuredContent."""
     if len(content) != 1:
         return False
     block = content[0]
@@ -116,16 +106,11 @@ def _content_is_redundant(content: list[ResultContent], sc: ToolOutputData) -> b
 
 
 def _tool_result_to_openai(result: ToolResult) -> str:
-    """Convert ToolResult to a string for the OpenAI Responses API function_call_output.
-
-    The Responses API only accepts strings in output (not content block arrays).
-    Errors are prefixed with "ERROR\\n" so the model can recognise them.
-    """
+    """Encode a tool result as the Responses API string output; prefix errors with `ERROR`."""
     sc = result.structured_content
     content = list(result.content) if result.content else []
     is_error = result.is_error
 
-    # Case 1: structured_content present, content empty or redundant
     if sc is not None and (not content or _content_is_redundant(content, sc)):
         json_str = pydantic_core.to_json(sc, fallback=str).decode("utf-8")
         _check_size(json_str)
@@ -133,7 +118,6 @@ def _tool_result_to_openai(result: ToolResult) -> str:
             return f"ERROR\n{json_str}"
         return json_str
 
-    # Case 2: Content blocks present — flatten to string
     if content:
         parts = []
         if is_error:
@@ -149,12 +133,10 @@ def _tool_result_to_openai(result: ToolResult) -> str:
         _check_size(text)
         return text
 
-    # Case 3: Empty
     return "ERROR" if is_error else ""
 
 
 def _openai_to_tool_result(output: str) -> ToolResult:
-    """Convert OpenAI FunctionCallOutputItem.output to ToolResult."""
     structured_content: ToolOutputData | None = None
     with contextlib.suppress(json.JSONDecodeError):
         structured_content = json.loads(output)
@@ -162,17 +144,13 @@ def _openai_to_tool_result(output: str) -> ToolResult:
 
 
 def _normalize_call_arguments(arguments: str | dict[str, Any] | list[Any] | None) -> str | None:
-    """Normalize function call arguments to JSON string."""
     if arguments is None or isinstance(arguments, str):
         return arguments
     return pydantic_core.to_json(arguments, fallback=str).decode("utf-8")
 
 
 def _tool_choice_from_policy(policy: ToolPolicy) -> ToolChoice:
-    """Map a ToolPolicy to Responses API tool_choice value.
-
-    Exhaustive and strict: raises on unknown policy.
-    """
+    """Map supported policies to API values; unknown policies raise `TypeError`."""
     if isinstance(policy, RequireAnyTool):
         return "required"
     if isinstance(policy, AllowAnyToolOrTextMessage):
@@ -185,14 +163,9 @@ type TranscriptItem = Message | FunctionCallItem | ReasoningItem | ToolCallOutpu
 
 
 def _sanitize_tool_result(result: ToolResult) -> ToolResult:
-    """Remove null bytes from ToolResult, prepending warning if any found.
+    """Strip NULs before JSONB event persistence; PostgreSQL JSONB rejects them.
 
-    Why here (not at OpenAI conversion): PostgreSQL JSONB doesn't support null bytes,
-    and events are persisted via Pydantic model_dump(). Tools like `rg -0` produce null
-    bytes that would break persistence. Sanitizing at event creation ensures:
-    1. Stored events are JSONB-safe
-    2. Warning message is part of the permanent record
-    3. OpenAI API (via _tool_result_to_openai) receives clean data
+    Keep the warning with the permanent event, and send sanitized data to the API.
     """
     null_count = 0
 
@@ -214,7 +187,6 @@ def _sanitize_tool_result(result: ToolResult) -> ToolResult:
         if isinstance(block, TextContent):
             new_content.append(TextContent(text=sanitize(block.text)))
         else:
-            # ImageContent passes through (binary data in base64)
             new_content.append(block)
 
     # Sanitize structured_content if present (use `is not None` — empty list [] is valid)
@@ -269,14 +241,7 @@ class Agent:
         return self._client.model
 
     def _extract_text_from_message(self, msg: UserMessage | AssistantMessage) -> str:
-        """Extract text content from message's content parts.
-
-        TODO: This is lossy - joins multiple content part objects with "\n" separator,
-        losing part boundaries and adding separators that weren't in the original OpenAI response.
-        Should preserve the multi-part structure faithfully in handler events.
-        """
-        # UserMessage.content is always present (list[InputTextPart])
-        # AssistantMessage.content can be None or list[OutputTextPart]
+        # TODO: Preserve content-part boundaries in handler events; joining loses them and adds newlines.
         content = msg.content or []
         return "\n".join(part.text for part in content)
 
@@ -291,11 +256,6 @@ class Agent:
             h.on_assistant_text_event(evt)
 
     def _notify_handlers_for_transcript_item(self, item: TranscriptItem) -> None:
-        """Dispatch handler notifications based on transcript item type.
-
-        This is the single source of truth for "what handler events does this item type trigger".
-        Called for both injected items and items added from API responses.
-        """
         if isinstance(item, UserMessage):
             text = self._extract_text_from_message(item)
             self._notify_user_text(text)
@@ -326,20 +286,11 @@ class Agent:
             raise TypeError(f"Unhandled transcript item type: {type(item).__name__}")
 
     def process_message(self, message: Message) -> None:
-        """Add a message to the transcript and notify handlers.
-
-        Use this to set up initial context (system prompts, user messages) before calling run().
-        """
         self._transcript.append(message)
         self._notify_handlers_for_transcript_item(message)
 
     async def _build_effective_instructions(self) -> str | None:
-        """Build instructions for the OpenAI API request.
-
-        Returns result of dynamic_instructions callback if provided, otherwise None.
-        Note: This is the 'instructions' field in the API, separate from system messages
-        in the transcript.
-        """
+        """Return dynamic instructions separately from transcript system messages."""
         if self._dynamic_instructions is not None:
             return await self._dynamic_instructions()
         return None
@@ -347,18 +298,10 @@ class Agent:
     async def compact_transcript(
         self, *, keep_recent_turns: int = 10, summarization_prompt: str | None = None
     ) -> CompactionResult:
-        """Compact old conversation by summarizing.
+        """Summarize the transcript prefix before the last `keep_recent_turns` items.
 
-        Preserves:
-        - Recent N transcript items
-
-        Compacts:
-        - Old UserMessage/AssistantMessage text
-        - Old FunctionCallItem/ToolCallOutput (tool call chains)
-        - Old ReasoningItem blocks
-
-        Returns summary as a single UserMessage inserted before recent turns.
-        When summarization_prompt is None, the default prompt is loaded from a file.
+        The prefix needs at least three items; it becomes one summary `UserMessage`.
+        If no prompt is supplied, load `compaction_prompt.md`.
         """
 
         boundary_index = max(0, len(self._transcript) - keep_recent_turns)
@@ -378,22 +321,13 @@ class Agent:
 
         self._transcript = [
             summary_msg,
-            *recent_region,  # Recent turns preserved verbatim (no ReasoningItems)
+            *recent_region,  # Keep recent transcript items unchanged.
         ]
 
         return CompactionResult(compacted=True)
 
     async def _generate_summary(self, items: list[TranscriptItem], custom_prompt: str | None) -> str:
-        """Use LLM to summarize transcript items.
-
-        Handles:
-        - UserMessage: full text
-        - AssistantMessage: full text
-        - ReasoningItem: summary only (not full extended thinking)
-        - FunctionCallItem: tool name and args
-        - ToolCallOutput: result summary
-        """
-
+        """Serialize messages, reasoning items, function calls, and outputs for the summarizer."""
         # TODO: Consider stripping/formatting to remove fields without semantic content
         #  (e.g., tool call IDs, encrypted reasoning data, internal metadata)
         adapter = TypeAdapter(list[TranscriptItem])
@@ -415,20 +349,9 @@ class Agent:
         raise RuntimeError("Summary generation failed: LLM response missing assistant message")
 
     async def step(self) -> StepResult:
-        """Run one iteration of the agent loop (one LLM call + tool resolution).
+        """Run one step and resolve pending calls.
 
-        Does not reset assistant_text_chunks or loop. Always resets self.finished=False
-        after the step so step() can be called again by the caller.
-
-        To capture output from the model, install a BaseHandler that overrides
-        on_assistant_text_event() and/or on_tool_call_event().
-
-        Usage for multi-agent loops where each agent runs one turn at a time:
-            capture = MyTextCapture()  # BaseHandler subclass
-            agent = Agent(..., handlers=[capture])
-            agent.process_message(UserMessage.text("question"))
-            while not captured_text:
-                await agent.step()
+        Preserves accumulated text and resets `finished` before returning; output is emitted to handlers.
         """
         await self._run_one_phase()
         if self.pending_function_calls:
@@ -438,14 +361,7 @@ class Agent:
         return StepResult(done=done)
 
     async def run(self) -> AgentResult:
-        """Run the agent loop until a handler signals completion.
-
-        Before calling run(), add messages to the transcript using process_message().
-        Example:
-            agent.process_message(SystemMessage.text("You are a helpful assistant"))
-            agent.process_message(UserMessage.text("Hello"))
-            result = await agent.run()
-        """
+        """Clear text, pending calls, and completion state, then step until a handler finishes."""
         self.assistant_text_chunks.clear()
         self.pending_function_calls.clear()
         self.finished = False
@@ -476,7 +392,7 @@ class Agent:
             call_id = _require_call_id(function_call)
             # No agent-level before-tool gating; Policy Gateway middleware enforces approvals/denials
             if call_id in local_map:
-                # Already have a result (replay scenario)
+                # Replay persisted output by call_id.
                 return local_map[call_id]
 
             try:
@@ -486,6 +402,7 @@ class Agent:
             if not isinstance(parsed, dict):
                 return ToolResult.error(f"Tool arguments must be a JSON object, got {type(parsed).__name__}")
             args: dict[str, Any] = parsed
+            # Providers map expected failures to ToolResult.error(); unexpected exceptions propagate.
             return await self._tool_provider.call_tool(function_call.name, args)
 
         if self._parallel_tool_calls:
@@ -503,8 +420,6 @@ class Agent:
 
             async def runner(fc: FunctionCallItem, aj: str | None) -> None:
                 call_id = _require_call_id(fc)
-                # Tool providers handle their own exceptions and return ToolResult.error()
-                # Any exception here is unexpected and should propagate
                 results[call_id] = await invoker(fc, aj)
 
             for function_call, args_json in calls:
@@ -518,46 +433,17 @@ class Agent:
 
     async def _run_tool_calls_sequential(self, calls: list[tuple[FunctionCallItem, str | None]], invoker) -> None:
         for function_call, args_json in calls:
-            # Tool providers handle their own exceptions and return ToolResult.error()
             self._emit_tool_result(function_call, await invoker(function_call, args_json))
 
     def to_openai_messages(self) -> list[InputItem]:
-        """Convert transcript to typed OpenAI Responses input items.
+        """Serialize the complete transcript on each stateless Responses request.
 
-        Summary of our reasoning handling (stateless, full-input):
-        - We forward the exact ResponseReasoningItem objects returned by the model
-          in-order as part of the transcript when continuing the model's chain-of-thought.
-        - We do NOT synthesize or mutate reasoning items or ids; always forward the
-          SDK-returned objects (model_dump(exclude_none=True)).
-        - We avoid previous_response_id / stateful Responses API usage by design and
-          therefore reproduce the full input sequence (user/assistant/reasoning/
-          function_call/function_call_output) on each stateless request.
-        - Reasoning forwarding is orthogonal to tool execution: include reasoning
-          items where they were produced to allow the model to continue reasoning.
-
-        Recommended/required practices:
-        - Preserve ordering and structure exactly as returned by the SDK/API.
-        - Do not fabricate rs_/fc_ ids; prefer omission over synthesis if originals
-          are missing.
-
-        Canonical references:
-        - OpenAI Responses API reference: https://platform.openai.com/docs/api-reference/responses
-        - OpenAI Cookbook examples (reasoning items & function-call orchestration):
-          https://github.com/openai/openai-cookbook/blob/main/examples/responses_api/reasoning_items.ipynb
-          https://github.com/openai/openai-cookbook/blob/main/examples/reasoning_function_calls.ipynb
-
-        Implementation note: this agent intentionally uses the stateless full-input
-        approach to preserve reproducibility and avoid server-side state. Keep this
-        behavior in mind when modifying messages()/transcript serialization.
+        Forward SDK reasoning items unchanged and in order; never synthesize `rs_`/`fc_` IDs.
         """
         items: list[InputItem] = []
         for item in self._transcript:
             if isinstance(item, UserMessage | AssistantMessage | SystemMessage):
-                # Use serialize/deserialize instead of model_copy(deep=True) to avoid pytest-xdist deadlock.
-                # Root cause unclear: no circular refs in data, deepcopy works in isolation, but under
-                # parallel test execution (pytest-xdist -n16) it hangs in Pydantic's __deepcopy__.
-                # Hypothesis: pytest-xdist fork + Pydantic internal state (validators, cached schemas)
-                # causes deepcopy memo dict corruption. Serialize/deserialize forces clean state.
+                # Pydantic deepcopy hangs under pytest-xdist -n16; it works in isolation, and the cause is unknown.
                 item_type = type(item)
                 items.append(item_type.model_validate_json(item.model_dump_json()))
                 continue
@@ -574,7 +460,7 @@ class Agent:
         return items
 
     async def _run_one_phase(self):
-        # Poll handlers sequentially - first non-NoAction decision wins
+        # The first handler returning a decision wins.
         decision: LoopDecision = NoAction()
         for h in self._handlers:
             d = h.on_before_sample()
@@ -616,11 +502,9 @@ class Agent:
                 if isinstance(item, FunctionCallItem):
                     self.pending_function_calls.append(item)
 
-            # Skip sampling this iteration
-            # Main loop will execute any pending function calls, then iterate again
+            # Let step() resolve injected calls before another sample.
             return
 
-        # Unify resp_output element type across branches for mypy
         resp_output: list[ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut] | None = None
 
         should_sample_llm = False
@@ -646,10 +530,8 @@ class Agent:
                 reasoning=reasoning_param,
             )
 
-            # Emit ApiRequest event for persistence
-            # TODO: This stores O(N^2) data - full transcript state at each API call.
-            # Consider storing only non-derivable data (e.g., instructions, tool schemas at each phase)
-            # and reconstructing full request from transcript + metadata.
+            # TODO: Avoid O(N²) full-transcript snapshots; store non-derivable request data and reconstruct
+            # each request from the transcript and metadata.
             request_id = uuid4()
             phase_number = self._response_count
             prepared_request = self._client.prepare(req)
@@ -686,17 +568,15 @@ class Agent:
                     Response(response_id=resp.id, request_id=request_id, usage=usage, model=self._client.model)
                 )
             self._response_count += 1
-        # Note: Loop termination is controlled by handlers
-        # or explicit tool policies (e.g., RequireAnyTool prevents text-only responses)
+        # Handlers end the loop; tool policies can prevent text-only responses.
 
     def _process_resp_output(
         self, resp_output: Sequence[ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut]
     ) -> None:
         self.pending_function_calls.clear()
-        # Skip items that are already present in our transcript (id collision).
+        # Skip transcript items already seen by ID.
         existing_ids: set[str] = set()
         for evt in self._transcript:
-            # Only these item types carry optional id fields
             if isinstance(evt, ReasoningItem | FunctionCallItem):
                 eid = evt.id
                 if isinstance(eid, str) and eid:
@@ -733,7 +613,6 @@ class Agent:
                     ]
 
             elif isinstance(item, FunctionCallItem):
-                # Enforce a proper call_id for indexing/pending management
                 call_id = _require_call_id(item)
                 self._transcript.append(item)
                 self._notify_handlers_for_transcript_item(item)
@@ -741,7 +620,6 @@ class Agent:
                     continue
                 self.pending_function_calls.append(item)
             else:
-                # Crash fast on unknown items to surface mismatches early
                 raise TypeError(f"Unsupported Responses output item: {type(item)}")
 
     @classmethod
@@ -757,13 +635,9 @@ class Agent:
         tool_policy: ToolPolicy,
         dynamic_instructions: Callable[[], Awaitable[str]] | None = None,
     ) -> Agent:
-        """Create an Agent.
+        """Keep `tool_policy` fixed for the agent's lifetime.
 
-        Tool policy is set once at initialization and remains fixed throughout the agent's lifetime.
-        Common values: RequireAnyTool() (typical), AllowAnyToolOrTextMessage().
-
-        For static system prompts, use process_message(SystemMessage.text("...")) before calling run().
-        For dynamic instructions that can change between phases, provide dynamic_instructions callback.
+        Use transcript system messages for static context; `dynamic_instructions` fills the separate API field per request.
         """
         return cls(
             tool_provider=tool_provider,
@@ -777,10 +651,6 @@ class Agent:
         )
 
     def _emit_tool_result(self, function_call: FunctionCallItem, result: ToolResult) -> None:
-        """Emit a ToolCallOutput event and notify handlers.
-
-        Sanitizes null bytes from tool results before emitting (PostgreSQL JSONB doesn't support them).
-        """
         call_id = _require_call_id(function_call)
         sanitized = _sanitize_tool_result(result)
         event = ToolCallOutput(call_id=call_id, result=sanitized)
