@@ -1,6 +1,6 @@
 //! At-init calls must account for reads reached through function values.
-//! Each input runs successfully as one ESM chunk. An accepted split must
-//! preserve that result, even when a call crosses a parameter or `new`.
+//! An accepted split must preserve the original completion and output, even
+//! when a call crosses a parameter or `new`.
 
 use debundle_e2e_support::*;
 use std::fmt::Write as _;
@@ -446,9 +446,8 @@ export {{ saved, Checker, Command, create, command, later }};
 
 #[test]
 fn reassigned_escaped_class_keeps_unknown_constructor_alternative() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            r#"const saved = () => later;
+    let rejected = run_rejection_fixture(FixtureOpts::new(
+        r#"const saved = () => later;
 globalThis.saved = saved;
 class Checker { isAllowed() { return true; } }
 globalThis.savedChecker = Checker;
@@ -461,13 +460,38 @@ const command = create({ execute: () => later });
 const later = 7;
 export { saved, Checker, Command, create, command, later };
 "#,
-            vec![
-                logical_module("command", &[Member::new("command")]),
-                logical_module("value", &[Member::new("later")]),
-            ],
-        ),
-        &["command", "value"],
-        &[],
+        vec![
+            logical_module("command", &[Member::new("command")]),
+            logical_module("value", &[Member::new("later")]),
+        ],
+    ));
+    save_relocation_reports(
+        &rejected.report_root,
+        &rejected.chunk_id,
+        "reassigned-escaped-class",
+    );
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_eq!(assessment["status"], "blocked_by_effect_and_placement");
+    assert_eq!(assessment["decision"]["status"], "conflict");
+    let effects = rejected.effect_translation_validation();
+    assert!(
+        effects["examples"].as_array().unwrap().iter().any(|pair| {
+            pair["runs_first"]["module"] == "command"
+                && pair["cells"].as_array().unwrap().iter().any(|cell| {
+                    cell["cell"]["kind"] == "binding"
+                        && cell["cell"]["binding"] == "Checker"
+                        && cell["observed_conflict"] == true
+                        && cell["first_read"]["kind"] == "observed"
+                        && cell["later_write"]["kind"] == "observed"
+                })
+        }),
+        "construction must not move before the Checker reassignment: {effects:#}"
+    );
+    assert_node_error(
+        &rejected
+            .source_root
+            .join(format!("{}.js", rejected.chunk_id)),
+        "ReferenceError",
     );
 }
 
