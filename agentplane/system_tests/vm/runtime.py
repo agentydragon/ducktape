@@ -180,7 +180,6 @@ def _observe_host_qemu(k3s: K3s, namespace: str, stop: threading.Event) -> None:
     artifacts = undeclared_outputs_dir() / "vm-artifacts"
     started: dict[Path, float] = {}
     last: dict[Path, float] = {}
-    boot: set[Path] = set()
     samples: dict[Path, int] = {}
     while not stop.is_set():
         for console in (artifacts / "serial").glob("*/*/*.log"):
@@ -193,13 +192,10 @@ def _observe_host_qemu(k3s: K3s, namespace: str, stop: threading.Event) -> None:
                 start = started.setdefault(console, now)
                 if now - start < 5 or now - last.get(console, 0) < 4:
                     continue
-                phase = "shutdown"
+                phase = "shutdown-host" if now - start < 15 else "shutdown-qmp"
                 last[console] = now
-            elif console in boot:
-                continue
             else:
-                phase = "boot"
-                boot.add(console)
+                continue
             launcher = console.parents[1].name
             pod = launcher.removeprefix(f"{namespace}_").rsplit("_", 1)[0]
             directory = artifacts / "host-qemu" / launcher / console.parent.name
@@ -209,7 +205,10 @@ def _observe_host_qemu(k3s: K3s, namespace: str, stop: threading.Event) -> None:
             with (directory / f"{phase}-{sample}.txt").open("w") as output:
                 output.write(f"HOST_QEMU_SNAPSHOT phase={phase} time={time.time()}\n")
                 try:
-                    _qemu_snapshot(k3s, namespace, pod, output, stop)
+                    if phase == "shutdown-host":
+                        _qemu_processes(output)
+                    else:
+                        _qemu_snapshot(k3s, namespace, pod, output, stop)
                 except Exception as error:
                     output.write(f"SNAPSHOT_ERROR {error!r}\n")
         stop.wait(0.25)

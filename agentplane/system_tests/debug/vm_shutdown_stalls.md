@@ -94,6 +94,7 @@ The source checks used systemd `v257.9`, matching the guest's `257.9-1~deb13u1`:
    starting the service. The proposed collector now starts the observer at boot, blocked
    on a FIFO. ACPI wakes it before changing manager logging. Keeping its FIFO reader open
    also accepts repeated power-button notifications without needing a responsive PID 1.
+
 6. [Host QEMU inspection](https://app.buildbuddy.io/invocation/39f1fe6c-190f-4c91-a58c-e108c93ba9f3):
    three VM executions using source `b0f6c79819206746b3401a45bea7b2a3fcaf552f`. Restore
    original ACPI handling and disable the new journal-console and watchdog services;
