@@ -191,6 +191,7 @@ py_test(
 
 py_test(
     name = "test_dev_server_integration",
+    size = "medium",  # Cold imports, PostgreSQL image load and launcher startup; debug/dev_server_integration_budget.md.
     srcs = ["test_dev_server_integration.py"],
     data = [":dev"],
     env = {"PROPS_DEV_RLOCATION": "$(rlocationpath :dev)"},
