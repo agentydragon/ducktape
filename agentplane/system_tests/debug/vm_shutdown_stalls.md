@@ -94,6 +94,27 @@ The source checks used systemd `v257.9`, matching the guest's `257.9-1~deb13u1`:
    starting the service. The proposed collector now starts the observer at boot, blocked
    on a FIFO. ACPI wakes it before changing manager logging. Keeping its FIFO reader open
    also accepts repeated power-button notifications without needing a responsive PID 1.
+6. [Host QEMU inspection](https://app.buildbuddy.io/invocation/39f1fe6c-190f-4c91-a58c-e108c93ba9f3):
+   three VM executions using source `b0f6c79819206746b3401a45bea7b2a3fcaf552f`. Restore
+   original ACPI handling and disable the new journal-console and watchdog services;
+   preserve host-side journal, serial and virtiofs retention. A host thread saves QEMU
+   process/thread kernel state, then reads status, vCPU registers and APIC/IRQ state using
+   libvirt's QMP interface. Boot samples validate the probes; shutdown samples begin five
+   seconds after ACPI if proof is absent. QMP can briefly synchronize with vCPUs, so these
+   probes are not assumed to be free of perturbation.
+
+   All three executions passed (409.50, 391.79 and 364.75 seconds), and all nine guests
+   emitted proof and powered down. Boot samples retained host thread stacks and both
+   vCPUs' registers; the session libvirt socket worked without a privileged URI fallback.
+   No guest remained without proof long enough to trigger a shutdown sample. This QEMU
+   supports the register, APIC and IRQ probes but has no `info clocks` command.
+
+The journal/serial diagnostics merged in [PR #14629](https://github.com/agentydragon/ducktape/pull/14629).
+The FIFO observer merged in [PR #14633](https://github.com/agentydragon/ducktape/pull/14633)
+at head `78775a077cd7c6fd93f13373b6e43cd47407b0db`. Its CI synthetic merge commit
+`0b601a7f201c9d28fa3fe465a2eb79c96548c10` has the same tree as that head. All three guests
+recorded observer start, FIFO notification, PID 1 samples, shutdown proof and powerdown;
+all three retained native journals passed `journalctl --verify`.
 
 Experiment 1 did reproduce a shutdown failure in its second execution: the Codex OOM guest
 stopped Runtime at 18:55:50 UTC, unmounted `/state/workspaces` by 18:55:52 and stopped journal
@@ -115,9 +136,9 @@ and its [file-tail sidecar](https://github.com/kubevirt/kubevirt/blob/3203e9d1ce
 rule out a stopped tail reader imposing pipe backpressure on QEMU: the producer writes a
 regular file. This does not exclude guest UART or host filesystem I/O blocking.
 
-The working-tree patches for these runs were applied over
-`23547bc724049d8d144ba1b2861833b4e91899b6`; these are experiment invocations, not CI proof
-for a committed diagnostic head. No successful retry establishes a functional repair.
+Experiments 1–4 used working-tree patches over `23547bc724049d8d144ba1b2861833b4e91899b6`;
+experiments 5–6 identify their source separately above. Experiment invocations are distinct
+from the diagnostic PR's CI. No successful retry establishes a functional repair.
 
 ## Upstream lead checked
 

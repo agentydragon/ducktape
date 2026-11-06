@@ -59,6 +59,10 @@ class VmRuntime:
         return k3s.kubectl("get", "storageclass", block_storage.STORAGE_CLASS, "-o", "jsonpath={.metadata.uid}")
 
     def configure(self, objects: list[dict[str, Any]]) -> None:
+        for template in objects:
+            if template["kind"] == "SandboxTemplate" and "vm" in template["spec"]:
+                boot = template["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]
+                boot["kernelArgs"] += " systemd.log_level=debug systemd.log_target=console loglevel=8"
         vm_sandboxes.select_boot_evidence(objects, enabled=os.environ.get("AGENTPLANE_VM_BOOT_EVIDENCE") == "1")
         vm_sandboxes.select_native_profile(
             objects,
@@ -151,7 +155,7 @@ def _qemu_snapshot(k3s: K3s, namespace: str, pod: str, output: TextIO, stop: thr
             ("info lapic", 1),
             ("info pic", None),
             ("info irq", None),
-            ("info clocks", None),
+            ("info cpus", None),
         ):
             if stop.is_set():
                 return
