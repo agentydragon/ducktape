@@ -6,13 +6,14 @@ from typing import ClassVar, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agentplane.egress.platform_routes import PlatformRoute
+from agentplane.environment_runtime_transport.config import TLS
 
 CONTAINER_NAME = "egress-sidecar"
+RUNNER_TLS_MOUNT_PATH = "/run/agentplane/environment-runtime-tls"
 READINESS_PATH = "/readyz"
 READINESS_HOST = "0.0.0.0"
 READINESS_PORT = 3129
 READINESS_LISTEN_ADDRESS = f"{READINESS_HOST}:{READINESS_PORT}"
-RUNNER_TLS_MOUNT_PATH = "/run/agentplane/environment-runtime-tls"
 ProxyMode = Literal["token", "mtls"]
 
 
@@ -30,6 +31,15 @@ class ProxyTLSFiles(BaseModel):
         if any(not path.is_absolute() for path in (self.cert_file, self.key_file, self.ca_file)):
             raise ValueError("proxy TLS file paths must be absolute")
         return self
+
+
+class WorkloadRoute(BaseModel):
+    """One HTTP origin whose sidecar presents the Sandbox SVID to its destination."""
+
+    model_config = ConfigDict(extra="forbid")
+    upstream: str
+    server_uri: str
+    tls: TLS
 
 
 class Settings(BaseModel):
@@ -54,6 +64,9 @@ class Settings(BaseModel):
         description="Audience to the projected token file holding this Pod's identity for it, offered to the "
         "central proxy to substitute where a rule names that audience. The optional proxy-audience bearer "
         "above is separate; in mtls mode it is downstream identity context, not hop authentication.",
+    )
+    workload_routes: dict[str, WorkloadRoute] = Field(
+        default_factory=dict, description="Exact HTTP host:port to service-owned SVID TLS via opaque central CONNECT."
     )
     platform_routes: dict[str, PlatformRoute] = Field(
         default_factory=dict,
