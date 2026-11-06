@@ -174,6 +174,7 @@ def workspace_kustomization(
     source: ArtifactGeneratorSpecArtifacts,
     *,
     depends_on: Sequence[Kustomization],
+    timeout: str = "20m",
 ) -> Kustomization:
     """Create a Workspace Kustomization that consumes its ExternalArtifact path."""
     return flux_kustomization(
@@ -184,7 +185,7 @@ def workspace_kustomization(
         ),
         path=f"./{artifact_directory(directory.artifact)}",
         decryption=directory.decryption,
-        timeout="20m",
+        timeout=timeout,
         depends_on=flux_kustomization_depends_on_many(*depends_on),
         health_check_exprs=[WORKSPACE_HEALTH_CHECK_EXPR],
     )

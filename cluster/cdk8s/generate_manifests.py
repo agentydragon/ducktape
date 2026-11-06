@@ -928,30 +928,33 @@ def generate_manifests(root: Path) -> None:
         ],
     )
     gatus_sso_artifact = artifact(gatus_sso.NAME, gatus_sso.OUTPUT_DIR)
-    gatus_sso.resources(
+    opentofu.workspace_kustomization(
         flux_chart,
+        gatus_sso.NAME,
         write_directory(root, gatus_sso_artifact, gatus_sso.chart),
         authentik_tf_artifact,
-        crossplane_opentofu_provider_kustomization,
-        tofu_state_db_kustomization,
+        depends_on=[crossplane_opentofu_provider_kustomization, tofu_state_db_kustomization],
+        timeout="10m",
     )
     alloy_otlp_bearer_token_artifact = artifact(alloy_otlp_bearer_token.NAME, alloy_otlp_bearer_token.OUTPUT_DIR)
-    alloy_otlp_bearer_token.resources(
+    opentofu.workspace_kustomization(
         flux_chart,
+        alloy_otlp_bearer_token.NAME,
         write_directory(root, alloy_otlp_bearer_token_artifact, alloy_otlp_bearer_token.chart),
         authentik_tf_artifact,
-        crossplane_opentofu_provider_kustomization,
-        tofu_state_db_kustomization,
+        depends_on=[crossplane_opentofu_provider_kustomization, tofu_state_db_kustomization],
+        timeout="10m",
     )
     github_tf_artifact = artifact(github_tf.NAME, github_tf.OUTPUT_DIR)
     forgejo_gitops_artifact = artifact(forgejo_gitops_modules.NAME, forgejo_gitops_modules.OUTPUT_DIR)
     forgejo_claude_artifact = artifact(forgejo_claude.NAME, forgejo_claude.OUTPUT_DIR)
-    forgejo_claude_kustomization = forgejo_claude.resources(
+    forgejo_claude_kustomization = opentofu.workspace_kustomization(
         flux_chart,
+        forgejo_claude.NAME,
         write_directory(root, forgejo_claude_artifact, forgejo_claude.chart),
         forgejo_gitops_artifact,
-        crossplane_opentofu_provider_kustomization,
-        tofu_state_db_kustomization,
+        depends_on=[crossplane_opentofu_provider_kustomization, tofu_state_db_kustomization],
+        timeout="10m",
     )
     forgejo_haku_state_artifact = artifact(
         forgejo_crossplane_roots.HAKU_STATE_NAME, forgejo_crossplane_roots.output_dir("haku-state")
