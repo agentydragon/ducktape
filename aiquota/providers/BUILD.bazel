@@ -211,6 +211,7 @@ py_test(
     deps = [
         ":zai_lib",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
