@@ -792,30 +792,60 @@ fn dense_array_push_retains_mutation_argument_and_escape_guards() {
 #[test]
 fn dense_array_push_invalidates_cached_iteration_without_losing_callbacks() {
     let source = "const values = [];\nfunction read() { return values.map(() => Later); }\nconst before = read();\nvalues.push(1);\nconst after = read();\nclass Later {}\n";
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module_with_anon(
-                    "values",
-                    &[
-                        Member::new("values"),
-                        Member::new("read"),
-                        Member::new("before"),
-                        Member::new("after"),
-                    ],
-                    &["values.push(1);"],
-                ),
-                logical_module("later", &[Member::new("Later")]),
-            ],
-        ),
-        &["values", "later"],
-        &["eager_use"],
+    let fixture = run_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module_with_anon(
+                "values",
+                &[
+                    Member::new("values"),
+                    Member::new("read"),
+                    Member::new("before"),
+                    Member::new("after"),
+                ],
+                &["values.push(1);"],
+            ),
+            logical_module("later", &[Member::new("Later")]),
+        ],
+    ));
+    assert_preserved_entry_error(&fixture, "Cannot access 'Later' before initialization");
+    let graph = fixture.dependency_graph();
+    let owner = |binding: &str| {
+        graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|declared| declared.binding == binding)
+            })
+            .expect("source owner")
+            .statement_ordinal
+            .0
+    };
+    let assessment = fixture.candidate_relocation_assessment();
+    let order = assessment["emitted_order"]
+        .as_array()
+        .expect("emitted order");
+    let position = |ordinal: usize| {
+        order
+            .iter()
+            .position(|value| value.as_u64() == Some(ordinal as u64))
+            .expect("source owner in emitted order")
+    };
+    assert!(
+        position(owner("after")) < position(owner("Later")),
+        "the post-push callback must run before Later initializes: {assessment}"
     );
 
-    expect_atomic_conflict_rejection(
+    let source = "import { consume } from './peer.js';\nconst values = [() => Later];\nvalues.push(1);\nconsume(values);\nclass Later {}\n";
+    let peers = [(
+        "static/peer",
+        "export function consume(values) { return values[0](); }\n",
+    )];
+    let fixture = run_fixture(
         FixtureOpts::new(
-            "const values = [() => Later];\nvalues.push(1);\nconsume(values);\nclass Later {}\n",
+            source,
             vec![
                 logical_module_with_anon(
                     "values",
@@ -824,8 +854,8 @@ fn dense_array_push_invalidates_cached_iteration_without_losing_callbacks() {
                 ),
                 logical_module("later", &[Member::new("Later")]),
             ],
-        ),
-        &["values", "later"],
-        &["eager_use"],
+        )
+        .with_extra_chunks(&peers),
     );
+    assert_preserved_entry_error(&fixture, "Cannot access 'Later' before initialization");
 }
