@@ -4561,6 +4561,14 @@ spec:
       namespace: agentplane-staging
     - apiVersion: cert-manager.io/v1
       kind: Certificate
+      name: agentplane-egress-proxy
+      namespace: agentplane-staging
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: egress-rules-workload
+      namespace: agentplane-staging
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
       name: agentplane-egress-root-ca
       namespace: agentplane-staging
     - apiVersion: trust.cert-manager.io/v1alpha1

@@ -106,14 +106,7 @@ func (s *sidecar) dialWorkloadRoute(ctx context.Context, target string, security
 	stop := context.AfterFunc(ctx, func() { connection.Close() })
 	defer stop()
 	request := &http.Request{Method: http.MethodConnect, URL: &url.URL{Host: target}, Host: target, Header: make(http.Header)}
-	token := ""
-	if s.config.ProxyMode == "token" {
-		token, err = readToken(s.config.TokenFile)
-		if err != nil {
-			return nil, err
-		}
-	}
-	rewriteRequest(request, token, nil)
+	rewriteRequest(request, "", nil)
 	if err := request.WriteProxy(connection); err != nil {
 		return nil, err
 	}

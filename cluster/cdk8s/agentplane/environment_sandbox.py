@@ -52,6 +52,7 @@ from cluster.cdk8s.agentplane import (
     runner_gateway,
     sandbox_pod,
     telemetry,
+    workload_routes,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
@@ -211,7 +212,6 @@ class EnvironmentSandbox(Construct):
                 namespace=namespace,
                 runner_pod=template.spec["pod"],
                 settings_config_map=template.add_launcher_relay_settings(name="launcher-relay-egress-sidecar"),
-                runner_tls_enabled=env.runner_egress_mtls,
             )
             # VM claim storage is separate from the runner Pod's state claim. Copy it before
             # selecting the VM class so the Pod template keeps its own storage policy.
@@ -277,8 +277,6 @@ class EnvironmentSandbox(Construct):
         """Add the fleet runner network and platform-route fences."""
         namespace = self.env.namespace
         proxy_egress = [cilium.dns_egress(), egress.proxy(namespace).egress()]
-        if self.env.runner_egress_mtls:
-            proxy_egress.append(egress.proxy_mtls(namespace).egress())
         NetworkPolicy(
             self,
             "networkpolicy",
@@ -522,8 +520,11 @@ class EnvironmentSandboxTemplate(Construct):
             self.env,
             name=name,
             platform_routes=platform_routes.sidecar_routes(self.env.namespace, listen_host=bind_host),
+            workload_routes=workload_routes.rules_route(
+                self.env.namespace, origin=self.egress_api_service or egress.agent_api(self.env.namespace)
+            ),
             listen_address=(f"{bind_host}:{sandbox_pod.SIDECAR_LISTEN_PORT}" if listen_host is not None else None),
-            proxy_mode="mtls" if self.env.runner_egress_mtls else "token",
+            proxy_mode="mtls",
         )
 
     def _add_sandbox_template(self) -> dict[str, Any]:

@@ -169,7 +169,6 @@ def environment_chart(
         chart,
         "egress",
         env,
-        enable_svid_listener=env.runner_egress_mtls,
         database_url=egress_database_url,
         runners=environment_sandbox.pods(env.namespace),
         admin_grpc_callers=[app_account],

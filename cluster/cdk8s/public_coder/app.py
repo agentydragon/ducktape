@@ -340,7 +340,6 @@ def _deployment(scope: Construct) -> None:
                     ],
                     containers=[_openclaw_container(), public_coder_egress.relay_container(relay_settings)],
                     volumes=[
-                        public_coder_egress.token_volume(),
                         relay_settings.volume,
                         k8s.Volume(
                             name="data",

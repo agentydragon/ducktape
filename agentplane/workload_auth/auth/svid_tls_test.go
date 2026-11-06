@@ -35,8 +35,8 @@ func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
 				t.Fatal(err)
 			}
 			ca := transporttesting.NewCA(t)
-			serverConfig := ca.Issue(t, environment_runtime_transport.HistoryIngressURI)
-			serverTLS, err := serverConfig.WorkloadServerTLSConfig(environment_runtime_transport.HistoryIngressURI)
+			serverConfig := ca.Issue(t, environment_runtime_transport.EgressRulesURI)
+			serverTLS, err := serverConfig.WorkloadServerTLSConfig(environment_runtime_transport.EgressRulesURI)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -52,7 +52,7 @@ func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
 			t.Cleanup(server.Stop)
 			runtimeURI := leaf.URIs[0].String()
 			valid := ca.Issue(t, runtimeURI)
-			clientTLS, err := valid.ClientTLSConfig(environment_runtime_transport.HistoryIngressURI)
+			clientTLS, err := valid.ClientTLSConfig(environment_runtime_transport.EgressRulesURI)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -1555,7 +1555,7 @@ design that before removing the projected tokens. Consequence for `AGENT_PRINCIP
 the Pod's ServiceAccount stops being what authenticates an agent, and no agent is provisioned one by
 default. Costs that stand: a second authentication scheme in each agent-facing service during the
 migration, and the projected-token path kept for non-SVID workloads the proxy fronts (the public
-coder's OpenClaw). **Exit:** `SVID_EGRESS_HOP` and `SVID_PLATFORM_ROUTES` in
+coder's OpenClaw). **Exit:** `SVID_PLATFORM_ROUTES` in
 [section 14](#14-identity-and-kubernetes-accounts-cutover); the Gateway path is already covered.
 
 ## 7. Our own Sandbox resource: Sessions that outlive their Pod
@@ -2950,22 +2950,23 @@ old paths.
 ## 14. Identity and Kubernetes accounts cutover
 
 The implementation of [identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md)
-under the 2026-11-05 decisions. Everything but the last node lands as code that is off in staging
-and exercised in the k3s system tests, so each PR stays small; `IDENTITY_CUTOVER` is the one change
+under the 2026-11-05 decisions. The SVID authentication slice preserves Sandbox ServiceAccount
+subjects and has its own draft flip/operational hold. The later Identity/account changes stay off
+in staging and are exercised in k3s; `IDENTITY_CUTOVER` is the one change
 with downtime, per [`AGENTS.md`](../AGENTS.md) § Changes that can break staging. Stage edges are
 technical prerequisites; the fan-in to the system tests is a sequencing hold, not a permission to
 start them early.
 
 ```mermaid
 flowchart LR
-    SVID_EGRESS_HOP[In flight: SVID on the egress hop]
     IDENTITY_KINDS --> POLICY_GRANTS[Blocked: grants, role sets, managed SAs]
     IDENTITY_KINDS --> EGRESS_IDENTITY_RULES[Blocked: identity rules and impersonation]
     IDENTITY_KINDS --> SERVICES_IDENTITY_PRINCIPAL[Blocked: services act and record by identity]
     IDENTITY_KINDS --> SANDBOX_IDENTITY_SPEC[Blocked: a Sandbox names its identity]
     IDENTITY_KINDS --> IDENTITY_CATALOG[Blocked: catalog and RBAC in cdk8s]
     IDENTITY_KINDS --> APP_IDENTITIES_UI[Blocked: identities in the app]
-    SVID_EGRESS_HOP --> SVID_PLATFORM_ROUTES[Blocked: services verify SVIDs]
+    SVID_PLATFORM_ROUTES[In flight: services verify SVIDs]
+    NON_SANDBOX_PROXY_AUTH[Decision: non-Sandbox proxy authentication] -. operational merge hold .-> SVID_PLATFORM_ROUTES
     SVID_PLATFORM_ROUTES --> IDENTITY_SYSTEM_TESTS[Blocked: cutover acceptance scenarios]
     POLICY_GRANTS --> IDENTITY_SYSTEM_TESTS
     EGRESS_IDENTITY_RULES --> IDENTITY_SYSTEM_TESTS
@@ -2986,31 +2987,29 @@ the policy protobuf follow. No reader changes. **Exit:** the CRDs install on the
 admission rejects a Kubernetes rule in a `PolicySet` and a binding with no identity, and existing
 tests of untouched kinds still pass.
 
-### `SVID_EGRESS_HOP` — the sidecar and relay present the SVID to the proxy
+### `NON_SANDBOX_PROXY_AUTH` — separate caller authentication before merging the flip
 
-**In flight; Codex, 2026-11-05.** PR1 adds an optional client-certificate listener to the central
-proxy, verified with `environment_runtime_transport` against the trust-manager roots. It parses the
-Runtime SPIFFE URI, resolves the UID and credential ID against the live Sandbox and its current
-runner binding, then derives the existing policy subject from that Sandbox's own ServiceAccount
-namespace/name. This first slice does not read `spec.identity`, require an `Identity` kind or
-reference, read a Pod or ServiceAccount object, or trust a caller header. The listener and its
-Service, certificate, trust bundle, Cilium port and Sandbox-read permission are off by default.
-The existing token listener remains intact in this PR. Turning callers over to SVID traffic remains
-an operational hold until the sidecar and relay use this hop and the service-route/cutover work is
-ready; the additive listener alone does not switch staging callers. **Exit:** the egress test harness
-(`test_proxy.py`, real binaries, envtest) admits an SVID-authenticated request under the Sandbox
-ServiceAccount's rules, refuses stale, deleted or replaced Sandbox bindings, rejects a projected
-token bound to another Pod, and refuses a caller-supplied subject header.
+**Operator decision; 2026-11-05.** Keep the TLS-only hop flip draft and blocked while defining
+how Action command boxes, Haku UI and external OpenClaw instances authenticate without a
+Sandbox-issued SVID. An OpenClaw instance may have its own SVID; issuance, attestation and policy
+subject resolution need an explicit design. Preserve the first-slice Sandbox ServiceAccount
+subject and do not introduce the Identity/account cutover here. **Exit:** the chosen non-Sandbox
+contract is implemented and exercised before the staging flip merges. This is an operational hold,
+not a prerequisite for drafting the five service-owned SVID boundaries.
 
 ### `SVID_PLATFORM_ROUTES` — first-party services verify SVIDs themselves
 
-**Blocked on `SVID_EGRESS_HOP`.** Decided 2026-11-05: the proxy tunnels the TLS connection through
+**In flight; Codex, 2026-11-05.** The hop implementation is complete and its finished node is
+removed; validation and rollback live in the egress docs and PRs. The Rules API is the first
+service-owned SVID boundary in the flip. The five service PRs remain, with the whole stack
+operationally held by `NON_SANDBOX_PROXY_AUTH`. Decided 2026-11-05: the proxy tunnels the TLS connection through
 and each of Notification, Dispatcher, runner ingress, the Action Service and LLM ingress verifies
 the client certificate with the shared transport package and resolves the identity through the
 live Sandbox; the proxy never asserts an identity. Each service drops its Pod-bound projected-token
 path for sandbox callers and keeps its own authorization as the whole gate; `authenticatedWorkloadToken`
 and the per-audience `projectedWorkloadToken` entries go. The central sampler's zero-environment
-path stays on delegation with an identity reference (`SERVICES_IDENTITY_PRINCIPAL`). **Exit:** one
+path keeps its existing delegated ServiceAccount authentication and holds no SVID; changing its
+principal belongs to the later `SERVICES_IDENTITY_PRINCIPAL` cutover. **Exit:** one
 platform route per service authenticates an SVID end to end in the k3s stack, and a forged or
 expired leaf is refused before any handler runs.
 

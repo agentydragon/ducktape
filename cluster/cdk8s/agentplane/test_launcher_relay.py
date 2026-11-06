@@ -80,12 +80,7 @@ def policy() -> dict:
 def tls_policy() -> dict:
     chart = Chart(App(), "test-tls")
     LauncherRelayPolicy(
-        chart,
-        "policy",
-        namespace=NAMESPACE,
-        runner_pod=deepcopy(RUNNER_POD),
-        settings_config_map=RELAY_SETTINGS,
-        runner_tls_enabled=True,
+        chart, "policy", namespace=NAMESPACE, runner_pod=deepcopy(RUNNER_POD), settings_config_map=RELAY_SETTINGS
     )
     rendered: dict = Cdk8sTesting.synth(chart)[0]
     del rendered["spec"]["webhookConfiguration"]

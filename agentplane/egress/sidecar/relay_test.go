@@ -348,19 +348,19 @@ func TestSidecarPlainRequestReplacesProxyAuthorization(t *testing.T) {
 	}
 }
 
-func TestMTLSHopReplacesCallerHeaderAndPreservesCompatibilityBearer(t *testing.T) {
+func TestMTLSHopRemovesCallerHopBearerAndPreservesDestinationTokens(t *testing.T) {
 	request, err := http.ReadRequest(bufio.NewReader(strings.NewReader(
 		"GET http://upstream.test/path HTTP/1.1\r\nProxy-Authorization: Bearer workload-forgery\r\n\r\n",
 	)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	rewriteRequest(request, "destination-context-token", map[string]string{testAudience: "audience-token"})
-	if got := request.Header.Values("Proxy-Authorization"); len(got) != 1 || got[0] != "Bearer destination-context-token" {
-		t.Fatalf("mTLS compatibility bearer = %q", got)
+	rewriteRequest(request, "", map[string]string{testAudience: "audience-token"})
+	if got := request.Header.Values("Proxy-Authorization"); len(got) != 0 {
+		t.Fatalf("mTLS hop retained a bearer = %q", got)
 	}
 	if got := request.Header.Values(projectedTokenHeader); len(got) != 1 || got[0] != testAudience+" audience-token" {
-		t.Fatalf("mTLS request lost destination audience identity: %q", got)
+		t.Fatalf("mTLS request lost its destination token: %q", got)
 	}
 }
 
