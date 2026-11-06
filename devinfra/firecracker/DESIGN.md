@@ -2,6 +2,12 @@
 
 Warm Firecracker microVMs on the home cluster for Claude Code development.
 
+> **Status: parked design.** The deployment is archived and unwired from Flux.
+> The provisioner references a missing `#fc-dev-rootfs` output; guest boot and
+> restore integration remain acceptance gates in the [revival plan](TODO.md).
+> Architecture, resource figures and timing goals below describe the proposal,
+> not a verified running deployment.
+
 ## Problem
 
 Claude Code web sessions run inside Anthropic's Firecracker VMs with:
@@ -155,155 +161,69 @@ base LV. Re-run when Nix config changes. The rootfs updates infrequently
 
 ### Guest init: process_api via initramfs
 
-Anthropic's `process_api` is a ~3.3MB static Rust binary that serves as
-PID 1 in Claude Code web Firecracker VMs. Full reverse-engineered source
-(5,752 lines, 10 modules) at <devinfra/claude/web_env/re/process_api/>.
+The proposal uses Anthropic's captured ~3.3MB static `process_api` binary as
+guest PID 1. See the [RE record](../claude/web_env/re/process_api/README.md)
+for its captured identity, annotated reconstruction, API and limitations.
+Reconstruction compilation does not establish runtime parity or provide a
+reproducible replacement for the captured proprietary binary.
 
-We use it as our guest init, following Anthropic's architecture:
+Boot supplies the kernel, an ~5MB cpio initramfs containing `/init`, and an
+~2–4GB NixOS ext4 rootfs exposed as `/dev/vda`.
 
-```
-VM pod entrypoint (host side)
-  │
-  │ Firecracker API:
-  │   PUT /boot-source  {kernel, initrd_path: initramfs.cpio}
-  │   PUT /drives/rootfs {path_on_host: nixos-rootfs.ext4}  → /dev/vda
-  │   PUT /actions       {InstanceStart}
-  │
-  ▼
-┌─ Firecracker guest ────────────────────────────────┐
-│                                                     │
-│  Kernel boots → unpacks initramfs to tmpfs          │
-│  Runs /init (process_api --firecracker-init)        │
-│                                                     │
-│  process_api:                                       │
-│    1. mount /proc, /sys, /dev, /dev/pts, cgroup2    │
-│    2. configure networking (IP, gateway, DNS)       │
-│    3. mount /dev/vda (ext4) → /mnt                  │
-│    4. pivot_root /mnt /mnt/oldroot                  │
-│    5. umount /oldroot (initramfs freed)             │
-│    6. start WebSocket listener (vsock or TCP)       │
-│    7. start HTTP control server                     │
-│                                                     │
-│  Guest is now running NixOS from /dev/vda with      │
-│  process_api as PID 1 managing processes via WS.    │
-│                                                     │
-│  /init in /proc/1/exe → points to initramfs path    │
-│  (filesystem gone after pivot_root — invisible)     │
-└─────────────────────────────────────────────────────┘
-```
+The initramfs is baked into the VM pod OCI image; rootfs delivery remains an
+open design decision, with the PVC proposal described under Storage. The intended
+init sequence is:
 
-**Two filesystem images:**
+1. Kernel unpacks the initramfs and runs `process_api --firecracker-init`.
+2. Init mounts proc/sys/dev/devpts/cgroup2 and configures IP, gateway and DNS.
+3. Init mounts `/dev/vda` at `/mnt`, pivots root, and unmounts the old root,
+   freeing the initramfs. `/proc/1/exe` can retain its now-invisible init path.
+4. Init starts the process WebSocket listener and HTTP control server.
 
-1. **Initramfs** (~5MB cpio): contains just `process_api` as `/init`.
-   Built as a cpio archive, baked into the VM pod OCI image. The kernel
-   unpacks it into tmpfs at boot. After pivot_root the tmpfs is freed.
-
-2. **NixOS rootfs** (~2-4GB ext4): full dev environment. Exposed to
-   guest as `/dev/vda` via Firecracker's drive API. Delivery mechanism
-   is an open decision (see Storage section).
-
-**What process_api provides:**
-
-- **Process execution over WebSocket**: spawn processes, forward I/O as
-  binary frames, reattachable sessions that survive disconnects
-- **vsock + TCP + UDS transports**: same protocol over any transport
-- **HTTP control server**: `/health`, `/shutdown`, `/fs_freeze`,
-  `/fs_thaw`, `/mount_root` (snapstart — apply per-session config on
-  snapshot restore)
-- **Cgroup v1/v2 resource limits**: per-process memory/OOM monitoring
-- **JWT auth**: Ed25519-verified tokens (optional — accepts all if no key)
-
-**Trade-off**: proprietary binary we can't rebuild. If a Firecracker or
-kernel update breaks compatibility, fallback is reimplementing the subset
-we need (vsock readiness + command exec + fs_freeze/thaw) as a custom
-agent. The RE source serves as the spec.
-
-**SSH remains available** in the NixOS rootfs for interactive access from
-Claude Code sessions. process_api handles the machine-to-machine control
-plane (readiness, process exec, snapshot coordination).
+The intended binary supports TCP, vsock and UDS, cgroup v1/v2 limits and OOM
+monitoring, plus `/health`, `/shutdown`, `/fs_freeze`, `/fs_thaw` and
+`/mount_root` for per-session configuration after restore. If kernel or
+Firecracker compatibility breaks, the fallback is a custom agent implementing
+vsock readiness, command execution and filesystem freeze/thaw. The RE record
+guides that fallback; boot compatibility remains an acceptance gate.
 
 ### Pod-per-VM
 
-Each Firecracker VM runs as its own k8s pod. The pod is infrastructure-only
-(Firecracker process + networking + port proxies). The manager service is
-the VMM brain — it creates pods, drives boot/restore via the FC API proxy,
-and tracks VM state.
+The manager owns PVC/pod creation and VM configuration. The pod only sets up
+networking, starts the Firecracker process, starts proxies, and waits for exit.
+See [entrypoint.py](vm_pod/entrypoint.py), [service.py](manager/service.py),
+[clients.py](manager/clients.py) and [k8s_client.py](manager/k8s_client.py).
 
-```
-Claude Code session (Anthropic Firecracker VM)
-  │
-  │ 1. POST /vms → manager creates PVC (cloned from base) + pod
-  │ 2. POST /vms/{id}/boot → manager configures FC via API proxy
-  │ 3. Manager returns pod IP + ports
-  │ 4. Claude Code connects to process_api WS on pod_ip:2024
-  │
-  ├──── Manager API ──────────────────────────────────┐
-  │     POST /vms, POST /vms/{id}/boot                │
-  │     POST /vms/{id}/snapshot, POST /vms/{id}/restore│
-  │     DELETE /vms/{id}, GET /vms                     │
-  └───────────────────────────────────────────────────┘
-  │
-  │ Manager drives boot/restore via FC API proxy (:2026)
-  │ Manager waits for guest /health via control proxy (:2025)
-  │ Claude Code connects to WS proxy (:2024)
-  ▼
-┌─ VM Pod (infrastructure only) ──────────────────────┐
-│ entrypoint:                                          │
-│   1. Create TAP + NAT (pyroute2 + nft)              │
-│   2. Start Firecracker process (no VM config)       │
-│   3. Proxy ports onto pod network:                  │
-│        :2024 → guest:2024 (process_api WS)          │
-│        :2025 → guest:2025 (process_api HTTP)        │
-│        :2026 → FC Unix socket (management API)      │
-│   4. Block until Firecracker exits                  │
-│                                                      │
-│ ┌─ Firecracker VM ─────────────────────────────────┐│
-│ │ process_api (PID 1, from initramfs)              ││
-│ │   ├─ WebSocket :2024 — process execution         ││
-│ │   ├─ HTTP :2025 — /health, /shutdown, /fs_freeze ││
-│ │   └─ pivot_root to NixOS on /dev/vda             ││
-│ │                                                   ││
-│ │ NixOS guest (sshd for interactive access)        ││
-│ │ Bazel + Python 3.14 + JDK 21 + Git              ││
-│ │ eth0 → TAP → pod eth0 → internet                ││
-│ └───────────────────────────────────────────────────┘│
-│                                                      │
-│ /dev/kvm (via device plugin)                         │
-│ NET_ADMIN (for TAP + NAT)                            │
-│ PVC: rootfs (cloned from base by manager)            │
-│ emptyDir: /work (snapshots, runtime)                 │
-└──────────────────────────────────────────────────────┘
-```
+| Pod port | Destination             | Purpose                                |
+| -------- | ----------------------- | -------------------------------------- |
+| 2024     | Guest TCP 2024          | process_api WebSocket                  |
+| 2025     | Guest TCP 2025          | process_api HTTP control and readiness |
+| 2026     | Firecracker Unix socket | Host management API                    |
+
+`POST /vms` creates rootfs/work PVCs and a pod; boot remains a separate
+`POST /vms/{id}/boot`. The manager configures boot source, rootfs drive,
+machine resources and virtio-net through port 2026, starts the instance and
+waits for guest `/health` on 2025. List/get/delete routes and the snapshot
+route are defined in the service; restore is `POST /snapshots/{name}/restore`.
+The work volume is a filesystem PVC. Restore currently creates a pod
+but does not wait for Running or invoke `restore_vm`; the reconciler remains
+in the [revival plan](TODO.md).
 
 ### Command execution
 
-Claude Code drives the VM via **process_api's WebSocket API** (port 2024),
-the same protocol Anthropic uses in their own Claude Code web VMs:
-
-1. Manager creates VM pod, waits for process_api `/health` to respond
-2. Manager returns WebSocket connection info (pod IP + port) to caller
-3. Claude Code connects to process_api WebSocket directly
-4. Sends `CreateProcess` with command, args, env, uid/gid, timeout
-5. process_api spawns the process, streams stdout/stderr as binary frames
-6. Client sends stdin, signals (SIGINT, SIGTERM)
-7. Sessions are **reattachable** — if the WebSocket disconnects, the
-   process keeps running. Client reconnects with `ProcessConnection`.
-
-SSH remains available in the NixOS guest for interactive/ad-hoc access,
-but the primary machine-to-machine interface is the WebSocket API.
+The client connects to guest WebSocket port 2024 and sends `CreateProcess`
+with command, args, env, uid/gid and timeout. Binary frames carry stdout/stderr;
+the client sends stdin and signals such as SIGINT/SIGTERM. Processes survive
+disconnects and can be reattached with `ProcessConnection`. SSH in the proposed
+NixOS rootfs remains the interactive interface; WebSocket is the control plane.
 
 ### Networking
 
-Each VM pod gets a CNI-assigned IP. Inside the pod, the entrypoint:
-
-1. Creates a TAP device
-2. NATs via nftables MASQUERADE (pyroute2 for TAP, `nft` for NAT)
-3. Firecracker attaches the TAP as a virtio-net device
-4. Guest gets an IP on the TAP subnet, routes through pod's `eth0`
-5. process_api listens on TCP :2024 (WebSocket) and :2025 (HTTP control)
-
-Claude Code sessions reach VMs via `kubectl port-forward` to the VM pod
-(port 2024 for WebSocket, port 22 for SSH).
+Each VM pod gets a CNI IP. Its entrypoint creates a TAP device using pyroute2
+and nftables MASQUERADE; virtio-net connects the guest subnet through the
+pod's eth0. Clients can use `kubectl port-forward` to reach WebSocket port
+2024 or SSH port 22. The pod needs `/dev/kvm` and `NET_ADMIN`, without full
+privilege; hardware isolation uses a separate guest kernel.
 
 ### Authentication
 
@@ -318,19 +238,23 @@ Can be hardened later by injecting an auth key via the manager config.
 ### Snapshot/Restore
 
 Firecracker's snapshot API (`PUT /snapshot/create`, `PUT /snapshot/load`)
-captures full VM state (memory + vCPU registers + device state). Restore
-uses `userfaultfd` lazy memory loading — pages are demand-faulted from the
-snapshot file, achieving ~28ms restore time.
+captures full VM state (memory + vCPU registers + device state). The ~28ms
+restore figure comes from the ForgeVM prior art below; it is a target, not a
+measurement of this prototype. The prototype client selects a `File` memory
+backend, not a `userfaultfd` backend. The service creates restore pods but does
+not yet drive `restore_vm` (see [clients.py](manager/clients.py),
+[snapshots.py](manager/snapshots.py) and [service.py](manager/service.py)).
 
-Workflow:
+Intended workflow:
 
 1. Boot VM, clone repo, `bazel query 'tests(//...)'` (warms Skyframe)
 2. Pause VM: `PUT /vm` with `state: Paused`
 3. Snapshot: `PUT /snapshot/create` → memory + state files on PVC
-4. Restore: new pod starts Firecracker with `--restore-from-snapshot`
+4. Restore: configure the new Firecracker process through `PUT /snapshot/load`
 5. Fixups: re-seed entropy, reconnect SSH, `git pull`
 
-Post-restore, Bazel queries take ~0.3s (warm Skyframe) instead of ~15s.
+The warm-Skyframe goal is ~0.3s per query after restore instead of ~15s cold;
+local end-to-end validation remains open.
 
 ### Gotchas on Snapshot Restore
 
