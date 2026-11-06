@@ -510,8 +510,11 @@ fn array_index_read_uses_literal_element_snapshot_after_binding_reassignment() {
             vec![
                 logical_module("left", &[Member::new("left")]),
                 logical_module("right", &[Member::new("right")]),
-                logical_module("callback", &[Member::new("callback")]),
-                logical_module("callbacks", &[Member::new("callbacks")]),
+                logical_module_with_anon(
+                    "callbacks",
+                    &[Member::new("callback"), Member::new("callbacks")],
+                    &["callback = () => right[0];"],
+                ),
                 logical_module("selected", &[Member::new("selected")]),
                 logical_module("result", &[Member::new("result")]),
                 logical_module_with_anon("observe", &[], &["console.log(result);"]),
