@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "inspected_source_devel_commit": "7fc04701455bc2c47fd6961b0140dce82a94d609",
+  "inspected_source_devel_commit": "ed29e38cdbc91bc3b0ccc41e9d8a36546446aebc",
   "prior_report_commit": "1ead186a30",
-  "measurement_cutoff_scope": "Envelope across retained historical evidence, a CI-role mainline execution sample updated 2026-11-04T00:55:00Z to 2026-11-06T00:55:29Z, and two Props probes completed by 2026-11-06T01:09:47Z. No new PR-feedback census.",
+  "measurement_cutoff_scope": "Implementation follow-up, bounded ordinary-CI action snapshot, two same-input Optimize profiles and a controlled registry-state prototype; no new fleet PR-feedback census. Earlier populations retain their original windows.",
   "github": {
     "repository": "agentydragon/ducktape",
     "source_commit": "59c1027f5700ae10df4d211e33269e1874935916",
@@ -30335,5 +30335,1591 @@
       "limit": "No macro expansion, configured graph or runtime fixture demand census; not a repo-wide startup-cost estimate."
     },
     "publication_privacy": "Only reviewed aggregate measurements, public source/test labels and invocation links; no credentials, raw logs, worker IDs, service identities or cache blob addresses."
+  },
+  "image_family_followup_2026_11_06": {
+    "inspected_source_devel_commit": "ed29e38cdbc91bc3b0ccc41e9d8a36546446aebc",
+    "measurement_scope": "Implementation follow-up, bounded ordinary-CI action snapshot, two same-input Optimize profiles and a controlled registry-state prototype; no new fleet PR-feedback census.",
+    "implementations": [
+      {
+        "pr": 14514,
+        "state": "MERGED",
+        "merge_commit": "aefa57a9a2a06d7731fdabadea12f22dd2d08083",
+        "scope": "10 Props container E2E image consumers"
+      },
+      {
+        "pr": 14516,
+        "state": "MERGED",
+        "merge_commit": "ab388131bb35c403f62372aef83720aba7b59a99",
+        "scope": "12 original stock PostgreSQL/Ryuk consumers; native bridge retains separate effective-platform properties"
+      },
+      {
+        "pr": 14524,
+        "state": "MERGED",
+        "merge_commit": "896f539da095fa5e9bd73e03f390b91165a32635",
+        "head_commit": "c380e6cfd87214ac1b465f285953bafb9d576463",
+        "scope": "4 additional Props stock PostgreSQL consumers"
+      }
+    ],
+    "normal_ci": {
+      "workflow": "CI",
+      "created_window_utc": [
+        "2026-11-06T01:57:22Z",
+        "2026-11-06T02:25:24Z"
+      ],
+      "cohort_runs": 21,
+      "initial_invocation_status_counts": {
+        "PARTIAL_INVOCATION_STATUS": 3,
+        "absent": 5,
+        "COMPLETE_INVOCATION_STATUS": 13
+      },
+      "action_snapshot_boundary": "Initial GetExecution responses were retained. Three partial statuses were rechecked, but execution lists were not refreshed after completion; this is not a final census of every action in all 21 runs.",
+      "groups": {
+        "postgres_pr14516": {
+          "new_completed_actions": 1,
+          "no_infrastructure_imports": 1,
+          "restore_lineage_recorded": 1,
+          "passed_cases": 9,
+          "process_seconds_median": 22.559411
+        },
+        "props_container_e2e": {
+          "new_completed_actions": 10,
+          "no_infrastructure_imports": 9,
+          "restore_lineage_recorded": 9,
+          "passed_cases": 13,
+          "process_seconds_median": 91.8120385
+        },
+        "props_postgres_pr14524": {
+          "new_completed_actions": 4,
+          "no_infrastructure_imports": 0,
+          "restore_lineage_recorded": 0,
+          "passed_cases": 23,
+          "process_seconds_median": 40.638163
+        }
+      },
+      "total_new_completed_actions": 15,
+      "passed_cases": 45,
+      "failed_cases": 0,
+      "skipped_cases": 0,
+      "cross_target_lineage": [
+        {
+          "target": "//props/agents/grader:test_e2e_clustering",
+          "invocation": "8ca1606d-6baa-5d25-b621-ad7ce80116ea",
+          "snapshot_origin_target": "//props/agents/grader:test_e2e_sleep_wake",
+          "snapshot_origin_invocation": "b8ef7b95-e8a5-584a-8bd9-cebfdc751b06"
+        }
+      ],
+      "limits": "Three invocations supply the fifteen selected actions. No warm-rate or fleet/PR-feedback savings inference; other enrolled targets had no selected NEW completed execution. Missing lineage is unknown; save-intent is not completed publication."
+    },
+    "normal_ci_selected_actions": [
+      {
+        "target": "//devinfra/claude/session_export:test_web",
+        "family": "postgres_pr14516",
+        "invocation": "99d11c51-65ca-58e6-a4f4-76dda36792e9",
+        "github_run_head": "4f3b640a90ffe5be5df664f4a19761ec38069d37",
+        "new_completed_physical_execution": true,
+        "process_seconds": 22.559411,
+        "queue_seconds": 0.059192,
+        "input_fetch_seconds": 0.238446,
+        "output_upload_seconds": 0.08772,
+        "cpu_seconds": 18.373187,
+        "recycling_key": "postgres-images-v1-sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280-sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
+        "remote_snapshot_permission": "unset",
+        "forced_save_policy": "unset",
+        "restore_lineage": "recorded",
+        "snapshot_origin_invocation": "736a74c9-e4f1-5a26-8be1-83e6680ef89e",
+        "snapshot_origin_target": "//devinfra/claude/session_export:test_web",
+        "cross_target_lineage": false,
+        "artifacts": {
+          "cases": 9,
+          "failed": 0,
+          "skipped": 0,
+          "container_setup_log_imports": 0,
+          "container_setup_log_import_seconds": 0,
+          "postgres_ready_seconds": [
+            3.8
+          ]
+        }
+      },
+      {
+        "target": "//props/agents/critic:test_critic_sql_integration",
+        "family": "props_postgres_pr14524",
+        "invocation": "69dcd2d3-e5d6-5761-8863-0e6172258dd1",
+        "github_run_head": "c380e6cfd87214ac1b465f285953bafb9d576463",
+        "new_completed_physical_execution": true,
+        "process_seconds": 40.899501,
+        "queue_seconds": 0.060714,
+        "input_fetch_seconds": 0.922416,
+        "output_upload_seconds": 0.092255,
+        "cpu_seconds": 82.506117,
+        "recycling_key": "postgres-images-v1-sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280-sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
+        "remote_snapshot_permission": "unset",
+        "forced_save_policy": "unset",
+        "restore_lineage": "unknown",
+        "snapshot_origin_invocation": null,
+        "snapshot_origin_target": null,
+        "cross_target_lineage": false,
+        "artifacts": {
+          "cases": 4,
+          "failed": 0,
+          "skipped": 0,
+          "container_setup_log_imports": 2,
+          "container_setup_log_import_seconds": 19.5,
+          "postgres_ready_seconds": [
+            3.1
+          ],
+          "docker_load_spans": 2
+        }
+      },
+      {
+        "target": "//props/agents/critic:test_e2e",
+        "family": "props_container_e2e",
+        "invocation": "8ca1606d-6baa-5d25-b621-ad7ce80116ea",
+        "github_run_head": "c9cf0634234621b8f3c682c15e3de3180947b1d8",
+        "new_completed_physical_execution": true,
+        "process_seconds": 96.19756,
+        "queue_seconds": 0.010698,
+        "input_fetch_seconds": 0.316352,
+        "output_upload_seconds": 0.029604,
+        "cpu_seconds": 124.531853,
+        "recycling_key": "props-e2e-images-v1-sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280-sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33-sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
+        "remote_snapshot_permission": "unset",
+        "forced_save_policy": "unset",
+        "restore_lineage": "recorded",
+        "snapshot_origin_invocation": "b8ef7b95-e8a5-584a-8bd9-cebfdc751b06",
+        "snapshot_origin_target": "//props/agents/critic:test_e2e",
+        "cross_target_lineage": false,
+        "artifacts": {
+          "cases": 3,
+          "failed": 0,
+          "skipped": 0,
+          "container_setup_log_imports": 0,
+          "container_setup_log_import_seconds": 0,
+          "postgres_ready_seconds": [
+            4.1
+          ],
+          "docker_load_spans": 0
+        }
+      },
+      {
+        "target": "//props/agents/critic:test_reported_issues_constraints",
+        "family": "props_postgres_pr14524",
+        "invocation": "69dcd2d3-e5d6-5761-8863-0e6172258dd1",
+        "github_run_head": "c380e6cfd87214ac1b465f285953bafb9d576463",
+        "new_completed_physical_execution": true,
+        "process_seconds": 73.922593,
+        "queue_seconds": 0.09517,
+        "input_fetch_seconds": 0.267393,
+        "output_upload_seconds": 0.091135,
+        "cpu_seconds": 129.617379,
+        "recycling_key": "postgres-images-v1-sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280-sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
+        "remote_snapshot_permission": "unset",
+        "forced_save_policy": "unset",
+        "restore_lineage": "unknown",
+        "snapshot_origin_invocation": null,
+        "snapshot_origin_target": null,
+        "cross_target_lineage": false,
+        "artifacts": {
+          "cases": 6,
+          "failed": 0,
+          "skipped": 0,
+          "container_setup_log_imports": 2,
+          "container_setup_log_import_seconds": 34.9,
+          "postgres_ready_seconds": [
+            6.3
+          ],
+          "docker_load_spans": 2
+        }
+      },
+      {
+        "target": "//props/agents/critic_dev/improve:test_e2e",
+        "family": "props_container_e2e",
+        "invocation": "8ca1606d-6baa-5d25-b621-ad7ce80116ea",
+        "github_run_head": "c9cf0634234621b8f3c682c15e3de3180947b1d8",
+        "new_completed_physical_execution": true,
+        "process_seconds": 74.158305,
+        "queue_seconds": 0.011763,
+        "input_fetch_seconds": 0.256703,
+        "output_upload_seconds": 0.021397,
+        "cpu_seconds": 113.343698,
+        "recycling_key": "props-e2e-images-v1-sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280-sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33-sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
+        "remote_snapshot_permission": "unset",
+        "forced_save_policy": "unset",
+        "restore_lineage": "recorded",
+        "snapshot_origin_invocation": "b8ef7b95-e8a5-584a-8bd9-cebfdc751b06",
+        "snapshot_origin_target": "//props/agents/critic_dev/improve:test_e2e",
+        "cross_target_lineage": false,
+        "artifacts": {
+          "cases": 1,
+          "failed": 0,
+          "skipped": 0,
+          "container_setup_log_imports": 0,
+          "container_setup_log_import_seconds": 0,
+          "postgres_ready_seconds": [
+            3.6
+          ],
+          "docker_load_spans": 0
+        }
+      },
+      {
+        "target": "//props/agents/critic_dev/optimize:test_e2e",
+        "family": "props_container_e2e",
+        "invocation": "8ca1606d-6baa-5d25-b621-ad7ce80116ea",
+        "github_run_head": "c9cf0634234621b8f3c682c15e3de3180947b1d8",
+        "new_completed_physical_execution": true,
+        "process_seconds": 98.358074,
+        "queue_seconds": 0.064862,
+        "input_fetch_seconds": 0.274482,
+        "output_upload_seconds": 0.173436,
+        "cpu_seconds": 197.962244,
+        "recycling_key": "props-e2e-images-v1-sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280-sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33-sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
+        "remote_snapshot_permission": "unset",
+        "forced_save_policy": "unset",
+        "restore_lineage": "recorded",
+        "snapshot_origin_invocation": "b8ef7b95-e8a5-584a-8bd9-cebfdc751b06",
+        "snapshot_origin_target": "//props/agents/critic_dev/optimize:test_e2e",
+        "cross_target_lineage": false,
+        "artifacts": {
+          "cases": 1,
+          "failed": 0,
+          "skipped": 0,
+          "container_setup_log_imports": 0,
+          "container_setup_log_import_seconds": 0,
+          "postgres_ready_seconds": [
+            3.9
+          ],
+          "docker_load_spans": 0
+        }
+      },
+      {
+        "target": "//props/agents/critic_dev/recipes:test_build_critic_e2e",
+        "family": "props_container_e2e",
+        "invocation": "8ca1606d-6baa-5d25-b621-ad7ce80116ea",
+        "github_run_head": "c9cf0634234621b8f3c682c15e3de3180947b1d8",
+        "new_completed_physical_execution": true,
+        "process_seconds": 67.372748,
+        "queue_seconds": 0.012663,
+        "input_fetch_seconds": 0.21902,
+        "output_upload_seconds": 0.021768,
+        "cpu_seconds": 121.366447,
+        "recycling_key": "props-e2e-images-v1-sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280-sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33-sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
+        "remote_snapshot_permission": "unset",
+        "forced_save_policy": "unset",
+        "restore_lineage": "recorded",
+        "snapshot_origin_invocation": "b8ef7b95-e8a5-584a-8bd9-cebfdc751b06",
+        "snapshot_origin_target": "//props/agents/critic_dev/recipes:test_build_critic_e2e",
+        "cross_target_lineage": false,
+        "artifacts": {
+          "cases": 1,
+          "failed": 0,
+          "skipped": 0,
+          "container_setup_log_imports": 0,
+          "container_setup_log_import_seconds": 0,
+          "postgres_ready_seconds": [
+            3.0
+          ],
+          "docker_load_spans": 0
+        }
+      },
+      {
+        "target": "//props/agents/critic_dev/recipes:test_recipes",
+        "family": "props_container_e2e",
+        "invocation": "8ca1606d-6baa-5d25-b621-ad7ce80116ea",
+        "github_run_head": "c9cf0634234621b8f3c682c15e3de3180947b1d8",
+        "new_completed_physical_execution": true,
+        "process_seconds": 142.709421,
+        "queue_seconds": 0.061209,
+        "input_fetch_seconds": 0.477499,
+        "output_upload_seconds": 0.164299,
+        "cpu_seconds": 249.490397,
+        "recycling_key": "props-e2e-images-v1-sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280-sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33-sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
+        "remote_snapshot_permission": "unset",
+        "forced_save_policy": "unset",
+        "restore_lineage": "recorded",
+        "snapshot_origin_invocation": "b8ef7b95-e8a5-584a-8bd9-cebfdc751b06",
+        "snapshot_origin_target": "//props/agents/critic_dev/recipes:test_recipes",
+        "cross_target_lineage": false,
+        "artifacts": {
+          "cases": 1,
+          "failed": 0,
+          "skipped": 0,
+          "container_setup_log_imports": 0,
+          "container_setup_log_import_seconds": 0,
+          "postgres_ready_seconds": [
+            6.7
+          ],
+          "docker_load_spans": 0
+        }
+      },
+      {
+        "target": "//props/agents/critic_dev:test_e2e",
+        "family": "props_container_e2e",
+        "invocation": "8ca1606d-6baa-5d25-b621-ad7ce80116ea",
+        "github_run_head": "c9cf0634234621b8f3c682c15e3de3180947b1d8",
+        "new_completed_physical_execution": true,
+        "process_seconds": 234.589549,
+        "queue_seconds": 0.05899,
+        "input_fetch_seconds": 1.995383,
+        "output_upload_seconds": 0.174075,
+        "cpu_seconds": 487.097507,
+        "recycling_key": "props-e2e-images-v1-sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280-sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33-sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
+        "remote_snapshot_permission": "unset",
+        "forced_save_policy": "unset",
+        "restore_lineage": "unknown",
+        "snapshot_origin_invocation": null,
+        "snapshot_origin_target": null,
+        "cross_target_lineage": false,
+        "artifacts": {
+          "cases": 2,
+          "failed": 0,
+          "skipped": 0,
+          "container_setup_log_imports": 2,
+          "container_setup_log_import_seconds": 37.6,
+          "postgres_ready_seconds": [
+            6.5
+          ],
+          "docker_load_spans": 3
+        }
+      },
+      {
+        "target": "//props/agents/grader:test_e2e",
+        "family": "props_container_e2e",
+        "invocation": "8ca1606d-6baa-5d25-b621-ad7ce80116ea",
+        "github_run_head": "c9cf0634234621b8f3c682c15e3de3180947b1d8",
+        "new_completed_physical_execution": true,
+        "process_seconds": 57.682236,
+        "queue_seconds": 0.05866,
+        "input_fetch_seconds": 0.194269,
+        "output_upload_seconds": 0.115545,
+        "cpu_seconds": 86.114557,
+        "recycling_key": "props-e2e-images-v1-sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280-sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33-sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
+        "remote_snapshot_permission": "unset",
+        "forced_save_policy": "unset",
+        "restore_lineage": "recorded",
+        "snapshot_origin_invocation": "b8ef7b95-e8a5-584a-8bd9-cebfdc751b06",
+        "snapshot_origin_target": "//props/agents/grader:test_e2e",
+        "cross_target_lineage": false,
+        "artifacts": {
+          "cases": 1,
+          "failed": 0,
+          "skipped": 0,
+          "container_setup_log_imports": 0,
+          "container_setup_log_import_seconds": 0,
+          "postgres_ready_seconds": [
+            3.7
+          ],
+          "docker_load_spans": 0
+        }
+      },
+      {
+        "target": "//props/agents/grader:test_e2e_clustering",
+        "family": "props_container_e2e",
+        "invocation": "8ca1606d-6baa-5d25-b621-ad7ce80116ea",
+        "github_run_head": "c9cf0634234621b8f3c682c15e3de3180947b1d8",
+        "new_completed_physical_execution": true,
+        "process_seconds": 92.220817,
+        "queue_seconds": 0.06401,
+        "input_fetch_seconds": 0.285096,
+        "output_upload_seconds": 0.087491,
+        "cpu_seconds": 119.364959,
+        "recycling_key": "props-e2e-images-v1-sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280-sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33-sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
+        "remote_snapshot_permission": "unset",
+        "forced_save_policy": "unset",
+        "restore_lineage": "recorded",
+        "snapshot_origin_invocation": "b8ef7b95-e8a5-584a-8bd9-cebfdc751b06",
+        "snapshot_origin_target": "//props/agents/grader:test_e2e_sleep_wake",
+        "cross_target_lineage": true,
+        "artifacts": {
+          "cases": 1,
+          "failed": 0,
+          "skipped": 0,
+          "container_setup_log_imports": 0,
+          "container_setup_log_import_seconds": 0,
+          "postgres_ready_seconds": [
+            5.9
+          ],
+          "docker_load_spans": 0
+        }
+      },
+      {
+        "target": "//props/agents/grader:test_e2e_report_failure",
+        "family": "props_container_e2e",
+        "invocation": "8ca1606d-6baa-5d25-b621-ad7ce80116ea",
+        "github_run_head": "c9cf0634234621b8f3c682c15e3de3180947b1d8",
+        "new_completed_physical_execution": true,
+        "process_seconds": 54.456541,
+        "queue_seconds": 0.06273,
+        "input_fetch_seconds": 0.225505,
+        "output_upload_seconds": 0.086178,
+        "cpu_seconds": 84.131949,
+        "recycling_key": "props-e2e-images-v1-sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280-sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33-sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
+        "remote_snapshot_permission": "unset",
+        "forced_save_policy": "unset",
+        "restore_lineage": "recorded",
+        "snapshot_origin_invocation": "b8ef7b95-e8a5-584a-8bd9-cebfdc751b06",
+        "snapshot_origin_target": "//props/agents/grader:test_e2e_report_failure",
+        "cross_target_lineage": false,
+        "artifacts": {
+          "cases": 1,
+          "failed": 0,
+          "skipped": 0,
+          "container_setup_log_imports": 0,
+          "container_setup_log_import_seconds": 0,
+          "postgres_ready_seconds": [
+            3.7
+          ],
+          "docker_load_spans": 0
+        }
+      },
+      {
+        "target": "//props/agents/grader:test_e2e_sleep_wake",
+        "family": "props_container_e2e",
+        "invocation": "8ca1606d-6baa-5d25-b621-ad7ce80116ea",
+        "github_run_head": "c9cf0634234621b8f3c682c15e3de3180947b1d8",
+        "new_completed_physical_execution": true,
+        "process_seconds": 91.40326,
+        "queue_seconds": 0.063976,
+        "input_fetch_seconds": 0.251826,
+        "output_upload_seconds": 0.086431,
+        "cpu_seconds": 123.119382,
+        "recycling_key": "props-e2e-images-v1-sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280-sha256:1be55279f18a2fe1a74edf2664cac61c1bea305b7b4642dab412e7affdcb3e33-sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
+        "remote_snapshot_permission": "unset",
+        "forced_save_policy": "unset",
+        "restore_lineage": "recorded",
+        "snapshot_origin_invocation": "b8ef7b95-e8a5-584a-8bd9-cebfdc751b06",
+        "snapshot_origin_target": "//props/agents/grader:test_e2e_sleep_wake",
+        "cross_target_lineage": false,
+        "artifacts": {
+          "cases": 1,
+          "failed": 0,
+          "skipped": 0,
+          "container_setup_log_imports": 0,
+          "container_setup_log_import_seconds": 0,
+          "postgres_ready_seconds": [
+            5.7
+          ],
+          "docker_load_spans": 0
+        }
+      },
+      {
+        "target": "//props/agents/grader:test_grading_edges_constraints",
+        "family": "props_postgres_pr14524",
+        "invocation": "69dcd2d3-e5d6-5761-8863-0e6172258dd1",
+        "github_run_head": "c380e6cfd87214ac1b465f285953bafb9d576463",
+        "new_completed_physical_execution": true,
+        "process_seconds": 40.376825,
+        "queue_seconds": 0.060215,
+        "input_fetch_seconds": 0.920828,
+        "output_upload_seconds": 0.10047,
+        "cpu_seconds": 83.247378,
+        "recycling_key": "postgres-images-v1-sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280-sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
+        "remote_snapshot_permission": "unset",
+        "forced_save_policy": "unset",
+        "restore_lineage": "unknown",
+        "snapshot_origin_invocation": null,
+        "snapshot_origin_target": null,
+        "cross_target_lineage": false,
+        "artifacts": {
+          "cases": 10,
+          "failed": 0,
+          "skipped": 0,
+          "container_setup_log_imports": 2,
+          "container_setup_log_import_seconds": 18.4,
+          "postgres_ready_seconds": [
+            2.7
+          ],
+          "docker_load_spans": 2
+        }
+      },
+      {
+        "target": "//props/agents/grader:test_matchable_occurrences",
+        "family": "props_postgres_pr14524",
+        "invocation": "69dcd2d3-e5d6-5761-8863-0e6172258dd1",
+        "github_run_head": "c380e6cfd87214ac1b465f285953bafb9d576463",
+        "new_completed_physical_execution": true,
+        "process_seconds": 28.089433,
+        "queue_seconds": 0.048359,
+        "input_fetch_seconds": 0.300059,
+        "output_upload_seconds": 0.073088,
+        "cpu_seconds": 64.655797,
+        "recycling_key": "postgres-images-v1-sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280-sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0",
+        "remote_snapshot_permission": "unset",
+        "forced_save_policy": "unset",
+        "restore_lineage": "unknown",
+        "snapshot_origin_invocation": null,
+        "snapshot_origin_target": null,
+        "cross_target_lineage": false,
+        "artifacts": {
+          "cases": 3,
+          "failed": 0,
+          "skipped": 0,
+          "container_setup_log_imports": 2,
+          "container_setup_log_import_seconds": 11.1,
+          "postgres_ready_seconds": [
+            2.5
+          ],
+          "docker_load_spans": 2
+        }
+      }
+    ],
+    "optimize_warm_profiles": {
+      "optimize-baseline": {
+        "invocation": "2adc54ce-9926-422a-b47f-da2e0d264e4c",
+        "action_digest": {
+          "hash": "5d8f7f9468b018fa5ec36748eec982acb492bddd4c12a02ad30648d048e5657d",
+          "sizeBytes": "764"
+        },
+        "process_seconds": 138.265786,
+        "cpu_seconds": 242.342935,
+        "docker_loads": 0,
+        "import_seconds": 0,
+        "cases": [
+          "test_optimizer_orchestrates_critic"
+        ],
+        "snapshot_origin_invocation": "b8ef7b95-e8a5-584a-8bd9-cebfdc751b06",
+        "saved_local_snapshot_intent": "absent",
+        "saved_remote_snapshot_intent": "absent",
+        "clock_source": "ExecuteResponse executionMetadata; new physical TestRunner execution, not cached summary",
+        "pushes": {
+          "critic_dev_optimize": {
+            "start": "02:26:59.695",
+            "end": "02:27:07.710",
+            "digest": "sha256:ad132cbd1e611778a08b63c64fe94b466a4551742d48ad2d4e2bc2e715129936",
+            "seconds": 8.015
+          },
+          "critic": {
+            "start": "02:27:07.713",
+            "end": "02:27:12.317",
+            "digest": "sha256:20d24461c8d8cf9a5386040dcfd3229e788005ee8128f0daa9c47a85b64a41b0",
+            "seconds": 4.604
+          },
+          "grader": {
+            "start": "02:27:12.318",
+            "end": "02:27:15.791",
+            "digest": "sha256:7adf068af4ef23904d929dff2abe2cc3667e566a47764490048b468559760ff6",
+            "seconds": 3.473
+          }
+        },
+        "push_serial_seconds": 16.092,
+        "pulls": {
+          "critic_dev_optimize": {
+            "start": "02:27:15.794",
+            "end": "02:27:48.979",
+            "seconds": 33.185
+          },
+          "grader": {
+            "start": "02:27:15.795",
+            "end": "02:27:48.032",
+            "seconds": 32.237
+          },
+          "critic": {
+            "start": "02:27:15.796",
+            "end": "02:27:48.065",
+            "seconds": 32.269
+          }
+        },
+        "pull_envelope_seconds": 33.185,
+        "otel_spans": [
+          {
+            "name": "postgres_container fixture",
+            "seconds": 5.674271
+          },
+          {
+            "name": "upgrade_database",
+            "seconds": 0.394814
+          },
+          {
+            "name": "recreate_database",
+            "seconds": 0.471172
+          },
+          {
+            "name": "configure container",
+            "seconds": 0.018513
+          },
+          {
+            "name": "container start + wait",
+            "seconds": 1.413355
+          },
+          {
+            "name": "e2e_registry startup",
+            "seconds": 1.4325
+          },
+          {
+            "name": "delete registry manifests",
+            "seconds": 0.299062
+          },
+          {
+            "name": "test: props/agents/critic_dev/optimize/test_e2e.py::test_optimizer_orchestrates_critic",
+            "seconds": 98.075219
+          }
+        ]
+      },
+      "optimize-repeat": {
+        "invocation": "d71b44f3-5e9a-4536-982c-eb5d157d2627",
+        "action_digest": {
+          "hash": "5d8f7f9468b018fa5ec36748eec982acb492bddd4c12a02ad30648d048e5657d",
+          "sizeBytes": "764"
+        },
+        "process_seconds": 106.079785,
+        "cpu_seconds": 202.21898,
+        "docker_loads": 0,
+        "import_seconds": 0,
+        "cases": [
+          "test_optimizer_orchestrates_critic"
+        ],
+        "snapshot_origin_invocation": "b8ef7b95-e8a5-584a-8bd9-cebfdc751b06",
+        "saved_local_snapshot_intent": "absent",
+        "saved_remote_snapshot_intent": "absent",
+        "clock_source": "ExecuteResponse executionMetadata; new physical TestRunner execution, not cached summary",
+        "pushes": {
+          "critic_dev_optimize": {
+            "start": "02:34:13.484",
+            "end": "02:34:23.095",
+            "digest": "sha256:ad132cbd1e611778a08b63c64fe94b466a4551742d48ad2d4e2bc2e715129936",
+            "seconds": 9.611
+          },
+          "critic": {
+            "start": "02:34:23.100",
+            "end": "02:34:27.867",
+            "digest": "sha256:20d24461c8d8cf9a5386040dcfd3229e788005ee8128f0daa9c47a85b64a41b0",
+            "seconds": 4.767
+          },
+          "grader": {
+            "start": "02:34:27.868",
+            "end": "02:34:31.044",
+            "digest": "sha256:7adf068af4ef23904d929dff2abe2cc3667e566a47764490048b468559760ff6",
+            "seconds": 3.176
+          }
+        },
+        "push_serial_seconds": 17.554000000000002,
+        "pulls": {
+          "critic": {
+            "start": "02:34:31.053",
+            "end": "02:34:47.506",
+            "seconds": 16.453
+          },
+          "critic_dev_optimize": {
+            "start": "02:34:31.054",
+            "end": "02:34:47.612",
+            "seconds": 16.558
+          },
+          "grader": {
+            "start": "02:34:31.058",
+            "end": "02:34:47.519",
+            "seconds": 16.461
+          }
+        },
+        "pull_envelope_seconds": 16.559,
+        "otel_spans": [
+          {
+            "name": "postgres_container fixture",
+            "seconds": 6.096633
+          },
+          {
+            "name": "upgrade_database",
+            "seconds": 0.462882
+          },
+          {
+            "name": "recreate_database",
+            "seconds": 0.526627
+          },
+          {
+            "name": "configure container",
+            "seconds": 0.031331
+          },
+          {
+            "name": "container start + wait",
+            "seconds": 1.429222
+          },
+          {
+            "name": "e2e_registry startup",
+            "seconds": 1.461901
+          },
+          {
+            "name": "delete registry manifests",
+            "seconds": 0.194345
+          },
+          {
+            "name": "test: props/agents/critic_dev/optimize/test_e2e.py::test_optimizer_orchestrates_critic",
+            "seconds": 72.960182
+          }
+        ]
+      }
+    },
+    "optimize_profile_source": "c380e6cfd87214ac1b465f285953bafb9d576463",
+    "optimize_bazel_profile_limit": "First invocation rebuilt three application-layer Tar prerequisites outside the test process; repeat had one remote TestRunner action. Nested OTel spans are not additive. No attribution of pre-pytest gaps to bytecode/import CPU.",
+    "registry_prototype": {
+      "pr": 14548,
+      "initial_source": "8922a49ff99f1779119935d98a431ea9bb877db2",
+      "strict_control_source": "24ef5b0e6a960a1d30534dcb8ca8ed95d07f9848",
+      "final_source": "dd5b32f1f3d57f7b4df377895ada9e1dccf023ef",
+      "input_identity_proof": {
+        "input_roots_equal": true,
+        "command_different_fields": [
+          "platform"
+        ],
+        "command_environment_different_names": [],
+        "command_equal_excluding_platform": true,
+        "platform_different_names": [
+          "env-overrides",
+          "runner-recycling-key"
+        ]
+      },
+      "final_library_validation_invocation": "f30a8c2f-558a-4b0a-93bf-75ba1e14751b",
+      "leftover_container_guard_validation_invocation": "f9e16079-18dd-446a-9b6d-7e81204e68d9",
+      "final_head_runtime_validation": {
+        "invocation": "f991d7f4-4622-4571-82e6-902429343eb8",
+        "action_digest": {
+          "hash": "5c5ef7513f81cc273ffdff05e32e2d50a57d2227bd8273b854b4e43b1bff6505",
+          "sizeBytes": "822"
+        },
+        "process_seconds": 65.793412,
+        "cpu_seconds": 79.077556,
+        "docker_loads": 0,
+        "import_seconds": 0,
+        "cases": [
+          "test_optimizer_orchestrates_critic"
+        ],
+        "snapshot_origin_invocation": "f0593b77-5156-42cc-8569-50684e0c7c04",
+        "saved_local_snapshot_intent": "absent",
+        "saved_remote_snapshot_intent": "absent",
+        "clock_source": "ExecuteResponse executionMetadata; new physical TestRunner execution, not cached summary"
+      },
+      "lifecycle_validation": {
+        "invocation": "1d177d6f-a668-4fb2-9153-97558304e969",
+        "action_digest": {
+          "hash": "bb0250514a51182062b4baa1945dbee6353de561a5788982e588f3d89e2a518e",
+          "sizeBytes": "698"
+        },
+        "process_seconds": 16.063668,
+        "cpu_seconds": 22.896482,
+        "docker_loads": 2,
+        "import_seconds": 2.170883,
+        "cases": [
+          "test_registry_keeps_only_blobs_and_layer_links_across_container_removal",
+          "test_registry_cache_lease_fails_without_waiting_for_another_owner"
+        ],
+        "snapshot_origin_invocation": null,
+        "saved_local_snapshot_intent": true,
+        "saved_remote_snapshot_intent": "absent",
+        "clock_source": "ExecuteResponse executionMetadata; new physical TestRunner execution, not cached summary"
+      },
+      "library_validation_invocation": "98132876-040e-4eb7-9680-e280ee76cca5",
+      "negative_design_result": {
+        "invocation": "e75696f3-18e1-455f-862e-7af9f6b86556",
+        "finding": "Separate blob and repository-link mounts cause filesystem upload commit to fail with invalid cross-device link. Use one registry root filesystem and reset mutable metadata explicitly.",
+        "upstream_source": "https://github.com/distribution/distribution/blob/v3.0.0/registry/storage/driver/filesystem/driver.go"
+      },
+      "measurements": {
+        "registry-control-seed": {
+          "invocation": "4e7225f1-d458-46f7-88ec-2fb0f6f82aea",
+          "action_digest": {
+            "hash": "01d0647a71b8c138290d065d31a57c0f6dc4f1aebef9110f1bbc054ccb25ef9e",
+            "sizeBytes": "793"
+          },
+          "process_seconds": 103.761237,
+          "cpu_seconds": 269.665003,
+          "docker_loads": 3,
+          "import_seconds": 16.729951,
+          "cases": [
+            "test_optimizer_orchestrates_critic"
+          ],
+          "snapshot_origin_invocation": null,
+          "saved_local_snapshot_intent": true,
+          "saved_remote_snapshot_intent": "absent",
+          "clock_source": "ExecuteResponse executionMetadata; new physical TestRunner execution, not cached summary",
+          "pushes": {
+            "critic_dev_optimize": {
+              "start": "02:48:59.808",
+              "end": "02:49:05.171",
+              "digest": "sha256:ad132cbd1e611778a08b63c64fe94b466a4551742d48ad2d4e2bc2e715129936",
+              "seconds": 5.363
+            },
+            "critic": {
+              "start": "02:49:05.171",
+              "end": "02:49:09.004",
+              "digest": "sha256:20d24461c8d8cf9a5386040dcfd3229e788005ee8128f0daa9c47a85b64a41b0",
+              "seconds": 3.833
+            },
+            "grader": {
+              "start": "02:49:09.004",
+              "end": "02:49:11.484",
+              "digest": "sha256:7adf068af4ef23904d929dff2abe2cc3667e566a47764490048b468559760ff6",
+              "seconds": 2.48
+            }
+          },
+          "push_serial_seconds": 11.676,
+          "pulls": {
+            "critic": {
+              "start": "02:49:11.485",
+              "end": "02:49:36.833",
+              "seconds": 25.348
+            },
+            "critic_dev_optimize": {
+              "start": "02:49:11.486",
+              "end": "02:49:36.979",
+              "seconds": 25.493
+            },
+            "grader": {
+              "start": "02:49:11.486",
+              "end": "02:49:36.816",
+              "seconds": 25.33
+            }
+          },
+          "pull_envelope_seconds": 25.494,
+          "postgres_ready_seconds": [
+            2.3
+          ],
+          "otel_spans": [
+            {
+              "name": "docker_load",
+              "seconds": 0.259603
+            },
+            {
+              "name": "load_oci_image(testcontainers/ryuk:0.14.0)",
+              "seconds": 0.348312
+            },
+            {
+              "name": "docker_load",
+              "seconds": 14.973878
+            },
+            {
+              "name": "load_oci_image(ducktape/oci:sha256-7341002d2b8c7c5bdd7542a671a95b36196c0b5b888daf454ae4fc33ba5346d7)",
+              "seconds": 14.993522
+            },
+            {
+              "name": "postgres_container fixture",
+              "seconds": 17.676739
+            },
+            {
+              "name": "upgrade_database",
+              "seconds": 0.281334
+            },
+            {
+              "name": "recreate_database",
+              "seconds": 0.308813
+            },
+            {
+              "name": "docker_load",
+              "seconds": 1.49647
+            },
+            {
+              "name": "load_oci_image(ducktape/oci:sha256-7518da9b12dd746278282a729dee2e65eabdeb449db4d0b28d46ef6e90308f58)",
+              "seconds": 1.515665
+            },
+            {
+              "name": "configure container",
+              "seconds": 0.008187
+            },
+            {
+              "name": "container start + wait",
+              "seconds": 1.309014
+            },
+            {
+              "name": "e2e_registry startup",
+              "seconds": 1.317605
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.118445
+            },
+            {
+              "name": "test: props/agents/critic_dev/optimize/test_e2e.py::test_optimizer_orchestrates_critic",
+              "seconds": 79.764312
+            }
+          ]
+        },
+        "registry-control-repeat-1": {
+          "invocation": "dd2088af-cbec-4d82-bd27-f06eea3c4466",
+          "action_digest": {
+            "hash": "01d0647a71b8c138290d065d31a57c0f6dc4f1aebef9110f1bbc054ccb25ef9e",
+            "sizeBytes": "793"
+          },
+          "process_seconds": 71.961897,
+          "cpu_seconds": 107.508067,
+          "docker_loads": 0,
+          "import_seconds": 0,
+          "cases": [
+            "test_optimizer_orchestrates_critic"
+          ],
+          "snapshot_origin_invocation": "4e7225f1-d458-46f7-88ec-2fb0f6f82aea",
+          "saved_local_snapshot_intent": "absent",
+          "saved_remote_snapshot_intent": "absent",
+          "clock_source": "ExecuteResponse executionMetadata; new physical TestRunner execution, not cached summary",
+          "pushes": {
+            "critic_dev_optimize": {
+              "start": "02:52:15.422",
+              "end": "02:52:20.645",
+              "digest": "sha256:ad132cbd1e611778a08b63c64fe94b466a4551742d48ad2d4e2bc2e715129936",
+              "seconds": 5.223
+            },
+            "critic": {
+              "start": "02:52:20.646",
+              "end": "02:52:24.535",
+              "digest": "sha256:20d24461c8d8cf9a5386040dcfd3229e788005ee8128f0daa9c47a85b64a41b0",
+              "seconds": 3.889
+            },
+            "grader": {
+              "start": "02:52:24.536",
+              "end": "02:52:27.526",
+              "digest": "sha256:7adf068af4ef23904d929dff2abe2cc3667e566a47764490048b468559760ff6",
+              "seconds": 2.99
+            }
+          },
+          "push_serial_seconds": 12.102,
+          "pulls": {
+            "grader": {
+              "start": "02:52:27.531",
+              "end": "02:52:27.751",
+              "seconds": 0.22
+            },
+            "critic_dev_optimize": {
+              "start": "02:52:27.532",
+              "end": "02:52:27.749",
+              "seconds": 0.217
+            },
+            "critic": {
+              "start": "02:52:27.533",
+              "end": "02:52:27.761",
+              "seconds": 0.228
+            }
+          },
+          "pull_envelope_seconds": 0.23,
+          "postgres_ready_seconds": [
+            3.5
+          ],
+          "otel_spans": [
+            {
+              "name": "postgres_container fixture",
+              "seconds": 3.942329
+            },
+            {
+              "name": "upgrade_database",
+              "seconds": 0.322834
+            },
+            {
+              "name": "recreate_database",
+              "seconds": 0.350045
+            },
+            {
+              "name": "configure container",
+              "seconds": 0.009442
+            },
+            {
+              "name": "container start + wait",
+              "seconds": 1.272902
+            },
+            {
+              "name": "e2e_registry startup",
+              "seconds": 1.282934
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.138583
+            },
+            {
+              "name": "test: props/agents/critic_dev/optimize/test_e2e.py::test_optimizer_orchestrates_critic",
+              "seconds": 49.789866
+            }
+          ]
+        },
+        "registry-control-repeat-2": {
+          "invocation": "baed0e2e-a041-4f2c-a98e-956c2e146ed9",
+          "action_digest": {
+            "hash": "01d0647a71b8c138290d065d31a57c0f6dc4f1aebef9110f1bbc054ccb25ef9e",
+            "sizeBytes": "793"
+          },
+          "process_seconds": 72.190721,
+          "cpu_seconds": 103.949785,
+          "docker_loads": 0,
+          "import_seconds": 0,
+          "cases": [
+            "test_optimizer_orchestrates_critic"
+          ],
+          "snapshot_origin_invocation": "4e7225f1-d458-46f7-88ec-2fb0f6f82aea",
+          "saved_local_snapshot_intent": "absent",
+          "saved_remote_snapshot_intent": "absent",
+          "clock_source": "ExecuteResponse executionMetadata; new physical TestRunner execution, not cached summary",
+          "pushes": {
+            "critic_dev_optimize": {
+              "start": "02:53:57.908",
+              "end": "02:54:03.636",
+              "digest": "sha256:ad132cbd1e611778a08b63c64fe94b466a4551742d48ad2d4e2bc2e715129936",
+              "seconds": 5.728
+            },
+            "critic": {
+              "start": "02:54:03.638",
+              "end": "02:54:06.895",
+              "digest": "sha256:20d24461c8d8cf9a5386040dcfd3229e788005ee8128f0daa9c47a85b64a41b0",
+              "seconds": 3.257
+            },
+            "grader": {
+              "start": "02:54:06.896",
+              "end": "02:54:09.312",
+              "digest": "sha256:7adf068af4ef23904d929dff2abe2cc3667e566a47764490048b468559760ff6",
+              "seconds": 2.416
+            }
+          },
+          "push_serial_seconds": 11.401,
+          "pulls": {
+            "critic_dev_optimize": {
+              "start": "02:54:09.314",
+              "end": "02:54:09.464",
+              "seconds": 0.15
+            },
+            "critic": {
+              "start": "02:54:09.315",
+              "end": "02:54:09.463",
+              "seconds": 0.148
+            },
+            "grader": {
+              "start": "02:54:09.315",
+              "end": "02:54:09.462",
+              "seconds": 0.147
+            }
+          },
+          "pull_envelope_seconds": 0.15,
+          "postgres_ready_seconds": [
+            3.8
+          ],
+          "otel_spans": [
+            {
+              "name": "postgres_container fixture",
+              "seconds": 4.182967
+            },
+            {
+              "name": "upgrade_database",
+              "seconds": 0.270512
+            },
+            {
+              "name": "recreate_database",
+              "seconds": 0.314381
+            },
+            {
+              "name": "configure container",
+              "seconds": 0.010902
+            },
+            {
+              "name": "container start + wait",
+              "seconds": 1.283054
+            },
+            {
+              "name": "e2e_registry startup",
+              "seconds": 1.294636
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.136379
+            },
+            {
+              "name": "test: props/agents/critic_dev/optimize/test_e2e.py::test_optimizer_orchestrates_critic",
+              "seconds": 48.230135
+            }
+          ]
+        },
+        "registry-helper-control-repeat": {
+          "invocation": "73304db2-1ff7-457e-92ff-3ec4381a8be6",
+          "action_digest": {
+            "hash": "aee3f3fb5128b9990a2ccce80f4743f4d4eec2c87b8ba7f32ea488f1b536c043",
+            "sizeBytes": "793"
+          },
+          "process_seconds": 74.610673,
+          "cpu_seconds": 106.421422,
+          "docker_loads": 0,
+          "import_seconds": 0,
+          "cases": [
+            "test_optimizer_orchestrates_critic"
+          ],
+          "snapshot_origin_invocation": "4e7225f1-d458-46f7-88ec-2fb0f6f82aea",
+          "saved_local_snapshot_intent": "absent",
+          "saved_remote_snapshot_intent": "absent",
+          "clock_source": "ExecuteResponse executionMetadata; new physical TestRunner execution, not cached summary",
+          "pushes": {
+            "critic_dev_optimize": {
+              "start": "03:15:40.655",
+              "end": "03:15:47.049",
+              "digest": "sha256:ad132cbd1e611778a08b63c64fe94b466a4551742d48ad2d4e2bc2e715129936",
+              "seconds": 6.394
+            },
+            "critic": {
+              "start": "03:15:47.050",
+              "end": "03:15:50.617",
+              "digest": "sha256:20d24461c8d8cf9a5386040dcfd3229e788005ee8128f0daa9c47a85b64a41b0",
+              "seconds": 3.567
+            },
+            "grader": {
+              "start": "03:15:50.618",
+              "end": "03:15:53.257",
+              "digest": "sha256:7adf068af4ef23904d929dff2abe2cc3667e566a47764490048b468559760ff6",
+              "seconds": 2.639
+            }
+          },
+          "push_serial_seconds": 12.6,
+          "pulls": {
+            "grader": {
+              "start": "03:15:53.260",
+              "end": "03:15:53.422",
+              "seconds": 0.162
+            },
+            "critic_dev_optimize": {
+              "start": "03:15:53.261",
+              "end": "03:15:53.419",
+              "seconds": 0.158
+            },
+            "critic": {
+              "start": "03:15:53.262",
+              "end": "03:15:53.418",
+              "seconds": 0.156
+            }
+          },
+          "pull_envelope_seconds": 0.162,
+          "postgres_ready_seconds": [
+            3.9
+          ],
+          "otel_spans": [
+            {
+              "name": "postgres_container fixture",
+              "seconds": 4.6169
+            },
+            {
+              "name": "upgrade_database",
+              "seconds": 0.418603
+            },
+            {
+              "name": "recreate_database",
+              "seconds": 0.488922
+            },
+            {
+              "name": "configure container",
+              "seconds": 0.012215
+            },
+            {
+              "name": "container start + wait",
+              "seconds": 1.324591
+            },
+            {
+              "name": "e2e_registry startup",
+              "seconds": 1.337364
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.164712
+            },
+            {
+              "name": "test: props/agents/critic_dev/optimize/test_e2e.py::test_optimizer_orchestrates_critic",
+              "seconds": 49.670361
+            }
+          ]
+        },
+        "registry-helper-control-repeat-2": {
+          "invocation": "a7092257-0e02-46e3-b54b-a7fcb936743a",
+          "action_digest": {
+            "hash": "aee3f3fb5128b9990a2ccce80f4743f4d4eec2c87b8ba7f32ea488f1b536c043",
+            "sizeBytes": "793"
+          },
+          "process_seconds": 80.894034,
+          "cpu_seconds": 118.571176,
+          "docker_loads": 0,
+          "import_seconds": 0,
+          "cases": [
+            "test_optimizer_orchestrates_critic"
+          ],
+          "snapshot_origin_invocation": "4e7225f1-d458-46f7-88ec-2fb0f6f82aea",
+          "saved_local_snapshot_intent": "absent",
+          "saved_remote_snapshot_intent": "absent",
+          "clock_source": "ExecuteResponse executionMetadata; new physical TestRunner execution, not cached summary",
+          "pushes": {
+            "critic_dev_optimize": {
+              "start": "03:18:17.781",
+              "end": "03:18:24.619",
+              "digest": "sha256:ad132cbd1e611778a08b63c64fe94b466a4551742d48ad2d4e2bc2e715129936",
+              "seconds": 6.838
+            },
+            "critic": {
+              "start": "03:18:24.620",
+              "end": "03:18:28.986",
+              "digest": "sha256:20d24461c8d8cf9a5386040dcfd3229e788005ee8128f0daa9c47a85b64a41b0",
+              "seconds": 4.366
+            },
+            "grader": {
+              "start": "03:18:28.986",
+              "end": "03:18:33.240",
+              "digest": "sha256:7adf068af4ef23904d929dff2abe2cc3667e566a47764490048b468559760ff6",
+              "seconds": 4.254
+            }
+          },
+          "push_serial_seconds": 15.457999999999998,
+          "pulls": {
+            "grader": {
+              "start": "03:18:33.245",
+              "end": "03:18:33.416",
+              "seconds": 0.171
+            },
+            "critic": {
+              "start": "03:18:33.246",
+              "end": "03:18:33.417",
+              "seconds": 0.171
+            },
+            "critic_dev_optimize": {
+              "start": "03:18:33.247",
+              "end": "03:18:33.414",
+              "seconds": 0.167
+            }
+          },
+          "pull_envelope_seconds": 0.172,
+          "postgres_ready_seconds": [
+            3.9
+          ],
+          "otel_spans": [
+            {
+              "name": "postgres_container fixture",
+              "seconds": 4.495
+            },
+            {
+              "name": "upgrade_database",
+              "seconds": 0.375631
+            },
+            {
+              "name": "recreate_database",
+              "seconds": 0.435553
+            },
+            {
+              "name": "configure container",
+              "seconds": 0.011731
+            },
+            {
+              "name": "container start + wait",
+              "seconds": 1.311491
+            },
+            {
+              "name": "e2e_registry startup",
+              "seconds": 1.323758
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.182985
+            },
+            {
+              "name": "test: props/agents/critic_dev/optimize/test_e2e.py::test_optimizer_orchestrates_critic",
+              "seconds": 55.13459
+            }
+          ]
+        },
+        "registry-candidate-seed": {
+          "invocation": "f0593b77-5156-42cc-8569-50684e0c7c04",
+          "action_digest": {
+            "hash": "b8af5f91f54e6daa624be18bf4399500f989372179aeba1026a0c7af2c72fb9f",
+            "sizeBytes": "822"
+          },
+          "process_seconds": 115.055095,
+          "cpu_seconds": 276.300887,
+          "docker_loads": 3,
+          "import_seconds": 23.160271,
+          "cases": [
+            "test_optimizer_orchestrates_critic"
+          ],
+          "snapshot_origin_invocation": null,
+          "saved_local_snapshot_intent": true,
+          "saved_remote_snapshot_intent": "absent",
+          "clock_source": "ExecuteResponse executionMetadata; new physical TestRunner execution, not cached summary",
+          "pushes": {
+            "critic_dev_optimize": {
+              "start": "03:15:24.915",
+              "end": "03:15:30.843",
+              "digest": "sha256:ad132cbd1e611778a08b63c64fe94b466a4551742d48ad2d4e2bc2e715129936",
+              "seconds": 5.928
+            },
+            "critic": {
+              "start": "03:15:30.844",
+              "end": "03:15:34.267",
+              "digest": "sha256:20d24461c8d8cf9a5386040dcfd3229e788005ee8128f0daa9c47a85b64a41b0",
+              "seconds": 3.423
+            },
+            "grader": {
+              "start": "03:15:34.267",
+              "end": "03:15:36.758",
+              "digest": "sha256:7adf068af4ef23904d929dff2abe2cc3667e566a47764490048b468559760ff6",
+              "seconds": 2.491
+            }
+          },
+          "push_serial_seconds": 11.842,
+          "pulls": {
+            "critic_dev_optimize": {
+              "start": "03:15:36.761",
+              "end": "03:16:00.870",
+              "seconds": 24.109
+            },
+            "grader": {
+              "start": "03:15:36.761",
+              "end": "03:16:00.784",
+              "seconds": 24.023
+            },
+            "critic": {
+              "start": "03:15:36.762",
+              "end": "03:16:00.763",
+              "seconds": 24.001
+            }
+          },
+          "pull_envelope_seconds": 24.109,
+          "postgres_ready_seconds": [
+            2.5
+          ],
+          "otel_spans": [
+            {
+              "name": "docker_load",
+              "seconds": 0.345554
+            },
+            {
+              "name": "load_oci_image(testcontainers/ryuk:0.14.0)",
+              "seconds": 0.3921
+            },
+            {
+              "name": "docker_load",
+              "seconds": 20.477708
+            },
+            {
+              "name": "load_oci_image(ducktape/oci:sha256-7341002d2b8c7c5bdd7542a671a95b36196c0b5b888daf454ae4fc33ba5346d7)",
+              "seconds": 20.51811
+            },
+            {
+              "name": "postgres_container fixture",
+              "seconds": 23.46505
+            },
+            {
+              "name": "upgrade_database",
+              "seconds": 0.497432
+            },
+            {
+              "name": "recreate_database",
+              "seconds": 0.588832
+            },
+            {
+              "name": "docker_load",
+              "seconds": 2.337009
+            },
+            {
+              "name": "load_oci_image(ducktape/oci:sha256-7518da9b12dd746278282a729dee2e65eabdeb449db4d0b28d46ef6e90308f58)",
+              "seconds": 2.368041
+            },
+            {
+              "name": "configure container",
+              "seconds": 0.011086
+            },
+            {
+              "name": "container start + wait",
+              "seconds": 1.821058
+            },
+            {
+              "name": "e2e_registry startup",
+              "seconds": 1.832682
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.183603
+            },
+            {
+              "name": "test: props/agents/critic_dev/optimize/test_e2e.py::test_optimizer_orchestrates_critic",
+              "seconds": 87.732086
+            }
+          ]
+        },
+        "registry-candidate-repeat-1": {
+          "invocation": "5527b6a1-e857-4cc5-a4d6-ea742fa1ca29",
+          "action_digest": {
+            "hash": "b8af5f91f54e6daa624be18bf4399500f989372179aeba1026a0c7af2c72fb9f",
+            "sizeBytes": "822"
+          },
+          "process_seconds": 68.795985,
+          "cpu_seconds": 75.783863,
+          "docker_loads": 0,
+          "import_seconds": 0,
+          "cases": [
+            "test_optimizer_orchestrates_critic"
+          ],
+          "snapshot_origin_invocation": "f0593b77-5156-42cc-8569-50684e0c7c04",
+          "saved_local_snapshot_intent": "absent",
+          "saved_remote_snapshot_intent": "absent",
+          "clock_source": "ExecuteResponse executionMetadata; new physical TestRunner execution, not cached summary",
+          "pushes": {
+            "critic_dev_optimize": {
+              "start": "03:18:18.710",
+              "end": "03:18:19.153",
+              "digest": "sha256:ad132cbd1e611778a08b63c64fe94b466a4551742d48ad2d4e2bc2e715129936",
+              "seconds": 0.443
+            },
+            "critic": {
+              "start": "03:18:19.154",
+              "end": "03:18:19.428",
+              "digest": "sha256:20d24461c8d8cf9a5386040dcfd3229e788005ee8128f0daa9c47a85b64a41b0",
+              "seconds": 0.274
+            },
+            "grader": {
+              "start": "03:18:19.428",
+              "end": "03:18:19.735",
+              "digest": "sha256:7adf068af4ef23904d929dff2abe2cc3667e566a47764490048b468559760ff6",
+              "seconds": 0.307
+            }
+          },
+          "push_serial_seconds": 1.024,
+          "pulls": {
+            "critic_dev_optimize": {
+              "start": "03:18:19.737",
+              "end": "03:18:19.902",
+              "seconds": 0.165
+            },
+            "grader": {
+              "start": "03:18:19.738",
+              "end": "03:18:19.904",
+              "seconds": 0.166
+            },
+            "critic": {
+              "start": "03:18:19.738",
+              "end": "03:18:19.903",
+              "seconds": 0.165
+            }
+          },
+          "pull_envelope_seconds": 0.167,
+          "postgres_ready_seconds": [
+            3.7
+          ],
+          "otel_spans": [
+            {
+              "name": "postgres_container fixture",
+              "seconds": 4.50722
+            },
+            {
+              "name": "upgrade_database",
+              "seconds": 0.352228
+            },
+            {
+              "name": "recreate_database",
+              "seconds": 0.388121
+            },
+            {
+              "name": "configure container",
+              "seconds": 0.015174
+            },
+            {
+              "name": "container start + wait",
+              "seconds": 1.602493
+            },
+            {
+              "name": "e2e_registry startup",
+              "seconds": 1.61831
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.162888
+            },
+            {
+              "name": "test: props/agents/critic_dev/optimize/test_e2e.py::test_optimizer_orchestrates_critic",
+              "seconds": 39.826785
+            }
+          ]
+        },
+        "registry-candidate-repeat-2": {
+          "invocation": "75b82427-628c-41bc-a7fa-572b237632e0",
+          "action_digest": {
+            "hash": "b8af5f91f54e6daa624be18bf4399500f989372179aeba1026a0c7af2c72fb9f",
+            "sizeBytes": "822"
+          },
+          "process_seconds": 57.334422,
+          "cpu_seconds": 65.24741,
+          "docker_loads": 0,
+          "import_seconds": 0,
+          "cases": [
+            "test_optimizer_orchestrates_critic"
+          ],
+          "snapshot_origin_invocation": "f0593b77-5156-42cc-8569-50684e0c7c04",
+          "saved_local_snapshot_intent": "absent",
+          "saved_remote_snapshot_intent": "absent",
+          "clock_source": "ExecuteResponse executionMetadata; new physical TestRunner execution, not cached summary",
+          "pushes": {
+            "critic_dev_optimize": {
+              "start": "03:20:51.680",
+              "end": "03:20:52.045",
+              "digest": "sha256:ad132cbd1e611778a08b63c64fe94b466a4551742d48ad2d4e2bc2e715129936",
+              "seconds": 0.365
+            },
+            "critic": {
+              "start": "03:20:52.046",
+              "end": "03:20:52.242",
+              "digest": "sha256:20d24461c8d8cf9a5386040dcfd3229e788005ee8128f0daa9c47a85b64a41b0",
+              "seconds": 0.196
+            },
+            "grader": {
+              "start": "03:20:52.242",
+              "end": "03:20:52.453",
+              "digest": "sha256:7adf068af4ef23904d929dff2abe2cc3667e566a47764490048b468559760ff6",
+              "seconds": 0.211
+            }
+          },
+          "push_serial_seconds": 0.772,
+          "pulls": {
+            "critic_dev_optimize": {
+              "start": "03:20:52.455",
+              "end": "03:20:52.601",
+              "seconds": 0.146
+            },
+            "critic": {
+              "start": "03:20:52.455",
+              "end": "03:20:52.601",
+              "seconds": 0.146
+            },
+            "grader": {
+              "start": "03:20:52.456",
+              "end": "03:20:52.603",
+              "seconds": 0.147
+            }
+          },
+          "pull_envelope_seconds": 0.148,
+          "postgres_ready_seconds": [
+            3.4
+          ],
+          "otel_spans": [
+            {
+              "name": "postgres_container fixture",
+              "seconds": 3.873672
+            },
+            {
+              "name": "upgrade_database",
+              "seconds": 0.268843
+            },
+            {
+              "name": "recreate_database",
+              "seconds": 0.295722
+            },
+            {
+              "name": "configure container",
+              "seconds": 0.010252
+            },
+            {
+              "name": "container start + wait",
+              "seconds": 1.518767
+            },
+            {
+              "name": "e2e_registry startup",
+              "seconds": 1.529418
+            },
+            {
+              "name": "delete registry manifests",
+              "seconds": 0.132622
+            },
+            {
+              "name": "test: props/agents/critic_dev/optimize/test_e2e.py::test_optimizer_orchestrates_critic",
+              "seconds": 30.886702
+            }
+          ]
+        }
+      },
+      "cache_identity_and_storage": {
+        "same_recipe_across_seed_two_repeats_final_head": true,
+        "same_volume_across_seed_two_repeats_final_head": true,
+        "distinct_registry_containers_across_all_four": true,
+        "volume_bytes_before_release_each": 577041306,
+        "measurement_phase": "After the session test, before stopping the registry and deleting its manifests/uploads; not snapshot bytes or provider uploaded bytes.",
+        "verification": "Compared the four actual undeclared-output receipts; all four size samples agree."
+      },
+      "limits": "Only Optimize is the candidate consumer. Cold and warm current application manifest digests must agree across arms. Services/databases stay fresh. Volume usage before release is not snapshot-upload bytes; no provider publication/transfer counter is available."
+    }
   }
 }

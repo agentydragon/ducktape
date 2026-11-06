@@ -1,22 +1,22 @@
 {
-  "source_devel_commit": "7fc04701455bc2c47fd6961b0140dce82a94d609",
+  "source_devel_commit": "ed29e38cdbc91bc3b0ccc41e9d8a36546446aebc",
   "window_start_utc": "2026-11-01T00:00:00Z",
-  "window_end_utc": "2026-11-06T01:12:39Z",
-  "published_at_utc": "2026-11-06T01:28:50.999183+00:00",
+  "window_end_utc": "2026-11-06T03:32:12Z",
+  "published_at_utc": "2026-11-06T03:40:39.711087+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "1ead186a30",
-  "analysis_scope": "Focused service-reuse audit plus one same-input three-case Props local snapshot pair. Previous Rust/capacity findings, historical feedback cohorts and all prior-work dispositions retained with their original windows.",
-  "window_semantics": "Envelope across retained historical evidence, a mainline execution sample updated Nov4-6 and the Props pair; not a new PR-feedback census. Component clocks remain separate.",
-  "report_html_sha256": "35c94ab73c15ef321d9c5bc34ca07888353603debf5dea17d4bba5044a980184",
-  "evidence_sha256": "9595741eff10d530bd7d55eecfaa57de29763a787dfefd757f6ea9877f264efa",
+  "previous_report_commit": "1ead186a30ca79265eb1ce6313a227fd2cbea8c9",
+  "analysis_scope": "Image-family enrollment, bounded ordinary-CI observations, warm Optimize profiles and one Optimize-only registry-blob experiment. Historical findings and all 31 prior-work dispositions retain their original windows.",
+  "window_semantics": "Envelope across retained historical measurements and the new component-specific samples; not a new PR-feedback census.",
+  "report_html_sha256": "7fc8b2bf5f44a77d9bff20e51de120384edf3a493e42dc8368ba1921f6569c8d",
+  "evidence_sha256": "aa9081384c61de88f710aeb86fb4e740c71ecb5bc63da424503da5d7cdf9576f",
   "visual_validation": {
     "target": "//x/ci_service_reuse_preview:visual_test",
     "result": "PASSED",
-    "bazel_invocation_id": "b0839c89-6d96-49e0-99c2-f256bc926e57",
-    "invocation_url": "https://app.buildbuddy.io/invocation/b0839c89-6d96-49e0-99c2-f256bc926e57",
-    "source_base_commit": "cd8e32fde0355ff4ddd44c1c551eb01cab4f5d50",
+    "bazel_invocation_id": "8f0fc50c-46df-469a-8b09-25b6ba60f1d8",
+    "invocation_url": "https://app.buildbuddy.io/invocation/8f0fc50c-46df-469a-8b09-25b6ba60f1d8",
+    "source_base_commit": "b7208449c60134208119de682425dcf722083298",
     "harness_template_commit": "b7a95b671fa176760f79943237ec1357275124a5",
-    "reviewed_html_sha256": "35c94ab73c15ef321d9c5bc34ca07888353603debf5dea17d4bba5044a980184",
+    "reviewed_html_sha256": "7fc8b2bf5f44a77d9bff20e51de120384edf3a493e42dc8368ba1921f6569c8d",
     "viewports": [
       {
         "name": "desktop",
@@ -29,11 +29,12 @@
         "height": 844
       }
     ],
-    "details_expanded": 9,
+    "details_expanded": 10,
     "controls_exercised": [
       "select:Service reuse design",
       "select:Bazel finish advance"
     ],
+    "control_scope": "Every option in both selects; each service-reuse detail checked nonempty and defined.",
     "horizontal_overflow": false,
     "document_dimensions_with_details_open": [
       {
@@ -47,50 +48,70 @@
         "body_width": 390
       }
     ],
-    "wide_table_scroll_regions_checked": 12,
-    "keyboard_scroll_test": "All named focusable table regions exercised with ArrowRight at 390px; condition waits observed scroll movement; document remained within viewport.",
-    "capture_hashes_verified": 8,
-    "manual_review": "Desktop/mobile first screens and all three new service-reuse sections inspected. Mobile table captures show the exercised horizontal-scroll state; keyboard scrolling and document bounds passed. Historical sections retained and checked by the harness, without claiming every historical pixel was re-reviewed.",
+    "wide_table_scroll_regions_checked": 15,
+    "keyboard_scroll_test": "Every named focusable table region exercised with ArrowRight at 390px; scroll movement observed, then tables reset to zero before section captures.",
+    "capture_hashes_verified": 12,
+    "manual_review": "Desktop/mobile first screens, all three new sections, reuse-model selector and updated rollout table inspected. Final new-section captures are byte-identical to the inspected preceding render; the final scope-correction captures were inspected separately. Historical sections retained and checked by the harness, without claiming every historical pixel was re-reviewed.",
     "captures": [
       {
         "viewport": "desktop",
         "name": "baa4b6a09d588a87bf23e181d5820742f9b55deb72ef1cd2bf11963476ffafdf.png",
-        "sha256": "aef65a22f7e22fdbba1bd7be9c1704e72d5d3a17dd32d2139354a299f52e6305"
+        "sha256": "67246016a13bf45e7be48897f066e47675b4e47735d7cab906cb47166196f993"
       },
       {
         "viewport": "desktop",
-        "name": "50029223c453fcc38dc8b936f4da97e8fea54290b052c20b4d80eba2403cbdf0.png",
-        "sha256": "720433c26a8ebce47af9272b044691247e80e58971fc82efb328c3b236ff41df"
+        "name": "f24e6ccb1ab430abd0edb9644ffe54e04410af81d65e16dc6a1626efd1df0525.png",
+        "sha256": "23ddb71e27fc189e1b03aaac747c991b739cce495390f8d6c448fd50ba650c93"
+      },
+      {
+        "viewport": "desktop",
+        "name": "6d23306e709f54bf261623a504bc5febd09c7953f51d65b754b2ab4b243fb8d6.png",
+        "sha256": "e87c38c2121519bdfa1c62c8405438eddea231ffb6c4a1f67c213e5aa82e11d8"
+      },
+      {
+        "viewport": "desktop",
+        "name": "1d8874a72f027d7cd8edcb4bbe8de55dfdaea83b46ab2a8bccc74dd893321b7c.png",
+        "sha256": "267977c014617a8e255c9d87c73ae46706f295e07e629d1972f26381fc348fac"
       },
       {
         "viewport": "desktop",
         "name": "15a532a54512b969f1c5f136a2a997caf9255434c3b4de866bbeb86cee112c15.png",
-        "sha256": "37a6ec6a7dc49e2007bc1d87c8478bc74c7ff9c6a5e6b4baac88ca3e1b242b04"
+        "sha256": "6a99bfe59140ce3b1b4d31c01715f8cb478742c601b878aa515544cb99ec0e51"
       },
       {
         "viewport": "desktop",
         "name": "74a83c1e10803029c63e6d5f3857bab7aeef29d0ae8afcd3081b4ca9aee24a0e.png",
-        "sha256": "b04197291b1cd5ceaaef5c96c3848e7c1605898168e7bf40dc409ed2f459b7b6"
+        "sha256": "5c4b8f88b16ea06e749fde06f40292caf6e40e1a8bd8f218ca043ca58ceac2aa"
       },
       {
         "viewport": "mobile",
         "name": "a8e8e3662356a94336a213bde8f185fabf389fe6802e12e306f420a3d2b3c0dc.png",
-        "sha256": "06ac65ad20204dec2a6a9b97f05b3141998efa54ed833a4b97840e481fadb163"
+        "sha256": "19e6a3a194681e9ad8187e0c1fe7b4ef0c407d37ebcd3ef5bbe54e7dd88b312a"
       },
       {
         "viewport": "mobile",
-        "name": "0b83e27db2baad2059da3c67762779ed36cedd6444a047dede9812e8fff711cb.png",
-        "sha256": "b6af1339e28b596f7a5f1ab286e549ce1025531d80eff0e8b95693bca89fbfba"
+        "name": "ddeb3c523e6a9759518071b36439971a94f9597d9daa20d11fcecd09abace532.png",
+        "sha256": "75d8c09a6d164971984c08c209362b5bb4d145c9f78d780a9d76b060697dca01"
+      },
+      {
+        "viewport": "mobile",
+        "name": "acfcd0779024f390f2fb849b978e52fa707136a55067144fb1e8ef780373a613.png",
+        "sha256": "042758722f8f53fa63691848409d98001894e8c2115370fd271c54d42733ab0c"
+      },
+      {
+        "viewport": "mobile",
+        "name": "274a117f7f29c112e80d658317d5c9c32bcffba626590316db944f6ffcfafd33.png",
+        "sha256": "47785d88bda86daa5352f94a19b314865c81b1535466a4c45f73987b57f86ed3"
       },
       {
         "viewport": "mobile",
         "name": "0865efc1c9f5ed3d6689def937f436c894d99115b830b576aefa1d042dccb7cc.png",
-        "sha256": "490646191a531e58bf2107fc0197443265dfa3428d6492113f9a122636334514"
+        "sha256": "f506a3327f23062989c03e56e21daf438a59fc13913e891cc884d85bb3160e11"
       },
       {
         "viewport": "mobile",
         "name": "8b75d2b38a51e0d35f0efa69cc2fc3c292ba8eed0121c6cf4c816a41c1fe3161.png",
-        "sha256": "ca1a8303f34aabeb2d9ec267d613adf1965d34aa60fcc5c3f5106b8813e38232"
+        "sha256": "7de57c5ffa418cef72569d3bfb3e59a90ed82b712c0508039afbf4391c946a20"
       }
     ]
   }
