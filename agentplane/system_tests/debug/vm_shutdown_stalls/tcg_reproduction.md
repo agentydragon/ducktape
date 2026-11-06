@@ -168,3 +168,46 @@ completed experiment; a future run should carry the ACPI sequence into the curre
 bounded driver rather than remove those safeguards. The driver reported deletion of
 namespace `agentplane-tcg-multiacpi-20261106`, and a later `kubectl get namespace`
 returned no object.
+
+## Direct TCG with three virtiofs mounts
+
+On 2026-11-06, one initial guest and a separate five-guest batch ran on `wyrm2`.
+This version added virtiofs exports tagged `agentplane-environment-runtime-tls` and
+`agentplane-environment-runtime-trust` to the existing `/state` export. Every guest's
+serial log shows both extra mount units **mounted and unmounted**. All six used the
+same hashed CI kernel, initramfs, root and runner images and QEMU 10.1.0
+(`qemu-kvm-10.1.0-10.el9`), with `-machine q35,accel=tcg`, no `/dev/kvm`, and QEMU
+monitor confirmation that KVM was disabled.
+
+| Run     | Guest request markers | Shutdown receipt | Kernel powerdown | QEMU exit |
+| ------- | --------------------: | ---------------: | ---------------: | --------: |
+| Initial |                     2 |                1 |                1 |         0 |
+| Batch 1 |                     4 |                1 |                1 |         0 |
+| Batch 2 |                     4 |                1 |                1 |         0 |
+| Batch 3 |                     3 |                1 |                1 |         0 |
+| Batch 4 |                     4 |                1 |                1 |         0 |
+| Batch 5 |                     4 |                1 |                1 |         0 |
+
+Every saved run passed the committed `tcg/check.sh`: the same serial stream has an
+ordered request, `AGENTPLANE_GUEST_SHUTDOWN_COMPLETE`, and `reboot: Power down`, and
+the monitor reports `VM status: paused (shutdown)`. Each monitor records five
+`system_powerdown` command lines: four sent 50 ms apart and one sent five seconds
+later. Those are QEMU input commands, distinct from the 2–4 request markers the
+guest actually logged. No late shutdown stall occurred in these six runs.
+
+The extra mounts exercise their guest mount/unmount path, but the isolated pod still
+lacks KubeVirt and the Agentplane application stack. Its TLS and trust exports are
+empty placeholders, and `agentplane-environment-runtime.service` failed to start in
+all six guests. A healthy shutdown here therefore cannot exclude a stall that needs
+the running service or its real mount users. The result does not identify a cause
+for the CI failure.
+
+The [deterministic archive](tcg/results/three-virtiofs.tar.gz) contains the exact
+scratch scripts, both driver logs, pod placement/events, and unmodified per-run
+guest-exec, serial, QEMU monitor, and three virtiofsd logs (SHA-256
+`517c5ae509581f5250abc3d7dc83a1e4c20e2505e1f1cdbae5d61bdeae0d8d24`).
+The [patch](tcg/results/three-virtiofs.patch) records differences from the committed
+`tcg/` scripts: two extra virtiofs daemons/devices, the repeated ACPI command
+sequence, `wyrm2` placement, and collection of the extra daemon logs. It applies
+with `patch -p1` from this directory. Both disposable namespaces were reported
+deleted by their drivers and verified absent with read-only `kubectl get namespace`.
