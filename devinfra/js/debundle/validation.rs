@@ -1,6 +1,6 @@
 use analysis_model::DepKind;
 use source_identity::SourceUnitOrdinal;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
 
 use petgraph::algo::greedy_feedback_arc_set;
@@ -66,6 +66,9 @@ pub struct AssignmentValidation {
 pub struct CycleReport {
     pub rejection: BlockingRejection,
     pub modules: Vec<ModulePath>,
+    /// One ordered, complete walk through actual Pass-1 constraining edges.
+    /// Absent for actual Pass-2 and conditional collapsed diagnoses.
+    pub pass_one_witness: Option<PassOneCycleWitness>,
     /// Spec-author-actionable cut: realizability-constraining
     /// (`at-init` or `side-effect`) reasons whose removal (by
     /// co-locating each binding pair into one module) lifts the
@@ -107,9 +110,9 @@ pub struct CycleReport {
 ///
 /// The full list of constraining cross-module edges inside the SCC
 /// is recomputable from `dependency_graph.json.gz` + this entry's `modules`
-/// set, so the wire entry carries only the modules and the cut (a
-/// 1335-module SCC's full evidence is multi-MB; the trimmed entry is
-/// ~100 KB). Consumers that need per-edge evidence re-derive it via
+/// set, so the wire entry carries the modules, cut, and one bounded
+/// Pass-1 closed walk instead of all SCC edges. Consumers that need
+/// every edge re-derive it via
 /// `debundle gate describe <id>` (see `devinfra/js/debundle/docs/cli.md`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockingSccEntry {
@@ -129,6 +132,8 @@ pub struct BlockingSccEntry {
     /// toward breaking the SCC. See [`CycleReport::cut`] for the
     /// per-rejection-kind derivation.
     pub cut: Vec<CycleEdge>,
+    /// `null` means this rejection has no supported Pass-1 witness.
+    pub pass_one_witness: Option<PassOneCycleWitness>,
     /// See [`CycleReport::inert_commuting_edges`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inert_commuting_edges: Vec<CycleEdge>,
@@ -175,6 +180,7 @@ impl BlockingSccEntry {
             id,
             modules: cycle.modules.clone(),
             cut: cycle.cut.clone(),
+            pass_one_witness: cycle.pass_one_witness.clone(),
             inert_commuting_edges: cycle.inert_commuting_edges.clone(),
             rejection: Some(cycle.rejection),
         }
@@ -189,6 +195,15 @@ impl BlockingSccEntry {
             .map(|(idx, cycle)| Self::from_cycle_report(idx, cycle))
             .collect()
     }
+}
+
+/// A complete module closed walk, with one typed dependency cause per step.
+/// The text renderer previews only the first few steps; JSON keeps the walk.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PassOneCycleWitness {
+    pub complete: bool,
+    pub steps: Vec<CycleEdge>,
+    pub text_preview_omitted_steps: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -390,6 +405,8 @@ impl CycleEdge {
 /// For ESM-evaluation-simulator (Pass-2 / TDZ) rejections, the cut
 /// rows are followed by the lazy back-edges that close the I-cycle
 /// (`CycleReport::lazy_closure`), in the same binding-pair format.
+const CYCLE_WITNESS_PREVIEW_STEPS: usize = 8;
+
 pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
     let mut out = String::new();
     const TOP_K: usize = 10;
@@ -420,6 +437,35 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
             cycle.cut.len(),
             cut_pairs_count(&cycle.cut),
         ));
+
+        if let Some(witness) = &cycle.pass_one_witness {
+            out.push_str(&format!(
+                "  Complete Pass-1 closed walk ({} step(s); showing {}):\n",
+                witness.steps.len(),
+                witness.steps.len() - witness.text_preview_omitted_steps,
+            ));
+            for edge in witness.steps.iter().take(CYCLE_WITNESS_PREVIEW_STEPS) {
+                let key = BindingPairKey::of(edge);
+                out.push_str(&format!(
+                    "    {} ({}, {}) --{}--> {} ({}, {})\n",
+                    key.from_label,
+                    key.from,
+                    edge.from_source_unit_id,
+                    edge.kind.diagnostic_label(),
+                    key.to_label,
+                    key.to,
+                    edge.to_source_unit_id,
+                ));
+            }
+            if witness.text_preview_omitted_steps > 0 {
+                out.push_str(&format!(
+                    "    ... {} step(s) omitted from this preview; full ordered walk in cycles.json\n",
+                    witness.text_preview_omitted_steps,
+                ));
+            }
+        } else {
+            out.push_str("  Pass-1 closed-walk witness unsupported for this rejection kind.\n");
+        }
 
         // Group cut edges by binding-pair blame key. Each group is
         // one (reader, target) atom split the spec author can fix.
@@ -674,17 +720,17 @@ pub(crate) fn validation_from_verdict(
         .collect();
     let report =
         |diagnosis: &SccDiagnosis, rejection: BlockingRejection, modules: &BTreeSet<ModuleId>| {
-            let (cut, lazy_closure) = match diagnosis.rejection {
-                SccRejection::MutualConstrainingCycle => (
-                    compute_realizability_cut(
+            let (cut, lazy_closure, pass_one_witness) = match diagnosis.rejection {
+                SccRejection::MutualConstrainingCycle => {
+                    let (cut, witness) = compute_realizability_cut(
                         dependency_graph,
                         assignment,
                         &diagnosis.core.constraining_dependency_edges,
                         module_path,
                         &from_binding_by_ordinal,
-                    ),
-                    Vec::new(),
-                ),
+                    );
+                    (cut, Vec::new(), Some(witness))
+                }
                 // The diagnosis's source-unit edges ARE the cut: the
                 // simulator surfaced exactly the constraining
                 // `(from, to)` pairs whose post-order check failed.
@@ -703,11 +749,17 @@ pub(crate) fn validation_from_verdict(
                         module_path,
                         &from_binding_by_ordinal,
                     ),
+                    None,
                 ),
             };
             CycleReport {
                 rejection,
                 modules: modules.iter().copied().map(module_path).collect(),
+                pass_one_witness: if rejection == BlockingRejection::MutualConstrainingCycle {
+                    pass_one_witness
+                } else {
+                    None
+                },
                 cut,
                 lazy_closure,
                 inert_commuting_edges: inert_commuting_edges(
@@ -872,31 +924,47 @@ fn cycle_edges_for(
     let mut out: Vec<CycleEdge> = edge_ids
         .into_iter()
         .map(|edge_id| {
-            let edge = dependency_graph.edge(edge_id);
-            let (from, to) = assignment_endpoints(edge, assignment, EndpointView::Gate)
-                .expect("verdict source-unit edge provenance is cross-module in the gate view");
-            CycleEdge {
-                from: module_path(from),
-                to: module_path(to),
-                from_source_unit_id: analysis::reports::source_unit_key(edge.from),
-                to_source_unit_id: analysis::reports::source_unit_key(edge.to),
-                statement_ordinal: edge.reason.statement_ordinal,
-                binding: edge.reason.binding.as_ref().map(|id| id.0.clone()),
-                from_binding: from_binding_by_ordinal
-                    .get(&edge.reason.statement_ordinal)
-                    .cloned(),
-                kind: edge.reason.kind,
-                sequenced_source_unit: analysis::reports::schema::sequenced_edge_cause(
-                    dependency_graph,
-                    edge,
-                ),
-                explanation: explain_edge(dependency_graph, edge),
-                commuting_premise: edge.reason.commuting_premise().cloned(),
-            }
+            cycle_edge_for(
+                dependency_graph,
+                assignment,
+                edge_id,
+                module_path,
+                from_binding_by_ordinal,
+            )
         })
         .collect();
     CycleEdge::sort_for_report(&mut out);
     out
+}
+
+fn cycle_edge_for(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+    edge_id: DependencyEdgeId,
+    module_path: &dyn Fn(ModuleId) -> ModulePath,
+    from_binding_by_ordinal: &HashMap<SourceUnitOrdinal, Atom>,
+) -> CycleEdge {
+    let edge = dependency_graph.edge(edge_id);
+    let (from, to) = assignment_endpoints(edge, assignment, EndpointView::Gate)
+        .expect("verdict source-unit edge provenance is cross-module in the gate view");
+    CycleEdge {
+        from: module_path(from),
+        to: module_path(to),
+        from_source_unit_id: analysis::reports::source_unit_key(edge.from),
+        to_source_unit_id: analysis::reports::source_unit_key(edge.to),
+        statement_ordinal: edge.reason.statement_ordinal,
+        binding: edge.reason.binding.as_ref().map(|id| id.0.clone()),
+        from_binding: from_binding_by_ordinal
+            .get(&edge.reason.statement_ordinal)
+            .cloned(),
+        kind: edge.reason.kind,
+        sequenced_source_unit: analysis::reports::schema::sequenced_edge_cause(
+            dependency_graph,
+            edge,
+        ),
+        explanation: explain_edge(dependency_graph, edge),
+        commuting_premise: edge.reason.commuting_premise().cloned(),
+    }
 }
 
 /// Cross-module edges between members of `modules` (gate view) that an
@@ -1193,7 +1261,7 @@ fn compute_realizability_cut(
     constraining_dependency_edges: &[DependencyEdgeId],
     module_path: &dyn Fn(ModuleId) -> ModulePath,
     from_binding_by_ordinal: &HashMap<SourceUnitOrdinal, Atom>,
-) -> Vec<CycleEdge> {
+) -> (Vec<CycleEdge>, PassOneCycleWitness) {
     let mut by_pair: BTreeMap<(ModuleId, ModuleId), Vec<DependencyEdgeId>> = BTreeMap::new();
     for &edge_id in constraining_dependency_edges {
         let edge = dependency_graph.edge(edge_id);
@@ -1222,11 +1290,75 @@ fn compute_realizability_cut(
     for fas_edge in greedy_feedback_arc_set(&pair_graph) {
         cut_edge_ids.extend_from_slice(&by_pair[fas_edge.weight()]);
     }
-    cycle_edges_for(
+    // Anchor at a deterministic edge of the actionable cut. The verdict's
+    // Pass-1 SCC is strongly connected, so a reciprocal path exists through
+    // these same active constraining pairs.
+    let anchor = *cut_edge_ids
+        .iter()
+        .min()
+        .expect("a Pass-1 SCC has a nonempty feedback cut");
+    let anchor_edge = dependency_graph.edge(anchor);
+    let (anchor_from, anchor_to) =
+        assignment_endpoints(anchor_edge, assignment, EndpointView::Gate)
+            .expect("cut edge is cross-module in the gate view");
+    let mut queue = VecDeque::from([anchor_to]);
+    let mut seen = BTreeSet::from([anchor_to]);
+    let mut predecessor: BTreeMap<ModuleId, (ModuleId, DependencyEdgeId)> = BTreeMap::new();
+    while let Some(from) = queue.pop_front() {
+        if from == anchor_from {
+            break;
+        }
+        // Reuse the pair graph rather than retaining another adjacency map.
+        // Its edges were inserted in BTreeMap order, so traversal is repeatable.
+        for pair_edge in pair_graph.edges(idx_of[&from]) {
+            let pair = pair_edge.weight();
+            let to = pair.1;
+            if seen.insert(to) {
+                let edge_id = *by_pair[pair].iter().min().expect("a pair has an edge");
+                predecessor.insert(to, (from, edge_id));
+                queue.push_back(to);
+            }
+        }
+    }
+    assert!(
+        seen.contains(&anchor_from),
+        "Pass-1 verdict edge has no reciprocal path inside its SCC"
+    );
+    let mut return_edge_ids = Vec::new();
+    let mut at = anchor_from;
+    while at != anchor_to {
+        let &(previous, edge_id) = predecessor
+            .get(&at)
+            .expect("BFS path has a predecessor until its start");
+        return_edge_ids.push(edge_id);
+        at = previous;
+    }
+    return_edge_ids.reverse();
+    let witness_steps: Vec<CycleEdge> = std::iter::once(anchor)
+        .chain(return_edge_ids)
+        .map(|edge_id| {
+            cycle_edge_for(
+                dependency_graph,
+                assignment,
+                edge_id,
+                module_path,
+                from_binding_by_ordinal,
+            )
+        })
+        .collect();
+    let witness = PassOneCycleWitness {
+        complete: true,
+        text_preview_omitted_steps: witness_steps
+            .len()
+            .saturating_sub(CYCLE_WITNESS_PREVIEW_STEPS),
+        steps: witness_steps,
+    };
+    let cut = cycle_edges_for(
         dependency_graph,
         assignment,
         cut_edge_ids,
         module_path,
         from_binding_by_ordinal,
-    )
+    );
+    (cut, witness)
 }
