@@ -56,10 +56,13 @@ agentplane/system_tests/debug/vm_shutdown_stalls/tcg/run.sh \
   NEW_DISPOSABLE_NAMESPACE "$scratch/inputs" "$scratch/output" 5
 ```
 
-The guest script verifies the four extracted input hashes before booting. It sends the
-power button after 60 seconds and quits QEMU 30 seconds later. Its exit check requires
-request, receipt and kernel powerdown markers; the raw serial and monitor output should
-also be inspected for their ordering and any errors. The fixed 60-second boot delay
+The driver bounds each image transfer at 180 seconds; a failed transfer aborts and
+cleans up the namespace. It also stops the batch if the guest exec itself times out,
+so an unknown prior QEMU process cannot overlap the next guest. The guest script
+verifies the four extracted input hashes before booting. It sends the
+power button after 60 seconds and quits QEMU 30 seconds later. Its exit check requires an ordered request, receipt and kernel powerdown in the same
+serial stream, plus monitor evidence of disabled KVM and a paused shutdown. Inspect
+the retained raw output for errors as well. The fixed 60-second boot delay
 can produce a false failure on a loaded node if the ACPI handler is not ready yet.
 The optional final argument runs one to ten guests sequentially in the same pod; each
 starts with a fresh workspace and state volume. The output directory contains pod
@@ -74,3 +77,55 @@ failed execution emitted shutdown proof and powered down.
 produced six passes. Neither batch reproduced the late post-ACPI stall. Both also had
 separate outer BuildBuddy Firecracker kernel panic attempts that passed on infrastructure
 retry; those are distinct failures and no causal link to the guest stalls is established.
+
+## Repeated controls and CPU contention
+
+On 2026-11-06, five fresh guests ran sequentially on node `wyrm2` using the packaged
+driver, followed by five more on the same node with one `yes` process sharing the
+pod's one-CPU cgroup limit during the 30 seconds after the power-button request. Both
+arms used the same pinned launcher image and guest input hashes. Each guest started with
+fresh state and workspace storage. Every guest in both arms recorded the ordered shutdown
+receipt and powerdown, and every QEMU monitor recorded `kvm support: disabled` followed
+by `VM status: paused (shutdown)`. Neither arm reproduced the late stall.
+
+| Arm            | Runs | First watchdog uptime to kernel powerdown |
+| -------------- | ---: | ----------------------------------------: |
+| Control        |    5 |                         2.31–2.64 seconds |
+| CPU contention |    5 |                         4.10–4.67 seconds |
+
+The interval subtracts the uptime in the first shutdown-watchdog sample from the kernel
+powerdown uptime. It is an approximation, not a precise duration from the ACPI event:
+the sample itself can be delayed or interleaved. The small sample shows that the added
+load slowed these shutdowns, not that it causes the original failure.
+
+The unmodified per-run serial, monitor, virtiofsd, and driver output are retained in
+[control.tar.gz](tcg/results/control.tar.gz) and
+[cpu-pressure.tar.gz](tcg/results/cpu-pressure.tar.gz). Both owned namespaces were
+verified absent after cleanup. The pressure arm's exact guest-script change is in
+[cpu-pressure.patch](tcg/results/cpu-pressure.patch); it starts the CPU consumer just
+before the power-button command and kills it before QEMU exits. To repeat it, copy the
+scripts to scratch, apply the patch there, and choose a fresh namespace:
+
+```bash
+mkdir -p "$scratch/pressure"
+cp agentplane/system_tests/debug/vm_shutdown_stalls/tcg/{run.sh,guest.sh,check.sh,pod.yaml,input.sha256} "$scratch/pressure/"
+patch -d "$scratch/pressure" -p1 < agentplane/system_tests/debug/vm_shutdown_stalls/tcg/results/cpu-pressure.patch
+"$scratch/pressure/run.sh" NEW_PRESSURE_NAMESPACE "$scratch/inputs" "$scratch/pressure-output" 5
+```
+
+For a matched same-node comparison, pin both pod manifests to the same suitable node;
+the committed pod manifest intentionally leaves scheduling unconstrained.
+
+## Repeated ACPI requests in the original failure
+
+In [the original CI failure](https://app.buildbuddy.io/invocation/15e9310a-7352-56a3-87c6-322dfb3065c0),
+all three guests logged four closely spaced `AGENTPLANE_GUEST_SHUTDOWN_REQUESTED`
+lines. The [VM 1 console](tcg/results/original-vm-1-console.log.gz) has no shutdown
+receipt or kernel powerdown; [VM 2](tcg/results/original-vm-2-console.log.gz) and
+[the Codex OOM guest](tcg/results/original-vm-3-console.log.gz) both completed.
+The decompressed consoles have SHA-256 digests `6175cadfbea61e5e77c782296bf9f21839333c20af6919479ed4c5f5929a6522`,
+`2e0879963edacffd46f9c7a2cffda1d94058b59aa40241bb37b3eb67b44566d9`, and
+`947bf2c70033f04f025553038a55d99be6eb7058bbdb5baef35ebb71d6ad691a`, respectively,
+matching the BuildBuddy CAS artifacts. Multiple requests are therefore a feature to
+preserve in the reduced experiment, but occurred on both failed and healthy guests and
+are not sufficient evidence of the cause.

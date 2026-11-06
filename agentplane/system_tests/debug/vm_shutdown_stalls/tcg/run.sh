@@ -60,14 +60,21 @@ kubectl -n "$namespace" get pod qemu-smoke -o wide >"$output_dir/pod-placement.t
 kubectl -n "$namespace" logs qemu-smoke >"$output_dir/pod-preflight.log"
 # The launcher image's QEMU has a file capability; copying removes it so it can
 # execute with no_new_privs in a restricted pod. The binary itself is unchanged.
-kubectl -n "$namespace" exec qemu-smoke -- /bin/sh -ceu '
+timeout 60s kubectl -n "$namespace" exec qemu-smoke -- /bin/sh -ceu '
   cp /usr/libexec/qemu-kvm /scratch/qemu-kvm
   mkdir -p /scratch/empty-iso
   echo smoke > /scratch/empty-iso/placeholder
   xorriso -as mkisofs -quiet -o /scratch/empty.iso /scratch/empty-iso
 '
 stage() {
-  kubectl -n "$namespace" exec -i qemu-smoke -- /bin/sh -c "cat > /scratch/$2" <"$1"
+  echo "Staging $2"
+  if timeout 180s kubectl -n "$namespace" exec -i qemu-smoke -- /bin/sh -c "cat > /scratch/$2" <"$1"; then
+    return 0
+  else
+    local result=$?
+    echo "Staging $2 failed with exit $result" >&2
+    return "$result"
+  fi
 }
 for file in vmlinuz initramfs.cpio root.img test-runner.img; do
   stage "$input_dir/$file" "$file"
@@ -79,24 +86,28 @@ for ((iteration = 1; iteration <= count; iteration++)); do
   run_dir="$output_dir/run-$iteration"
   mkdir -p "$run_dir"
   # Reset only scratch data belonging to this pod; each guest gets a fresh disk.
-  kubectl -n "$namespace" exec qemu-smoke -- /bin/sh -ceu '
+  timeout 60s kubectl -n "$namespace" exec qemu-smoke -- /bin/sh -ceu '
     rm -rf /scratch/state2 /scratch/workspace.img
     mkdir /scratch/state2
     truncate -s 1G /scratch/workspace.img
   '
   result=0
-  kubectl -n "$namespace" exec qemu-smoke -- /bin/sh /scratch/guest.sh >"$run_dir/guest-exec.log" 2>&1 || result=$?
+  timeout 180s kubectl -n "$namespace" exec qemu-smoke -- /bin/sh /scratch/guest.sh >"$run_dir/guest-exec.log" 2>&1 || result=$?
   for log in guest-serial qemu-monitor virtiofsd; do
-    kubectl -n "$namespace" exec qemu-smoke -- cat "/scratch/$log.log" >"$run_dir/$log.log" || true
+    timeout 30s kubectl -n "$namespace" exec qemu-smoke -- cat "/scratch/$log.log" >"$run_dir/$log.log" || true
   done
   if [[ "$result" != 0 ]] \
-    || ! grep -Fq 'AGENTPLANE_GUEST_SHUTDOWN_REQUESTED' "$run_dir/guest-serial.log" \
-    || ! grep -Fq 'AGENTPLANE_GUEST_SHUTDOWN_COMPLETE' "$run_dir/guest-serial.log" \
-    || ! grep -Fq 'reboot: Power down' "$run_dir/guest-serial.log"; then
+    || ! "$script_dir/check.sh" "$run_dir/guest-serial.log" "$run_dir/qemu-monitor.log"; then
     echo "Run $iteration incomplete (QEMU exec exit $result); see $run_dir" >&2
     failed=1
   else
     echo "Run $iteration recorded request, shutdown receipt and powerdown"
+  fi
+  # A timed-out exec can leave QEMU alive in the pod; delete the pod rather than
+  # overlap the next guest with an unknown prior process.
+  if [[ "$result" == 124 ]]; then
+    echo "Guest exec timed out; stopping the batch for cleanup" >&2
+    break
   fi
 done
 kubectl -n "$namespace" get events --sort-by=.lastTimestamp >"$output_dir/events.txt" || true
