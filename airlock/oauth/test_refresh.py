@@ -115,27 +115,34 @@ async def test_refresh_loop_continues_on_error(provider: GenericOAuth2Provider) 
     mock_store = AsyncMock()
     mock_store.read_token.return_value = expiring_token
 
-    call_count = 0
-
-    async def failing_refresh(refresh_token: str) -> TokenData:
-        nonlocal call_count
-        call_count += 1
-        raise RuntimeError("network error")
-
-    with patch.object(provider, "refresh_tokens", side_effect=failing_refresh):
+    with patch.object(provider, "refresh_tokens", side_effect=RuntimeError("network error")) as mock_refresh:
         await _run_loop_passes({"test": provider}, mock_store, "test-ns", passes=2)
 
-    assert call_count == 2
+    assert mock_refresh.await_count == 2
     mock_store.write_token.assert_not_called()
 
 
-async def test_refresh_loop_keeps_access_secret_when_refresh_fails_for_valid_token(
-    provider: GenericOAuth2Provider, caplog: pytest.LogCaptureFixture
+@pytest.mark.parametrize(
+    ("hours_until_expiry", "delete_access_secret", "log_message"),
+    [
+        (
+            0.5,
+            False,
+            "Leaving access secret for test unchanged after refresh failure because the token remains valid until",
+        ),
+        (-0.5, True, "Deleting access secret for test because refresh failed and the token expired at"),
+    ],
+    ids=["valid", "expired"],
+)
+async def test_refresh_loop_handles_access_secret_after_refresh_failure(
+    provider: GenericOAuth2Provider,
+    caplog: pytest.LogCaptureFixture,
+    hours_until_expiry: float,
+    delete_access_secret: bool,
+    log_message: str,
 ) -> None:
-    expiring_token = _make_token(hours_until_expiry=0.5)
-
     mock_store = AsyncMock()
-    mock_store.read_token.return_value = expiring_token
+    mock_store.read_token.return_value = _make_token(hours_until_expiry=hours_until_expiry)
 
     with (
         caplog.at_level("WARNING"),
@@ -143,33 +150,11 @@ async def test_refresh_loop_keeps_access_secret_when_refresh_fails_for_valid_tok
     ):
         await _run_loop_passes({"test": provider}, mock_store, "test-ns")
 
-    mock_store.delete_secret.assert_not_called()
-    assert any(
-        "Leaving access secret for test unchanged after refresh failure because the token remains valid until"
-        in record.message
-        for record in caplog.records
-    )
-
-
-async def test_refresh_loop_deletes_access_secret_when_refresh_fails_for_expired_token(
-    provider: GenericOAuth2Provider, caplog: pytest.LogCaptureFixture
-) -> None:
-    expired_token = _make_token(hours_until_expiry=-0.5)
-
-    mock_store = AsyncMock()
-    mock_store.read_token.return_value = expired_token
-
-    with (
-        caplog.at_level("WARNING"),
-        patch.object(provider, "refresh_tokens", side_effect=RuntimeError("network error")),
-    ):
-        await _run_loop_passes({"test": provider}, mock_store, "test-ns")
-
-    mock_store.delete_secret.assert_any_call("test-access-token", "test-ns")
-    assert any(
-        "Deleting access secret for test because refresh failed and the token expired at" in record.message
-        for record in caplog.records
-    )
+    if delete_access_secret:
+        mock_store.delete_secret.assert_any_call("test-access-token", "test-ns")
+    else:
+        mock_store.delete_secret.assert_not_called()
+    assert any(log_message in record.message for record in caplog.records)
 
 
 async def test_refresh_loop_logs_when_refresh_token_cannot_be_read(
