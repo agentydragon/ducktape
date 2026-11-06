@@ -166,12 +166,7 @@ func (h *ingressHandler) ServeHTTP(writer http.ResponseWriter, request *http.Req
 }
 
 func allowedMethod(method string) bool {
-	for _, allowed := range proxyMethods {
-		if method == allowed {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(proxyMethods, method)
 }
 
 func (h *ingressHandler) authenticate(writer http.ResponseWriter, request *http.Request) (auth.Principal, bool) {
