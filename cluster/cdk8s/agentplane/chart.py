@@ -176,6 +176,7 @@ def environment_chart(
         registry_secret_name=REGISTRY_SECRET_NAME,
         tls_passthrough_services=[
             history_service.workload_service(env.namespace),
+            llm_ingress.workload_service(env.namespace),
             notifications.workload_service(env.namespace),
         ],
     ).add_platform_resources()

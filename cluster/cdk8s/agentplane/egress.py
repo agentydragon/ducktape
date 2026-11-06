@@ -425,7 +425,7 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
             # proxy substitutes and authorizes the caller itself, so a method or path list here would
             # only be a second copy of their routes to keep in step.
             Rule.egress(
-                hosts=[llm_ingress.service(namespace).fqdn, actions.service(namespace).fqdn],
+                hosts=[actions.service(namespace).fqdn],
                 cluster_internal=True,
                 credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
             ),
@@ -967,6 +967,7 @@ class Egress(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 self.agent_api.egress(),
                 llm_ingress.service(namespace).egress(),
+                llm_ingress.workload_service(namespace).egress(),
                 actions.service(namespace).egress(),
                 session_dispatcher.service(namespace).egress(),
                 forgejo.HTTP.egress(),

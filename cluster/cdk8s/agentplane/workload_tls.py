@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata
-from cdk8s_plus_34 import ConfigMap, Secret, Volume
+from cdk8s_plus_34 import ConfigMap, Container, Secret, Volume
 from cert_manager_crds.io.cert_manager import (
     CertificateSpecIssuerRef,
     CertificateSpecPrivateKeyRotationPolicy,
@@ -14,7 +14,6 @@ from constructs import Construct
 from agentplane.environment_runtime_transport.config import TLS
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.runner_gateway import RUNNER_CERTIFICATE_ISSUER
-from cluster.cdk8s.agentplane.service_workload import ServiceWorkload
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, ServiceRef
@@ -23,7 +22,7 @@ _CERT_PATH = "/run/agentplane/workload-tls"
 _TRUST_PATH = "/run/agentplane/workload-trust"
 
 
-def serving_certificate(scope: Construct, env: Environment, *, workload: ServiceWorkload, name: str, uri: str) -> TLS:
+def serving_certificate(scope: Construct, env: Environment, *, container: Container, name: str, uri: str) -> TLS:
     """Mount a serving leaf and the existing cluster trust-manager bundle."""
     secret_name = f"{name}-workload-tls"
     Certificate(
@@ -50,8 +49,8 @@ def serving_certificate(scope: Construct, env: Environment, *, workload: Service
         ConfigMap.from_config_map_name(scope, "workload-trust-bundle", "cluster-internal-ca-bundle"),
         name="workload-trust",
     )
-    workload.container.mount(_CERT_PATH, certificate, read_only=True)
-    workload.container.mount(_TRUST_PATH, trust, read_only=True)
+    container.mount(_CERT_PATH, certificate, read_only=True)
+    container.mount(_TRUST_PATH, trust, read_only=True)
     return TLS(
         cert_file=f"{_CERT_PATH}/tls.crt",
         key_file=f"{_CERT_PATH}/tls.key",

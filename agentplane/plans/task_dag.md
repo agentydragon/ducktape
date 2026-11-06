@@ -2983,14 +2983,16 @@ token bound to another Pod, and refuses a caller-supplied subject header.
 **In flight, Codex, 2026-11-05.** The operator split SVID authentication from the identity cutover:
 services resolve the verified leaf through the live Sandbox and accepted runner credential to its
 own ServiceAccount, with the same principal result and authorization as today. History runner
-ingress and Notification have implementation slices in review; Dispatcher, Action and LLM remain.
-The proxy tunnels opaque TLS and never asserts a caller. Each service removes its projected-token
-audience from Sandbox templates and the proxy in its own change. Remove `authenticatedWorkloadToken`
-and per-audience `projectedWorkloadToken` sources as their consumers disappear. The sampler retains
-its existing delegated path. Service migrations may proceed on the optional SVID hop before the
-HTTP hop removal; that flip stays draft pending a separate non-SVID authentication design for
-command boxes and external OpenClaw callers. **Exit:** each service's route authenticates an SVID
-end to end in k3s, preserves its authorization, and rejects forged or expired leaves before a handler.
+ingress and Notification have implementation slices in review; the LLM ingress adds its SVID-only
+TLS listener and exact-origin sidecar route in this change; Dispatcher and Action remain. The proxy
+tunnels opaque TLS and never asserts a caller. Each service removes its projected-token audience
+from Sandbox templates and the proxy in its own change. Remove `authenticatedWorkloadToken` and
+per-audience `projectedWorkloadToken` sources as their consumers disappear. The central sampler
+retains the LLM ingress's direct TokenReview listener. Service migrations may proceed on the
+optional SVID hop before the HTTP hop removal; that flip stays draft pending a separate non-SVID
+authentication design for command boxes and external OpenClaw callers. **Exit:** each service's route
+authenticates an SVID end to end in k3s, preserves its authorization, and rejects forged or expired
+leaves before a handler.
 
 ### `POLICY_GRANTS` — grants, role sets and managed ServiceAccounts
 

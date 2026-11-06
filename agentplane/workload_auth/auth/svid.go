@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
@@ -73,6 +74,19 @@ func (r *SVIDResolver) Resolve(ctx context.Context) (Principal, error) {
 	}
 	principal, err := r.ResolveVerifiedLeaf(ctx, info.State.PeerCertificates[0])
 	return principal, svidStatus(ctx, err)
+}
+
+// ResolveRequest authenticates an HTTP request whose TLS listener verified the
+// client chain. It derives identity only from the verified peer certificate;
+// request headers and bodies cannot select a principal.
+func (r *SVIDResolver) ResolveRequest(request *http.Request) (Principal, error) {
+	if request == nil || request.TLS == nil || len(request.TLS.PeerCertificates) == 0 {
+		return Principal{}, ErrInvalidBearer
+	}
+	if _, err := environment_runtime_transport.PeerIdentityFromTLSState(*request.TLS, x509.ExtKeyUsageClientAuth); err != nil {
+		return Principal{}, ErrInvalidBearer
+	}
+	return r.ResolveVerifiedLeaf(request.Context(), request.TLS.PeerCertificates[0])
 }
 
 // ResolveVerifiedLeaf takes a leaf whose signature and trust chain the TLS

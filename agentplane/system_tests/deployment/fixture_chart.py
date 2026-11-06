@@ -465,6 +465,7 @@ def build_chart(
         memory_limit=None,
         tls_passthrough_services=[
             history_service.workload_service(env.namespace),
+            llm_ingress.workload_service(env.namespace),
             notifications.workload_service(env.namespace),
         ],
     )

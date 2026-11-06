@@ -561,27 +561,27 @@ flowchart LR
     actions -->|create + watch Pods| k8s
     actions -->|exec via Kubernetes API| workload
     workload --> box_sidecar -->|token mode; no Sandbox SVID| egress
-    runner --> sidecar -->|TLS SVID on proxy-mtls:8889 when enabled| egress
-    guest --> relay -->|TLS SVID on proxy-mtls:8889 when enabled| egress
+    runner --> sidecar -.->|opaque CONNECT with Sandbox SVID inside TLS| egress
+    guest --> relay -.->|opaque CONNECT with Sandbox SVID inside TLS| egress
     app -->|egress admin API| egress
     egress -->|policy and credential watches; live Sandbox lookup for SVID| k8s
     egress -->|workload Actions gRPC and MCP| actions
     egress -->|policy-approved requests| other
-    egress -->|model requests| llm
+    egress -.->|opaque TLS to SVID listener:8081| llm
+    sampler -->|direct TokenReview HTTP:8080| llm
     llm -->|model API + server-held key| litellm
     actions -->|MCP calls| mcp_servers
     actions -->|REST + web push| github
 ```
 
-The optional runner mTLS hop authenticates the Runtime SVID, then resolves its Sandbox UID and
-accepted credential ID through the live API before using that Sandbox's own ServiceAccount as the
-policy subject. Caller headers do not select identity; the HTTP token listener remains available.
-The egress proxy substitutes a configured credential only for the destination covered by its
-policy. LiteLLM is a separate hop behind LLM ingress; only that service holds the LiteLLM virtual key.
-The Sandbox sidecar and KubeVirt launcher relay select their hop mode explicitly. Pod and
-Firecracker system-test fixtures exercise the TLS listener; staging remains in token mode until the
-explicit flip. Plain Action boxes and external workloads still use token
-mode because they have no Sandbox Controller-issued SVID.
+The optional runner mTLS hop authenticates the Runtime SVID at the egress proxy. For LLM requests,
+the sidecar maps its existing HTTP origin to a dedicated LLM TLS listener through opaque CONNECT;
+the listener resolves the Sandbox UID and accepted credential ID through the live API before using
+that Sandbox's ServiceAccount and Pod as the principal. Caller headers do not select identity. The
+central sampler retains its direct TokenReview HTTP listener on port 8080. LiteLLM is a separate hop
+behind LLM ingress; only that service holds the LiteLLM virtual key. The Sandbox sidecar and KubeVirt
+launcher relay select their proxy hop mode explicitly. Plain Action boxes and external workloads
+still use token mode because they have no Sandbox Controller-issued SVID.
 The app has independent `action_federation.service_url` and `connection_service_url` settings.
 Both tiers send operator Connection calls and gRPC health probes to the [MCP edge](../mcp_edge/README.md).
 Staging's external MCP/OAuth routes terminate there too, preserving the public issuer/resource URLs.

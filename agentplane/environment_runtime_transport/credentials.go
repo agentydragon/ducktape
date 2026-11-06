@@ -36,7 +36,11 @@ const EgressProxyURI = "spiffe://agentplane/egress-proxy"
 const HistoryIngressURI = "spiffe://agentplane/history-ingress"
 
 // NotificationsURI is the Notification Service workload listener.
-const NotificationsURI = "spiffe://agentplane/notifications"
+const (
+	NotificationsURI = "spiffe://agentplane/notifications"
+	// LLMIngressURI is the LLM ingress listener that authenticates Sandbox SVIDs.
+	LLMIngressURI = "spiffe://agentplane/llm-ingress"
+)
 
 var trustDomain = spiffeid.RequireTrustDomainFromString("agentplane")
 
@@ -178,7 +182,7 @@ func (c Config) WorkloadServerCredentials(localURI string) (credentials.Transpor
 // fixed SPIFFE identity. The file source reloads projected certificate, key,
 // and CA bundle replacements while keeping the client identity pinned.
 func (c Config) ClientTLSConfig(expectedPeerURI string) (*tls.Config, error) {
-	if expectedPeerURI != EgressProxyURI && expectedPeerURI != HistoryIngressURI && expectedPeerURI != NotificationsURI {
+	if expectedPeerURI != EgressProxyURI && expectedPeerURI != HistoryIngressURI && expectedPeerURI != NotificationsURI && expectedPeerURI != LLMIngressURI {
 		return nil, errors.New("expected peer URI must name a supported first-party service")
 	}
 	if c.WorkloadAPISocket != "" {
@@ -202,7 +206,7 @@ func (c Config) ClientTLSConfig(expectedPeerURI string) (*tls.Config, error) {
 // listener. It accepts only a current EnvironmentRuntime identity with an
 // explicit clientAuth EKU; callers resolve the URI to live Sandbox state.
 func (c Config) WorkloadServerTLSConfig(localURI string) (*tls.Config, error) {
-	if localURI != EgressProxyURI && localURI != HistoryIngressURI && localURI != NotificationsURI {
+	if localURI != EgressProxyURI && localURI != HistoryIngressURI && localURI != NotificationsURI && localURI != LLMIngressURI {
 		return nil, errors.New("local URI must name a supported first-party service")
 	}
 	if c.WorkloadAPISocket != "" {
@@ -456,7 +460,7 @@ func requireEKU(certificate *x509.Certificate, usage x509.ExtKeyUsage) error {
 
 // parseIdentity accepts first-party service identities or a canonical EnvironmentRuntimeURI.
 func parseIdentity(identity string) (spiffeid.ID, error) {
-	if identity != GatewayURI && identity != EgressProxyURI && identity != HistoryIngressURI && identity != NotificationsURI {
+	if identity != GatewayURI && identity != EgressProxyURI && identity != HistoryIngressURI && identity != NotificationsURI && identity != LLMIngressURI {
 		if _, _, _, err := ParseEnvironmentRuntimeURI(identity); err != nil {
 			return spiffeid.ID{}, fmt.Errorf("identity must name a first-party service or a valid EnvironmentRuntimeURI: %w", err)
 		}
