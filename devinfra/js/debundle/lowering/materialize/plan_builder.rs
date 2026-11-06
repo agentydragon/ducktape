@@ -222,7 +222,9 @@ impl ChunkPlanBuilder {
         };
 
         let mut bindings_catalogue = HashMap::new();
-        let mut retained_plan_bindings = vec![BTreeSet::<String>::new(); self.module_plans.len()];
+        // Metadata is keyed by source name for both owned bindings and imported
+        // re-exports, even though imports have no entry in plan.bindings.
+        let mut retained_claim_names = vec![BTreeSet::<String>::new(); self.module_plans.len()];
         for (binding, kind) in &self.bindings_catalogue {
             let mut retained_kind = kind.clone();
             let referenced_module = match &mut retained_kind {
@@ -254,9 +256,7 @@ impl ChunkPlanBuilder {
             };
             if keep {
                 referenced_module.0 = new_index;
-                if matches!(kind, BindingKind::Owned { .. }) {
-                    retained_plan_bindings[old_index].insert(binding.0.to_string());
-                }
+                retained_claim_names[old_index].insert(binding.0.to_string());
                 bindings_catalogue.insert(binding.clone(), retained_kind);
             }
         }
@@ -274,7 +274,7 @@ impl ChunkPlanBuilder {
             .enumerate()
             .filter_map(|(old_index, mut plan)| {
                 remapped_indices[old_index].map(|_| {
-                    let retained = &retained_plan_bindings[old_index];
+                    let retained = &retained_claim_names[old_index];
                     plan.bindings.retain(|name, _| retained.contains(name));
                     plan.spec_named_bindings
                         .retain(|name| retained.contains(name));
