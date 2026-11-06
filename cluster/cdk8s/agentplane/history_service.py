@@ -68,7 +68,7 @@ def ingress_service(namespace: str) -> ServiceRef:
 def workload_service(namespace: str) -> ServiceRef:
     return ServiceRef(
         name=NAME,
-        port=Port(name="workload-ingress", number=8082),
+        port=Port(name="workload", number=8082),
         pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
     )
 
