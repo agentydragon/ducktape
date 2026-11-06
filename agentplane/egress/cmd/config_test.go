@@ -130,6 +130,50 @@ func TestAdminGRPCIsOffUnlessItsSettingsAreSet(t *testing.T) {
 	}
 }
 
+func TestSVIDListenerIsOffByDefaultAndAllOrNothing(t *testing.T) {
+	c, err := loadTestConfig(t, required(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SVIDListenAddress != "" || c.SVIDCertFile != "" || c.SVIDKeyFile != "" || c.SVIDCAFile != "" {
+		t.Fatalf("SVID listener unexpectedly enabled by default: %+v", c)
+	}
+	for name, settings := range map[string][]string{
+		"address only": {settingPrefix + "SVID_LISTEN_ADDRESS=127.0.0.1:8889"},
+		"missing CA": {
+			settingPrefix + "SVID_LISTEN_ADDRESS=127.0.0.1:8889",
+			settingPrefix + "SVID_CERT_FILE=/svid/tls.crt",
+			settingPrefix + "SVID_KEY_FILE=/svid/tls.key",
+		},
+		"relative path": {
+			settingPrefix + "SVID_LISTEN_ADDRESS=127.0.0.1:8889",
+			settingPrefix + "SVID_CERT_FILE=etc/tls.crt",
+			settingPrefix + "SVID_KEY_FILE=/svid/tls.key",
+			settingPrefix + "SVID_CA_FILE=/svid/ca.crt",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadTestConfig(t, append(required(t), settings...)); err == nil {
+				t.Fatal("accepted incomplete or invalid SVID listener configuration")
+			}
+		})
+	}
+	configured, err := loadTestConfig(t, required(
+		t,
+		settingPrefix+"SVID_LISTEN_ADDRESS=127.0.0.1:8889",
+		settingPrefix+"SVID_CERT_FILE=/svid/tls.crt",
+		settingPrefix+"SVID_KEY_FILE=/svid/tls.key",
+		settingPrefix+"SVID_CA_FILE=/svid/ca.crt",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configured.SVIDListenAddress != "127.0.0.1:8889" || configured.SVIDCertFile != "/svid/tls.crt" ||
+		configured.SVIDKeyFile != "/svid/tls.key" || configured.SVIDCAFile != "/svid/ca.crt" {
+		t.Fatalf("unexpected SVID listener settings: %+v", configured)
+	}
+}
+
 func TestAdminGRPCLoadsFromTheFileAndTheEnvironment(t *testing.T) {
 	path := writeSettings(t, `allowed_service_account_namespaces: [ns]
 admin_grpc_audience: file-audience

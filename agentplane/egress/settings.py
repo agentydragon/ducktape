@@ -10,10 +10,12 @@ from ipaddress import IPv4Network, IPv6Network
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.log_levels import LogLevels
+
+PROXY_MTLS_PORT = 8889
 
 
 class Settings(BaseModel):
@@ -34,6 +36,13 @@ class Settings(BaseModel):
         "token at all; it grants nothing on its own, since a subject no binding names still reaches no rule.",
     )
     listen_address: str = Field(default="0.0.0.0:8888", description="Proxy listener address the sidecars relay to.")
+    svid_listen_address: str | None = Field(
+        default=None,
+        description="Optional mTLS forward-proxy listener. Unset disables SVID authentication and the listener.",
+    )
+    svid_cert_file: Path | None = Field(default=None, description="Server certificate for the SVID listener.")
+    svid_key_file: Path | None = Field(default=None, description="Private key for the SVID listener certificate.")
+    svid_ca_file: Path | None = Field(default=None, description="Trust bundle for SVID client certificates.")
     admin_listen_address: str = Field(
         default="0.0.0.0:8081",
         description="Admin listener address serving gRPC health and, when configured, the EgressAdmin API.",
@@ -79,3 +88,10 @@ class Settings(BaseModel):
         default_factory=list,
         description="Networks an admitted host may resolve into although they are not globally reachable.",
     )
+
+    @model_validator(mode="after")
+    def svid_listener_is_all_or_nothing(self) -> Settings:
+        configured = [self.svid_listen_address, self.svid_cert_file, self.svid_key_file, self.svid_ca_file]
+        if any(value is not None for value in configured) and any(value is None for value in configured):
+            raise ValueError("svid_listen_address, svid_cert_file, svid_key_file and svid_ca_file must be set together")
+        return self
