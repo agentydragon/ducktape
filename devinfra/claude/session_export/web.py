@@ -10,7 +10,6 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Respons
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from python.runfiles import Runfiles
 from starlette import status
 
 from devinfra.claude.session_export.read_api import create_read_api
@@ -20,8 +19,6 @@ from devinfra.claude.session_export.supervisor import SyncStatus, SyncSupervisor
 from util.oidc_login import LoginConfig, install_login
 
 logger = logging.getLogger(__name__)
-
-_FRONTEND_INDEX = "ducktape/devinfra/claude/session_export/frontend/dist/index.html"
 
 
 class PairingStart(BaseModel):
@@ -106,13 +103,6 @@ def _health_route(app: FastAPI) -> None:
 
 
 def _frontend(app: FastAPI, frontend_dir: Path | None) -> None:
-    if frontend_dir is None:
-        # Only the server binary packages the SPA; the library is also imported without it, by its own tests.
-        runfiles_index = Runfiles.CreateOrRaise().root() / _FRONTEND_INDEX
-        if not runfiles_index.is_file():
-            logger.warning("the frontend bundle is not present in runfiles")
-        else:
-            frontend_dir = Path(str(runfiles_index)).parent
     if frontend_dir is not None:
         index = frontend_dir / "index.html"
         if index.is_file():

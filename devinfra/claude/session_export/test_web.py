@@ -22,6 +22,7 @@ from devinfra.claude.session_export.conftest import (
     make_session,
     redirect_url,
 )
+from devinfra.claude.session_export.export_sessions import _frontend_dir
 from devinfra.claude.session_export.models import Event
 from devinfra.claude.session_export.oauth import CredentialStore
 from devinfra.claude.session_export.settings import ServeSettings, WebSettings
@@ -54,13 +55,19 @@ def serve(store: SessionStore, tmp_path: Path) -> Serve:
 
     @asynccontextmanager
     async def serving(
-        *, subject: str = OWNER, token_status: int = 200, token_response: dict[str, Any] = PAIRED_RESPONSE
+        *,
+        subject: str = OWNER,
+        token_status: int = 200,
+        token_response: dict[str, Any] = PAIRED_RESPONSE,
+        frontend_dir: Path | None = None,
     ) -> AsyncIterator[str]:
-        frontend_dir = tmp_path / "frontend"
-        frontend_dir.mkdir()
-        (frontend_dir / "index.html").write_text(
-            "<!doctype html><title>session sync test shell</title>", encoding="utf-8"
-        )
+        frontend = frontend_dir
+        if frontend is None:
+            frontend = tmp_path / "frontend"
+            frontend.mkdir()
+            (frontend / "index.html").write_text(
+                "<!doctype html><title>session sync test shell</title>", encoding="utf-8"
+            )
         private_key, public_key = generate_rsa_keypair()
         with bind_http_server() as idp_endpoint, bind_http_server() as app_endpoint:
             idp_url, app_url = idp_endpoint.origin, app_endpoint.origin
@@ -94,7 +101,7 @@ def serve(store: SessionStore, tmp_path: Path) -> Serve:
             async with (
                 idp_endpoint.serve(idp),
                 app_endpoint.serve_in_loop(
-                    create_app(supervisor=supervisor, settings=settings, store=store, frontend_dir=frontend_dir)
+                    create_app(supervisor=supervisor, settings=settings, store=store, frontend_dir=frontend)
                 ),
             ):
                 yield app_url
@@ -131,6 +138,17 @@ async def test_everything_but_health_needs_the_login_and_the_owner_completes_it(
     assert status.status_code == 200
     assert status.json()["state"] == "unpaired"
     assert status.headers["cache-control"] == "no-store"
+
+
+async def test_declared_frontend_bundle_is_served_after_login(serve: Serve) -> None:
+    async with serve(frontend_dir=_frontend_dir()) as app_url, httpx.AsyncClient(base_url=app_url) as browser:
+        page = await browser.get("/auth/login", follow_redirects=True)
+        script = await browser.get("/main.js")
+    assert page.status_code == 200
+    assert page.url.path == "/sessions"
+    assert 'src="/main.js"' in page.text
+    assert script.status_code == 200
+    assert script.headers["content-type"].startswith("text/javascript")
 
 
 async def test_someone_who_passes_login_but_is_not_the_owner_is_refused(serve: Serve) -> None:
