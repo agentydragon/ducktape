@@ -14,9 +14,9 @@
 //!   [`EsmImportOrder::sort_entry_imports`] —
 //!   `source_import_position` ascending (docs/design.md "Lemma 2":
 //!   SCC dep rank ascending, intra-SCC linker position descending),
-//!   `ModuleId` ascending on ties. Assignment analysis interleaves isolated
-//!   entry-only leaves by their earliest source unit; the relative order of
-//!   every other I-graph participant stays unchanged.
+//!   `ModuleId` ascending on ties. Acyclic import graphs prefer each module's
+//!   earliest source unit; DFS still evaluates its dependencies first. Cyclic
+//!   graphs retain the base order except for isolated entry-only leaves.
 //! - **Module imports** (every emitted logical module's intra-chunk
 //!   `import` directives: cross-module binding imports, phantom
 //!   side-effect imports, and the residual-entry import, merged into
@@ -27,10 +27,11 @@
 //!
 //! The emitter renders import declarations in exactly these orders
 //! (`lowering/lower.rs`); the candidate uses the same orders as DFS
-//! neighbor order. The legacy graph gate uses the base order without the
-//! entry-only leaf preference: those leaves cannot change other modules'
-//! relative evaluation order, and every constraint into one comes from entry,
-//! which always evaluates last. Do not reintroduce
+//! neighbor order. The legacy graph gate uses the base order: acyclic imports
+//! always evaluate dependencies first regardless of entry import order. In
+//! cyclic graphs only entry-only leaves move; they cannot affect other modules'
+//! relative order and every constraint into one comes from entry, which runs
+//! last. Do not reintroduce
 //! per-side ordering rules (e.g. "phantom imports first") — encode
 //! any ordering requirement here so both sides inherit it.
 
@@ -40,6 +41,8 @@ use analysis::graph::{
     chunk_linker_order_from_pairs, chunk_source_import_order_from_adjacency, position_lookup,
 };
 use analysis::ids::ModuleId;
+use petgraph::algo::is_cyclic_directed;
+use petgraph::graphmap::DiGraphMap;
 use source_identity::SourceUnitOrdinal;
 
 /// Sort key for one import target: `(position, target)` with missing
@@ -89,15 +92,31 @@ impl EsmImportOrder {
         &self.linker_order
     }
 
-    /// Modules with no imports and only entry as an importer are DFS leaves.
-    /// Interleave them by their first source unit without changing the relative
-    /// order of other I-graph participants, including rescued lazy cycles.
-    pub(crate) fn preserve_isolated_source_order(
+    /// Prefer source order when every import dependency is acyclic. DFS still
+    /// visits dependencies first. Cyclic graphs retain their rescue ordering;
+    /// only entry-only leaves can be interleaved without affecting that order.
+    pub(crate) fn preserve_source_order(
         &mut self,
         i_successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
         first_units: &BTreeMap<ModuleId, SourceUnitOrdinal>,
         entry: ModuleId,
     ) {
+        let graph = DiGraphMap::<ModuleId, ()>::from_edges(
+            i_successors
+                .iter()
+                .flat_map(|(from, targets)| targets.iter().map(move |to| (*from, *to))),
+        );
+        if !is_cyclic_directed(&graph) {
+            let mut order: Vec<_> = self.source_import_position.keys().copied().collect();
+            order.sort_by_key(|module| {
+                (
+                    first_units.get(module).map_or(usize::MAX, |first| first.0),
+                    *module,
+                )
+            });
+            self.source_import_position = position_lookup(&order);
+            return;
+        }
         let mut connected: BTreeSet<_> = i_successors
             .iter()
             .filter(|(from, _)| **from != entry)

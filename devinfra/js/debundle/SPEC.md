@@ -3978,11 +3978,13 @@ empty.
 
 ## Realizability cut explanations
 
-Modules imported only by entry, with no imports of their own, are entry-only
-leaves. Entry imports interleave these leaves by their earliest source unit,
-preserving the relative import order of every module participating in the
-intra-chunk graph. The candidate's exact emitted order still requires the
-ordinary relocation assessment.
+When the full intra-chunk import graph is acyclic, entry imports prefer each
+module's earliest source unit. Dependency traversal still evaluates imported
+modules first. Cyclic graphs retain their rescue order except for entry-only
+leaves: modules imported only by entry with no imports of their own. These leaves
+can be interleaved by source unit without changing other modules' relative
+order. The candidate's exact emitted order still requires the ordinary
+relocation assessment.
 
 Each `cycles.json` entry names its `rejection`. `mutual_constraining_cycle`
 is a Pass-1 cycle of constraining edges. `esm_evaluation_tdz` is a Pass-2 TDZ
