@@ -2021,28 +2021,6 @@ fn binding_execution_report(fixture: &Fixture, binding: &str) -> Value {
     .expect("serialize execution report")
 }
 
-fn assert_inline_operation_receipt(
-    fixture: &Fixture,
-    binding: &str,
-    expected_calls: usize,
-    case: &str,
-) {
-    let execution = binding_execution_report(fixture, binding);
-    assert_eq!(execution["complete"], true, "{case}: {execution:#}");
-    let authority = &execution["binding_effect_authority"];
-    assert_eq!(
-        authority["authority"], "operation_receipt",
-        "{case}: {execution:#}"
-    );
-    let receipt = &authority["receipt"];
-    assert_eq!(receipt["binding"], binding, "{case}: {receipt:#}");
-    assert_eq!(
-        receipt["calls"].as_array().unwrap().len(),
-        expected_calls,
-        "{case}: {receipt:#}"
-    );
-}
-
 fn depth_limited_fixture(
     tail: &str,
     callback_result: bool,
@@ -2974,19 +2952,16 @@ fn single_local_call_seals_real_lexical_read_and_call_receipts() {
 
 #[test]
 fn inline_callee_creation_executes_with_exact_operation_receipts() {
-    for (case, expression) in [
-        ("arrow", "((value) => value)((() => 42)())"),
-        (
-            "anonymous function",
-            "(function(value) { return value; })((function() { return 42; })())",
-        ),
+    for expression in [
+        "((value) => value)((() => 42)())",
+        "(function(value) { return value; })((function() { return 42; })())",
     ] {
         let source = format!("const result = {expression};\nconsole.log(result);\n");
         let fixture = run_fixture(
             FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
         );
         assert_preserved_entry_output(&fixture, "42\n");
-        assert_inline_operation_receipt(&fixture, "result", 2, case);
+        assert_operation_receipt(&fixture, "result", 2);
     }
 }
 
@@ -3000,7 +2975,7 @@ fn inline_callee_invocation_keeps_captured_reads_and_refuses_unsupported_bodies(
         .with_unassigned_mode(unassigned_mode_inline()),
     );
     assert_preserved_entry_output(&captured, "41\n");
-    assert_inline_operation_receipt(&captured, "result", 2, "captured-read");
+    assert_operation_receipt(&captured, "result", 2);
     let graph = captured.dependency_graph();
     let result = source_unit_for_binding(&graph, "result");
     let seed = source_unit_for_binding(&graph, "seed");
@@ -3036,11 +3011,9 @@ fn inline_callee_invocation_keeps_captured_reads_and_refuses_unsupported_bodies(
         .with_unassigned_mode(unassigned_mode_inline()),
     );
     assert_preserved_entry_output(&named, "42\n");
-    let execution = binding_execution_report(&named, "result");
-    assert_ne!(
-        execution["binding_effect_authority"]["authority"], "operation_receipt",
-        "named function self scopes remain outside operation receipts: {execution:#}"
-    );
+    // This layer supplies the named-self establishment missing on the lower
+    // inline-callee PR. Its same nested named call must now carry a receipt.
+    assert_operation_receipt(&named, "result", 2);
 }
 
 #[test]
