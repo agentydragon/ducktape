@@ -57,6 +57,7 @@ pub fn emit_browser_harness(
         copied_assets,
         entry_scripts: browser.entry_scripts.clone(),
         module_preloads: browser.module_preloads.clone(),
+        runtime_resources: &browser.runtime_resources,
         generated: HarnessGeneratedManifest {
             bootstrap: module_path_from_path(&PathBuf::from("bootstrap.js")),
             index_html: module_path_from_path(&PathBuf::from("index.html")),
@@ -87,7 +88,8 @@ pub fn emit_browser_harness(
 }
 
 #[derive(Serialize)]
-struct HarnessRuntimeReport {
+struct HarnessRuntimeReport<'a> {
+    runtime_resources: &'a [artifact::runtime_resources::RuntimeResourceResolution],
     app_root: String,
     copied_assets: Vec<String>,
     entry_scripts: Vec<String>,

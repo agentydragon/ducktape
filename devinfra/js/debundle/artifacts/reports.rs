@@ -193,6 +193,7 @@ pub struct ChunkAnalysisReport {
 
 #[derive(Debug, Clone, Default)]
 pub struct ChunkRuntimeFacts {
+    pub resources: Vec<crate::runtime_resources::RuntimeResourceUse>,
     /// Direct ESM exports whose complete local binding history is primitive
     /// once their copied imports are. Resolved by the program-level
     /// cross-module analysis.

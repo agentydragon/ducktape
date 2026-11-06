@@ -129,7 +129,22 @@ impl ReconstructionPlan {
     ) -> Result<Self> {
         let browser_harness = browser_options
             .map(|options| {
-                BrowserHarnessPlan::prepare(files.files(), &vendor.full_swap_chunk_ids(), options)
+                BrowserHarnessPlan::prepare(
+                    files.files(),
+                    &vendor.full_swap_chunk_ids(),
+                    &vendor
+                        .full_swap_resolutions()
+                        .values()
+                        .filter_map(|resolution| {
+                            files
+                                .files()
+                                .chunk_table
+                                .get(&resolution.chunk_id)
+                                .map(|id| (id, resolution.package.clone()))
+                        })
+                        .collect(),
+                    options,
+                )
             })
             .transpose()?;
         Ok(Self {
