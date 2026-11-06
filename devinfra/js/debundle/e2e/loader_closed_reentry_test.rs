@@ -282,23 +282,19 @@ fn dynamic_provider_modules() -> Vec<LogicalModuleEntry> {
 
 /// The dynamically imported module reads the requester at its top level. That
 /// happens in a later job, after the requester finished evaluating, so the
-/// split preserves the original output. `lazy.js` is a runtime-only sibling:
-/// the source copy reads the original provider, the emitted copy (where the
-/// rebased specifier lands) reads the emitted provider entry.
+/// split preserves the original output. Capture `lazy.js` as a source chunk so
+/// its provider import and the moved dynamic import use emitted destinations;
+/// both executions must run the same source without an authored emitted copy.
 #[test]
 fn dynamic_import_is_not_a_synchronous_loader_site() {
     let consumer = r#"import { readLater } from "./provider.js";
 console.log("consumer", readLater());
 "#;
-    let extra_chunks = [("static/provider", DYNAMIC_PROVIDER)];
-    let extra_files = [
+    let extra_chunks = [
+        ("static/provider", DYNAMIC_PROVIDER),
         (
-            "static/lazy.js",
+            "static/lazy",
             "import { readLater } from \"./provider.js\";\nconsole.log(\"lazy\", readLater());\n",
-        ),
-        (
-            "static/provider/lazy.js",
-            "import { readLater } from \"./entry.js\";\nconsole.log(\"lazy\", readLater());\n",
         ),
     ];
     let provider_modules = [(PROVIDER_CHUNK, dynamic_provider_modules())];
@@ -306,7 +302,6 @@ console.log("consumer", readLater());
         FixtureOpts::new(consumer, vec![])
             .with_chunk_id("static/consumer")
             .with_extra_chunks(&extra_chunks)
-            .with_extra_files(&extra_files)
             .with_extra_chunk_logical_modules(&provider_modules),
     );
     let report = export_reentry_report(&fixture.report_root);

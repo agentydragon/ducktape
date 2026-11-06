@@ -27,3 +27,13 @@ reports are not emitter-defect evidence. No private capture or source is include
 The existing direct Worker-string rewrite has only source-shape coverage. Its
 browser document base is not the module URL; the resource inventory marks this
 case unresolved. The destination fix leaves that transform outside its scope.
+
+Full hosted CI at `f17735cbfd` exposed a fixture dependency on the old wrong
+coordinate system: `loader_closed_reentry_test` supplied an extra, hand-written
+emitted `lazy.js` whose provider import pointed at `entry.js`. Correct source
+rebasing reached the original runtime-only file instead, whose provider source
+path was absent from the emitted tree. The fixture now captures the lazy module
+as a source chunk and executes that same source in both trees; the artifact
+resolver owns both the dynamic target and its static provider import. This
+preserves the test's asynchronous-reentry proof without a fixture-only emitted
+implementation.
