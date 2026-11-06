@@ -93,7 +93,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "Each row is one exact head event in the arrival-time cohort, not a workflow attempt. `PR head event` is the observed GitHub PR-head event timestamp: it is an event-time proxy, **not the commit's actual push time**. `Workflow creation proxy` starts at the first observed workflow creation; choose one clock for comparable quantiles. Completion timestamps are provider-reported, not first API-queryable, webhook-delivery, or agent-receipt times. Green replays the **latest observed required-policy replay as of the dashboard end** (`policy_observed_at`), not historical merge eligibility. Missing policy or gates stay unknown or pending, never green. Timed rates include every head old enough at dashboard end, including censored heads; younger heads remain visible as still observing. Blank timing fields mean no sample."
+        "content": "Each row is one head occurrence in the arrival cohort. **PR head event** starts at GitHub\u2019s PR opening or head-change timestamp: a proxy, not the commit\u2019s actual push time. **Workflow creation proxy** starts at the first observed workflow. Select one clock for comparable percentiles.\n\nResults use job completion timestamps, before webhook or agent delivery. Green replays the **latest observed required-check policy**; this is not historical merge eligibility. Missing results remain pending or unknown. Timed rates include censored heads in their denominators; younger heads are still observing. Blank timings mean no sample."
       }
     },
     {
@@ -169,7 +169,7 @@
               },
               {
                 "id": "displayName",
-                "value": "P50 (s)"
+                "value": "P50"
               }
             ]
           },
@@ -189,7 +189,7 @@
               },
               {
                 "id": "displayName",
-                "value": "P90 (s)"
+                "value": "P90"
               }
             ]
           },
@@ -209,7 +209,7 @@
               },
               {
                 "id": "displayName",
-                "value": "P99 (s)"
+                "value": "P99"
               }
             ]
           }
@@ -294,7 +294,7 @@
               },
               {
                 "id": "displayName",
-                "value": "P50 (s)"
+                "value": "P50"
               }
             ]
           },
@@ -314,7 +314,7 @@
               },
               {
                 "id": "displayName",
-                "value": "P90 (s)"
+                "value": "P90"
               }
             ]
           },
@@ -346,7 +346,7 @@
         "x": 0,
         "y": 11,
         "w": 16,
-        "h": 7
+        "h": 9
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -457,7 +457,7 @@
         "x": 16,
         "y": 11,
         "w": 8,
-        "h": 7
+        "h": 9
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -532,9 +532,9 @@
       "type": "table",
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 20,
         "w": 24,
-        "h": 5
+        "h": 6
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
@@ -737,7 +737,7 @@
       "type": "table",
       "gridPos": {
         "x": 0,
-        "y": 23,
+        "y": 26,
         "w": 24,
         "h": 4
       },
@@ -856,7 +856,7 @@
               },
               {
                 "id": "displayName",
-                "value": "Named missing gates"
+                "value": "Missing results"
               },
               {
                 "id": "custom.width",
@@ -922,7 +922,7 @@
       "type": "table",
       "gridPos": {
         "x": 0,
-        "y": 27,
+        "y": 30,
         "w": 24,
         "h": 10
       },
@@ -940,7 +940,7 @@
           "editorMode": "code",
           "rawQuery": true,
           "format": "table",
-          "rawSql": "WITH feedback AS (\n  SELECT *\n  FROM cdviz.ci_feedback($__timeFrom(), $__timeTo())\n  WHERE (\n    ${scope:sqlstring} = 'all'\n    OR (${scope:sqlstring} = 'PR' AND pr IS NOT NULL)\n    OR (${scope:sqlstring} = 'devel' AND pr IS NULL AND branch IN ('devel', 'main'))\n  )\n    AND (${clock:sqlstring} = 'all' OR clock = ${clock:sqlstring})\n)\nSELECT\n  arrived_at AS \"Arrived\",\n  pr AS \"PR\",\n  LEFT(head_sha, 10) AS \"Head SHA\",\n  state AS \"State\",\n  first_verdict AS \"First verdict\",\n  ROUND(first_verdict_seconds::numeric, 1) AS \"Verdict seconds\",\n  ROUND(red_seconds::numeric, 1) AS \"Red seconds\",\n  ROUND(green_seconds::numeric, 1) AS \"Green seconds\",\n  observed_gates AS \"Observed gates\",\n  required_gates AS \"Required gates\",\n  missing_gates AS \"Missing gates\",\n  clock AS \"Arrival clock\",\n  repository AS \"Repository\",\n  branch AS \"Branch\",\n  first_red_at AS \"First red\",\n  first_green_at AS \"First green\",\n  policy_observed_at AS \"Policy observed\",\n  url AS \"URL\"\nFROM feedback\nORDER BY arrived_at DESC\nLIMIT 50"
+          "rawSql": "WITH feedback AS (\n  SELECT *\n  FROM cdviz.ci_feedback($__timeFrom(), $__timeTo())\n  WHERE (\n    ${scope:sqlstring} = 'all'\n    OR (${scope:sqlstring} = 'PR' AND pr IS NOT NULL)\n    OR (${scope:sqlstring} = 'devel' AND pr IS NULL AND branch IN ('devel', 'main'))\n  )\n    AND (${clock:sqlstring} = 'all' OR clock = ${clock:sqlstring})\n)\nSELECT\n  arrived_at AS \"Arrived\",\n  pr AS \"PR\",\n  LEFT(head_sha, 10) AS \"Head SHA\",\n  state AS \"State\",\n  first_verdict AS \"First verdict\",\n  ROUND(first_verdict_seconds::numeric, 1) AS \"Verdict seconds\",\n  ROUND(red_seconds::numeric, 1) AS \"Red seconds\",\n  ROUND(green_seconds::numeric, 1) AS \"Green seconds\",\n  observed_gates::text || '/' || required_gates::text AS \"Gates\",\n  clock AS \"Arrival clock\",\n  missing_gates AS \"Missing gates\",\n  repository AS \"Repository\",\n  branch AS \"Branch\",\n  first_red_at AS \"First red\",\n  first_green_at AS \"First green\",\n  policy_observed_at AS \"Policy observed\",\n  url AS \"URL\"\nFROM feedback\nORDER BY arrived_at DESC\nLIMIT 50"
         }
       ],
       "fieldConfig": {
@@ -1126,7 +1126,7 @@
               },
               {
                 "id": "custom.width",
-                "value": 100
+                "value": 170
               }
             ]
           },
@@ -1210,7 +1210,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Verdict (s)"
+                "value": "Feedback"
               },
               {
                 "id": "custom.width",
@@ -1234,7 +1234,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Red (s)"
+                "value": "First red"
               },
               {
                 "id": "custom.width",
@@ -1258,7 +1258,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Green (s)"
+                "value": "First green"
               },
               {
                 "id": "custom.width",
@@ -1277,38 +1277,6 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Observed gates"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Gates seen"
-              },
-              {
-                "id": "custom.width",
-                "value": 80
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Required gates"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Gates req."
-              },
-              {
-                "id": "custom.width",
-                "value": 80
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
               "options": "Arrival clock"
             },
             "properties": [
@@ -1319,6 +1287,26 @@
               {
                 "id": "custom.width",
                 "value": 80
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Gates"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "string"
+              },
+              {
+                "id": "custom.width",
+                "value": 55
+              },
+              {
+                "id": "displayName",
+                "value": "Seen/req"
               }
             ]
           }

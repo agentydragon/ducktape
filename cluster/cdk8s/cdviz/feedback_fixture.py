@@ -1,5 +1,6 @@
 """Adversarial CI histories for the PostgreSQL/Grafana integration test."""
 
+import hashlib
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -34,7 +35,7 @@ def seed(connection: psycopg.Connection, now: datetime) -> None:
     )
 
     def head(number: int, age: int, revision: int = 0) -> tuple[str, datetime]:
-        sha = f"{number * 100 + revision:040x}"
+        sha = hashlib.sha256(f"{number}/{revision}".encode()).hexdigest()[:40]
         at = now - timedelta(minutes=age)
         write(
             at,
@@ -137,7 +138,7 @@ def seed(connection: psycopg.Connection, now: datetime) -> None:
 
     # Unknown PR arrival is retained as a visibly different workflow-clock cohort.
     at = now - timedelta(minutes=12)
-    sha = f"{21100:040x}"
+    sha = hashlib.sha256(b"211/0").hexdigest()[:40]
     for gate in range(3):
         run(211, sha, at, gate)
         job(211, sha, at, gate, gate + 1, "success")
