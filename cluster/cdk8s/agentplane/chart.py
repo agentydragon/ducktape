@@ -178,6 +178,7 @@ def environment_chart(
             history_service.workload_service(env.namespace),
             notifications.workload_service(env.namespace),
             runner_gateway.workload_service(env.namespace),
+            actions.workload_service(env.namespace),
         ],
     ).add_platform_resources()
     sandbox_pod.add_tool_config(chart, env)
@@ -256,6 +257,7 @@ def environment_chart(
         "actions",
         env,
         database_url=actions_database_url,
+        workload_callers=[egress.proxy(env.namespace).pods],
         history=history_service.service(env.namespace),
         history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=session_dispatcher.service(env.namespace),

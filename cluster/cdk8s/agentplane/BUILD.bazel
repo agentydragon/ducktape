@@ -507,6 +507,7 @@ py_library(
         ":mcp_routes",
         ":notifications",
         ":service_workload",
+        ":workload_tls",
         "//agentplane:crd_group",
         "//agentplane:subjects",
         "//agentplane/action_service:catalog",
@@ -1498,6 +1499,7 @@ py_library(
     srcs = ["workload_routes.py"],
     deps = [
         ":egress",
+        ":actions",
         ":notifications",
         ":runner_gateway",
         ":session_dispatcher",

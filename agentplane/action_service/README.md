@@ -8,6 +8,14 @@ Agent entry point: [`/llms.txt`](docs/agents/llms.txt), with linked lifecycle, r
 Kubernetes/grant workflows. The generated HTTP/JSON API reference is `/openapi.json`; update the guides
 when those contracts change.
 
+Sandbox calls use the service-owned SVID listener on 8082, with the sidecar
+originating TLS through an opaque central-proxy CONNECT. The service resolves the
+verified leaf to the live Sandbox's own ServiceAccount and UID; caller-label,
+request ownership, approval policy and watch rechecks are unchanged. Its in-process
+HTTP facade runs the same Gate as native gRPC. The backend listener keeps workload
+tokens and operator OIDC for its existing callers. Operator APIs are absent from
+the SVID listener.
+
 **For an agent, this is where a call to the outside world goes**, mediated rather than direct: an
 `ActionGroup` mounts one MCP server, mirrors its `tools/list` into the catalog, and this service
 initiates `tools/call` itself, so the harness never holds an MCP client of its own. The standalone

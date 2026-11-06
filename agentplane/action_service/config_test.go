@@ -398,3 +398,15 @@ func TestSessionDelegationPeersAreSetExactlyWhenADelegationGroupCallsThem(t *tes
 		})
 	}
 }
+
+func TestWorkloadListenerRequiresPairedDistinctTLSSettings(t *testing.T) {
+	const files = "workload_tls: {cert_file: /tls/tls.crt, key_file: /tls/tls.key, ca_file: /trust/ca.crt}\n"
+	for _, fragment := range []string{"workload_port: 8082\n", files, files + "workload_port: 8080\n"} {
+		if _, err := loadTestConfig(t, requiredFile+fragment); err == nil {
+			t.Fatal("unpaired or conflicting workload TLS listener accepted")
+		}
+	}
+	if _, err := loadTestConfig(t, requiredFile+files+"workload_port: 8082\n"); err != nil {
+		t.Fatal(err)
+	}
+}

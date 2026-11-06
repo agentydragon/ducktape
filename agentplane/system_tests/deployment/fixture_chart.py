@@ -458,6 +458,7 @@ def build_chart(
             history_service.workload_service(env.namespace),
             notifications.workload_service(env.namespace),
             runner_gateway.workload_service(env.namespace),
+            actions.workload_service(NAMESPACE),
         ],
     )
     sandbox_pod.add_tool_config(chart, env)
@@ -589,6 +590,7 @@ def build_chart(
         "actions",
         env,
         database_url=actions_database_url,
+        workload_callers=[egress.proxy(NAMESPACE).pods],
         history=history_service.service(NAMESPACE),
         history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=runner_gateway_workload.dispatcher_service(NAMESPACE),

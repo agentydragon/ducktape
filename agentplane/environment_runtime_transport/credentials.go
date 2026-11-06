@@ -43,6 +43,8 @@ const NotificationsURI = "spiffe://agentplane/notifications"
 
 // SessionDispatcherURI is the Runner Gateway's Sandbox workload listener.
 const SessionDispatcherURI = "spiffe://agentplane/session-dispatcher"
+// ActionsURI is the Action Service workload listener.
+const ActionsURI = "spiffe://agentplane/actions"
 
 var trustDomain = spiffeid.RequireTrustDomainFromString("agentplane")
 
@@ -184,7 +186,7 @@ func (c Config) WorkloadServerCredentials(localURI string) (credentials.Transpor
 // fixed SPIFFE identity. The file source reloads projected certificate, key,
 // and CA bundle replacements while keeping the client identity pinned.
 func (c Config) ClientTLSConfig(expectedPeerURI string) (*tls.Config, error) {
-	if expectedPeerURI != EgressProxyURI && expectedPeerURI != EgressRulesURI && expectedPeerURI != HistoryIngressURI && expectedPeerURI != NotificationsURI && expectedPeerURI != SessionDispatcherURI {
+	if expectedPeerURI != EgressProxyURI && expectedPeerURI != EgressRulesURI && expectedPeerURI != HistoryIngressURI && expectedPeerURI != NotificationsURI && expectedPeerURI != SessionDispatcherURI && expectedPeerURI != ActionsURI {
 		return nil, errors.New("expected peer URI must name a supported first-party service")
 	}
 	if c.WorkloadAPISocket != "" {
@@ -208,7 +210,7 @@ func (c Config) ClientTLSConfig(expectedPeerURI string) (*tls.Config, error) {
 // listener. It accepts only a current EnvironmentRuntime identity with an
 // explicit clientAuth EKU; callers resolve the URI to live Sandbox state.
 func (c Config) WorkloadServerTLSConfig(localURI string) (*tls.Config, error) {
-	if localURI != EgressProxyURI && localURI != EgressRulesURI && localURI != HistoryIngressURI && localURI != NotificationsURI && localURI != SessionDispatcherURI {
+	if localURI != EgressProxyURI && localURI != EgressRulesURI && localURI != HistoryIngressURI && localURI != NotificationsURI && localURI != SessionDispatcherURI && localURI != ActionsURI {
 		return nil, errors.New("local URI must name a supported first-party service")
 	}
 	if c.WorkloadAPISocket != "" {
@@ -462,7 +464,7 @@ func requireEKU(certificate *x509.Certificate, usage x509.ExtKeyUsage) error {
 
 // parseIdentity accepts fixed first-party egress service identities or a canonical EnvironmentRuntimeURI.
 func parseIdentity(identity string) (spiffeid.ID, error) {
-	if identity != GatewayURI && identity != EgressProxyURI && identity != EgressRulesURI && identity != HistoryIngressURI && identity != NotificationsURI && identity != SessionDispatcherURI {
+	if identity != GatewayURI && identity != EgressProxyURI && identity != EgressRulesURI && identity != HistoryIngressURI && identity != NotificationsURI && identity != SessionDispatcherURI && identity != ActionsURI {
 		if _, _, _, err := ParseEnvironmentRuntimeURI(identity); err != nil {
 			return spiffeid.ID{}, fmt.Errorf("identity must name a first-party service or a valid EnvironmentRuntimeURI: %w", err)
 		}

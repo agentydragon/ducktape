@@ -119,6 +119,9 @@ flowchart LR
     sidecar -->|mTLS Runtime SVID :8889| egress
     guest -->|HTTP CONNECT through launcher relay| relay
     relay -->|mTLS Runtime SVID :8889| egress
+    sidecar -.->|Action SVID TLS through CONNECT| egress
+    relay -.->|Action SVID TLS through CONNECT| egress
+    egress -.->|opaque Action TLS, verified by the service| actions
     runner -.->|OTLP/gRPC telemetry route| sidecar
     sidecar -->|OTLP/gRPC| alloy
     guest -.->|OTLP/gRPC telemetry route| relay
