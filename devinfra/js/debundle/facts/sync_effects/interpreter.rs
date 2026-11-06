@@ -10785,6 +10785,36 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             fresh_checked_constructor,
         );
         self.record_callable_heap_contents(key, &mut outcome);
+        let no_normal_return = self
+            .inputs
+            .index
+            .callables
+            .get(&key)
+            .is_some_and(|callable| {
+                !callable.generator
+                    && !self.inputs.index.async_callables.contains(&key)
+                    && !callable.may_fall_through
+                    && callable.body_facts.value_flow().returns().is_empty()
+            });
+        if no_normal_return
+            && outcome
+                .returns
+                .iter()
+                .any(|value| *value != AbstractValue::Value(Value::Unavailable))
+        {
+            // An opaque nested operation can carry values for effect reach.
+            // They are not successful returns of a source throw-only body.
+            // Preserve their publication while retaining the abrupt result.
+            let reached = std::mem::take(&mut outcome.returns);
+            self.publish_values(
+                &reached,
+                ClassMembersPublicationWriter::ThrowValuePublication,
+                None,
+            );
+            outcome
+                .returns
+                .insert(AbstractValue::Value(Value::Unavailable));
+        }
         if !outcome.complete || outcome.unknown_call {
             let cells: Vec<_> = self.state.active_cells.values().copied().collect();
             self.havoc_cells(cells);
