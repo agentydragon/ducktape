@@ -1370,6 +1370,15 @@ fn captured_value_bindings_survive_saved_program_summary() {
     .with_extra_chunks(&[("static/setup", SETUP), ("static/peer", PROVIDER)])
     .with_value_inputs("static/peer", vec![input]);
     let (staged, _fixture) = staged(opts);
+    // The premise provider belongs to the static-import closure, but is not a
+    // materialization root. Analyze must retain it from canonical source sites.
+    let projection: Value = rmp_serde::from_slice(&fs::read(&staged.projection).unwrap()).unwrap();
+    assert_eq!(projection["analysed_chunks"], json!(["static/app"]));
+    assert_eq!(
+        projection["source_sites"]["value_inputs"]["static/peer"][0],
+        json!({"binding": "captured", "body_index": 0}),
+    );
+    assert!(projection["source_sites"]["source_sha256"]["static/peer"].is_string());
     let direct = staged.run(&[]);
     assert_ok(&direct.result, "direct captured-value run");
     let saved = staged.run(&["--analysis", path(&staged.artifact)]);

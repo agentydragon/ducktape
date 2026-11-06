@@ -2,8 +2,8 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+use crate::ChunkBundle;
 use anyhow::{Result, bail};
-use artifact::ChunkBundle;
 use spec::ChunkExportPurity;
 
 pub fn resolve_source_export_policies<'a>(
@@ -34,8 +34,9 @@ pub fn resolve_source_export_policies<'a>(
         let Some(entry) = chunk.js.get_file(&chunk.analysis.entry_file) else {
             continue;
         };
-        // Raw entries retain their exact input text. AST entries use the current
-        // staged body, not stale original text retained in the parser SourceMap.
+        // Source representations retain exact input text, including an AST
+        // held only for read-only analysis. Mutable AST access invalidates that
+        // representation; ordinary AST entries use the current staged body.
         let source = match entry.source() {
             Some(source) => Cow::Borrowed(source),
             None => Cow::Owned(entry.render_source()?),

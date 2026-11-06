@@ -510,6 +510,22 @@ impl HostBehavior {
 }
 
 impl TransformSpec {
+    /// Provider ASTs needed to resolve source-bound premises, independently of
+    /// which chunks are selected for materialization.
+    pub fn source_premise_chunk_ids(&self) -> BTreeSet<String> {
+        self.chunk_analysis_options
+            .iter()
+            .filter(|(_, options)| {
+                !options.value_inputs.is_empty()
+                    || !options.native_operation_inputs.is_empty()
+                    || !options.native_call_identity_inputs.is_empty()
+                    || !options.argument_inputs.is_empty()
+                    || !options.no_accessor_install_callables.is_empty()
+            })
+            .map(|(chunk, _)| chunk.clone())
+            .collect()
+    }
+
     /// Chunk ids selected by the `materialize_logical_modules` stage.
     ///
     /// Keep this selection shared by the pipeline and commands that need to

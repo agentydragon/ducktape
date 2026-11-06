@@ -27,9 +27,12 @@ pub struct SourcePreparation {
 }
 
 /// `materialized_chunk_ids` is `TransformSpec::materialize_chunk_ids`: the
-/// chunks whose modules are planned keep their AST.
+/// chunks whose modules are planned keep their AST. `analysis_provider_chunk_ids`
+/// independently retains original ASTs for source-premise providers, including
+/// providers inside the import closure that are not materialized.
 pub fn prepare_js_chunks(
     materialized_chunk_ids: &BTreeSet<String>,
+    analysis_provider_chunk_ids: &BTreeSet<String>,
     vendor: &BTreeMap<String, VendorMark>,
     loaded: LoadedJsChunks,
 ) -> Result<SourcePreparation> {
@@ -94,9 +97,9 @@ pub fn prepare_js_chunks(
     //
     // A chunk needs to keep its AST if any downstream stage will read it. The
     // predicates below cover spec-driven stages (logical modules, residual
-    // modules, renames, vendor); on top of those, the pass-through emission
-    // rewriter canonicalizes specifiers in every emitted non-module file, so
-    // we must also keep the AST whenever it would rewrite anything in this
+    // modules, renames, vendor) and source-premise provider analysis. The
+    // pass-through emission rewriter also canonicalizes specifiers in every
+    // emitted non-module file, so we keep its AST whenever it would rewrite this
     // chunk's entry. The `has_rewritable_specifier` fact mirrors the
     // canonicalizer's relative-path gate (`.` or `/` prefix) exactly and is
     // computed during the first-pass `analyze_program_shallow` walk, so this
@@ -104,20 +107,26 @@ pub fn prepare_js_chunks(
     let prepared_chunks = parsed_chunks
         .into_iter()
         .map(|(chunk_id, chunk_name, mut prepared)| {
-            let needs_ast = materialized_chunk_ids.contains(&chunk_name)
+            let needs_emission_ast = materialized_chunk_ids.contains(&chunk_name)
                 || vendor_target_chunk_ids.contains(&chunk_name)
                 || prepared.has_rewritable_specifier;
 
-            if !needs_ast
+            if !needs_emission_ast
                 && let Some(pos) = prepared
                     .files
                     .iter()
                     .position(|f| f.path == CANONICAL_CHUNK_ENTRY_FILE)
             {
                 let file = prepared.files.remove(pos);
-                if let Some(rendered) = file.into_rendered_source() {
-                    prepared.files.insert(pos, rendered);
+                // Read-only analysis retention must not change source-marker
+                // matching or pass-through output bytes/header behavior.
+                let file = if analysis_provider_chunk_ids.contains(&chunk_name) {
+                    file.into_source_with_ast()
+                } else {
+                    file.into_rendered_source()
                 }
+                .context("freshly prepared entry must contain an AST")?;
+                prepared.files.insert(pos, file);
             }
 
             Ok((chunk_id, chunk_name, prepared))
@@ -237,6 +246,87 @@ mod tests {
     use super::*;
     use std::fs;
 
+    #[test]
+    fn source_premise_provider_retention_is_independent_of_materialization() {
+        js_ast::with_swc_globals(|| {
+            let root = tempfile::TempDir::new().unwrap();
+            let source = "// original parser input\nexport function reader() { return 7; }\n";
+            fs::write(root.path().join("provider.js"), source).unwrap();
+            fs::write(root.path().join("neighbor.js"), "export const value = 7;").unwrap();
+            let list = root.path().join("js-files.txt");
+            fs::write(&list, "provider.js\nneighbor.js\n").unwrap();
+            let spec: spec::TransformSpec = serde_yaml::from_str(concat!(
+                "inputs: {input_root: '.', js_list_path: js-files.txt}\n",
+                "chunk_analysis_options:\n",
+                "  provider:\n",
+                "    no_accessor_install_callables:\n",
+                "      - source_match:\n",
+                "          match: 'export function reader() { return 7; }'\n",
+                "          bindings: [reader]\n",
+            ))
+            .unwrap();
+            assert!(spec.materialize_chunk_ids().is_empty());
+            let providers = spec.source_premise_chunk_ids();
+            assert_eq!(providers, BTreeSet::from(["provider".to_string()]));
+            for retain_provider in [false, true] {
+                let loaded = artifact::load_js_chunks(root.path(), &list).unwrap();
+                let retained = if retain_provider {
+                    providers.clone()
+                } else {
+                    BTreeSet::new()
+                };
+                let prepared = prepare_js_chunks(
+                    &spec.materialize_chunk_ids(),
+                    &retained,
+                    &spec.vendor,
+                    loaded,
+                )
+                .unwrap();
+                let artifact = prepared.program.artifact();
+                for chunk in &artifact.chunks {
+                    let name = artifact.chunk_table.name(chunk.chunk_id);
+                    let file = chunk.js.get_file(CANONICAL_CHUNK_ENTRY_FILE).unwrap();
+                    assert_eq!(
+                        file.ast().is_some(),
+                        retain_provider && name == "provider",
+                        "{name}"
+                    );
+                    if let Some(parsed) = file.ast() {
+                        assert_eq!(parsed.source_text(), source);
+                        assert_eq!(file.source(), Some(source));
+                        assert_eq!(file.render_source().unwrap(), source);
+                        let mut mutated = file.clone();
+                        mutated.ast_mut().unwrap().module.body.clear();
+                        assert!(mutated.source().is_none());
+                        assert!(!mutated.render_source().unwrap().contains("reader"));
+                        assert_eq!(file.render_source().unwrap(), source);
+                        let (parts, mut parsed) = file.clone().into_ast_parts().unwrap();
+                        parsed.module.body.clear();
+                        let reconstructed = JsFile::from_ast_parts(parts, parsed);
+                        assert!(reconstructed.source().is_none());
+                        assert!(!reconstructed.render_source().unwrap().contains("reader"));
+                    }
+                }
+                // Both source-to-emission paths restore pass-through source
+                // storage before eager mutation passes can enroll the provider.
+                let emissions = [
+                    artifact::EmissionFiles::new(artifact.clone()).unwrap(),
+                    artifact::EmissionFiles::from_prepared(prepared.program),
+                ];
+                for emission in emissions {
+                    for chunk in &emission.files().chunks {
+                        let name = emission.files().chunk_table.name(chunk.chunk_id);
+                        let file = chunk.js.get_file(CANONICAL_CHUNK_ENTRY_FILE).unwrap();
+                        assert!(file.ast().is_none(), "{name}");
+                        if name == "provider" {
+                            assert_eq!(file.render_source().unwrap(), source);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     // Retention is an internal storage invariant, not observable in emitted JS.
     // Load real source files through the normal loader and fused preparation.
     #[test]
@@ -271,18 +361,25 @@ mod tests {
                 "inputs: {input_root: '.', js_list_path: js-files.txt}\nvendor:\n  vendor.js: {identity: fixture, level: suppress}\n",
             ).unwrap();
             let loaded = artifact::load_js_chunks(root.path(), &list).unwrap();
-            let prepared =
-                prepare_js_chunks(&spec.materialize_chunk_ids(), &spec.vendor, loaded).unwrap();
-            let artifact = prepared.program.artifact();
-            for chunk in &artifact.chunks {
-                let name = artifact.chunk_table.name(chunk.chunk_id);
-                let has_ast = chunk
-                    .js
-                    .get_file(CANONICAL_CHUNK_ENTRY_FILE)
-                    .unwrap()
-                    .ast()
-                    .is_some();
-                assert_eq!(has_ast, name != "helper", "{name}");
+            let prepared = prepare_js_chunks(
+                &spec.materialize_chunk_ids(),
+                &spec.source_premise_chunk_ids(),
+                &spec.vendor,
+                loaded,
+            )
+            .unwrap();
+            let emission = artifact::EmissionFiles::from_prepared(prepared.program.clone());
+            for artifact in [prepared.program.artifact(), emission.files()] {
+                for chunk in &artifact.chunks {
+                    let name = artifact.chunk_table.name(chunk.chunk_id);
+                    let has_ast = chunk
+                        .js
+                        .get_file(CANONICAL_CHUNK_ENTRY_FILE)
+                        .unwrap()
+                        .ast()
+                        .is_some();
+                    assert_eq!(has_ast, name != "helper", "{name}");
+                }
             }
         });
     }

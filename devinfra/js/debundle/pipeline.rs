@@ -503,7 +503,12 @@ fn prepare_transform(
                 .with_context(|| format!("parse embedded loaders {}", path.display()))?,
             None => BTreeMap::new(),
         };
-    let source = prepare_js_chunks(&spec.materialize_chunk_ids(), &spec.vendor, artifact)?;
+    let source = prepare_js_chunks(
+        &spec.materialize_chunk_ids(),
+        &spec.source_premise_chunk_ids(),
+        &spec.vendor,
+        artifact,
+    )?;
     let source_program = &source.program;
 
     // Single post-prepare vendor resolution pass: validates every mark,
