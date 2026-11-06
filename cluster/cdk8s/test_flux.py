@@ -182,38 +182,6 @@ def test_config_map_data_rejects_directory_traversal_keys(key: str) -> None:
         ConfigMapArgs(name="test-config", namespace="test-ns", data={key: "value"})
 
 
-def test_config_map_data_serializes_to_kustomize_literals() -> None:
-    data = {
-        "config.yaml": "credentials: user=token==\nnext: true\n",
-        "empty": "",
-        "quoted": '"keep space "',
-        "single-quoted": "'literal quotes'",
-    }
-    entry = ConfigMapArgs(
-        name="test-config",
-        namespace="test-ns",
-        data=data,
-        files=["file.conf"],
-        options=GeneratorOptions(disable_name_suffix_hash=True),
-    )
-    rendered = kustomize_kustomization(resources=[], config_map_generator=[entry])
-    assert rendered["configMapGenerator"] == [
-        {
-            "name": "test-config",
-            "namespace": "test-ns",
-            "options": {"disableNameSuffixHash": True},
-            "files": ["file.conf"],
-            "literals": [
-                "config.yaml=credentials: user=token==\nnext: true\n",
-                "empty=",
-                "quoted='\"keep space \"'",
-                "single-quoted=\"'literal quotes'\"",
-            ],
-        }
-    ]
-    assert entry.data == data
-
-
 def test_config_map_data_preserves_values_through_kustomize(kustomize: Path, tmp_path: Path) -> None:
     data = {
         "config.yaml": "credentials: user=token==\nnext: true\n",
@@ -237,7 +205,10 @@ def test_config_map_data_preserves_values_through_kustomize(kustomize: Path, tmp
     result = subprocess.run([kustomize, "build", tmp_path], capture_output=True, check=False)
     assert result.returncode == 0, result.stderr.decode()
     [rendered] = yaml.safe_load_all(result.stdout)
+    assert rendered["metadata"]["name"] == "test-config"
+    assert rendered["metadata"]["namespace"] == "test-ns"
     assert rendered["data"] == {**data, "file.conf": "file-backed content\n"}
+    assert entry.data == data
 
 
 def test_file_backed_config_map_omits_literals() -> None:
