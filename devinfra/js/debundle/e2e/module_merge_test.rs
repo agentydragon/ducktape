@@ -3,7 +3,7 @@
 use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 
-use debundle_e2e_support::write_text_file;
+use debundle_e2e_support::{read_json, write_text_file};
 use serde_yaml::Value;
 
 #[test]
@@ -284,7 +284,10 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
         let target = format!(
             "{metadata}members: [{{selector: {{binding: {{name: a}}}}}}]\nanonymous_statements: [{{match: 'console.log(\"first\");'}}]"
         );
-        let fixture = GraphFixture::new_full_tree(
+        // The original split moves a console call across another module's
+        // initializers. The merge repairs that unproved order while preserving
+        // every claim and metadata field below.
+        let fixture = GraphFixture::rejected_full_tree(
             "const a = 1; const b = 2; const c = 3; const d = 4; console.log(\"first\"); console.log(\"second\"); console.log(a + b + c + d);",
             &[
                 ("ui/target.yaml", &target),
@@ -303,6 +306,12 @@ fn merge_preserves_claims_metadata_and_runtime_with_or_without_target_comments()
                 ("ui/empty.yaml", "members: []"),
             ],
         );
+        let baseline: serde_json::Value = read_json(
+            &fixture
+                .graph
+                .with_file_name("candidate_relocation_assessment.json"),
+        );
+        assert_eq!(baseline["status"], "incomplete", "{baseline:#}");
         let sibling = fixture.modules.join("ui/target.yaml.tmp");
         write_text_file(&sibling, "unrelated data\n");
         let paths = [
