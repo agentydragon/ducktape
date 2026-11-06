@@ -223,3 +223,36 @@ The historical shutdown failures have no retained PID 1 syscall/kernel-stack or 
 samples from the quiet interval. Their exact blocker remains beyond that evidence. The
 new guest observer and host snapshots are intended to cross that boundary on recurrence;
 passing experiments remain validation of collection rather than a shutdown repair.
+
+## Uncached control after observer merges
+
+On devel commit `57305db4d39334d78cfdaec858791dda69325a4a`,
+[six uncached full-suite runs](https://app.buildbuddy.io/invocation/f7a6fc69-875c-4cf1-994e-2fb36e1ddda5)
+with the merged guest and host observers produced five passes and one failure. The failure
+does **not** reproduce the late-shutdown stall: the original `systest-vm-2` launcher aborted
+during guest boot at 21:34:17 UTC with QEMU 10.1.0's `iotlb_to_section` assertion
+`section_index < d->map.sections_nb`. Its raw serial ended during PCI enumeration, before
+an ACPI shutdown request. A replacement incarnation completed the scenario, but the suite
+correctly rejected the original launcher's missing shutdown proof. Its report-phase host
+sample found the launcher already gone; that is not a shutdown-phase QEMU sample. This is a
+second observation of the boot assertion described in [the CPU comparison](../vm_cpu_budgets.md),
+now with two vCPUs. It does not establish a shared cause with the late-shutdown stall.
+The retained original launcher's [raw serial](run6-serial.log.gz), [CRI console](run6-console.log.gz),
+[launcher log](run6-launcher.log.gz), and [report-phase host sample](run6-report.log.gz) are
+compressed alongside this report without changing their bytes; the invocation also retains the
+replacement and other guests' artifacts.
+
+One execution also suffered a separate BuildBuddy infrastructure failure and was retried:
+the outer Firecracker VM's Linux 5.15.0 kernel panicked at `update_blocked_averages+0x273/0x740`
+on a noncanonical address. Its execution is
+`/uploads/042cc757-65fd-418a-9e2f-4257de885375/blobs/497c5e7828dcf152cac098248b56b7ef1304146918065aacdd0f6c1118a5ad73/1852`;
+`bb execution get` exposes its `vm_log_tail.txt` server log. This matches the _location_ of
+one previously recorded provider panic, not proof of its corruption writer or of a relation
+to the guest shutdown failures. The six test results include the infrastructure retry.
+
+The earlier passing [devel CI invocation](https://app.buildbuddy.io/invocation/56121559-725f-58e0-ad04-ef20045b9f46)
+provides a healthy comparison for the guest and QEMU observations. The Codex OOM guest's raw
+serial shows `mount-monitor-dispatch` entering and leaving rate limiting, followed by the
+shutdown proof and powerdown. Its host snapshot at 21:16:10.028 UTC captured a running QEMU
+domain shortly before proof; one vCPU was halted in the register sample. These individual
+observations therefore do not establish a stuck manager or vCPU.
