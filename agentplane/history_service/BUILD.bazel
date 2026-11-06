@@ -120,7 +120,10 @@ go_test(
     name = "config_test",
     srcs = ["config_test.go"],
     embed = [":main_lib"],
-    deps = ["//agentplane/workload_auth/auth"],
+    deps = [
+        "//agentplane/testing/configtest",
+        "//agentplane/workload_auth/auth",
+    ],
 )
 
 go_test(
