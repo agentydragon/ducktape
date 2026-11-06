@@ -1953,6 +1953,33 @@ fn assert_operation_receipt(fixture: &Fixture, binding: &str, expected_calls: us
     receipt.clone()
 }
 
+fn assert_class_declaration_receipt(fixture: &impl FixtureGraphExt, binding: &str) -> Value {
+    let graph = fixture.dependency_graph();
+    let unit = source_unit_for_binding(&graph, binding);
+    let node = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == unit)
+        .expect("class declaration owner");
+    let execution = serde_json::to_value(
+        node.synchronous_execution
+            .as_ref()
+            .expect("class declaration execution report"),
+    )
+    .expect("serialize class declaration execution report");
+    assert_eq!(execution["complete"], true, "{execution:#}");
+    let authority = &execution["binding_effect_authority"];
+    assert_eq!(authority["authority"], "operation_receipt", "{execution:#}");
+    let receipt = &authority["receipt"];
+    assert_eq!(receipt["root_kind"], "class_declaration", "{receipt:#}");
+    assert_eq!(receipt["binding"], binding, "{receipt:#}");
+    assert_eq!(receipt["owner"], node.statement_ordinal.0, "{receipt:#}");
+    assert!(receipt["declaration_span"].is_object(), "{receipt:#}");
+    assert!(receipt.get("initializer_span").is_none(), "{receipt:#}");
+    assert_eq!(receipt["calls"], serde_json::json!([]), "{receipt:#}");
+    receipt.clone()
+}
+
 fn assert_binary_reads_remain_ordered(fixture: &Fixture, binding: &str, reads: &[&str]) {
     let graph = fixture.dependency_graph();
     let owner = source_unit_for_binding(&graph, binding);
@@ -2111,7 +2138,7 @@ fn empty_native_collection_inputs(
     ]
 }
 
-fn binding_execution_report(fixture: &Fixture, binding: &str) -> Value {
+fn binding_execution_report(fixture: &impl FixtureGraphExt, binding: &str) -> Value {
     let graph = fixture.dependency_graph();
     let unit = source_unit_for_binding(&graph, binding);
     let node = graph.nodes.iter().find(|node| node.id == unit).unwrap();
@@ -5642,7 +5669,6 @@ fn unsupported_class_shapes_remain_uncovered() {
     for declaration in [
         "class WorkQueue extends Object {}",
         "class WorkQueue { [globalThis.queueKey]() {} }",
-        "class WorkQueue { get value() { return 1; } }",
         "class WorkQueue { static state = (globalThis.marker = 1); }",
         "class WorkQueue { static { globalThis.marker = 1; } }",
     ] {
@@ -7250,21 +7276,25 @@ fn local_private_field_construction_keeps_deferred_callback_and_brand() {
 }
 
 #[test]
-fn private_new_receipt_does_not_cover_a_reordered_class_definition() {
+fn private_new_and_class_definition_receipts_cover_reordering() {
     let source = "class Box { #read = () => later; run() { return this.#read(); } } const result = new Box(); const later = 7; console.log(result.run());\n";
-    let rejected = run_rejection_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module(
-                "callbacks/box",
-                &[Member::new("Box"), Member::new("result")],
-            ),
-            logical_module("values/later", &[Member::new("later")]),
-        ],
-    ));
-    let assessment = rejected.effect_translation_validation();
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/box",
+                    &[Member::new("Box"), Member::new("result")],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        ),
+        "private-construction-class-root",
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+    let assessment = fixture.effect_translation_validation();
     assert_eq!(
-        assessment["decision"]["status"], "incomplete",
+        assessment["decision"]["status"], "accepted",
         "{assessment:#}"
     );
     assert_eq!(
@@ -7272,5 +7302,150 @@ fn private_new_receipt_does_not_cover_a_reordered_class_definition() {
         serde_json::json!([2, 0, 1, 3]),
         "{assessment:#}"
     );
-    assert_eq!(assessment["counts"]["uncovered_pairs"], 1, "{assessment:#}");
+    assert_eq!(assessment["swapped_pairs"], 2, "{assessment:#}");
+
+    assert_class_declaration_receipt(&fixture, "Box");
+    let receipt = assert_operation_receipt(&fixture, "result", 1);
+    assert_eq!(
+        receipt["calls"][0]["target"]["kind"], "construction",
+        "{receipt:#}"
+    );
+    let execution = binding_execution_report(&fixture, "result");
+    let private_write =
+        execution["heap_frontier"]["non_assumed_heap_accesses"]["writes"]["sample"][0].clone();
+    assert_eq!(private_write["kind"], "private_slot", "{execution:#}");
+    assert_eq!(private_write["name"], "read", "{execution:#}");
+    assert_eq!(
+        private_write["origin"], receipt["calls"][0]["target"]["class"],
+        "{execution:#}"
+    );
+    assert_eq!(private_write["class"], private_write["origin"]);
+}
+
+#[test]
+fn eager_class_definition_effect_does_not_receive_a_complete_root_receipt() {
+    let source = "class Box { static ready = later; #read = () => later; run() { return this.#read(); } } const result = new Box(); const later = 7; console.log(result.run());\n";
+    let source_witness = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "source",
+            &[
+                Member::new("Box"),
+                Member::new("result"),
+                Member::new("later"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_error(&source_witness, "ReferenceError");
+
+    let rejected = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/box",
+                    &[Member::new("Box"), Member::new("result")],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        ),
+        &["--effect-conflicts-jsonl"],
+        1,
+    );
+    let assessment = rejected.effect_translation_validation();
+    assert_eq!(
+        assessment["decision"]["status"], "conflict",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["emitted_order"],
+        serde_json::json!([2, 0, 1, 3]),
+        "{assessment:#}"
+    );
+    assert_eq!(assessment["swapped_pairs"], 2, "{assessment:#}");
+    assert_eq!(assessment["counts"]["uncovered_pairs"], 2, "{assessment:#}");
+    assert_eq!(assessment["counts"]["havoc_pairs"], 2, "{assessment:#}");
+    for domain in ["global_properties", "general_heap", "host_effects"] {
+        assert_eq!(
+            assessment["coverage"]["unknown_coverage"][domain], 3,
+            "{assessment:#}"
+        );
+    }
+    assert_eq!(
+        assessment["coverage"]["owner_coverage_refusals"]["unsupported_owner_kind"], 2,
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
+        "{assessment:#}"
+    );
+
+    let rows = read_jsonl(&rejected.report_path("effect_conflicts.jsonl"));
+    let pair = rows
+        .iter()
+        .find(|pair| pair["runs_first"]["unit"] == 2 && pair["runs_later"]["unit"] == 0)
+        .unwrap_or_else(|| panic!("later-before-class effect hazard: {rows:#?}"));
+    assert_eq!(pair["runs_first"]["module"], "values/later", "{pair:#}");
+    assert_eq!(pair["runs_later"]["module"], "callbacks/box", "{pair:#}");
+    assert_eq!(pair["disposition"], "uncovered", "{pair:#}");
+    assert_eq!(pair["havoc"], true, "{pair:#}");
+    assert_eq!(
+        pair["later_opacity"]["owner_coverage_refusal"]["reason"], "unsupported_owner_kind",
+        "{pair:#}"
+    );
+    assert_eq!(
+        pair["later_opacity"]["unknown_coverage"],
+        serde_json::json!(["global_properties", "general_heap", "host_effects"]),
+        "{pair:#}"
+    );
+    let later_cell = pair["cells"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|cell| cell["cell"]["kind"] == "binding" && cell["cell"]["binding"] == "later")
+        .unwrap_or_else(|| panic!("eager Box/later lexical hazard: {pair:#}"));
+    assert_eq!(
+        later_cell["first_write"]["kind"], "observed",
+        "{later_cell:#}"
+    );
+    assert_eq!(
+        later_cell["later_read"]["kind"], "observed",
+        "{later_cell:#}"
+    );
+    assert_eq!(later_cell["observed_conflict"], true, "{later_cell:#}");
+
+    let execution = binding_execution_report(&rejected, "Box");
+    assert_eq!(execution["complete"], true, "{execution:#}");
+    let authority = &execution["binding_effect_authority"];
+    assert_eq!(authority["authority"], "legacy_execution", "{execution:#}");
+    assert_eq!(authority["complete"], true, "{execution:#}");
+    assert!(authority.get("receipt").is_none(), "{execution:#}");
+}
+
+#[test]
+fn class_relocation_does_not_invoke_deferred_constructor_or_field_initializers() {
+    let source = "class Box { #read = () => later; #deferred = unavailable(); constructor(value = unavailable()) { this.value = value; } get value() { return unavailable(); } read() { return this.#read(); } } const later = 7; console.log(typeof Box, later);\n";
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("callbacks/box", &[Member::new("Box")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        ),
+        "deferred-class-initializers",
+    );
+    assert_preserved_entry_output(&fixture, "function 7\n");
+    let assessment = fixture.effect_translation_validation();
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["emitted_order"],
+        serde_json::json!([1, 0, 2]),
+        "{assessment:#}"
+    );
+    assert_eq!(assessment["swapped_pairs"], 1, "{assessment:#}");
+    assert_class_declaration_receipt(&fixture, "Box");
 }
