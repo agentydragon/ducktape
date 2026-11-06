@@ -118,13 +118,17 @@ fn relocated_array_length_read_receipts_the_length_cell_written_by_push() {
 fn forcing_push_before_the_array_length_read_rejects_and_changes_inspection_output() {
     // Importing the array forces the module containing its allocation and push
     // to finish before the reader. No extra lexical anchor creates a cycle.
-    let fixture = run_inspection_fixture(FixtureOpts::new(
-        "const store = [];\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n",
-        vec![
-            logical_module("mutator", &[Member::new("store"), Member::new("alpha")]),
-            logical_module("observer", &[Member::new("gamma")]),
-        ],
-    ));
+    let fixture = run_inspection_fixture(
+        FixtureOpts::new(
+            "const store = [];\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n",
+            vec![
+                logical_module("mutator", &[Member::new("store"), Member::new("alpha")]),
+                logical_module("observer", &[Member::new("gamma")]),
+            ],
+        )
+        .with_dataflow_aware_s_chain()
+        .with_trusted_dataflow_summaries(),
+    );
     let assessment = fixture.candidate_relocation_assessment();
     assert_eq!(
         assessment["decision"]["status"], "conflict",
