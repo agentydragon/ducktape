@@ -22,6 +22,11 @@ configMapGenerator:
               "state_dir": "/data/session/anthropic"
             },
             {
+              "id": "chatgpt",
+              "type": "chatgpt",
+              "state_dir": "/data/session/chatgpt"
+            },
+            {
               "id": "quest",
               "type": "quest",
               "state_dir": "/data/session/quest-platform"
@@ -38,6 +43,27 @@ configMapGenerator:
           "owner": {
             "role": "owner",
             "token_file": "/var/run/platform-sessions/owner"
+          },
+          "chatgpt-read": {
+            "role": "routes",
+            "token_file": "/var/run/platform-sessions/chatgpt-read",
+            "allow": [
+              {
+                "instance": "chatgpt",
+                "method": "GET",
+                "path": "/backend-api/conversations"
+              },
+              {
+                "instance": "chatgpt",
+                "method": "GET",
+                "path": "/backend-api/conversations/*"
+              },
+              {
+                "instance": "chatgpt",
+                "method": "GET",
+                "path": "/backend-api/conversations/*/messages"
+              }
+            ]
           },
           "thrive-scraper": {
             "role": "routes",

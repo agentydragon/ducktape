@@ -122,6 +122,41 @@ spec:
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
+  name: platform-sessions-chatgpt-read-bearer
+  namespace: platform-sessions
+spec:
+  allowRepeat: true
+  digits: 12
+  length: 48
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: platform-sessions-chatgpt-read-bearer
+  namespace: platform-sessions
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: platform-sessions-chatgpt-read-bearer
+  refreshPolicy: CreatedOnce
+  target:
+    creationPolicy: Owner
+    deletionPolicy: Retain
+    immutable: true
+    name: platform-sessions-chatgpt-read-bearer
+    template:
+      data:
+        token: "{{ .password }}"
+      type: Opaque
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
   name: platform-sessions-aiquota-bearer
   namespace: platform-sessions
 spec:
@@ -401,6 +436,11 @@ spec:
                     - key: token
                       path: thrive-read
                   name: platform-sessions-thrive-read-bearer
+              - secret:
+                  items:
+                    - key: token
+                      path: chatgpt-read
+                  name: platform-sessions-chatgpt-read-bearer
         - emptyDir: {}
           name: tmp
 ---
