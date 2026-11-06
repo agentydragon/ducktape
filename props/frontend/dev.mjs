@@ -66,13 +66,27 @@ if (!skipBackend) {
     console.warn(`${C.dim}Backend may fail. Run from props/ direnv shell.${C.reset}`);
   }
 
-  // Backend CLI is in runfiles at props/backend/backend_cli
-  // From props/frontend (chdir location), go up to runfiles root then down to backend
-  const backendBin = resolve(__dirname, "..", "backend", "backend_cli");
+  const backendRlocation = process.env.PROPS_BACKEND_CLI_RLOCATION;
+  const runfilesDir = process.env.JS_BINARY__RUNFILES;
+  if (!backendRlocation || !runfilesDir) {
+    throw new Error("Bazel did not provide the backend CLI runfiles path");
+  }
+  const backendBin = resolve(runfilesDir, backendRlocation);
+  if (!existsSync(backendBin)) {
+    throw new Error(`Backend CLI runfile was not found: ${backendBin}`);
+  }
+  const backendEnv = {
+    ...process.env,
+    RUNFILES_DIR: runfilesDir,
+    JAVA_RUNFILES: runfilesDir,
+  };
+  // Use the same runfiles tree for the Python child as for this JS launcher.
+  delete backendEnv.RUNFILES_MANIFEST_FILE;
+  delete backendEnv.RUNFILES_MANIFEST_ONLY;
 
-  backendProcess = spawn(backendBin, ["--host", "127.0.0.1", "--port", String(BACKEND_PORT)], {
+  backendProcess = spawn(backendBin, ["serve", "--host", "127.0.0.1", "--port", String(BACKEND_PORT)], {
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env },
+    env: backendEnv,
   });
 
   backendProcess.stdout.on("data", (d) => prefixLines("backend", C.cyan, d));

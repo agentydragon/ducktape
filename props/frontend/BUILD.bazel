@@ -159,6 +159,9 @@ js_binary(
         "//props/frontend/src/lib:schema",
     ],
     entry_point = "dev.mjs",
+    env = {
+        "PROPS_BACKEND_CLI_RLOCATION": "$(rlocationpath //props/backend:backend_cli)",
+    },
     no_copy_to_bin = ["//props/backend:backend_cli"],
 )
 
