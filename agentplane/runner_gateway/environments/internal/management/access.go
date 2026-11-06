@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -105,7 +107,8 @@ func (a *Access) Create(ctx context.Context, request *environmentpb.CreateEnviro
 	for _, name := range request.GetPolicySets() {
 		policySets[name] = struct{}{}
 	}
-	policySetNames := sortedKeys(policySets)
+	policySetNames := slices.AppendSeq(make([]string, 0, len(policySets)), maps.Keys(policySets))
+	slices.Sort(policySetNames)
 	if err := a.requirePolicySets(ctx, policySetNames); err != nil {
 		return nil, err
 	}
@@ -480,21 +483,10 @@ func pythonJSON(value any) (string, error) {
 	return ascii.String(), nil
 }
 
-func sortedKeys(set map[string]struct{}) []string {
-	keys := make([]string, 0, len(set))
-	for key := range set {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 func uniqueSorted(values []string) []string {
-	set := make(map[string]struct{}, len(values))
-	for _, value := range values {
-		set[value] = struct{}{}
-	}
-	return sortedKeys(set)
+	values = append([]string{}, values...)
+	slices.Sort(values)
+	return slices.Compact(values)
 }
 
 func sameDuration(first, second *metav1.Duration) bool {
