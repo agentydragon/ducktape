@@ -2759,18 +2759,18 @@ fn assert_class_construction_receipt(
     assert!(receipt["initializer_span"].is_object(), "{receipt:#}");
     let calls = receipt["calls"].as_array().unwrap();
     assert_eq!(calls.len(), 1, "{receipt:#}");
-    assert_eq!(calls[0]["caller"]["kind"], "root_initializer", "{calls:#}");
-    assert_eq!(calls[0]["caller"]["owner"], owner, "{calls:#}");
+    assert_eq!(calls[0]["caller"]["kind"], "root_initializer", "{calls:#?}");
+    assert_eq!(calls[0]["caller"]["owner"], owner, "{calls:#?}");
     assert_eq!(
         calls[0]["call_span"], receipt["initializer_span"],
-        "{calls:#}"
+        "{calls:#?}"
     );
     assert_eq!(
         calls[0]["target"],
         json!({"kind": "construction", "class": class, "owner": class_owner}),
-        "{calls:#}"
+        "{calls:#?}"
     );
-    assert_eq!(calls[0]["dependencies"], json!({}), "{calls:#}");
+    assert_eq!(calls[0]["dependencies"], json!({}), "{calls:#?}");
 }
 
 fn assert_export_filter_changes_only_sinks(
@@ -5392,9 +5392,9 @@ fn assert_set_spread_saved_replay(
             assert_eq!(calls.len(), 1, "{copied_execution:#}");
             assert_eq!(
                 calls[0]["target"]["kind"], "native_construction",
-                "{calls:#}"
+                "{calls:#?}"
             );
-            assert_eq!(calls[0]["target"]["intrinsic"], "set", "{calls:#}");
+            assert_eq!(calls[0]["target"]["intrinsic"], "set", "{calls:#?}");
 
             if selected {
                 let refs = json!([
@@ -5412,7 +5412,7 @@ fn assert_set_spread_saved_replay(
                 );
                 assert_eq!(
                     calls[0]["dependencies"]["native_operation_inputs"], refs,
-                    "{calls:#}"
+                    "{calls:#?}"
                 );
                 for (binding, input_index, operation) in [
                     ("seed", 0, "set_from_primitive_array"),
@@ -5445,7 +5445,7 @@ fn assert_set_spread_saved_replay(
                     json!({}),
                     "{receipt:#}"
                 );
-                assert_eq!(calls[0]["dependencies"], json!({}), "{calls:#}");
+                assert_eq!(calls[0]["dependencies"], json!({}), "{calls:#?}");
                 for binding in ["seed", "sibling", "copied"] {
                     let execution =
                         &graph_node_for_binding(&graph, binding)["synchronous_execution"];
