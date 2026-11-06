@@ -988,24 +988,28 @@ impl ValidatedNativeOperationFacts {
         })
     }
 
-    /// The exact-site native input certifies the ordinary original data slots;
-    /// a literal string additionally makes conversion and registry lookup
-    /// nonthrowing and free of user callbacks. The registry insertion cannot
-    /// be observed independently of the returned symbol in ECMAScript.
-    pub(crate) fn symbol_for_literal_proof(
+    /// The exact-site native input certifies the original data slots. A bare
+    /// Symbol call with no argument or one string literal has no conversion
+    /// callback; Symbol.for requires one string literal for its registry lookup.
+    /// The fresh allocation or registry operation has no separately
+    /// observable effect at these literal sites.
+    pub(crate) fn symbol_literal_proof(
         &self,
         call: &CallExpr,
     ) -> Option<&ResolvedNativeOperationInput> {
-        if call.args.len() != 1
-            || call.args[0].spread.is_some()
-            || !matches!(call.args[0].expr.as_ref(), Expr::Lit(Lit::Str(_)))
-        {
-            return None;
-        }
+        let string_literal = matches!(call.args.as_slice(), [arg]
+            if arg.spread.is_none() && matches!(arg.expr.as_ref(), Expr::Lit(Lit::Str(_))));
         self.inputs.iter().find(|input| {
             input.call_span == call.span
-                && input.evidence.operation
-                    == NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor)
+                && match input.evidence.operation {
+                    NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
+                        call.args.is_empty() || string_literal
+                    }
+                    NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor) => {
+                        string_literal
+                    }
+                    _ => false,
+                }
         })
     }
 }

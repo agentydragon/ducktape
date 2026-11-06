@@ -2488,6 +2488,11 @@ cross-chunk, restored) reject the input. Opaque receiver or key writes remain
 census witnesses covered by the assertion: a write to an apparently unrelated
 property can still run a setter or Proxy trap.
 
+A validated `symbol` site has an additional pure-initializer consequence only
+for direct `Symbol()` or `Symbol('literal')`; `symbol_for` requires exactly one
+direct string-literal argument. Other permitted primitive arguments retain
+their ordinary conversion and effect checks.
+
 For `set_from_primitive_array`, an identifier element must resolve to the same
 canonical binding as one earlier direct top-level simple `var`, `let` or
 `const` declarator initialized by a primitive literal. The completed source

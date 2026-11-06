@@ -567,10 +567,13 @@ source shape proves fresh dense elements and a closed interval, and the graph
 co-locates producer and consumer statements so the emitted module keeps it.
 No family-wide `Array` integrity follows; the external A11 obligation still
 applies.
-For exactly one string-literal argument, a validated `symbol_for` site has a
-separate purity consequence. The original native `Symbol.for` converts that
-string without user code or a throw, then looks up or inserts a symbol in the
-agent-local registry. ECMAScript exposes no registry enumeration or removal:
+An exact validated `symbol` site with zero arguments or one direct string
+literal has a separate pure-initializer consequence: the original native
+`Symbol` creates a fresh symbol without coercion callbacks or a throw. An exact
+validated `symbol_for` site still requires exactly one direct string literal.
+The original native `Symbol.for` converts that string without user code or a
+throw, then looks up or inserts a symbol in the agent-local registry. ECMAScript
+exposes no registry enumeration or removal:
 [`Symbol.keyFor`](https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-symbol.keyfor)
 queries an already held symbol, and repeat `Symbol.for` calls
 for a key return that key's unique symbol. Registry insertion can therefore

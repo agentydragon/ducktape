@@ -270,7 +270,7 @@ fn native_pure_initializer<'a>(
         return None;
     };
     let input = match decl.init.as_deref()?.unwrap_parens() {
-        Expr::Call(call) => native_facts.symbol_for_literal_proof(call)?,
+        Expr::Call(call) => native_facts.symbol_literal_proof(call)?,
         Expr::New(construction) => native_facts.empty_native_constructor_proof(construction)?,
         _ => return None,
     };

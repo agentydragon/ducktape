@@ -561,9 +561,7 @@ impl Visit for OpaqueAtInitCallFinder<'_> {
         }
         if self.lazy_depth == 0 {
             let opaque = match expr {
-                Expr::Call(call) if self.native_facts.symbol_for_literal_proof(call).is_some() => {
-                    false
-                }
+                Expr::Call(call) if self.native_facts.symbol_literal_proof(call).is_some() => false,
                 Expr::New(construction)
                     if self
                         .native_facts
