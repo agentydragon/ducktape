@@ -5082,8 +5082,30 @@ fn assert_set_spread_saved_replay(source: &str, expected_stdout: &str) {
             "",
         );
         let direct = staged.run(&[]);
+        if !direct.result.status.success() {
+            save_relocation_reports(
+                &direct.output_root().join("reports/tree"),
+                "static/app",
+                if selected {
+                    "set-spread-direct-selected"
+                } else {
+                    "set-spread-direct-inferred"
+                },
+            );
+        }
         assert_ok(&direct.result, "direct Set spread run");
         let loaded = staged.run(&["--analysis", path(&staged.artifact)]);
+        if !loaded.result.status.success() {
+            save_relocation_reports(
+                &loaded.output_root().join("reports/tree"),
+                "static/app",
+                if selected {
+                    "set-spread-saved-selected"
+                } else {
+                    "set-spread-saved-inferred"
+                },
+            );
+        }
         assert_ok(&loaded.result, "Set spread run from saved analysis");
         assert_same_invocation_trees(&direct, &loaded);
         for invocation in [&direct, &loaded] {
