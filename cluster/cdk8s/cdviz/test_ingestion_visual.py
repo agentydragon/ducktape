@@ -270,6 +270,7 @@ async def _capture_dashboard(
     filtered: bool,
 ) -> None:
     page = visual.page
+    panel_by_ref = {target["refId"]: str(panel["id"]) for panel in dashboard["panels"] for target in panel["targets"]}
 
     async def inspect(route: Route) -> None:
         request_body = route.request.post_data_json
@@ -292,11 +293,10 @@ async def _capture_dashboard(
                 errors.append(f"{view_name} query {ref_id}: {result['error']}")
             if _UNRESOLVED_DASHBOARD_VARIABLE.search(raw_sql):
                 errors.append(f"{view_name} query {ref_id} contains an unresolved dashboard variable")
-            request_id = query.get("requestId", "")
             query_results.append(
                 {
                     "view": view_name,
-                    "panel_id": request_id.removesuffix(ref_id),
+                    "panel_id": panel_by_ref.get(ref_id, ""),
                     "ref_id": ref_id,
                     "raw_sql": raw_sql,
                     "request": query,

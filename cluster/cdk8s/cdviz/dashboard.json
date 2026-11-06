@@ -27,7 +27,7 @@
         "sort": 1,
         "multi": false,
         "includeAll": true,
-        "allValue": "__all",
+        "allValue": "'__all'",
         "current": {
           "text": "All",
           "value": "$__all"
@@ -46,7 +46,7 @@
         "sort": 1,
         "multi": false,
         "includeAll": true,
-        "allValue": "__all",
+        "allValue": "'__all'",
         "current": {
           "text": "All",
           "value": "$__all"
@@ -128,7 +128,7 @@
       },
       "targets": [
         {
-          "refId": "A",
+          "refId": "B",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "cdviz"
@@ -175,7 +175,7 @@
       },
       "targets": [
         {
-          "refId": "A",
+          "refId": "C",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "cdviz"
@@ -222,7 +222,7 @@
       },
       "targets": [
         {
-          "refId": "A",
+          "refId": "D",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "cdviz"
@@ -269,7 +269,7 @@
       },
       "targets": [
         {
-          "refId": "A",
+          "refId": "E",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "cdviz"
@@ -319,7 +319,7 @@
       },
       "targets": [
         {
-          "refId": "A",
+          "refId": "F",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "cdviz"
@@ -372,7 +372,7 @@
       },
       "targets": [
         {
-          "refId": "A",
+          "refId": "G",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "cdviz"
@@ -490,7 +490,7 @@
       },
       "targets": [
         {
-          "refId": "A",
+          "refId": "H",
           "datasource": {
             "type": "grafana-postgresql-datasource",
             "uid": "cdviz"
