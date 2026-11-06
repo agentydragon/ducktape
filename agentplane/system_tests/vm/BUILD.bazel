@@ -110,6 +110,13 @@ py_library(
     name = "guest_logs",
     srcs = ["guest_logs.py"],
     visibility = ["//agentplane/system_tests:__subpackages__"],
+    deps = [":shutdown_diagnostic"],
+)
+
+py_library(
+    name = "shutdown_diagnostic",
+    srcs = ["shutdown_diagnostic.py"],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
 py_library(
@@ -140,6 +147,18 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_shutdown_diagnostic",
+    srcs = ["test_shutdown_diagnostic.py"],
+    deps = [
+        ":shutdown_diagnostic",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

@@ -92,6 +92,7 @@ class VmRuntime:
                 destination=artifacts,
                 validate_shutdown=validate_shutdown,
                 require_boot_evidence=os.environ.get("AGENTPLANE_VM_BOOT_EVIDENCE") == "1",
+                record_shutdown_diagnostic=os.environ.get("AGENTPLANE_VM_SHUTDOWN_DIAGNOSTIC") == "1",
             ),
             host_qemu.capture(k3s.kubectl, namespace, artifacts),
         ):

@@ -11,6 +11,8 @@ from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import BinaryIO
 
+from agentplane.system_tests.vm import shutdown_diagnostic
+
 logger = logging.getLogger(__name__)
 SHUTDOWN_COMPLETE = b"AGENTPLANE_GUEST_SHUTDOWN_COMPLETE"
 SUPERVISION_FAILED = b"AGENTPLANE_GUEST_SUPERVISION_FAILED"
@@ -209,6 +211,7 @@ def capture(
     destination: Path,
     validate_shutdown: Callable[[], bool],
     require_boot_evidence: bool = False,
+    record_shutdown_diagnostic: bool = False,
 ) -> Iterator[None]:
     """Retain native journals, raw serial output and launcher/handler container logs.
 
@@ -233,10 +236,19 @@ def capture(
                 copying.result()
             except Exception:
                 logger.exception("Could not finish retaining VM logs while unwinding a failure")
+            if record_shutdown_diagnostic:
+                try:
+                    shutdown_diagnostic.record(destination, destination.parent, namespace)
+                except Exception:
+                    logger.exception("Could not write the VM shutdown diagnostic while unwinding a failure")
             raise
         finally:
             stop.set()
         copying.result()
+        if record_shutdown_diagnostic:
+            report = shutdown_diagnostic.record(destination, destination.parent, namespace)
+            if validate_shutdown():
+                shutdown_diagnostic.require_orderly_shutdown(report)
         if validate_shutdown():
             _require_shutdown(destination / "consoles")
             if require_boot_evidence:
