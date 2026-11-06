@@ -29,8 +29,8 @@ fn linkage_reexports_keep_dependency_evaluation_coverage_open() {
                 &source,
                 vec![logical_module("second", &[Member::new("second")])],
             )
-            .with_extra_files(&[(
-                "static/peer.js",
+            .with_extra_chunks(&[(
+                "static/peer",
                 "console.log('peer'); export const shared = 1;\n",
             )]),
         );
