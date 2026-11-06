@@ -16,12 +16,12 @@ from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.grafana_dashboards import DashboardFile
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.monitoring import grafana_instance
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/grafana"
 _NAMESPACE = "monitoring"
-_INSTANCE_LABELS = {"dashboards": "grafana"}
 DASHBOARD = DashboardFile(
     source="cluster/cdk8s/monitoring/dashboards/aiquota-history.json",
     config_map="aiquota-history-dashboard",
@@ -35,7 +35,7 @@ def chart(app: App) -> Chart:
         chart,
         "datasource",
         metadata=ApiObjectMetadata(name="clickhouse", namespace=_NAMESPACE),
-        instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
+        instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
         values_from=[
             GrafanaDatasourceSpecValuesFrom(
                 target_path="secureJsonData.password",
@@ -70,7 +70,7 @@ def chart(app: App) -> Chart:
         chart,
         "dashboard",
         metadata=ApiObjectMetadata(name="aiquota-history", namespace=_NAMESPACE),
-        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
+        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
         folder="Analytics",
         config_map_ref=DASHBOARD.config_map_ref(),
     )

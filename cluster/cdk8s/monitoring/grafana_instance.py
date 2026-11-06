@@ -54,7 +54,7 @@ TEMPO_DATASOURCE_UID = "f99d1a97-7e72-4887-9277-0b105a5ccf44"
 # The existing CR cannot gain immutable spec.uid; use the supported legacy datasource.uid.
 LOKI_DATASOURCE_UID = "fc9a18f9-6955-4e40-95c1-66e32e7e8431"
 # The Service grafana-operator creates for the Grafana named `_NAME`.
-_SERVICE = ServiceRef(
+SERVICE = ServiceRef(
     name=f"{_NAME}-service",
     port=Port(name="grafana", number=3000),
     pods=Pods(namespace=_NAMESPACE, labels=(("app", _NAME),)),
@@ -70,7 +70,7 @@ DATABASE = cluster.PostgresRef(
 _ADMIN = SecretRef(namespace=_NAMESPACE, name="grafana-admin-password")
 _OIDC = SecretRef(namespace=_NAMESPACE, name="grafana-oidc-config")
 # The label the Grafana CR carries and every dashboard and datasource selects.
-_INSTANCE_LABELS = {"dashboards": _NAME}
+INSTANCE_LABELS = {"dashboards": _NAME}
 
 
 def _dashboard_file(name: str) -> DashboardFile:
@@ -117,7 +117,7 @@ def _grafana(chart: Chart) -> None:
     Grafana(
         chart,
         "grafana",
-        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE, labels=_INSTANCE_LABELS),
+        metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE, labels=INSTANCE_LABELS),
         client=GrafanaSpecClient(use_kube_auth=True),
         config={
             "server": {"root_url": GRAFANA_BASE_URL},
@@ -205,7 +205,7 @@ def _grafana(chart: Chart) -> None:
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         hostnames=[HOSTNAME],
-        backend=_SERVICE,
+        backend=SERVICE,
         hsts=False,
         listener=None,
     )
@@ -216,7 +216,7 @@ def _datasource(chart: Chart, name: str, datasource: GrafanaDatasourceSpecDataso
         chart,
         f"datasource-{name}",
         metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
-        instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
+        instance_selector=GrafanaDatasourceSpecInstanceSelector(match_labels=INSTANCE_LABELS),
         datasource=datasource,
     )
 
@@ -306,7 +306,7 @@ def _dashboard(
         chart,
         f"dashboard-{name}",
         metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE),
-        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=_INSTANCE_LABELS),
+        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=INSTANCE_LABELS),
         folder=folder,
         datasources=[
             GrafanaDashboardSpecDatasources(input_name=input_name, datasource_name=datasource)

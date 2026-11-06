@@ -29,6 +29,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
+from cluster.cdk8s.monitoring import flux_annotations, grafana_instance
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.flux.notification import Alert, Provider, Receiver, ReceiverResource
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -118,8 +119,8 @@ def chart(app: App) -> Chart:
         # notification-controller >=1.7 sends the request to `address` as-is (no
         # auto-append of /api/annotations like older versions did), so the full endpoint
         # path is required here.
-        address="https://grafana.allegedly.works/api/annotations",
-        secret_ref=ProviderSpecSecretRef(name="grafana-flux-token"),
+        address=f"{grafana_instance.GRAFANA_BASE_URL}/api/annotations",
+        secret_ref=ProviderSpecSecretRef(name=flux_annotations.TOKEN.name),
     )
     Alert(
         chart,
