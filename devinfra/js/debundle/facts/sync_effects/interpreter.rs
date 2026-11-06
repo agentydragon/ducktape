@@ -1652,43 +1652,6 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
         reason: ExecutionPrecisionLossReason,
         span: Span,
     ) {
-        // A stopped ordered frame still has a source-known suffix. Preserve
-        // its direct top-level callees' static heap may-cells when their
-        // bindings cannot be rebound or dynamically resolved. This records
-        // neither execution nor a call receipt; it keeps direct suffix cells
-        // visible alongside the opaque operation's assumed effects.
-        let direct_suffix_heap_contents: Vec<_> =
-            if self.executor.inputs.index.dynamic_scope_owners.is_empty() {
-                self.calls()
-                    .iter()
-                    .filter(|call| {
-                        call.kind == CallKind::Call
-                            && call.owner == self.owner
-                            && call.caller == self.scope.caller()
-                            && call.span.lo >= span.hi
-                    })
-                    .filter_map(|call| {
-                        let ValueExpr::Binding(binding) = &call.callee else {
-                            return None;
-                        };
-                        let index = &self.executor.inputs.index;
-                        if !index.direct_top_level_functions.contains(binding)
-                            || index.reassigned_bindings.contains(binding)
-                        {
-                            return None;
-                        }
-                        let key = index.hoisted_bindings.get(binding)?;
-                        self.executor
-                            .inputs
-                            .callable_heap_contents
-                            .get(key)
-                            .cloned()
-                    })
-                    .collect()
-            } else {
-                Vec::new()
-            };
-
         self.retain_global_fallback_accesses(frame, &reason, span);
         self.executor.local_operation_fallback(
             frame,
@@ -1698,11 +1661,6 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
             span,
             self.outcome,
         );
-        for cells in direct_suffix_heap_contents {
-            self.outcome
-                .effects
-                .record_heap_contents(&cells, self.executor.state.assumption.is_none());
-        }
         // The opaque operation can complete and reach later calls. Retain
         // their unknown direct-callee alternatives at their lexical sites,
         // rather than reporting every loss only at the truncation point.
@@ -9033,37 +8991,57 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
                 return true;
             }
-            let mut nested = match callback {
+            let writable_before = self.state.writable_prefix.clone();
+            let nested = match callback {
                 AbstractValue::ClassMembers(key) => {
                     self.promote_class_members(key, outcome);
-                    continue;
+                    None
                 }
                 AbstractValue::DeferredCallbacks(captured)
                 | AbstractValue::AuditedRetainedResult(_, captured) => {
                     self.promote_deferred_callbacks(&captured.values, outcome);
-                    continue;
+                    None
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key)) => {
-                    self.invoke(key, args_for(key, self.inputs.index), None, false)
+                    Some(self.invoke(key, args_for(key, self.inputs.index), None, false))
                 }
                 AbstractValue::Closure(key, captured) => {
-                    self.invoke(key, args_for(key, self.inputs.index), Some(captured), false)
+                    Some(self.invoke(key, args_for(key, self.inputs.index), Some(captured), false))
                 }
-                _ => continue,
+                _ => None,
             };
-            // Foreign code can retain and invoke a callback's synchronous
-            // return value as well. This includes a descriptor getter that
-            // returns another callable; stopping at the getter loses the
-            // returned callable's importer reads. Prefix coverage preserves
-            // the ordinary boundary at an unconditional await. Whatever the
-            // member returns reaches that code too.
-            self.taint_objects(&nested.returns);
-            self.promote_returned_callbacks(&nested.returns);
-            self.apply_rebind_effects(&nested.effects.rebinds);
-            outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
-            outcome.executed_owners.extend(nested.executed_owners);
-            outcome.unknown_call |= nested.unknown_call;
-            outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+            if let Some(mut nested) = nested {
+                // Foreign code can retain and invoke a callback's synchronous
+                // return value as well. This includes a descriptor getter that
+                // returns another callable; stopping at the getter loses the
+                // returned callable's importer reads. Prefix coverage preserves
+                // the ordinary boundary at an unconditional await. Whatever the
+                // member returns reaches that code too.
+                self.taint_objects(&nested.returns);
+                self.promote_returned_callbacks(&nested.returns);
+                self.apply_rebind_effects(&nested.effects.rebinds);
+                outcome.absorb_call_effects(&mut nested.effects, self.state.assumption.as_ref());
+                outcome.executed_owners.extend(nested.executed_owners);
+                outcome.unknown_call |= nested.unknown_call;
+                outcome.inherit_completeness(nested.complete, nested.effects.precision_losses);
+            }
+            // Opaque code can omit or repeat this member. A changed exact
+            // post-state cannot replace the entry witness as though the call
+            // occurred once. Widen before another member or fixed-point pass
+            // observes it; otherwise pushes grow exact lengths to the budget.
+            if !self.state.writable_prefix.ptr_eq(&writable_before) {
+                let changed: Vec<_> = self
+                    .state
+                    .writable_prefix
+                    .iter()
+                    .filter_map(|(object, state)| {
+                        (writable_before.get(object) != Some(state)).then_some(*object)
+                    })
+                    .collect();
+                for object in changed {
+                    self.invalidate_writable_object(object);
+                }
+            }
         }
         false
     }
