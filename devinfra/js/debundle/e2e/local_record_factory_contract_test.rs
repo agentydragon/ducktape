@@ -347,9 +347,9 @@ fn factory_identity_refusals_report_the_first_guard() {
 
 #[test]
 fn escaped_class_members_report_the_first_global_member_write() {
+    use analysis::execution_evidence::ConstructionRejection;
     use analysis::reports::schema::{
-        ClassMembersPublicationWriter as Writer, ConstructionRejection,
-        RecordFactoryRejectionReason,
+        ClassMembersPublicationWriter as Writer, RecordFactoryRejectionReason,
     };
 
     let factory = FACTORY.replace("() => later", "() => 42");

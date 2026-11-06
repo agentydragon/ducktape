@@ -1,5 +1,6 @@
 //! Retained local instances must not be confused with escaped class members.
-use analysis::reports::schema::{ConstructionRejection, RecordFactoryRejectionReason};
+use analysis::execution_evidence::ConstructionRejection;
+use analysis::reports::schema::RecordFactoryRejectionReason;
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use serde_json::Value as JsonValue;

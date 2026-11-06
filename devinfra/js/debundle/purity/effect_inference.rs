@@ -66,7 +66,7 @@ pub(crate) struct PurityCallObligation {
     pub(crate) callee: PurityFunctionKey,
     pub(crate) name: String,
     pub(crate) span: Span,
-    pub(crate) source_location: Option<crate::SourceLocation>,
+    pub(crate) source_location: Option<crate::execution_evidence::SourceLocation>,
 }
 
 impl PurityBodyTransfer {

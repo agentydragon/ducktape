@@ -14,11 +14,11 @@ use super::super::value_model::{
 };
 use super::ExecutionIndex;
 use crate::analysis_inputs::{ForeignInvocation, ForeignReturn, NativeIntrinsic};
+use crate::execution_evidence::OrderedFieldReadRefusal;
 use crate::facts::abstract_domain::builtins::{self, Invocation};
 use crate::facts::abstract_domain::foreign_call::DerivedForeignCall;
 use crate::facts::abstract_domain::integrity::Integrity;
 use crate::facts::abstract_domain::value::{Kind, Value};
-use crate::reports::schema::OrderedFieldReadRefusal;
 use imbl::OrdMap;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::Span;

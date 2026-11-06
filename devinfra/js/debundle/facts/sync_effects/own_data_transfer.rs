@@ -1,9 +1,9 @@
 //! Present ordinary own-data slots at one settled execution prefix.
 
 use super::value_model::{AbstractValue, OwnPropertyDescriptorSyntax, OwnPropertyShape, Values};
+use crate::execution_evidence::OrderedFieldReadRefusal;
 use crate::facts::EffectCell;
 use crate::facts::abstract_domain::value::Value;
-use crate::reports::schema::OrderedFieldReadRefusal;
 use std::collections::BTreeSet;
 
 pub(super) trait OwnDataContext {

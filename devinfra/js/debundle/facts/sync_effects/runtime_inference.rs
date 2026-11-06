@@ -13,6 +13,7 @@ use super::runtime_callbacks::{self, CallbackOperation, CallbackResult};
 use super::runtime_heap::{HeapOperation, HeapResult};
 use super::runtime_models::{self, ModelOperation, ModelResult};
 use crate::analysis_inputs::ProofDependencies;
+use crate::execution_evidence::OrderedCallAdmissionRefusal;
 use crate::facts::evaluation_effects::EvaluationEffects;
 use crate::facts::statement_facts::SynchronousCalls;
 use crate::facts::{
@@ -20,9 +21,7 @@ use crate::facts::{
     PreparedPurity,
 };
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
-use crate::reports::schema::{
-    NativeProgramPointKind, NativeProgramPointStep, OrderedCallAdmissionRefusal,
-};
+use crate::reports::schema::{NativeProgramPointKind, NativeProgramPointStep};
 use source_identity::SourceUnitOrdinal;
 use std::cell::{Cell, RefCell};
 

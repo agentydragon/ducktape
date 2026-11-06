@@ -1,5 +1,5 @@
 use super::*;
-use crate::reports::schema::AssumedEffectReason;
+use crate::execution_evidence::{AssumedEffectReason, ExecutionPrecisionLoss};
 use source_identity::SourceUnitOrdinal;
 
 /// One value per syntactic position bucket. Collapses the repeated
@@ -253,7 +253,7 @@ pub(crate) struct SynchronousCalls {
     /// path. This is a subset of `heap_contents` and is used only to check
     /// explicit commuting premises; the conservative heap order uses all cells.
     pub(crate) non_assumed_heap_accesses: HeapContentAccesses,
-    pub precision_losses: Vec<crate::reports::schema::ExecutionPrecisionLoss>,
+    pub precision_losses: Vec<ExecutionPrecisionLoss>,
     pub native_integrity_checks: Vec<crate::reports::schema::NativeIntegrityCheck>,
     pub native_prototype_property_checks: Vec<crate::reports::schema::NativePrototypePropertyCheck>,
     pub native_prefix_observations: Vec<crate::reports::schema::NativePrefixObservation>,
@@ -358,7 +358,7 @@ pub struct CallbackFactoryUseFact {
     pub evidence: Vec<crate::analysis_inputs::CallbackFactoryEvidence>,
     pub kind: crate::reports::schema::CallbackFactoryUseKind,
     pub lexical_statement_ordinal: SourceUnitOrdinal,
-    pub source_location: Option<crate::reports::schema::SourceLocation>,
+    pub source_location: Option<crate::execution_evidence::SourceLocation>,
     pub span: swc_common::Span,
 }
 
@@ -368,7 +368,7 @@ pub struct ReturnedRecordUseFact {
     pub evidence: crate::analysis_inputs::ReturnedRecordSummary,
     pub kind: crate::reports::schema::ReturnedRecordUseKind,
     pub lexical_statement_ordinal: SourceUnitOrdinal,
-    pub source_location: Option<crate::reports::schema::SourceLocation>,
+    pub source_location: Option<crate::execution_evidence::SourceLocation>,
     pub span: swc_common::Span,
 }
 

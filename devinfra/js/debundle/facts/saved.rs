@@ -200,17 +200,18 @@ fn restore_effect_cells(
 
 #[derive(Serialize, Deserialize)]
 struct SavedFallbackOnlyEffects {
-    reads: BTreeMap<SavedBinding, crate::reports::schema::AssumedEffectReason>,
-    rebinds: BTreeMap<SavedBinding, crate::reports::schema::AssumedEffectReason>,
-    uninitialized_reads: BTreeMap<SavedBinding, crate::reports::schema::AssumedEffectReason>,
+    reads: BTreeMap<SavedBinding, crate::execution_evidence::AssumedEffectReason>,
+    rebinds: BTreeMap<SavedBinding, crate::execution_evidence::AssumedEffectReason>,
+    uninitialized_reads: BTreeMap<SavedBinding, crate::execution_evidence::AssumedEffectReason>,
 }
 
 impl SavedFallbackOnlyEffects {
     fn snapshot(effects: &FallbackOnlyEffects, ordinals: &ContextOrdinals) -> Result<Self> {
         fn snapshot_reasons(
-            reasons: &BTreeMap<Id, crate::reports::schema::AssumedEffectReason>,
+            reasons: &BTreeMap<Id, crate::execution_evidence::AssumedEffectReason>,
             ordinals: &ContextOrdinals,
-        ) -> Result<BTreeMap<SavedBinding, crate::reports::schema::AssumedEffectReason>> {
+        ) -> Result<BTreeMap<SavedBinding, crate::execution_evidence::AssumedEffectReason>>
+        {
             reasons
                 .iter()
                 .map(|(binding, reason)| Ok((ordinals.snapshot_binding(binding)?, reason.clone())))
@@ -226,9 +227,9 @@ impl SavedFallbackOnlyEffects {
 
     fn restore(self, ordinals: &ContextOrdinals) -> Result<FallbackOnlyEffects> {
         fn restore_reasons(
-            reasons: BTreeMap<SavedBinding, crate::reports::schema::AssumedEffectReason>,
+            reasons: BTreeMap<SavedBinding, crate::execution_evidence::AssumedEffectReason>,
             ordinals: &ContextOrdinals,
-        ) -> Result<BTreeMap<Id, crate::reports::schema::AssumedEffectReason>> {
+        ) -> Result<BTreeMap<Id, crate::execution_evidence::AssumedEffectReason>> {
             reasons
                 .into_iter()
                 .map(|(binding, reason)| Ok((ordinals.restore_binding(binding)?, reason)))
@@ -699,9 +700,10 @@ mod tests {
                     }],
                 },
             }),
-            precision_losses: vec![crate::reports::schema::ExecutionPrecisionLoss {
-                reason: crate::reports::schema::ExecutionPrecisionLossReason::RecursiveInvocation,
-                reach: crate::reports::schema::HavocReach::Bounded,
+            precision_losses: vec![crate::execution_evidence::ExecutionPrecisionLoss {
+                reason:
+                    crate::execution_evidence::ExecutionPrecisionLossReason::RecursiveInvocation,
+                reach: crate::execution_evidence::HavocReach::Bounded,
                 statement_ordinal: SourceUnitOrdinal(3),
                 source_location: None,
                 span: precision_loss_span,

@@ -7,8 +7,8 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use crate::analysis_inputs::ProofDependencies;
+use crate::execution_evidence::SourceLocation;
 use crate::purity::{Purity, PurityReason, PurityRule};
-use crate::reports::schema::SourceLocation;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use swc_common::Span;

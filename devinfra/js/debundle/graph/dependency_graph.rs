@@ -4,10 +4,11 @@ use std::fmt;
 
 use swc_ecma_ast::Id;
 
+use crate::StatementKind;
 use crate::analysis_inputs::CommutingStatementsRef;
+use crate::execution_evidence::SourceLocation;
 use crate::facts::CallbackFactoryBarrierFact;
 use crate::purity::Purity;
-use crate::{SourceLocation, StatementKind};
 
 use super::edge::{DependencyEdge, DependencyEdgeId, EdgeReason, EdgeRole};
 

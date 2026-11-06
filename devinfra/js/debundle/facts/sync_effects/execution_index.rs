@@ -21,6 +21,7 @@ use crate::analysis_inputs::{
     ResolvedNoAccessorInstall, SelectedBindingValueInput, SelectedNativeOperationInput,
     ValueInputEvidence, ValueInputRef,
 };
+use crate::execution_evidence::SourceLocation;
 use crate::facts::abstract_domain::builtins::{
     self, ArgSel, IntrinsicOp, Invocation, Row, iteration_row,
 };
@@ -56,7 +57,6 @@ use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::reports::schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativePrototypeMutation,
     NativePrototypeMutationKind, NativeReceiverPath, NativeWriteSlot, RecordFactoryRejectionReason,
-    SourceLocation,
 };
 use analysis_model::PrimKinds;
 use source_identity::SourceUnitOrdinal;
@@ -10317,7 +10317,7 @@ impl ExecutionIndex {
 
     pub(crate) fn locate_native_integrity_witnesses(
         &mut self,
-        mut locate: impl FnMut(Span) -> Option<crate::reports::schema::SourceLocation>,
+        mut locate: impl FnMut(Span) -> Option<crate::execution_evidence::SourceLocation>,
     ) {
         if self
             .native_integrity_witnesses
@@ -13527,7 +13527,7 @@ impl PreparedCallableCapabilities {
             let (path, index) = source?;
             let (start_line, end_line, start_column) =
                 index.line_range_and_start_column_for_span(span)?;
-            Some(crate::reports::schema::SourceLocation {
+            Some(crate::execution_evidence::SourceLocation {
                 source_path: path.clone(),
                 start_line,
                 end_line,
@@ -13566,7 +13566,7 @@ impl PreparedCallableCapabilities {
             let (path, index) = source?;
             let (start_line, end_line, start_column) =
                 index.line_range_and_start_column_for_span(span)?;
-            Some(crate::reports::schema::SourceLocation {
+            Some(crate::execution_evidence::SourceLocation {
                 source_path: path.clone(),
                 start_line,
                 end_line,

@@ -31,7 +31,7 @@ pub(super) enum ModelResult {
         outcome: Box<Outcome>,
     },
     LocalClassConstruction(
-        Box<Result<(Outcome, AbstractValue), crate::reports::schema::ConstructionRejection>>,
+        Box<Result<(Outcome, AbstractValue), crate::execution_evidence::ConstructionRejection>>,
     ),
     MetadataDecoration {
         outcome: Box<Outcome>,

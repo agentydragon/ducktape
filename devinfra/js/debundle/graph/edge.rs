@@ -9,8 +9,8 @@ use swc_ecma_ast::Id;
 
 use crate::ModuleId;
 use crate::analysis_inputs::CommutingStatementsRef;
+use crate::execution_evidence::AssumedEffectReason;
 use crate::facts::{DataflowOpacityCause, EffectCell};
-use crate::reports::schema::AssumedEffectReason;
 
 use super::build::PremiseVerdict;
 
