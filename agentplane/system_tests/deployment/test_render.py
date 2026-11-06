@@ -103,6 +103,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         "agentplane-runner-gateway",
         "agentplane-egress-proxy",
         "egress-rules-workload",
+        "history-service-workload",
     }
     assert _resource(docs, "Issuer", "agentplane-runner-ca")["spec"]["ca"]["secretName"] == "agentplane-runner-ca"
     gateway_certificate = _resource(docs, "Certificate", "agentplane-runner-gateway")

@@ -31,6 +31,7 @@ go_test(
     name = "proxy_test",
     srcs = [
         "gate_test.go",
+        "passthrough_test.go",
         "proxy_test.go",
     ],
     embed = [":proxy"],

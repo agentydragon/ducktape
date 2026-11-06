@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/history_service/api"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/history_servicepb"
@@ -223,19 +224,55 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 	historypb.RegisterHistoryServiceServer(server, service)
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
-	ingressServer := grpc.NewServer(
+	var ingressOptions []grpc.ServerOption
+	if c.Ingress.WorkloadTLS != nil {
+		methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.Accounts(writerAuth, c.Ingress.SamplerAccounts)}
+		ingressOptions = methods.ServerOptions(seconds(c.RequestTimeoutSeconds))
+	}
+	ingressServer := grpc.NewServer(append(
+		ingressOptions,
 		observability.GRPCServerOption(),
 		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
 			MinTime:             30 * time.Second,
 			PermitWithoutStream: false,
 		}),
-	)
+	)...)
 	session_ingresspb.RegisterSessionJournalIngressServer(ingressServer, &ingress.Service{
 		Principals: writerAuth, SandboxUIDs: ingress.NewServiceAccountSandboxUIDResolver(kube),
 		History:         storage.NewStore(ingressDB, c.Ingress.SettleDeltas),
 		SamplerAccounts: c.Ingress.SamplerAccounts,
 		Timing:          ingress.Timing{IdleAck: ingressIdleAck, SilenceLimit: ingressSilenceLimit},
 	})
+	var workloadServer *grpc.Server
+	var workloadListener net.Listener
+	if c.Ingress.WorkloadTLS != nil {
+		base, err := kubernetesConfig(c)
+		if err != nil {
+			return err
+		}
+		svids, err := auth.NewKubernetesSVIDResolver(base, c.Ingress.WriterNamespaces)
+		if err != nil {
+			return err
+		}
+		security, err := c.Ingress.WorkloadTLS.WorkloadServerCredentials(environment_runtime_transport.HistoryIngressURI)
+		if err != nil {
+			return err
+		}
+		workloadListener, err = netlistener.Open(c.Ingress.WorkloadListenAddress)
+		if err != nil {
+			return err
+		}
+		defer workloadListener.Close()
+		securedWriter := writerAuth.WithSVID(svids)
+		methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnyAccount(securedWriter)}
+		options := methods.ServerOptions(seconds(c.RequestTimeoutSeconds))
+		workloadServer = grpc.NewServer(append(options, grpc.Creds(security), observability.GRPCServerOption())...)
+		session_ingresspb.RegisterSessionJournalIngressServer(workloadServer, &ingress.Service{
+			Principals: securedWriter, SandboxUIDs: ingress.NewServiceAccountSandboxUIDResolver(kube),
+			History: storage.NewStore(ingressDB, c.Ingress.SettleDeltas),
+			Timing:  ingress.Timing{IdleAck: ingressIdleAck, SilenceLimit: ingressSilenceLimit},
+		})
+	}
 	changes, unsubscribe, err := hub.Subscribe(storage.ChannelHistory)
 	if err != nil {
 		return err
@@ -250,9 +287,14 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 			Run(foldContext, seconds(c.FoldIntervalSeconds), changes, healthServer)
 	}()
 
-	failed := make(chan error, 2)
+	failed := make(chan error, 3)
 	go func() { failed <- fmt.Errorf("gRPC listener: %w", server.Serve(listener)) }()
 	go func() { failed <- fmt.Errorf("runner ingress listener: %w", ingressServer.Serve(ingressListener)) }()
+	if workloadServer != nil {
+		go func() {
+			failed <- fmt.Errorf("workload SVID ingress listener: %w", workloadServer.Serve(workloadListener))
+		}()
+	}
 
 	var result error
 	select {
@@ -272,6 +314,9 @@ func serve(ctx context.Context, c config, kube kubernetes.Interface, listener, i
 	go func() { graceful.Stop(stopping, ingressServer); close(ingressStopped) }()
 	graceful.Stop(stopping, server)
 	<-ingressStopped
+	if workloadServer != nil {
+		graceful.Stop(stopping, workloadServer)
+	}
 	<-folded
 	return result
 }

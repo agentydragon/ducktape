@@ -34,8 +34,16 @@ func (l SandboxLaunch) Instructions(sessionID, additionalInstructions string) st
 }
 
 type Endpoint struct {
-	Target string `json:"target"`
-	Bearer string `json:"bearer"`
+	Target string        `json:"target"`
+	Bearer string        `json:"bearer,omitempty"`
+	SVID   *SVIDEndpoint `json:"svid,omitempty"`
+}
+
+// SVIDEndpoint reuses Runtime's control certificate for an end-to-end service
+// connection carried by the local egress sidecar.
+type SVIDEndpoint struct {
+	ServerURI    string `json:"server_uri"`
+	ProxyAddress string `json:"proxy_address"`
 }
 
 // EnvironmentRuntimeControlConfiguration exposes the Runner as a Gateway-dialed gRPC server.

@@ -174,6 +174,7 @@ def environment_chart(
         admin_grpc_callers=[app_account],
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
+        tls_passthrough_services=[history_service.workload_service(env.namespace)],
     ).add_platform_resources()
     sandbox_pod.add_tool_config(chart, env)
     app_caller = {app_account: app_component.service(env.namespace).pods}
