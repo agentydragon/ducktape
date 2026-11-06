@@ -15,10 +15,12 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
@@ -43,6 +45,8 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
+	"github.com/agentydragon/ducktape/agentplane/workload_auth/facade"
+	gatewayruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime" // Distinguish the HTTP gateway mux from the Kubernetes runtime scheme.
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -120,7 +124,15 @@ func run(ctx context.Context, c config) error {
 		return fmt.Errorf("HTTP listener: %w", err)
 	}
 	defer httpListener.Close()
-	return serve(ctx, c, deps, grpcListener, httpListener)
+	var workloadListener net.Listener
+	if c.WorkloadTLS != nil {
+		workloadListener, err = net.Listen("tcp", net.JoinHostPort(c.Host, strconv.Itoa(c.WorkloadPort)))
+		if err != nil {
+			return fmt.Errorf("workload TLS listener: %w", err)
+		}
+		defer workloadListener.Close()
+	}
+	return serve(ctx, c, deps, grpcListener, httpListener, workloadListener)
 }
 
 func openDatabase(ctx context.Context, databaseURL string) (*sql.DB, error) {
@@ -149,10 +161,17 @@ func newRoutes(agentFacade, webhookHandler http.Handler) (http.Handler, error) {
 
 // serve answers until ctx ends or a worker or a listener fails: the servicers on grpcListener, and the HTTP form of
 // `Notifications`, its documentation and the webhook on httpListener.
-func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListener net.Listener) error {
+func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListener, workloadListener net.Listener) error {
 	resolver, err := auth.NewResolver(deps.Reviews, c.TokenAudience, []string{c.Namespace})
 	if err != nil {
 		return err
+	}
+	if c.WorkloadTLS != nil {
+		svid, err := auth.NewKubernetesSVIDResolver(deps.Policies, []string{c.Namespace})
+		if err != nil {
+			return err
+		}
+		resolver = resolver.WithSVID(svid)
 	}
 	sandboxes, err := sandboxreader.New(c.Namespace, deps.Sandboxes)
 	if err != nil {
@@ -267,6 +286,41 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	}
 	server := &http.Server{Handler: observability.HTTPHandler(routes), ReadHeaderTimeout: readHeaderTimeout}
 
+	var workloadServer *http.Server
+	var workloadGRPC *grpc.Server
+	if workloadListener != nil {
+		tlsConfig, err := c.WorkloadTLS.WorkloadServerTLSConfig(environment_runtime_transport.NotificationsURI)
+		if err != nil {
+			return err
+		}
+		workloadMethods := api.Methods(options)
+		workloadGRPC = grpc.NewServer(append(workloadMethods.ServerOptions(options.RequestTimeout), observability.GRPCServerOption())...)
+		notificationspb.RegisterNotificationsServer(workloadGRPC, notifications)
+		workloadHTTP, err := workloadfacade.NewHandler(facadeContext, workloadfacade.Interceptors{Unary: workloadMethods.UnaryInterceptor(options.RequestTimeout), Stream: workloadMethods.StreamInterceptor(options.RequestTimeout)},
+			facade.HandlerOptions{RejectUnknownJSONFields: true}, workloadfacade.Registration{
+				Server: func(registrar grpc.ServiceRegistrar) {
+					notificationspb.RegisterNotificationsServer(registrar, notifications)
+				},
+				HTTP: func(ctx context.Context, mux *gatewayruntime.ServeMux, conn grpc.ClientConnInterface) error {
+					return notificationspb.RegisterNotificationsHandlerClient(ctx, mux, notificationspb.NewNotificationsClient(conn))
+				},
+			})
+		if err != nil {
+			return err
+		}
+		workloadServer = &http.Server{
+			ConnState: environment_runtime_transport.HTTPServerTLSExpiryConnState(nil),
+			TLSConfig: tlsConfig, ReadHeaderTimeout: readHeaderTimeout,
+			Handler: observability.HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+					workloadGRPC.ServeHTTP(w, r)
+					return
+				}
+				workloadHTTP.ServeHTTP(w, r)
+			})),
+		}
+	}
+
 	// Each worker follows the commits on its own signal.
 	signals := make([]<-chan struct{}, workers)
 	for i := range signals {
@@ -283,7 +337,7 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		Dispatcher: dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
 		Actions:    actionsSource, GitHub: githubSource, Settings: c.Settings,
 	}
-	failed := make(chan error, workers+2)
+	failed := make(chan error, workers+3)
 	// The workers outlive the listeners, so a claim in progress is released before the database closes: the
 	// deferred cancel ends them, and the wait after it returns once they have released their claims.
 	workContext, stopWorkers := context.WithCancel(context.WithoutCancel(ctx))
@@ -295,6 +349,11 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	go func() { failed <- fmt.Errorf("gRPC listener: %w", grpcServer.Serve(grpcListener)) }()
 	go func() { failed <- fmt.Errorf("HTTP listener: %w", server.Serve(httpListener)) }()
 
+	if workloadServer != nil {
+		go func() {
+			failed <- fmt.Errorf("workload TLS listener: %w", workloadServer.ServeTLS(workloadListener, "", ""))
+		}()
+	}
 	var result error
 	select {
 	case result = <-failed:
@@ -308,6 +367,12 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 	// The facade's calls are gRPC calls, so the HTTP listener stops first.
 	if err := server.Shutdown(stopped); err != nil {
 		server.Close()
+	}
+	if workloadServer != nil {
+		if err := workloadServer.Shutdown(stopped); err != nil {
+			workloadServer.Close()
+		}
+		graceful.Stop(stopped, workloadGRPC)
 	}
 	graceful.Stop(stopped, grpcServer)
 	return result

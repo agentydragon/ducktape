@@ -73,6 +73,7 @@ class EnvironmentFirecrackerTemplate(Construct):
             platform_routes=platform_routes.sidecar_routes(namespace, listen_host="0.0.0.0"),
             workload_routes=workload_routes.rules_route(namespace),
             proxy_mode="mtls",
+            workload_routes=workload_routes.sidecar_routes(namespace),
         )
         launcher_settings = SettingsFile(
             self,
