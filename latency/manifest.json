@@ -1,118 +1,104 @@
 {
-  "source_devel_commit": "ed29e38cdbc91bc3b0ccc41e9d8a36546446aebc",
-  "window_start_utc": "2026-11-01T00:00:00Z",
-  "window_end_utc": "2026-11-06T03:32:12Z",
-  "published_at_utc": "2026-11-06T03:40:39.711087+00:00",
+  "source_devel_commit": "899a1ce5fb59e55b02b7a0b679cf1282c0dc06d5",
+  "window_start_utc": "2026-11-05T22:35:00Z",
+  "window_end_utc": "2026-11-06T04:35:00Z",
+  "published_at_utc": "2026-11-06T05:06:08.281537+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "1ead186a30ca79265eb1ce6313a227fd2cbea8c9",
-  "analysis_scope": "Image-family enrollment, bounded ordinary-CI observations, warm Optimize profiles and one Optimize-only registry-blob experiment. Historical findings and all 31 prior-work dispositions retain their original windows.",
-  "window_semantics": "Envelope across retained historical measurements and the new component-specific samples; not a new PR-feedback census.",
-  "report_html_sha256": "7fc8b2bf5f44a77d9bff20e51de120384edf3a493e42dc8368ba1921f6569c8d",
-  "evidence_sha256": "aa9081384c61de88f710aeb86fb4e740c71ecb5bc63da424503da5d7cdf9576f",
+  "previous_report_commit": "78f66553d50c7007bcae3dc70c66c99d6233c853",
+  "analysis_scope": "Six-hour required-gate census, 95-minute backlog incident, 20-PR physical action probe, dedicated KVM pool snapshots and bounded fail-fast/cancellation experiments. Historical sections retain their original windows.",
+  "window_semantics": "Main six-hour GitHub cohort; diagnostic KVM action and later pool/experiment clocks are separately labeled in evidence.",
+  "report_html_sha256": "f11ab79d0c55f960590486160849768198b527c27e932ab1d3c778e579f1f0f1",
+  "evidence_sha256": "e33a9544482c290f63800232605dedef83f3dbd2d2a081beadca564551175a56",
   "visual_validation": {
-    "target": "//x/ci_service_reuse_preview:visual_test",
+    "target": "//x/ci_backlog_preview:visual_test",
     "result": "PASSED",
-    "bazel_invocation_id": "8f0fc50c-46df-469a-8b09-25b6ba60f1d8",
-    "invocation_url": "https://app.buildbuddy.io/invocation/8f0fc50c-46df-469a-8b09-25b6ba60f1d8",
-    "source_base_commit": "b7208449c60134208119de682425dcf722083298",
-    "harness_template_commit": "b7a95b671fa176760f79943237ec1357275124a5",
-    "reviewed_html_sha256": "7fc8b2bf5f44a77d9bff20e51de120384edf3a493e42dc8368ba1921f6569c8d",
+    "invocation_id": "9436a8cf-08ad-4e78-9e2f-084c4eebdf50",
+    "invocation_url": "https://app.buildbuddy.io/invocation/9436a8cf-08ad-4e78-9e2f-084c4eebdf50",
     "viewports": [
       {
-        "name": "desktop",
         "width": 1280,
         "height": 900
       },
       {
-        "name": "mobile",
         "width": 390,
         "height": 844
       }
     ],
-    "details_expanded": 10,
-    "controls_exercised": [
-      "select:Service reuse design",
-      "select:Bazel finish advance"
-    ],
-    "control_scope": "Every option in both selects; each service-reuse detail checked nonempty and defined.",
+    "report_bytes_sha256_checked_inside_test": true,
+    "all_internal_anchors_checked": true,
+    "all_details_expanded": true,
+    "all_select_options_exercised": true,
     "horizontal_overflow": false,
-    "document_dimensions_with_details_open": [
-      {
-        "viewport_width": 1280,
-        "document_width": 1280,
-        "body_width": 1280
-      },
-      {
-        "viewport_width": 390,
-        "document_width": 390,
-        "body_width": 390
-      }
-    ],
-    "wide_table_scroll_regions_checked": 15,
-    "keyboard_scroll_test": "Every named focusable table region exercised with ArrowRight at 390px; scroll movement observed, then tables reset to zero before section captures.",
-    "capture_hashes_verified": 12,
-    "manual_review": "Desktop/mobile first screens, all three new sections, reuse-model selector and updated rollout table inspected. Final new-section captures are byte-identical to the inspected preceding render; the final scope-correction captures were inspected separately. Historical sections retained and checked by the harness, without claiming every historical pixel was re-reviewed.",
+    "manual_review": "Desktop/mobile first screens, mechanism, gate feedback, intervention table and execution architecture captures inspected. Final first-screen and mechanism captures are byte-identical to the preceding reviewed render; final changed table captures inspected separately. Historical narrative reviewed in full, without claiming every historical pixel was re-reviewed.",
     "captures": [
       {
-        "viewport": "desktop",
-        "name": "baa4b6a09d588a87bf23e181d5820742f9b55deb72ef1cd2bf11963476ffafdf.png",
-        "sha256": "67246016a13bf45e7be48897f066e47675b4e47735d7cab906cb47166196f993"
+        "case_id": "x/ci_backlog_preview/visual_test.py::test_report[mobile]",
+        "checkpoint": "actions-now",
+        "name": "785066896d2b534c2bf708d96aba5e6fb9d66f23e66211d7a52731a80300c4fd.png",
+        "sha256": "0d2481c4e63d2e5129868ddc6ede0ee45dbf7942098e9445798b256559a8fa15"
       },
       {
-        "viewport": "desktop",
-        "name": "f24e6ccb1ab430abd0edb9644ffe54e04410af81d65e16dc6a1626efd1df0525.png",
-        "sha256": "23ddb71e27fc189e1b03aaac747c991b739cce495390f8d6c448fd50ba650c93"
+        "case_id": "x/ci_backlog_preview/visual_test.py::test_report[mobile]",
+        "checkpoint": "feedback-now",
+        "name": "4a40ce099c789d845b0f1aa698385626fea0f353384e59c7a9714d64925808cb.png",
+        "sha256": "bf3139463cd8d6566a70154514b7d69d038db942cb116e0054cefa1c9e74ab12"
       },
       {
-        "viewport": "desktop",
-        "name": "6d23306e709f54bf261623a504bc5febd09c7953f51d65b754b2ab4b243fb8d6.png",
-        "sha256": "e87c38c2121519bdfa1c62c8405438eddea231ffb6c4a1f67c213e5aa82e11d8"
+        "case_id": "x/ci_backlog_preview/visual_test.py::test_report[desktop]",
+        "checkpoint": "architecture-now",
+        "name": "3bf90356ef6c80e03f679efc406d7f8650d2f1cc628ea2d3f4d038f78e32fab6.png",
+        "sha256": "0ea99b633329a63ea6751367b212d4a583bb52edcf0c25df1c1982b15c36d589"
       },
       {
-        "viewport": "desktop",
-        "name": "1d8874a72f027d7cd8edcb4bbe8de55dfdaea83b46ab2a8bccc74dd893321b7c.png",
-        "sha256": "267977c014617a8e255c9d87c73ae46706f295e07e629d1972f26381fc348fac"
+        "case_id": "x/ci_backlog_preview/visual_test.py::test_report[desktop]",
+        "checkpoint": "actions-now",
+        "name": "eb40c9228405402970479f3d54f36b23115a8bb2febbd50ca0db7d30fdd5715b.png",
+        "sha256": "c2423abfef4883f607e8ddb21f3fca95725f4d219e1104c02c59a922cda0afd2"
       },
       {
-        "viewport": "desktop",
-        "name": "15a532a54512b969f1c5f136a2a997caf9255434c3b4de866bbeb86cee112c15.png",
-        "sha256": "6a99bfe59140ce3b1b4d31c01715f8cb478742c601b878aa515544cb99ec0e51"
+        "case_id": "x/ci_backlog_preview/visual_test.py::test_report[desktop]",
+        "checkpoint": "feedback-now",
+        "name": "2be26ee4b5eae69114b8528cccbd659c3d964adbd8bd312c976d9016b035bd48.png",
+        "sha256": "fd6077472fc832b7c4a1a1f0d32054f7cba93ee853e8157208ca577cbd378d6b"
       },
       {
-        "viewport": "desktop",
-        "name": "74a83c1e10803029c63e6d5f3857bab7aeef29d0ae8afcd3081b4ca9aee24a0e.png",
-        "sha256": "5c4b8f88b16ea06e749fde06f40292caf6e40e1a8bd8f218ca043ca58ceac2aa"
+        "case_id": "x/ci_backlog_preview/visual_test.py::test_report[mobile]",
+        "checkpoint": "architecture-now",
+        "name": "80ceb8c63570a5379e30399272da0fd550adb50a68c8ed1ed8d693cc630b35f3.png",
+        "sha256": "febb99c941c6b6d315099a3af707abb566dd54552e3b899e11e0922222aabcbf"
       },
       {
-        "viewport": "mobile",
-        "name": "a8e8e3662356a94336a213bde8f185fabf389fe6802e12e306f420a3d2b3c0dc.png",
-        "sha256": "19e6a3a194681e9ad8187e0c1fe7b4ef0c407d37ebcd3ef5bbe54e7dd88b312a"
+        "case_id": "x/ci_backlog_preview/visual_test.py::test_report[desktop]",
+        "checkpoint": "mechanism",
+        "name": "479b8330e1335347a732f755d53324cd7242e8d2882de97d52e3db8b662703f8.png",
+        "sha256": "2dada25f31396e95ad0d4266f8eb3402bd91e124d559353eee9bb02adcae146d"
       },
       {
-        "viewport": "mobile",
-        "name": "ddeb3c523e6a9759518071b36439971a94f9597d9daa20d11fcecd09abace532.png",
-        "sha256": "75d8c09a6d164971984c08c209362b5bb4d145c9f78d780a9d76b060697dca01"
+        "case_id": "x/ci_backlog_preview/visual_test.py::test_report[mobile]",
+        "checkpoint": "mechanism",
+        "name": "a055f25699a5d851a1107d67c48aea288fed0d092e0c194943ccaf42d0be87f8.png",
+        "sha256": "b5304ee5497b4c4bb430de4a55bacd98e9e854fd50cd1138aedc49185245518c"
       },
       {
-        "viewport": "mobile",
-        "name": "acfcd0779024f390f2fb849b978e52fa707136a55067144fb1e8ef780373a613.png",
-        "sha256": "042758722f8f53fa63691848409d98001894e8c2115370fd271c54d42733ab0c"
+        "case_id": "x/ci_backlog_preview/visual_test.py::test_report[mobile]",
+        "checkpoint": "first-screen",
+        "name": "12cc4ba8eea6d258e428758d6779127a518fa03b9f59bbfcfed92b7679a2be84.png",
+        "sha256": "8b5f1f1c2b2c4b376ffdc82166c1836090eedfb088cfe161786f3ef19fdb056f"
       },
       {
-        "viewport": "mobile",
-        "name": "274a117f7f29c112e80d658317d5c9c32bcffba626590316db944f6ffcfafd33.png",
-        "sha256": "47785d88bda86daa5352f94a19b314865c81b1535466a4c45f73987b57f86ed3"
-      },
-      {
-        "viewport": "mobile",
-        "name": "0865efc1c9f5ed3d6689def937f436c894d99115b830b576aefa1d042dccb7cc.png",
-        "sha256": "f506a3327f23062989c03e56e21daf438a59fc13913e891cc884d85bb3160e11"
-      },
-      {
-        "viewport": "mobile",
-        "name": "8b75d2b38a51e0d35f0efa69cc2fc3c292ba8eed0121c6cf4c816a41c1fe3161.png",
-        "sha256": "7de57c5ffa418cef72569d3bfb3e59a90ed82b712c0508039afbf4391c946a20"
+        "case_id": "x/ci_backlog_preview/visual_test.py::test_report[desktop]",
+        "checkpoint": "first-screen",
+        "name": "a5c1c228e0ae5bbdeaf2f9c41010aadd0e7bb04840dc1b104eb2501da935add1.png",
+        "sha256": "82977ee11c2d62bedb7b5c0ab349ed6dff79653cbddb53e1b06cb887fa77eaeb"
       }
     ]
-  }
+  },
+  "pre_commit_checks": [
+    "no-commit-to-branch",
+    "trailing-whitespace",
+    "end-of-file-fixer",
+    "check-merge-conflict",
+    "keep-sorted",
+    "prettier"
+  ]
 }
