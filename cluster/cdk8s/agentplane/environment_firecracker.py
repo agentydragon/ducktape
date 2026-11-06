@@ -71,7 +71,6 @@ class EnvironmentFirecrackerTemplate(Construct):
             name=f"{NAME}-relay",
             listen_address=f"[::]:{sandbox_pod.SIDECAR_LISTEN_PORT}",
             platform_routes=platform_routes.sidecar_routes(namespace, listen_host="0.0.0.0"),
-            workload_routes=workload_routes.rules_route(namespace),
             proxy_mode="mtls",
             workload_routes=workload_routes.sidecar_routes(namespace),
         )
