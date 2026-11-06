@@ -58,12 +58,10 @@
 # gazelle:resolve py third_party.containers.nginx_unprivileged //third_party/containers:nginx_unprivileged
 # gazelle:resolve py third_party.containers.pgvector_pg18 //third_party/containers:pgvector_pg18
 # gazelle:resolve py third_party.containers.postgres_18 //third_party/containers:postgres_18
-# gazelle:resolve py third_party.containers.timescaledb_postgres_18 //third_party/containers:timescaledb_postgres_18
-# gazelle:resolve py third_party.containers.postgres_18_minimal //third_party/containers:postgres_18_minimal
 # gazelle:resolve py third_party.containers.python_3_14_slim //third_party/containers:python_3_14_slim
 # gazelle:resolve py third_party.containers.registry_3 //third_party/containers:registry_3
 # gazelle:resolve py third_party.containers.ryuk //third_party/containers:ryuk
-# gazelle:resolve py third_party.containers.timescaledb_oss //third_party/containers:timescaledb_oss
+# gazelle:resolve py third_party.containers.timescaledb_postgres_18 //third_party/containers:timescaledb_postgres_18
 #
 # Bazel-provided libraries (not from PyPI)
 # gazelle:resolve py rules_python.python.runfiles @rules_python//python/runfiles

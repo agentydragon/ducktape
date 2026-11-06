@@ -12,7 +12,7 @@ from pathlib import Path
 
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from third_party.containers import postgres_18_minimal, timescaledb_oss
+from third_party.containers import timescaledb_postgres_18
 
 
 @contextmanager
@@ -26,13 +26,9 @@ def timescaledb_postgres(
     """
     suffix = re.sub(r"[^a-z0-9-]+", "-", tmp_path.name.lower()).strip("-")[:24] or "test"
     container_name = f"tsdb-{suffix}-{uuid.uuid4().hex[:8]}"
-    extension_name = f"{container_name}-ext"
-    extension_root = tmp_path / "timescaledb-extension"
-    extension_root.mkdir()
     log_path = undeclared_outputs_dir() / f"{container_name}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    postgres_image = load_oci_image(postgres_18_minimal.LAYOUT_RLOCATION)
-    extension_image = load_oci_image(timescaledb_oss.LAYOUT_RLOCATION)
+    postgres_image = load_oci_image(timescaledb_postgres_18.LAYOUT_RLOCATION)
 
     with log_path.open("w") as log:
 
@@ -56,14 +52,6 @@ def timescaledb_postgres(
                 log.flush()
 
         try:
-            # Extract the extension payload from its pinned OCI image just as CNPG
-            # makes it available to the PostgreSQL container through ImageVolume.
-            # The extension image is a filesystem payload, without a command.
-            # This container is never started; Docker still requires an entrypoint.
-            run("docker", "create", "--name", extension_name, "--entrypoint", "/unused", extension_image)
-            run("docker", "cp", f"{extension_name}:/share", str(extension_root))
-            run("docker", "cp", f"{extension_name}:/lib", str(extension_root))
-
             create_args = ["docker", "create", "--name", container_name, "--publish", "127.0.0.1::5432"]
             if network is not None:
                 create_args.extend(["--network", network, "--network-alias", network_alias])
@@ -80,9 +68,6 @@ def timescaledb_postgres(
             )
             run(*create_args)
             run("docker", "start", container_name)
-            run("docker", "exec", "--user", "0", container_name, "mkdir", "-p", "/extensions/timescaledb-oss")
-            run("docker", "cp", str(extension_root / "share"), f"{container_name}:/extensions/timescaledb-oss/")
-            run("docker", "cp", str(extension_root / "lib"), f"{container_name}:/extensions/timescaledb-oss/")
             run(
                 "docker",
                 "exec",
@@ -148,4 +133,3 @@ def timescaledb_postgres(
             raise
         finally:
             run("docker", "rm", "--force", container_name, check=False)
-            run("docker", "rm", "--force", extension_name, check=False)
