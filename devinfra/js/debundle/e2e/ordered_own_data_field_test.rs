@@ -1,6 +1,5 @@
-use analysis::{
-    DependencyGraphReport, EffectCellReport, reports::schema::BindingEffectAuthorityReport,
-};
+use analysis::graph::{EffectCellReport, KnownConflict, PremiseVerdict};
+use analysis::{DependencyGraphReport, reports::schema::BindingEffectAuthorityReport};
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
@@ -330,7 +329,19 @@ fn compound_owner_keeps_the_value_read_before_its_later_mutation() {
     assert_eq!(receipt.calls.len(), 1, "{receipt:#?}");
     // The compound owner reads the old value and writes the new value. The
     // following read must stay after that write, even with exact coverage.
-    assert_property_frontier(&graph, 3, 2);
+    assert_sequenced_order(&graph, 3, 2);
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.statement_ordinal.0 == 3
+                && edge.target == compound.id
+                && matches!(&edge.premise_verdict,
+                    Some(PremiseVerdict::Known { conflict: KnownConflict::SharedCell {
+                        cell: EffectCellReport::OwnProperty { property, .. }
+                    } }) if property == "value")
+        }),
+        "the following read observes the compound owner's write: {:#?}",
+        graph.edges
+    );
 }
 
 #[test]
