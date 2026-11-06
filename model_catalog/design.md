@@ -222,140 +222,49 @@ not an exhaustive behavior matrix in the active refactor.
 
 ### Consumer-local settings pattern (tentative agreement)
 
-The operator is **tentatively comfortable with this pattern**: a consumer selects a
-canonical route and combines shared roster facts with its own settings downstream.
-This is not approval of the exact helper APIs, example values, field derivations or
-file locations. Per-file dispositions remain open unless separately approved in the [migration inventory](migration_inventory.md).
+The operator is tentatively comfortable with this pattern. Helper APIs, example
+values, field derivations and file destinations remain unapproved except for explicit
+[inventory decisions](migration_inventory.md).
+Each consumer selects a canonical route and projects it into its native schema:
 
-For example, an OpenClaw-specific configuration projection could look like:
+| Input                 | Owner and projection                                                        |
+| --------------------- | --------------------------------------------------------------------------- |
+| Identity/display name | Shared route → OpenClaw `id`/`name`, or Claude wrapper route IDs            |
+| Client budgets        | Consumer → OpenClaw `contextWindow`/`maxTokens`, or Claude wrapper settings |
+| Compaction policy     | Agent-level policy where applicable; not forced onto every model            |
 
-```python
-from model_catalog.catalog import GPT6_LUNA_RESPONSES, Route
-
-
-def openclaw_model(
-    route: Route,
-    *,
-    context_budget: int,
-    output_budget: int,
-) -> dict[str, object]:
-    return {
-        # Shared identity and presentation:
-        "id": route.id,
-        "name": route.display_name,
-        # OpenClaw-specific policy, expressed in its native schema:
-        "contextWindow": context_budget,
-        "maxTokens": output_budget,
-    }
-
-
-models = [
-    openclaw_model(
-        GPT6_LUNA_RESPONSES,
-        context_budget=128_000,
-        output_budget=16_000,
-    ),
-]
-```
-
-**The numbers are illustrative policy choices, not recommendations, provider-capacity
-claims or verified output-cap enforcement.** The route supplies shared identity/name;
-the consumer supplies its own accounting/request settings. The central roster does
-not need to know OpenClaw exists. The selection and its settings stay together rather
-than in a model list plus parallel override dictionaries. Agent-wide compaction policy
-belongs at the agent level, not forcibly attached to every model entry.
-
-A Claude-wrapper projection could independently accept:
-
-```python
-wrapper = claude_wrapper(
-    primary=GPT6_ASTRA_MESSAGES,
-    haiku=GPT6_LUNA_MESSAGES,
-    max_context_tokens=128_000,
-    max_output_tokens=16_000,
-)
-```
-
-Here `claude_wrapper` is an illustrative consumer-local helper, not a new shared API.
-It would project route IDs and Claude-specific settings into the wrapper's JSON shape;
-the Nix gateway renderer would apply them in Claude's environment/configuration. The
-same numeric values above do not imply equivalent Claude/OpenClaw semantics. Both
-consumers remain paused; illustrating their retained renderers does not re-enable them.
-
-These settings are not necessarily **overrides of central defaults**. They may have
-no corresponding central value at all. Where justified, a known provider constraint
-can validate a consumer choice, or support an explicit derivation with matching
-semantics. It must not silently rewrite an independently chosen compaction budget.
-Unknown provider facts remain unknown rather than being filled from client settings.
-
-Prefer a small projection per consumer over a universal client-budget object or a
-framework abstracting the superficial similarity of these helpers. This is a pattern
-for separating shared facts from genuine consumer policy, not another model registry.
+Keep each selection beside its settings, without parallel override maps. A consumer
+budget may have no central default; provider evidence may validate or explicitly
+justify a derivation, never silently rewrite that independently chosen policy.
+Unknown provider facts stay unknown, and equal numbers do not imply equal client
+semantics, capacity or output-cap enforcement. Prefer small consumer-local
+projections to a universal budget API or another registry. OpenClaw and Nix gateway
+wrappers remain paused; describing their renderers does not authorize activation.
+Existing wrapper projection: [`nix.py`](nix.py); source-owned Ollama declarations:
+[`ollama.py`](ollama.py). These are examples of boundaries, not approval of exact APIs.
 
 ### Ollama serving-variant pattern (tentative agreement)
 
-The operator is also **tentatively comfortable with one Ollama serving-variant
-definition feeding both provisioning and routing**, separate from provider facts and
-consumer budgets. The subsequent ownership clarification is that **Ollama owns this
-serving definition; LiteLLM consumes it**, not the reverse. The preferred placement is
-now outside cdk8s: Ollama declarations feed both Ollama's cdk8s generator and the
-LiteLLM declaration layer, which in turn feeds LiteLLM's cdk8s generator. Exact modules,
-records and interfaces remain undecided; existing records may suffice instead of adding
-the illustrative class below.
+Ollama owns model/tag/serving declarations outside cdk8s. Both its provisioning
+projection and LiteLLM route declarations consume them; LiteLLM does not own the
+source. Other sources/direct clients do not need to depend on gateway policy.
+The first landed slice is recorded [below](#first-source-declaration-extraction);
+other exact records/modules remain undecided, and existing records may suffice.
 
-```python
-# Ollama-owned declarations outside cdk8s (exact module/API undecided).
-QWEN_256K = OllamaServingVariant(
-    model=QWEN_IQ4XS,  # Shared model identity/name/capabilities.
-    base_tag="qwen3.8-flash-next-iq4xs",
-    tag="qwen3.8-flash-next-iq4xs-256k",
-    num_ctx=262_144,
-)
+- Provisioning gets base/tag/parameters from source declarations. The setup shell's
+  fate is open; credentials, placement, storage and readiness remain deployment-local.
+- LiteLLM chooses which source variants/wires to expose and adds adapter/endpoint/auth
+  bindings. Prefer one baked-in variant for both wires only after verifying it:
+  OpenAI-compatible Ollama ignores native `options.num_ctx`; identical bodies are
+  insufficient. Server defaults must not determine explicitly named variant semantics.
+- Requested `num_ctx` is allocation, not measured capacity, a provider input/output
+  pair, or a client budget. Discovery must not reintroduce unjustified limits;
+  deriving client settings requires explicit evidence and a separate decision.
 
-# LiteLLM declarations, also outside cdk8s, reference the source declaration.
-QWEN_256K_OPENAI = Route(
-    upstream=OLLAMA_OPENAI,
-    serving_variant=QWEN_256K,
-)
-QWEN_256K_NATIVE = Route(
-    upstream=OLLAMA_NATIVE,
-    serving_variant=QWEN_256K,
-)
-```
-
-This is a sketch, not an implemented API. The serving definition describes a requested
-allocation, not a measured capacity. The intended boundaries are:
-
-```text
-Ollama declaration ─┬─→ Ollama cdk8s: provisioning/deployment
-                    └─→ LiteLLM declarations ─→ LiteLLM cdk8s: endpoint/auth bindings
-shared model facts ─────→ source/route identity, name and capabilities
-client selection ──→ direct source or gateway route + consumer-owned settings
-```
-
-- **Provisioning:** obtain the base/tag/parameters from the serving definition rather
-  than independently maintaining copies in shell literals. The setup script may remain
-  the execution mechanism; its fate is open. Credentials, scheduling, storage/GPU
-  placement and readiness remain deployment concerns.
-- **Routing:** LiteLLM independently selects which Ollama models/wires to expose.
-  Both illustrated routes reference the same variant; LiteLLM combines its tag with
-  the selected adapter and deployment URL/auth bindings. Prefer using the baked-in
-  variant on both wires **if verified**, rather than two competing ways to set context.
-  Ollama's OpenAI-compatible path does not apply native `options.num_ctx` the same way;
-  identical extra request bodies across wires do not establish equivalent behavior.
-- **Server defaults:** a global `OLLAMA_CONTEXT_LENGTH` may still be useful, but it
-  must not silently determine the meaning of an explicitly named 256K variant.
-- **Publication:** neither projection assigns `max_input_tokens` or `max_output_tokens`
-  from `num_ctx`. Known provider limits follow the independently justified pair-or-none
-  policy; LiteLLM/Ollama discovery must not silently reintroduce unjustified limits.
-- **Clients:** Agentplane, OpenClaw or another consumer selects the route and owns its
-  budget. A derivation from serving configuration needs explicit justification, not an
-  automatic rule that every `num_ctx` becomes the harness's window.
-
-Acceptance must check that provisioning and both selected wire paths resolve to the
-intended tag/settings, not just that their generated strings agree. No capacity claim,
-variant activation/retirement, client-budget change or provisioning change is approved
-by recording this pattern; the corresponding file decisions in the [migration inventory](migration_inventory.md) remain open.
+Acceptance checks provisioning and each selected wire's effective tag/settings,
+not just generated strings. This pattern approves no activation/retirement,
+capacity claim, client-budget change or provisioning change; open file decisions
+remain in the [inventory](migration_inventory.md).
 
 ### First source-declaration extraction
 
@@ -364,7 +273,7 @@ by recording this pattern; the corresponding file decisions in the [migration in
 LiteLLM identities; Ollama cdk8s renders its existing setup shell from the same
 source declarations. Storage/shard handling, other generation parameters and the
 choice of models to provision remain local to Ollama cdk8s. This is not a generic
-provisioning system or an adoption of the entire illustrative API above.
+provisioning system or approval of the remaining tentative APIs.
 
 Provisioning, route identities and client budgets are unchanged. Native Ollama
 routes now always send their explicitly requested `options.num_ctx`, including
