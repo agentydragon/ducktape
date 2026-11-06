@@ -21,7 +21,7 @@ Evaluation system for LLM code critics: critic agents report issues in frozen co
 
 ## Container E2E image reuse
 
-Tests using `e2e_stack` share the image family in
+Tests using `e2e_stack` use the image profiles in
 [`testing/exec_properties.bzl`](testing/exec_properties.bzl). A normal RBE test
 seeds PostgreSQL, registry and Ryuk images; later compatible actions can reuse
 them on the same executor. PostgreSQL, the registry, application servers and test
@@ -43,6 +43,20 @@ automatically. Bump its recipe version when changing incompatible preparation;
 application image changes use the existing digest checks. Keep
 `remote-snapshot-save-policy` unset and leave remote snapshot eligibility at the
 platform default. Cold execution remains supported by the same fixtures.
+
+Optimize E2E additionally opts into a registry blob cache through its RBE
+properties. The fixture leases a volume identified by the registry image and
+storage recipe, clears manifests and unfinished uploads, then starts a fresh
+registry. Release stops the registry and clears that metadata again. Blobs and
+repository layer links survive; authenticated pushes still publish manifests
+and record image definitions for each fresh test database.
+
+The volume must use one filesystem: registry uploads commit by renaming into
+the blob store. A storage/reset change must bump both the runtime recipe in
+`testing/fixtures/registry_blob_cache.py` and its family version in
+`testing/exec_properties.bzl`. Application image changes remain action inputs.
+Local fixtures keep retention off unless `PROPS_E2E_REGISTRY_BLOB_CACHE=1` is
+explicitly set. No BuildBuddy API or warm cache is needed for correctness.
 
 ## Setup
 
