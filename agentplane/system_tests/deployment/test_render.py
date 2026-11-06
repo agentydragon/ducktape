@@ -406,6 +406,26 @@ def test_vm_boot_evidence_selects_only_oom_guest_at_runtime(vm_fixture: rendered
     assert "agentplane.boot-evidence=1" not in other_args
 
 
+def test_libvirt_monitor_debug_is_opt_in_and_confined_to_test_vms(vm_fixture: rendered_fixture.RenderedFixture) -> None:
+    objects = vm_fixture.objects
+    original = json.loads(json.dumps(objects))
+    vm_sandboxes.select_libvirt_monitor_debug(objects, enabled=False)
+    assert objects == original
+
+    vm_sandboxes.select_libvirt_monitor_debug(objects, enabled=True)
+    for before, after in zip(original, objects, strict=True):
+        if before["kind"] != "SandboxTemplate" or "vm" not in before["spec"]:
+            assert after == before
+            continue
+        before_meta = before["spec"]["vm"]["template"].get("metadata", {})
+        after_meta = after["spec"]["vm"]["template"]["metadata"]
+        assert after_meta["labels"] == {**before_meta.get("labels", {}), "debugLogs": "true"}
+        assert after_meta["annotations"] == {
+            **before_meta.get("annotations", {}),
+            "kubevirt.io/libvirt-log-filters": "1:qemu.qemu_monitor 3:*",
+        }
+
+
 def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: rendered_fixture.RenderedFixture) -> None:
     template = _resource(vm_fixture.objects, "SandboxTemplate", "environment-vm")["spec"]
     state = template["stateVolume"]

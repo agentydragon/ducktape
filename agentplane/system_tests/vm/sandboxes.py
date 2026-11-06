@@ -42,6 +42,16 @@ def select_boot_evidence(objects: list[dict[str, Any]], *, enabled: bool) -> Non
     boot["kernelArgs"] += " agentplane.boot-evidence=1"
 
 
+def select_libvirt_monitor_debug(objects: list[dict[str, Any]], *, enabled: bool) -> None:
+    """Enable libvirt QEMU-monitor debug logs only on this test action's VMs."""
+    if not enabled:
+        return
+    for template in (obj for obj in objects if obj["kind"] == "SandboxTemplate" and "vm" in obj["spec"]):
+        metadata = template["spec"]["vm"]["template"].setdefault("metadata", {})
+        metadata.setdefault("labels", {})["debugLogs"] = "true"
+        metadata.setdefault("annotations", {})["kubevirt.io/libvirt-log-filters"] = "1:qemu.qemu_monitor 3:*"
+
+
 def report(kubectl: Kubectl, namespace: str) -> str:
     """KubeVirt's and Kyverno's view of the VMs, each guest's serial console, and what Pods pulled from
     registries rather than from the imported layouts."""
