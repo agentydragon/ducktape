@@ -2850,7 +2850,9 @@ fn complete_execution_does_not_erase_missing_global_or_host_coverage() {
         ("parameter => globalThis.marker = parameter", true),
         ("(globalThis.marker = 1, 1)", false),
         ("(globalThis.marker = 1, () => 0)", false),
-        ("`text`", false),
+        ("`text`", true),
+        ("`${globalThis.marker = 1}`", false),
+        ("`${globalThis.missing}`", false),
         ("({value: 1})", true),
         ("[1]", true),
         ("(0, {value: 1})", true),
@@ -6464,7 +6466,12 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
     }
     assert_eq!(
         report["coverage"]["owner_coverage_refusals"]["uninitialized_read"], 1,
-        "the first declarator's ordered read observes a TDZ cell: {report:#}"
+        "the ordered first declarator retains its actual uninitialized-read refusal: {report:#}"
+    );
+    assert_ne!(
+        binding_execution_report(&tdz, "first")["binding_effect_authority"]["authority"],
+        "operation_receipt",
+        "a forward TDZ read cannot seal an initializer receipt"
     );
 }
 
