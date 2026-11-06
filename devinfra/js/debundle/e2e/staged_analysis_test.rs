@@ -13,6 +13,7 @@ use debundle_e2e_support::*;
 use debundle_e2e_support::{TreeFixture, TreeRun, run_tree_graph_fixture};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use spec::{IntrinsicFamilies, IntrinsicFamily, IntrinsicsNeverWritten, ProgramPremises};
 use tempfile::TempDir;
 
 struct StagedInvocation {
@@ -3948,15 +3949,15 @@ export { table, readLater };\n",
                 .collect::<Vec<_>>();
             let mut opts = FixtureOpts::new(case.source, vec![logical_module("all", &members)]);
             if case.array_integrity_premise {
-                opts = opts.with_program_premises(
-                    serde_json::from_value(json!({
-                        "intrinsics_never_written": {
-                            "families": ["array"],
-                            "note": "Neutral source-only receiver provenance fixture"
-                        }
-                    }))
-                    .unwrap(),
-                );
+                opts = opts.with_program_premises(ProgramPremises {
+                    intrinsics_never_written: Some(IntrinsicsNeverWritten {
+                        families: IntrinsicFamilies::Listed(BTreeSet::from([
+                            IntrinsicFamily::Array,
+                        ])),
+                        note: Some("Neutral source-only receiver provenance fixture".to_owned()),
+                    }),
+                    ..ProgramPremises::default()
+                });
             }
             let (staged, _fixture) = staged(opts);
             let before = staged.run(&[]);
