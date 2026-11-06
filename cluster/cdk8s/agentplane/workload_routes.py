@@ -4,7 +4,7 @@ from pathlib import Path
 
 from agentplane.egress.sidecar_config import RUNNER_TLS_MOUNT_PATH, WorkloadRoute
 from agentplane.environment_runtime_transport.config import TLS
-from cluster.cdk8s.agentplane import egress, notifications, runner_gateway, session_dispatcher
+from cluster.cdk8s.agentplane import actions, egress, notifications, runner_gateway, session_dispatcher
 from cluster.cdk8s.service_ref import ServiceRef
 
 
@@ -16,6 +16,8 @@ def sidecar_routes(namespace: str, *, rules_origin: ServiceRef | None = None) ->
     dispatcher_origin = session_dispatcher.service(namespace)
     dispatcher_http_origin = session_dispatcher.http_service(namespace)
     dispatcher_destination = runner_gateway.workload_service(namespace)
+    action_origin = actions.service(namespace)
+    action_destination = actions.workload_service(namespace)
     certificate_path = Path(RUNNER_TLS_MOUNT_PATH)
     security = TLS(
         cert_file=str(certificate_path / "tls.crt"),
@@ -36,6 +38,11 @@ def sidecar_routes(namespace: str, *, rules_origin: ServiceRef | None = None) ->
         f"{notification_origin.fqdn}:{notification_origin.port.number}": WorkloadRoute(
             upstream=f"{notification_destination.fqdn}:{notification_destination.port.number}",
             server_uri=notifications.WORKLOAD_URI,
+            tls=security,
+        ),
+        f"{action_origin.fqdn}:{action_origin.port.number}": WorkloadRoute(
+            upstream=f"{action_destination.fqdn}:{action_destination.port.number}",
+            server_uri=actions.WORKLOAD_URI,
             tls=security,
         ),
         f"{dispatcher_origin.fqdn}:{dispatcher_origin.port.number}": dispatcher,

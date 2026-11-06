@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/push"
+	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
@@ -32,9 +33,11 @@ const settingPrefix = "AGENTPLANE_ACTIONS_"
 //
 // The database URL is a Secret, so a deployment supplies it as an environment variable.
 type config struct {
-	DatabaseURL string `mapstructure:"database_url"`
-	Host        string `mapstructure:"host"`
-	Port        int    `mapstructure:"port"`
+	DatabaseURL  string                                `mapstructure:"database_url"`
+	Host         string                                `mapstructure:"host"`
+	Port         int                                   `mapstructure:"port"`
+	WorkloadPort int                                   `mapstructure:"workload_port"`
+	WorkloadTLS  *environment_runtime_transport.Config `mapstructure:"workload_tls"`
 	// TokenAudience is the audience a workload's projected token must be issued for.
 	TokenAudience string `mapstructure:"token_audience"`
 	// CallerServiceAccountNamespaces hold the ServiceAccounts whose workloads may call; a labeled account outside
@@ -158,6 +161,14 @@ func loadConfig() (config, error) {
 func (c *config) operatorsEnabled() bool { return c.OperatorOIDC != api.DefaultOperatorOIDCSettings() }
 
 func (c *config) validate() error {
+	if c.WorkloadTLS == nil && c.WorkloadPort != 0 || c.WorkloadTLS != nil && (c.WorkloadPort < 1 || c.WorkloadPort > 65535 || c.WorkloadPort == c.Port) {
+		return errors.New("workload_port and workload_tls must name a distinct TLS listener together")
+	}
+	if c.WorkloadTLS != nil {
+		if err := c.WorkloadTLS.Validate(); err != nil {
+			return fmt.Errorf("workload_tls: %w", err)
+		}
+	}
 	for _, required := range []struct{ name, value string }{
 		{"database_url", c.DatabaseURL},
 		{"host", c.Host},
