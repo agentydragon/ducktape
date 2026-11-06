@@ -18,11 +18,11 @@ from cluster.rotators.authentik_jwt_rotation.rotate import (
     encrypt_sops_file,
     mint_jwt,
     probe_rejects_token,
-    remaining_hours,
     stamped_audiences,
     stamped_claims,
     token_audiences,
 )
+from cluster.rotators.sops_stamps import remaining_hours
 
 
 def _make_jwt(claims: dict) -> str:

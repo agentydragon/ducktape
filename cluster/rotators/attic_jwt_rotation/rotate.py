@@ -36,6 +36,7 @@ from cluster.rotators.attic_jwt_rotation.config import (
     SopsDestination,
     Token,
 )
+from cluster.rotators.sops_stamps import remaining_hours, unencrypted_stamps
 from devinfra.prettier_cli import prettier_format_yaml_in_place
 
 logger = logging.getLogger(__name__)
@@ -241,27 +242,6 @@ def _notify_workspace(destination: KubernetesDestination | MirroredDestination, 
         ["patch", "workspaces.opentofu.upbound.io", notification.workspace, "--type=merge", "--patch-file=/dev/stdin"],
         input_text=json.dumps(patch),
     )
-
-
-def unencrypted_stamps(sops_file: Path) -> dict[str, Any]:
-    """The plaintext `*_unencrypted` stamps from a sops file, parsed as YAML.
-
-    A sops-encrypted YAML file is still valid YAML, and the `*_unencrypted`-suffixed
-    keys keep their plaintext values (SOPS leaves them in clear), so the freshness
-    stamp loads straight out without the in-cluster age key. Returns `{}` when the
-    file is absent or empty.
-    """
-    if not sops_file.exists():
-        return {}
-    return yaml.safe_load(sops_file.read_text()) or {}
-
-
-def remaining_hours(sops_file: Path) -> float | None:
-    """Hours until the existing token expires, or None if absent/unstamped."""
-    expires = unencrypted_stamps(sops_file).get("expires_unencrypted")
-    if expires is None:
-        return None
-    return (datetime.fromisoformat(expires) - datetime.now(UTC)).total_seconds() / 3600
 
 
 def scope_drift(token: Token, stamps: dict[str, Any]) -> str | None:

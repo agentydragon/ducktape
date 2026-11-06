@@ -25,6 +25,7 @@ import typer
 import yaml
 
 from cluster.rotators.forgejo_token_rotation.config import Config, Rotation, TeaSecretOutput
+from cluster.rotators.sops_stamps import unencrypted_stamps
 from devinfra.prettier_cli import prettier_format_yaml_in_place
 
 logger = logging.getLogger(__name__)
@@ -67,13 +68,6 @@ def read_credentials(rotation: Rotation) -> ForgejoCredentials:
 
 def api_base(api_url: str) -> str:
     return f"{api_url.rstrip('/')}/api/v1"
-
-
-def unencrypted_stamps(sops_file: Path) -> dict[str, Any]:
-    """Read plaintext `*_unencrypted` stamps from a SOPS YAML file."""
-    if not sops_file.exists():
-        return {}
-    return yaml.safe_load(sops_file.read_text()) or {}
 
 
 def parse_utc(value: str) -> datetime:
