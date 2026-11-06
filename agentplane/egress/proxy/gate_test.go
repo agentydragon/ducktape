@@ -14,7 +14,6 @@ import (
 	"net/netip"
 	"net/url"
 	"runtime"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,7 +25,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	"golang.org/x/net/http2"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -37,10 +35,6 @@ var (
 	}
 	projectedCredential = resources.Credential{
 		Name: "kube", Source: resources.ProjectedWorkloadToken{Audience: projectedAudience},
-		Targets: []resources.Target{resources.SchemeToken{Header: "Authorization", Scheme: "Bearer"}},
-	}
-	workloadCredential = resources.Credential{
-		Name: "workload", Source: resources.AuthenticatedWorkloadToken{},
 		Targets: []resources.Target{resources.SchemeToken{Header: "Authorization", Scheme: "Bearer"}},
 	}
 	// bearerHeader carries hopToken as a plain proxy request's header, and validBearer as the
@@ -626,57 +620,6 @@ func TestABearerlessRequestInheritsNothingFromAnAuthenticatedConnection(t *testi
 	}
 	if reached.Load() != 1 {
 		t.Errorf("%d requests reached upstream, want only the authenticated one", reached.Load())
-	}
-}
-
-func TestEachConnectionSubstitutesItsOwnWorkloadBearerAndNeverForwardsTheHopHeader(t *testing.T) {
-	l := newLab(t)
-	l.index.PutCredential(workloadCredential)
-	l.allow(rule("/workload", workloadCredential.Name))
-	_, tokenB := runnerToken(t, hopAudience)
-	_, tokenC := runnerToken(t, hopAudience)
-	var authorization, hop seen
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authorization.set(r.Header.Get("Authorization"))
-		hop.set(r.Header.Get("Proxy-Authorization"))
-	})
-	tlsUpstream, _ := l.upstream(t, fixtureHost, true, handler)
-	plain := plainUpstream(t, handler)
-	_, tunnelA := l.tunnelAs(t, hopToken, portOf(tlsUpstream), true, "")
-	_, tunnelB := l.tunnelAs(t, tokenB, portOf(tlsUpstream), true, "")
-	placeholder := "Bearer " + workloadCredential.Placeholder()
-	through := func(client *http2.ClientConn) int {
-		req := request(bounded(t), portOf(tlsUpstream), "/workload", true, nil)
-		req.Header.Del("x-api-key")
-		req.Header.Set("Authorization", placeholder)
-		response, err := client.RoundTrip(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		response.Body.Close()
-		return response.StatusCode
-	}
-
-	var got []string
-	for _, send := range []func() int{
-		func() int { return through(tunnelA) },
-		func() int { return through(tunnelB) },
-		func() int {
-			return l.send(t, "GET", portOf(plain), "/workload", header("Proxy-Authorization", "Bearer "+tokenC, "Authorization", placeholder), nil).StatusCode
-		},
-		func() int { return through(tunnelA) },
-	} {
-		if status := send(); status != 200 {
-			t.Fatalf("request %d: status %d", len(got), status)
-		}
-		got = append(got, authorization.take())
-		if forwarded := hop.take(); forwarded != "" {
-			t.Errorf("request %d forwarded Proxy-Authorization %q", len(got)-1, forwarded)
-		}
-	}
-
-	if want := []string{"Bearer " + hopToken, "Bearer " + tokenB, "Bearer " + tokenC, "Bearer " + hopToken}; !slices.Equal(got, want) {
-		t.Errorf("upstream saw Authorization %q, want each request's own hop bearer %q", got, want)
 	}
 }
 

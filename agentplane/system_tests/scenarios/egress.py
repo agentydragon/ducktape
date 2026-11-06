@@ -8,15 +8,14 @@ admitted -- an agent saying "I fetched it" is equally consistent with a request 
 one that never reached the proxy, and a model that ran nothing.
 
 The reported username is the load-bearing assertion. The probe credential's account
-(`probe_credential`) can only come back if the sandbox asked the proxy what it may present and was
-told, sent a placeholder it cannot itself resolve, the sidecar carried the Pod's token, the proxy
-admitted the request and swapped in the token it holds for that account, and the API server
-authenticated it. No part of that can be faked by a model being agreeable, and the placeholder
-appears nowhere in the prompt -- the agent has to go and find it.
+(`probe_credential`) can only come back if the sandbox asked what it may present, sent a placeholder
+it cannot resolve, and the API server authenticated the substituted credential. No part of that
+can be faked by a model being agreeable, and the placeholder appears nowhere in the prompt -- the
+agent has to go and find it.
 
 What these encode is the deployed form of agentplane/egress/SPEC.md: a sandbox reaches what its
-policies name and nothing else, with the credential substituted at the proxy, and the model call is
-one of those requests rather than an exception to them. They exist because the last gap of this kind
+policies name and nothing else, and the model call uses the Sandbox SVID route through the proxy.
+They exist because the last gap of this kind
 -- a runner that dropped the proxy variables, so every call bypassed the proxy and hung, leaving an
 empty history behind a green unit suite -- was caught by a person noticing.
 """
@@ -52,13 +51,6 @@ GITHUB_CLONE = "github-clone"
 PUBLIC_REPO = "https://github.com/agentydragon/ducktape"
 # Named by no policy the deployment has, so it is refused for want of a rule rather than by one.
 UNLISTED_HOST = "example.com"
-# The authenticated model ingress, on the same egress path as everything else
-# (cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml, PolicySet "basic"). It holds
-# the LiteLLM key and is bound by the app's default PolicySets rather than by a caller,
-# because an agent that cannot reach it has nothing to run -- so a sandbox that names no policy
-# still has this one.
-BASIC_POLICY = "basic"
-
 # The proxy records a decision as it serves it; the app reads committed history over a separate hop, and a
 # each replica observes bindings asynchronously; the scenario checks actual read-only egress.
 DECISION_SECONDS = 30.0
@@ -112,13 +104,15 @@ class Probe(BaseModel):
 async def _decision_for(
     cluster: Cluster, client: Client, sandbox: str, uid: str, host: str, *, after: datetime | None = None
 ) -> Decision:
-    """The newest decision about `host`, once the proxy has one later than `after`."""
+    """The newest decision for this live Sandbox ServiceAccount about `host`, after `after`."""
     with tracer.start_as_current_span(
         "system_test.egress.proxy_decision", record_exception=False, set_status_on_exception=False
     ):
         target = identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name=sandbox, uid=uid)
         environment = await client.get_environment(target)
         subject = environment.execution_account.account
+        assert subject.namespace == cluster.namespace
+        assert subject.name == sandbox
         async with egress_decisions.watch_client(cluster) as (stub, caller):
             async for attempt in AsyncRetrying(
                 stop=stop_after_delay(DECISION_SECONDS), wait=wait_fixed(1), reraise=True
@@ -183,19 +177,19 @@ async def the_model_call_itself_goes_through_the_proxy(
     offered_model: str,
     scripted: ScriptedUpstream,
 ) -> None:
-    """The runner holds only an inert placeholder, not the LiteLLM key, so a turn happens at all only
-    if the proxy admits the model call and substitutes its sidecar-only workload token for the
-    authenticated ingress. The ingress then verifies that workload identity and presents its
-    server-held LiteLLM key on the separate internal hop.
+    """The SVID route strips caller authorization and authenticates the destination TLS connection
+    with the runner's Runtime certificate. The proxy admits the CONNECT under the Sandbox's own
+    ServiceAccount; the ingress verifies the same live SVID and presents its server-held LiteLLM key
+    on the separate internal hop.
 
     That makes the turn its own proof of reachability -- an agent that answers has been served -- and
-    leaves the decision to say *how*: through the proxy with a credential substituted, rather than
-    around it on a key the sandbox held. Both halves matter, because the failure this replaces was a
+    the subject-filtered decision history proves the CONNECT was admitted through the proxy. Both
+    halves matter, because the failure this replaces was a
     sandbox reaching LiteLLM directly with the key in its own environment, which answers just as well
     and is what routing the model endpoint through the proxy exists to stop.
 
-    The sandbox names no policy. `basic` reaching the ingress anyway is what the app's
-    default PolicySets are for.
+    The sandbox names no policy. The SVID route is an exact-origin platform route, and the service
+    independently verifies the leaf before forwarding.
     """
     assert view.kubernetes_diagnostics.HasField("pod")
     model = scripted.model(view.kubernetes_diagnostics.pod.name, harness)
@@ -211,11 +205,9 @@ async def the_model_call_itself_goes_through_the_proxy(
         cluster, client, view.target.name, view.target.uid, f"llm-ingress.{cluster.namespace}.svc.cluster.local"
     )
     assert served.outcome == Decision.OUTCOME_ALLOW, f"{served!r}\n{turn.transcript}"
-    assert served.policy == BASIC_POLICY, f"the model call was admitted by another policy: {served!r}"
-    assert served.substituted, (
-        f"the model call was admitted with no credential substituted, so the sandbox did not present "
-        f"only the inert placeholder to the authenticated ingress: {served!r}"
-    )
+    assert served.method == "CONNECT", f"the model call did not traverse the proxy as CONNECT: {served!r}"
+    assert not served.policy, f"the exact-origin SVID route should not use an egress policy: {served!r}"
+    assert not served.substituted, f"the SVID route must not substitute a bearer: {served!r}"
 
 
 async def _kubectl_create_binding(

@@ -82,11 +82,11 @@ History journal ingress uses this path. Its projected-token audience is no longe
   it may be presented in. Its placeholder is `agentplane-credential-<name>`, derived from the
   object's own name and written nowhere, so one placeholder means one credential by construction.
   A rule names a credential; the credential names the targets. Its source is exactly one of
-  `secretRef`, preserving the central-held Secret behavior; `authenticatedWorkloadToken`, the
-  bearer retained from successful authentication of this request or CONNECT tunnel; or
-  `projectedWorkloadToken`, naming the audience of a token the sidecar presented on the hop. The
-  latter two are resolved per request and must still be bound to the caller being decided; absent,
-  stale, or mismatched context refuses with `credential-unavailable`.
+  `secretRef`, preserving the central-held Secret behavior; or `projectedWorkloadToken`, naming the
+  audience of a token the sidecar presented on the hop. The projected token is resolved per request
+  and must still be bound to the caller being decided; absent, stale, or mismatched context refuses
+  with `credential-unavailable`. First-party SVID routes authenticate with the Runtime certificate
+  and do not use credential substitution.
 - **A projected token is the caller's own identity minted for somewhere else.** The hop bearer
   carries this proxy's audience, so a destination validating its own — the API server against
   `--api-audiences` — refuses it; the sidecar projects a second token per configured audience,
@@ -150,34 +150,15 @@ History journal ingress uses this path. Its projected-token audience is no longe
 
 - The rules API publishes `/llms.txt` and linked Markdown guides under `/docs/agents/` for
   credential presentation and refusal recovery, and the OpenAPI document of `/v1/rules` at
-  `/openapi.json`. They contain no credentials or caller-specific rules;
-  effective access still comes from the authenticated `/v1/rules` view.
-- **A sandbox can read the rules that apply to it**, at
-  `http://egress.agentplane-staging.svc.cluster.local/v1/rules` through the sidecar's
-  existing HTTP(S) proxy, the same path it uses for every other destination. The answer names the
-  subject it is of and the egress policies an active binding grants it: each rule's
-  hosts, methods, paths, and where a credential is substituted, its placeholder, its operator-written
-  `description`, and every target — which is what a client needs to build the value and to know whose
-  credential it is spending, since a header name and a placeholder leave open both whether the value
-  reads `Bearer <placeholder>` or the placeholder bare, and what the token behind it can do. Never
-  the Secret, its key,
-  or its value — the projection is built from its own field list, so a field added to a resource
-  does not appear here until someone writes it in.
-  The caller sends the published inert `agentplane-credential-agentplane-workload` placeholder
-  in ordinary `Authorization: Bearer` through the configured proxy. An active ordinary
-  `basic` egress policy/binding authorizes exact substitution using `agentplane-workload`.
-  Missing or forged destination auth and unbound placeholders fail closed.
-  The destination independently authenticates its Authorization bearer with TokenReview and live
-  Pod resolution, without relying on proxy-hop identity or the caller's source address. The answer
-  is of the subject that bearer proves, projected from the answering replica's enforcement index;
-  this informational snapshot need not come from the replica that admitted the API request.
-  Other request headers and bodies cannot select identity. Service port 80 reaches the distinct
-  API listener, not proxy port 8888; there is no local proxy dispatch or recursive forwarding.
-  Operator admin endpoints are not available through this route.
-  `GET /v1/rules` is the generated HTTP/JSON form of the gRPC `EgressRules.GetRules`
-  (<egress_rules.proto>), served in-process on a loopback listener only: proto-JSON answers, and a
-  bearer that proves no workload fails `401` as a `google.rpc.Status` body (`503` when it could not
-  be reviewed), with the same subject and redaction either way.
+  `/openapi.json`. They contain no credentials or caller-specific rules; effective access still
+  comes from the authenticated `/v1/rules` view.
+- **A Sandbox can read the rules that apply to it** through its exact-origin SVID route. The API
+  derives the ServiceAccount subject from the verified Runtime certificate and live Sandbox
+  binding, then returns the redacted rules for that account. Caller headers and bodies cannot select
+  identity; this route does not send a bearer placeholder or use policy credential substitution.
+  Operator admin endpoints are not available through this route. `GET /v1/rules` is the generated
+  HTTP/JSON form of gRPC `EgressRules.GetRules` (<egress_rules.proto>), served in-process on a
+  loopback listener only.
 - The admitted host is resolved by the proxy, never by the sandbox. A host with any address that
   is not globally reachable unicast — loopback, private, link-local, carrier-grade NAT, multicast,
   reserved, and the IPv4-mapped IPv6 forms of those — is refused whole with `address-forbidden`;

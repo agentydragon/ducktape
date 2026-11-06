@@ -8,8 +8,9 @@ from cluster.cdk8s.agentplane import actions, egress, notifications, session_dis
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.service_ref import ServiceRef
 
-_WORKLOAD_PLACEHOLDER = "agentplane-credential-agentplane-workload"
-_NOTIFICATIONS_PLACEHOLDER = "agentplane-credential-agentplane-notifications-workload"
+# Generic HTTP clients still require an Authorization input, which the sidecar strips on these
+# exact-origin SVID routes. It is never a service credential.
+_SVID_ROUTE_AUTH_VALUE = "unused"
 _SESSIONS_PLACEHOLDER = placeholder_of(session_dispatcher.WORKLOAD_CREDENTIAL)
 
 
@@ -55,11 +56,11 @@ def agent_cli_environment(urls: ServiceUrls) -> dict[str, str]:
     """Return the service URLs and placeholder bearers read by the `agentplane` command."""
     return {
         "AGENTPLANE_ACTIONS_URL": urls.actions,
-        "AGENTPLANE_ACTIONS_CREDENTIAL": _WORKLOAD_PLACEHOLDER,
+        "AGENTPLANE_ACTIONS_CREDENTIAL": _SVID_ROUTE_AUTH_VALUE,
         "AGENTPLANE_SESSIONS_URL": urls.sessions,
         "AGENTPLANE_SESSIONS_CREDENTIAL": _SESSIONS_PLACEHOLDER,
         "AGENTPLANE_NOTIFICATIONS_URL": urls.notifications,
-        "AGENTPLANE_NOTIFICATIONS_CREDENTIAL": _NOTIFICATIONS_PLACEHOLDER,
+        "AGENTPLANE_NOTIFICATIONS_CREDENTIAL": _SVID_ROUTE_AUTH_VALUE,
         "AGENTPLANE_EGRESS_URL": urls.egress,
-        "AGENTPLANE_EGRESS_CREDENTIAL": _WORKLOAD_PLACEHOLDER,
+        "AGENTPLANE_EGRESS_CREDENTIAL": _SVID_ROUTE_AUTH_VALUE,
     }

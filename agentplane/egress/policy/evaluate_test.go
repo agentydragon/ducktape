@@ -273,26 +273,6 @@ func scopedIndex(credential resources.Credential) *Index {
 	)
 }
 
-func TestAuthenticatedWorkloadSourceSubstitutesOnlyTheValidatedContextBearer(t *testing.T) {
-	dynamic := resources.Credential{Name: "agentplane-workload", Source: resources.AuthenticatedWorkloadToken{}, Targets: []resources.Target{bearer}}
-	scoped := scopedIndex(dynamic)
-	token := "pod-a-authenticated-workload-token"
-	request := outbound(header(authorization, "Bearer "+dynamic.Placeholder()))
-
-	got := scoped.Evaluate(caller, request, &WorkloadContext{Bearer: token, Caller: caller, PodUID: "pod-a-uid"})
-
-	assertDecision(t, got, Allowed{Binding: "b", Policy: "scoped", Rewrites: swapped(token)})
-	for _, format := range []string{"%v", "%+v", "%#v"} {
-		if strings.Contains(fmt.Sprintf(format, got), token) {
-			t.Errorf("the decision prints the workload token under %s", format)
-		}
-	}
-
-	assertDecision(t, scoped.Evaluate(caller, request, nil), Denied{decision.CredentialUnavailable})
-	stale := &WorkloadContext{Bearer: "stale-token", Caller: policyapi.ServiceAccountRef{Namespace: namespace, Name: "someone-else"}}
-	assertDecision(t, scoped.Evaluate(caller, request, stale), Denied{decision.CredentialUnavailable})
-}
-
 func TestProjectedWorkloadSource(t *testing.T) {
 	projected := resources.Credential{
 		Name: "kubernetes-workload", Source: resources.ProjectedWorkloadToken{Audience: audience}, Targets: []resources.Target{bearer},

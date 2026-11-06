@@ -142,33 +142,21 @@ would remain inert there. Do not configure credentialless `bb remote` until Buil
 runner-side credential reference or Agentplane owns an equivalent broker at that boundary; the
 boundary and the candidate rewrite are in <../docs/buildbuddy_remote_auth.md>.
 
-## Authenticated workload credentials
+## Sandbox SVID routes
 
-For a trusted first-party destination that directly validates the Sandbox Pod's projected workload
-token, an `EgressCredential` may resolve the bearer already authenticated on the sidecar-to-central
-hop. This remains ordinary egress policy and target substitution: there is no destination-specific branch,
-second token, sideband, or unconditional `Authorization` injection.
+Sandbox-to-service routes use the Runtime certificate issued for the current Sandbox incarnation.
+The sidecar selects a route by exact destination authority, opens an authorized CONNECT through the
+proxy, and presents the Runtime SVID on the destination TLS connection. It removes caller
+`Authorization`, `Proxy-Authorization`, and projected-token headers before forwarding. The proxy
+authenticates the sidecar's TLS client certificate, resolves its Sandbox UID and credential ID
+against the live Sandbox status, and evaluates egress rules for that Sandbox's ServiceAccount.
+The destination independently verifies the SVID and performs its own live Sandbox lookup. No
+caller-supplied header or HTTP bearer establishes identity on this route.
 
-```yaml
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressCredential
-metadata:
-  name: agentplane-workload
-spec:
-  description: Calling Sandbox Pod workload identity for trusted first-party services.
-  source:
-    authenticatedWorkloadToken: {}
-  targets:
-    - header: Authorization
-      method: schemeToken
-      scheme: Bearer
-```
-
-The sidecar presents the configured workload audience (`WORKLOAD_TOKEN_AUDIENCE`,
-`agentplane-egress`). Central strips `Proxy-Authorization`, validates and binds its bearer to the
-authenticated caller, and substitutes it only when the selected rule names this credential and the request
-presents exactly `Authorization: Bearer agentplane-credential-agentplane-workload`. Missing, stale,
-or mismatched authenticated context fails closed.
+The token-authenticated forward-proxy listener remains available for compatibility paths, including
+destinations that still use projected tokens. SVID routes do not use `EgressCredential` substitution.
+The LLM ingress's SVID-only listener and the Sandbox's exact-origin sidecar route are described in
+[`../llm_ingress/README.md`](../llm_ingress/README.md).
 
 Authoritative evidence is pinned to BuildBuddy source commit
 [`6fc01488`](https://github.com/buildbuddy-io/buildbuddy/tree/6fc01488a60d69832f86eff154ac985e1170653e):
@@ -182,28 +170,11 @@ both appends the key to the local outgoing gRPC context and retains it in the ne
 
 ## Rules API
 
-Agents send an ordinary proxied HTTP `GET` to
-`http://egress.agentplane-staging.svc.cluster.local/v1/rules` with
-`Authorization: Bearer agentplane-credential-agentplane-workload`. The placeholder is inert and
-published in nonsecret runner instructions. The default `basic` egress policy binds this exact
-host, method, and path to the `agentplane-workload` credential's `schemeToken` target.
-Central applies normal exact-placeholder substitution using the authenticated sidecar workload
-context; no rules-specific proxy dispatch or credential injection mode is involved.
-
-Service port `80` targets the separate HTTP API listener on `8082`; port `8888` remains the forward
-proxy. Central resolves and dials the API like any other destination admitted by an egress policy.
-The endpoint validates ordinary `Authorization` through the same `workload_auth` resolver,
-reviewing the bearer itself rather than inheriting the tunnel's verdict: one proxied read is two
-reviews, deliberately, each reused for 30 s. The API sees central's
-source address, not the caller's Pod address; proxy-hop identity and caller metadata are not API
-identity authorities. Missing or forged destination auth fails closed.
-
-The API shares the central process's current enforcement `Index`, which projects the subject the
-bearer proved and returns only the redacted field allowlist. Operator
-Operator decision and health reads are on the separate admin listener ([Admin gRPC API](#admin-grpc-api)), not the rules API.
-Network policy admits the agent API from central egress only. Service target-port separation prevents recursion.
-The Service may select a different replica from the one that admitted the request. The answer is
-an informational snapshot of the answering replica, not a global acknowledgement or admission promise.
+Sandbox clients read `/v1/rules` through the exact-origin SVID route. The API derives the subject
+from the verified certificate and live Sandbox binding, then returns the redacted rules that apply
+to that Sandbox's ServiceAccount. It does not accept a bearer placeholder or caller identity header.
+The route is authenticated independently of egress policy evaluation; operator decision and health
+reads remain on the separate admin listener ([Admin gRPC API](#admin-grpc-api)).
 
 ## Admin gRPC API
 

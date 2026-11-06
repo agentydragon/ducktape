@@ -1,5 +1,4 @@
-"""What the namespace's egress grants a sandbox: the Actions API's agent-facing surface only, and
-the Kubernetes access every sandbox gets rather than the ones that opted in."""
+"""What the namespace grants a sandbox: SVID-protected service routes and Kubernetes access."""
 
 from __future__ import annotations
 
@@ -219,15 +218,15 @@ def test_public_internet_is_available_but_never_implicitly_granted(staging_manif
                 assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policySets"]
 
 
-def test_agent_egress_api_uses_its_canonical_service(staging_manifests: list[dict[str, Any]]) -> None:
-    policy = one(
-        doc for doc in staging_manifests if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == BASIC_POLICY
+def test_legacy_workload_bearer_routes_are_removed_from_basic(staging_manifests: list[dict[str, Any]]) -> None:
+    policy = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
+    hosts = [host for rule in policy["spec"]["rules"] for host in rule.get("hosts", [])]
+    assert agent_api(staging.ENV.namespace).fqdn not in hosts
+    assert "actions.agentplane-staging.svc.cluster.local" not in hosts
+    assert not any(
+        doc["kind"] == "EgressCredential" and doc["metadata"]["name"] == "agentplane-workload"
+        for doc in staging_manifests
     )
-    canonical_host = agent_api(staging.ENV.namespace).fqdn
-    rule = one(rule for rule in policy["spec"]["rules"] if canonical_host in rule.get("hosts", []))
-    assert rule["hosts"] == [canonical_host]
-    assert rule["methods"] == ["GET"]
-    assert rule["paths"] == ["/llms.txt", "/docs/agents/**", "/openapi.json", "/v1/rules"]
 
 
 def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_manifests: list[dict[str, Any]]) -> None:
