@@ -226,20 +226,13 @@ async def _run_malformed_json_test(
 
 
 @pytest.mark.parametrize(
-    ("arguments", "exact_error_response"),
-    [('{"text": "unterminated string', True), ('["not", "an", "object"]', False)],
-    ids=["malformed-json", "non-object-json"],
+    "arguments", ['{"text": "unterminated string', '["not", "an", "object"]'], ids=["malformed-json", "non-object-json"]
 )
-async def test_invalid_tool_argument_json(
-    mcp_tool_provider_echo, recording_handler, arguments, exact_error_response
-) -> None:
+async def test_invalid_tool_argument_json(mcp_tool_provider_echo, recording_handler, arguments) -> None:
     call = FunctionCallItem(type="function_call", name=ECHO_TOOL_NAME, arguments=arguments, call_id="test:1")
     text, events = await _run_malformed_json_test(mcp_tool_provider_echo, recording_handler, call)
 
-    if exact_error_response:
-        assert text == "I received an error"
-    else:
-        assert "error" in text.lower()
+    assert text == "I received an error"
 
     tool_outputs = [evt for evt in events if isinstance(evt, ToolCallOutput)]
     assert len(tool_outputs) == 1
