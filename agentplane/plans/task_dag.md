@@ -2983,7 +2983,7 @@ token bound to another Pod, and refuses a caller-supplied subject header.
 **In flight, Codex, 2026-11-05.** The operator split SVID authentication from the identity cutover:
 services resolve the verified leaf through the live Sandbox and accepted runner credential to its
 own ServiceAccount, with the same principal result and authorization as today. History runner
-ingress and Notification have implementation slices in review; Dispatcher, Action and LLM remain.
+ingress, Notification and Action have implementation slices in review; Dispatcher and LLM remain.
 The proxy tunnels opaque TLS and never asserts a caller. Each service removes its projected-token
 audience from Sandbox templates and the proxy in its own change. Remove `authenticatedWorkloadToken`
 and per-audience `projectedWorkloadToken` sources as their consumers disappear. The sampler retains
