@@ -72,8 +72,10 @@ def test_records_ordered_guest_shutdown_and_correlated_host_evidence(tmp_path: P
     assert guest["shutdown_complete_lines"] == ["AGENTPLANE_GUEST_SHUTDOWN_COMPLETE"]
     assert guest["domain_powerdown_lines"] == ["[  72.512345] reboot: Power down"]
     assert guest["ordered_shutdown_proof"] is True
-    assert guest["host_lifecycle"]["observation"] == "correlated_host_logs_present"
-    assert guest["host_lifecycle"]["events"]["grace_period_expired"] == []
+    lifecycle = guest["host_lifecycle"]
+    assert lifecycle is not None
+    assert lifecycle["observation"] == "correlated_host_logs_present"
+    assert lifecycle["events"]["grace_period_expired"] == []
     assert report["handler_artifacts"] == ["handler.log"]
     require_orderly_shutdown(report)
 
@@ -92,6 +94,7 @@ def test_correlates_and_classifies_a_kubevirt_forced_stop(tmp_path: Path) -> Non
     lifecycle = report["guests"][0]["host_lifecycle"]
 
     assert report["classification"] == "guest_powerdown_with_host_forced_stop"
+    assert lifecycle is not None
     assert len(lifecycle["events"]["grace_period_expired"]) == 1
     assert len(lifecycle["events"]["virt_launcher_kill"]) == 1
     assert len(lifecycle["events"]["domain_stopped_destroyed"]) == 1
@@ -122,7 +125,9 @@ def test_domain_stopped_destroyed_is_a_forced_stop_without_kill_log(tmp_path: Pa
     report = record(artifacts, output, NAMESPACE)
 
     assert report["classification"] == "guest_powerdown_with_host_forced_stop"
-    events = report["guests"][0]["host_lifecycle"]["events"]
+    lifecycle = report["guests"][0]["host_lifecycle"]
+    assert lifecycle is not None
+    events = lifecycle["events"]
     assert events["domain_stopped_destroyed"]
     assert events["grace_period_expired"] == []
     assert events["virt_launcher_kill"] == []
@@ -141,7 +146,9 @@ def test_missing_correlated_host_logs_is_not_reported_as_no_forced_stop(tmp_path
     report = record(artifacts, output, NAMESPACE)
 
     assert report["classification"] == "guest_powerdown_host_lifecycle_logs_missing"
-    assert report["guests"][0]["host_lifecycle"]["observation"] == "correlated_handler_or_launcher_logs_missing"
+    lifecycle = report["guests"][0]["host_lifecycle"]
+    assert lifecycle is not None
+    assert lifecycle["observation"] == "correlated_handler_or_launcher_logs_missing"
 
 
 def test_correlated_host_logs_without_shutdown_event_remain_unknown(tmp_path: Path) -> None:
@@ -158,6 +165,7 @@ def test_correlated_host_logs_without_shutdown_event_remain_unknown(tmp_path: Pa
 
     assert report["classification"] == "guest_powerdown_host_shutdown_event_missing"
     lifecycle = report["guests"][0]["host_lifecycle"]
+    assert lifecycle is not None
     assert lifecycle["observation"] == "correlated_host_logs_present"
     assert lifecycle["events"]["domain_shutdown"] == []
     assert lifecycle["events"]["domain_shutoff_shutdown"] == []
