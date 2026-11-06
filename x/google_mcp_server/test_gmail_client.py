@@ -41,27 +41,17 @@ class _Executable:
         return self._result
 
 
-class _ThreadRequest:
-    """A pending users.threads.modify request (batched)."""
-
-    def __init__(self, result: Any) -> None:
-        self.result = result
-
-    def execute(self) -> Any:
-        return self.result
-
-
 class _FakeBatch:
     def __init__(self, callback: Any) -> None:
         self._callback = callback
-        self._requests: list[tuple[str, _ThreadRequest]] = []
+        self._requests: list[tuple[str, _Executable]] = []
 
-    def add(self, request: _ThreadRequest, *, request_id: str) -> None:
+    def add(self, request: _Executable, *, request_id: str) -> None:
         self._requests.append((request_id, request))
 
     def execute(self) -> None:
         for request_id, request in self._requests:
-            self._callback(request_id, request.result, None)
+            self._callback(request_id, request.execute(), None)
 
 
 class _FakeLabels:
@@ -90,11 +80,8 @@ class _FakeLabels:
 
 
 class _FakeThreads:
-    def __init__(self, svc: _FakeGmailService) -> None:
-        self._svc = svc
-
     def modify(self, *, userId, id, body):  # noqa: N803
-        return _ThreadRequest({})
+        return _Executable({})
 
 
 class _FakeDrafts:
@@ -145,7 +132,7 @@ class _FakeUsers:
         return _FakeLabels(self._svc)
 
     def threads(self) -> _FakeThreads:
-        return _FakeThreads(self._svc)
+        return _FakeThreads()
 
     def drafts(self) -> _FakeDrafts:
         return _FakeDrafts(self._svc)
