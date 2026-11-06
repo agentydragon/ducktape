@@ -30,6 +30,7 @@ py_library(
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/monitoring:alloy",
+        "//cluster/cdk8s/monitoring:grafana_instance",
         "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",
         "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
