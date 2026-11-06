@@ -11832,10 +11832,9 @@ impl Visit for ExecutionIndex {
                 .callables
                 .get_mut(&function.span.lo.0)
                 .unwrap()
-                .may_fall_through = !function
-                .body
-                .as_ref()
-                .is_some_and(|body| matches!(body.stmts.last(), Some(Stmt::Return(_))));
+                .may_fall_through = !function.body.as_ref().is_some_and(|body| {
+                matches!(body.stmts.last(), Some(Stmt::Return(_) | Stmt::Throw(_)))
+            });
             index
                 .callables
                 .get_mut(&function.span.lo.0)
@@ -11911,7 +11910,7 @@ impl Visit for ExecutionIndex {
                 .may_fall_through = match arrow.body.as_ref() {
                 ArrowFunctionBody::Expr(_) => false,
                 ArrowFunctionBody::FunctionBody(body) => {
-                    !matches!(body.stmts.last(), Some(Stmt::Return(_)))
+                    !matches!(body.stmts.last(), Some(Stmt::Return(_) | Stmt::Throw(_)))
                 }
             };
             arrow.visit_children_with(index);
