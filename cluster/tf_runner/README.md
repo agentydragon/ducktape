@@ -20,7 +20,7 @@ in the cluster downloads nothing.
 
 `devinfra/ci/image_targets.json` publishes it to `ghcr.io/agentydragon/tf-runner` (GHCR, not
 Forgejo: the runner provisions Forgejo's registry credentials, so it cannot depend on them).
-The `tf-runner` ImagePolicy (`cluster/cdk8s/tofu_controller/release.py`) picks the newest
+The `tf-runner` ImagePolicy (`cluster/cdk8s/tofu_controller_release.py`) picks the newest
 build, and Flux writes it into the HelmRelease's `runner.image` in
 `cluster/k8s/tofu-controller-image-pins/helmrelease-image.yaml`, beside the controller's pin.
 

@@ -160,7 +160,7 @@ Its [parser][episodic-parser] builds conversation exchanges, records some tool m
 
 ### Langfuse: attractive existing operation view, with ingestion work
 
-The repository already declares a Langfuse deployment, external Postgres/ClickHouse/Valkey, SeaweedFS event/media storage, and Authentik access in [`cluster/cdk8s/langfuse/app.py`](../cluster/cdk8s/langfuse/app.py). That makes reusing it attractive; this investigation did not check live readiness, project settings, or existing workstation coverage.
+The repository already declares a Langfuse deployment, external Postgres/ClickHouse/Valkey, SeaweedFS event/media storage, and Authentik access in [`cluster/cdk8s/langfuse.py`](../cluster/cdk8s/langfuse.py). That makes reusing it attractive; this investigation did not check live readiness, project settings, or existing workstation coverage.
 
 **Fidelity:** the [Claude integration][langfuse-claude] reconstructs generations and tool spans from transcripts. Its example code uses the latest user message or preceding tool results as generation input, rather than recreating the entire actual request. It also truncates some displayed fields. This is useful operation inspection, but not proof of the full prompt sent to a model.
 

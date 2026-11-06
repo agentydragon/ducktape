@@ -12,7 +12,6 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
         "//cluster/cdk8s/clickhouse:__pkg__",
         "//cluster/cdk8s/grafana:__pkg__",
-        "//cluster/cdk8s/langfuse:__pkg__",
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
     deps = [

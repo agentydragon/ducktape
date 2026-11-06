@@ -1,7 +1,7 @@
 My homepage. Everything is CC BY-NC-SA 3.0.
 
 Hakyll (`site.hs`) renders it into an OCI image served by `static-web-server`
-(`default.nix`). The cluster runs it (`cluster/cdk8s/website/website.py`); a push to
+(`default.nix`). The cluster runs it (`cluster/cdk8s/website.py`); a push to
 `devel` that touches this directory publishes a new image, and Flux rolls it out.
 
 # Important linked URLs
