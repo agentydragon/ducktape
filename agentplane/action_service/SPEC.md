@@ -51,7 +51,15 @@ supplied MCP schemas and policy-authored argument schemas retain their own JSON 
 
 Every caller is a Kubernetes ServiceAccount carrying the label
 `agentplane.allegedly.works/use-action-service: "true"` in a configured caller namespace.
-A Kubernetes token proves that account directly through TokenReview for the configured audience.
+The service-owned workload listener on 8082 verifies an agentplane Runtime SVID with explicit
+clientAuth against the trust-manager roots. It resolves the exact live Sandbox UID and accepted
+credential to its controller-owned ServiceAccount and canonical UID. The sidecar originates TLS
+through the central proxy's opaque CONNECT; the proxy supplies no identity. Native gRPC and the
+in-process generated HTTP facade run the same Gate. Bearer headers cannot replace the certificate
+peer; deleted Sandboxes, stale credentials and invalid leaves fail before a handler runs. Only
+ActionService is exposed here; operator APIs remain on the backend listener.
+
+On the backend listener, a Kubernetes token proves that account directly through TokenReview for the configured audience.
 The resolver requires an allowed namespace and ServiceAccount UID; Actions accepts tokens with or without a Pod binding. A supplied
 Pod binding must have exactly one name and UID. An external MCP bearer proves an active
 Connection grant whose currently bound account is admitted by the same label. Nothing is admitted
@@ -69,7 +77,7 @@ admission refuses subsequent MCP authority resolution. Revoking an old grant can
 replacement, and no Connection or grant history is deleted.
 
 The core receives a ServiceAccount principal and has no Connection authority or grant provenance.
-At admission it stores the TokenReview-verified UID beside the ServiceAccount's namespace and name.
+At admission it stores the authentication-verified UID beside the ServiceAccount's namespace and name.
 The UID pins the exact account incarnation in receipts and execution payloads. Requests whose
 admitting writer did not store a UID remain explicitly unknown, including writes by older replicas
 during a roll. The service never looks up a same-name live account to fill it in, and a

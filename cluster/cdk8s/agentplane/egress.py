@@ -425,7 +425,7 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
             # proxy substitutes and authorizes the caller itself, so a method or path list here would
             # only be a second copy of their routes to keep in step.
             Rule.egress(
-                hosts=[llm_ingress.service(namespace).fqdn, actions.service(namespace).fqdn],
+                hosts=[llm_ingress.service(namespace).fqdn],
                 cluster_internal=True,
                 credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
             ),

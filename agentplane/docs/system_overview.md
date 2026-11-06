@@ -116,8 +116,11 @@ flowchart LR
     vmexec --> relay
     runner -->|local HTTP CONNECT| sidecar
     sidecar -->|mTLS SVID on proxy-mtls:8889 when enabled; explicit token mode in staging| egress
+    sidecar -.->|Action SVID TLS through CONNECT| egress
     guest -->|HTTP CONNECT through launcher relay| relay
     relay -->|mTLS SVID on proxy-mtls:8889 when enabled; explicit token mode in staging| egress
+    relay -.->|Action SVID TLS through CONNECT| egress
+    egress -.->|opaque Action TLS, verified by the service| actions
     runner -.->|OTLP/gRPC telemetry route| sidecar
     sidecar -->|OTLP/gRPC| alloy
     guest -.->|OTLP/gRPC telemetry route| relay

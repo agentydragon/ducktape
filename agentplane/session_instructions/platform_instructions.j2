@@ -38,7 +38,7 @@ Use the configured proxy and CA trust. Service addresses and authentication are:
 | Service | Base URL | Authorization Bearer placeholder |
 | --- | --- | --- |
 | Egress rules | {{ egress_api_url }} | `agentplane-credential-agentplane-workload` |
-| Actions | {{ actions_service_url }} | `agentplane-credential-agentplane-workload` |
+| Actions | {{ actions_service_url }} | Authenticated by the egress sidecar |
 | Sessions and environments | {{ sessions_service_url }} | `agentplane-credential-agentplane-session-dispatcher-workload` |
 | Notifications | {{ notifications_service_url }} | Managed by your Sandbox; no Authorization header needed |
 
