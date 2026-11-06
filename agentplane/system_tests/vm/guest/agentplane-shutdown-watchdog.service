@@ -5,7 +5,12 @@ IgnoreOnIsolate=yes
 
 [Service]
 Type=exec
+RuntimeDirectory=agentplane-shutdown-watchdog
+ExecStartPre=/usr/bin/busybox mkfifo /run/agentplane-shutdown-watchdog/request
 ExecStart=/usr/sbin/agentplane-shutdown-watchdog
 StandardOutput=tty
 StandardError=tty
 TTYPath=/dev/ttyS0
+
+[Install]
+WantedBy=sysinit.target

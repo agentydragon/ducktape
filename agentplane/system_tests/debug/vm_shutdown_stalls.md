@@ -84,7 +84,16 @@ The source checks used systemd `v257.9`, matching the guest's `257.9-1~deb13u1`:
    manager log-level/target changes and all pending-job RPCs removed. Kernel arguments
    remain ordinary. The independent sampler adds PID 1 CPU counters, descriptor mappings
    and a process listing. This tests whether extra manager traffic or debug output changes
-   reproduction. Running.
+   reproduction. Three executions passed. Two hit the existing 600-second pytest limit;
+   all 15 guests emitted proof and powered down. In run 2 the timer included 378 seconds
+   of stack setup, then guest-ready waits of 157–200 seconds. It fired while sessions and
+   initial turns were still progressing. A provisioner API timeout surfaced on teardown;
+   its original time is not recorded, so it cannot be assigned as the cause of the cutoff.
+
+   Two run-1 guests produced no watchdog sample: the bounded start RPC could expire before
+   starting the service. The proposed collector now starts the observer at boot, blocked
+   on a FIFO. ACPI wakes it before changing manager logging. Keeping its FIFO reader open
+   also accepts repeated power-button notifications without needing a responsive PID 1.
 
 Experiment 1 did reproduce a shutdown failure in its second execution: the Codex OOM guest
 stopped Runtime at 18:55:50 UTC, unmounted `/state/workspaces` by 18:55:52 and stopped journal
