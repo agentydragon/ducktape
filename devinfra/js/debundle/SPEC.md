@@ -4095,6 +4095,14 @@ of an incomplete execution rather than a known ordering fact. A `sequenced`
 edge whose endpoint is classified pure (an allocation, a pure content reader)
 has no evidence for that side but keeps its `explanation`.
 
+When non-empty, `heap_frontier` on a source-unit synchronous report and its
+sequenced endpoint context separates `own_at_init` from
+`composed_synchronous_calls`, and includes `non_assumed_heap_accesses`. Each
+cell set reports its unique count and a stable sample of at most eight exact
+cells. The existing opaque bit has no per-operation provenance; exact escaped
+cells remain independent evidence alongside it. This diagnostic does not
+prove heap locality and changes no ordering or gate verdict.
+
 The explanation is retained when the dependency graph is built
 (`dependency_graph.json.gz` `edges[].sequenced_cause` for `sequenced` edges; the
 edge `role` for at-init reads), never recomputed at report time. Where several

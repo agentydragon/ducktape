@@ -26,7 +26,10 @@ fn dataflow_cycle_fixture() -> FixtureOpts<'static> {
     FixtureOpts::new(
         r#"const alpha = (globalThis.tag = "first", "a");
 const beta = (globalThis.tag = "second", "b");
-const probe = probeHost(alpha);
+const captured = [];
+const composed = [];
+function touch() { composed.push("local"); }
+const probe = probeHost(alpha, () => captured.push("escaped"), touch());
 const gamma = (globalThis.tag = "third", "g");
 console.log(alpha, beta, probe, gamma, globalThis.tag);
 export { alpha, beta, probe, gamma };
@@ -34,7 +37,15 @@ export { alpha, beta, probe, gamma };
         vec![
             logical_module("mod_a", &[Member::new("alpha"), Member::new("gamma")]),
             logical_module("mod_b", &[Member::new("beta")]),
-            logical_module("mod_c", &[Member::new("probe")]),
+            logical_module(
+                "mod_c",
+                &[
+                    Member::new("captured"),
+                    Member::new("composed"),
+                    Member::new("touch"),
+                    Member::new("probe"),
+                ],
+            ),
         ],
     )
     .with_dataflow_aware_s_chain()
@@ -132,6 +143,76 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
     let reason = &barrier_cause["purity"]["reasons"][0];
     assert_eq!(reason["rule"], "unknown_call", "{edge}");
     assert_eq!(reason["detail"], "probeHost", "{edge}");
+
+    let heap = &barrier_cause["heap_frontier"];
+    let own = &heap["own_at_init"];
+    assert_eq!(own["opaque"], true, "{edge}");
+    assert_eq!(own["writes"]["count"], 1, "{edge}");
+    let own_writes = own["writes"]["sample"]
+        .as_array()
+        .expect("own write sample");
+    assert_eq!(own_writes.len(), 1, "{edge}");
+    assert_eq!(own_writes[0]["kind"], "array_contents", "{edge}");
+    let composed = &heap["composed_synchronous_calls"];
+    assert!(composed["writes"]["count"].as_u64().unwrap() > 0, "{edge}");
+    let composed_writes = composed["writes"]["sample"]
+        .as_array()
+        .expect("composed write sample");
+    assert!(
+        composed_writes
+            .iter()
+            .any(|cell| !own_writes.contains(cell)),
+        "local synchronous callee must contribute its own exact array cell: {edge}"
+    );
+    let non_assumed_writes = &heap["non_assumed_heap_accesses"]["writes"];
+    assert!(non_assumed_writes["count"].as_u64().unwrap() > 0, "{edge}");
+    assert!(
+        non_assumed_writes["sample"]
+            .as_array()
+            .expect("non-assumed write sample")
+            .iter()
+            .all(|cell| composed_writes.contains(cell)),
+        "non-assumed writes must be retained in the composed summary: {edge}"
+    );
+    for cells in [
+        &own["allocations"],
+        &own["reads"],
+        &own["writes"],
+        &composed["allocations"],
+        &composed["reads"],
+        &composed["writes"],
+        &heap["non_assumed_heap_accesses"]["reads"],
+        non_assumed_writes,
+    ] {
+        assert!(
+            cells["sample"].as_array().unwrap().len() <= 8,
+            "heap cell samples are bounded: {edge}"
+        );
+    }
+
+    let graph_path = rejected
+        .report_root
+        .join("static/app/dependency_graph.json.gz");
+    let described = run_debundle(&[
+        "gate",
+        "describe",
+        "0",
+        "--graph",
+        graph_path.to_str().unwrap(),
+        "--format",
+        "text",
+    ]);
+    assert!(
+        described.status.success(),
+        "{}",
+        String::from_utf8_lossy(&described.stderr)
+    );
+    let described = String::from_utf8_lossy(&described.stdout);
+    assert!(
+        described.contains("heap frontier: own-at-init opaque=true"),
+        "{described}"
+    );
+    assert!(described.contains("array contents #"), "{described}");
 }
 
 /// Array-content order (emitted in both S-chain modes; this fixture uses

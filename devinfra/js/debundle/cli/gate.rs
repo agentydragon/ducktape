@@ -1163,6 +1163,9 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
         _ => None,
     };
     for cause in edge.sequenced_source_unit.iter().chain(target_cause) {
+        if let Some(heap_frontier) = &cause.heap_frontier {
+            out.push_str(&format!("      heap frontier: {heap_frontier}\n"));
+        }
         let Purity::NotPure { reasons } = &cause.purity else {
             continue;
         };
@@ -1384,6 +1387,10 @@ fn impure_source_unit_cause(node: &SourceUnitReport) -> Option<SequencedSourceUn
             .synchronous_execution
             .as_ref()
             .map(|execution| execution.complete),
+        heap_frontier: node
+            .synchronous_execution
+            .as_ref()
+            .and_then(|execution| execution.heap_frontier.clone()),
     })
 }
 
