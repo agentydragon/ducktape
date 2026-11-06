@@ -13,7 +13,6 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
 )
 
 func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
@@ -28,7 +27,7 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 	service, _ := newService(t, testTiming)
 	service.Principals = service.Principals.WithSVID(resolver)
 	serverCredentials := ca.Issue(t, transport.HistoryIngressURI)
-	serverTLS, err := serverCredentials.WorkloadServerTLSConfig(transport.HistoryIngressURI)
+	serverTLS, err := serverCredentials.WorkloadServerCredentials(transport.HistoryIngressURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +36,7 @@ func TestSVIDKeepsTheFirstWriterServiceAccountGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnyAccount(service.Principals)}
-	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
+	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverTLS))...)
 	session_ingresspb.RegisterSessionJournalIngressServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
