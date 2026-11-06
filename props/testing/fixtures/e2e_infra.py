@@ -4,9 +4,9 @@ Provides test infrastructure:
 - Docker registry (testcontainers registry:3, session-scoped with per-test cleanup)
 - BazelImage fixtures for agent images (from Bazel oci_image layouts)
 
-The registry container is session-scoped to avoid 28-76s startup overhead on RBE,
-but manifests are deleted at the start of each test to ensure crane push always
-triggers agent_definition recording via the backend proxy.
+Manifests are deleted at the start of each test so crane push triggers
+agent_definition recording through the backend proxy. An explicit opt-in retains
+only registry blobs and repository layer links across pytest processes.
 
 Usage in tests:
     async def test_something(e2e_registry, grader_image, e2e_stack):
@@ -18,22 +18,41 @@ Usage in tests:
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 from collections.abc import Generator
+from contextlib import ExitStack
 
 import httpx
 import pytest
 from opentelemetry import trace
+from python.runfiles import Runfiles
 from testcontainers.core import testcontainers_config
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
 from devinfra.oci.oci import BazelImage, load_oci_image
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from props.db.models import AgentType
+from props.testing.fixtures.registry_blob_cache import (
+    RegistryBlobCacheReceipt,
+    RegistryBlobCacheRecipe,
+    cached_registry_container,
+    registry_blob_cache_usage_bytes,
+)
 from third_party.containers import registry_3, ryuk
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
+_REGISTRY_BLOB_CACHE_ENV = "PROPS_E2E_REGISTRY_BLOB_CACHE"
+
+
+def _registry_blob_cache_enabled() -> bool:
+    setting = os.environ.get(_REGISTRY_BLOB_CACHE_ENV, "0")
+    if setting not in {"0", "1"}:
+        raise ValueError(f"{_REGISTRY_BLOB_CACHE_ENV} must be unset, '0', or '1'")
+    return setting == "1"
 
 
 # --- Infrastructure ---
@@ -45,25 +64,53 @@ def _e2e_registry_container() -> Generator[DockerContainer]:
 
     Use e2e_registry instead, which adds per-test cleanup.
     """
+    cache_enabled = _registry_blob_cache_enabled()
     load_oci_image(ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
     registry_image = load_oci_image(registry_3.LAYOUT_RLOCATION)
-    with tracer.start_as_current_span("e2e_registry startup"):
-        with tracer.start_as_current_span("configure container"):
-            registry = (
-                DockerContainer(registry_image)
-                .with_exposed_ports(5000)
-                .with_env("REGISTRY_HTTP_RELATIVEURLS", "true")
-                .with_env("REGISTRY_STORAGE_DELETE_ENABLED", "true")
-                .waiting_for(LogMessageWaitStrategy("listening on"))
-            )
+    receipt: RegistryBlobCacheReceipt | None = None
+    with ExitStack() as stack:
+        with tracer.start_as_current_span("e2e_registry startup"):
+            with tracer.start_as_current_span("configure container"):
+                registry = (
+                    DockerContainer(registry_image)
+                    .with_exposed_ports(5000)
+                    .with_env("REGISTRY_HTTP_RELATIVEURLS", "true")
+                    .with_env("REGISTRY_STORAGE_DELETE_ENABLED", "true")
+                    .waiting_for(LogMessageWaitStrategy("listening on"))
+                )
 
-        with tracer.start_as_current_span("container start + wait"):
-            registry.start()
-
-    try:
+            with tracer.start_as_current_span("container start + wait"):
+                if cache_enabled:
+                    receipt = stack.enter_context(
+                        cached_registry_container(
+                            registry,
+                            image_ref=registry_image,
+                            recipe=RegistryBlobCacheRecipe.model_validate_json(
+                                (
+                                    Runfiles.CreateOrRaise().root()
+                                    / "ducktape/props/testing/registry_cache_recipe.json"
+                                ).read_text()
+                            ),
+                            namespace="props-e2e",
+                        )
+                    )
+                else:
+                    stack.callback(registry.stop)
+                    registry.start()
         yield registry
-    finally:
-        registry.stop()
+        if receipt is not None:
+            (undeclared_outputs_dir() / "registry_blob_cache.json").write_text(
+                json.dumps(
+                    {
+                        "namespace": receipt.namespace,
+                        "recipe": receipt.recipe,
+                        "volume_name": receipt.volume_name,
+                        "container_id": receipt.container_id,
+                        "volume_usage_bytes_before_release": registry_blob_cache_usage_bytes(registry, receipt),
+                    },
+                    sort_keys=True,
+                )
+            )
 
 
 @tracer.start_as_current_span("delete registry manifests")
@@ -101,9 +148,9 @@ def _delete_all_manifests(registry_url: str) -> None:
 def e2e_registry(_e2e_registry_container: DockerContainer) -> DockerContainer:
     """Function-scoped registry fixture that clears manifests before each test.
 
-    The underlying container is session-scoped (avoids 28-76s startup on RBE),
-    but manifests are deleted at the start of each test so crane push always
-    triggers agent_definition recording via the proxy.
+    The registry starts once per pytest process. Its optional named-volume cache
+    retains only blobs and repository layer links across processes; manifests are
+    deleted at the start of each test so crane push records definitions via proxy.
     """
     registry_url = f"http://localhost:{_e2e_registry_container.get_exposed_port(5000)}"
     _delete_all_manifests(registry_url)
