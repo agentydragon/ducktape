@@ -1,14 +1,7 @@
 """Attic ops folded into one CLI: token rotation and cache bootstrap.
 
-Two subcommands share the `kubectl exec deploy/attic-next -- atticadm make-token …`
-pattern so the HS256 signing secret never leaves the attic pod:
-
-  * `rotate`           — mints per-token JWTs, publishes configured Kubernetes
-                         Secrets, and pushes SOPS outputs to devel.
-  * `bootstrap-caches` — idempotently ensures each named cache exists (creating
-                         via attic's REST API when absent, with a `--keypair-dir`
-                         signing key when one is mounted) and prints its public
-                         key.
+Both commands mint tokens with `atticadm` in the attic pod; its HS256 signing
+secret never leaves. The `rotate` command also publishes configured Kubernetes Secrets.
 
 Deriving `nix/attic-pubkeys.json` from the signing keys is a separate, local-only
 concern (`sync_pubkeys.py` in this package) — it needs SOPS decrypt access to

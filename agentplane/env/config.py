@@ -19,9 +19,11 @@ KUBECONFIG = f"{CONFIG_DIRECTORY}/kubeconfig"
 _MAX_DURATION_MS = (2**63 - 1) // 1_000_000
 
 
-class Endpoint(BaseModel):
+class _RuntimeConfigModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
+
+class Endpoint(_RuntimeConfigModel):
     target: str = Field(min_length=1, description="Service host:port.")
     bearer: str = Field(min_length=1, description="Bearer presented to the platform route.")
 
@@ -46,9 +48,7 @@ def _valid_host_port(value: str, field: str) -> str:
     return value
 
 
-class EnvironmentRuntimeControl(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
+class EnvironmentRuntimeControl(_RuntimeConfigModel):
     listen_address: str = Field(min_length=1, description="Environment Runtime gRPC listener host:port.")
     security: Security
 
@@ -58,10 +58,8 @@ class EnvironmentRuntimeControl(BaseModel):
         return _valid_host_port(value, "control.listen_address")
 
 
-class ResourceLimits(BaseModel):
+class ResourceLimits(_RuntimeConfigModel):
     """A cgroup-v2 budget; CPU quota is per fixed 100,000 microsecond period."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     cpu_quota_micros: int = Field(gt=0)
     memory_max_bytes: int = Field(gt=0)
@@ -72,10 +70,8 @@ class ResourceLimits(BaseModel):
     write_iops: int = Field(gt=0)
 
 
-class GuestResources(BaseModel):
+class GuestResources(_RuntimeConfigModel):
     """VM size, enclosing systemd slice caps, and native service budgets."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     guest_memory_bytes: int = Field(gt=0)
     guest_vcpu_count: int = Field(gt=0)
@@ -124,10 +120,8 @@ class GuestResources(BaseModel):
         return self
 
 
-class EnvironmentVariables(BaseModel):
+class EnvironmentVariables(_RuntimeConfigModel):
     """Inherited names are read first; explicit values take precedence."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     inherit: Sequence[str] = Field(default_factory=list)
     values: Mapping[str, str] = Field(default_factory=dict)
@@ -141,9 +135,7 @@ class EnvironmentVariables(BaseModel):
         return self
 
 
-class Harness(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
+class Harness(_RuntimeConfigModel):
     binary: str
     base_url: str
     token_env: str = Field(min_length=1, description="Environment Runtime variable containing the provider token.")
@@ -164,9 +156,7 @@ class Harness(BaseModel):
         return value
 
 
-class Executor(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
+class Executor(_RuntimeConfigModel):
     url: str
 
     @field_validator("url")
@@ -190,8 +180,6 @@ class Executor(BaseModel):
 
 
 class ContainerExecutor(Executor):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
     socket: str
 
     @field_validator("socket")
@@ -206,17 +194,13 @@ class VMExecutor(Executor):
     """Loopback exec-server endpoint supervised by the guest systemd manager."""
 
 
-class PodEnvironment(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
+class PodEnvironment(_RuntimeConfigModel):
     kind: Literal["pod"] = "pod"
     supervision: Literal["pid1"]
     executor: ContainerExecutor | None = None
 
 
-class VMEnvironment(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
+class VMEnvironment(_RuntimeConfigModel):
     kind: Literal["vm"] = "vm"
     resources: GuestResources
     console_autologin: bool = False
@@ -234,17 +218,13 @@ class VMEnvironment(BaseModel):
         return self
 
 
-class DebugCheckpoint(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
+class DebugCheckpoint(_RuntimeConfigModel):
     name: str = Field(min_length=1)
     command_id: str = Field(min_length=1)
 
 
-class CodexReadiness(BaseModel):
+class CodexReadiness(_RuntimeConfigModel):
     """Optional Codex startup windows; omitted values keep the Environment Runtime defaults."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     exec_server_ready_timeout_ms: int | None = Field(default=None, gt=0, le=_MAX_DURATION_MS)
     exec_server_probe_timeout_ms: int | None = Field(default=None, gt=0, le=_MAX_DURATION_MS)
@@ -254,10 +234,8 @@ class CodexReadiness(BaseModel):
     app_server_initialize_timeout_ms: int | None = Field(default=None, gt=0, le=_MAX_DURATION_MS)
 
 
-class Configuration(BaseModel):
+class Configuration(_RuntimeConfigModel):
     """All Environment Runtime policy supplied by its template, separate from Sandbox launch identity."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     version: Literal[2]
     session_reconcile_concurrency: int | None = Field(
