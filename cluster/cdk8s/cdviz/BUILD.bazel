@@ -157,7 +157,7 @@ py_test(
         "//third_party/containers:cdviz_db_migration",
         "//third_party/containers:python_3_14_slim",
         "//third_party/containers:ryuk",
-        "//third_party/containers:timescaledb",
+        "//third_party/containers:timescaledb_pg18",
         "//util/testing/frontend_visual:capture",
         "//util/testing/frontend_visual:context",
         "@pypi//docker",

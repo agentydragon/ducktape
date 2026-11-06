@@ -9,9 +9,9 @@
 #     deps = ["//third_party/containers:postgres_18"]
 #     from third_party.containers import postgres_18
 
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_oci//oci:defs.bzl", "oci_load")
 load("//devinfra/oci:defs.bzl", "oci_layout_py", "oci_layout_rloc")
-load("//devinfra/python:defs.bzl", "RYUK_TAG", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "RYUK_TAG", "py_library", "py_test")
 
 py_test(
     name = "test_image_descriptor",
@@ -94,49 +94,11 @@ oci_layout_py(
     visibility = ["//visibility:public"],
 )
 
-py_library(
-    name = "timescaledb_layer",
-    srcs = ["timescaledb_layer.py"],
-)
-
-py_binary(
-    name = "timescaledb_layer_bin",
-    main_module = "third_party.containers.timescaledb_layer",
-    deps = [":timescaledb_layer"],
-)
-
-genrule(
-    name = "timescaledb_extension_layer",
-    srcs = ["@timescaledb_oss_linux_amd64"],
-    outs = ["timescaledb_extension_layer.tar"],
-    cmd = "$(location :timescaledb_layer_bin) --layout $(location @timescaledb_oss_linux_amd64) --output $@",
-    tools = [":timescaledb_layer_bin"],
-)
-
-oci_image(
-    name = "timescaledb_postgres_18_image",
-    testonly = True,
-    base = "@postgres_18_minimal_linux_amd64",
-    tars = [":timescaledb_extension_layer"],
-)
-
 oci_layout_py(
-    name = "timescaledb_postgres_18",
+    name = "timescaledb_pg18",
     testonly = True,
-    image = ":timescaledb_postgres_18_image",
+    image = "@timescaledb_pg18_linux_amd64",
     visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "timescaledb",
-    testonly = True,
-    srcs = ["timescaledb.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//devinfra/oci",
-        "//devinfra/testing:undeclared_outputs",
-        "//third_party/containers:timescaledb_postgres_18",
-    ],
 )
 
 oci_layout_py(

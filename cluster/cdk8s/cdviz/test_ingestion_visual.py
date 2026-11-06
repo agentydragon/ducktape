@@ -29,14 +29,14 @@ from psycopg.rows import dict_row
 from python.runfiles import Runfiles
 from testcontainers.core import testcontainers_config
 from testcontainers.core.network import Network
+from testcontainers.postgres import PostgresContainer
 
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.output_writer import BoundTestOutputs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from grafana.visual_tests.visual_browser import capture_dashboard
 from grafana.visual_tests.visual_harness import TEST_PASSWORD, grafana_server
-from third_party.containers import cdviz_collector, cdviz_db_migration, python_3_14_slim, ryuk
-from third_party.containers.timescaledb import timescaledb_postgres
+from third_party.containers import cdviz_collector, cdviz_db_migration, python_3_14_slim, ryuk, timescaledb_pg18
 from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.context import FROZEN_NOW_MS, deterministic_browser_context
 
@@ -85,14 +85,14 @@ def _setup_database(admin_url: str) -> tuple[str, str, str]:
             admin.execute(
                 sql.SQL("CREATE ROLE {} LOGIN PASSWORD {}").format(sql.Identifier(role), sql.Literal(password))
             )
-        admin.execute("CREATE DATABASE cdviz OWNER cdviz")
+        # The upstream image installs Timescale in template1; exercise explicit extension creation as CNPG does.
+        admin.execute("CREATE DATABASE cdviz OWNER cdviz TEMPLATE template0")
 
     owner = _url(admin_url, "cdviz", "cdviz", _OWNER_PASSWORD)
     collector = _url(admin_url, "cdviz", "cdviz_collector", _COLLECTOR_PASSWORD)
     reader = _url(admin_url, "cdviz", "cdviz_reader", _READER_PASSWORD)
     # CNPG's Database CR creates TimescaleDB as postgres before migration runs as cdviz.
-    parsed = urlsplit(admin_url)
-    extension_url = f"postgresql://postgres@{parsed.hostname}:{parsed.port}/cdviz?sslmode=disable"
+    extension_url = _url(admin_url, "cdviz", "postgres", "postgres")
     with psycopg.connect(extension_url, autocommit=True) as admin:
         admin.execute("CREATE EXTENSION timescaledb")
     return owner, collector, reader
@@ -439,7 +439,25 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
         network.create()
         network_created = True
         network_name = network.name
-        with timescaledb_postgres(tmp_path, network=network_name, network_alias="cdviz-db") as admin_url:
+        with (
+            PostgresContainer(
+                image=load_oci_image(timescaledb_pg18.LAYOUT_RLOCATION),
+                username="postgres",
+                password="postgres",
+                dbname="postgres",
+            )
+            .with_network(network)
+            .with_network_aliases("cdviz-db")
+            .with_env("NO_TS_TUNE", "true")
+            .with_command("postgres -c timescaledb.telemetry_level=off -c max_locks_per_transaction=128")
+        ) as postgres:
+            log_threads.append(
+                _stream_logs(postgres.get_wrapped_container(), undeclared_outputs_dir() / "cdviz-db.log")
+            )
+            admin_url = (
+                f"postgresql://postgres:postgres@{postgres.get_container_host_ip()}:"
+                f"{postgres.get_exposed_port(5432)}/postgres"
+            )
             _stage("creating roles, database, and Timescale extension")
             owner_url, _, reader_url = _setup_database(admin_url)
             _stage("running pinned migration as non-superuser cdviz")

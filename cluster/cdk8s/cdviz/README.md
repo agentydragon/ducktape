@@ -10,7 +10,7 @@ This provides workflow and job timings and outcomes. Exact PR-head arrival-to-re
 
 The collector image is `ghcr.io/cdviz-dev/cdviz-collector:0.53.1`; schema setup uses `ghcr.io/cdviz-dev/cdviz-db-migration:1.5.0`. Both are pinned to OCI index digests in `collector.py` so Kubernetes can resolve the node architecture. The migration image entrypoint is `migrate`, so its init container supplies `-database … -path /migrations/ up` as arguments.
 
-The RBE integration test uses `//third_party/containers:timescaledb_postgres_18_image`, assembled by Bazel from the pinned minimal PostgreSQL image and TimescaleDB extension payload. Its extension files are already present when Docker starts the test container. Production uses the same pinned inputs through CNPG's `ImageVolume` extension support.
+The RBE integration test uses the digest-pinned upstream `timescale/timescaledb:2.31.0-pg18-oss` image through Testcontainers. It matches production's PostgreSQL major and TimescaleDB version; CNPG's Debian image and `ImageVolume` extension mounting are deployment concerns outside this test.
 
 The database sink is named `postgres`: the bundled `database` sink in this collector version has a default `url` that takes precedence over `url_file`. A separate name lets the mounted secret supply the connection string.
 
