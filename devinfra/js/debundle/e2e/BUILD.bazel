@@ -889,6 +889,8 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "selector_commands_agree_test",
     size = "small",
+    data = ["//devinfra/js/debundle:debundle_analyze"],
+    env = {"DEBUNDLE_TEST_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)"},
     deps = [
         ":graph_support",
         "@crates//:serde_json",
