@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 
@@ -429,12 +430,8 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 				}
 			}
 			deltaSeen = true
-			for key, value := range event.Delta {
-				message[key] = value
-			}
-			for key, value := range event.Usage {
-				usage[key] = value
-			}
+			maps.Copy(message, event.Delta)
+			maps.Copy(usage, event.Usage)
 		case "message_stop":
 			if !started || !deltaSeen {
 				return fail("message_stop without message delta")

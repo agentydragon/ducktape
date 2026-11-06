@@ -15,6 +15,7 @@ per-taxpayer index that is wrong. Four distinct amounts separate them.
 from dataclasses import dataclass
 from decimal import Decimal
 
+import pytest
 import pytest_bazel
 
 from finance.augur.policy.funding import ClaimPayer
@@ -200,35 +201,25 @@ def test_the_ledger_is_year_to_date_and_opens_the_next_year_empty() -> None:
     assert set(_earned(rollout, NEXT_YEAR).values()) == {0}
 
 
-def test_wages_are_taxed_by_both_jurisdictions() -> None:
-    """The positive anchor for every exemption below: without it they could all pass on a
-    scenario that collects nothing."""
-
-    tax = tax_by_jurisdiction(run(Payment(AgentId("alice"), ORDINARY_INCOME, ALICE_WAGES)))
-
-    assert tax["federal_us"] > 0
-    assert tax["california"] > 0
-
-
-def test_treasury_interest_is_federally_taxed_and_state_exempt() -> None:
-    """31 USC 3124. This is the row no bracket configuration could express while every
-    jurisdiction read one shared income scalar."""
-
-    tax = tax_by_jurisdiction(run(Payment(AgentId("alice"), TREASURY, ALICE_WAGES)))
-
-    assert tax["federal_us"] > 0
-    assert tax["california"] == 0
-
-
-def test_in_state_muni_interest_is_exempt_everywhere() -> None:
-    """IRC 103 excludes it federally; California exempts its own munis. "In-state" is not
-    stored anywhere — it is California's rule for `Municipal(state=california)`, decided by
-    the jurisdiction reading the row rather than by the instrument."""
-
-    tax = tax_by_jurisdiction(run(Payment(AgentId("alice"), MUNI, ALICE_WAGES)))
-
-    assert tax["federal_us"] == 0
-    assert tax["california"] == 0
+@pytest.mark.parametrize(
+    ("source", "exempt"),
+    [
+        pytest.param(ORDINARY_INCOME, (False, False), id="wages-positive-anchor"),
+        # 31 USC 3124 exempts federal obligations from state tax.
+        pytest.param(TREASURY, (False, True), id="treasury-state-exemption"),
+        # IRC 103 and California's own-muni rule exempt this interest at both levels.
+        pytest.param(MUNI, (True, True), id="in-state-muni"),
+    ],
+)
+def test_income_exemptions_depend_on_source_and_jurisdiction(
+    source: TransferIncomeCategory, exempt: tuple[bool, bool]
+) -> None:
+    tax = tax_by_jurisdiction(run(Payment(AgentId("alice"), source, ALICE_WAGES)))
+    for jurisdiction, is_exempt in zip(("federal_us", "california"), exempt, strict=True):
+        if is_exempt:
+            assert tax[jurisdiction] == 0
+        else:
+            assert tax[jurisdiction] > 0
 
 
 def test_federal_tax_on_treasury_interest_matches_tax_on_identical_wages() -> None:

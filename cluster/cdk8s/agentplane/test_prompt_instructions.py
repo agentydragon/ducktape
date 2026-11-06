@@ -9,6 +9,7 @@ two places they are supposed to work, which reads as flaky policy rather than a 
 
 from typing import Any
 
+import pytest
 import pytest_bazel
 import yaml
 from more_itertools import one
@@ -80,32 +81,19 @@ def test_haku_preset_binds_what_its_account_binding_names(staging_manifests: lis
     assert set(preset) <= created, sorted(set(preset) - created)
 
 
-def test_quest_read_is_granted_to_haku_and_claude_ai(staging_manifests: list[dict[str, Any]]) -> None:
+@pytest.mark.parametrize("policy_set", ["quest-read", "thrive-read"])
+def test_read_policy_grants(staging_manifests: list[dict[str, Any]], policy_set: str) -> None:
     for name in ("haku-agent", "claude-ai"):
         binding = one(
             doc for doc in staging_manifests if doc["kind"] == "PolicyBinding" and doc["metadata"]["name"] == name
         )
-        assert "quest-read" in binding["spec"]["policySets"]
+        assert policy_set in binding["spec"]["policySets"]
     app_config = one(
         doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config"
     )
     presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
-    assert "quest-read" in presets["haku"]["policy_sets"]
-    assert all("quest-read" not in preset["policy_sets"] for name, preset in presets.items() if name != "haku")
-
-
-def test_thrive_read_is_granted_to_haku_and_claude_ai(staging_manifests: list[dict[str, Any]]) -> None:
-    for name in ("haku-agent", "claude-ai"):
-        binding = one(
-            doc for doc in staging_manifests if doc["kind"] == "PolicyBinding" and doc["metadata"]["name"] == name
-        )
-        assert "thrive-read" in binding["spec"]["policySets"]
-    app_config = one(
-        doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "app-config"
-    )
-    presets = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]
-    assert "thrive-read" in presets["haku"]["policy_sets"]
-    assert all("thrive-read" not in preset["policy_sets"] for name, preset in presets.items() if name != "haku")
+    assert policy_set in presets["haku"]["policy_sets"]
+    assert all(policy_set not in preset["policy_sets"] for name, preset in presets.items() if name != "haku")
 
 
 def test_haku_and_claude_account_policy_order(staging_manifests: list[dict[str, Any]]) -> None:

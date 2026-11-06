@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -1515,9 +1516,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 		}
 		if unresolved || liveCell || liveProcess {
 			result := map[string]any{"status": IntentResultRejected, "not_dispatched": []any{}}
-			for key, value := range failure.Evidence {
-				result[key] = value
-			}
+			maps.Copy(result, failure.Evidence)
 			wire, err := marshal(result)
 			if err != nil {
 				return err
@@ -1543,9 +1542,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 			return err
 		}
 		result := map[string]any{"status": IntentResultRejected, "not_dispatched": outputs}
-		for key, value := range failure.Evidence {
-			result[key] = value
-		}
+		maps.Copy(result, failure.Evidence)
 		wire, err := marshal(result)
 		if err != nil {
 			return err
@@ -3200,9 +3197,7 @@ func (s *Store) AcknowledgeInterrupt(ctx context.Context, owner Owner, requestID
 			}
 			activeCall = intent.CallID
 			interrupted := map[string]any{"status": "interrupted", "partial_effects_possible": true}
-			for key, value := range result {
-				interrupted[key] = value
-			}
+			maps.Copy(interrupted, result)
 			wire, err := marshal(interrupted)
 			if err != nil {
 				return err

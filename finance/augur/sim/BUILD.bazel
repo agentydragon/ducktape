@@ -1248,6 +1248,7 @@ py_test(
         "//finance/augur/policy:funding",
         "//finance/augur/sim/testing:rollouts",
         "//finance/augur/sim/testing:session",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

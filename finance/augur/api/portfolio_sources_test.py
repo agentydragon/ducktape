@@ -73,37 +73,26 @@ def test_plaid_source_adds_cash_and_sp500_proxy_position(
 
     async def fake_holdings(**kwargs) -> tuple[CurrentHolding, ...]:
         assert kwargs["account_ids"] == ("wealthfront_account",)
-        return (
+        return tuple(
             CurrentHolding(
                 account_id="wealthfront_account",
                 account_name="Wealthfront",
                 institution_name="Wealthfront",
-                security_id="sec-a",
-                security_name="Stock A",
-                ticker_symbol="A",
+                security_id=security_id,
+                security_name=security_name,
+                ticker_symbol=ticker,
                 security_type="equity",
                 captured_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
-                quantity=Decimal("2.0"),
-                cost_basis=Decimal(700),
-                institution_price=Decimal("400.0"),
-                institution_value=Decimal("800.0"),
+                quantity=Decimal(quantity),
+                cost_basis=Decimal(basis),
+                institution_price=Decimal(price),
+                institution_value=Decimal(value),
                 iso_currency_code="USD",
-            ),
-            CurrentHolding(
-                account_id="wealthfront_account",
-                account_name="Wealthfront",
-                institution_name="Wealthfront",
-                security_id="sec-b",
-                security_name="Stock B",
-                ticker_symbol="B",
-                security_type="equity",
-                captured_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
-                quantity=Decimal("1.0"),
-                cost_basis=Decimal(200),
-                institution_price=Decimal("500.0"),
-                institution_value=Decimal("500.0"),
-                iso_currency_code="USD",
-            ),
+            )
+            for security_id, security_name, ticker, quantity, basis, price, value in (
+                ("sec-a", "Stock A", "A", "2.0", "700", "400.0", "800.0"),
+                ("sec-b", "Stock B", "B", "1.0", "200", "500.0", "500.0"),
+            )
         )
 
     monkeypatch.setattr("finance.augur.api.portfolio_sources.read_current_cash_balances", fake_cash)
