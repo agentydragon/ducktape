@@ -1315,6 +1315,16 @@ fn assert_lexical_authority_staged_parity(
 #[test]
 fn lexical_effect_authority_and_fallback_survive_staged_artifact_round_trip() {
     assert_lexical_authority_staged_parity(
+        "const seed = 41;\nconst values = [];\nfunction readSeed() { values.push(seed); return seed; }\nvar result = readSeed();\nconsole.log(result);\n",
+        &[
+            Member::new("seed"),
+            Member::new("values"),
+            Member::new("readSeed"),
+            Member::new("result"),
+        ],
+        "operation_receipt",
+    );
+    assert_lexical_authority_staged_parity(
         "const seed = 41;\nfunction readSeed() { return seed; }\nvar result = readSeed();\nconsole.log(result);\n",
         &[
             Member::new("seed"),

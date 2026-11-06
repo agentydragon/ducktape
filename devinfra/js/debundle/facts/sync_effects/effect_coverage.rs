@@ -1,6 +1,6 @@
 //! Nonterminal receipts from operations executed by the ordered local kernel.
 
-use crate::analysis_inputs::ProofDependencies;
+use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use crate::reports::schema::BindingEffectAuthorityReport;
 use analysis_codec::{ContextOrdinals, SavedBinding};
 use anyhow::Result;
@@ -52,6 +52,10 @@ pub(super) enum LocalBodyIdentity {
     Callable {
         key: u32,
         owner: SourceUnitOrdinal,
+    },
+    Native {
+        intrinsic: NativeIntrinsic,
+        property: Option<String>,
     },
 }
 
@@ -290,6 +294,13 @@ impl LexicalBindingEffectReceipt {
                                 owner: *owner,
                             }
                         }
+                        LocalBodyIdentity::Native {
+                            intrinsic,
+                            property,
+                        } => LexicalBindingEffectBody::Native {
+                            intrinsic: *intrinsic,
+                            property: property.clone(),
+                        },
                     },
                     call_span: call.call_span,
                     target: match &call.target {
@@ -306,6 +317,13 @@ impl LexicalBindingEffectReceipt {
                                 owner: *owner,
                             }
                         }
+                        LocalBodyIdentity::Native {
+                            intrinsic,
+                            property,
+                        } => LexicalBindingEffectBody::Native {
+                            intrinsic: *intrinsic,
+                            property: property.clone(),
+                        },
                     },
                     dependencies: call.dependencies.as_ref().clone(),
                 })
@@ -448,7 +466,7 @@ impl EffectCoverageFragment {
                 for (key, next_call) in &next.calls {
                     current
                         .calls
-                        .entry(*key)
+                        .entry(key.clone())
                         .and_modify(|call| call.dependencies.extend(&next_call.dependencies))
                         .or_insert_with(|| next_call.clone());
                 }
@@ -552,13 +570,13 @@ impl EffectCoverageFragment {
                 .insert(local_body_key(&call.target));
         }
         let root_key = local_body_key(&root_body);
-        let mut reachable_bodies = std::collections::BTreeSet::from([root_key]);
+        let mut reachable_bodies = std::collections::BTreeSet::from([root_key.clone()]);
         let mut pending = vec![root_key];
         while let Some(body) = pending.pop() {
             if let Some(targets) = adjacency.get(&body) {
                 for target in targets {
-                    if reachable_bodies.insert(*target) {
-                        pending.push(*target);
+                    if reachable_bodies.insert(target.clone()) {
+                        pending.push(target.clone());
                     }
                 }
             }
@@ -609,15 +627,26 @@ impl EffectCoverageFragment {
 /// Compact ordered identity for the edge map and iterative connectivity check.
 /// Spans are represented by their exact byte coordinates because SWC `Span`
 /// itself does not implement `Ord`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum LocalBodyKey {
-    RootInitializer { owner: usize, lo: u32, hi: u32 },
-    Callable { key: u32, owner: usize },
+    RootInitializer {
+        owner: usize,
+        lo: u32,
+        hi: u32,
+    },
+    Callable {
+        key: u32,
+        owner: usize,
+    },
+    Native {
+        intrinsic: NativeIntrinsic,
+        property: Option<String>,
+    },
 }
 
 /// Exact identity for a flat local call edge. Span coordinates are used
 /// because SWC `Span` itself does not implement `Ord`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct LocalCallKey {
     caller: LocalBodyKey,
     call_lo: u32,
@@ -638,6 +667,13 @@ fn local_body_key(body: &LocalBodyIdentity) -> LocalBodyKey {
         LocalBodyIdentity::Callable { key, owner } => LocalBodyKey::Callable {
             key: *key,
             owner: owner.0,
+        },
+        LocalBodyIdentity::Native {
+            intrinsic,
+            property,
+        } => LocalBodyKey::Native {
+            intrinsic: *intrinsic,
+            property: property.clone(),
         },
     }
 }

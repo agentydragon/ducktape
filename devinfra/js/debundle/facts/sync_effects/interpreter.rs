@@ -1,6 +1,7 @@
 //! Call-site execution effects distinguish function values from function bodies: returning a closure never executes it.
 
 use super::super::allocation_transfer::AllocationContext;
+use super::super::array_transfer::{self, ArrayContext, ArrayPushSelection};
 use super::super::effect_coverage::{
     BindingEffectCoverage, EffectCoverageFragment, LocalBodyIdentity, LocalCallReceipt,
     RootInitializerIdentity,
@@ -1454,6 +1455,47 @@ impl OwnDataContext for Executor<'_, '_> {
     }
 }
 
+impl ArrayContext for Executor<'_, '_> {
+    fn writable_array_length(&self, object: u32) -> Option<u32> {
+        if !self.state.object_accessors_are_settled(&object)
+            || self.state.applied_accessors.contains_key(&object)
+            || !self.state.dense_arrays.contains_key(&object)
+            || self
+                .state
+                .prefix_object_properties
+                .get(&object)?
+                .contains_key(&Some("push".into()))
+        {
+            return None;
+        }
+        match self.state.writable_prefix.get(&object)? {
+            super::super::allocation_transfer::WritablePrefixState::DenseArray { length } => {
+                Some(*length)
+            }
+            _ => None,
+        }
+    }
+
+    fn array_prototypes_intact(&self) -> bool {
+        self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS)
+    }
+
+    fn array_dependencies(&self) -> ProofDependencies {
+        self.settled_prefix_dependencies()
+    }
+
+    fn append_primitives(&mut self, object: u32, length: u32, arguments: &[Values]) {
+        self.state.unknown_array_contents.insert(object);
+        self.state.writable_prefix.insert(
+            object,
+            super::super::allocation_transfer::WritablePrefixState::DenseArray { length },
+        );
+        let values = arguments.iter().flatten().cloned().collect();
+        self.literal_heap().write_property(object, None, &values);
+        self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
+    }
+}
+
 impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
     fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
         self.executor.ordinary_record_shape(allocation)
@@ -1650,6 +1692,25 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         if sparse {
             self.executor.state.tainted_objects.insert(allocation);
         }
+    }
+    fn array_push_callee(
+        &mut self,
+        receivers: &Values,
+        property: &str,
+    ) -> Option<(ArrayPushSelection, EffectCoverageFragment)> {
+        let (selection, effects) = array_transfer::select_push(self.executor, receivers, property)?;
+        for cell in [
+            crate::facts::EffectCell::ObjectShape(selection.object),
+            crate::facts::EffectCell::OwnProperty {
+                origin: selection.object,
+                property: "push".into(),
+            },
+        ] {
+            self.outcome
+                .effects
+                .record_heap_read(cell, self.executor.state.assumption.is_none());
+        }
+        Some((selection, effects))
     }
     fn instantiate_parameter_bindings(&mut self, frame: &mut LocalFrame) {
         for parameter in self.body.parameters.iter() {
@@ -1980,6 +2041,64 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         arguments: &[SelectedValue],
         span: Span,
     ) -> Option<LocalValueResult> {
+        if let EvaluatedCallee::Member {
+            array_push: Some(selection),
+            receiver,
+            ..
+        } = callee
+        {
+            let args: Vec<_> = arguments
+                .iter()
+                .map(|argument| argument.values.clone())
+                .collect();
+            let call = self
+                .calls()
+                .iter()
+                .find(|call| call.kind == CallKind::Call && call.span == span)
+                .expect("a source-covered call has its canonical call record");
+            let caller = self.executor.local_body_identity_for_call(call)?;
+            if let Some(mut result) = array_transfer::push(self.executor, selection, &args) {
+                for cell in result.reads {
+                    self.outcome
+                        .effects
+                        .record_heap_read(cell, self.executor.state.assumption.is_none());
+                }
+                for cell in result.writes {
+                    self.outcome
+                        .effects
+                        .record_heap_write(cell, self.executor.state.assumption.is_none());
+                }
+                result.effects.selected_local_call(LocalCallReceipt {
+                    caller,
+                    call_span: span,
+                    target: LocalBodyIdentity::Native {
+                        intrinsic: NativeIntrinsic::Array,
+                        property: Some("prototype.push".into()),
+                    },
+                    dependencies: Box::new(result.dependencies),
+                });
+                return Some(LocalValueResult {
+                    allocation: super::super::allocation_transfer::AllocationValue::opaque(
+                        result.values,
+                    ),
+                    effects: result.effects,
+                    selection: None,
+                });
+            }
+            let mut reached = receiver.clone();
+            reached.extend(args.into_iter().flatten());
+            self.fallback(
+                frame,
+                reached,
+                ExecutionPrecisionLossReason::UnsupportedOperation {
+                    operation: ExecutionOperation::OpaqueExecution,
+                    ordered_field_read_refusal: None,
+                    ordered_call_admission_refusal: None,
+                },
+                span,
+            );
+            return None;
+        }
         let targets = callee.targets();
         let mut reached = targets.clone();
         if let Some(receiver) = callee.receiver() {
@@ -3996,6 +4115,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         if self.state.unknown_array_contents.insert(object) {
             self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
         }
+        self.invalidate_writable_object(object);
         true
     }
 
@@ -4014,6 +4134,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn evaluate_array(&mut self, object: u32, env: &Context, captures: &Context) -> Values {
+        // Legacy value projection does not execute a generation-tracked
+        // ArrayCreate. It cannot preserve an earlier ordered descriptor proof.
+        self.invalidate_writable_object(object);
         let elements = self.inputs.index.array_elements[&object].clone();
         let mut slots = Vec::new();
         let mut containment = Values::new();
@@ -7556,17 +7679,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// and versions the execution prefix even when ordinary values do not
     /// change, so invocation memos cannot retain a stale descriptor premise.
     fn invalidate_writable_object(&mut self, object: u32) {
-        if matches!(
-            self.state.writable_prefix.get(&object),
-            Some(super::super::allocation_transfer::WritablePrefixState::InProgress)
-                | Some(super::super::allocation_transfer::WritablePrefixState::Proven(_))
-        ) {
-            self.state.writable_prefix.insert(
-                object,
-                super::super::allocation_transfer::WritablePrefixState::Unknown,
-            );
-            self.state.prefix_revision = self.state.prefix_revision.wrapping_add(1);
-        }
+        self.literal_heap().invalidate_writable(object);
     }
 
     fn invalidate_writable_values(&mut self, values: &Values) {
