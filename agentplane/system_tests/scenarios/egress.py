@@ -75,8 +75,7 @@ def _probe(rules_url: str) -> str:
     You are inside a sandbox whose outbound network goes through a proxy. Work out what it lets you
     do, then report. Do all four steps, and do not stop early if one fails -- a failure is a result.
 
-    1. Ask the proxy what you are allowed to reach: GET {rules_url} with Authorization: Bearer
-       agentplane-credential-agentplane-workload (a known inert placeholder). It answers with the policies
+    1. Ask the proxy what you are allowed to reach: GET {rules_url}. It answers with the policies
        that apply to you. Some rules name a credential you do not hold: a placeholder, and every
        target it may be presented at -- a header and the shape of its value -- which the proxy
        swaps for the real value on its way out.
