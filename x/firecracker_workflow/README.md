@@ -253,27 +253,7 @@ export BUILDBUDDY_API_KEY=$(sops -d --extract '["stringData"]["api-key"]' \
 
 ## Invocation IDs
 
-`bbr` produces two invocation IDs
-([details](../../devinfra/buildbuddy/docs/remote.md)):
-
-```bash
-# Inner (Bazel RBE build) — minted and printed by bbr ("bbr: invocation <id>");
-# use for targets, test results, artifacts, action cache stats. For scripts,
-# have bbr record it (or pass your own --invocation_id=<uuid> after the verb):
-bbr --invocation-id-file=/tmp/bbr-inv test //foo:bar
-bbapi invocation $(cat /tmp/bbr-inv)
-# Actions: 271   Duration: 6s   AC Hits: 865
-
-# Outer (bb remote / runner invocation) — printed by bb remote itself as
-# "Streaming remote runner logs to: .../invocation/<outer>"
-bbapi invocation <outer>
-# Duration:    8s   Host: 192.168.241.2   Role: HOSTED_BAZEL
-# Child:       <inner>   ← the Bazel invocation above
-
-# Browse: https://app.buildbuddy.io/invocation/<id>
-```
-
-`bbapi target` and `bbapi target log` auto-resolve outer IDs to inner — either works.
+`bbr` produces an outer runner invocation and an inner Bazel invocation. Use the inner ID for target results and artifacts; `bbapi` accepts either and resolves the outer to its child. See the [remote execution guide's invocation-ID section](../../devinfra/buildbuddy/docs/remote.md#invocation-ids) for per-run capture, explicit IDs, and the shared-file race caveat.
 
 ---
 

@@ -88,17 +88,7 @@ Flipping the toggle re-issues all certificates. The trust bundle follows via the
 
 ## External Connectivity
 
-### DNS Delegation
-
-1. Route 53 is authoritative for `allegedly.works`. ExternalDNS manages public records; Terraform manages domain registration and nameserver delegation.
-2. cert-manager uses Route 53 DNS-01 solver for ACME challenges
-
-### Ingress (Gateway API)
-
-- Cilium Gateway API with Envoy DaemonSet (hostNetwork on OVH nodes)
-- OVH public IPs receive HTTPS traffic directly on ports 80/443
-- Gateway terminates TLS using wildcard cert (`*.allegedly.works`)
-- HTTPRoutes in each application namespace route to backend services
+DNS delegation and record ownership are described in the [cluster overview](../README.md#infrastructure) and [DNS automation guide](dns_automation.md). The Cilium Gateway receives traffic on OVH public IPs at ports `80/443`, terminates TLS with the `*.allegedly.works` wildcard certificate, and routes namespaced HTTPRoutes to backend services.
 
 ### Cluster Endpoint
 

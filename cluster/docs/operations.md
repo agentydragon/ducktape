@@ -4,13 +4,7 @@ Operational procedures for day-to-day cluster management, scaling, maintenance, 
 
 ## SOPS Secrets
 
-```bash
-# Edit an existing SOPS secret
-sops cluster/k8s/<app>/secrets/my-secret.sops.yaml
-
-# Create a new SOPS-encrypted secret (uses .sops.yaml creation rules)
-sops cluster/k8s/<app>/secrets/new-secret.sops.yaml
-```
+See [Secrets Strategy](secrets.md) for editing and creation, local age-key decryption scope, and Flux's SOPS decryption requirements and failure modes.
 
 ## Node Operations
 
