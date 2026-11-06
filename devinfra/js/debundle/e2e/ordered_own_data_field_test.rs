@@ -315,27 +315,22 @@ fn compound_owner_keeps_the_value_read_before_its_later_mutation() {
     ));
     assert_preserved_entry_output(&fixture, "8 42\n");
     let graph = fixture.dependency_graph();
-    let compound = &graph
+    let compound = graph
         .nodes
         .iter()
         .find(|node| node.statement_ordinal.0 == 2)
-        .unwrap()
-        .id;
-    assert!(
-        graph
-            .edges
-            .iter()
-            .filter(|edge| &edge.source == compound || &edge.target == compound)
-            .all(|edge| {
-                !serde_json::to_value(&edge.sequenced_cause).unwrap()["conflicts"]
-                    .as_array()
-                    .is_some_and(|conflicts| {
-                        conflicts
-                            .iter()
-                            .any(|conflict| conflict["cell"]["kind"] == "own_property")
-                    })
-            })
-    );
+        .unwrap();
+    let execution = compound.synchronous_execution.as_ref().unwrap();
+    let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+        execution.binding_effect_authority.as_ref()
+    else {
+        panic!("the ordered read and mutating call retain their receipt: {execution:#?}");
+    };
+    assert!(execution.complete, "{execution:#?}");
+    assert_eq!(receipt.calls.len(), 1, "{receipt:#?}");
+    // The compound owner reads the old value and writes the new value. The
+    // following read must stay after that write, even with exact coverage.
+    assert_property_frontier(&graph, 3, 2);
 }
 
 #[test]
