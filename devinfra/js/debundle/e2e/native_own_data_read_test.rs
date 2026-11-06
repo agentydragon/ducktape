@@ -201,19 +201,64 @@ fn assert_project_analysis_rejected(opts: FixtureOpts<'_>, tokens: &[&str]) {
 }
 
 #[test]
-fn resolved_member_certifies_only_the_selected_relational_alias() {
+fn resolved_member_certifies_only_the_selected_alias_without_covering_decoration() {
     let source = format!(
         "{}{}",
         decorator_trio("a", "Alpha", "alpha role"),
         decorator_trio("b", "Beta", "beta role")
     );
-    let fixture = run_fixture(relational_opts(
+    let outcome = run_fixture_observing_gate(relational_opts(
         &source,
         relational_input(&source, "alpha", "alphaDefine"),
     ));
+    let FixtureRunOutcome::Rejected(fixture) = outcome else {
+        panic!("the selected alias cannot cover the unproved decoration");
+    };
+    assert_eq!(fixture.status, Some(1), "{}", fixture.stderr);
+    let assessment = fixture.candidate_relocation_assessment();
+    assert_eq!(assessment["decision"]["status"], "incomplete");
+    assert_eq!(assessment["decision"]["uncovered_havoc"], true);
+    assert_eq!(assessment["counts"]["uncovered_pairs"], 4);
+    assert_eq!(
+        assessment["emitted_order"],
+        serde_json::json!([0, 1, 2, 3, 5, 6, 7, 8, 4, 9])
+    );
+    let effects = fixture.effect_translation_validation();
+    let pairs = effects["examples"].as_array().unwrap();
+    assert_eq!(pairs.len(), 4);
+    for pair in pairs {
+        assert_eq!(pair["runs_later"]["unit"], 4);
+        assert_eq!(pair["havoc"], true);
+        assert_eq!(pair["disposition"], "uncovered");
+        assert_eq!(
+            pair["later_owner_coverage_refusal"]["source_location"]["start_line"],
+            9
+        );
+    }
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let selected = node(&graph, "pa");
     let other = node(&graph, "pb");
+    assert_eq!(
+        selected["synchronous_execution"]["binding_effect_authority"]["authority"],
+        "operation_receipt"
+    );
+    let decoration = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|unit| unit["id"] == "unit:4")
+        .unwrap();
+    assert_eq!(decoration["synchronous_execution"]["complete"], false);
+    assert!(
+        decoration["synchronous_execution"]["precision_losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|loss| {
+                loss["reason"]["operation"] == "member_read"
+                    && loss["reason"]["ordered_field_read_refusal"] == "receiver_not_object"
+            })
+    );
     let evidence = &selected["synchronous_execution"]["native_operation_input_uses"][0]["evidence"];
     assert_eq!(evidence["reference"]["defining_chunk"], "static/app");
     assert_eq!(evidence["reference"]["input_index"], 0);
@@ -690,7 +735,7 @@ fn known_exact_slot_writes_contradict_only_the_relevant_premise() {
     }
     let source =
         "Object.entries = function replacement() {};\nvar alias = Object.defineProperty;\n";
-    let fixture = run_fixture(
+    let outcome = run_fixture_observing_gate(
         FixtureOpts::new(
             source,
             vec![logical_module("alias", &[Member::new("alias")])],
@@ -700,7 +745,37 @@ fn known_exact_slot_writes_contradict_only_the_relevant_premise() {
             vec![input(source, "var alias = Object.defineProperty;")],
         ),
     );
+    let FixtureRunOutcome::Rejected(fixture) = outcome else {
+        panic!("the selected read premise cannot cover the unrelated property store");
+    };
+    assert_eq!(fixture.status, Some(1), "{}", fixture.stderr);
+    let assessment = fixture.candidate_relocation_assessment();
+    assert_eq!(assessment["emitted_order"], serde_json::json!([1, 0]));
+    assert_eq!(assessment["decision"]["status"], "incomplete");
+    assert_eq!(assessment["counts"]["premise_contradictions"], 0);
+    assert_eq!(assessment["counts"]["uncovered_pairs"], 1);
+    let effects = fixture.effect_translation_validation();
+    let pair = &effects["examples"][0];
+    assert_eq!(pair["runs_first"]["unit"], 1);
+    assert_eq!(pair["runs_later"]["unit"], 0);
+    assert_eq!(pair["havoc"], true);
+    assert_eq!(pair["disposition"], "uncovered");
+    assert_eq!(
+        pair["later_owner_coverage_refusal"]["source_location"]["start_line"],
+        1
+    );
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    assert_eq!(
+        node(&graph, "alias")["synchronous_execution"]["binding_effect_authority"]["authority"],
+        "operation_receipt"
+    );
+    assert!(
+        graph["nodes"][0]["synchronous_execution"]["precision_losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|loss| loss["reason"]["operation"] == "property_write")
+    );
     assert_eq!(
         node(&graph, "alias")["synchronous_execution"]["native_operation_input_uses"][0]["evidence"]
             ["operation"],
