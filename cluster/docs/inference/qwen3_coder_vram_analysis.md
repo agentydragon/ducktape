@@ -445,22 +445,9 @@ historical; this note does not claim that the demo currently reproduces them.
 The [E1 run record](runs/2026-07-17_e1_qwen3coder_awq/README.md) documents the
 262K vLLM capacity and tool checks from that run, not current capacity.
 
-## Ollama Quick Start
+## Current local setup
 
-```bash
-# Pull the model (default Q4_K_M)
-ollama pull qwen3-coder:30b
-
-# Run with extended context
-ollama run qwen3-coder:30b --num-ctx 131072
-
-# Or create a Modelfile for persistent settings
-cat > Modelfile << 'EOF'
-FROM qwen3-coder:30b-a3b-q4_K_M
-PARAMETER num_ctx 131072
-EOF
-ollama create qwen3-coder-long -f Modelfile
-```
+Managed OpenCode provider/model settings live in [wyrm2-opencode.nix](../../../nix/home/hosts/wyrm2-opencode.nix); its Qwen3-Coder AWQ entry sets `reasoning = false`. Launch defaults live in [start-vllm-awq.sh](../../../x/local_llm/start-vllm-awq.sh), which sources the Podman launcher. These are configuration defaults, not evidence that the model is downloaded or serving now.
 
 ## vLLM Memory Debugging Options
 
@@ -584,56 +571,7 @@ Please try lowering `max_num_seqs` or `gpu_memory_utilization` when initializing
 3. **`--quantization awq` flag** - Model uses `compressed-tensors` format, auto-detected
 4. **FP16 KV cache at 262K** - Not enough memory, use FP8
 
-### OpenCode Configuration
-
-Add to `~/.config/opencode/opencode.json`:
-
-```json
-{
-  "provider": {
-    "vllm": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "vLLM (local, tensor parallel)",
-      "options": {
-        "baseURL": "http://0.0.0.0:8000/v1"
-      },
-      "models": {
-        "qwen3-coder-awq": {
-          "name": "Qwen3-Coder 30B AWQ (vLLM)",
-          "reasoning": true,
-          "tool_call": true,
-          "interleaved": {
-            "field": "reasoning_content"
-          },
-          "limit": {
-            "context": 262144,
-            "output": 8192
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-**Important:** Use `0.0.0.0` not `localhost` for baseURL when vLLM runs in Docker.
-
-### Start Script
-
-Use the provided script which includes all fixes:
-
-```bash
-~/code/ducktape/x/local_llm/start-vllm-awq.sh
-```
-
-Environment variables for customization:
-
-- `MAX_MODEL_LEN=131072` - Lower context if needed
-- `MAX_NUM_SEQS=32` - Measured safe setting at 262K; validate warmup before raising
-- `KV_CACHE_DTYPE=fp16` - Use FP16 KV (halves max context)
-- `GPU_MEM_UTIL=0.95` - Increase memory utilization (risky)
-
-## References
+### References
 
 - [Qwen3-Coder GitHub](https://github.com/QwenLM/Qwen3-Coder)
 - [Qwen3-Coder Blog Post](https://qwenlm.github.io/blog/qwen3-coder/)
