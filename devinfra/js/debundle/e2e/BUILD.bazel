@@ -1283,3 +1283,5 @@ debundle_e2e_test(
         "@crates//:serde_json",
     ],
 )
+
+debundle_e2e_test(name = "export_availability_test")

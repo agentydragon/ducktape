@@ -345,6 +345,18 @@ standard `source_location` (`source_path`, `start_line`, `end_line`,
 `start_column`). This is a return-only callback capability, independent of
 call purity. The field is omitted when no bare imported callable was resolved.
 
+General imported call and returned-record summaries require a separate
+availability proof. Besides existing declaration summaries, a direct const
+function/arrow initializer is supported when its provider contains exactly that
+one declaration and local export aliases, with no retained provider captures.
+After splitting, the initializer destination remains a dependency leaf, so the
+resolved importing binding reaches an initialized value. This proof is independent
+of the callable body's invocation, return, and callback timing proofs. Imports,
+reexports, namespace/member aliases, additional executable statements and mutable
+initializers remain unsupported for this initialized-provider case. Their calls
+keep conservative dependencies; source-module acyclicity alone is insufficient
+because splitting may change the evaluation graph.
+
 Source-certified immutable wrappers may also supply `callback_object_arguments`:
 ordinary allocated argument positions and checked direct callback uses. An
 anonymous inline consumer without self-identity access completes entry

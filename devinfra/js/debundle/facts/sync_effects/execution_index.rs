@@ -13314,13 +13314,55 @@ pub(crate) struct InferredCallableCapabilities {
 pub(crate) struct InferredForeignCall {
     pub derived: crate::facts::abstract_domain::foreign_call::DerivedForeignCall,
     pub declaration_start: u32,
-    /// Initialized at module instantiation (a function or class declaration),
-    /// so an importer's call never finds it uninitialized.
-    pub hoisted: bool,
+    pub availability: CallableAvailability,
     pub dependencies: ProofDependencies,
     pub record: Option<InferredReturnedRecord>,
     /// The returned closure defers its first argument (`deferred_callback_closure`).
     pub callback_factory: bool,
+}
+
+/// Availability is independent of the callable body's invocation/return proof.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CallableAvailability {
+    Instantiation,
+    /// The provider has one const callable declaration and only local exports.
+    /// Every emitted destination reaching it therefore depends on a leaf: no
+    /// assignment can introduce a return import from that initializer.
+    IsolatedInitializer,
+    UnprovedInitializer,
+}
+
+impl CallableAvailability {
+    pub(crate) fn available_to_importer(self) -> bool {
+        !matches!(self, Self::UnprovedInitializer)
+    }
+}
+
+fn isolated_callable_initializer(body: &[TopLevelItemView<'_>], binding: &Ident) -> bool {
+    let mut declarations = 0;
+    for item in body {
+        match item.as_module_item() {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration)))
+            | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                decl: Decl::Var(declaration), ..
+            })) => {
+                let [declarator] = declaration.decls.as_slice() else { return false; };
+                if declaration.kind != VarDeclKind::Const
+                    || !matches!(&declarator.name, Pat::Ident(local) if local.id.to_id() == binding.to_id())
+                {
+                    return false;
+                }
+                declarations += 1;
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export))
+                if export.src.is_none() && export.specifiers.iter().all(|specifier| {
+                    matches!(specifier, ExportSpecifier::Named(named)
+                        if matches!(&named.orig, ModuleExportName::Ident(local) if local.to_id() == binding.to_id()))
+                }) => {}
+            _ => return false,
+        }
+    }
+    declarations == 1
 }
 
 /// Prepared once for callable inference and the whole-program native census.
@@ -13732,9 +13774,7 @@ pub(crate) fn infer_callable_capabilities<'f>(
                     crate::facts::abstract_domain::integrity::Integrity::Intact(_)
                 )
             },
-            // Only a declaration is published as `foreign_call` or a record;
-            // an initializer can only be a callback factory.
-            |call| call.hoisted || call.callback_factory,
+            |call| call.availability.available_to_importer() || call.callback_factory,
         );
     }
     result.intact_collections = [
@@ -13829,7 +13869,13 @@ fn infer_foreign_calls<'f>(
             }
             Some((
                 binding,
-                foreign_call(index, derived, declaration_start, hoisted),
+                foreign_call(
+                    index,
+                    derived,
+                    declaration_start,
+                    hoisted,
+                    !hoisted && isolated_callable_initializer(body, binding),
+                ),
             ))
         })
         .filter(|(_, call)| wanted(call))
@@ -13851,7 +13897,7 @@ fn infer_foreign_calls<'f>(
             // An initializer's binding holds `undefined` (or is in its TDZ)
             // until its statement runs; afterwards it must hold only that
             // function.
-            if call.hoisted {
+            if call.availability == CallableAvailability::Instantiation {
                 values.iter().count() == 1
             } else {
                 values
@@ -13868,6 +13914,7 @@ fn foreign_call(
     derived: crate::facts::abstract_domain::foreign_call::DerivedForeignCall,
     declaration_start: u32,
     hoisted: bool,
+    isolated_initializer: bool,
 ) -> InferredForeignCall {
     let mut dependencies = derived.dependencies.clone();
     for family in &derived.native_constructions {
@@ -13888,9 +13935,15 @@ fn foreign_call(
             && deferred_callback_closure(index, declaration_start, closure)
     });
     InferredForeignCall {
-        derived,
         declaration_start,
-        hoisted,
+        availability: if hoisted {
+            CallableAvailability::Instantiation
+        } else if isolated_initializer && derived.retained_provider_captures.is_empty() {
+            CallableAvailability::IsolatedInitializer
+        } else {
+            CallableAvailability::UnprovedInitializer
+        },
+        derived,
         dependencies,
         record,
         callback_factory,
