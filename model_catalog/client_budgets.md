@@ -149,38 +149,16 @@ The deployment does not set `LITELLM_LOCAL_MODEL_COST_MAP`, so its package pin s
 does not pin the downloaded catalogue. The ready CLIProxyAPI Pod ran
 `cli-proxy-api:devel-20260924021629-ce93c9e`, whose source pin is `7fac6b15bcfe`.
 
-### What Codex 0.157.0 does with these values
-
-The [matching source](https://github.com/openai/codex/tree/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs)
-corroborates the live fallback warning and telemetry:
-
-- `models-manager/src/manager.rs` strips **one** namespace segment for recognition;
-  `chatgpt/oai-responses/gpt-6-astra` has two and does not match the bundled Astra entry.
-- `model-provider/src/models_endpoint.rs` does not enable API-key catalogue discovery
-  for this custom provider without `model_catalog_url`. We do not configure one.
-  LiteLLM's metadata fields therefore cannot repair this recognition failure.
-- `models-manager/src/model_info.rs` gives fallback models context and override maximum
-  **272000**, with **95%** usable: **258400**. `model_context_window` is clamped to the
-  recognized entry's maximum; setting 872000 on the unrecognized route would not work.
-- `protocol/src/openai_models.rs` derives the default automatic-compaction threshold
-  from **90% of the resolved window**: **244800** here, not 90% of 258400. This is a
-  source-derived default, not a newly measured compaction boundary or an output reserve
-  of 128000. The usable-window headroom covers prompts, tools, and output together.
-- Bundled Astra, Sol and Luna entries all default to **272000**, with override maximum
-  **872000**. Merely switching to a recognized alias would **not** raise the default
-  window. The maximum is a client override bound, not a subscription capacity fact.
-- Recognition also changes prompt/reasoning defaults, freeform `apply_patch`,
-  `tool_mode=code_mode_only`, and `use_responses_lite`. The tool mode has precedence over
-  feature flags when code mode is available. Do not treat an alias as a context-only fix.
-- **Version correction to the older audit:** 0.157.0 gates WebSockets on the provider's
-  `supports_websockets` (default false), which our provider does not enable. Its JSON
-  catalogue still contains `prefer_websockets`, but `ModelInfo` no longer consumes that
-  field. Recognition alone does not enable WebSockets in this version.
-
-See `core/src/tools/mod.rs`, `core/src/client.rs`, and
-`model-provider-info/src/lib.rs` for those non-context effects. The older
-[harness audit](debug/harness_model_metadata.md) remains historical evidence,
-not a substitute for inspecting the launched version.
+Codex 0.157.0 recognized only one namespace segment ([source](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/models-manager/src/manager.rs)),
+so this two-segment route used the **272000** fallback window (**258400** usable at
+95%; automatic compaction defaults to 90% of the resolved window
+([source](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/protocol/src/openai_models.rs))).
+These are client-accounting values: `context_window` is not a separate input/output
+pair or evidence of backend capacity. The current per-route catalog supplies full
+Codex `ModelInfo` entries; recognition also selects prompt, reasoning, and tool
+behavior, and is not route authorization. See the
+[ingress contract](../agentplane/llm_ingress/README.md#codex-model-catalog) and
+[versioned source/deployment audit](../agentplane/debug/codex_model_catalog.md).
 
 ### Output limits are not enforced by these metadata fields
 
@@ -219,89 +197,28 @@ vocabularies only when both actually need supported overrides.
 
 ## Codex local model catalogue, 2026-10-10
 
-**`model_catalog_json` can supply per-model token windows**, independently of the
-central logging/proxy decision. This is a source audit of the runner's **0.157.0**
-([commit `00c972ed5d6f`](https://github.com/openai/codex/tree/00c972ed5d6ff6499317fd41b7f23605b8e6850d)),
-not just upstream main and **not a tested Agentplane integration**.
+Codex `model_catalog_json` is a startup-only local file containing a full
+`ModelsResponse` (`{"models": [ModelInfo, ...]}`), not a sparse limits map or URL.
+In 0.157.0 it replaces the bundled catalogue; per-thread config does not reload it.
+The generated entries are parsed by the pinned Codex in
+[`test_codex_models.py`](../cluster/cdk8s/agentplane/test_codex_models.py) through
+this setting. See the [pinned source](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/core/src/config/mod.rs).
 
-### File contract and token semantics
+Full `ModelInfo` entries also carry instructions, reasoning/tool behavior, and
+`truncation_policy`; context metadata alone is not a complete model entry. The catalog
+is not route authorization: unknown names can receive fallback metadata, so access
+stays with gateway/ingress policy. `context_window` is client accounting, not separate
+provider input/output limits; a `model_context_window` override is clamped to
+`max_context_window`. Codex uses 95% of the resolved window as usable input, while
+default compaction is 90% of the resolved window. `truncation_policy` limits tool
+output, not generated model output.
 
-The setting is a **path to a local JSON file**, not inline JSON or a URL. The
-[loader][catalog-loader] deserializes a `ModelsResponse`: an object containing a
-nonempty `models` array of full [`ModelInfo` entries][catalog-types]. Invalid JSON,
-missing required fields, an unreadable file, or an empty array fails loading.
-This is not a sparse slug/window overlay: entries also require fields such as
-`display_name`, `supported_reasoning_levels`, `shell_type`, `visibility`,
-`supported_in_api`, `priority`, `support_verbosity`, `truncation_policy`, and
-`experimental_supported_tools`.
-
-| Field                              | Meaning in pinned Codex                                                                                                                                |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `context_window`                   | Nominal context budget in tokens, before Codex's input headroom deduction. Not an independent maximum-input or maximum-output declaration.             |
-| `max_context_window`               | Ceiling for an explicit `model_context_window` config override; also the resolved window if `context_window` is absent. Not an output-token limit.     |
-| `effective_context_window_percent` | Percentage usable for inputs after reserving headroom for system prompts, tools, and model output. Defaults to **95**.                                 |
-| `auto_compact_token_limit`         | Optional token threshold; defaults to **90% of the resolved window**. An explicit value is capped at that 90% threshold when a resolved window exists. |
-| `truncation_policy`                | Tool-output truncation (`mode: "bytes"` or `"tokens"`, plus `limit`), not a model-generation cap or another context-window declaration.                |
-
-`ModelInfo` has no separate `max_input_tokens` / `max_output_tokens` pair. Treat
-`context_window` as Codex's overall accounting budget with reserved headroom, not
-proof of an upstream input+output capacity contract. A route's verified input,
-output and joint limits still need an explicit translation into client policy.
-
-For illustration, these are **fields within a full model entry**, not a complete
-loadable catalogue and not a proposed capacity claim for any deployed model:
-
-```json
-{
-  "slug": "example/responses/model-a",
-  "context_window": 256000,
-  "max_context_window": 256000,
-  "effective_context_window_percent": 95,
-  "auto_compact_token_limit": 220000
-}
-```
-
-That example gives **243200** usable tokens and an auto-compaction threshold of
-**220000**. Without the explicit threshold, compaction defaults to **230400**
-(90% of 256000, not 90% of 243200). A startup `model_context_window` still overrides
-the entry's window, clamped to its `max_context_window`; a startup
-`model_auto_compact_token_limit` also overrides the entry before the 90% cap.
-
-### Resolution, lifecycle and possible runner simplification
-
-- For the OpenAI-compatible provider, a supplied catalogue selects
-  [`StaticModelsManager`][catalog-provider]: it **replaces the active catalogue**,
-  rather than merging sparse entries into bundled/remote metadata. It does not
-  fetch `/models` or refresh from ETags. It is not an authorization allowlist:
-  unmatched model names can still resolve to fallback metadata.
-- [Lookup][catalog-manager] uses longest-prefix matching, then the restricted
-  single-namespace fallback described above. Providing the **full exposed route
-  slug** can directly recognize a multiply-namespaced route without renaming it
-  or inheriting the generic **272000** override ceiling. Include all intended
-  routes and test overlapping prefixes; this does not itself rewrite upstream names.
-- The [config schema][catalog-schema] explicitly says **startup only**. Per-thread
-  config overrides do not reapply it. Updating the file is not hot reload: plan
-  catalogue snapshots and process restarts/resume deliberately.
-- These are full behavioral entries: instructions, reasoning/tool capabilities,
-  tool mode, Responses-lite and other flags accompany token metadata. Do not
-  blindly clone a bundled entry or assume omitted optional fields are neutral.
-  Pin the schema/entry construction to the launched Codex version.
-
-**Done for Codex:** cdk8s generates the catalog and LLM ingress serves it
-([Codex model catalog](../agentplane/llm_ingress/README.md#codex-model-catalog)), replacing the
-process-wide `model_context_window` override, so each exposed route has its own window and a
-switch between windows is no longer rejected. Checked so far: reported effective windows, a
-switch between routes, a catalog edit under a running Codex, and unknown routes
-(fallback metadata). Not yet checked against a served upstream entry: native tools and reasoning,
-compaction after a switch to a smaller window, process restart and thread resume.
-Keep current behavior until those tests justify a change. No new budgets, model
-switching behavior, gateway configuration, or live probes are introduced by this note.
-
-[catalog-loader]: https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/core/src/config/mod.rs#L2119-L2149
-[catalog-types]: https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/protocol/src/openai_models.rs#L404-L539
-[catalog-provider]: https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/model-provider/src/provider.rs#L546-L568
-[catalog-manager]: https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/models-manager/src/manager.rs#L745-L805
-[catalog-schema]: https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/core/config.schema.json
+The deployed path uses `model_catalog_url`, not the local-file setting. The ingress
+serves generated per-route entries and Codex refetches after a changed `X-Models-Etag`;
+see the [ingress contract](../agentplane/llm_ingress/README.md#codex-model-catalog) and
+[versioned source/deployment audit](../agentplane/debug/codex_model_catalog.md).
+Tools/reasoning, route changes, and process resume have coverage; smaller-window
+compaction, VM Sandbox fetching, and a multi-turn ETag/header mismatch remain open.
 
 ## Subscription-path public evidence, 2026-10-05
 
