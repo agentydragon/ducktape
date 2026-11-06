@@ -32,6 +32,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/presentation"
 	"github.com/agentydragon/ducktape/agentplane/egress/upstream"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"github.com/google/uuid"
 )
 
@@ -46,6 +47,10 @@ type Options struct {
 	Upstream      *upstream.Resolver
 	// Record receives every decision. It must not block.
 	Record func(decision.Record)
+	// SandboxReaders performs live credential-to-Sandbox lookups for the
+	// optional SVID listener, keyed by namespace. Every reader must use an
+	// uncached API reader. The map is empty when the listener is disabled.
+	SandboxReaders map[string]*sandboxreader.Reader
 }
 
 // Proxy serves egress requests until Drain.
@@ -63,6 +68,11 @@ func New(options Options) (*Proxy, error) {
 	if len(options.CA.Certificate) == 0 || options.CA.PrivateKey == nil || options.UpstreamRoots == nil ||
 		options.Identity == nil || options.Policy == nil || options.Upstream == nil || options.Record == nil {
 		return nil, errors.New("interception CA, upstream roots, identity, policy, upstream resolver and record are required")
+	}
+	for namespace, reader := range options.SandboxReaders {
+		if namespace == "" || reader == nil {
+			return nil, errors.New("SVID Sandbox readers must have nonempty namespaces and readers")
+		}
 	}
 	leaves, err := newLeafIssuer(options.CA)
 	if err != nil {
@@ -99,7 +109,8 @@ type connectionIDKey struct{}
 // connection is the authenticated state of one client connection, which a tunnel's requests share:
 // their headers are behind the tunnel's TLS, so what the CONNECT presented is what applies.
 type connection struct {
-	id string
+	id        string
+	peerState *tls.ConnectionState
 
 	mu   sync.Mutex
 	auth *authenticated
@@ -108,7 +119,12 @@ type connection struct {
 // newConnection starts the state of a request that arrived on the accepted connection, whose
 // identifier the decisions it leads to share.
 func newConnection(r *http.Request) *connection {
-	return &connection{id: r.Context().Value(connectionIDKey{}).(string)}
+	client := &connection{id: r.Context().Value(connectionIDKey{}).(string)}
+	if r.TLS != nil {
+		state := *r.TLS
+		client.peerState = &state
+	}
+	return client
 }
 
 func (p *Proxy) serve(w http.ResponseWriter, r *http.Request) {

@@ -2934,7 +2934,7 @@ start them early.
 
 ```mermaid
 flowchart LR
-    IDENTITY_KINDS[Ready: identity and grant kinds] --> SVID_EGRESS_HOP[Blocked: SVID on the egress hop]
+    SVID_EGRESS_HOP[In flight: SVID on the egress hop]
     IDENTITY_KINDS --> POLICY_GRANTS[Blocked: grants, role sets, managed SAs]
     IDENTITY_KINDS --> EGRESS_IDENTITY_RULES[Blocked: identity rules and impersonation]
     IDENTITY_KINDS --> SERVICES_IDENTITY_PRINCIPAL[Blocked: services act and record by identity]
@@ -2964,15 +2964,19 @@ tests of untouched kinds still pass.
 
 ### `SVID_EGRESS_HOP` — the sidecar and relay present the SVID to the proxy
 
-**Blocked on `IDENTITY_KINDS`.** The central proxy accepts a client certificate on the hop,
-verified with `environment_runtime_transport` against the trust-manager roots, parses the SPIFFE
-path, resolves the Sandbox UID to the live Sandbox, checks the credential ID against its status
-(question 2 of the plan decides whether the sidecar shares Runtime's Secret or gets a second
-certificate under the same path), and reads `spec.identity`; this gives the proxy a Sandbox read.
-The Pod sidecar and the Firecracker relay present it instead of the proxy-audience projected token.
-Behind a proxy setting, off in staging. **Exit:** the egress test harness (`test_proxy.py`, real
-binaries, envtest) admits an SVID-authenticated request under the identity's rules, refuses a
-certificate for a deleted or replaced Sandbox, and refuses a name in any header as identity.
+**In flight; Codex, 2026-11-05.** PR1 adds an optional client-certificate listener to the central
+proxy, verified with `environment_runtime_transport` against the trust-manager roots. It parses the
+Runtime SPIFFE URI, resolves the UID and credential ID against the live Sandbox and its current
+runner binding, then derives the existing policy subject from that Sandbox's own ServiceAccount
+namespace/name. This first slice does not read `spec.identity`, require an `Identity` kind or
+reference, read a Pod or ServiceAccount object, or trust a caller header. The listener and its
+Service, certificate, trust bundle, Cilium port and Sandbox-read permission are off by default.
+The existing token listener remains intact in this PR. Turning callers over to SVID traffic remains
+an operational hold until the sidecar and relay use this hop and the service-route/cutover work is
+ready; the additive listener alone does not switch staging callers. **Exit:** the egress test harness
+(`test_proxy.py`, real binaries, envtest) admits an SVID-authenticated request under the Sandbox
+ServiceAccount's rules, refuses stale, deleted or replaced Sandbox bindings, rejects a projected
+token bound to another Pod, and refuses a caller-supplied subject header.
 
 ### `SVID_PLATFORM_ROUTES` — first-party services verify SVIDs themselves
 

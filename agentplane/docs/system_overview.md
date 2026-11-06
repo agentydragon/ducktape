@@ -114,7 +114,8 @@ flowchart LR
     guest -->|local Codex JSON-RPC over WebSocket, isolated mode| vmexec
     guest -->|starts| guest_agent
     vmexec --> relay
-    runner --> sidecar --> egress
+    runner --> sidecar
+    sidecar -->|optional Runtime SVID mTLS :8889; token listener :8888 remains| egress
     guest --> relay --> egress
     runner -.->|OTLP/gRPC telemetry route| sidecar
     sidecar -->|OTLP/gRPC| alloy
@@ -532,10 +533,11 @@ flowchart LR
     actions -->|create + watch Pods| k8s
     actions -->|exec via Kubernetes API| workload
     workload --> box_sidecar --> egress
-    runner --> sidecar --> egress
+    runner --> sidecar
+    sidecar -->|optional Runtime SVID mTLS :8889; token listener :8888 remains| egress
     guest --> relay --> egress
     app -->|egress admin API| egress
-    egress -->|policy and credential watches| k8s
+    egress -->|policy and credential watches; live Sandbox lookup for SVID| k8s
     egress -->|workload Actions gRPC and MCP| actions
     egress -->|policy-approved requests| other
     egress -->|model requests| llm
@@ -544,6 +546,9 @@ flowchart LR
     actions -->|REST + web push| github
 ```
 
+The optional runner mTLS hop authenticates the Runtime SVID, then resolves its Sandbox UID and
+accepted credential ID through the live API before using that Sandbox's own ServiceAccount as the
+policy subject. Caller headers do not select identity; the HTTP token listener remains available.
 The egress proxy substitutes a configured credential only for the destination covered by its
 policy. LiteLLM is a separate hop behind LLM ingress; only that service holds the LiteLLM virtual key.
 The app has independent `action_federation.service_url` and `connection_service_url` settings.
