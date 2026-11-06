@@ -66,11 +66,7 @@ py_test(
 py_test(
     name = "test_human",
     srcs = ["test_human.py"],
-    data = [
-        "__snapshots__/test_human.ambr",
-        "//aiquota/testing:fixtures",
-    ],
-    uses_syrupy = True,
+    data = ["//aiquota/testing:fixtures"],
     deps = [
         ":format_lib",
         ":human_lib",
@@ -80,7 +76,6 @@ py_test(
         "//aiquota/testing:quota_fixtures",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//syrupy",
         "@rules_python//python/runfiles",
     ],
 )

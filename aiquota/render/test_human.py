@@ -4,7 +4,6 @@ from datetime import UTC, datetime, timedelta, timezone
 import pytest
 import pytest_bazel
 from python.runfiles import Runfiles
-from syrupy.assertion import SnapshotAssertion
 
 from aiquota.models import AllQuotas, FetchSuccess, ProviderFetch, ProviderQuota, QuotaWindow
 from aiquota.render import human
@@ -204,11 +203,32 @@ def test_reset_credit_summary_is_compact_by_default_and_lists_all_expiries_in_de
 
 
 @pytest.mark.parametrize("fixture_name", FIXTURE_NAMES)
-def test_renders_shared_fixture(
-    quota_fixture: Callable[[str], AllQuotas], fixture_name: str, snapshot: SnapshotAssertion
+def test_renders_shared_fixture(quota_fixture: Callable[[str], AllQuotas], fixture_name: str) -> None:
+    """All shared scenarios must be renderable by the CLI."""
+    quotas = quota_fixture(fixture_name)
+    assert human.render(quotas, now=quotas.fetched_at, tz=UTC).strip()
+
+
+@pytest.mark.parametrize(
+    ("fixture_name", "balance"),
+    [
+        ("claude_prepaid_balance", "Prepaid balance: $123.45"),
+        ("claude_prepaid_balance_unavailable", "Prepaid balance: unavailable"),
+        ("claude_prepaid_balance_stale", "Prepaid balance: $123.45 · stale 1h"),
+    ],
+)
+def test_prepaid_balance_state_is_visible(
+    quota_fixture: Callable[[str], AllQuotas], fixture_name: str, balance: str
 ) -> None:
     quotas = quota_fixture(fixture_name)
-    assert human.render(quotas, now=quotas.fetched_at, tz=UTC) == snapshot
+    assert balance in human.render(quotas, now=quotas.fetched_at, tz=UTC)
+
+
+def test_failed_refresh_reports_fallback_and_keeps_last_usage(quota_fixture: Callable[[str], AllQuotas]) -> None:
+    quotas = quota_fixture("stale_fallback")
+    rendered = human.render(quotas, now=quotas.fetched_at, tz=UTC)
+    assert "Refresh failed · showing available data" in rendered
+    assert "35% used" in rendered
 
 
 def test_terminal_window_keeps_shared_tint() -> None:

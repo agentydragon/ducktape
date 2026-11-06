@@ -33,7 +33,7 @@ GNOME extension render those fields. Presentation updates do not poll providers.
 daemon forwards the server view and only writes its raw cache when the quota data changes.
 
 Scenarios in `testing/fixtures/*.yaml` are `AllQuotas` Pydantic model data with fixed timestamps.
-CLI snapshots (`render/test_human.py`) load those models directly; GNOME and browser fixtures
+CLI tests (`render/test_human.py`) load those models directly; GNOME and browser fixtures
 are generated through `to_view(...).model_dump(mode="json")`, the same snake_case view contract
 served by `/v1/quotas` and the desktop daemon. GNOME passes that payload through `_loadViewData`.
 The scenarios feed GNOME renders (`gnome/test_render.py`) and dashboard screenshots in both
