@@ -9,7 +9,6 @@ exports_files(
         "home-network-overview.json",
     ],
     visibility = [
-        "//cluster/cdk8s/grafana:__pkg__",
         "//cluster/cdk8s/monitoring:__pkg__",
     ],
 )

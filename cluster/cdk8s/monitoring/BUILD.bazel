@@ -1,3 +1,4 @@
+# gazelle:resolve py grafana_grafanaserviceaccount_crds //cluster/cdk8s/providers/grafana_operator:grafanaserviceaccount
 load("@image_pins//:pins.bzl", "BLACKBOX_EXPORTER_DIGEST", "BLACKBOX_EXPORTER_IMAGE")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
@@ -232,6 +233,39 @@ py_test(
         "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "aiquota_analytics",
+    srcs = ["aiquota_analytics.py"],
+    data = ["//cluster/cdk8s/monitoring/dashboards:aiquota-history.json"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:grafana_dashboards",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/clickhouse:client",
+        "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",
+        "//cluster/cdk8s/providers/grafana_operator:grafana_datasource",
+        "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
+        "//cluster/cdk8s/providers/grafana_operator:grafanadatasource",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "flux_annotations",
+    srcs = ["flux_annotations.py"],
+    visibility = ["//cluster/cdk8s:__pkg__"],
+    deps = [
+        "//cluster/cdk8s:flux",
+        "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/grafana_operator:grafana",
+        "//cluster/cdk8s/providers/grafana_operator:grafana_operator_grafana",
+        "//cluster/cdk8s/providers/grafana_operator:grafanaserviceaccount",
+        "@pypi//cdk8s",
     ],
 )
 

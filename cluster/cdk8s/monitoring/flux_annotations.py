@@ -48,7 +48,7 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def flux_grafana_secrets(chart: Chart, directory: RenderedDirectory, grafana_operator: Kustomization) -> Kustomization:
+def flux_annotations(chart: Chart, directory: RenderedDirectory, grafana_operator: Kustomization) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
