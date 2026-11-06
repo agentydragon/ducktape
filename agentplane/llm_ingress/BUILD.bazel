@@ -95,8 +95,8 @@ go_test(
     embed = [":server_lib"],
     x_defs = {"github.com/agentydragon/ducktape/agentplane/llm_ingress.ingressServerRlocation": "$(rlocationpath :server)"},
     deps = [
-        "//agentplane/testing/configtest",
         "//agentplane/environment_runtime_transport/testing",
+        "//agentplane/testing/configtest",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/workload_auth/auth",
         "//agentplane/workload_auth/testing",

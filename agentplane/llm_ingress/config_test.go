@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
+	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
 func TestLoadConfigPrecedence(t *testing.T) {

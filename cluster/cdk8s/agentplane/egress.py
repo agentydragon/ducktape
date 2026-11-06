@@ -823,7 +823,9 @@ class Egress(Construct):
         workload.container.mount("/etc/agentplane-egress/svid", svid_volume, read_only=True)
         workload.container.mount("/etc/agentplane-egress/svid-ca", svid_ca_volume, read_only=True)
         settings.mount_into(workload.container, env=Settings.config_file_env)
-        workload_tls.serving_certificate(self, self.env, container=workload.container, name="egress-rules", uri=RULES_WORKLOAD_URI)
+        workload_tls.serving_certificate(
+            self, self.env, container=workload.container, name="egress-rules", uri=RULES_WORKLOAD_URI
+        )
         return workload
 
     def _add_network_policy(self, runners: Pods) -> None:
