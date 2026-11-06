@@ -104,7 +104,7 @@ def _e2e_registry_container() -> Generator[DockerContainer]:
                     {
                         "namespace": receipt.namespace,
                         "recipe": receipt.recipe,
-                        "volume_names": receipt.volume_names,
+                        "volume_name": receipt.volume_name,
                         "container_id": receipt.container_id,
                         "volume_usage_bytes_before_release": registry_blob_cache_usage_bytes(registry, receipt),
                     },

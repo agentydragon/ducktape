@@ -51,6 +51,10 @@ registry. Release stops the registry and clears that metadata again. Blobs and
 repository layer links survive; authenticated pushes still publish manifests
 and record image definitions for each fresh test database.
 
+The nonblocking `filelock` lease uses the same persistent lock path across runs;
+contention raises `filelock.Timeout`. Storage still attached to another container
+is refused, even when registry shutdown fails.
+
 The volume must use one filesystem: registry uploads commit by renaming into
 the blob store. `REGISTRY_CACHE_RECIPE` in `testing/exec_properties.bzl` feeds
 both the BuildBuddy family and generated runtime configuration. Bump its version
