@@ -140,10 +140,11 @@ fn assert_called_operation_receipt(fixture: &Fixture, binding: &str, callee: &st
 
 #[test]
 fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
-    let source = "import { limit as bytes } from './peer.js';\nconst before = 0;\nfunction read() { return bytes; }\nconst computed = read();\nconst after = 1;\nconsole.log(before, computed, after);\n";
+    for (initializer, expected) in [("read()", "0 2 1\n"), ("4 * bytes + 256", "0 264 1\n")] {
+    let source = format!("import {{ limit as bytes }} from './peer.js';\nconst before = 0;\nfunction read() {{ return bytes; }}\nconst computed = {initializer};\nconst after = 1;\nconsole.log(before, computed, after);\n");
     let fixture = run_fixture(
         FixtureOpts::new(
-            source,
+            &source,
             vec![
                 logical_module("compute", &[Member::new("read"), Member::new("computed")]),
                 logical_module("anchors", &[Member::new("before"), Member::new("after")]),
@@ -151,7 +152,7 @@ fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
         )
         .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
     );
-    assert_preserved_entry_output(&fixture, "0 2 1\n");
+    assert_preserved_entry_output(&fixture, expected);
     let assessment = fixture.candidate_relocation_assessment();
     assert_eq!(
         assessment["decision"]["status"], "accepted",
@@ -183,6 +184,7 @@ fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
         "the computed initializer must cross an executable anchor, beyond static linkage: {assessment:#}"
     );
     assert_root_read_receipt(&fixture, "computed");
+    }
 }
 
 #[test]
