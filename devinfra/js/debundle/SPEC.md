@@ -764,6 +764,14 @@ recover that value. Holes, unsupported spreads, out-of-range indices, pooled
 allocation reuse, mutation and accessors retain fallback. Provider-only and
 retained queries require their own prefix witness; the read proof grants no
 array-write capability.
+An own `length` read uses that transfer only when the same checked prefix
+witness proves the array's present data slot. It returns the `NUMBER` abstract
+value and records the exact `OwnProperty(origin, length)` cell that checked native
+`push` writes. This remains read-only: array length assignment never uses the
+ordinary writable-slot path because truncation has distinct semantics.
+Ordinary-object accessors, sparse or unknown arrays, unsettled or reused
+allocations, and retained queries without their own current prefix remain
+conservative.
 When the same exact root has both a lexical operation receipt and complete
 global/heap/host coverage, its represented effects discharge the relocation
 projection's `opaque_at_init_call` and unattributed `member_write_or_alias`

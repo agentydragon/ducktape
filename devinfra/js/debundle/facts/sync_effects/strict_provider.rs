@@ -269,6 +269,17 @@ impl OwnDataContext for ProviderContext<'_> {
             && matches!(self.writable_prefix.get(&allocation),
                 Some(WritablePrefixState::Proven(properties)) if properties.contains(property))
     }
+    fn first_generation_dense_array_length(&self, allocation: u32) -> Option<u32> {
+        if !self.index.array_elements.contains_key(&allocation)
+            || !self.arrays.contains_key(&allocation)
+        {
+            return None;
+        }
+        match self.writable_prefix.get(&allocation)? {
+            WritablePrefixState::DenseArray { length } => Some(*length),
+            _ => None,
+        }
+    }
 }
 
 impl DescriptorContext for ProviderContext<'_> {

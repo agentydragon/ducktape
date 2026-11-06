@@ -16,9 +16,9 @@ pub(super) trait OwnDataContext {
     fn property_is_accessor(&self, allocation: u32, property: &str) -> bool;
     fn property_is_writable(&self, allocation: u32, property: &str) -> bool;
 
-    /// Only contexts with a current first-generation array-literal witness
-    /// provide this length. Provider-only and retained queries stay
-    /// conservative until they carry the same prefix state.
+    /// Only application or isolated provider contexts with a current
+    /// first-generation array-literal witness provide this length. Retained
+    /// queries stay conservative until they carry the same prefix state.
     fn first_generation_dense_array_length(&self, _allocation: u32) -> Option<u32> {
         None
     }
@@ -50,6 +50,9 @@ pub(super) struct OwnDataRead {
 pub(super) enum PresentOwnDataSlot {
     OrdinaryRecord(OwnDataSlot),
     ArrayIndex(OwnDataSlot),
+    /// Read-only view of the native own `length` data property. This variant
+    /// is available only while the array-literal prefix proves its value;
+    /// it is deliberately not accepted by the writable-slot resolver.
     ArrayLength(OwnDataSlot),
 }
 
@@ -64,7 +67,9 @@ impl PresentOwnDataSlot {
 
     pub(super) fn property(&self) -> &str {
         match self {
-            Self::OrdinaryRecord(slot) | Self::ArrayIndex(slot) | Self::ArrayLength(slot) => &slot.property,
+            Self::OrdinaryRecord(slot) | Self::ArrayIndex(slot) | Self::ArrayLength(slot) => {
+                &slot.property
+            }
         }
     }
 
