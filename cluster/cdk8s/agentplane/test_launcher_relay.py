@@ -69,7 +69,7 @@ def policy() -> dict:
     LauncherRelayPolicy(
         chart, "policy", namespace=NAMESPACE, runner_pod=deepcopy(RUNNER_POD), settings_config_map=RELAY_SETTINGS
     )
-    rendered = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "ClusterPolicy")
+    rendered: dict = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "ClusterPolicy")
     # The CLI's policy validation needs a cluster to check match conditions against and panics
     # without one; they narrow which requests reach the policy, not what it decides.
     del rendered["spec"]["webhookConfiguration"]
@@ -87,7 +87,7 @@ def tls_policy() -> dict:
         settings_config_map=RELAY_SETTINGS,
         runner_tls_enabled=True,
     )
-    rendered = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "ClusterPolicy")
+    rendered: dict = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "ClusterPolicy")
     del rendered["spec"]["webhookConfiguration"]
     return rendered
 
