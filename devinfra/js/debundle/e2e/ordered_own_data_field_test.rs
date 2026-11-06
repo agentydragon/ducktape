@@ -10,39 +10,26 @@ use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 const ARRAY_LENGTH_SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nconst gamma = read();\nconst anchor = 0;\nconst alpha = write();\nconsole.log(anchor, gamma, alpha);\n";
-const ARRAY_LENGTH_INVERSION_SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nconst anchor = 0;\nconst gamma = read(anchor);\nconst alpha = write();\nconsole.log(anchor, gamma, alpha);\n";
-
-fn array_length_split(invert_read_and_write: bool) -> FixtureOpts<'static> {
-    let mut provider_members = vec![
-        Member::new("store"),
-        Member::new("read"),
-        Member::new("write"),
-    ];
-    let mutator_members = if invert_read_and_write {
-        vec![Member::new("anchor"), Member::new("alpha")]
-    } else {
-        provider_members.push(Member::new("anchor"));
-        vec![Member::new("alpha")]
-    };
-    let mut modules = vec![logical_module("provider", &provider_members)];
-    if invert_read_and_write {
-        modules.push(logical_module("mutator", &mutator_members));
-        modules.push(logical_module("observer", &[Member::new("gamma")]));
-    } else {
-        modules.push(logical_module("observer", &[Member::new("gamma")]));
-        modules.push(logical_module("mutator", &mutator_members));
-    }
-    // The unsafe reader imports anchor from the writer's module. ESM must
-    // evaluate that whole module before gamma, forcing push ahead of the read.
-    let source = if invert_read_and_write {
-        ARRAY_LENGTH_INVERSION_SOURCE
-    } else {
-        ARRAY_LENGTH_SOURCE
-    };
-    FixtureOpts::new(source, modules)
-        .with_unassigned_mode(unassigned_mode_inline())
-        .with_dataflow_aware_s_chain()
-        .with_trusted_dataflow_summaries()
+fn array_length_relocation() -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        ARRAY_LENGTH_SOURCE,
+        vec![
+            logical_module(
+                "provider",
+                &[
+                    Member::new("store"),
+                    Member::new("read"),
+                    Member::new("write"),
+                    Member::new("anchor"),
+                ],
+            ),
+            logical_module("observer", &[Member::new("gamma")]),
+            logical_module("mutator", &[Member::new("alpha")]),
+        ],
+    )
+    .with_unassigned_mode(unassigned_mode_inline())
+    .with_dataflow_aware_s_chain()
+    .with_trusted_dataflow_summaries()
 }
 
 fn execution_for_binding<'a>(
@@ -97,7 +84,7 @@ fn assert_no_operation_receipt(graph: &DependencyGraphReport, binding: &str, cas
 
 #[test]
 fn relocated_array_length_read_receipts_the_length_cell_written_by_push() {
-    let fixture = run_fixture(array_length_split(false));
+    let fixture = run_fixture(array_length_relocation());
     assert_preserved_entry_output(&fixture, "0 0 undefined\n");
 
     let assessment = fixture.candidate_relocation_assessment();
@@ -129,7 +116,15 @@ fn relocated_array_length_read_receipts_the_length_cell_written_by_push() {
 
 #[test]
 fn forcing_push_before_the_array_length_read_rejects_and_changes_inspection_output() {
-    let fixture = run_inspection_fixture(array_length_split(true));
+    // Importing the array forces the module containing its allocation and push
+    // to finish before the reader. No extra lexical anchor creates a cycle.
+    let fixture = run_inspection_fixture(FixtureOpts::new(
+        "const store = [];\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n",
+        vec![
+            logical_module("mutator", &[Member::new("store"), Member::new("alpha")]),
+            logical_module("observer", &[Member::new("gamma")]),
+        ],
+    ));
     let assessment = fixture.candidate_relocation_assessment();
     assert_eq!(
         assessment["decision"]["status"], "conflict",
@@ -149,9 +144,15 @@ fn forcing_push_before_the_array_length_read_rejects_and_changes_inspection_outp
     ));
     assert_length_write_follows_read(&graph, "gamma", "alpha");
 
+    save_relocation_reports(
+        &fixture.report_root,
+        &fixture.chunk_id,
+        "array-length-forced-inversion",
+    );
     // The marked rejection tree can still be inspected under Node: its module
     // order runs push first, so gamma changes from the source value 0 to 1.
-    assert_node_output(&fixture.entry_path, "0 1 undefined\n", "");
+    assert_node_output(&fixture.source_path, "0 1\n", "");
+    assert_node_output(&fixture.entry_path, "1 1\n", "");
 }
 
 #[test]
