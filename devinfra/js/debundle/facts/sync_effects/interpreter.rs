@@ -807,6 +807,20 @@ pub(super) struct OwnPropertyQuery {
 }
 
 impl ExecutionInputs<'_> {
+    /// Admit a source-checked imported primitive to the ordered kernel. This
+    /// grants entry only; each reached read still checks its actual value.
+    fn imported_primitive_read(&self, binding: &Id) -> Option<&ImportedPrimitiveRead> {
+        if !self.index.imported_bindings.contains(binding) {
+            return None;
+        }
+        let read = self.imported_primitive_reads.get(binding.0.as_ref())?;
+        (!read.kinds.is_empty()
+            && read.dependency_closure.contains(&read.provider_module)
+            && !read.source_cells.is_empty()
+            && self.imported_values.get(binding.0.as_ref()) == Some(&Value::Prim(read.kinds)))
+        .then_some(read)
+    }
+
     fn synchronous_effects(
         &self,
         owner: SourceUnitOrdinal,
@@ -1992,19 +2006,9 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             && self
                 .executor
                 .inputs
-                .index
-                .imported_bindings
-                .contains(binding)
-            && self
-                .executor
-                .inputs
-                .imported_primitive_reads
-                .get(binding.0.as_ref())
+                .imported_primitive_read(binding)
                 .is_some_and(|read| {
-                    !read.kinds.is_empty()
-                        && read.dependency_closure.contains(&read.provider_module)
-                        && !read.source_cells.is_empty()
-                        && values == Values::from([AbstractValue::Value(Value::Prim(read.kinds))])
+                    values == Values::from([AbstractValue::Value(Value::Prim(read.kinds))])
                 });
         let effects = if normal
             && (self.executor.initialized_local_binding(binding) || imported_primitive_read)
@@ -10913,6 +10917,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     && body.free_reads().iter().all(|binding| {
                         env.contains_key(binding)
                             || self.inputs.top_bindings.contains(binding)
+                            || self.inputs.imported_primitive_read(binding).is_some()
                             || (!self.inputs.flow.is_declared(binding)
                                 && !self.inputs.shadowed.contains(binding.0.as_ref())
                                 && NativeIntrinsic::for_global_binding(binding.0.as_ref())
@@ -10986,6 +10991,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && body.free_reads().iter().all(|binding| {
                 env.contains_key(binding)
                     || self.inputs.top_bindings.contains(binding)
+                    || self.inputs.imported_primitive_read(binding).is_some()
                     || (!self.inputs.flow.is_declared(binding)
                         && !self.inputs.shadowed.contains(binding.0.as_ref())
                         && NativeIntrinsic::for_global_binding(binding.0.as_ref()).is_some_and(

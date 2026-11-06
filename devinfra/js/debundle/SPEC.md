@@ -2114,7 +2114,7 @@ Imported primitive types alone do not cover the imported binding's normal
 `GetValue`. A separate read capability requires an analyzed stable primitive
 export, an exact ordinary ESM importer-to-provider request, and a fully
 resolved static dependency closure of the provider that does not reach the
-importer. Unresolved, unsupported, non-entry, or cyclic provider dependencies
+importer. Unresolved, unsupported, non-entry, or importer-reaching dependencies
 leave the read conservative. The capability retains every local export cell
 that supplied the value through copies and re-exports; aliases do not erase
 that provenance. It authorizes only the reached imported binding read's

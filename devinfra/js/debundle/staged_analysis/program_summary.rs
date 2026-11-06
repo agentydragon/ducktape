@@ -90,7 +90,7 @@ pub struct ProgramSummary {
     /// Per-chunk imported-binding values (`AnalysisInputs::imported_values`).
     pub values: BTreeMap<String, BTreeMap<String, Value>>,
     /// Per-chunk imported primitive read capabilities with source-cell
-    /// provenance and an acyclic, fully resolved provider dependency closure.
+    /// provenance and a resolved provider closure excluding the importer.
     pub primitive_reads: BTreeMap<String, BTreeMap<String, ImportedPrimitiveRead>>,
     /// Per-chunk pure-member sets for imported namespace-like bindings,
     /// merged into `AnalysisAssumptions::declared_pure_members`.
@@ -1527,6 +1527,69 @@ mod tests {
             assert!(facts.has_cjs_interop);
             assert!(facts.has_own_cjs_export_surface);
             assert!(!facts.stable_export_values.contains_key("label"));
+        });
+    }
+
+    #[test]
+    fn imported_read_capability_requires_a_resolved_provider_closure_before_the_importer() {
+        js_ast::with_swc_globals(|| {
+            for (provider, expected_read) in [
+                ("export const limit = 2;", true),
+                ("import '../app/app.js'; export const limit = 2;", false),
+                ("import './missing.js'; export const limit = 2;", false),
+            ] {
+                let artifact = test_bundle(&[
+                    (
+                        "static/app",
+                        "import { limit as bytes } from '../peer/peer.js'; export const copied = bytes;",
+                    ),
+                    ("static/peer", provider),
+                ]);
+                let indexes = ArtifactIndexes::build(&artifact).expect("build indexes");
+                let no_options = BTreeMap::new();
+                let no_export_purity = BTreeMap::new();
+                let host_behavior = spec::HostBehavior::default();
+                let facts = collect_program_summary(
+                    &artifact,
+                    &indexes,
+                    &AnalysisProjection::new(
+                        &no_options,
+                        &no_export_purity,
+                        &host_behavior,
+                        None,
+                        BTreeMap::new(),
+                        analysis_projection::AnalysisSourceSites::default(),
+                        BTreeMap::new(),
+                    )
+                    .expect("empty projection is valid"),
+                    ProgramSummaryOptions {
+                        graph_provenance: None,
+                        replacement_packages: &BTreeMap::new(),
+                    },
+                    None,
+                    &reparse_unretained_entries(&artifact, None),
+                )
+                .expect("program summary analysis succeeds");
+                assert_eq!(
+                    facts.values["static/app"]["bytes"],
+                    Value::Prim(PrimKinds::NUMBER)
+                );
+                let read = facts.primitive_reads["static/app"].get("bytes");
+                assert_eq!(read.is_some(), expected_read, "{provider}");
+                if let Some(read) = read {
+                    assert_eq!(
+                        read.dependency_closure,
+                        BTreeSet::from(["static/peer".to_string()])
+                    );
+                    assert_eq!(
+                        read.source_cells,
+                        BTreeSet::from([PrimitiveExportCell {
+                            module: "static/peer".to_string(),
+                            export: "limit".to_string(),
+                        }])
+                    );
+                }
+            }
         });
     }
 
