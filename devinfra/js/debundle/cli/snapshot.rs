@@ -2,18 +2,17 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Args, Parser, Subcommand};
 use graph_provenance::{
-    CurrentRoots, GraphProvenance, InputRoot, ProvenanceRoots, read_graph_header,
+    CurrentRoots, GraphProvenance, InputRoot, ProvenanceRoots, read_graph_header, sha256_copy,
+    sha256_reader,
 };
 use nix::fcntl::{RenameFlags, renameat2};
 use pipeline::TransformSpecSource;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree, require_relative_source_paths};
 
 use crate::{DebundleArgs, DebundleCommand, RunArgs};
@@ -442,7 +441,7 @@ fn copy_file(source: &Path, destination: &Path, expected: Option<&str>) -> Resul
     let mut input =
         fs::File::open(source).with_context(|| format!("reading {}", source.display()))?;
     let mut output = fs::File::create(destination)?;
-    let digest = digest_reader(&mut input, Some(&mut output))?;
+    let digest = sha256_copy(&mut input, &mut output)?;
     if let Some(expected) = expected {
         ensure!(
             digest == expected,
@@ -454,28 +453,8 @@ fn copy_file(source: &Path, destination: &Path, expected: Option<&str>) -> Resul
     Ok(digest)
 }
 
-fn digest_reader(input: &mut impl Read, mut output: Option<&mut fs::File>) -> Result<String> {
-    let mut digest = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let count = input.read(&mut buffer)?;
-        if count == 0 {
-            break;
-        }
-        digest.update(&buffer[..count]);
-        if let Some(output) = &mut output {
-            output.write_all(&buffer[..count])?;
-        }
-    }
-    Ok(digest
-        .finalize()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect())
-}
-
 fn digest_file(path: &Path) -> Result<String> {
-    digest_reader(&mut fs::File::open(path)?, None)
+    Ok(sha256_reader(fs::File::open(path)?)?)
 }
 
 fn verify(directory: &Path) -> Result<SnapshotOutcome> {

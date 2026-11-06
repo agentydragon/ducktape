@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
-use std::io::{BufReader, Read};
+use std::io::{self, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -1132,7 +1132,11 @@ pub fn sha256(bytes: &[u8]) -> String {
     hex(digest::digest(&SHA256, bytes).as_ref())
 }
 
-fn sha256_reader(mut reader: impl Read) -> std::io::Result<String> {
+pub fn sha256_reader(reader: impl Read) -> io::Result<String> {
+    sha256_copy(reader, io::sink())
+}
+
+pub fn sha256_copy(mut reader: impl Read, mut writer: impl Write) -> io::Result<String> {
     let mut hasher = digest::Context::new(&SHA256);
     let mut buffer = [0_u8; 64 * 1024];
     loop {
@@ -1141,6 +1145,7 @@ fn sha256_reader(mut reader: impl Read) -> std::io::Result<String> {
             break;
         }
         hasher.update(&buffer[..count]);
+        writer.write_all(&buffer[..count])?;
     }
     Ok(hex(hasher.finish().as_ref()))
 }
@@ -1182,6 +1187,73 @@ mod tests {
         assert_eq!(
             sha256(b"abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn sha256_copy_hashes_and_copies_short_reads() -> std::io::Result<()> {
+        struct ShortReader<R> {
+            inner: R,
+            max_read: usize,
+        }
+
+        impl<R: Read> Read for ShortReader<R> {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                let limit = buffer.len().min(self.max_read);
+                self.inner.read(&mut buffer[..limit])
+            }
+        }
+
+        let bytes: Vec<u8> = (0..200_000).map(|byte| (byte % 251) as u8).collect();
+        let reader = ShortReader {
+            inner: std::io::Cursor::new(&bytes),
+            max_read: 997,
+        };
+        let mut copied = Vec::new();
+
+        let actual = sha256_copy(reader, &mut copied)?;
+
+        assert_eq!(copied, bytes);
+        assert_eq!(
+            actual,
+            "e24bc62381f1224fbbb74688663f8f9743b9680b193edd666835e97b06e730eb"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn sha256_copy_propagates_reader_and_writer_errors() {
+        struct FailingReader;
+
+        impl Read for FailingReader {
+            fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset))
+            }
+        }
+
+        struct FailingWriter;
+
+        impl Write for FailingWriter {
+            fn write(&mut self, _buffer: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        assert_eq!(
+            sha256_copy(FailingReader, std::io::sink())
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::ConnectionReset
+        );
+        assert_eq!(
+            sha256_copy(&b"input"[..], FailingWriter)
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::BrokenPipe
         );
     }
 
