@@ -46,28 +46,18 @@ def _minimal_config(**kwargs) -> GridConfig:
     )
 
 
-def test_grid_config_rejects_same_axes():
-    with pytest.raises(Exception, match="must be different"):
-        GridConfig(
-            x=AxisConfig(param=CutParam.SPEED_MM_S, values=[10, 20]),
-            y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50, 100]),
-        )
-
-
-def test_grid_config_rejects_power_min_pct_axis():
-    with pytest.raises(Exception, match="use 'power_pct'"):
-        GridConfig(
-            x=AxisConfig(param=CutParam.POWER_MIN_PCT, values=[10, 20]),
-            y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50, 100]),
-        )
-
-
-def test_grid_config_rejects_power_max_pct_axis():
-    with pytest.raises(Exception, match="use 'power_pct'"):
-        GridConfig(
-            x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10, 20]),
-            y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50, 100]),
-        )
+@pytest.mark.parametrize(
+    ("x_param", "y_param", "message"),
+    [
+        (CutParam.SPEED_MM_S, CutParam.SPEED_MM_S, "must be different"),
+        (CutParam.POWER_MIN_PCT, CutParam.SPEED_MM_S, "use 'power_pct'"),
+        (CutParam.POWER_MAX_PCT, CutParam.SPEED_MM_S, "use 'power_pct'"),
+    ],
+    ids=["same-axes", "power-min-axis", "power-max-axis"],
+)
+def test_grid_config_rejects_invalid_axes(x_param: CutParam, y_param: CutParam, message: str):
+    with pytest.raises(Exception, match=message):
+        GridConfig(x=AxisConfig(param=x_param, values=[10, 20]), y=AxisConfig(param=y_param, values=[50, 100]))
 
 
 def test_cut_config_power_shorthand():

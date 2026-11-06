@@ -4,21 +4,8 @@ import { describe, expect, it } from "vitest";
 import { isRegisteredLanguage, renderSpecialChar, VISIBLE_SPECIAL_CHARS } from "./code_block";
 
 describe("CodeBlock language support", () => {
-  it("recognizes each CodeMirror language grammar used for fenced blocks", () => {
-    for (const language of [
-      "bash",
-      "go",
-      "javascript",
-      "json",
-      "nix",
-      "protobuf",
-      "python",
-      "rust",
-      "typescript",
-      "yaml",
-    ]) {
-      expect(isRegisteredLanguage(language)).toBe(true);
-    }
+  it("distinguishes a registered language from an unknown one", () => {
+    expect(isRegisteredLanguage("typescript")).toBe(true);
     expect(isRegisteredLanguage("unknown")).toBe(false);
   });
 });

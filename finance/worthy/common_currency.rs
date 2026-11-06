@@ -10,14 +10,10 @@ use petgraph::{
 use rust_decimal::prelude::*;
 use rust_decimal_macros::*;
 use std::collections::{HashMap, HashSet};
-use std::{
-    cmp::{Ord, Ordering, Ordering::*},
-    default::Default,
-    fmt::Debug,
-    ops::Add,
-};
+use std::{default::Default, fmt::Debug, ops::Add};
 
-#[derive(Copy, Clone, Debug, PartialEq, Default)]
+// `Finite` precedes `Infinite` so derived ordering treats every finite value as smaller.
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd, Default)]
 enum MultiplyDecimal {
     Finite(Decimal),
     #[default]
@@ -25,17 +21,6 @@ enum MultiplyDecimal {
 }
 
 use MultiplyDecimal::*;
-
-impl PartialOrd for MultiplyDecimal {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(match (self, other) {
-            (Infinite, Finite(_)) => Greater,
-            (Finite(_), Infinite) => Less,
-            (Infinite, Infinite) => Equal,
-            (Finite(a), Finite(b)) => a.cmp(b),
-        })
-    }
-}
 
 impl FloatMeasure for MultiplyDecimal {
     fn zero() -> Self {

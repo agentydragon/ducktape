@@ -38,15 +38,6 @@ class ClaudeRunner(AgentRunner):
     """Runner for Claude Code using Docker containers."""
 
     def __init__(self, runner_id: str, config: dict):
-        """Initialize Claude runner.
-
-        Args:
-            runner_id: Unique identifier for this runner instance
-            config: Claude-specific configuration including:
-                - max_turns: Maximum conversation turns
-                - bash_timeout_ms: Timeout for bash commands
-                - strace_enabled: Whether to enable strace debugging
-        """
         super().__init__(runner_id, config)
         self.workspace_path: Path | None = None  # explicit for mypy when base not resolved
         self.task_claude: TaskClaude | None = None
@@ -56,12 +47,7 @@ class ClaudeRunner(AgentRunner):
         self.docker_image: str | None = None
 
     async def setup(self, task: TaskDefinition, task_type_config: dict) -> None:
-        """Set up workspace for task execution.
-
-        Args:
-            task: Task to execute
-            task_type_config: Configuration from task type
-        """
+        """Resolve task setup and prepare the workspace."""
         # TaskTypeConfig mapping requires TaskTypeConfig values, not raw dicts
         ttype = TaskTypeConfig(name=task.type, grading=task_type_config.get("grading"))
         setup, _ = task.resolve_config({task.type: ttype})
@@ -90,15 +76,7 @@ class ClaudeRunner(AgentRunner):
         self.current_task = task
 
     async def run_task(self, task: TaskDefinition, agent_instructions: str) -> Rollout:
-        """Execute task using Claude Code in container.
-
-        Args:
-            task: Task to execute (contains the task prompt)
-            agent_instructions: The instructions being optimized (CLAUDE.md content)
-
-        Returns:
-            Rollout with trajectory and files
-        """
+        """Run the task with `agent_instructions` written to workspace `CLAUDE.md`."""
         if not self.workspace_path:
             raise RuntimeError("Workspace not set up. Call setup() first.")
 
