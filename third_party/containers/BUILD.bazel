@@ -9,7 +9,9 @@
 #     deps = ["//third_party/containers:postgres_18"]
 #     from third_party.containers import postgres_18
 
-load("@rules_oci//oci:defs.bzl", "oci_load")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/oci:defs.bzl", "oci_layout_py", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "RYUK_TAG", "py_library", "py_test")
 
@@ -50,10 +52,52 @@ py_library(
     ],
 )
 
+pkg_files(
+    name = "postgres_entrypoint_files",
+    testonly = True,
+    srcs = ["@postgres_docker_entrypoint//file"],
+    attributes = pkg_attributes(mode = "0755"),
+    prefix = "/usr/local/bin",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_files(
+    name = "postgres_license_files",
+    testonly = True,
+    srcs = ["@postgres_docker_license//file"],
+    prefix = "/usr/share/licenses/docker-postgres",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "postgres_test_startup",
+    testonly = True,
+    srcs = [
+        ":postgres_entrypoint_files",
+        ":postgres_license_files",
+    ],
+    empty_dirs = ["/docker-entrypoint-initdb.d"],
+)
+
+# CNPG runs as postgres (UID 26). Ephemeral test data lives in writable /tmp;
+# initdb installs listen_addresses so command overrides (Electric) retain TCP access.
+oci_image(
+    name = "postgres_18_test_image",
+    testonly = True,
+    base = "@postgres_18_minimal_linux_amd64",
+    cmd = ["postgres"],
+    entrypoint = ["/usr/local/bin/docker-entrypoint.sh"],
+    env = {
+        "PGDATA": "/tmp/postgresql/data",
+        "POSTGRES_INITDB_ARGS": "--encoding=UTF8 --set=listen_addresses=*",
+    },
+    tars = [":postgres_test_startup"],
+)
+
 oci_layout_py(
     name = "postgres_18",
     testonly = True,
-    image = "@postgres_18_linux_amd64",
+    image = ":postgres_18_test_image",
     visibility = ["//visibility:public"],
 )
 
@@ -62,7 +106,7 @@ oci_layout_py(
 oci_layout_rloc(
     name = "postgres_18_rloc",
     testonly = True,
-    image = "@postgres_18_linux_amd64",
+    image = ":postgres_18_test_image",
     visibility = ["//agentplane:__subpackages__"],
 )
 
@@ -99,7 +143,7 @@ oci_layout_py(
 oci_load(
     name = "postgres_18_load",
     testonly = True,
-    image = "@postgres_18_linux_amd64",
+    image = ":postgres_18_test_image",
     repo_tags = ["postgres:18"],
     visibility = ["//visibility:public"],
 )

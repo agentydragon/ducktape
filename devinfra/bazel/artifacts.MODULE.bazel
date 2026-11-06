@@ -3,6 +3,22 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
+# Preserve Docker's PostgreSQL test-container startup protocol over CNPG's minimal base.
+http_file(
+    name = "postgres_docker_entrypoint",
+    downloaded_file_path = "docker-entrypoint.sh",
+    executable = True,
+    sha256 = "9c440299ae04a0a79d55b8bf03307036d890a40979d2fb698073c9050d4b20a5",
+    urls = ["https://raw.githubusercontent.com/docker-library/postgres/dfc76bb299b057785026eb2eea39556b6fe52983/docker-entrypoint.sh"],
+)
+
+http_file(
+    name = "postgres_docker_license",
+    downloaded_file_path = "LICENSE",
+    sha256 = "87ffd2c45e3f90cfa3407b5c40ef8333e87c3e875e4895f8b64df758198deafc",
+    urls = ["https://raw.githubusercontent.com/docker-library/postgres/dfc76bb299b057785026eb2eea39556b6fe52983/LICENSE"],
+)
+
 artifact_pins = use_extension("//devinfra:artifact_pins.bzl", "artifact_pins")
 use_repo(artifact_pins, "artifact_pins", "cert_manager_v1_21_2_release", "helm_3_20_2_linux_amd64", "k3s_linux_amd64", "kubevirt_operator_bundle", "kyverno_install", "trust_manager_chart_v0_25_0")
 
