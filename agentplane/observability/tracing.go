@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -70,7 +71,9 @@ func Init(ctx context.Context, serviceName string, resourceAttributes ...attribu
 		exporterNames = "otlp"
 	}
 	exporters := make([]sdktrace.SpanExporter, 0, 2)
-	if !containsExporter(strings.Split(exporterNames, ","), "none") {
+	if !slices.ContainsFunc(strings.Split(exporterNames, ","), func(name string) bool {
+		return strings.EqualFold(strings.TrimSpace(name), "none")
+	}) {
 		seen := make(map[string]struct{})
 		for _, rawName := range strings.Split(exporterNames, ",") {
 			exporterName := strings.ToLower(strings.TrimSpace(rawName))
@@ -117,15 +120,6 @@ func Init(ctx context.Context, serviceName string, resourceAttributes ...attribu
 			}
 		})
 	}, nil
-}
-
-func containsExporter(names []string, wanted string) bool {
-	for _, name := range names {
-		if strings.EqualFold(strings.TrimSpace(name), wanted) {
-			return true
-		}
-	}
-	return false
 }
 
 func newOTLPExporter(ctx context.Context) (sdktrace.SpanExporter, error) {
