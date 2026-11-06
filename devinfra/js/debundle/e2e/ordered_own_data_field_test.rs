@@ -116,11 +116,16 @@ fn relocated_array_length_read_receipts_the_length_cell_written_by_push() {
 
 #[test]
 fn forcing_push_before_the_array_length_read_rejects_and_changes_inspection_output() {
+    const SOURCE: &str = "const store = [];\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n";
+    let baseline = run_fixture(
+        FixtureOpts::new(SOURCE, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&baseline, "0 1\n");
     // Importing the array forces the module containing its allocation and push
     // to finish before the reader. No extra lexical anchor creates a cycle.
     let fixture = run_inspection_fixture(
         FixtureOpts::new(
-            "const store = [];\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n",
+            SOURCE,
             vec![
                 logical_module("mutator", &[Member::new("store"), Member::new("alpha")]),
                 logical_module("observer", &[Member::new("gamma")]),
@@ -155,7 +160,6 @@ fn forcing_push_before_the_array_length_read_rejects_and_changes_inspection_outp
     );
     // The marked rejection tree can still be inspected under Node: its module
     // order runs push first, so gamma changes from the source value 0 to 1.
-    assert_node_output(&fixture.source_path, "0 1\n", "");
     assert_node_output(&fixture.entry_path, "1 1\n", "");
 }
 
