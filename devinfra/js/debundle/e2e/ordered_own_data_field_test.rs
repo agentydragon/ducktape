@@ -10,7 +10,7 @@ use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 const ARRAY_LENGTH_SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nconst gamma = read();\nconst anchor = 0;\nconst alpha = write();\nconsole.log(anchor, gamma, alpha);\n";
-const ARRAY_LENGTH_INVERSION_SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nconst anchor = 0;\nconst gamma = read();\nconst alpha = write();\nconsole.log(anchor, gamma, alpha);\n";
+const ARRAY_LENGTH_INVERSION_SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nconst anchor = 0;\nconst gamma = read(anchor);\nconst alpha = write();\nconsole.log(anchor, gamma, alpha);\n";
 
 fn array_length_split(invert_read_and_write: bool) -> FixtureOpts<'static> {
     let mut provider_members = vec![
@@ -32,9 +32,8 @@ fn array_length_split(invert_read_and_write: bool) -> FixtureOpts<'static> {
         modules.push(logical_module("observer", &[Member::new("gamma")]));
         modules.push(logical_module("mutator", &mutator_members));
     }
-    // The first source position of a module selects its order among otherwise
-    // unconstrained destinations. Put anchor before gamma only for the unsafe
-    // candidate, forcing mutator ahead of observer rather than trusting YAML order.
+    // The unsafe reader imports anchor from the writer's module. ESM must
+    // evaluate that whole module before gamma, forcing push ahead of the read.
     let source = if invert_read_and_write {
         ARRAY_LENGTH_INVERSION_SOURCE
     } else {
@@ -176,13 +175,13 @@ fn ordinary_length_getters_and_unknown_receivers_do_not_get_array_length_receipt
         "getter effects must stay conservative"
     );
 
-    let unknown = run_fixture(FixtureOpts::new(
-        "globalThis.makeArray = () => [1];\nfunction read(receiver) { return receiver.length; }\nconst observed = read(globalThis.makeArray());\nconsole.log(observed);\n",
-        vec![logical_module(
-            "all",
-            &[Member::new("read"), Member::new("observed")],
-        )],
-    ));
+    let unknown = run_fixture(
+        FixtureOpts::new(
+            "globalThis.makeArray = () => [1];\nfunction read(receiver) { return receiver.length; }\nconst observed = read(globalThis.makeArray());\nconsole.log(observed);\n",
+            vec![],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
     assert_preserved_entry_output(&unknown, "1\n");
     let unknown_graph = unknown.dependency_graph();
     assert_no_operation_receipt(&unknown_graph, "observed", "unknown receiver");
