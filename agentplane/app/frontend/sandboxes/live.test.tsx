@@ -1,21 +1,37 @@
 // @vitest-environment happy-dom
 import { create, toJson } from "@bufbuild/protobuf";
+import { act, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, expect, it, vi } from "vitest";
+
 import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
 import { EnvironmentDescriptorSchema } from "../../../environments/v1/environment_service_pb";
 import { testSandbox } from "../testing/sandbox";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vitest";
 
 import { serveEventStreams, stubWatchFetch, type ServedWatch } from "../testing/watch";
 import { SandboxesLiveProvider, useEnvironmentWatch, useRequiredSandboxesLive } from "./live";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-afterEach(() => {
-  vi.useRealTimers();
-  vi.unstubAllGlobals();
+const roots: Root[] = [];
+
+afterEach(async () => {
+  const mountedRoots = roots.splice(0);
+  try {
+    for (const root of mountedRoots) await act(async () => root.unmount());
+  } finally {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
 });
+
+async function mount(element: ReactNode): Promise<{ container: HTMLDivElement; root: Root }> {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  roots.push(root);
+  await act(async () => root.render(element));
+  return { container, root };
+}
 
 function Inventory() {
   const { snapshot } = useRequiredSandboxesLive();
@@ -37,14 +53,10 @@ it("publishes a complete snapshot then applies upserts and UID-fenced removals",
     undefined,
     new Set(["/upstream/environments/v1/environments:watch"])
   );
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  await act(async () =>
-    root.render(
-      <SandboxesLiveProvider>
-        <Inventory />
-      </SandboxesLiveProvider>
-    )
+  const { container } = await mount(
+    <SandboxesLiveProvider>
+      <Inventory />
+    </SandboxesLiveProvider>
   );
   expect(container.textContent).toBe("waiting");
   await act(async () => {
@@ -71,7 +83,6 @@ it("publishes a complete snapshot then applies upserts and UID-fenced removals",
     watch?.send({ removed: { namespace: "agentplane-test", name: "box", uid: "new" } });
   });
   expect(container.textContent).toBe("second:u2");
-  await act(async () => root.unmount());
 });
 
 it("retains the previous inventory until a reconnect snapshot is complete", async () => {
@@ -84,14 +95,10 @@ it("retains the previous inventory until a reconnect snapshot is complete", asyn
     undefined,
     new Set(["/upstream/environments/v1/environments:watch"])
   );
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  await act(async () =>
-    root.render(
-      <SandboxesLiveProvider>
-        <Inventory />
-      </SandboxesLiveProvider>
-    )
+  const { container } = await mount(
+    <SandboxesLiveProvider>
+      <Inventory />
+    </SandboxesLiveProvider>
   );
   await act(async () => {
     watches[0]?.send({ snapshot: { environments: [toJson(EnvironmentDescriptorSchema, testSandbox("old", "u1"))] } });
@@ -113,7 +120,6 @@ it("retains the previous inventory until a reconnect snapshot is complete", asyn
     watches[1]?.send({ snapshotComplete: {} });
   });
   expect(container.textContent).toBe("new:u2");
-  await act(async () => root.unmount());
 });
 
 function Detail({ target }: { target: EnvironmentTarget | undefined }) {
@@ -123,20 +129,15 @@ function Detail({ target }: { target: EnvironmentTarget | undefined }) {
 
 it("does not connect or repeatedly report a disabled environment watch", async () => {
   const { served } = stubWatchFetch();
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  await act(async () => root.render(<Detail target={undefined} />));
+  const { container } = await mount(<Detail target={undefined} />);
   expect(container.textContent).toBe("waiting");
   expect(served).toHaveLength(0);
-  await act(async () => root.unmount());
 });
 
 it("watches exact target identity and clears the old descriptor before observing a replacement", async () => {
   const { served } = stubWatchFetch();
   const target = create(EnvironmentTargetSchema, { namespace: "test-namespace", name: "test-box", uid: "old" });
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  await act(async () => root.render(<Detail target={target} />));
+  const { container, root } = await mount(<Detail target={target} />);
   expect(served[0]?.url.pathname).toBe("/upstream/environments/v1/environments/test-namespace/test-box:watch");
   expect(served[0]?.url.searchParams.get("target.uid")).toBe("old");
   await act(async () => {
@@ -156,20 +157,16 @@ it("watches exact target identity and clears the old descriptor before observing
     });
   });
   expect(container.textContent).toBe("new");
-  await act(async () => root.unmount());
 });
 
 it("rejects a generated detail frame for a different target", async () => {
   const { served } = stubWatchFetch();
   const target = create(EnvironmentTargetSchema, { namespace: "test-namespace", name: "test-box", uid: "expected" });
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  await act(async () => root.render(<Detail target={target} />));
+  const { container } = await mount(<Detail target={target} />);
   await act(async () => {
     served[0]?.send({
       environment: toJson(EnvironmentDescriptorSchema, testSandbox("test-box", "replacement", "test-namespace")),
     });
   });
   expect(container.textContent).toBe("waiting");
-  await act(async () => root.unmount());
 });
