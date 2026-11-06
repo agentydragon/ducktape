@@ -25,7 +25,6 @@ from typing import Any, get_type_hints, overload
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_core import to_jsonable_python
 
-from agent_core.pydantic_utils import format_validation_error
 from agent_core.tool_provider import ToolResult, ToolSchema
 from openai_utils.json_schema import OpenAICompatibleSchema
 
@@ -118,7 +117,7 @@ class DirectToolProvider:
         try:
             validated_args = tool.parameters.model_validate(arguments)
         except ValidationError as e:
-            return ToolResult.error(format_validation_error(e))
+            return ToolResult.error(e.json(indent=2, include_url=False))
 
         try:
             result = tool.fn() if tool.parameters is EmptyArgs else tool.fn(validated_args)
