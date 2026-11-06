@@ -375,9 +375,11 @@ func startWithResource(t *testing.T, resource func(*Server) http.Handler, config
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
-	if h.server, err = New(ctx, config, db, store); err != nil {
+	server, err := New(ctx, config, db, store)
+	if err != nil {
 		t.Fatal(err)
 	}
+	h.server = server
 	mux := http.NewServeMux()
 	mux.Handle(resourcePath, resource(h.server))
 	mux.Handle("/", h.server.Handler())
