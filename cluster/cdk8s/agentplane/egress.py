@@ -712,7 +712,6 @@ class Egress(Construct):
                 f"{account.namespace}/{account.name}"
                 for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
             ],
-            "tls_passthrough_targets": [f"{service.fqdn}:{service.pod_port}" for service in tls_passthrough_services],
             "projected_token_audiences": [
                 KUBERNETES_AUDIENCE,
                 notifications.TOKEN_AUDIENCE,
