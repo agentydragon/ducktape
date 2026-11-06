@@ -17,17 +17,16 @@ Usage:
 import argparse
 import asyncio
 import logging
-import os
 import statistics
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from enum import StrEnum
+from importlib import resources
 from pathlib import Path
 from typing import assert_never
 
 import httpx
 import uvicorn
-from python.runfiles import Runfiles
 
 from devinfra.bazel.workspace import get_build_working_directory
 from devinfra.claude.session_export.api import SessionCookie, SessionsApi
@@ -53,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 
 def _frontend_dir() -> Path:
-    frontend_dir = Path(str(Runfiles.CreateOrRaise().root() / os.environ["SESSION_SYNC_FRONTEND_RLOCATION"]))
+    frontend_dir = Path(str(resources.files("devinfra.claude.session_export") / "frontend" / "dist"))
     if not (frontend_dir / "index.html").is_file():
         raise FileNotFoundError(frontend_dir / "index.html")
     return frontend_dir
