@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { deferred } from "../../../../util/frontend/testing/deferred";
 import type { AgentRunDetail, LlmRequestInfo, SnapshotDetailResponse } from "../lib/schema";
 import { fetchLLMRequests, fetchRun, fetchRunLogs, fetchSnapshotDetail, fetchSnapshotFiles } from "../lib/api/client";
 import { toast } from "../lib/toast";
@@ -27,22 +28,6 @@ vi.mock("../lib/toast", () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 type RunResponse = Awaited<ReturnType<typeof fetchRun>>;
 type SnapshotResponse = Awaited<ReturnType<typeof fetchSnapshotDetail>>;
 type LLMResponse = Awaited<ReturnType<typeof fetchLLMRequests>>;
-
-interface Deferred<T> {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-  reject: (reason?: unknown) => void;
-}
-
-function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
 
 function run(runId: string, snapshotSlug?: string): AgentRunDetail {
   const critic = snapshotSlug !== undefined;

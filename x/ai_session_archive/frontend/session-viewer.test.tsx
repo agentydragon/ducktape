@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import { createMemoryRouter, MemoryRouter, RouterProvider } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { deferred } from "../../../util/frontend/testing/deferred";
 import type { SessionBrowserApi } from "./api";
 import { ApiError, httpApi } from "./api";
 import { App } from "./app";
@@ -183,14 +184,6 @@ function findProgressBar(view: HTMLElement, machineName: string): HTMLElement {
   );
   if (progressBar === undefined) throw new Error(`Could not find file-entry progress for ${machineName}`);
   return progressBar;
-}
-
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
 }
 
 it("resizes the session list from its accessible separator", async () => {

@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { deferred } from "../../../../util/frontend/testing/deferred";
 import type { CoverageResponse, OverviewResponse } from "../lib/schema";
 import { fetchCoverage } from "../lib/api/client";
 import { RunModalContext } from "../lib/runModalContext";
@@ -25,22 +26,6 @@ vi.mock("../components/stats/DistributionChart", () => ({
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
-interface Deferred<T> {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-  reject: (reason?: unknown) => void;
-}
-
-function deferred<T>(): Deferred<T> {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
 
 function coverage(maxRecall: number): CoverageResponse {
   return {

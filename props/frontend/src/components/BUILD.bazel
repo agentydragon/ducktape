@@ -325,6 +325,7 @@ props_vitest_test(
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:schema",
         "//props/frontend/src/lib:toast",
+        "//util/frontend:deferred_test_utils",
     ],
 )
 

@@ -217,6 +217,7 @@ vitest_test(
         "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//util/frontend:deferred_test_utils",
     ],
 )
 
