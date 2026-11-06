@@ -215,7 +215,7 @@ class LauncherRelayPolicy(ClusterPolicy):
                         "sources": [
                             {
                                 "secret": {
-                                    "name": "runner-{{ sandboxLive.status.runnerCredential.acceptedId || 'missing' }}",
+                                    "name": "runner-{{ sandboxLive.status.runnerCredential.acceptedId }}",
                                     "items": [
                                         {"key": "tls.crt", "path": "tls.crt"},
                                         {"key": "tls.key", "path": "tls.key"},

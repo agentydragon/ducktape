@@ -362,7 +362,9 @@ Secret from its existing root-only virtiofs mount, while the launcher relay gets
 Secret into its own sidecar mount.
 Kyverno checks the live Sandbox status binding against the VM annotation, current VMI UID and
 credential label before injection. Its admission controller has a namespace-scoped Role granting
-only `get` on Sandboxes for that lookup; it does not read the Secret. The sidecar verifies the proxy's fixed SPIFFE identity; the proxy
+only `get` on Sandboxes for that lookup; it does not read the Secret. A missing accepted credential
+fails mutation, so KubeVirt retries after the binding is recorded instead of admitting a Pod with
+a placeholder Secret name. The sidecar verifies the proxy's fixed SPIFFE identity; the proxy
 checks the Runner client identity against current Sandbox/incarnation state.
 
 The sidecar's `proxy_mode` is required and selects either the legacy token listener or mTLS listener.

@@ -131,7 +131,9 @@ exactly one of `pod`, `vm`, or `firecracker`.
   against the VM annotation, current VMI UID and credential label, plus the existing Sandbox owner
   chain. The egress-sidecar alone mounts that projection; the guest Runtime uses the existing
   virtiofs mount. Kyverno's admission controller gets only namespace-scoped Sandbox `get` for
-  the status lookup; the kubelet projects the Secret without Kyverno reading its value.
+  the status lookup; the kubelet projects the Secret without Kyverno reading its value. Missing
+  accepted credential data fails admission; KubeVirt retries after status is bound, without an
+  admitted Pod waiting forever on a placeholder Secret.
   The trust-manager CA bundle is mounted separately as public trust data.
 - The guest's executable erofs disk keeps serial `agentplane-runner` and mounts at
   `/run/agentplane/environment`. Runtime configuration and the launch file arrive as separate
