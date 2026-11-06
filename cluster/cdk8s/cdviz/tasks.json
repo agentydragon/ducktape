@@ -511,7 +511,7 @@
           "targets": [
             {
               "format": "table",
-              "rawSql": "SELECT\n  COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'taskName', ''), 'unknown') AS \"Task\",\n  outcome AS \"Outcome\",\n  started_at AS \"Started\",\n  finished_at AS \"Finished\",\n  ROUND(EXTRACT(EPOCH FROM (finished_at - started_at))::numeric, 1) AS \"Runtime (s)\",\n  last_payload -> 'customData' -> 'github' -> 'workflow_job' ->> 'head_branch' AS \"Branch\",\n  last_payload -> 'customData' -> 'github' -> 'workflow_job' ->> 'head_sha' AS \"Head SHA\",\n  last_payload -> 'subject' -> 'content' -> 'pipelineRun' ->> 'id' AS \"Pipeline Run\",\n  COALESCE(last_payload -> 'subject' -> 'content' ->> 'uri', last_payload -> 'subject' -> 'content' ->> 'url') AS \"URL\"\nFROM cdviz.taskrun\nWHERE $__timeFilter(COALESCE(finished_at, started_at))\n  AND COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'taskName', ''), 'unknown') = ANY(ARRAY[${selected_value:sqlstring}]::text[])\nORDER BY COALESCE(finished_at, started_at) DESC NULLS LAST\nLIMIT ${limit}",
+              "rawSql": "SELECT\n  regexp_replace(COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'taskName', ''), 'unknown'), '^agentydragon/ducktape/', '') AS \"Task\",\n  outcome AS \"Outcome\",\n  started_at AS \"Started\",\n  finished_at AS \"Finished\",\n  ROUND(EXTRACT(EPOCH FROM (finished_at - started_at))::numeric, 1) AS \"Runtime (s)\",\n  last_payload -> 'customData' -> 'github' -> 'workflow_job' ->> 'head_branch' AS \"Branch\",\n  last_payload -> 'customData' -> 'github' -> 'workflow_job' ->> 'head_sha' AS \"Head SHA\",\n  last_payload -> 'subject' -> 'content' -> 'pipelineRun' ->> 'id' AS \"Pipeline Run\",\n  COALESCE(last_payload -> 'subject' -> 'content' ->> 'uri', last_payload -> 'subject' -> 'content' ->> 'url') AS \"URL\"\nFROM cdviz.taskrun\nWHERE $__timeFilter(COALESCE(finished_at, started_at))\n  AND COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'taskName', ''), 'unknown') = ANY(ARRAY[${selected_value:sqlstring}]::text[])\nORDER BY COALESCE(finished_at, started_at) DESC NULLS LAST\nLIMIT ${limit}",
               "datasource": {
                 "type": "grafana-postgresql-datasource",
                 "uid": "cdviz"
@@ -536,7 +536,30 @@
                 "inspect": false
               }
             },
-            "overrides": []
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Task"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 300
+                  },
+                  {
+                    "id": "links",
+                    "value": [
+                      {
+                        "title": "Open in GitHub",
+                        "url": "${__data.fields[\"URL\"]}",
+                        "targetBlank": true
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
           },
           "options": {
             "showHeader": true,
@@ -560,5 +583,6 @@
     }
   ],
   "version": 2026060914,
-  "description": "Modified from CDviz task-run dashboard at commit 44e3250dad1c6aaebaa5f0d02a8bfb885fb3f63f: uses this repository's CI Analytics datasource and replaces the unsigned execution-table panel with Grafana's built-in table."
+  "description": "Modified from CDviz task-run dashboard at commit 44e3250dad1c6aaebaa5f0d02a8bfb885fb3f63f: uses this repository's CI Analytics datasource and replaces the unsigned execution-table panel with Grafana's built-in table.",
+  "refresh": "1m"
 }

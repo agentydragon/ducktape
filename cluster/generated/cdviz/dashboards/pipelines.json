@@ -158,7 +158,7 @@
       "type": "stat",
       "transparent": false,
       "repeatDirection": "h",
-      "title": "Avg Creation-to-Start Time",
+      "title": "Avg Queue-to-start Time",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "cdviz"
@@ -197,7 +197,7 @@
         "overrides": []
       },
       "id": 4,
-      "description": "Elapsed time from the workflow run's recorded queued/created timestamp to its recorded start. This does not measure runner assignment; GitHub can retain the original created_at on reruns."
+      "description": "Interval between recorded queue and start transitions. Webhooks use workflow_run.updated_at for each transition; REST reconciliation uses created_at and run_started_at. This is not runner assignment time, and reruns can retain the original created_at."
     },
     {
       "type": "stat",
@@ -556,7 +556,7 @@
           "targets": [
             {
               "format": "table",
-              "rawSql": "SELECT\n  COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'pipelineName', ''), 'unknown') AS \"Pipeline\",\n  outcome AS \"Outcome\",\n  queued_at AS \"Queued\",\n  started_at AS \"Started\",\n  finished_at AS \"Finished\",\n  ROUND(EXTRACT(EPOCH FROM (finished_at - started_at))::numeric, 1) AS \"Runtime (s)\",\n  ROUND(EXTRACT(EPOCH FROM (started_at - queued_at))::numeric, 1) AS \"Creation-to-start (s)\",\n  last_payload -> 'customData' -> 'github' -> 'workflow_run' ->> 'head_branch' AS \"Branch\",\n  last_payload -> 'customData' -> 'github' -> 'workflow_run' ->> 'head_sha' AS \"Head SHA\",\n  (\n    SELECT string_agg(pr.value ->> 'number', ', ' ORDER BY pr.ordinality)\n    FROM jsonb_array_elements(COALESCE(last_payload -> 'customData' -> 'github' -> 'workflow_run' -> 'pull_requests', '[]'::jsonb)) WITH ORDINALITY AS pr(value, ordinality)\n  ) AS \"PRs\",\n  COALESCE(last_payload -> 'subject' -> 'content' ->> 'uri', last_payload -> 'subject' -> 'content' ->> 'url') AS \"URL\"\nFROM cdviz.pipelinerun\nWHERE $__timeFilter(COALESCE(finished_at, started_at, queued_at))\n  AND COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'pipelineName', ''), 'unknown') = ANY(ARRAY[${selected_value:sqlstring}]::text[])\nORDER BY COALESCE(finished_at, started_at, queued_at) DESC NULLS LAST\nLIMIT ${limit}",
+              "rawSql": "SELECT\n  regexp_replace(COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'pipelineName', ''), 'unknown'), '^agentydragon/ducktape/', '') AS \"Pipeline\",\n  outcome AS \"Outcome\",\n  queued_at AS \"Queued\",\n  started_at AS \"Started\",\n  finished_at AS \"Finished\",\n  ROUND(EXTRACT(EPOCH FROM (finished_at - started_at))::numeric, 1) AS \"Runtime (s)\",\n  ROUND(EXTRACT(EPOCH FROM (started_at - queued_at))::numeric, 1) AS \"Queue-to-start (s)\",\n  last_payload -> 'customData' -> 'github' -> 'workflow_run' ->> 'head_branch' AS \"Branch\",\n  last_payload -> 'customData' -> 'github' -> 'workflow_run' ->> 'head_sha' AS \"Head SHA\",\n  (\n    SELECT string_agg(pr.value ->> 'number', ', ' ORDER BY pr.ordinality)\n    FROM jsonb_array_elements(COALESCE(last_payload -> 'customData' -> 'github' -> 'workflow_run' -> 'pull_requests', '[]'::jsonb)) WITH ORDINALITY AS pr(value, ordinality)\n  ) AS \"PRs\",\n  COALESCE(last_payload -> 'subject' -> 'content' ->> 'uri', last_payload -> 'subject' -> 'content' ->> 'url') AS \"URL\"\nFROM cdviz.pipelinerun\nWHERE $__timeFilter(COALESCE(finished_at, started_at, queued_at))\n  AND COALESCE(NULLIF(last_payload -> 'subject' -> 'content' ->> 'pipelineName', ''), 'unknown') = ANY(ARRAY[${selected_value:sqlstring}]::text[])\nORDER BY COALESCE(finished_at, started_at, queued_at) DESC NULLS LAST\nLIMIT ${limit}",
               "datasource": {
                 "type": "grafana-postgresql-datasource",
                 "uid": "cdviz"
@@ -581,7 +581,30 @@
                 "inspect": false
               }
             },
-            "overrides": []
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Pipeline"
+                },
+                "properties": [
+                  {
+                    "id": "custom.width",
+                    "value": 300
+                  },
+                  {
+                    "id": "links",
+                    "value": [
+                      {
+                        "title": "Open in GitHub",
+                        "url": "${__data.fields[\"URL\"]}",
+                        "targetBlank": true
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
           },
           "options": {
             "showHeader": true,
@@ -593,7 +616,7 @@
             }
           },
           "id": 9,
-          "description": "Creation-to-start is the interval from workflow creation/queue timestamp to recorded start, not runner assignment time. GitHub may retain the original created_at on a rerun."
+          "description": "Recorded queue-to-start uses webhook transition updated_at timestamps or REST created_at/run_started_at. It does not measure runner assignment; reruns may retain the original created_at."
         }
       ],
       "title": "Pipeline: Latest $limit Executions",
@@ -606,5 +629,6 @@
     }
   ],
   "version": 2026060914,
-  "description": "Modified from CDviz pipeline-run dashboard at commit 44e3250dad1c6aaebaa5f0d02a8bfb885fb3f63f: uses this repository's CI Analytics datasource and replaces the unsigned execution-table panel with Grafana's built-in table."
+  "description": "Modified from CDviz pipeline-run dashboard at commit 44e3250dad1c6aaebaa5f0d02a8bfb885fb3f63f: uses this repository's CI Analytics datasource and replaces the unsigned execution-table panel with Grafana's built-in table.",
+  "refresh": "1m"
 }

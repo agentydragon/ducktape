@@ -21,7 +21,7 @@ import psycopg
 import pytest
 import pytest_bazel
 from docker.models.containers import Container
-from playwright.async_api import Response, async_playwright, expect
+from playwright.async_api import Route, async_playwright, expect
 from psycopg import sql
 from psycopg.rows import dict_row
 from python.runfiles import Runfiles
@@ -127,7 +127,7 @@ def _workflow_run(action: str, run_id: int, attempt: int, name: str, conclusion:
             "head_sha": f"{run_id:040x}",
             "created_at": _timestamp(minute, -20),
             "run_started_at": _timestamp(minute, -15) if action != "requested" else None,
-            "updated_at": _timestamp(minute, 0),
+            "updated_at": _timestamp(minute, {"requested": -20, "in_progress": -15, "completed": 0}[action]),
             "conclusion": conclusion,
         },
     }
@@ -271,8 +271,7 @@ def _provision_grafana(base_url: str, root: Path) -> None:
 
 
 async def _capture(
-    page,
-    outputs: BoundTestOutputs,
+    visual: VisualPage,
     name: str,
     uid: str,
     base_url: str,
@@ -281,7 +280,7 @@ async def _capture(
     errors: list[str],
     query_results: list[dict],
 ) -> None:
-    tasks: list[asyncio.Task] = []
+    page = visual.page
     pending: set[int] = set()
     duration_values: list[float] = []
 
@@ -292,14 +291,16 @@ async def _capture(
     def finish_request(request) -> None:
         pending.discard(id(request))
 
-    async def inspect(response: Response) -> None:
-        if "/api/ds/query" not in response.url:
-            return
+    async def inspect(route: Route) -> None:
+        # Forward the browser's real request and retain its response before Grafana
+        # can cancel an obsolete query while initializing dashboard variables.
+        response = await route.fetch()
         if response.status >= 400:
             errors.append(f"datasource HTTP {response.status}: {response.url}")
+            await route.fulfill(response=response)
             return
         body = await response.json()
-        request_body = response.request.post_data_json or {}
+        request_body = route.request.post_data_json or {}
         query_by_ref = {query.get("refId"): query.get("rawSql", "") for query in request_body.get("queries", [])}
         for ref_id, value in body.get("results", {}).items():
             if value.get("error"):
@@ -313,11 +314,12 @@ async def _capture(
                     for field, column in zip(fields, columns, strict=False):
                         if field.get("name") == "total_duration":
                             duration_values.extend(float(item) for item in column if item is not None)
+        await route.fulfill(response=response)
 
     page.on("request", track_request)
     page.on("requestfinished", finish_request)
     page.on("requestfailed", finish_request)
-    page.on("response", lambda response: tasks.append(asyncio.create_task(inspect(response))))
+    await page.route("**/api/ds/query*", inspect)
     await page.goto(
         f"{base_url}/d/{uid}/{name}?orgId=1&from={FROZEN_NOW_MS - 31 * 86_400_000}&to={FROZEN_NOW_MS}",
         wait_until="domcontentloaded",
@@ -342,22 +344,15 @@ async def _capture(
 
     deadline = asyncio.get_running_loop().time() + 45
     while asyncio.get_running_loop().time() < deadline:
-        if tasks:
-            completed_tasks = tasks[:]
-            tasks.clear()
-            await asyncio.gather(*completed_tasks)
         if not pending and any(abs(value - expected_duration) < 0.01 for value in duration_values):
             break
         await page.wait_for_timeout(100)
-    if tasks:
-        await asyncio.gather(*tasks)
     assert not pending, f"{name} dashboard still has pending datasource requests"
     assert any(abs(value - expected_duration) < 0.01 for value in duration_values), (
         f"{name} datasource returned total_duration values {duration_values}, expected {expected_duration} seconds"
     )
     await expect(page.get_by_text("No data", exact=True)).to_have_count(0, timeout=10000)
-    with VisualPage(page, outputs=outputs, title=f"CDviz {name} dashboard") as visual:
-        await visual.capture(name, full_page=True, animations="disabled")
+    await visual.capture(name, full_page=True, animations="disabled")
 
 
 @pytest.mark.asyncio
@@ -603,17 +598,10 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                     page = await context.new_page()
                     expected_duration = 4500 if name == "pipelines" else 2400
                     table_value = "CDviz integration success" if name == "pipelines" else "Linux / test"
-                    await _capture(
-                        page,
-                        test_outputs,
-                        name,
-                        uid,
-                        grafana_url,
-                        expected_duration,
-                        table_value,
-                        errors,
-                        query_results,
-                    )
+                    with VisualPage(page, outputs=test_outputs, title=f"CDviz {name} dashboard") as visual:
+                        await _capture(
+                            visual, name, uid, grafana_url, expected_duration, table_value, errors, query_results
+                        )
                     await page.close()
             assert not errors, "; ".join(errors)
             assert query_results, "Grafana did not issue PostgreSQL datasource queries"
