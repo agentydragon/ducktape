@@ -164,7 +164,7 @@ func newLab(t *testing.T) *lab {
 	runner = workload.Principal.Account
 	runnerPod = &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
 		Namespace: runner.Namespace, Name: workload.Principal.PodName, UID: types.UID(workload.Principal.PodUID),
-	}}
+	}, Spec: corev1.PodSpec{ServiceAccountName: runner.Name}}
 	var err error
 	if hopToken, err = kube.PodToken(t.Context(), runnerPod, hopAudience); err != nil {
 		t.Fatal(err)
@@ -180,9 +180,6 @@ func newLab(t *testing.T) *lab {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The production listener verifies any supplied SVID. Allow a missing certificate here so
-	// the request reaches the handler and proves that no HTTP bearer can replace it.
-	proxyTLS.ClientAuth = tls.VerifyClientCertIfGiven
 	proxyTLS.NextProtos = []string{"http/1.1"}
 	clientLeaf := proxyCA.Issue(t, workload.URI)
 	proxyClientTLS, err := clientLeaf.ClientTLSConfig(environment_runtime_transport.EgressProxyURI)
@@ -390,16 +387,34 @@ func (l *lab) send(t *testing.T, method, port, path string, header http.Header, 
 
 // client returns a client whose plain-HTTP proxy requests share one connection to the proxy.
 func (l *lab) client() *http.Client {
+	return &http.Client{Transport: l.clientTransport(l.proxyClientTLS, &tls.Config{RootCAs: l.roots})}
+}
+
+func (l *lab) clientTransport(proxyTLS, originTLS *tls.Config) *http.Transport {
 	proxyURL, _ := url.Parse("https://" + l.address)
-	return &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL), ProxyTLSClientConfig: l.proxyClientTLS}}
+	return &http.Transport{
+		Proxy:           http.ProxyURL(proxyURL),
+		TLSClientConfig: originTLS,
+		DialTLSContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			if address != l.address {
+				return nil, fmt.Errorf("unexpected TLS endpoint %q", address)
+			}
+			connection, err := (&net.Dialer{}).DialContext(ctx, network, address)
+			if err != nil {
+				return nil, err
+			}
+			return tls.Client(connection, proxyTLS.Clone()), nil
+		},
+	}
 }
 
 func (l *lab) clientWithoutSVID() *http.Client {
-	proxyURL, _ := url.Parse("https://" + l.address)
 	tlsConfig := l.proxyClientTLS.Clone()
 	tlsConfig.Certificates = nil
-	tlsConfig.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return nil, nil }
-	return &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL), ProxyTLSClientConfig: tlsConfig}}
+	tlsConfig.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		return &tls.Certificate{}, nil
+	}
+	return &http.Client{Transport: l.clientTransport(tlsConfig, &tls.Config{RootCAs: l.roots})}
 }
 
 func (l *lab) sendOn(t *testing.T, client *http.Client, method, port, path string, header http.Header, body io.Reader) *http.Response {
@@ -670,7 +685,7 @@ func TestExistingConnectionRevocationStalenessAndAuthCleanup(t *testing.T) {
 					t.Fatal(err)
 				}
 				if change == "revoked credential" {
-					current.Status.RunnerCredential.AcceptedID = "replacement-generation"
+					current.Status.RunnerCredential.AcceptedID = "0123456789abcdef0123456789abcdef"
 				} else {
 					current.Status.Incarnation.UID = "replacement-pod-uid"
 				}
@@ -735,10 +750,9 @@ func TestIncrementalSSEAndWebSocket(t *testing.T) {
 	}
 	// WebSocket upgrades require HTTP/1 on both legs; HTTP/2 extended CONNECT is
 	// a different protocol and intentionally outside this spike.
-	proxyURL, _ := url.Parse("https://" + l.address)
-	client := &http.Client{Transport: &http.Transport{
-		Proxy: http.ProxyURL(proxyURL), ProxyTLSClientConfig: l.proxyClientTLS, TLSClientConfig: &tls.Config{RootCAs: l.roots},
-	}}
+	client := &http.Client{Transport: l.clientTransport(
+		l.proxyClientTLS, &tls.Config{RootCAs: l.roots, NextProtos: []string{"http/1.1"}},
+	)}
 	req, _ := http.NewRequestWithContext(bounded(t), "GET", "https://"+fixtureHost+":"+portOf(upstream)+"/ws", nil)
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Upgrade", "websocket")
@@ -770,14 +784,10 @@ func TestManySequentialHTTP1RequestsOnOneTunnelAreEachDecidedOnTheirOwn(t *testi
 	upstream, _ := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(r.URL.Path))
 	}))
-	proxyURL, err := url.Parse("https://" + l.address)
-	if err != nil {
-		t.Fatal(err)
-	}
 	// A TLS config of its own keeps the client on HTTP/1.1, which sends every request down the one tunnel.
-	client := &http.Client{Transport: &http.Transport{
-		Proxy: http.ProxyURL(proxyURL), ProxyTLSClientConfig: l.proxyClientTLS, TLSClientConfig: &tls.Config{RootCAs: l.roots},
-	}}
+	client := &http.Client{Transport: l.clientTransport(
+		l.proxyClientTLS, &tls.Config{RootCAs: l.roots, NextProtos: []string{"http/1.1"}},
+	)}
 	t.Cleanup(client.CloseIdleConnections)
 
 	for n := range requests {

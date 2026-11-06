@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -30,7 +31,7 @@ func TestWorkloadHTTPRoutePresentsSVIDThroughOpaqueConnectAndStreams(t *testing.
 	release := make(chan struct{})
 	defer close(release)
 	var calls atomic.Int32
-	destination := workloadDestination(t, ca, environment_runtime_transport.NotificationsURI, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	destination := workloadDestination(t, ca, environment_runtime_transport.EgressRulesURI, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		identity, err := environment_runtime_transport.PeerIdentityFromTLSState(*r.TLS, x509.ExtKeyUsageClientAuth)
 		if err != nil || identity != uri || r.ProtoMajor != 2 {
 			t.Errorf("destination peer=%q HTTP/%d error=%v", identity, r.ProtoMajor, err)
@@ -49,8 +50,8 @@ func TestWorkloadHTTPRoutePresentsSVIDThroughOpaqueConnectAndStreams(t *testing.
 		case <-r.Context().Done():
 		}
 	}))
-	central, observed := workloadCentral(t, strings.TrimPrefix(destination.URL, "https://"))
-	address := workloadSidecar(t, central, workloadRouteConfig{Upstream: strings.TrimPrefix(destination.URL, "https://"), ServerURI: environment_runtime_transport.NotificationsURI, TLS: credential})
+	central, observed := workloadCentral(t, ca, uri, strings.TrimPrefix(destination.URL, "https://"))
+	address := workloadSidecar(t, central, credential, workloadRouteConfig{Upstream: strings.TrimPrefix(destination.URL, "https://"), ServerURI: environment_runtime_transport.EgressRulesURI, TLS: credential})
 	proxyURL, err := url.Parse("http://" + address)
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +78,7 @@ func TestWorkloadHTTPRoutePresentsSVIDThroughOpaqueConnectAndStreams(t *testing.
 	}
 	select {
 	case hop := <-observed:
-		if hop.Method != http.MethodConnect || hop.Host != strings.TrimPrefix(destination.URL, "https://") || hop.Header.Get("Proxy-Authorization") != "Bearer sidecar-hop" || hop.Header.Get(projectedTokenHeader) != "" {
+		if hop.Method != http.MethodConnect || hop.Host != strings.TrimPrefix(destination.URL, "https://") || hop.Header.Get("Proxy-Authorization") != "" || hop.Header.Get(projectedTokenHeader) != "" {
 			t.Fatalf("central CONNECT=%+v", hop)
 		}
 	case <-time.After(3 * time.Second):
@@ -93,8 +94,9 @@ func TestWorkloadRouteDoesNotRetryWrongServiceIdentityAsPlaintext(t *testing.T) 
 	}
 	var calls atomic.Int32
 	destination := workloadDestination(t, ca, environment_runtime_transport.EgressProxyURI, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); w.WriteHeader(200) }))
-	central, observed := workloadCentral(t, strings.TrimPrefix(destination.URL, "https://"))
-	address := workloadSidecar(t, central, workloadRouteConfig{Upstream: strings.TrimPrefix(destination.URL, "https://"), ServerURI: environment_runtime_transport.NotificationsURI, TLS: ca.Issue(t, uri)})
+	credential := ca.Issue(t, uri)
+	central, observed := workloadCentral(t, ca, uri, strings.TrimPrefix(destination.URL, "https://"))
+	address := workloadSidecar(t, central, credential, workloadRouteConfig{Upstream: strings.TrimPrefix(destination.URL, "https://"), ServerURI: environment_runtime_transport.EgressRulesURI, TLS: credential})
 	proxyURL, err := url.Parse("http://" + address)
 	if err != nil {
 		t.Fatal(err)
@@ -144,11 +146,42 @@ func workloadDestination(t *testing.T, ca *environmentruntimetransporttesting.CA
 	return server
 }
 
-func workloadCentral(t *testing.T, target string) (*httptest.Server, <-chan *http.Request) {
+func workloadCentral(t *testing.T, ca *environmentruntimetransporttesting.CA, clientURI, target string) (*httptest.Server, <-chan *http.Request) {
 	t.Helper()
 	requests := make(chan *http.Request, 8)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	serverCredential := ca.Issue(t, environment_runtime_transport.EgressProxyURI)
+	security, err := serverCredential.WorkloadServerTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pair, err := tls.LoadX509KeyPair(serverCredential.CertFile, serverCredential.KeyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	security.Certificates = []tls.Certificate{pair}
+	rootPEM, err := os.ReadFile(ca.RootFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	security.ClientCAs = x509.NewCertPool()
+	if !security.ClientCAs.AppendCertsFromPEM(rootPEM) {
+		t.Fatal("failed to load workload CA for central proxy client verification")
+	}
+	security.ClientAuth = tls.RequireAndVerifyClientCert
+	security.NextProtos = []string{"http/1.1"}
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests <- r.Clone(r.Context())
+		if r.TLS == nil {
+			t.Error("central proxy request did not use TLS")
+			http.Error(w, "TLS required", http.StatusForbidden)
+			return
+		}
+		identity, err := environment_runtime_transport.PeerIdentityFromTLSState(*r.TLS, x509.ExtKeyUsageClientAuth)
+		if err != nil || identity != clientURI {
+			t.Errorf("central proxy client identity=%q, want %q: %v", identity, clientURI, err)
+			http.Error(w, "wrong peer", http.StatusForbidden)
+			return
+		}
 		if r.Method != http.MethodConnect || r.Host != target {
 			http.Error(w, "unexpected target", http.StatusForbidden)
 			return
@@ -174,13 +207,20 @@ func workloadCentral(t *testing.T, target string) (*httptest.Server, <-chan *htt
 		downstream.Close()
 		<-ended
 	}))
+	server.TLS = security
+	server.EnableHTTP2 = false
+	server.StartTLS()
 	t.Cleanup(server.Close)
 	return server, requests
 }
 
-func workloadSidecar(t *testing.T, central *httptest.Server, route workloadRouteConfig) string {
+func workloadSidecar(t *testing.T, central *httptest.Server, proxyCredential environment_runtime_transport.Config, route workloadRouteConfig) string {
 	t.Helper()
-	host, port, err := net.SplitHostPort(strings.TrimPrefix(central.URL, "http://"))
+	centralURL, err := url.Parse(central.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, port, err := net.SplitHostPort(centralURL.Host)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +228,13 @@ func workloadSidecar(t *testing.T, central *httptest.Server, route workloadRoute
 	if err != nil {
 		t.Fatal(err)
 	}
-	sidecar, err := newSidecar(config{ProxyHost: host, ProxyPort: number, ProxyMode: "token", TokenFile: writeTestToken(t, "sidecar-hop"), PlatformRoutes: map[string]platformRouteConfig{}, WorkloadRoutes: map[string]workloadRouteConfig{"notifications.test.invalid:8081": route}, ListenAddress: "127.0.0.1:0", ReadinessListenAddress: "127.0.0.1:0"})
+	sidecar, err := newSidecar(config{
+		ProxyHost: host, ProxyPort: number, ProxyMode: "mtls",
+		ProxyTLS:       &proxyTLSConfig{CertFile: proxyCredential.CertFile, KeyFile: proxyCredential.KeyFile, CAFile: proxyCredential.CAFile},
+		PlatformRoutes: map[string]platformRouteConfig{},
+		WorkloadRoutes: map[string]workloadRouteConfig{"notifications.test.invalid:8081": route},
+		ListenAddress:  "127.0.0.1:0", ReadinessListenAddress: "127.0.0.1:0",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

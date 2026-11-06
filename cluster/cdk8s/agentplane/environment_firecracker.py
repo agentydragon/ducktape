@@ -12,7 +12,7 @@ from constructs import Construct
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.env.config import CodexReadiness
 from agentplane.firecracker.config import Config
-from cluster.cdk8s.agentplane import platform_routes, sandbox_pod
+from cluster.cdk8s.agentplane import platform_routes, sandbox_pod, workload_routes
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.environment_guest import guest_config_data
 from cluster.cdk8s.config_format import json_config
@@ -71,6 +71,7 @@ class EnvironmentFirecrackerTemplate(Construct):
             name=f"{NAME}-relay",
             listen_address=f"[::]:{sandbox_pod.SIDECAR_LISTEN_PORT}",
             platform_routes=platform_routes.sidecar_routes(namespace, listen_host="0.0.0.0"),
+            workload_routes=workload_routes.rules_route(namespace),
             proxy_mode="mtls",
         )
         launcher_settings = SettingsFile(
