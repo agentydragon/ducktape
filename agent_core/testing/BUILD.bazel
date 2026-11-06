@@ -1,13 +1,11 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
-package(
-    default_testonly = True,
-    default_visibility = ["//:__subpackages__"],
-)
+package(default_testonly = True)
 
 py_library(
     name = "fixtures",
     srcs = ["fixtures.py"],
+    visibility = ["//:__subpackages__"],
     deps = [
         ":handlers",
         "//agent_core:events",
@@ -19,6 +17,7 @@ py_library(
 py_library(
     name = "handlers",
     srcs = ["handlers.py"],
+    visibility = ["//:__subpackages__"],
     deps = [
         "//agent_core:events",
         "//agent_core:handler",
@@ -29,6 +28,7 @@ py_library(
 py_library(
     name = "matchers",
     srcs = ["matchers.py"],
+    visibility = ["//:__subpackages__"],
     deps = [
         "//agent_core:events",
         "//agent_core:tool_provider",
@@ -39,6 +39,7 @@ py_library(
 py_library(
     name = "responses",
     srcs = ["responses.py"],
+    visibility = ["//:__subpackages__"],
     deps = [
         "//openai_utils:builders",
         "//openai_utils:model",
