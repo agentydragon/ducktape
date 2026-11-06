@@ -452,7 +452,7 @@ fn recognized_native_and_any_rebinding_reject_the_value_input() {
             "possible reassignment",
         ),
         (
-            "var captured = globalThis.runtimeSettings.state;\nvar captured = globalThis.runtimeSettings.state;\nObject.assign(captured, {});\n",
+            "var captured = globalThis.runtimeSettings.state;\nvar captured = globalThis.runtimeSettings.otherState;\nObject.assign(captured, {});\n",
             "var captured = globalThis.runtimeSettings.state;",
             "repeated or pattern declaration sites",
         ),
