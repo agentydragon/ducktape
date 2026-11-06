@@ -470,6 +470,10 @@ pub enum EffectCell {
     ArrayContents(u32),
     /// Mutable contents of one proved fresh native Set construction.
     SetContents(u32),
+    /// Shared agent-local ECMAScript GlobalSymbolRegistry used by
+    /// `Symbol.for`. Its entries are not enumerable or removable from source,
+    /// but repeated lookups observe the same key-unique symbol.
+    GlobalSymbolRegistry,
     /// Own keys and descriptor attributes, shared by every generation of
     /// this source allocation. Distinct from stored data values.
     ObjectShape(u32),
@@ -490,6 +494,7 @@ impl EffectCell {
             Self::ArrayContents(_)
             | Self::LexicalCell(_)
             | Self::SetContents(_)
+            | Self::GlobalSymbolRegistry
             | Self::ObjectShape(_)
             | Self::DescriptorMapContents(_)
             | Self::OwnProperty { .. } => true,

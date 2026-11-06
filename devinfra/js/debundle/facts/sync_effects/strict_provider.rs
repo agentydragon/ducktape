@@ -370,6 +370,7 @@ impl LocalContext for ProviderContext<'_> {
                 site: span.into(),
                 row,
                 premise,
+                native_operation_input: None,
             },
             effects,
         ))

@@ -598,15 +598,21 @@ An exact validated `symbol` site with zero arguments or one direct string
 literal has a separate pure-initializer consequence: the original native
 `Symbol` creates a fresh symbol without coercion callbacks or a throw. An exact
 validated `symbol_for` site still requires exactly one direct string literal.
-The original native `Symbol.for` converts that string without user code or a
-throw, then looks up or inserts a symbol in the agent-local registry. ECMAScript
-exposes no registry enumeration or removal:
+The shared ordered transfer consumes the exact selected callee evidence and
+requires its actual evaluated operand to be a string primitive. It converts
+that string without user code or a throw, then reads and conditionally writes
+the agent-local registry. The runtime records those accesses on the shared
+GlobalSymbolRegistry effect cell; it does not treat the registry as an unchanged
+heap or infer a general no-exterior-access premise. ECMAScript exposes no
+registry enumeration or removal:
 [`Symbol.keyFor`](https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-symbol.keyfor)
 queries an already held symbol, and repeat `Symbol.for` calls
 for a key return that key's unique symbol. Registry insertion can therefore
 move with this initializer without changing observable JS behavior. The pure
-verdict records the exact native-operation input reference; the array-content
-collector consumes the same checked site instead of adding an opaque frontier.
+verdict records the exact native-operation input reference; the registry cell
+remains explicit and independent of live array-content cells, so the checked
+site does not add an opaque frontier. The array-content collector consumes the
+same checked site.
 This conclusion does not extend to a merely primitive-valued expression:
 evaluating it or converting its result may throw. It also assumes the ordinary
 ECMAScript intrinsic behavior under the author premise, not host access to

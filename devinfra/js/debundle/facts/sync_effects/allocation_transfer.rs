@@ -144,8 +144,11 @@ pub(super) fn primitive_native_call_effects(
     arguments: &[Values],
     dependencies: &ProofDependencies,
 ) -> Option<EffectCoverageFragment> {
-    if row.body_effects != NativeBodyEffects::NoExteriorAccess
-        || row.invocation != [Invocation::Call]
+    let symbol_registry = row.body_effects == NativeBodyEffects::SymbolRegistryReadWrite;
+    if !matches!(
+        row.body_effects,
+        NativeBodyEffects::NoExteriorAccess | NativeBodyEffects::SymbolRegistryReadWrite
+    ) || row.invocation != [Invocation::Call]
         || !row.arity.contains(&arguments.len())
         || !row.invokes.is_empty()
         || row.allocates.is_some()
@@ -155,6 +158,25 @@ pub(super) fn primitive_native_call_effects(
         || arguments
             .iter()
             .any(|values| values.is_empty() || !values.iter().all(AbstractValue::is_primitive))
+    {
+        return None;
+    }
+    if symbol_registry
+        && (row.op != IntrinsicOp::SymbolFor
+            || row.family() != Some(NativeIntrinsic::Symbol)
+            || row.requires
+                != [
+                    IntrinsicSlot::Global(NativeIntrinsic::Symbol),
+                    IntrinsicSlot::Static(NativeIntrinsic::Symbol, "for"),
+                ]
+            || row.arity != (0..=1)
+            || row.coerces != [(ArgSel::Arg(0), CoerceOp::ToString)]
+            || row.returns != Return::Prim(PrimKinds::SYMBOL)
+            || arguments.len() != 1
+            || !arguments[0].iter().all(|value| {
+                matches!(value, AbstractValue::Value(Value::Prim(kinds))
+                    if kinds.is_only(PrimKinds::STRING))
+            }))
     {
         return None;
     }
