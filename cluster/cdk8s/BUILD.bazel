@@ -31,6 +31,14 @@
 
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
+package_group(
+    name = "deployment_consumers",
+    packages = [
+        "//agentplane/system_tests/deployment",
+        "//cluster/cdk8s/...",
+    ],
+)
+
 py_library(
     name = "buildbuddy_executor",
     srcs = ["buildbuddy_executor.py"],
@@ -171,10 +179,7 @@ py_test(
 py_library(
     name = "secret_ref",
     srcs = ["secret_ref.py"],
-    visibility = [
-        "//agentplane/system_tests/deployment:__pkg__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
+    visibility = ["//cluster/cdk8s:deployment_consumers"],
     deps = [
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -200,10 +205,7 @@ py_test(
 py_library(
     name = "service_ref",
     srcs = ["service_ref.py"],
-    visibility = [
-        "//agentplane/system_tests/deployment:__pkg__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
+    visibility = ["//cluster/cdk8s:deployment_consumers"],
     deps = [
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
@@ -308,10 +310,7 @@ py_test(
 py_library(
     name = "config_format",
     srcs = ["config_format.py"],
-    visibility = [
-        "//agentplane/system_tests/deployment:__pkg__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
+    visibility = ["//cluster/cdk8s:deployment_consumers"],
     deps = [
         "@pypi//cdk8s",
         "@pypi//pydantic",
@@ -573,10 +572,7 @@ py_test(
 py_library(
     name = "probes",
     srcs = ["probes.py"],
-    visibility = [
-        "//agentplane/system_tests/deployment:__pkg__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
+    visibility = ["//cluster/cdk8s:deployment_consumers"],
     deps = [
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -679,10 +675,7 @@ py_library(
 py_library(
     name = "pod_policy",
     srcs = ["pod_policy.py"],
-    visibility = [
-        "//agentplane/system_tests/deployment:__pkg__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
+    visibility = ["//cluster/cdk8s:deployment_consumers"],
     deps = [
         ":node_scheduling",
         "@pypi//cdk8s",
@@ -2135,10 +2128,7 @@ py_library(
 py_library(
     name = "agent_access_profiles",
     srcs = ["agent_access_profiles.py"],
-    visibility = [
-        "//agentplane/system_tests/deployment:__pkg__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
+    visibility = ["//cluster/cdk8s:deployment_consumers"],
     deps = [
         ":namespace_access",
         "//agentplane/crds:policyset",
