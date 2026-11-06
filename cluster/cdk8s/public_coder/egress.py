@@ -56,7 +56,7 @@ _SETTINGS_PATH = "/etc/agentplane-egress-sidecar/settings.yaml"
 def add_relay_settings(scope: Construct) -> PodWiring:
     """The relay's settings ConfigMap, and what the Pod needs to mount it."""
     settings = sidecar_config.Settings(
-        proxy_host=GATEWAY.fqdn, proxy_port=GATEWAY.pod_port, token_file=Path(_TOKEN_DIR) / "token"
+        proxy_host=GATEWAY.fqdn, proxy_port=GATEWAY.pod_port, proxy_mode="token", token_file=Path(_TOKEN_DIR) / "token"
     )
     return SettingsFile(
         scope,

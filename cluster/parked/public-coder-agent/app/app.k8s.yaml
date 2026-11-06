@@ -438,6 +438,7 @@ data:
   settings.yaml: |
     proxy_host: egress.agentplane-staging.svc.cluster.local
     proxy_port: 8888
+    proxy_mode: token
     token_file: /var/run/agentplane-egress/token
 immutable: false
 ---

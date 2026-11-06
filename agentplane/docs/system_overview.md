@@ -114,8 +114,10 @@ flowchart LR
     guest -->|local Codex JSON-RPC over WebSocket, isolated mode| vmexec
     guest -->|starts| guest_agent
     vmexec --> relay
-    runner --> sidecar --> egress
-    guest --> relay --> egress
+    runner -->|local HTTP CONNECT| sidecar
+    sidecar -->|mTLS SVID on proxy-mtls:8889 when enabled; explicit token mode in staging| egress
+    guest -->|HTTP CONNECT through launcher relay| relay
+    relay -->|mTLS SVID on proxy-mtls:8889 when enabled; explicit token mode in staging| egress
     runner -.->|OTLP/gRPC telemetry route| sidecar
     sidecar -->|OTLP/gRPC| alloy
     guest -.->|OTLP/gRPC telemetry route| relay
@@ -146,12 +148,22 @@ flowchart LR
     click index href "../x/indexing/app.py" "Git index API"
 ```
 
-Firecracker Sandboxes use a controller-owned launcher Pod, a separate token-holding relay and a
-NixOS guest. Their supervisor checkpoints RAM and all disks, then restores the same Runtime and
+Firecracker Sandboxes use a controller-owned launcher Pod, a separate egress relay and a NixOS
+guest. Their supervisor checkpoints RAM and all disks, then restores the same Runtime and
 processes in the same Pod. Its launcher serves SPIFFE Workload API credentials over vsock to the
 root guest agent, which serves a restricted Unix endpoint consumed by Runtime. Guest management
-uses a separate gRPC connection for boot/thaw readiness. See [Firecracker Sandboxes](firecracker_sandboxes.md) for the control,
-credential and network boundaries.
+uses a separate gRPC connection for boot/thaw readiness. The nonroot egress relay reads the
+host-mounted runner TLS files directly; Pod `fsGroup: 1000` grants it read access to the root-owned
+`0440` projection.
+See [Firecracker Sandboxes](firecracker_sandboxes.md) for the control, credential and network
+boundaries.
+
+Each runner incarnation has one controller-issued `runner-<credential-id>` Secret. In Pod and
+Firecracker templates the Sandbox Controller projects it to Environment Runtime and the egress
+sidecar only; workload containers have no mount. The KubeVirt launcher relay gets that same Secret
+through the existing Kyverno injection after a live Sandbox status check binds the launcher VM and
+VMI to the accepted credential. The relay holds the files on the host, not in the guest. Staging
+keeps the explicit token hop until the later cutover; TLS mode never falls back to token mode.
 
 A VM guest runs Environment Runtime with Session components and Execution; its relay is in the separate KubeVirt launcher Pod. The Git index is
 standalone, with no dependency on the backend services or the app: it polls a configured Git remote,
@@ -531,9 +543,9 @@ flowchart LR
     edge -->|account scoped gRPC| actions
     actions -->|create + watch Pods| k8s
     actions -->|exec via Kubernetes API| workload
-    workload --> box_sidecar --> egress
-    runner --> sidecar --> egress
-    guest --> relay --> egress
+    workload --> box_sidecar -->|token mode; no Sandbox SVID| egress
+    runner --> sidecar -->|TLS SVID on proxy-mtls:8889 when enabled| egress
+    guest --> relay -->|TLS SVID on proxy-mtls:8889 when enabled| egress
     app -->|egress admin API| egress
     egress -->|policy and credential watches| k8s
     egress -->|workload Actions gRPC and MCP| actions
@@ -546,6 +558,10 @@ flowchart LR
 
 The egress proxy substitutes a configured credential only for the destination covered by its
 policy. LiteLLM is a separate hop behind LLM ingress; only that service holds the LiteLLM virtual key.
+The Sandbox sidecar and KubeVirt launcher relay select their hop mode explicitly. Pod and
+Firecracker system-test fixtures exercise the TLS listener; staging remains in token mode until the
+dependent service migration is ready. Plain Action boxes and external workloads still use token
+mode because they have no Sandbox Controller-issued SVID.
 The app has independent `action_federation.service_url` and `connection_service_url` settings.
 Both tiers send operator Connection calls and gRPC health probes to the [MCP edge](../mcp_edge/README.md).
 Staging's external MCP/OAuth routes terminate there too, preserving the public issuer/resource URLs.
