@@ -348,17 +348,7 @@ paths and source-unit IDs belong in the consuming repo.
   it supplies that context; close any missing tree/global-context support.
   Include a deleted-anchor example caught before full analysis. Use bounded
   `describe` output first; the concise explain mode below covers missing compact
-  diagnostics. Review runtime observations for the intended positive path:
-  equal empty results do not establish that a parser or transition ran.
-- **W3 — Give new agents a short working recipe.** Update the orchestrator skill
-  and shared workflow with a discoverable path from the project adapter and a
-  passing baseline through one useful increment, cheap selector checks, the
-  normal gate, emitted-code review and relevant runtime/canonical validation.
-  Keep detailed mechanics in linked references and retain one current-state
-  handoff. Correct the CLI environment example that points
-  `DEBUNDLE_SOURCE_ROOT` at emitted `app/`: source lookup must use the captured
-  input required by the graph contract. Keep private audits and concrete specs
-  in [gaffer-private](https://github.com/agentydragon/gaffer-private).
+  diagnostics.
 - **W4 — Avoid unrelated rebuilds and unnecessary full graphs.** Investigate
   chunk-scoped selector/projection reuse and runtime-fixture invalidation so an
   ownership edit does not regenerate independent whole-program fixtures.

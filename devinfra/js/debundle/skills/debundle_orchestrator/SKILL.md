@@ -10,11 +10,11 @@ speed and memory use. Choose work by its expected downstream result and total
 cost, including author audit, review and repeated iteration. Respect the user's
 architecture requirements and execution limits.
 
-Read [drive specs and tool improvements](references/skills/shared/workflow.md#drive-specs-and-tool-improvements)
-before selecting substantial work. It owns prioritization, the three solution
-routes, evidence and reconsideration criteria. A sound specific recognizer or
-an audited annotation can be the right lasting solution; general interpretation
-is not the default prerequisite for progress.
+Start with [one useful increment](references/skills/shared/workflow.md#complete-one-useful-increment)
+for the recipe from adapter inputs through validation. The shared workflow owns
+prioritization, the three solution routes, evidence and reconsideration criteria.
+A sound specific recognizer or an audited annotation can be the right lasting
+solution; general interpretation is not the default prerequisite for progress.
 
 Combine [forward extraction and repair](references/skills/shared/workflow.md#combine-forward-and-repair-work)
 as needed within a task: extend a passing partial spec, reduce a failing spec
@@ -32,6 +32,10 @@ or a worker for an isolated
 [`per_atomic_group` emission probe](references/SPEC.md#unassigned-source).
 Use the resulting constraints to choose work; generated fragments are not a
 semantic architecture proposal or proof that rejected splits are impossible.
+
+For a rejection, use the [diagnosis procedure](references/skills/shared/workflow.md#diagnose-a-rejected-assignment)
+to distinguish an unsafe boundary, conservative analysis, a tool defect and an
+invalid probe before choosing the next edit.
 
 For delegated rounds, read [coordinate a round](references/skills/shared/workflow.md#coordinate-a-round)
 and the [adapter contract](references/skills/shared/workflow.md#adapter-contract).

@@ -75,9 +75,10 @@ of a matcher bug — reduce the range/pattern and establish a supported control 
 A validator-accepted spec must emit a bundle that runs correctly; over-restriction
 is acceptable, under-restriction is a soundness bug. Conditionally-correct analyses
 check their precondition and fall back conservatively — never widen a rule because
-the common case is fine. If the easy fix isn't the deepest correct fix, do the deeper
-one or stop and explain the blocker. Theorem: <docs/design.md> § Soundness over
-completeness. Read <docs/purity_soundness.md> before touching
+the common case is fine. Choose general inference, sound specific recognition or
+an audited annotation using <skills/shared/workflow.md#choose-the-solution-depth>.
+A sound scoped solution can be the lasting choice. Theorem: <docs/design.md>
+§ Soundness over completeness. Read <docs/purity_soundness.md> before touching
 <facts/abstract_domain/builtins.rs> or adding a purity annotation to a spec.
 
 ## Testing
