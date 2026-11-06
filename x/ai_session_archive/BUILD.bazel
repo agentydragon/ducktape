@@ -427,7 +427,6 @@ py_library(
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
         "@pypi//starlette",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -439,12 +438,14 @@ py_library(
         ":web",
         ":web_settings",
         "@pypi//uvicorn",
+        "@rules_python//python/runfiles",
     ],
 )
 
 py_binary(
     name = "web_bin",
     data = ["//x/ai_session_archive/frontend:bundle"],
+    env = {"AI_SESSION_ARCHIVE_FRONTEND_RLOCATION": "$(rlocationpath //x/ai_session_archive/frontend:bundle)"},
     main_module = "x.ai_session_archive.web_main",
     deps = [":web_main"],
 )
@@ -452,8 +453,26 @@ py_binary(
 aspect_py_binary(
     name = "web_image_bin",
     data = ["//x/ai_session_archive/frontend:bundle"],
+    env = {"AI_SESSION_ARCHIVE_FRONTEND_RLOCATION": "$(rlocationpath //x/ai_session_archive/frontend:bundle)"},
     main = "web_main.py",
     deps = [":web_main"],
+)
+
+_web_image_env = py_image_env(binary_name = "web_image_bin")
+
+_web_image_env["AI_SESSION_ARCHIVE_FRONTEND_RLOCATION"] = "$(rlocationpath //x/ai_session_archive/frontend:bundle)"
+
+genrule(
+    name = "web_image_env",
+    srcs = ["//x/ai_session_archive/frontend:bundle"],
+    outs = ["web-image.env"],
+    cmd = "printf '%s\\n' {} > $@".format(" ".join([
+        "'{}={}'".format(
+            key,
+            _web_image_env[key],
+        )
+        for key in sorted(_web_image_env.keys())
+    ])),
 )
 
 py_image_layer(
@@ -467,7 +486,7 @@ oci_image(
     name = "web_image",
     base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint("web_image_bin"),
-    env = py_image_env(binary_name = "web_image_bin"),
+    env = ":web_image_env",
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [":web_image_layers"],
     user = "1000:1000",
@@ -493,6 +512,7 @@ py_test(
     name = "test_browser",
     srcs = ["test_browser.py"],
     data = ["//x/ai_session_archive/frontend:bundle"],
+    env = {"AI_SESSION_ARCHIVE_FRONTEND_RLOCATION": "$(rlocationpath //x/ai_session_archive/frontend:bundle)"},
     tags = ["visual"],
     deps = [
         ":database",
@@ -511,6 +531,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+        "@rules_python//python/runfiles",
     ],
 )
 

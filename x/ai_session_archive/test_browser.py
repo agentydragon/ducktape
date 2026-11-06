@@ -7,6 +7,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import time
 from collections.abc import AsyncIterator, Iterator, Sequence
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ import pytest
 import pytest_bazel
 from itsdangerous import TimestampSigner
 from playwright.async_api import Playwright, expect
+from python.runfiles import Runfiles
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session as DbSession
@@ -82,7 +84,10 @@ def archive_settings() -> WebSettings:
 
 @pytest.fixture
 async def archive_origin(archive: Archive, archive_settings: WebSettings) -> AsyncIterator[str]:
-    async with serve_app(create_app(engine=archive.engine, settings=archive_settings)) as origin:
+    frontend_dir = Path(str(Runfiles.CreateOrRaise().root() / os.environ["AI_SESSION_ARCHIVE_FRONTEND_RLOCATION"]))
+    async with serve_app(
+        create_app(engine=archive.engine, settings=archive_settings, frontend_dir=frontend_dir)
+    ) as origin:
         yield origin
 
 
