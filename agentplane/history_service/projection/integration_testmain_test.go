@@ -8,7 +8,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
-	_ "github.com/lib/pq"
 )
 
 var integrationDatabase *postgres.Database
@@ -37,10 +36,6 @@ func openDB(t *testing.T, applicationName string) *sql.DB {
 		query.Set("application_name", applicationName)
 		target.RawQuery = query.Encode()
 	}
-	db, err := sql.Open("postgres", target.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, target.String())
 	return db
 }

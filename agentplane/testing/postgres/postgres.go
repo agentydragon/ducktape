@@ -146,6 +146,17 @@ func (db *Database) Clone(t testing.TB) string {
 	return db.databaseURL(name)
 }
 
+// Open returns a PostgreSQL database handle for dsn and closes it when the test completes.
+func Open(t testing.TB, dsn string) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
 // prepareCloneTemplateLocked initializes the clone source while db.mu is held.
 func (db *Database) prepareCloneTemplateLocked(ctx context.Context) error {
 	if db.admin != nil {

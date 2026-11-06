@@ -19,7 +19,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
 	"gopkg.in/yaml.v3"
 )
 
@@ -178,11 +177,7 @@ type fixture struct {
 func newFixture(t *testing.T) fixture {
 	t.Helper()
 	url := integrationDatabase.Clone(t)
-	db, err := sql.Open("postgres", url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, url)
 	hub, err := wakeups.Listen(t.Context(), url, store.UpdatesChannel, store.DispatchChannel)
 	if err != nil {
 		t.Fatal(err)

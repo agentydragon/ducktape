@@ -86,21 +86,13 @@ type fixture struct {
 
 func newFixture(t *testing.T, quotas Quotas) fixture {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, integrationDatabase.URL)
 	return fixtureForDatabase(t, db, quotas)
 }
 
 func newIsolatedFixture(t *testing.T, quotas Quotas) fixture {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.Clone(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, integrationDatabase.Clone(t))
 	return fixtureForDatabase(t, db, quotas)
 }
 

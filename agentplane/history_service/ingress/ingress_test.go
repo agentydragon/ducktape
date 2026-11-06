@@ -18,6 +18,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -94,11 +95,7 @@ func serveIngress(t *testing.T, service *Service) testIngress {
 
 func newService(t *testing.T, timing Timing) (*Service, *sql.DB) {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, integrationDatabase.URL)
 	principals, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
 	if err != nil {
 		t.Fatal(err)

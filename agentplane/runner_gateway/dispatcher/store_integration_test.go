@@ -19,6 +19,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
@@ -154,11 +155,7 @@ func testStore(t *testing.T, cap int) *Store {
 func testStoreWithURL(t *testing.T, cap int) (*Store, string) {
 	t.Helper()
 	databaseURL := integrationDatabase.Clone(t)
-	db, err := sql.Open("postgres", databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, databaseURL)
 	return NewStore(db, cap), databaseURL
 }
 
@@ -2248,11 +2245,7 @@ func TestSandboxCleanupWaitsForInFlightSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	connect := func() (*Store, int) {
-		db, err := sql.Open("postgres", databaseURL)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { db.Close() })
+		db := postgres.Open(t, databaseURL)
 		db.SetMaxOpenConns(1)
 		var pid int
 		if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
@@ -2565,11 +2558,7 @@ func TestSessionRejectionSerializesWithAdmissionAndFencesOwners(t *testing.T) {
 		t.Fatal(err)
 	}
 	connect := func() (*Store, int) {
-		db, err := sql.Open("postgres", databaseURL)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { db.Close() })
+		db := postgres.Open(t, databaseURL)
 		db.SetMaxOpenConns(1)
 		var pid int
 		if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
@@ -3057,11 +3046,7 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 				t.Fatal(err)
 			}
 			connect := func() (*Store, int) {
-				db, err := sql.Open("postgres", databaseURL)
-				if err != nil {
-					t.Fatal(err)
-				}
-				t.Cleanup(func() { db.Close() })
+				db := postgres.Open(t, databaseURL)
 				db.SetMaxOpenConns(1)
 				var pid int
 				if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
