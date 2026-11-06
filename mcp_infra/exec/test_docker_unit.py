@@ -248,27 +248,13 @@ def test_launcher_json_config_sets_container_creation_options(monkeypatch) -> No
     }
 
 
-def test_file_uri_template_matches_paths_with_slashes() -> None:
-    """FILE_RESOURCE_URI_TEMPLATE must match paths containing slashes.
-
-    The template uses RFC 6570 wildcard syntax {path*} so the regex uses .+
-    instead of [^/]+ - allowing it to match absolute paths like /init.
-    """
-    # Root-level file (the failing case before the fix)
-    result = match_uri_template("file:///init", FILE_RESOURCE_URI_TEMPLATE)
-    assert result is not None
-    assert result["path"] == "/init"
-
-    # Nested path
-    result = match_uri_template("file:///foo/bar/baz.txt", FILE_RESOURCE_URI_TEMPLATE)
-    assert result is not None
-    assert result["path"] == "/foo/bar/baz.txt"
-
-    # file_uri helper produces matching URIs
-    uri = ContainerExecServer.file_uri("/some/path.txt")
-    result = match_uri_template(uri, FILE_RESOURCE_URI_TEMPLATE)
-    assert result is not None
-    assert result["path"] == "/some/path.txt"
+@pytest.mark.parametrize("path", ["/init", "/foo/bar/baz.txt", "/some/path.txt"])
+def test_file_uri_template_matches_paths_with_slashes(path: str) -> None:
+    """The wildcard must retain absolute paths, including nested slashes."""
+    for uri in (f"file://{path}", ContainerExecServer.file_uri(path)):
+        result = match_uri_template(uri, FILE_RESOURCE_URI_TEMPLATE)
+        assert result is not None
+        assert result["path"] == path
 
 
 if __name__ == "__main__":
