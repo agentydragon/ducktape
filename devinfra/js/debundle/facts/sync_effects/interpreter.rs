@@ -15649,7 +15649,7 @@ impl Executor<'_, '_> {
         };
         let ordered_scalar_initializer = matches!(
             initializer_source.and_then(OriginalInitializer::composed_expression),
-            Some(ValueExpr::Binary(..))
+            Some(ValueExpr::Binding(_) | ValueExpr::Binary(..))
         ) && calls
             .iter()
             .all(|call| call.kind == CallKind::ImplicitCoercion);

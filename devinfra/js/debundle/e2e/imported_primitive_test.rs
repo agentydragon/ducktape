@@ -553,6 +553,9 @@ fn local_copies_preserve_imported_primitive_callback_timing() {
         .with_extra_chunks(&[("static/peer", "export var limit = 2;\n")]),
     );
     assert_preserved_entry_output(&fixture, "0 264 1 0\n");
+    assert_actual_imported_inversion(&fixture, "first");
+    assert_root_read_receipt(&fixture, "first");
+    assert_root_read_receipt(&fixture, "second");
     assert_actual_imported_inversion(&fixture, "computed");
     assert_root_read_receipt(&fixture, "computed");
     let graph = fixture.dependency_graph();
@@ -687,6 +690,41 @@ fn split_binding_copy_from_a_tdz_cell_keeps_the_root_uncovered() {
     );
     assert_preserved_entry_error(&fixture, "ReferenceError");
     assert_uncovered_root_read(&fixture, "first");
+}
+
+#[test]
+fn mutable_import_copy_cannot_acquire_an_ordered_read_receipt() {
+    let source = "import { limit as bytes } from './peer.js';\n\
+                  const before = 0;\nvar first = bytes, second = first;\n\
+                  const after = 1;\nconsole.log(before, second, after);\n";
+    let rejected = run_rejection_fixture(
+        FixtureOpts::new(
+            source,
+            primitive_modules(&[Member::new("first"), Member::new("second")]),
+        )
+        .with_extra_chunks(&[("static/peer", "export let limit = 2;\n")]),
+    );
+    assert_eq!(
+        rejected.candidate_relocation_assessment()["decision"]["status"],
+        "incomplete"
+    );
+    let graph = rejected.dependency_graph();
+    let first = source_unit_for_binding(&graph, "first");
+    let execution = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == first)
+        .unwrap()
+        .synchronous_execution
+        .as_ref()
+        .unwrap();
+    assert!(
+        !matches!(
+            execution.binding_effect_authority.as_ref(),
+            Some(analysis::reports::schema::BindingEffectAuthorityReport::OperationReceipt { .. })
+        ),
+        "a mutable import has no initialized primitive read proof: {execution:#?}"
+    );
 }
 
 #[test]
