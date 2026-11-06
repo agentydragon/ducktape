@@ -1,275 +1,61 @@
 # Split Feature Design
 
-## Overview
+## Status and scope
 
-A new feature for `wt` that allows splitting large PRs by moving files from the current branch to a new worktree. This addresses the common scenario where a PR grows too large and needs to be split into smaller, more reviewable chunks.
+Proposal only: `wt split` and `wt split-status` are not implemented. The feature would
+let a large change be split during development into smaller reviewable changes by
+extracting selected files or hunks into a new worktree. Preserving detailed commit
+history is an open question below.
 
-## Motivation
+## Proposed interface
 
-- Large PRs are harder to review and understand
-- Sometimes you realize mid-development that changes should be split
-- Need a clean way to extract files/changes while maintaining git history
-- Should feel natural and integrated with existing worktree workflow
-
-## Core Functionality
-
-### High-Level Flow
-
-1. Identify files/changes to move from current branch
-2. Create a new worktree for the extracted changes
-3. Remove the changes from current branch
-4. Leave current branch in clean state
-5. New worktree contains the extracted changes ready for independent PR
-
-### Command Interface
-
-#### Basic Mode: File List
-
-```bash
-wt split <new-worktree-name> <file1> <file2> ...
-wt split my-new-feature src/feature.py src/feature_test.py
-```
-
-#### Interactive Mode
-
-```bash
-wt split --interactive <new-worktree-name>
-wt split -i my-new-feature
-```
-
-## Interactive Mode Design
-
-### REPL Interface
-
-Similar to `git add --interactive` but for file/change movement:
-
-```
-Split Plan for 'my-new-feature':
-Files to move:
-  1. src/feature.py (modified, +150 -20)
-  2. src/feature_test.py (new file, +80)
-  3. docs/feature.md (modified, +30 -5)
-
-Commands:
-  [s]how plan
-  [a]dd file
-  [r]emove file
-  [p]atch (edit chunks)
-  [e]xecute plan
-  [q]uit
-
-What now>
-```
-
-### Interactive Commands
-
-#### Show Plan (`s`)
-
-Display current plan with file status and change summary
-
-#### Add File (`a`)
-
-```
-Add file> src/another_file.py
-Added src/another_file.py to split plan
-```
-
-#### Remove File (`r`)
-
-```
-Remove file> 2
-Removed src/feature_test.py from split plan
-```
-
-#### Patch Mode (`p`)
-
-Enter patch-style editing for specific files:
-
-```
-Patch file> 1
-# Shows hunks for src/feature.py
-Hunk 1/3: @@ -10,6 +10,15 @@
- def existing_function():
-     pass
-
-+def new_feature_function():
-+    return "new feature"
-+
- def another_function():
-     pass
-
-[y]es move this hunk, [n]o keep in current branch, [s]kip to next file:
-```
-
-#### Execute (`e`)
-
-Execute the split plan:
-
-- Create new worktree
-- Move selected files/hunks
-- Clean up current branch
-- Show summary of what was moved
-
-#### Quit (`q`)
-
-Exit without making changes
-
-## Implementation Considerations
-
-### Git Operations
-
-#### File Movement Strategy
-
-1. **Full File Move**: Simple case - entire file moves to new worktree
-2. **Partial File Move**: Complex case - only some hunks move, file exists in both branches
-
-#### For Full File Moves
-
-```bash
-# In current branch
-git rm <file>
-git commit -m "Move <file> to separate branch"
-
-# In new worktree
-git checkout current-branch -- <file>
-git add <file>
-git commit -m "Add <file> from main branch"
-```
-
-#### For Partial File Moves
-
-1. Use `git apply` with patch splitting
-2. Create patches for hunks to move vs hunks to keep
-3. Apply appropriate patches to each branch
-
-### Branch Management
-
-#### New Worktree Creation
-
-```bash
-# Create new branch from current branch
-git checkout -b <new-branch-name>
-# Create worktree for new branch
-git worktree add <worktree-path> <new-branch-name>
-```
-
-#### Branch Naming
-
-- Default: `split-<timestamp>-<description>`
-- User-provided: use as-is
-- Conflict resolution: append suffix
-
-### Safety Considerations
-
-#### Pre-flight Checks
-
-- Ensure working directory is clean (or handle dirty state)
-- Verify no conflicts with existing worktrees/branches
-- Check that files to move actually exist and are tracked
-
-#### Rollback Strategy
-
-- Create backup refs before starting
-- Support `wt split --abort` to cancel in-progress split
-- Store split state in `.git/wt-split-state` during operation
-
-### Integration with Existing Features
-
-#### With `wt create`
-
-- Should feel natural extension of existing workflow
-- Reuse existing branch/worktree creation logic
-- Consistent naming patterns and directory structure
-
-#### With `wt list`/`wt status`
-
-- Show split worktrees with context about origin
-- Indicate which worktrees are splits vs fresh creates
-
-## User Experience Examples
-
-### Example 1: Simple File Split
-
-```bash
-$ git status
-On branch feature/big-change
-Changes to be committed:
-  modified:   src/feature_a.py
-  new file:   src/feature_b.py
-  modified:   tests/test_both.py
-
-$ wt split feature-b-only src/feature_b.py
-Creating worktree 'feature-b-only'...
-Moving src/feature_b.py to new worktree...
-Cleaned up current branch.
-
-Current branch now has:
-  modified:   src/feature_a.py
-  modified:   tests/test_both.py
-
-New worktree 'feature-b-only' has:
-  new file:   src/feature_b.py
-```
-
-### Example 2: Interactive Split
-
-```bash
-$ wt split -i auth-refactor
-
-Split Plan for 'auth-refactor':
-  1. src/auth.py (modified, +200 -50)
-  2. src/middleware.py (modified, +30 -10)
-  3. tests/test_auth.py (modified, +100 -20)
-
-What now> p
-Patch file> 1
-
-Hunk 1/4: Authentication class refactor
-[y]es move, [n]o keep, [s]kip file: y
-
-Hunk 2/4: New login method
-[y]es move, [n]o keep, [s]kip file: y
-
-Hunk 3/4: Backwards compatibility fix
-[y]es move, [n]o keep, [s]kip file: n
-
-Hunk 4/4: Debug logging
-[y]es move, [n]o keep, [s]kip file: n
-
-What now> e
-Executing split plan...
-✓ Created worktree 'auth-refactor'
-✓ Moved 2/4 hunks from src/auth.py
-✓ Moved complete files: tests/test_auth.py
-✓ Cleaned up current branch
-```
-
-## Command Line Interface
-
-### New Commands
-
-#### `wt split`
-
-```
+```text
 wt split [options] <worktree-name> [files...]
-
-Options:
-  -i, --interactive    Interactive mode for selecting files/hunks
-  -b, --base-branch    Base branch for new worktree (default: current)
-  -m, --message        Commit message template
-  --dry-run           Show what would be done without executing
-  --abort             Cancel in-progress split operation
-
-Arguments:
-  worktree-name       Name for new worktree and branch
-  files               Files to move (ignored in interactive mode)
+wt split -i <worktree-name>
+wt split-status
 ```
 
-#### `wt split-status`
+| Option                | Proposed behavior                                                 |
+| --------------------- | ----------------------------------------------------------------- |
+| `-i`, `--interactive` | Select files and hunks in a REPL; positional files are ignored.   |
+| `-b`, `--base-branch` | Base branch for the new worktree; defaults to the current branch. |
+| `-m`, `--message`     | Commit-message template.                                          |
+| `--dry-run`           | Show the planned operation without executing it.                  |
+| `--abort`             | Cancel an in-progress split.                                      |
 
-```bash
-wt split-status    # Show any in-progress split operations
-```
+`<worktree-name>` names the new worktree and branch. Without interactive mode,
+`[files...]` selects whole files.
+
+## Selection and execution
+
+| Selection         | Proposed behavior                                                                                                                                          |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Whole files       | Move each selected file to the new worktree and remove it from the source branch.                                                                          |
+| Hunks             | A file may remain in both branches: selected hunks move; unselected hunks stay in the source.                                                              |
+| Patch application | Split selected and retained hunks into separate patches and apply each with `git apply`; this is proposed, not a runnable procedure.                       |
+| Interactive plan  | Show file status and change summary; `s` shows the plan, `a` adds a file, `r` removes one, `p` selects hunks, `e` executes, and `q` exits without changes. |
+| Hunk prompt       | `y` moves this hunk, `n` keeps it in the source, and `s` skips to the next file.                                                                           |
+| Completion        | Create the destination worktree, move selected content, remove those changes from the source, and summarize the result.                                    |
+
+The earlier overview says the source branch ends clean, while both examples retain
+unselected source changes. Resolve that source-state contract before implementation.
+
+## Branch, safety, and integration
+
+- Use the current branch as the default base; `-b, --base-branch` can select
+  another. The worktree name also names the new branch: default to
+  `split-<timestamp>-<description>`, use a supplied name as-is, and append a
+  suffix on collision.
+- Before executing, check whether the source worktree is clean or define how dirty
+  state is handled; verify selected paths exist and are tracked, and that the new
+  branch/worktree does not conflict with an existing one.
+- Create backup refs before the operation. Persist in-progress state in
+  `.git/wt-split-state`; `--abort` cancels an operation and `wt split-status`
+  reports its state.
+- Full-file operations and rollback need a safe design; exact commit-history
+  preservation remains open.
+- Reuse `wt create`'s branch/worktree logic and naming/layout conventions. `wt
+list` and `wt status` should identify a split worktree and its origin.
 
 ## Future Enhancements
 

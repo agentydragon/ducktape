@@ -25,9 +25,9 @@ run_loop_agent()
 
 ### Key implementations
 
-- **Critic:** `props/agents/critic/main.py` — `DirectToolProvider` with exec, insert_issue, submit, report_failure tools. Entry point: `CMD ["/app/critic"]`.
-- **Grader:** `props/agents/grader/loop.py` — `DirectToolProvider` with exec, show_issue, show_tp/fp, insert_edges, fill_remaining, delete_edges, submit, report_failure tools. Snapshot grader mode via `props/agents/grader/main.py` with pg_notify.
-- **Critic-dev (optimizer/improver):** `props/agents/critic_dev/optimize/main.py`, `props/agents/critic_dev/improve/main.py` — `DirectToolProvider` with exec, start_critic, wait_until_graded_tool, submit, report_failure tools.
+- **Critic:** `props/agents/critic/main.py` — critic entry point and tools; `CMD ["/app/critic"]`.
+- **Grader:** [`props/agents/grader/main.py`](../agents/grader/main.py) runs the persistent snapshot grader; [`props/agents/grader/tools.py`](../agents/grader/tools.py) defines its tool data models.
+- **Critic-dev:** [`props/agents/critic_dev/loop.py`](../agents/critic_dev/loop.py) builds optimizer/improver tools, including critic spawn and wait; [`grading.py`](../agents/critic_dev/grading.py) checks grading status.
 - **Host scaffold:** `props/orchestration/agent_registry.py` — creates agent DB role, starts container, waits for exit, captures logs, determines status from exit code.
 
 ## Decisions
@@ -144,87 +144,34 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 
 ### Snapshot Grader Mode
 
-| Aspect        | Decision                                                          |
-| ------------- | ----------------------------------------------------------------- |
-| Lifecycle     | Container runs indefinitely (no exit between grading batches)     |
-| Wake/sleep    | Internal loop uses pg_notify on `grading_pending` channel         |
-| Drift handler | `GraderDriftHandler.on_before_sample()` returns `Abort()` → sleep |
-| Timeout       | No timeout for snapshot graders (eternal)                         |
-| Scope         | One grader per snapshot, grades all critiques for that snapshot   |
+| Aspect     | Decision                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------------- |
+| Lifecycle  | Persistent loop processes batches and sleeps; supervisor reconciles one grader per snapshot |
+| Wake/sleep | `sleep` waits on snapshot-filtered `grading_pending` notifications                          |
+| Context    | Context overflow restarts the loop from scratch; completed edges are skipped                |
+| Timeout    | Snapshot grader launch has no registry run timeout; supervisor controls pod lifecycle       |
 
 **How snapshot graders work:**
 
-- "Drift" = ungraded (critique issue, GT occurrence) pairs in `grading_pending` view
-- Grader goal: make `grading_pending` empty for its snapshot
-- Loop: check drift → grade until empty → sleep waiting for `NOTIFY grading_pending`
-- GT changes (new TPs/FPs, edits) trigger notifications that wake the grader
-- Uses `asyncio.Event` for coordinated wake/sleep, background `pg_listen` task
-- On context length exceeded: grader supervisor auto-restarts with fresh context
+- `get_drift` exposes pending grading edges and clustering issues for the snapshot. `sleep` requires both to be empty before waiting; GT insert/delete and new reported issues/occurrences notify the `grading_pending` channel.
+- The `asyncio.Event` listener ignores notifications for other snapshots. The grader's `agent_{uuid}` PostgreSQL user can `LISTEN` without a channel grant.
+- A context-length overflow starts a fresh agent context; already-created grading edges are excluded from `grading_pending`, so completed work is retained.
 
-**pg_notify permissions:** Grader uses its temp user credentials (`agent_{uuid}`) for LISTEN. PostgreSQL allows any connected user to LISTEN on any channel without special grants. Notifications include `snapshot_slug` in the payload; the grader filters to only process notifications for its snapshot.
+The grader's persistent loop, notification handling, and tool binding are in [`main.py`](../agents/grader/main.py); argument and result schemas are in [`tools.py`](../agents/grader/tools.py). The registry starts snapshot graders without a run timeout; the supervisor reconciles pods and backs off after failures ([`agent_registry.py`](../orchestration/agent_registry.py), [`grader_supervisor.py`](../orchestration/grader_supervisor.py)).
 
-**Single implementation, two modes:**
-
-- One-off (`GraderTypeConfig`): grades single critic run, has `submit` + `report_failure`
-- Snapshot (`SnapshotGraderTypeConfig`): grades all critiques for snapshot, `report_failure` only (no `submit` - drift handler controls sleep)
-- Mode flag controls tool availability; all other tools identical
-
-**Grader Tools (DirectToolProvider):**
-
-| Tool             | Args                                              | Returns        | Mode    | Purpose                                     |
-| ---------------- | ------------------------------------------------- | -------------- | ------- | ------------------------------------------- |
-| `exec`           | `cmd`, `timeout_ms`, `cwd`                        | `ExecResult`   | both    | Shell commands for file reading, psql, etc. |
-| `show_issue`     | `issue_id`, `run?`                                | `IssueDetails` | both    | View reported issue + occurrence locations  |
-| `show_gt`        | `gt_ref` (tp/id/occ or fp/id/occ)                 | `GTDetails`    | both    | View ground truth occurrence + rationale    |
-| `insert_edges`   | `issue_id`, `rationale`, `edges[]`                | `str`          | both    | Create multiple edges: `{gt_ref, credit}`   |
-| `fill_remaining` | `issue_id`, `expected_count`, `rationale`, `run?` | `str`          | both    | Bulk-fill remaining edges with credit=0     |
-| `delete_edges`   | `issue_id`, `run?`                                | `str`          | both    | Delete all edges for issue (to redo)        |
-| `submit`         | `summary`                                         | `None`         | one-off | Finalize grading (validates no pending)     |
-| `report_failure` | `message`                                         | `None`         | both    | Report blocking error, exit                 |
-
-**Edge model:** Every `(critique_issue, matchable_gt_occurrence)` pair needs an edge. Credit 0.0-1.0 for both TPs and FPs. Use credit=0 for non-matches, >0 for matches (quality of match).
-
-**Grader loop:** `DriftHandler.on_before_sample()` checks `grading_pending` view. Returns `Abort()` when empty → agent loop exits → outer loop sleeps on pg_notify → wakes and creates fresh agent context.
-
-**Grader supervisor:** `props/orchestration/grader_supervisor.py` manages grader lifecycle — listens on `snapshot_created` channel, spawns one grader per snapshot, handles restarts.
+**Edge model:** Each critique issue and matchable TP-or-FP occurrence pair within the snapshot needs an edge. Credit is 0–1: zero means non-match; positive credit records a match's quality. `fill_remaining` writes zero-credit edges for the verified pending count.
 
 ### Subagent Spawning
 
-| Aspect          | Decision                                                                        |
-| --------------- | ------------------------------------------------------------------------------- |
-| Spawn           | REST API call to backend (`/api/runs/critic`)                                   |
-| Status query    | Direct Postgres query (no external call needed)                                 |
-| Results/status  | Direct Postgres query                                                           |
-| Logs            | Backend `GET /api/runs/{id}/logs`                                               |
-| Cost accounting | Counts against parent's budget                                                  |
-| Limits          | No explicit concurrency/spawn limits; cost + timeout sufficient                 |
-| Wait helpers    | `wait_until_graded_tool` polls `grading_pending` view directly inside container |
+| Aspect          | Decision                                                                                                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Spawn           | Backend REST `POST /api/runs/critic`                                                                                                                                           |
+| Status/grading  | Direct Postgres polls; grading requires an exited child started by the caller                                                                                                  |
+| Concurrency     | Configured per-model limits queue critic/critic-dev runs; unset models are uncapped ([`app.py`](../backend/app.py), [`agent_registry.py`](../orchestration/agent_registry.py)) |
+| Logs            | Backend `GET /api/runs/{id}/logs`                                                                                                                                              |
+| Cost accounting | Child runs count against the parent's budget                                                                                                                                   |
 
-Critic-dev agents have `DirectToolProvider` tools that call the backend REST API for spawning and poll the database directly for grading status. No MCP required.
-
-```
-Backend                                 Container (critic-dev)
-───────                                 ──────────────────────
-/api/runs/critic (REST)             DirectToolProvider
-├─ Spawns critic container   ◄──────────  start_critic tool (HTTP POST)
-└─ Returns critic_run_id
-
-PostgreSQL                              DirectToolProvider
-──────────                              ──────────────────
-grading_pending view         ◄──────────  wait_until_graded_tool (polls DB)
-└─ Returns when drift = 0
-```
-
-**Tools provided by DirectToolProvider:**
-
-- `start_critic(args: RunCriticRequest)` → critic_run_id (calls REST API)
-- `wait_until_graded_tool(critic_run_id)` → grading results (polls database directly)
-
-**Typical critic-dev workflow:**
-
-1. `start_critic(...)` → critic_run_id (returns when critic completes)
-2. `wait_until_graded_tool(critic_run_id)` (polls `grading_pending` until empty)
-3. Query metrics from DB
+Critic-dev uses `start_critic` → `wait_until_critic_completed` → `wait_until_graded_tool`; spawning returns the run ID immediately. Both waits are bounded, with configurable timeout limits. These tools use REST and direct database access; no MCP is needed. Grading status is available only after the critic exits and when the caller started that run. See [`loop.py`](../agents/critic_dev/loop.py) and [`grading.py`](../agents/critic_dev/grading.py).
 
 ### Observability
 
@@ -235,17 +182,7 @@ grading_pending view         ◄──────────  wait_until_grade
 | Access         | Critic-dev agents and humans read logs through the backend's RLS checks |
 | Cost tracking  | `llm_request_costs` and `llm_run_costs` views (per-request/run)         |
 
-**`llm_requests` table:**
-
-- `id`, `agent_run_id` (FK), `created_at`
-- `api_shape` - `responses`, `chat_completions`, or `anthropic`
-- `request_body` (JSONB) - full OpenAI-compatible request in that API shape
-- `response_body` (JSONB) - full response including `usage` field when provided
-- `model` (denormalized for filtering)
-- `latency_ms`
-- `error` (TEXT, nullable)
-- Cost computation via `llm_request_costs` view joining with `model_metadata` pricing table
-- Aggregated per-run costs via `llm_run_costs` view
+[`props/db/models.py`](../db/models.py) maps the `llm_requests` payload, usage, latency, and error fields, along with the request and per-run cost views.
 
 ### Security
 
