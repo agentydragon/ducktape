@@ -334,3 +334,9 @@ Both replicas are pinned to the `hil-ovh` zone by node selector with no anti-aff
 spread, so they may share a node; the PDB limits voluntary evictions, not involuntary failures.
 Testing runs one replica with `Recreate`. Both use a 60-second
 termination grace and gRPC health probes on the admin listener: readiness on the empty service, liveness on `livez`.
+
+Sandbox `workload_routes` map exact existing HTTP origins to a service's dedicated TLS listener.
+The sidecar creates a destination mTLS connection using its Runner Secret and pinned service URI,
+inside an authenticated central CONNECT. It strips bearer and proxy credential headers; the central
+proxy never sees the service request or asserts its caller. Other destinations keep their existing
+policy path. A TLS or CONNECT error fails the request without a token retry.

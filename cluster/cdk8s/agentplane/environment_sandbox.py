@@ -54,6 +54,7 @@ from cluster.cdk8s.agentplane import (
     runner_gateway,
     sandbox_pod,
     telemetry,
+    workload_routes,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
@@ -529,6 +530,7 @@ class EnvironmentSandboxTemplate(Construct):
             self.env,
             name=name,
             platform_routes=platform_routes.sidecar_routes(self.env.namespace, listen_host=bind_host),
+            workload_routes=workload_routes.sidecar_routes(self.env.namespace),
             listen_address=(f"{bind_host}:{sandbox_pod.SIDECAR_LISTEN_PORT}" if listen_host is not None else None),
             proxy_mode="mtls" if self.env.runner_egress_mtls else "token",
         )

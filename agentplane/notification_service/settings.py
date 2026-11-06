@@ -4,9 +4,10 @@ from datetime import date
 from pathlib import Path
 from typing import Annotated, ClassVar
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
+from agentplane.environment_runtime_transport.config import TLS
 from agentplane.log_levels import LogLevels
 from util.urls import HttpEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
@@ -171,6 +172,17 @@ class Settings(YamlFileSettings):
         le=65535,
         description="The HTTP listener's port: the facade, its documentation and the webhook.",
     )
+    workload_port: int | None = Field(default=None, ge=1, le=65535)
+    workload_tls: TLS | None = None
+
+    @model_validator(mode="after")
+    def validate_workload_listener(self) -> Settings:
+        if (self.workload_port is None) != (self.workload_tls is None):
+            raise ValueError("workload_port and workload_tls must be configured together")
+        if self.workload_port is not None and self.workload_port in (self.port, self.http_port):
+            raise ValueError("workload_port must be a separate port")
+        return self
+
     github: GitHubSettings | None = Field(
         default=None, description="GitHub source configuration. Disabled when absent from both YAML and environment."
     )

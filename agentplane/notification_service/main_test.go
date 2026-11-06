@@ -43,6 +43,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -107,8 +108,9 @@ type running struct {
 	notifications notificationspb.NotificationsClient
 	health        healthpb.HealthClient
 	// url is the base URL of the service's HTTP routes.
-	url string
-	db  *sql.DB
+	url             string
+	workloadAddress string
+	db              *sql.DB
 	// actionsToken is the Action Service token file.
 	actionsToken string
 	// wait returns what serve returned, once it has; stop asks it to stop first.
@@ -185,9 +187,22 @@ func restart(t *testing.T, tune func(*config)) running {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var workloadListener net.Listener
+	workloadAddress := ""
+	if c.WorkloadTLS != nil {
+		workloadListener, err = net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		workloadAddress = workloadListener.Addr().String()
+		deps.Sandboxes, err = client.New(apiConfig, client.Options{Scheme: scheme})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	ctx, cancel := context.WithCancel(t.Context())
 	served := make(chan error, 1)
-	go func() { served <- serve(ctx, c, deps, grpcListener, httpListener) }()
+	go func() { served <- serve(ctx, c, deps, grpcListener, httpListener, workloadListener) }()
 	var result error
 	var received sync.Once
 	wait := func() error {
@@ -212,7 +227,7 @@ func restart(t *testing.T, tune func(*config)) running {
 	t.Cleanup(func() { connection.Close() })
 	return running{
 		notifications: notificationspb.NewNotificationsClient(connection), health: healthpb.NewHealthClient(connection),
-		url: "http://" + httpListener.Addr().String(), db: db, actionsToken: c.Actions.TokenFile, wait: wait, stop: stop,
+		url: "http://" + httpListener.Addr().String(), workloadAddress: workloadAddress, db: db, actionsToken: c.Actions.TokenFile, wait: wait, stop: stop,
 	}
 }
 

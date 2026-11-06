@@ -323,3 +323,13 @@ Bearer <token>`. The token is the Pod's projected token for that service's audie
   control, History ingress, and Alloy OTLP gRPC. They do not permit pings without an active RPC.
 - An unexpected exit of a platform route, HTTP proxy, or readiness listener makes the sidecar
   unready and stops the process. Its other listeners close before the process exits.
+
+### Service-owned workload routes
+
+A sidecar `workload_routes` entry maps one exact HTTP host:port to an explicit TLS destination and
+fixed service SPIFFE URI. Only that configured origin selects the route. The sidecar removes
+Authorization and proxy/projected-token headers, authenticates the central hop, requests CONNECT
+for the configured destination, and presents the Runner SVID to the destination inside that opaque
+tunnel. The destination verifies and resolves the workload itself. Destination TLS sources reload
+on new handshakes while pinning the original local URI. TLS and CONNECT failures have no plaintext
+or token fallback. Streaming responses and upgrades remain incremental.
