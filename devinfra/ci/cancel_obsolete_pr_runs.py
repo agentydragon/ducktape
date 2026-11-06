@@ -1,4 +1,4 @@
-"""Retire older ordinary PR CI runs without holding up admission of their replacement.
+"""Retire obsolete ordinary PR validation runs as replacements start or their PR closes.
 
 Stdlib only: executed from the controller workflow's trusted default-branch SHA.
 """
@@ -17,6 +17,8 @@ from urllib.request import Request, urlopen
 from devinfra.ci.pr_mergeability import GitHubApi
 
 WORKFLOW_PATH = ".github/workflows/ci.yml"
+NIX_WHEEL_CHECK_WORKFLOW_PATH = ".github/workflows/nix-wheel-check.yml"
+CLOSED_PR_WORKFLOW_PATHS = (WORKFLOW_PATH, NIX_WHEEL_CHECK_WORKFLOW_PATH)
 ACTIVE_STATUSES = frozenset({"requested", "waiting", "pending", "queued", "in_progress"})
 
 
@@ -38,6 +40,29 @@ class Association:
     id: int
     base_repository_id: int
     head_repository_id: int
+
+
+@dataclass(frozen=True)
+class ClosedPull:
+    association: Association
+    head_branch: str
+    head_sha: str
+
+    @classmethod
+    def parse(cls, data: dict[str, Any]) -> ClosedPull:
+        head_branch = data["head"]["ref"]
+        if not isinstance(head_branch, str) or not head_branch:
+            raise ValueError("Expected a non-empty pull request head branch")
+        return cls(
+            association=Association(
+                number=positive(data["number"]),
+                id=positive(data["id"]),
+                base_repository_id=positive(data["base"]["repo"]["id"]),
+                head_repository_id=positive(data["head"]["repo"]["id"]),
+            ),
+            head_branch=head_branch,
+            head_sha=sha(data["head"]["sha"]),
+        )
 
 
 @dataclass(frozen=True)
@@ -84,19 +109,34 @@ class Run:
             pull=pull,
         )
 
-    def ordinary_pr(self, *, repository_id: int, repository: str, workflow_id: int) -> bool:
+    def same_repository_pr_validation(
+        self, *, repository_id: int, repository: str, workflow_id: int, workflow_paths: tuple[str, ...]
+    ) -> bool:
         return (
             self.repository_id == repository_id
             and self.repository_name == repository
             and self.head_repository_id == repository_id
             and self.workflow_id == workflow_id
-            and self.path == WORKFLOW_PATH
+            and self.path in workflow_paths
             and self.event == "pull_request"
             and self.attempt == 1
             and self.pull is not None
             and self.pull.base_repository_id == repository_id
             and self.pull.head_repository_id == repository_id
             and bool(self.head_branch)
+        )
+
+    def ordinary_pr(self, *, repository_id: int, repository: str, workflow_id: int) -> bool:
+        return self.same_repository_pr_validation(
+            repository_id=repository_id, repository=repository, workflow_id=workflow_id, workflow_paths=(WORKFLOW_PATH,)
+        )
+
+    def closed_pr_validation(self, *, repository_id: int, repository: str, workflow_id: int) -> bool:
+        return self.same_repository_pr_validation(
+            repository_id=repository_id,
+            repository=repository,
+            workflow_id=workflow_id,
+            workflow_paths=CLOSED_PR_WORKFLOW_PATHS,
         )
 
 
@@ -138,6 +178,11 @@ class CancellationApi(GitHubApi):
 def relevant_head(api: CancellationApi, trigger: Run) -> bool:
     assert trigger.pull is not None
     pull = api.get(f"pulls/{trigger.pull.number}")
+    return relevant_open_head(pull, trigger)
+
+
+def relevant_open_head(pull: dict[str, Any], trigger: Run) -> bool:
+    assert trigger.pull is not None
     return (
         positive(pull["id"]) == trigger.pull.id
         and positive(pull["number"]) == trigger.pull.number
@@ -149,6 +194,11 @@ def relevant_head(api: CancellationApi, trigger: Run) -> bool:
     )
 
 
+def relevant_closed_pull(api: CancellationApi, number: int, expected: ClosedPull) -> bool:
+    pull = api.get(f"pulls/{number}")
+    return pull["state"] == "closed" and ClosedPull.parse(pull) == expected
+
+
 def cancel_obsolete(api: CancellationApi, event: dict[str, Any]) -> None:
     if event["action"] != "requested":
         return
@@ -156,7 +206,7 @@ def cancel_obsolete(api: CancellationApi, event: dict[str, Any]) -> None:
     if event["repository"]["full_name"] != api.repository:
         return
     observed = Run.parse(event["workflow_run"])
-    if not observed.ordinary_pr(
+    if not observed.closed_pr_validation(
         repository_id=repository_id, repository=api.repository, workflow_id=observed.workflow_id
     ):
         return
@@ -167,11 +217,26 @@ def cancel_obsolete(api: CancellationApi, event: dict[str, Any]) -> None:
     if trigger != replace(observed, status=trigger.status):
         return
     workflow = api.get(f"actions/workflows/{trigger.workflow_id}")
-    if positive(workflow["id"]) != trigger.workflow_id or workflow["path"] != WORKFLOW_PATH:
-        return
-    if not relevant_head(api, trigger):
+    if positive(workflow["id"]) != trigger.workflow_id or workflow["path"] != trigger.path:
         return
     assert trigger.pull is not None
+    pull = api.get(f"pulls/{trigger.pull.number}")
+    if pull["state"] == "closed":
+        closed = ClosedPull.parse(pull)
+        if closed.association != trigger.pull or closed.head_branch != trigger.head_branch:
+            return
+        # A requested run can arrive after the close-event sweep. Its own
+        # trusted workflow_run event repeats the closed-PR cleanup so queued
+        # work created later is retired too.
+        _cancel_closed_pr_runs(api, repository_id, api.repository, closed, workflow_paths=(trigger.path,))
+        return
+    # Keep the open-PR admission optimization scoped to ordinary Bazel CI.
+    # The Nix wheel check has its own concurrency group and is only included
+    # here as a late-run signal for a PR that has already closed.
+    if not trigger.ordinary_pr(repository_id=repository_id, repository=api.repository, workflow_id=trigger.workflow_id):
+        return
+    if not relevant_open_head(pull, trigger):
+        return
     page = 1
     seen: set[int] = set()
     while True:
@@ -201,9 +266,88 @@ def cancel_obsolete(api: CancellationApi, event: dict[str, Any]) -> None:
         page += 1
 
 
+def cancel_closed_pr_runs(api: CancellationApi, event: dict[str, Any]) -> None:
+    """Cancel active first-attempt validation runs for one closed same-repository PR."""
+    if event["action"] != "closed":
+        return
+    repository_id = positive(event["repository"]["id"])
+    if event["repository"]["full_name"] != api.repository:
+        return
+    closed = ClosedPull.parse(event["pull_request"])
+    if closed.association.base_repository_id != repository_id or closed.association.head_repository_id != repository_id:
+        return
+    _cancel_closed_pr_runs(api, repository_id, api.repository, closed)
+
+
+def _cancel_closed_pr_runs(
+    api: CancellationApi,
+    repository_id: int,
+    repository: str,
+    closed: ClosedPull,
+    *,
+    workflow_paths: tuple[str, ...] = CLOSED_PR_WORKFLOW_PATHS,
+) -> None:
+    number = closed.association.number
+    if not relevant_closed_pull(api, number, closed):
+        return
+
+    for workflow_path in workflow_paths:
+        workflow = api.get(f"actions/workflows/{Path(workflow_path).name}")
+        workflow_id = positive(workflow["id"])
+        if workflow["path"] != workflow_path:
+            continue
+
+        page = 1
+        seen: set[int] = set()
+        while True:
+            query = urlencode({"event": "pull_request", "branch": closed.head_branch, "per_page": 100, "page": page})
+            result = api.get(f"actions/workflows/{workflow_id}/runs?{query}")
+            runs = result["workflow_runs"]
+            for data in runs:
+                candidate = Run.parse(data)
+                if candidate.id in seen:
+                    continue
+                seen.add(candidate.id)
+                if not _closed_pr_candidate(candidate, closed, repository_id, repository, workflow_id, workflow_path):
+                    continue
+                fresh = Run.parse(api.get(f"actions/runs/{candidate.id}"))
+                if fresh != replace(candidate, status=fresh.status):
+                    continue
+                if not _closed_pr_candidate(fresh, closed, repository_id, repository, workflow_id, workflow_path):
+                    continue
+                # A PR may be reopened or its head changed while this controller is
+                # paging. Recheck the closure identity immediately before each write.
+                if not relevant_closed_pull(api, number, closed):
+                    return
+                print(f"Requesting cancellation of active validation run {fresh.id} for closed PR #{number}")
+                api.cancel(fresh.id)
+            if len(runs) < 100:
+                break
+            page += 1
+
+
+def _closed_pr_candidate(
+    run: Run, closed: ClosedPull, repository_id: int, repository: str, workflow_id: int, workflow_path: str
+) -> bool:
+    return (
+        run.path == workflow_path
+        and run.closed_pr_validation(repository_id=repository_id, repository=repository, workflow_id=workflow_id)
+        and run.pull == closed.association
+        and run.head_branch == closed.head_branch
+        and run.status in ACTIVE_STATUSES
+    )
+
+
 def main() -> None:
+    event_name = os.environ["GITHUB_EVENT_NAME"]
+    if event_name not in {"workflow_run", "pull_request_target"}:
+        raise ValueError(f"Unsupported GITHUB_EVENT_NAME: {event_name}")
     api = CancellationApi(repository=os.environ["GITHUB_REPOSITORY"], token=os.environ["GITHUB_TOKEN"])
-    cancel_obsolete(api, json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text()))
+    event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
+    if event_name == "workflow_run":
+        cancel_obsolete(api, event)
+    else:
+        cancel_closed_pr_runs(api, event)
 
 
 if __name__ == "__main__":

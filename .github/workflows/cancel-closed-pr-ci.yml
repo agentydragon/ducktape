@@ -1,0 +1,32 @@
+# Cancel only active CI and Nix PR validation runs after a same-repository PR closes.
+# Shipping push runs and independent image builds remain under their own workflows.
+name: Cancel CI for closed PR
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  cancel-closed-pr-ci:
+    if: >-
+      github.event.pull_request.base.repo.id == github.event.repository.id &&
+      github.event.pull_request.head.repo.id == github.event.repository.id
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # pull_request_target loads this workflow from the base repository's default branch.
+          # Pin checkout to that trusted workflow revision, never the PR head or base branch.
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Cancel active CI validation runs for the closed PR
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 -m devinfra.ci.cancel_obsolete_pr_runs
