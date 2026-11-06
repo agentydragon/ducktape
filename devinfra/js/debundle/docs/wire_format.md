@@ -21,6 +21,15 @@ group. Their schema and provenance checks remain authoritative for graph-backed
 queries; a summary is not a substitute graph. This selection is independent of
 full diagnostic evidence and effect-conflict JSONL.
 
+For an ownership-subset run, `graph_summary.json` and `modules.json` include
+`ownership_subset` as an array of `{ "module": <chunk-local path>,
+"bindings": [<readable member names>] }` objects. A missing `bindings` field
+means all claims in that module were retained; an empty array means only its
+anonymous-statement claims were retained. An empty `ownership_subset` array
+means no explicit module was selected. This records the requested ownership
+selection, while final module contents show any bindings co-located by the
+ordinary placement rules.
+
 The staged per-chunk `SynchronousCalls` fact now carries
 `non_assumed_heap_accesses` as typed `reads` and `writes` sets of heap-content
 cells. It is analysis input to the commuting-premise check, not a new public

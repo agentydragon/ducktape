@@ -51,7 +51,7 @@ mod util;
 mod visitors;
 
 pub use imports::naturalize_cross_chunk_imports;
-use ownership_subset::OwnershipSubset;
+use ownership_subset::{OwnershipSubset, SelectedModule};
 
 use imports::VendorReimportOracle;
 use io::{ProgramGraphOutput, prepare_output_dir, write_chunk_report_json};
@@ -101,7 +101,7 @@ pub struct ChunkModulesReport {
     /// Present only for an ownership-subset run; selectors and contracts
     /// still come from the complete authored spec.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ownership_subset: Option<BTreeSet<spec::ModulePath>>,
+    pub ownership_subset: Option<BTreeSet<SelectedModule>>,
     pub counts: ChunkModulesCounts,
     pub final_module_contents: Vec<FinalModuleContent>,
     pub requested_logical_modules: Vec<RequestedLogicalModule>,

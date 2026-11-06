@@ -24,7 +24,7 @@ use crate::lower::{
     LoweredChunk, lower_chunk,
 };
 use crate::naturalize::collect_plan_export_rename_intents;
-use crate::ownership_subset::OwnershipSubset;
+use crate::ownership_subset::{OwnershipSubset, SelectedModule};
 use crate::placement::EmissionPlacement;
 use crate::plans::ModulePlan;
 use crate::rebind_fold::compute_rebind_folds;
@@ -449,9 +449,12 @@ pub(super) fn finish_logical_chunk(
     );
     // Selector outcomes, resolved-member anchors, and analysis assumptions
     // have already been collected from the complete authored ownership.
-    let ownership_subset = ownership_subset.map(|subset| subset.module_paths(chunk_id));
+    let ownership_subset = ownership_subset.map(|subset| subset.modules_for_chunk(chunk_id));
     if let Some(selected) = &ownership_subset {
         builder.retain_modules(selected)?;
+        // Recreate only the derived owners required by retained claims.
+        builder.apply_destructuring_group_placement(&ast_analysis.destructuring_groups);
+        builder.adopt_bindings_of_claimed_anonymous_statements(&declarations);
     }
     let catchall_request = chunk_unassigned_mode
         .catchall_file_target()
@@ -1099,7 +1102,7 @@ fn write_selector_diagnostics(
 /// The selected chunk's output policy, independent of its analysis facts.
 #[derive(Clone, Copy)]
 struct ChunkReportContext<'a> {
-    ownership_subset: Option<&'a BTreeSet<spec::ModulePath>>,
+    ownership_subset: Option<&'a BTreeSet<SelectedModule>>,
     chunk_id: &'a str,
     report_emission: &'a ReportEmission,
     graph_reports: GraphReportSelection,
@@ -1114,7 +1117,7 @@ struct ChunkReportContext<'a> {
 struct GraphSummary<'a> {
     chunk_id: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ownership_subset: Option<&'a BTreeSet<spec::ModulePath>>,
+    ownership_subset: Option<&'a BTreeSet<SelectedModule>>,
     source_units: usize,
     edges: usize,
     edge_kinds: std::collections::BTreeMap<analysis_model::DepKind, usize>,
