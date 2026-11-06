@@ -11,12 +11,12 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.exceptions import ApiException
+from python.runfiles import Runfiles
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.system_tests.x.shared_cluster import allocation, permissions
 from agentplane.system_tests.x.shared_cluster.namespaces import TENANT_LABEL, TENANT_VALUE, Namespaces
 from agentplane.testing.kubernetes_apiserver import kubernetes_apiserver
-from util.bazel.runfiles import get_required_path
 
 _QUOTA = {"pods": "8", "persistentvolumeclaims": "2", "requests.storage": "4Gi"}
 
@@ -32,13 +32,15 @@ async def _finish_deletion(core: k8s.CoreV1Api, name: str) -> None:
             await core.read_namespace(name)
 
 
-async def test_allocation_mints_scoped_credentials_and_holds_capacity_until_cleanup(tmp_path: Path) -> None:
+async def test_allocation_mints_scoped_credentials_and_holds_capacity_until_cleanup(
+    tmp_path: Path, runfiles: Runfiles
+) -> None:
     async with kubernetes_apiserver() as server:
         output = tmp_path / "credentials"
         api_server = server.api.configuration.host
         assert api_server is not None
         process = await asyncio.create_subprocess_exec(
-            str(get_required_path(os.environ["LEASE_BINARY_RLOCATION"])),
+            runfiles.root() / os.environ["LEASE_BINARY_RLOCATION"],
             "--admin-kubeconfig",
             str(server.kubeconfig),
             "allocate",
