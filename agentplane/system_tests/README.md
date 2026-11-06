@@ -25,18 +25,18 @@ The CI suites each start one [disposable k3s stack](deployment/README.md) in an 
 The session-scoped `deployment` fixture exposes its cluster handle, app URL, token, and MCP access
 ([`system_test_target.py`](deployment/system_test_target.py)). Compatible scenarios share a stack:
 
-| Target                                                        | Scenarios                                                                                                    |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `//agentplane/system_tests/suites:test_pod`                   | egress, messaging, presets, session instructions, suspend/resume, thread stream, Pod credentials and storage |
-| `//agentplane/system_tests/suites:test_session_deletion`      | Delayed Session mutation, controller quiescence and same-name replacement UID fencing                        |
-| `//agentplane/system_tests/suites:test_dispatcher`            | Dispatcher queue, wake and replica behavior                                                                  |
-| `//agentplane/system_tests/suites/mcp:test_actions`           | MCP Action execution, BFF decisions, launcher ownership and OAuth linkage                                    |
-| `//agentplane/system_tests/suites/mcp:test_services`          | Dynamic client registration, external MCP Connection, policy binding and Pod central sampler                 |
-| `//agentplane/system_tests/suites/mcp:test_delegation`        | External MCP Connection reuse, explicit Session input, retained reads with the integration app unavailable   |
-| `//agentplane/system_tests/suites/mcp:test_parent_delegation` | Existing-Sandbox parent Session uses the Action CLI to open and drive a child Session                        |
-| `//agentplane/system_tests/suites:test_real_model`            | Public LiteLLM egress and real-model standing-instruction acceptance                                         |
-| `//agentplane/system_tests/suites:test_vm`                    | VM Sandbox behavior, runner credentials and systemd supervision                                              |
-| `//agentplane/system_tests/suites:test_firecracker`           | KVM CI lane: Bazel-built Firecracker guest, harness turn and RAM-preserving suspend/resume                   |
+| Target                                                        | Scenarios                                                                                                                               |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `//agentplane/system_tests/suites:test_pod`                   | egress, messaging, Dispatcher SVID CLI route, presets, session instructions, suspend/resume, thread stream, Pod credentials and storage |
+| `//agentplane/system_tests/suites:test_session_deletion`      | Delayed Session mutation, controller quiescence and same-name replacement UID fencing                                                   |
+| `//agentplane/system_tests/suites:test_dispatcher`            | Dispatcher queue, wake and replica behavior                                                                                             |
+| `//agentplane/system_tests/suites/mcp:test_actions`           | MCP Action execution, BFF decisions, launcher ownership and OAuth linkage                                                               |
+| `//agentplane/system_tests/suites/mcp:test_services`          | Dynamic client registration, external MCP Connection, policy binding and Pod central sampler                                            |
+| `//agentplane/system_tests/suites/mcp:test_delegation`        | External MCP Connection reuse, explicit Session input, retained reads with the integration app unavailable                              |
+| `//agentplane/system_tests/suites/mcp:test_parent_delegation` | Existing-Sandbox parent Session uses the Action CLI to open and drive a child Session                                                   |
+| `//agentplane/system_tests/suites:test_real_model`            | Public LiteLLM egress and real-model standing-instruction acceptance                                                                    |
+| `//agentplane/system_tests/suites:test_vm`                    | VM Sandbox behavior, runner credentials and systemd supervision                                                                         |
+| `//agentplane/system_tests/suites:test_firecracker`           | KVM CI lane: Bazel-built Firecracker guest, harness turn and RAM-preserving suspend/resume                                              |
 
 The shared stack cuts setup and image-import work, while each target now has a coarser cache key: a
 changed scenario reruns its suite. Scenario modules live in [`scenarios/`](scenarios/) as ordinary
@@ -85,7 +85,7 @@ the shared deployment. These cases issue no shell tools or policy mutations. Mes
 presets, credentials, suspend/resume and storage cases retain fresh Sandbox ownership.
 Storage runs alone first, before the lazy runner pool creates any Pods, because it
 requires an empty Sandbox inventory and changes shared configuration. Only cases selected by
-pytest are started; all 14 retain separate parameter IDs, JUnit results and real execution
+pytest are started; all 15 retain separate parameter IDs, JUnit results and real execution
 durations from their OTel spans. For example, `--test_arg=-k=pod_mtls` selects only the Pod credential
 case. A case failure is reported on its own item while peers finish; early suite exit cancels and
 drains unfinished work before the shared deployment stops. The first three independent MCP Actions
