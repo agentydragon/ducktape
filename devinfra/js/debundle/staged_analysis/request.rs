@@ -69,7 +69,10 @@ pub fn analyze_from_projection(args: AnalyzeRequest, analysis_engine_sha256: &st
     };
     let vendor = spec.vendor_under(&source_root);
     let materialized: BTreeSet<String> = spec.analysed_chunks().iter().cloned().collect();
-    let source = prepare_js_chunks(&materialized, &vendor, artifact)?;
+    // Match live preparation's provider retention using the canonical source-site
+    // identities, without depending on authored selectors or materialization.
+    let analysis_providers = spec.source_sites.source_sha256.keys().cloned().collect();
+    let source = prepare_js_chunks(&materialized, &analysis_providers, &vendor, artifact)?;
     let vendor_plan = build_vendor_resolution_plan(
         source.program.artifact(),
         source.program.indexes(),

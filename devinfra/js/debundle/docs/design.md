@@ -2772,7 +2772,12 @@ The pipeline has three stages with different inputs and responsibilities:
   `frontend_elaboration::elaborate` collects source AST structure, projects
   eligible selector requests, solves them jointly once, and returns canonical
   member claims, source-bound premises, and `AnalysisProjection`. This target
-  has no dependency on lowering. Projection generation returns directly from
+  has no dependency on analysis execution or lowering. Source preparation keeps
+  original ASTs for configured source-premise providers under an analysis
+  retention reason independent of materialization. Frontend premise resolution
+  requires those retained ASTs and never reparses provider source. Source entry,
+  chunk selection and source-marker label resolution belong to `artifact`.
+  Projection generation returns directly from
   this service; materialization consumes its same resolution and claims before
   constructing output plans.
 - **Chunk analysis** (assignment-independent): parse → per-statement facts →
@@ -2804,7 +2809,8 @@ resolution, so it can also run in another process:
   closure. It rejects selector errors before writing the projection, without
   constructing `ChunkPlanBuilder` or entering lowering.
 - `debundle analyze --projection` computes the analysis from the projection
-  and the sources alone and writes an analysis artifact
+  and the sources alone, retaining premise-provider ASTs by the projection's
+  canonical source-site provenance keys, and writes an analysis artifact
   (`staged_analysis::analysis_artifact`): a header naming the engine, the projection
   and every chunk's parser-input digest, then the encoded body.
 - `debundle run --analysis` checks that header against its own engine,

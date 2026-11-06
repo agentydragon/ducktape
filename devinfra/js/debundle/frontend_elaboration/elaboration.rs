@@ -14,7 +14,10 @@ use analysis_projection::{
     ChunkGraphInputs, ProjectedChunkOptions,
 };
 use anyhow::{Context, Result, bail, ensure};
-use artifact::{ArtifactIndexes, ChunkBundle};
+use artifact::{
+    ArtifactIndexes, ChunkBundle, chunk_runtime_entry, export_policies, normalized_chunk_ids,
+    prune_artifact_to_chunk_ids,
+};
 use graph_provenance::GraphProvenance;
 use rayon::prelude::*;
 use selector_outcome::{Entity, EntityRef, Outcome, SelectorOutcome, Severity};
@@ -29,7 +32,6 @@ use spec::{
 use spec_resolution::{
     LogicalRequest, ProjectedChunk, ResolvedChunk, logical_requests_for_chunk, project_chunk,
 };
-use staged_analysis::chunk_facts::chunk_runtime_entry;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::GLOBALS;
 use swc_ecma_ast::{Module, ModuleItem};
@@ -144,9 +146,8 @@ pub fn project_analysis(
     if !spec.materialize_logical_modules.target_dir.is_empty() {
         artifact::paths::normalize_module_path(&spec.materialize_logical_modules.target_dir)?;
     }
-    let chunk_ids = staged_analysis::normalized_chunk_ids(
-        &spec.materialize_chunk_ids().into_iter().collect::<Vec<_>>(),
-    )?;
+    let chunk_ids =
+        normalized_chunk_ids(&spec.materialize_chunk_ids().into_iter().collect::<Vec<_>>())?;
     ensure!(
         !chunk_ids.is_empty(),
         "project_analysis requires at least one chunk_id"
@@ -159,12 +160,10 @@ pub fn project_analysis(
             "chunk_analysis_options.{chunk}.commuting_statements names a chunk this run does not materialize"
         );
     }
-    let chunk_export_purity = staged_analysis::export_policies::resolve_source_export_policies(
-        &artifact,
-        &spec.chunk_export_purity,
-    )?;
+    let chunk_export_purity =
+        export_policies::resolve_source_export_policies(&artifact, &spec.chunk_export_purity)?;
     if spec.materialize_logical_modules.prune_other_chunks {
-        staged_analysis::prune_artifact_to_chunk_ids(&mut artifact, &chunk_ids);
+        prune_artifact_to_chunk_ids(&mut artifact, &chunk_ids);
     }
     let inputs = chunk_ids
         .iter()
@@ -359,25 +358,15 @@ fn resolve_analysis_source_sites(
                 format!("{prefix} provider entry is unavailable to whole-program analysis")
             })?;
 
-        let resolved = if let Some(parsed) = entry_file.ast() {
-            resolve_provider_source_sites(
-                chunk_name,
-                &parsed.module,
-                options,
-                resolved_member_sites,
-            )?
-        } else {
-            let source = entry_file
-                .source()
-                .with_context(|| format!("{prefix} provider entry has no retained source text"))?;
-            let parsed = js_ast::parse_js_module(chunk_name, source)?;
-            resolve_provider_source_sites(
-                chunk_name,
-                &parsed.module,
-                options,
-                resolved_member_sites,
-            )?
-        };
+        let parsed = entry_file.ast().with_context(|| {
+            format!("{prefix} provider entry has no retained source-premise AST")
+        })?;
+        let resolved = resolve_provider_source_sites(
+            chunk_name,
+            &parsed.module,
+            options,
+            resolved_member_sites,
+        )?;
         let ProviderSourceSites {
             value_inputs,
             native_call_identity_inputs,

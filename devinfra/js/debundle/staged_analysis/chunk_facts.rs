@@ -5,39 +5,11 @@ use analysis::analysis_inputs::CallableSummary;
 use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSourceFacts};
 use analysis_projection::AnalysisProjection;
 use anyhow::{Context, Result};
-use artifact::paths::normalize_module_path;
-use artifact::{ArtifactIndexes, ChunkBundle, JsFile, get_chunk_entry_path};
+use artifact::{ArtifactIndexes, ChunkBundle, chunk_runtime_entry};
 use chunk_analysis::{DynamicImportTarget, check_chunk_facts, compute_chunk_facts};
 use js_ast::ParsedJsModule;
 use source_identity::ChunkId;
 use std::collections::BTreeMap;
-
-pub fn chunk_runtime_entry<'a>(
-    artifact: &'a ChunkBundle,
-    chunk_id: &str,
-    chunk_id_interned: ChunkId,
-    file: Option<&str>,
-) -> Result<(String, &'a JsFile, &'a ParsedJsModule)> {
-    let target_file = file
-        .map(normalize_module_path)
-        .transpose()?
-        .or_else(|| get_chunk_entry_path(artifact, chunk_id_interned))
-        .with_context(|| {
-            format!(
-                "materialize_logical_modules could not determine entry file for chunk: {chunk_id}"
-            )
-        })?;
-    let runtime_file = artifact
-        .js_chunk(chunk_id_interned)?
-        .get_file(&target_file)
-        .with_context(|| {
-            format!("materialize_logical_modules missing entry file for chunk: {chunk_id}")
-        })?;
-    let runtime_ast = runtime_file.ast().with_context(|| {
-        format!("materialize_logical_modules missing entry AST for chunk: {chunk_id}")
-    })?;
-    Ok((target_file, runtime_file, runtime_ast))
-}
 
 /// One chunk's facts for `debundle analyze`: what `finish_logical_chunk`
 /// computes, from the chunk's source, the projection and the cross-module

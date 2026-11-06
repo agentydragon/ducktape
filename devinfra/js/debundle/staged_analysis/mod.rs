@@ -10,8 +10,11 @@ use analysis_projection::AnalysisSpec;
 use anyhow::{Context, Result, bail, ensure};
 use artifact::paths::normalize_module_path;
 use artifact::reports::{StaticModuleRequest, StaticModuleRequestMode};
-use artifact::{ArtifactIndexes, ChunkBundle, JsFile};
-use chunk_facts::{analyze_logical_chunk, chunk_runtime_entry};
+use artifact::{
+    ArtifactIndexes, ChunkBundle, JsFile, chunk_runtime_entry, export_policies,
+    normalized_chunk_ids, prune_artifact_to_chunk_ids,
+};
+use chunk_facts::analyze_logical_chunk;
 use graph_provenance::GraphProvenance;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -21,7 +24,6 @@ use swc_common::GLOBALS;
 
 pub mod analysis_artifact;
 pub mod chunk_facts;
-pub mod export_policies;
 pub mod loader_surface;
 pub mod program_summary;
 pub mod progress;
@@ -120,19 +122,6 @@ pub enum ExportReentryClosureBlocker {
 pub struct ExportReentryTarget {
     pub chunk: String,
     pub file: String,
-}
-
-/// Chunk ids normalized, first occurrence kept.
-pub fn normalized_chunk_ids(chunk_ids: &[String]) -> Result<Vec<String>> {
-    let mut seen = BTreeSet::new();
-    let mut normalized_ids = Vec::new();
-    for chunk_id in chunk_ids {
-        let normalized = normalize_module_path(chunk_id)?;
-        if seen.insert(normalized.clone()) {
-            normalized_ids.push(normalized);
-        }
-    }
-    Ok(normalized_ids)
 }
 
 /// Hygiene-context ordinals for an analysis artifact: the analysed chunks'
@@ -641,12 +630,4 @@ fn report_target(target: ChunkId, file: &str, artifact: &ChunkBundle) -> ExportR
         chunk: artifact.chunk_table.name(target).to_string(),
         file: file.to_string(),
     }
-}
-
-pub fn prune_artifact_to_chunk_ids(artifact: &mut ChunkBundle, selected: &[String]) {
-    let selected_ids: std::collections::HashSet<ChunkId> = selected
-        .iter()
-        .filter_map(|name| artifact.chunk_table.get(name))
-        .collect();
-    artifact.retain_chunks(|chunk_id| selected_ids.contains(&chunk_id));
 }

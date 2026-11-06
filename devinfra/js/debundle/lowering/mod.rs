@@ -13,7 +13,10 @@ use analysis_projection::AnalysisSpec;
 
 use artifact::paths::normalize_module_path;
 use artifact::reports::SelectedModuleLowering;
-use artifact::{ArtifactIndexes, ChunkBundle};
+use artifact::{
+    ArtifactIndexes, ChunkBundle, export_policies, normalized_chunk_ids,
+    prune_artifact_to_chunk_ids,
+};
 use gate::CandidateRelocationAssessmentReport;
 
 use output_layout::MODULES_REPORT;
@@ -59,8 +62,7 @@ use materialize::{
     finish_logical_chunk, prepare_logical_chunk,
 };
 use staged_analysis::{
-    ExportReentryReport, export_policies, export_reentry_reports, load_analysis, loader_surface,
-    normalized_chunk_ids, program_summary, prune_artifact_to_chunk_ids,
+    ExportReentryReport, export_reentry_reports, load_analysis, loader_surface, program_summary,
 };
 
 use util::normalize_optional_relative_dir;

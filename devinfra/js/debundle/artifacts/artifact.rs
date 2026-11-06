@@ -18,6 +18,7 @@ use paths::{
 use reports::{ChunkAnalysisReport, ImportRecord, ImportSpecifierKind};
 
 mod emission_files;
+pub mod export_policies;
 mod indexed_files;
 pub mod metrics;
 pub mod paths;
@@ -25,7 +26,9 @@ pub mod reports;
 pub mod script_output;
 mod source_program;
 pub use emission_files::EmissionFiles;
-pub use source_program::SourceProgram;
+pub use source_program::{
+    SourceProgram, chunk_runtime_entry, normalized_chunk_ids, prune_artifact_to_chunk_ids,
+};
 
 pub const CANONICAL_CHUNK_ENTRY_FILE: &str = "entry.js";
 

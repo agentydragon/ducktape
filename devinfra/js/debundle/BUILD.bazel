@@ -314,6 +314,7 @@ rust_library(
     srcs = [
         "artifacts/artifact.rs",
         "artifacts/emission_files.rs",
+        "artifacts/export_policies.rs",
         "artifacts/indexed_files.rs",
         "artifacts/metrics.rs",
         "artifacts/paths.rs",
@@ -1092,7 +1093,6 @@ rust_library(
         ":source_match",
         ":spec",
         ":spec_resolution",
-        ":staged_analysis",
         "@crates//:anyhow",
         "@crates//:rayon",
         "@crates//:swc_common",

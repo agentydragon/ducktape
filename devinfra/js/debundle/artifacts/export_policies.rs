@@ -2,8 +2,8 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+use crate::ChunkBundle;
 use anyhow::{Result, bail};
-use artifact::ChunkBundle;
 use spec::ChunkExportPurity;
 
 pub fn resolve_source_export_policies<'a>(
