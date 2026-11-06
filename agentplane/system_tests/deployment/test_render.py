@@ -325,6 +325,12 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     )
     runner_sidecar_config = _resource(docs, "ConfigMap", "environment-tools-egress-sidecar")["data"]
     runner_settings = yaml.safe_load(next(iter(runner_sidecar_config.values())))
+    rules_authority = f"egress.{NAMESPACE}.svc.cluster.local:80"
+    assert runner_settings["workload_routes"][rules_authority]["upstream"] == (
+        f"egress.{NAMESPACE}.svc.cluster.local:8443"
+    )
+    executor_env = {entry["name"]: entry.get("value") for entry in pod_containers["codex-executor"]["env"]}
+    assert executor_env["AGENTPLANE_EGRESS_URL"] == f"http://egress.{NAMESPACE}.svc.cluster.local"
     assert runner_settings["proxy_mode"] == "mtls"
     assert runner_settings["proxy_port"] == 8889
     assert "token_file" not in runner_settings

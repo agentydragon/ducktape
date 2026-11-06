@@ -21,7 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
 )
 
-func TestWorkloadHTTPRoutePresentsSVIDThroughOpaqueConnectAndStreams(t *testing.T) {
+func TestWorkloadHTTPDefaultPortRoutePresentsSVIDThroughOpaqueConnectAndStreams(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	uri, err := environment_runtime_transport.EnvironmentRuntimeURI("test", "sandbox-uid", "credential-id")
 	if err != nil {
@@ -59,7 +59,7 @@ func TestWorkloadHTTPRoutePresentsSVIDThroughOpaqueConnectAndStreams(t *testing.
 	transport := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
-	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://notifications.test.invalid:8081/watch", nil)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://rules.test.invalid/watch", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestWorkloadRouteDoesNotRetryWrongServiceIdentityAsPlaintext(t *testing.T) 
 	}
 	transport := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
 	defer transport.CloseIdleConnections()
-	response, err := (&http.Client{Transport: transport, Timeout: 5 * time.Second}).Get("http://notifications.test.invalid:8081/forged")
+	response, err := (&http.Client{Transport: transport, Timeout: 5 * time.Second}).Get("http://rules.test.invalid:80/forged")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func workloadSidecar(t *testing.T, central *httptest.Server, proxyCredential env
 		ProxyHost: host, ProxyPort: number, ProxyMode: "mtls",
 		ProxyTLS:       &proxyTLSConfig{CertFile: proxyCredential.CertFile, KeyFile: proxyCredential.KeyFile, CAFile: proxyCredential.CAFile},
 		PlatformRoutes: map[string]platformRouteConfig{},
-		WorkloadRoutes: map[string]workloadRouteConfig{"notifications.test.invalid:8081": route},
+		WorkloadRoutes: map[string]workloadRouteConfig{"rules.test.invalid:80": route},
 		ListenAddress:  "127.0.0.1:0", ReadinessListenAddress: "127.0.0.1:0",
 	})
 	if err != nil {
