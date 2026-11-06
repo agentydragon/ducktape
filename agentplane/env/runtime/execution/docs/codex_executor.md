@@ -16,8 +16,8 @@ container on the same tools image. This process mode runs the companion as PID 1
 Environment Runtime, Runtime, COSI or telemetry. Kubernetes `resources` supplies its memory and
 CPU limits; kubelet restarts the container. Its PID namespace must be private
 (`shareProcessNamespace: false`). Both containers mount the same state, workspace, home, temporary
-directory, environment binary disk,
-proxy trust bundle and kubeconfig. Projected workload tokens remain confined to the egress sidecar.
+directory, environment binary disk and proxy trust bundle. Projected workload tokens remain
+confined to the egress sidecar.
 
 The embedded Execution Service claims the companion over its ownership socket. A claim's explicit
 environment reaches `exec-server` through `supervision.Process`; PID 1's process-wide reaper owns

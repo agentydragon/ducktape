@@ -151,6 +151,7 @@ py_library(
         ":iptables_rule",
         ":pki_infrastructure",
         ":release_manifests",
+        "//agentplane/egress:kubernetes_audience",
         "//agentplane/system_tests/driver:tracing",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//tenacity",

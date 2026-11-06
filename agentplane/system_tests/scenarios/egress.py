@@ -7,12 +7,9 @@ cross-checked against the proxy's decision history, which is the system's own re
 admitted -- an agent saying "I fetched it" is equally consistent with a request the proxy admitted,
 one that never reached the proxy, and a model that ran nothing.
 
-The reported username is the load-bearing assertion. The probe credential's account
-(`probe_credential`) can only come back if the sandbox asked the proxy what it may present and was
-told, sent a placeholder it cannot itself resolve, the sidecar carried the Pod's token, the proxy
-admitted the request and swapped in the token it holds for that account, and the API server
-authenticated it. No part of that can be faked by a model being agreeable, and the placeholder
-appears nowhere in the prompt -- the agent has to go and find it.
+The Kubernetes assertion is the value of a fresh, unpredictable ConfigMap entry granted only to
+the Sandbox's own ServiceAccount. Reading it proves the model used the platform's Kubernetes
+guidance, the projected workload token, and the proxy's credential substitution.
 
 What these encode is the deployed form of agentplane/egress/SPEC.md: a sandbox reaches what its
 policies name and nothing else, with the credential substituted at the proxy, and the model call is
@@ -25,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 import textwrap
 from datetime import UTC, datetime
 
@@ -38,7 +36,7 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
-from agentplane.system_tests.deployment import probe_credential, runtime_grant
+from agentplane.system_tests.deployment import runtime_grant
 from agentplane.system_tests.driver import egress_decisions
 from agentplane.system_tests.driver.agent import Agent
 from agentplane.system_tests.driver.cluster import Cluster
@@ -52,12 +50,10 @@ GITHUB_CLONE = "github-clone"
 PUBLIC_REPO = "https://github.com/agentydragon/ducktape"
 # Named by no policy the deployment has, so it is refused for want of a rule rather than by one.
 UNLISTED_HOST = "example.com"
-# The authenticated model ingress, on the same egress path as everything else
-# (cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml, PolicySet "basic"). It holds
-# the LiteLLM key and is bound by the app's default PolicySets rather than by a caller,
-# because an agent that cannot reach it has nothing to run -- so a sandbox that names no policy
-# still has this one.
+# The app's default egress PolicySet. It allows model ingress and the Kubernetes API without an
+# additional Sandbox policy.
 BASIC_POLICY = "basic"
+KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"
 
 # The proxy records a decision as it serves it; the app reads committed history over a separate hop, and a
 # each replica observes bindings asynchronously; the scenario checks actual read-only egress.
@@ -65,36 +61,19 @@ DECISION_SECONDS = 30.0
 BINDING_SECONDS = 60.0
 
 
-def _probe(rules_url: str) -> str:
-    """Where a sandbox asks what it may reach. The prompt names `rules_url` and nothing about the
-    credential: the agent has to discover both what to present and how, which is the property under
-    test. The endpoint reports each target's header, the shape of its value and its scheme, so an agent
-    does not have to guess `Bearer` -- both harnesses sent the placeholder bare and were refused when it
-    did not."""
+def _probe(configmap: str, namespace: str) -> str:
+    """Ask the agent to read an unpredictable value using its normal platform guidance."""
     return textwrap.dedent(f"""\
-    You are inside a sandbox whose outbound network goes through a proxy. Work out what it lets you
-    do, then report. Do all four steps, and do not stop early if one fails -- a failure is a result.
+    Read key `value` from ConfigMap `{configmap}` in namespace `{namespace}` using the platform's
+    normal Kubernetes access guidance.
 
-    1. Ask the proxy what you are allowed to reach: GET {rules_url} with Authorization: Bearer
-       agentplane-credential-agentplane-workload (a known inert placeholder). It answers with the policies
-       that apply to you. Some rules name a credential you do not hold: a placeholder, and every
-       target it may be presented at -- a header and the shape of its value -- which the proxy
-       swaps for the real value on its way out.
-    2. Fetch the refs of the public repository {PUBLIC_REPO} (git ls-remote is enough; no clone).
-    3. Ask the Kubernetes API which account you are authenticated as: POST
-       https://{probe_credential.HOST}{probe_credential.WHOAMI_PATH} with the JSON body
-       {{"apiVersion": "authentication.k8s.io/v1", "kind": "SelfSubjectReview"}}, presenting the
-       credential the rules name for that host and path exactly as step 1 described it: the rules give
-       the header, the shape of the value and, where the shape has one, the scheme. Build the value
-       from those and put the placeholder in verbatim -- it is not a secret, and it is all you get.
-    4. Try to fetch https://{UNLISTED_HOST}/ and see whether you are allowed to.
+    Also fetch the refs of {PUBLIC_REPO} and try to fetch https://{UNLISTED_HOST}/.
 
-    End your final message with exactly one JSON object and nothing after it:
+    End with exactly one JSON object and nothing after it:
 
-    {{"placeholder": "the placeholder you presented in step 3, or null",
+    {{"configmap_value": "the value you read, or null",
       "refs_ok": true or false,
-      "username": "the status.userInfo.username the API reported, or null",
-      "unlisted_refused": true if step 4 was refused or failed, false if it succeeded}}
+      "unlisted_refused": true if the host was refused or failed, false if it succeeded}}
     """)
 
 
@@ -103,9 +82,8 @@ class Probe(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    placeholder: str | None = Field(description="What the agent learned to present, from the rules endpoint.")
+    configmap_value: str | None = Field(description="The value read from the requested ConfigMap.")
     refs_ok: bool = Field(description="Whether the public repository's refs came back.")
-    username: str | None = Field(description="The account the API server reported for the substituted credential.")
     unlisted_refused: bool = Field(description="Whether the host no policy names was refused.")
 
 
@@ -134,6 +112,65 @@ async def _decision_for(
     raise AssertionError("unreachable: reraise=True either returns a decision or raises")
 
 
+async def _create_kubernetes_probe(
+    cluster: Cluster, view: environment_service_pb2.EnvironmentDescriptor
+) -> tuple[str, str, str]:
+    """Create a private ConfigMap and a get-only grant for this Sandbox's exact ServiceAccount."""
+    account = view.execution_account.account
+    if account.namespace != view.target.namespace or account.namespace != cluster.namespace:
+        raise AssertionError(
+            f"fixture expected the Sandbox's own ServiceAccount and namespace to match: "
+            f"{account.namespace}/{account.name}, Sandbox {view.target.namespace}/{view.target.name}, "
+            f"fixture namespace {cluster.namespace}"
+        )
+
+    name = f"{view.target.name}-kubernetes-probe"
+    value = secrets.token_urlsafe(32)
+    metadata: dict[str, object] = {
+        "namespace": account.namespace,
+        "ownerReferences": [
+            {
+                "apiVersion": f"{GROUP}/{VERSION}",
+                "kind": SANDBOX_KIND,
+                "name": view.target.name,
+                "uid": str(view.target.uid),
+            }
+        ],
+    }
+    named_metadata = metadata.copy()
+    named_metadata["name"] = name
+    await cluster.kubectl(
+        "create",
+        "-f",
+        "-",
+        body={"apiVersion": "v1", "kind": "ConfigMap", "metadata": named_metadata, "data": {"value": value}},
+    )
+    await cluster.kubectl(
+        "create",
+        "-f",
+        "-",
+        body={
+            "apiVersion": "rbac.authorization.k8s.io/v1",
+            "kind": "Role",
+            "metadata": named_metadata,
+            "rules": [{"apiGroups": [""], "resources": ["configmaps"], "resourceNames": [name], "verbs": ["get"]}],
+        },
+    )
+    await cluster.kubectl(
+        "create",
+        "-f",
+        "-",
+        body={
+            "apiVersion": "rbac.authorization.k8s.io/v1",
+            "kind": "RoleBinding",
+            "metadata": named_metadata,
+            "subjects": [{"kind": "ServiceAccount", "name": account.name, "namespace": account.namespace}],
+            "roleRef": {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": name},
+        },
+    )
+    return name, account.namespace, value
+
+
 async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     cluster: Cluster,
     client: Client,
@@ -142,36 +179,31 @@ async def a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
     harness: session_pb2.Harness,
     model: str,
 ) -> None:
-    """The whole path in one turn: the agent asks what it may reach, uses the credential it is told
-    about without ever holding it, is authenticated as that credential's account, and is refused
-    everywhere its policies do not name -- and the proxy agrees on every count.
-
-    Nothing here tells the agent the placeholder. If it comes back as the account, discovery worked.
-    """
-    view = await sandbox(f"systest-probe-{harness}", policies=[probe_credential.POLICY_SET, GITHUB_CLONE])
+    """The agent reads a private ConfigMap using its own projected ServiceAccount, while the same
+    Sandbox reaches a named public host and is refused elsewhere."""
+    view = await sandbox(f"systest-probe-{harness}", policies=[GITHUB_CLONE])
+    configmap, namespace, expected_value = await _create_kubernetes_probe(cluster, view)
     agent = await Agent.create(
         client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=model
     )
-    turn = await agent.run(_probe(f"http://egress.{cluster.namespace}.svc.cluster.local/v1/rules"))
+    turn = await agent.run(_probe(configmap, namespace))
     probe = turn.report(Probe)
 
-    assert probe.placeholder, f"the sandbox could not learn what credential to present:\n{turn.transcript}"
-    assert probe.refs_ok, f"the public repository was not reachable:\n{turn.transcript}"
-    # `system:serviceaccount:<namespace>:<name>`, in the fixture's egress credentials namespace.
-    assert (probe.username or "").endswith(f":{probe_credential.SERVICE_ACCOUNT}"), (
-        f"the API server reported {probe.username!r}, so the credential the sandbox discovered did not "
-        f"resolve to the probe's account:\n{turn.transcript}"
+    assert probe.configmap_value == expected_value, (
+        f"the sandbox did not read the ConfigMap using its own ServiceAccount; "
+        f"expected {expected_value!r}, got {probe.configmap_value!r}:\n{turn.transcript}"
     )
+    assert probe.refs_ok, f"the public repository was not reachable:\n{turn.transcript}"
     assert probe.unlisted_refused, f"{UNLISTED_HOST} was reachable:\n{turn.transcript}"
-
-    admitted = await _decision_for(cluster, client, view.target.name, view.target.uid, probe_credential.HOST)
-    assert admitted.outcome == Decision.OUTCOME_ALLOW, f"{admitted!r}"
-    assert admitted.policy == probe_credential.POLICY_SET, f"{admitted!r}"
-    assert admitted.substituted, f"the API call was admitted with no credential substituted: {admitted!r}"
 
     refused = await _decision_for(cluster, client, view.target.name, view.target.uid, UNLISTED_HOST)
     assert refused.outcome == Decision.OUTCOME_DENY, f"{refused!r}"
     assert refused.reason == "no-rule", f"{refused!r}"
+
+    kubernetes = await _decision_for(cluster, client, view.target.name, view.target.uid, KUBERNETES_HOST)
+    assert kubernetes.outcome == Decision.OUTCOME_ALLOW, f"{kubernetes!r}"
+    assert kubernetes.policy == BASIC_POLICY, f"{kubernetes!r}"
+    assert kubernetes.substituted, f"kubectl reached the API server without credential substitution: {kubernetes!r}"
 
 
 async def the_model_call_itself_goes_through_the_proxy(

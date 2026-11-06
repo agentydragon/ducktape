@@ -30,11 +30,6 @@ py_library(
 )
 
 py_library(
-    name = "probe_credential",
-    srcs = ["probe_credential.py"],
-)
-
-py_library(
     name = "runtime_grant",
     srcs = ["runtime_grant.py"],
 )
@@ -94,6 +89,13 @@ pkg_tar(
     symlinks = {"codex": "/opt/harnesses/codex/bin/codex"},
 )
 
+# The real-model sandbox needs kubectl to exercise the EgressCredential's documented command.
+pkg_tar(
+    name = "runner_kubectl",
+    srcs = ["@kubectl_linux_amd64//file:kubectl"],
+    package_dir = "/usr/bin",
+)
+
 # The runner Pod's environment-tools image. It keeps Debian's shell utilities for bootstrap and
 # process-lifecycle fixtures, plus curl and git (the `trixie_e2e` package set) for scripted commands;
 # the Nix-built production image supplies the full toolset. As in production, the runner is not in it:
@@ -110,6 +112,7 @@ oci_image(
         ":runner_claude_link",
         ":runner_codex_harness",
         ":runner_codex_link",
+        ":runner_kubectl",
     ],
     user = "1000:1000",
 )
@@ -210,7 +213,6 @@ py_library(
         ":dex",
         ":fixture_database",
         ":launch_preset",
-        ":probe_credential",
         ":rendered_fixture",
         ":runtime_grant",
         ":send_grant",
@@ -219,7 +221,6 @@ py_library(
         "//agentplane/action_service/sandbox:binding",
         "//agentplane/app:settings",
         "//agentplane/central_sampler:settings",
-        "//agentplane/crds:egresscredential",
         "//agentplane/crds:policyset",
         "//agentplane/env:config",
         "//agentplane/env/runtime:harness",
@@ -253,7 +254,6 @@ py_library(
         "//cluster/cdk8s/agentplane:sandbox_controller",
         "//cluster/cdk8s/agentplane:sandbox_pod",
         "//cluster/cdk8s/agentplane:session_dispatcher",
-        "//cluster/cdk8s/providers/agentplane:egress_credential",
         "//cluster/cdk8s/providers/agentplane:policy_set",
         "//cluster/cdk8s/providers/cert_manager:bundle",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_bundle",

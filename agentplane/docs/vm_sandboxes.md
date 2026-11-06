@@ -57,7 +57,7 @@ lost.
 - The config, launch and trust ConfigMap disks are read-only ISO 9660 images, mounted at
   `/run/agentplane/<disk>`, and `systemd-tmpfiles` links the files the runner reads into
   `/run/agentplane`. A file keeps its ConfigMap's mode, which must stay world-readable: harnesses
-  run as uid 107 and read the CA bundle and kubeconfig.
+  run as uid 107 and read the CA bundle.
 - The runner and the `agentplane` command are not in the guest image. They arrive on the runner disk,
   a read-only erofs on a second `containerDisk` (`//agentplane/env/images:disk_image`, [`env/images/BUILD.bazel`](../env/images/BUILD.bazel)),
   mounted at `/run/agentplane/environment`, and the harness `PATH` lists its `bin` after the system

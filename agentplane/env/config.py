@@ -14,7 +14,6 @@ CONFIG_FILE = f"{CONFIG_DIRECTORY}/environment-runtime.json"
 LAUNCH_FILE = "/run/agentplane/sandbox/launch.json"
 CA_BUNDLE = Path("/run/agentplane/trust/ca-certificates.crt")
 JAVA_TRUST_STORE = "/run/agentplane/trust/ca-certificates.p12"
-KUBECONFIG = f"{CONFIG_DIRECTORY}/kubeconfig"
 # Bound millisecond values before the Go loader converts them to signed nanosecond durations.
 _MAX_DURATION_MS = (2**63 - 1) // 1_000_000
 

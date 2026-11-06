@@ -348,7 +348,7 @@ class EnvironmentSandboxTemplate(Construct):
             working_dir=_STATE_DIR,
             security_context=sandbox_pod.workload_security_context(),
             env=sandbox_pod.workload_environment(
-                self.env, [*sandbox_pod.egress_env(), *(key.env() for key in self.key_files)]
+                self.env, [*sandbox_pod.proxy_environment(), *(key.env() for key in self.key_files)]
             ),
             resources=self.executor_resources
             or k8s.ResourceRequirements(
@@ -360,7 +360,6 @@ class EnvironmentSandboxTemplate(Construct):
             volume_mounts=[
                 *self._execution_mounts(),
                 *self._isolated_executor_mounts(),
-                *sandbox_pod.platform_control_mounts(),
                 *(key.mount() for key in self.key_files),
             ],
         )
@@ -373,7 +372,7 @@ class EnvironmentSandboxTemplate(Construct):
                 [
                     "PATH",
                     *self.env.sandbox_workload_env,
-                    *(var.name for var in sandbox_pod.egress_env()),
+                    *(var.name for var in sandbox_pod.proxy_environment()),
                     *self.agent_cli_env,
                     *(key.env_var for key in self.key_files),
                 ]
@@ -443,7 +442,7 @@ class EnvironmentSandboxTemplate(Construct):
                     ),
                     *(key.env() for key in self.key_files),
                     # On the container and not just on the harness children the runner spawns.
-                    *sandbox_pod.egress_env(),
+                    *sandbox_pod.proxy_environment(),
                     *(k8s.EnvVar(name=name, value=value) for name, value in self.agent_cli_env.items()),
                     *([k8s.EnvVar(name="OTEL_SDK_DISABLED", value="true")] if self.disable_otel_sdk else []),
                     # Neither a workload token nor a LiteLLM key: the placeholder the
@@ -467,7 +466,6 @@ class EnvironmentSandboxTemplate(Construct):
                     name=_CONFIG_VOLUME, mount_path=CONFIG_FILE, sub_path="environment-runtime.json", read_only=True
                 ),
                 *(self._isolated_executor_mounts() if self.env.isolated_codex_executor else []),
-                *sandbox_pod.platform_control_mounts(),
                 *(key.mount() for key in self.key_files),
             ],
         )

@@ -17,14 +17,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from agentplane_egresscredential_crds.works.allegedly.agentplane import (
-    EgressCredentialSpecTargets,
-    EgressCredentialSpecTargetsMethod,
-)
-from agentplane_policyset_crds.works.allegedly.agentplane import (
-    PolicySetSpecRulesCredentialRef,
-    PolicySetSpecRulesMethods,
-)
+from agentplane_policyset_crds.works.allegedly.agentplane import PolicySetSpecRulesMethods
 from cdk8s import ApiObjectMetadata, App, Chart, Size, Testing
 from cdk8s_plus_34 import ConfigMap, Cpu, DeploymentStrategy, EnvValue, ImagePullPolicy, k8s
 from cert_manager_clusterissuer_crds.io.cert_manager import ClusterIssuerSpecCa, ClusterIssuerSpecSelfSigned
@@ -48,14 +41,7 @@ from agentplane.env.config import CodexReadiness
 from agentplane.env.runtime.harness import Harness
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.subjects import ServiceAccountRef
-from agentplane.system_tests.deployment import (
-    dex,
-    fixture_database,
-    launch_preset,
-    probe_credential,
-    runtime_grant,
-    send_grant,
-)
+from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant
 from agentplane.system_tests.deployment.rendered_fixture import LocalModel, Models, PublicLiteLLM
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.vm import block_storage, configuration as vm_configuration
@@ -101,7 +87,6 @@ from cluster.cdk8s.agentplane.environment import (
     ReplicaProfile,
 )
 from cluster.cdk8s.agentplane.model_selections import HarnessRoutes, model_configs
-from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
@@ -665,7 +650,6 @@ def build_chart(
             )
         ],
     )
-    _add_probe_credential(chart, credentials_namespace=env.egress.credentials_namespace)
     PolicySet(
         chart,
         f"policy-set-{send_grant.POLICY_SET}",
@@ -685,56 +669,6 @@ def build_chart(
         mcp_edge=mcp_edge_service,
         app_login=app_login,
         mcp_linkage=mcp_linkage,
-    )
-
-
-def _add_probe_credential(chart: Chart, *, credentials_namespace: str) -> None:
-    """The credential `test_egress`'s probe presents in place of a real account's: a token the API server
-    authenticates and names back, for an account it authorizes for nothing beyond what every account may."""
-    k8s.KubeServiceAccount(
-        chart,
-        "probe-account",
-        metadata=k8s.ObjectMeta(name=probe_credential.SERVICE_ACCOUNT, namespace=credentials_namespace),
-    )
-    # The token controller fills in `token`.
-    k8s.KubeSecret(
-        chart,
-        "probe-token",
-        metadata=k8s.ObjectMeta(
-            name=probe_credential.SERVICE_ACCOUNT,
-            namespace=credentials_namespace,
-            annotations={"kubernetes.io/service-account.name": probe_credential.SERVICE_ACCOUNT},
-        ),
-        type="kubernetes.io/service-account-token",
-    )
-    EgressCredential(
-        chart,
-        "probe-credential",
-        metadata=ApiObjectMetadata(name=probe_credential.CREDENTIAL, namespace=NAMESPACE),
-        description=(
-            f"A token for the ServiceAccount {probe_credential.SERVICE_ACCOUNT}, which holds no RBAC: the "
-            "Kubernetes API authenticates it and lets it ask who it is."
-        ),
-        source=Source.secret_ref(name=probe_credential.SERVICE_ACCOUNT, key="token"),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-            )
-        ],
-    )
-    PolicySet(
-        chart,
-        f"policy-set-{probe_credential.POLICY_SET}",
-        metadata=ApiObjectMetadata(name=probe_credential.POLICY_SET, namespace=NAMESPACE),
-        rules=[
-            Rule.egress(
-                hosts=[probe_credential.HOST],
-                cluster_internal=True,
-                methods=[PolicySetSpecRulesMethods.POST],
-                paths=[probe_credential.WHOAMI_PATH],
-                credential_ref=PolicySetSpecRulesCredentialRef(name=probe_credential.CREDENTIAL),
-            )
-        ],
     )
 
 

@@ -58,7 +58,7 @@ func TestRulesTextShowsHowToPresentTheCredential(t *testing.T) {
 				reply(w, 200, rulesWith(tc.targets))
 			})
 			code, stdout, _ := invoke(egressEnv(f.URL), "egress", "rules")
-			want := "subject test-ns/test-sandbox\n" + rule + tc.want + "\n" + openRule
+			want := "subject test-ns/test-sandbox\n" + rule + tc.want + "  d\n" + openRule
 			if code != 0 || strings.TrimSpace(stdout) != want {
 				t.Errorf("exit %d, stdout %q; want exit 0 and %q", code, stdout, want)
 			}

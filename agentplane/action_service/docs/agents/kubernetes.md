@@ -1,7 +1,12 @@
 # Kubernetes access and temporary grants
 
-Use your mounted kubeconfig through the configured proxy. It authenticates as your Sandbox's own
-ServiceAccount; discover the account with `kubectl auth whoami`.
+Run `agentplane egress rules` and read the Kubernetes credential description. It names the
+API server, states that the credential acts as your Sandbox's own ServiceAccount, and gives the
+invocation `kubectl --server <host> --token <placeholder>`. Use the returned host and
+placeholder on each `kubectl` command. The proxy substitutes a projected token for your
+Sandbox; the placeholder itself is inert.
+
+For example, use `kubectl --server <host> --token <placeholder> auth whoami` to discover the account.
 
 ## Check standing access
 

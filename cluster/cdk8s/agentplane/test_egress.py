@@ -13,6 +13,7 @@ import yaml
 from cdk8s import App, Testing as Cdk8sTesting
 from more_itertools import one
 
+from agentplane.egress.kubernetes_audience import KUBERNETES_AUDIENCE
 from agentplane.egress.settings import Settings as EgressSettings
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import binding_delegation, notifications, staging, staging_grants
@@ -22,7 +23,6 @@ from cluster.cdk8s.agentplane.egress import (
     DEFAULT_POLICIES,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     INFERENCE_EXPERIMENTS_POLICY,
-    KUBERNETES_AUDIENCE,
     KUBERNETES_CREDENTIAL,
     KUBERNETES_HOST,
     PUBLIC_INTERNET_POLICY,
@@ -153,11 +153,9 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_mani
 
     `basic` is the policy every launch is granted before the caller picks anything
     (`SandboxAccess`, agentplane/app/sandbox_access.py), which is what makes
-    Kubernetes access a property of a sandbox rather than a choice one. It was its own policy
-    while every SandboxTemplate already mounted the kubeconfig naming this credential
-    (sandbox_pod.py): a box whose preset or caller did not name it held a working-looking config
-    whose requests the proxy refused for want of a rule, a transport failure dressed up as an
-    authorization answer.
+    Kubernetes access a property of a sandbox rather than a choice one. The credential description
+    tells the agent which API server to use and that the proxy substitutes the calling Sandbox's
+    own projected token; the SandboxTemplate does not materialize a kubeconfig.
 
     What makes it legitimate as an unconditional grant is what gets substituted. A default is the
     one grant a caller cannot decline, so it may only ever substitute the sandbox's own identity;
@@ -174,6 +172,11 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_mani
     assert "paths" not in api_server, api_server
 
     credential = _by_name(staging_manifests, "EgressCredential", KUBERNETES_CREDENTIAL)
+    description = credential["spec"]["description"]
+    placeholder = f"agentplane-credential-{KUBERNETES_CREDENTIAL}"
+    assert f"https://{KUBERNETES_HOST}" in description
+    assert "calling Sandbox's own ServiceAccount" in description
+    assert f"kubectl --server https://{KUBERNETES_HOST} --token {placeholder}" in description
     source = credential["spec"]["source"]
     assert "secretRef" not in source, "a default may substitute a sandbox's own credential, never an operator's"
     assert source["projectedWorkloadToken"]["audience"] == KUBERNETES_AUDIENCE, source

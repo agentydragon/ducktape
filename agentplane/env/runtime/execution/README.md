@@ -88,8 +88,8 @@ same proxy and CA settings. Processes in either container have the same filesyst
 change the shared files, so the companion is a process and resource boundary, not a trust boundary.
 Its Kubernetes requests and limits are independently configurable with `executor_resources` on
 `EnvironmentSandboxTemplate`; Environment Runtime resource overrides continue to apply only to that container. The
-companion receives the Sandbox kubeconfig and any optional BuildBuddy diagnostics key so its command
-tools keep the runner's intended access. It gets no model credentials or sidecar-projected tokens.
+companion receives any optional BuildBuddy diagnostics key. It gets no model credentials or
+sidecar-projected tokens.
 
 `../codex/protocol` generates Go models at build time with Quicktype from schemas
 exported by the same pinned Codex executable used by the native tests. Requests,

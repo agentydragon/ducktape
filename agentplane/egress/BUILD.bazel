@@ -10,6 +10,15 @@ load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 py_library(
+    name = "kubernetes_audience",
+    srcs = ["kubernetes_audience.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+)
+
+py_library(
     name = "resources",
     srcs = ["resources.py"],
     visibility = [

@@ -62,7 +62,7 @@ task; you do not need to fetch every index at startup.
 | Submit, recover, cancel, or follow an Action | Actions `/llms.txt`: lifecycle and recovery guides |
 | Open or manage a Session | Check `agentplane --help`; if this image lists `sessions`, use `agentplane sessions --help` |
 | Delegate work to another Session | Actions `/llms.txt`: Session delegation guide; discover the target and runtime, then open and submit input separately |
-| Check Kubernetes access or request a temporary grant | `kubectl auth can-i`; Actions `/llms.txt`: Kubernetes and grants guide |
+| Check Kubernetes access or request a temporary grant | `agentplane egress rules`, then `kubectl auth can-i`; Actions `/llms.txt`: Kubernetes and grants guide |
 | Subscribe to Actions or GitHub, or handle an inbox notice | `agentplane notifications --help`; Notifications `/llms.txt` |
 | Discover an existing environment (when `agentplane --help` lists `environments`) | `agentplane environments list`, then `agentplane environments get NAMESPACE NAME UID` for one exact target |
 
@@ -83,10 +83,12 @@ placeholder literally in its declared location and shape; do not replace it with
 `<redacted>`, or another invented value. Never obtain, print, or persist substituted credentials,
 bypass the proxy, disable certificate verification, or impersonate the operator.
 
-Your mounted kubeconfig uses your own ServiceAccount through the proxy. Check the exact verb,
-resource/subresource, name and namespace with `kubectl auth can-i`; its `--list` view may be
-incomplete. If denied, use an appropriate Action or request the missing scope through the grants
-workflow. A refusal is not permission to use another account's credentials.
+For Kubernetes, use the credential description in the rules response. It names the API server,
+states that the credential acts as the calling Sandbox's own ServiceAccount, and gives the
+`kubectl --server <host> --token <placeholder>` invocation. Use that host and placeholder
+for `kubectl auth can-i`; its `--list` view may be incomplete. Check the exact verb,
+resource/subresource, name and namespace. If denied, use an appropriate Action or request the missing
+scope through the grants workflow. A refusal is not permission to use another account's credentials.
 
 An Action catalog entry does not establish auto-approval. Inspect current policy constraints and
 expiry; the submitted request's decision is authoritative. Do not submit speculative requests to

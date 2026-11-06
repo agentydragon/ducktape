@@ -1,7 +1,7 @@
 """The Pod shape every agentplane box shares: the egress sidecar that relays a box's
 traffic to the central proxy, the tokens only it mounts, the interception CA over the system bundle
-and as Java's trust store, a kubeconfig that reaches the API server through the proxy, and the proxy
-environment that points a workload at the sidecar. The runner SandboxTemplates (environment_sandbox.py) and
+and as Java's trust store, and the proxy environment that points a workload at the sidecar. The
+runner SandboxTemplates (environment_sandbox.py) and
 the sandbox Actions' box templates (command_sandbox.py) are both built from it, so both kinds of box sit
 behind the same egress path; only the command box also gets the system bazelrc that points Bazel at
 the trust store.
@@ -21,9 +21,9 @@ from cdk8s_plus_34 import ConfigMap, Role, RolePolicyRule, k8s
 from constructs import Construct
 
 from agentplane.egress import sidecar_config
+from agentplane.egress.kubernetes_audience import KUBERNETES_AUDIENCE
 from agentplane.egress.platform_routes import PlatformRoute
-from agentplane.egress.resources import placeholder_of
-from agentplane.env.config import CA_BUNDLE, JAVA_TRUST_STORE, KUBECONFIG
+from agentplane.env.config import CA_BUNDLE, JAVA_TRUST_STORE
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
@@ -42,7 +42,7 @@ _EGRESS_TOKEN_DIR = "/var/run/agentplane-egress"
 # neither can name a file the other does not project. The hop token is deliberately absent: it
 # carries the proxy's own audience, so it is not substitutable anywhere.
 _SUBSTITUTABLE_AUDIENCE_FILES = {
-    egress.KUBERNETES_AUDIENCE: "kubernetes-token",
+    KUBERNETES_AUDIENCE: "kubernetes-token",
     notifications.TOKEN_AUDIENCE: "notifications-token",
     session_dispatcher.TOKEN_AUDIENCE: "session-dispatcher-token",
     RUNNER_INGRESS_AUDIENCE: "runner-ingress-token",
@@ -67,10 +67,6 @@ TOOL_CONFIG_READER_ROLE_NAME = "agentplane-sandbox-tool-config-reader"
 TOOL_CONFIG_GRANT = "sandbox-tool-config"
 _TOOL_CONFIG_VOLUME_NAME = "tool-config"
 _BAZELRC_KEY = "bazel.bazelrc"
-_KUBECONFIG_KEY = "kubeconfig"
-# Outside the home directory: a subPath mount creates its missing parents as root, and kubectl keeps
-# its cache under ~/.kube.
-_KUBECONFIG_PATH = KUBECONFIG
 PROXY_VAR_NAMES = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")
 NO_PROXY_VAR_NAMES = ("NO_PROXY", "no_proxy")
 CA_BUNDLE_VAR_NAMES = ("SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO", "REQUESTS_CA_BUNDLE")
@@ -79,18 +75,6 @@ CA_BUNDLE_VAR_NAMES = ("SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "CURL_CA_BUNDLE",
 def audience_token_file(audience: str) -> str:
     """The sidecar-only file holding this Pod's projected token for `audience`."""
     return f"{_EGRESS_TOKEN_DIR}/{_SUBSTITUTABLE_AUDIENCE_FILES[audience]}"
-
-
-def egress_env() -> list[k8s.EnvVar]:
-    """The proxy environment, for the workload container itself.
-
-    The box's fence lets it reach DNS and the egress proxy and nothing else, so a process that does
-    not know to use the proxy has no egress at all -- and anything entering by another door
-    (`kubectl exec`, the sandbox Actions' exec, a debug shell) is that kind of process. Both
-    spellings, since clients disagree on case; NO_PROXY is loopback and nothing else. KUBECONFIG
-    names the box's own identity at the API server, through the same proxy.
-    """
-    return [*proxy_environment(), k8s.EnvVar(name="KUBECONFIG", value=_KUBECONFIG_PATH)]
 
 
 def proxy_environment() -> list[k8s.EnvVar]:
@@ -121,15 +105,6 @@ def egress_proxy_mounts() -> list[k8s.VolumeMount]:
     ]
 
 
-def platform_control_mounts() -> list[k8s.VolumeMount]:
-    """The kubeconfig for workload tools which need this Sandbox's API identity."""
-    return [
-        k8s.VolumeMount(
-            name=_TOOL_CONFIG_VOLUME_NAME, mount_path=_KUBECONFIG_PATH, sub_path=_KUBECONFIG_KEY, read_only=True
-        )
-    ]
-
-
 def proxy_trust_mounts() -> list[k8s.VolumeMount]:
     """The proxy CA at system and Java trust paths, without the Sandbox API identity."""
     return [
@@ -151,8 +126,8 @@ def proxy_trust_mounts() -> list[k8s.VolumeMount]:
 
 
 def egress_mounts() -> list[k8s.VolumeMount]:
-    """Proxy trust and platform control mounts needed by sandbox tools."""
-    return [*proxy_trust_mounts(), *platform_control_mounts()]
+    """Proxy trust mounts needed by sandbox tools."""
+    return proxy_trust_mounts()
 
 
 def bazelrc_mount() -> k8s.VolumeMount:
@@ -164,36 +139,18 @@ def bazelrc_mount() -> k8s.VolumeMount:
     )
 
 
-def kubeconfig(ca_path: str) -> dict[str, object]:
-    """A box's identity at the API server: through the proxy, verified against the bundle at
-    `ca_path`, which carries the interception root, with the placeholder the proxy swaps for the box's
-    own projected token. The box has no token of its own to put there; the sidecar holds it."""
-    return {
-        "apiVersion": "v1",
-        "kind": "Config",
-        "clusters": [
-            {
-                "name": "in-cluster",
-                "cluster": {"server": f"https://{egress.KUBERNETES_HOST}", "certificate-authority": ca_path},
-            }
-        ],
-        "users": [{"name": "workload", "user": {"token": placeholder_of(egress.KUBERNETES_CREDENTIAL)}}],
-        "contexts": [{"name": "in-cluster", "context": {"cluster": "in-cluster", "user": "workload"}}],
-        "current-context": "in-cluster",
-    }
-
-
 def add_tool_config(scope: Construct, env: Environment) -> None:
-    """Bazel's system rc, which Bazel in a command box reads before its workspace's own, and the
-    kubeconfig. Bazel's JVM fetches through the proxy but trusts only its own store, which lacks the
-    interception root; and Bazel scrubs a test's environment, so the box's egress environment reaches
-    a test only when named here."""
-    passthrough = " ".join(f"--test_env={var.name}" for var in egress_env())
+    """Bazel's system rc, which Bazel in a command box reads before its workspace's own.
+
+    Bazel's JVM fetches through the proxy but trusts only its own store, which lacks the interception
+    root; and Bazel scrubs a test's environment, so the box's egress environment reaches a test only
+    when named here.
+    """
+    passthrough = " ".join(f"--test_env={var.name}" for var in proxy_environment())
     tool_config_data = {
         _BAZELRC_KEY: (
             f"startup --host_jvm_args=-Djavax.net.ssl.trustStore={_JAVA_TRUST_STORE_PATH}\ncommon {passthrough}\n"
-        ),
-        _KUBECONFIG_KEY: yaml_config(kubeconfig(_CA_BUNDLE_PATH)),
+        )
     }
     tool_config = ConfigMap(
         scope,
