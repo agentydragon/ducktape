@@ -5,10 +5,17 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest_bazel
+import yaml
 from cdk8s import App, Chart, Testing as Cdk8sTesting
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import environment_firecracker, environment_sandbox, staging
+from cluster.cdk8s.agentplane import (
+    environment_firecracker,
+    environment_sandbox,
+    runner_gateway,
+    session_dispatcher,
+    staging,
+)
 from cluster.cdk8s.pod_policy import harden, pod_spec
 
 
@@ -66,6 +73,15 @@ def test_firecracker_mounts_and_tokens_stay_on_the_correct_side(scratch_app: App
     assert "proxy_port: 8889" in relay_settings
     assert "token_file: /var/run/agentplane-egress/token" in relay_settings
     assert "/run/agentplane/environment-runtime-tls/tls.crt" in relay_settings
+    routes = yaml.safe_load(relay_settings)["workload_routes"]
+    destination = runner_gateway.workload_service(staging.ENV.namespace)
+    for origin in (
+        session_dispatcher.service(staging.ENV.namespace),
+        session_dispatcher.http_service(staging.ENV.namespace),
+    ):
+        route = routes[f"{origin.fqdn}:{origin.port.number}"]
+        assert route["upstream"] == f"{destination.fqdn}:{destination.pod_port}"
+        assert route["server_uri"] == runner_gateway.WORKLOAD_URI
     status_policy = one(doc for doc in docs if doc["kind"] == "CiliumNetworkPolicy")
     assert status_policy["spec"]["ingress"][0]["fromEntities"] == ["kube-apiserver", "host"]
     assert rendered["spec"]["firecracker"]["runnerImage"] == "registry.test/runner@sha256:123"

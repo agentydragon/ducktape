@@ -230,6 +230,7 @@ flowchart LR
     history[History Service]
     subgraph unified[Runner Gateway]
         dispatcher[Dispatcher API and durable delivery]
+        workload[Sandbox SVID listener :8082]
         environments[EnvironmentService API]
         lifecycle[Shared lifecycle manager]
         gateway[Runner proxy and state observation]
@@ -258,18 +259,22 @@ flowchart LR
     lifecycle -->|guarded running + generation update| k8s
     pod -.->|Session and EnvironmentService gRPC over HTTPS_PROXY/CONNECT| sidecar
     guest -.->|Session and EnvironmentService gRPC over HTTPS_PROXY/CONNECT| relay
-    sidecar -.-> egress
-    relay -.-> egress
-    egress -.->|Exact RPC paths; substituted Sandbox bearer| dispatcher
+    sidecar -.->|mTLS proxy hop and CONNECT| egress
+    relay -.->|mTLS proxy hop and CONNECT| egress
+    egress -.->|Opaque Runner SVID TLS| workload
+    workload -->|Existing Session and EnvironmentService methods| dispatcher
 ```
 
 Managed Pod and VM callers receive only the inert `AGENTPLANE_SESSIONS_CREDENTIAL` placeholder. The
 `AGENTPLANE_SESSIONS_URL` targets `session-dispatcher.<namespace>.svc.cluster.local:8080`. The egress sidecar
-or VM launcher relay holds the short-lived `session-dispatcher` audience token; the central proxy substitutes
-it on the allowlisted SessionDispatcher and EnvironmentService RPC paths.
-Backend checks of the Sandbox identity and object UID remain authoritative; network reachability
-grants no Session authority. The Action Service uses the same Dispatcher audience and a pod-bound
-Actions token on the opted-in `EnvironmentService` list/get methods and its separately configured
+or VM launcher relay maps that exact origin through central CONNECT and presents its Runner SVID at the
+Gateway's dedicated workload listener on `:8082`; the central proxy carries the destination TLS bytes
+opaquely. The Gateway resolves the current Sandbox credential and ServiceAccount UID before applying
+the unchanged Session and EnvironmentService method rules. The CLI placeholder remains inert, and no
+Dispatcher audience token is projected into Sandbox Pods. Backend checks of the Sandbox identity and
+object UID remain authoritative; network reachability grants no Session authority. The Action Service
+continues to use the configured Dispatcher audience and a pod-bound Actions token on the opted-in
+`EnvironmentService` list/get methods and its separately configured
 `EnvironmentService.ResumeEnvironment` method. The receiver applies the caller identity from the
 shared delegation envelope, then checks the current Sandbox and
 execution-ServiceAccount identity and resume policy. The integration app uses its own Pod-bound

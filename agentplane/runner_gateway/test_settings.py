@@ -20,6 +20,12 @@ def _settings(runner_security: object, *, kubernetes_client_qps: float = 0) -> S
                 "runner_token_file": "/run/test/token",
                 "dispatcher_audience": "test-dispatcher",
                 "gateway_audience": "test-gateway",
+                "workload_listen_address": ":8082",
+                "workload_tls": {
+                    "cert_file": "/test/workload-cert",
+                    "key_file": "/test/workload-key",
+                    "ca_file": "/test/workload-ca",
+                },
                 "dispatcher_callers": {"test-app/test-dispatcher"},
                 "gateway_callers": {"test-app/test-gateway"},
                 "operator_callers": {"test-app/test-dispatcher"},

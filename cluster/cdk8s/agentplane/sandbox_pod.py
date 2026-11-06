@@ -26,7 +26,7 @@ from agentplane.egress.resources import placeholder_of
 from agentplane.env.config import CA_BUNDLE, JAVA_TRUST_STORE, KUBECONFIG
 from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from cluster.cdk8s.agentplane import egress, session_dispatcher, telemetry
+from cluster.cdk8s.agentplane import egress, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
@@ -40,10 +40,7 @@ _EGRESS_TOKEN_DIR = "/var/run/agentplane-egress"
 # to under `_EGRESS_TOKEN_DIR`. The volume and the sidecar's mapping are both rendered from this, so
 # neither can name a file the other does not project. The hop bearer remains temporarily for
 # destination identity context; in mTLS mode it never authenticates the hop or acts as a fallback.
-_SUBSTITUTABLE_AUDIENCE_FILES = {
-    egress.KUBERNETES_AUDIENCE: "kubernetes-token",
-    session_dispatcher.TOKEN_AUDIENCE: "session-dispatcher-token",
-}
+_SUBSTITUTABLE_AUDIENCE_FILES = {egress.KUBERNETES_AUDIENCE: "kubernetes-token"}
 SIDECAR_LISTEN_PORT = 3128
 # The sidecar's settings file: a ConfigMap per Pod template, mounted on the sidecar alone.
 SIDECAR_SETTINGS_VOLUME_NAME = "egress-sidecar-settings"

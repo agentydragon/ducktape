@@ -12,7 +12,7 @@ from typing import Annotated, ClassVar
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, field_validator, model_validator
 from pydantic_settings import SettingsConfigDict
 
-from agentplane.environment_runtime_transport.config import Security
+from agentplane.environment_runtime_transport.config import TLS, Security
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
 from util.yaml_file_settings import YamlFileSettings
 
@@ -67,6 +67,10 @@ class Settings(YamlFileSettings):
         min_length=1,
         description="HTTP/JSON listen address of the Dispatcher's generated facade; unset serves none.",
     )
+    workload_listen_address: str = Field(
+        min_length=1, description="Dedicated SVID-authenticated gRPC and HTTP/JSON listener for Sandbox workloads."
+    )
+    workload_tls: TLS = Field(description="Serving certificate and trust bundle for the Sandbox workload listener.")
     proxy_port: int = Field(
         default=8080, ge=1, le=65535, description="Port advertised in each Sandbox control EndpointSlice."
     )

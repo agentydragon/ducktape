@@ -217,7 +217,16 @@ func (s *sidecar) handle(client net.Conn) {
 			writeRefusal(client, http.StatusBadRequest, "bad-request")
 			return
 		}
-		if request.Method != http.MethodConnect && request.URL.Scheme == "http" {
+		if request.Method == http.MethodConnect {
+			authority := request.URL.Host
+			if authority == "" {
+				authority = request.Host
+			}
+			if route := s.workloadRoutes[authority]; route != nil {
+				s.exchangeWorkloadConnectRoute(client, clientReader, route)
+				return
+			}
+		} else if request.URL.Scheme == "http" {
 			if route := s.workloadRoutes[request.URL.Host]; route != nil {
 				if !s.exchangeWorkloadRoute(client, clientReader, request, route) {
 					return

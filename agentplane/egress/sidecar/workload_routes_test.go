@@ -5,6 +5,8 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -18,6 +20,12 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	"github.com/agentydragon/ducktape/agentplane/environment_runtime_transport/testing"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 )
 
 func TestWorkloadHTTPRoutePresentsSVIDThroughOpaqueConnectAndStreams(t *testing.T) {
@@ -179,6 +187,10 @@ func workloadCentral(t *testing.T, target string) (*httptest.Server, <-chan *htt
 }
 
 func workloadSidecar(t *testing.T, central *httptest.Server, route workloadRouteConfig) string {
+	return workloadSidecarFor(t, central, "notifications.test.invalid:8081", route)
+}
+
+func workloadSidecarFor(t *testing.T, central *httptest.Server, authority string, route workloadRouteConfig) string {
 	t.Helper()
 	host, port, err := net.SplitHostPort(strings.TrimPrefix(central.URL, "http://"))
 	if err != nil {
@@ -188,7 +200,7 @@ func workloadSidecar(t *testing.T, central *httptest.Server, route workloadRoute
 	if err != nil {
 		t.Fatal(err)
 	}
-	sidecar, err := newSidecar(config{ProxyHost: host, ProxyPort: number, ProxyMode: "token", TokenFile: writeTestToken(t, "sidecar-hop"), PlatformRoutes: map[string]platformRouteConfig{}, WorkloadRoutes: map[string]workloadRouteConfig{"notifications.test.invalid:8081": route}, ListenAddress: "127.0.0.1:0", ReadinessListenAddress: "127.0.0.1:0"})
+	sidecar, err := newSidecar(config{ProxyHost: host, ProxyPort: number, ProxyMode: "token", TokenFile: writeTestToken(t, "sidecar-hop"), PlatformRoutes: map[string]platformRouteConfig{}, WorkloadRoutes: map[string]workloadRouteConfig{authority: route}, ListenAddress: "127.0.0.1:0", ReadinessListenAddress: "127.0.0.1:0"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,4 +232,106 @@ func workloadSidecar(t *testing.T, central *httptest.Server, route workloadRoute
 		}
 	})
 	return listener.Addr().String()
+}
+
+type workloadRouteHealth struct {
+	healthpb.UnimplementedHealthServer
+	expectedURI string
+	seenToken   string
+}
+
+func (h *workloadRouteHealth) Check(ctx context.Context, _ *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
+	remote, ok := peer.FromContext(ctx)
+	if !ok {
+		return nil, errors.New("TLS peer missing")
+	}
+	info, ok := remote.AuthInfo.(credentials.TLSInfo)
+	if !ok {
+		return nil, fmt.Errorf("TLS peer info missing: %T", remote.AuthInfo)
+	}
+	identity, err := environment_runtime_transport.PeerIdentityFromTLSState(info.State, x509.ExtKeyUsageClientAuth)
+	if err != nil || identity != h.expectedURI {
+		return nil, fmt.Errorf("SVID=%q, want %q: %w", identity, h.expectedURI, err)
+	}
+	values, _ := metadata.FromIncomingContext(ctx)
+	if tokens := values.Get("authorization"); len(tokens) > 0 {
+		h.seenToken = tokens[0]
+	}
+	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
+}
+
+func TestWorkloadGRPCConnectRoutePresentsRunnerSVIDAndCarriesNativeMetadata(t *testing.T) {
+	ca := environmentruntimetransporttesting.NewCA(t)
+	uri, err := environment_runtime_transport.EnvironmentRuntimeURI("test", "sandbox-uid", "credential-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceURI := environment_runtime_transport.SessionDispatcherURI
+	serverCredential := ca.IssueWithUsage(t, serviceURI, x509.ExtKeyUsageServerAuth)
+	serverTLS, err := serverCredential.WorkloadServerTLSConfig(serviceURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTLS.NextProtos = []string{"h2"}
+	clientCredential := ca.Issue(t, uri)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe := &workloadRouteHealth{expectedURI: uri}
+	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(serverTLS)))
+	healthpb.RegisterHealthServer(server, probe)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+
+	destination := listener.Addr().String()
+	central, observed := workloadCentral(t, destination)
+	target := "session-dispatcher.test.invalid:8080"
+	proxyAddress := workloadSidecarFor(t, central, target, workloadRouteConfig{
+		Upstream: destination, ServerURI: serviceURI, TLS: clientCredential,
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	connection, err := grpc.DialContext(ctx, "passthrough:///"+target,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			connection, err := (&net.Dialer{}).DialContext(ctx, "tcp", proxyAddress)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := fmt.Fprintf(connection, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", target, target); err != nil {
+				connection.Close()
+				return nil, err
+			}
+			reader := bufio.NewReader(connection)
+			response, err := http.ReadResponse(reader, &http.Request{Method: http.MethodConnect})
+			if err != nil {
+				connection.Close()
+				return nil, err
+			}
+			if response.StatusCode != http.StatusOK {
+				connection.Close()
+				return nil, fmt.Errorf("sidecar CONNECT response: %s", response.Status)
+			}
+			return &bufferedWorkloadConnection{Conn: connection, reader: reader}, nil
+		}), grpc.WithAuthority(target), grpc.WithBlock(), grpc.WithNoProxy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = connection.Close() })
+	callCtx := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer inert-placeholder")
+	if _, err := healthpb.NewHealthClient(connection).Check(callCtx, &healthpb.HealthCheckRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if probe.seenToken != "Bearer inert-placeholder" {
+		t.Fatalf("native gRPC metadata = %q, want inert CLI placeholder", probe.seenToken)
+	}
+	select {
+	case hop := <-observed:
+		if hop.Method != http.MethodConnect || hop.Host != destination || hop.Header.Get("Proxy-Authorization") != "Bearer sidecar-hop" || hop.Header.Get(projectedTokenHeader) != "" {
+			t.Fatalf("central CONNECT = %+v", hop)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("central proxy did not receive workload CONNECT")
+	}
 }

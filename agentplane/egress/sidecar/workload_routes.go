@@ -33,6 +33,7 @@ type workloadRouteConfig struct {
 
 type workloadRoute struct {
 	config    workloadRouteConfig
+	security  *tls.Config
 	transport *http.Transport
 }
 
@@ -47,7 +48,7 @@ func (s *sidecar) prepareWorkloadRoutes() error {
 			return fmt.Errorf("workload route %q: %w", authority, err)
 		}
 		security.NextProtos = []string{"h2", "http/1.1"}
-		route := &workloadRoute{config: config}
+		route := &workloadRoute{config: config, security: security}
 		route.transport = &http.Transport{
 			Proxy: nil, ForceAttemptHTTP2: true, TLSClientConfig: security,
 			TLSHandshakeTimeout:   10 * time.Second,
@@ -159,6 +160,53 @@ func (s *sidecar) dialWorkloadRoute(ctx context.Context, target string, security
 	tracked.setExpiry(environment_runtime_transport.CloseTLSConnAtCertificateExpiry(inner, localNotAfter))
 	complete = true
 	return inner, nil
+}
+
+// exchangeWorkloadConnectRoute carries native h2c gRPC frames through the caller's existing HTTP
+// CONNECT authority. The sidecar adds destination TLS and its Runner SVID after central admission;
+// the central proxy sees only opaque service TLS bytes.
+func (s *sidecar) exchangeWorkloadConnectRoute(client net.Conn, reader *bufio.Reader, route *workloadRoute) {
+	ctx, cancel := context.WithTimeout(s.workloadContext, 10*time.Second)
+	defer cancel()
+	upstream, err := s.dialWorkloadRoute(ctx, route.config.Upstream, route.security)
+	if err != nil {
+		slog.Warn("workload CONNECT route refused", "upstream", route.config.Upstream, "error", err)
+		writeRefusal(client, http.StatusBadGateway, "workload-tls-unavailable")
+		return
+	}
+	defer upstream.Close()
+	if _, err := io.WriteString(client, "HTTP/1.1 200 Connection established\r\n\r\n"); err != nil {
+		return
+	}
+	if err := pipeWorkloadTunnel(client, reader, upstream); err != nil {
+		slog.Warn("workload CONNECT route ended with connection error", "upstream", route.config.Upstream, "error", err)
+	}
+}
+
+func pipeWorkloadTunnel(client net.Conn, reader *bufio.Reader, upstream net.Conn) error {
+	results := make(chan error, 2)
+	go func() {
+		_, err := io.Copy(upstream, reader)
+		if closeWriter, okay := upstream.(interface{ CloseWrite() error }); okay {
+			_ = closeWriter.CloseWrite()
+		}
+		results <- err
+	}()
+	go func() {
+		_, err := io.Copy(client, upstream)
+		_ = client.Close()
+		results <- err
+	}()
+	first := <-results
+	if first != nil {
+		_ = client.Close()
+		_ = upstream.Close()
+	}
+	second := <-results
+	if first != nil {
+		return first
+	}
+	return second
 }
 
 type bufferedWorkloadConnection struct {

@@ -36,6 +36,8 @@ type config struct {
 	KubernetesClientQPS          float32                                `mapstructure:"kubernetes_client_qps"`
 	ListenAddress                string                                 `mapstructure:"listen_address"`
 	HTTPListenAddress            string                                 `mapstructure:"http_listen_address"`
+	WorkloadListenAddress        string                                 `mapstructure:"workload_listen_address"`
+	WorkloadTLS                  *environment_runtime_transport.Config  `mapstructure:"workload_tls"`
 	ProxyPort                    int                                    `mapstructure:"proxy_port"`
 	RunnerControlTargetTemplate  string                                 `mapstructure:"runner_control_target_template"`
 	DispatcherAudience           string                                 `mapstructure:"dispatcher_audience"`
@@ -113,6 +115,7 @@ func (c *config) validate() error {
 		{"dispatcher_audience", c.DispatcherAudience},
 		{"gateway_audience", c.GatewayAudience},
 		{"listen_address", c.ListenAddress},
+		{"workload_listen_address", c.WorkloadListenAddress},
 		{"runner_control_target_template", c.RunnerControlTargetTemplate},
 	} {
 		if required.value == "" {
@@ -121,6 +124,12 @@ func (c *config) validate() error {
 	}
 	if err := c.RunnerSecurity.Validate(); err != nil {
 		return fmt.Errorf("runner_security: %w", err)
+	}
+	if c.WorkloadTLS == nil {
+		return errors.New("workload_tls is required")
+	}
+	if err := c.WorkloadTLS.Validate(); err != nil {
+		return fmt.Errorf("workload_tls: %w", err)
 	}
 	if len(c.DispatcherCallers) == 0 || len(c.GatewayCallers) == 0 {
 		return errors.New("dispatcher_callers and gateway_callers must each list at least one ServiceAccount")

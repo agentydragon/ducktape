@@ -16,7 +16,15 @@ from more_itertools import one
 from agentplane.crd_group import GROUP
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import agent_access_profiles
-from cluster.cdk8s.agentplane import binding_delegation, environment_sandbox, notifications, staging, staging_grants
+from cluster.cdk8s.agentplane import (
+    binding_delegation,
+    environment_sandbox,
+    notifications,
+    runner_gateway,
+    session_dispatcher,
+    staging,
+    staging_grants,
+)
 from cluster.cdk8s.agentplane.egress import (
     ADMIN_GRPC_AUDIENCE,
     BASIC_POLICY,
@@ -281,89 +289,48 @@ def test_notifications_verify_svids_behind_an_opaque_tunnel(staging_manifests: l
     assert notification_settings["workload_tls"]["cert_file"].endswith("/tls.crt")
 
 
-def test_session_dispatcher_egress_is_limited_to_the_delegation_rpc_surfaces(
-    staging_manifests: list[dict[str, Any]],
-) -> None:
-    """Only the Session and inventory RPCs get the Sandbox-bound bearer substitution.
+def test_session_dispatcher_sandbox_calls_use_the_workload_svid_route(staging_manifests: list[dict[str, Any]]) -> None:
+    """Keep the CLI origin and inert placeholder while the sidecar presents its SVID."""
+    namespace = staging.ENV.namespace
+    service_url = (
+        f"http://{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
+    )
+    destination = runner_gateway.workload_service(namespace)
+    dispatcher_origin = (
+        f"{session_dispatcher.service(namespace).fqdn}:{session_dispatcher.service(namespace).port.number}"
+    )
+    http_origin = (
+        f"{session_dispatcher.http_service(namespace).fqdn}:{session_dispatcher.http_service(namespace).port.number}"
+    )
+    credential_name = session_dispatcher.WORKLOAD_CREDENTIAL
 
-    The Gateway listener also hosts unrelated Runner-control RPCs. Compare normalized permissions
-    for rules that can reach this Service or consume its credential, so rule grouping and ordering
-    are irrelevant while a new route, method, destination, or uncredentialed path still fails.
-    """
-    destination = "session-dispatcher.agentplane-staging.svc.cluster.local"
-    service_url = f"http://{destination}:8080"
-    credential_name = "agentplane-session-dispatcher-workload"
-    audience = "session-dispatcher"
-    credential_placeholder = f"agentplane-credential-{credential_name}"
-    session_paths = [
-        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CreateSession",
-        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput",
-        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSession",
-        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListSessions",
-        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch",
-        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
-        "/agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn",
-    ]
-    environment_service_paths = [
-        "/agentplane.environments.v1.EnvironmentService/ListEnvironments",
-        "/agentplane.environments.v1.EnvironmentService/GetEnvironment",
-        "/agentplane.environments.v1.EnvironmentService/WatchEnvironment",
-        "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",
-    ]
-    expected_permissions = {
-        (BASIC_POLICY, credential_name, destination, "POST", path, True)
-        for path in (*session_paths, *environment_service_paths)
-    }
-
-    def host_matches_destination(pattern: str) -> bool:
-        return pattern in {destination, "*"} or (
-            pattern.startswith("*.") and destination.endswith(pattern[1:]) and destination != pattern[2:]
-        )
-
-    actual_permissions: set[tuple[str, str | None, str, str, str, bool]] = set()
-    for policy in staging_manifests:
-        if policy["kind"] != "PolicySet":
-            continue
-        for rule in policy["spec"]["rules"]:
-            credential_ref = rule.get("credentialRef", {}).get("name")
-            # This separate opt-in set intentionally grants uncredentialed public access to any host.
-            if policy["metadata"]["name"] == PUBLIC_INTERNET_POLICY and credential_ref is None:
-                continue
-            if not any(host_matches_destination(host) for host in rule.get("hosts", [])) and (
-                credential_ref != credential_name
-            ):
-                continue
-
-            hosts = rule.get("hosts")
-            methods = rule.get("methods")
-            paths = rule.get("paths")
-            assert hosts, rule
-            assert methods, rule
-            assert paths, rule
-            actual_permissions.update(
-                (policy["metadata"]["name"], credential_ref, host, method, path, rule.get("clusterInternal", False))
-                for host in hosts
-                for method in methods
-                for path in paths
-            )
-
-    assert actual_permissions == expected_permissions
-
-    credential = _by_name(staging_manifests, "EgressCredential", credential_name)
-    gateway = _by_name(staging_manifests, "Deployment", "runner-gateway")["spec"]["template"]["spec"]
-    gateway_container = one(container for container in gateway["containers"] if container["name"] == "runner-gateway")
-    gateway_env = {entry["name"]: entry["value"] for entry in gateway_container["env"] if "value" in entry}
-    dispatcher_audience = gateway_env["AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_AUDIENCE"]
-    assert dispatcher_audience == audience
-    assert credential["spec"]["source"] == {"projectedWorkloadToken": {"audience": dispatcher_audience}}
-    assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}]
+    assert not any(
+        item["kind"] == "EgressCredential" and item["metadata"]["name"] == credential_name for item in staging_manifests
+    )
+    basic = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
+    assert all(
+        rule.get("credentialRef", {}).get("name") != credential_name
+        and session_dispatcher.service(namespace).fqdn not in rule.get("hosts", [])
+        for rule in basic["spec"]["rules"]
+    )
     proxy_settings = yaml.safe_load(
         _by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
     )
-    assert proxy_settings["projected_token_audiences"].count(dispatcher_audience) == 1
+    assert session_dispatcher.TOKEN_AUDIENCE not in proxy_settings["projected_token_audiences"]
+    assert f"{destination.fqdn}:{destination.pod_port}" in proxy_settings["tls_passthrough_targets"]
 
-    # Both execution environments pass only the inert placeholder to the agent. The VM carries
-    # that value in its guest runner config; the Pod carries it in its runner container env.
+    configured: list[tuple[str, Any]] = []
+    for item in staging_manifests:
+        if item["kind"] != "ConfigMap" or "settings.yaml" not in item.get("data", {}):
+            continue
+        routes = yaml.safe_load(item["data"]["settings.yaml"]).get("workload_routes", {})
+        configured.extend((origin, routes[origin]) for origin in (dispatcher_origin, http_origin) if origin in routes)
+    assert {origin for origin, _ in configured} == {dispatcher_origin, http_origin}
+    for _, route in configured:
+        assert route["upstream"] == f"{destination.fqdn}:{destination.pod_port}"
+        assert route["server_uri"] == runner_gateway.WORKLOAD_URI
+        assert route["tls"]["cert_file"].endswith("/tls.crt")
+
     pod_template = _by_name(staging_manifests, "SandboxTemplate", "environment-tools")
     pod_runner = one(
         container
@@ -372,13 +339,12 @@ def test_session_dispatcher_egress_is_limited_to_the_delegation_rpc_surfaces(
     )
     pod_env = {entry["name"]: entry["value"] for entry in pod_runner["env"] if "value" in entry}
     assert pod_env["AGENTPLANE_SESSIONS_URL"] == service_url
-    assert pod_env["AGENTPLANE_SESSIONS_CREDENTIAL"] == credential_placeholder
-
-    vm_runner = json.loads(
-        _by_name(staging_manifests, "ConfigMap", "environment-vm-config")["data"]["environment-runtime.json"]
+    assert pod_env["AGENTPLANE_SESSIONS_CREDENTIAL"] == f"agentplane-credential-{credential_name}"
+    assert all(
+        source.get("serviceAccountToken", {}).get("audience") != session_dispatcher.TOKEN_AUDIENCE
+        for volume in pod_template["spec"]["pod"]["spec"]["volumes"]
+        for source in volume.get("projected", {}).get("sources", [])
     )
-    assert vm_runner["harness_environment"]["values"]["AGENTPLANE_SESSIONS_URL"] == service_url
-    assert vm_runner["harness_environment"]["values"]["AGENTPLANE_SESSIONS_CREDENTIAL"] == credential_placeholder
 
 
 def test_github_policy_admits_the_write_verbs_a_pr_lifecycle_needs(staging_manifests: list[dict[str, Any]]) -> None:

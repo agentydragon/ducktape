@@ -385,11 +385,9 @@ def objects(
     synthesized = list(Testing.synth(fixture.chart))
     if vm_sandboxes:
         _boot_test_guest(synthesized)
-    if firecracker_sandboxes:
-        # Bare k3s does not install Cilium. Keep the production construct and its SandboxTemplate,
-        # but omit its CiliumNetworkPolicy because this fixture cannot enforce that policy.
-        synthesized = [doc for doc in synthesized if doc["kind"] != "CiliumNetworkPolicy"]
-    return synthesized
+    # Bare k3s does not install Cilium. Keep the production constructs and their workloads,
+    # but omit CiliumNetworkPolicies because this fixture cannot enforce those policies.
+    return [doc for doc in synthesized if doc["kind"] != "CiliumNetworkPolicy"]
 
 
 def build_chart(
@@ -466,6 +464,7 @@ def build_chart(
         tls_passthrough_services=[
             history_service.workload_service(env.namespace),
             notifications.workload_service(env.namespace),
+            runner_gateway.workload_service(env.namespace),
         ],
     )
     sandbox_pod.add_tool_config(chart, env)
