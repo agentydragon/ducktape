@@ -254,7 +254,7 @@ fn finalization_registry_guards_preserve_native_effect_authority() {
         (
             "class Cleanup {}\nconst registry = new globalThis.FinalizationRegistry(Cleanup);\nclass Later {}\n",
             false,
-            Some("TypeError"),
+            None,
         ),
         (
             "const registry = new globalThis.FinalizationRegistry(globalThis.cleanup);\nclass Later {}\n",
