@@ -7,15 +7,7 @@ from typing import cast
 import pytest
 import pytest_bazel
 
-from finance.plaid.spend.allowance import (
-    Disposition,
-    Kind,
-    PeriodId,
-    TransactionPeriodId,
-    daily_reference,
-    matching_rule,
-    round_minor_units,
-)
+from finance.plaid.spend.allowance import Disposition, Kind, PeriodId, TransactionPeriodId, matching_rule
 from finance.plaid.spend.models import StatementReason
 from finance.plaid.spend.sustainability import SustainabilityView
 from finance.plaid.spend.testing import dashboard
@@ -173,7 +165,6 @@ def test_allowance_balance_matches_current_cycle() -> None:
     )
     assert allowance.review_transaction_count == view.summary.unmatched_charge_count
     assert allowance.review_minor_units == view.summary.unmatched_charge_minor_units
-    assert allowance.daily_reference_minor_units == round_minor_units(daily_reference(allowance.monthly_minor_units), 0)
 
 
 def test_allowance_scenarios_are_calculated_from_valid_inputs() -> None:

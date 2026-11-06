@@ -13,7 +13,12 @@ from agentplane.x.indexing.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, ch
 def test_offsets_slice_the_embedded_text_back_out() -> None:
     blob = "\n".join(f"line {n} with some words in it" for n in range(200))
     encoded = blob.encode()
-    for chunk in chunk_text(blob):
+    chunks = chunk_text(blob)
+    assert len(chunks) > 1
+    assert chunks[0].byte_start == 0
+    assert chunks[-1].byte_end == len(encoded)
+    assert all(left.byte_end >= right.byte_start for left, right in itertools.pairwise(chunks))
+    for chunk in chunks:
         assert encoded[chunk.byte_start : chunk.byte_end].decode() == chunk.text
 
 
@@ -28,10 +33,11 @@ def test_overlap_is_code_point_safe_for_multibyte_content() -> None:
 
 
 def test_zero_overlap_keeps_chunks_contiguous_and_in_document_order() -> None:
-    chunks = chunk_text(
-        "\n".join(f"line {n}" for n in range(500)), ChunkBudget(target_bytes=100, max_bytes=200, overlap_codepoints=0)
-    )
+    blob = "\n".join(f"line {n}" for n in range(500))
+    chunks = chunk_text(blob, ChunkBudget(target_bytes=100, max_bytes=200, overlap_codepoints=0))
+    assert len(chunks) > 1
     assert all(left.byte_end == right.byte_start for left, right in itertools.pairwise(chunks))
+    assert "".join(chunk.text for chunk in chunks) == blob
 
 
 def test_packs_to_preferred_line_boundaries() -> None:
