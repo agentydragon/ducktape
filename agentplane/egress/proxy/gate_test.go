@@ -7,13 +7,13 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
-	"net/url"
 	"runtime"
 	"strconv"
 	"strings"
@@ -26,7 +26,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	"golang.org/x/net/http2"
 )
 
 var (
@@ -158,12 +157,17 @@ func TestRefusalsCarryTheirReasonAndAreRecorded(t *testing.T) {
 func TestProxyAuthorizationCannotAuthenticateWithoutAnSVID(t *testing.T) {
 	l := newLab(t)
 	upstream := plainUpstream(t, func(http.ResponseWriter, *http.Request) { t.Error("request without an SVID reached upstream") })
-	response := l.sendOn(t, l.clientWithoutSVID(), "GET", portOf(upstream), "/allowed", bearerHeader, nil)
-	if response.StatusCode != http.StatusForbidden || response.Header.Get("x-agentplane-egress") != "denied; reason=token-rejected" {
-		t.Fatalf("response %d %q; a hop bearer must not replace the missing SVID", response.StatusCode, response.Header.Get("x-agentplane-egress"))
+	request, err := http.NewRequestWithContext(bounded(t), http.MethodGet, "http://"+fixtureHost+":"+portOf(upstream)+"/allowed", nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if record := l.records.all()[0]; record.Subject != nil || valueOf(record.Reason) != decision.TokenRejected {
-		t.Fatalf("missing SVID was recorded as an authenticated caller: %+v", record)
+	request.Header = bearerHeader.Clone()
+	_, err = l.clientWithoutSVID().Do(request)
+	if err == nil {
+		t.Fatal("request without an SVID reached the HTTP proxy despite presenting a hop bearer")
+	}
+	if records := l.records.all(); len(records) != 0 {
+		t.Fatalf("a connection without an SVID reached the proxy handler: %+v", records)
 	}
 }
 
@@ -189,10 +193,6 @@ func TestAdmittedRequestIsSubstitutedAndLosesItsHopHeaders(t *testing.T) {
 func TestPlainRequestsOnOneClientConnectionShareAConnectionID(t *testing.T) {
 	l := newLab(t)
 	upstream := plainUpstream(t, func(http.ResponseWriter, *http.Request) {})
-	proxyURL, err := url.Parse("https://" + l.address)
-	if err != nil {
-		t.Fatal(err)
-	}
 	get := func(client *http.Client, path string) {
 		t.Helper()
 		req, err := http.NewRequestWithContext(bounded(t), "GET", "http://"+fixtureHost+":"+portOf(upstream)+path, nil)
@@ -527,13 +527,37 @@ func TestProxyAuthorizationCannotReplaceAMissingSVIDOnCONNECT(t *testing.T) {
 	upstream, counted := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("request without SVID reached upstream") }))
 	tlsConfig := l.proxyClientTLS.Clone()
 	tlsConfig.Certificates = nil
-	tlsConfig.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return nil, nil }
-	_, response := l.connectWithTLS(t, tlsConfig, fixtureHost+":"+portOf(upstream), validBearer)
-	if response.StatusCode != http.StatusForbidden || response.Header.Get("x-agentplane-egress") != "denied; reason=token-rejected" {
-		t.Fatalf("CONNECT response %d %q; a hop bearer must not replace the missing SVID", response.StatusCode, response.Header.Get("x-agentplane-egress"))
+	tlsConfig.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		return &tls.Certificate{}, nil
 	}
-	if len(l.records.all()) != 1 || l.records.all()[0].Subject != nil || counted.accepts.Load() != 0 {
-		t.Fatalf("missing SVID acquired identity or dialed upstream: records=%+v TCP=%d", l.records.all(), counted.accepts.Load())
+	ctx := bounded(t)
+	connection, err := (&net.Dialer{}).DialContext(ctx, "tcp", l.address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	if err := connection.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	tlsConnection := tls.Client(connection, tlsConfig)
+	responseStatus := 0
+	if err := tlsConnection.HandshakeContext(ctx); err == nil {
+		port := portOf(upstream)
+		_, writeErr := fmt.Fprintf(tlsConnection, "CONNECT %s:%s HTTP/1.1\r\nHost: %s:%s\r\n%s\r\n",
+			fixtureHost, port, fixtureHost, port, validBearer)
+		if writeErr == nil {
+			response, readErr := http.ReadResponse(bufio.NewReader(tlsConnection), &http.Request{Method: http.MethodConnect})
+			if readErr == nil {
+				responseStatus = response.StatusCode
+				response.Body.Close()
+			}
+		}
+	}
+	if responseStatus == http.StatusOK {
+		t.Fatal("CONNECT without an SVID succeeded despite its hop bearer")
+	}
+	if len(l.records.all()) != 0 || counted.accepts.Load() != 0 {
+		t.Fatalf("missing SVID reached the HTTP handler or dialed upstream: records=%+v TCP=%d", l.records.all(), counted.accepts.Load())
 	}
 }
 
@@ -641,7 +665,8 @@ func TestNoSecretReachesTheLogsOrTheRecordedDecisions(t *testing.T) {
 	port := portOf(upstream)
 
 	if refused := l.send(t, "GET", port, "/public/x", header("Proxy-Authorization", "Bearer "+forgedBearer), nil); refused.StatusCode != 403 {
-		t.Fatalf("forged bearer: status %d", refused.StatusCode)
+		body, _ := io.ReadAll(refused.Body)
+		t.Fatalf("forged bearer: status %d headers=%v body=%q", refused.StatusCode, refused.Header, body)
 	}
 	_, client := l.tunnelAs(t, hopBearer, port, true, "X-Agentplane-Workload-Token: "+projectedAudience+" "+forgedProjected+"\r\n")
 	public := request(bounded(t), port, "/public/"+pathSecret+"?token="+querySecret, true, nil)

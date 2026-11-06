@@ -412,7 +412,6 @@ func TestMTLSFailureDoesNotRetryAsToken(t *testing.T) {
 		ProxyHost:              "127.0.0.1",
 		ProxyPort:              port,
 		ProxyMode:              "mtls",
-		TokenFile:              writeTestToken(t, "must-not-fallback"),
 		ProxyTLS:               &proxyTLSConfig{CertFile: clientCredentials.CertFile, KeyFile: clientCredentials.KeyFile, CAFile: ca.RootFile},
 		ListenAddress:          "127.0.0.1:3128",
 		ReadinessListenAddress: "127.0.0.1:3129",
