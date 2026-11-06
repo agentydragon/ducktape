@@ -13,6 +13,7 @@ from agentplane.system_tests.k3s.baseline import K3s
 from agentplane.system_tests.vm import (
     block_storage,
     guest_logs,
+    host_qemu,
     infrastructure as vm_infrastructure,
     sandboxes as vm_sandboxes,
 )
@@ -77,15 +78,19 @@ class VmRuntime:
 
     @contextmanager
     def capture(self, k3s: K3s, namespace: str, validate_shutdown: Callable[[], bool]) -> Iterator[None]:
-        with guest_logs.capture(
-            log_root=Path("/var/log/pods"),
-            pod_root=Path("/var/lib/kubelet/pods"),
-            storage_root=k3s.data_dir / "storage",
-            namespace=namespace,
-            kubevirt_namespace=vm_infrastructure.KUBEVIRT_NAMESPACE,
-            destination=undeclared_outputs_dir() / "vm-artifacts",
-            validate_shutdown=validate_shutdown,
-            require_boot_evidence=os.environ.get("AGENTPLANE_VM_BOOT_EVIDENCE") == "1",
+        artifacts = undeclared_outputs_dir() / "vm-artifacts"
+        with (
+            guest_logs.capture(
+                log_root=Path("/var/log/pods"),
+                pod_root=Path("/var/lib/kubelet/pods"),
+                storage_root=k3s.data_dir / "storage",
+                namespace=namespace,
+                kubevirt_namespace=vm_infrastructure.KUBEVIRT_NAMESPACE,
+                destination=artifacts,
+                validate_shutdown=validate_shutdown,
+                require_boot_evidence=os.environ.get("AGENTPLANE_VM_BOOT_EVIDENCE") == "1",
+            ),
+            host_qemu.capture(k3s.kubectl, namespace, artifacts),
         ):
             yield
 

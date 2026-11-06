@@ -112,6 +112,24 @@ py_library(
     visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
+py_library(
+    name = "host_qemu",
+    srcs = ["host_qemu.py"],
+    deps = [":guest_logs"],
+)
+
+py_test(
+    name = "test_host_qemu",
+    srcs = ["test_host_qemu.py"],
+    deps = [
+        ":host_qemu",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "test_guest_logs",
     srcs = ["test_guest_logs.py"],
@@ -165,6 +183,7 @@ py_library(
     deps = [
         ":block_storage",
         ":guest_logs",
+        ":host_qemu",
         ":infrastructure",
         ":sandboxes",
         "//agentplane/system_tests/driver:cluster",
