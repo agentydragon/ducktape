@@ -1,6 +1,6 @@
 use analysis_model::DepKind;
 use source_identity::ChunkId;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, OnceLock};
 
 use serde::Serialize;
