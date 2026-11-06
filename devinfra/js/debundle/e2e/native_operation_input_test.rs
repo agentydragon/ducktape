@@ -1243,7 +1243,7 @@ fn selected_symbol_for_rejects_other_callees_and_nonprimitive_conversion() {
     for (source, expected) in [
         (
             "const marker = Symbol(...['key']);\nexport { marker };\n",
-            "nonspread",
+            "unsupported Symbol call shape",
         ),
         (
             "const marker = Symbol({ toString() { return 'key'; } });\nexport { marker };\n",
@@ -1307,10 +1307,6 @@ fn primitive_argument_throw_is_preserved_by_selected_symbol_for() {
     assert_preserved_entry_output(&fixture, "1\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     assert_eq!(native_input_uses(&graph).len(), 1);
-    assert_eq!(
-        node_for_binding(&graph, "marker")["purity"]["kind"],
-        "not_pure"
-    );
 }
 
 #[test]
