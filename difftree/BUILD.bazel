@@ -161,21 +161,6 @@ py_test(
 )
 
 py_test(
-    name = "test_snapshots",
-    srcs = ["test_snapshots.py"],
-    data = ["__snapshots__/test_snapshots.ambr"],
-    uses_syrupy = True,
-    deps = [
-        ":config",
-        ":conftest",
-        ":parser",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_tree",
     srcs = ["test_tree.py"],
     deps = [

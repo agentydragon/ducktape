@@ -153,6 +153,71 @@ def test_column_ordering(columns, first, second):
     assert 0 <= positions[first] < positions[second]
 
 
+@pytest.mark.parametrize(
+    ("columns", "present", "absent"),
+    [
+        ([Column.TREE], (), ("+7", "-2", "A", "D", "%")),
+        ([Column.TREE, Column.COUNTS], ("+7", "-2"), ("A", "D", "%")),
+        ([Column.TREE, Column.BARS], ("A", "D"), ("+7", "-2", "%")),
+        ([Column.TREE, Column.PERCENTAGES], ("100.0%",), ("+7", "-2", "A", "D")),
+    ],
+)
+def test_configured_columns_control_rendered_content(columns, present, absent):
+    changes = [FileChange(path="src/file.py", additions=7, deletions=2)]
+    config = RenderConfig(
+        columns=columns, bar_left_blocks=BlockChars.simple("D"), bar_right_blocks=BlockChars.simple("A")
+    )
+
+    result = render_to_string(
+        make_diff_tree(changes, config=config), width=120, force_terminal=False, color_system=None
+    )
+
+    assert "src/file.py" in result
+    for content in present:
+        assert content in result
+    for content in absent:
+        assert content not in result
+
+
+def test_configured_bar_width_bounds_each_bar():
+    changes = [FileChange(path="src/file.py", additions=10, deletions=10)]
+    config = RenderConfig(
+        columns=[Column.TREE, Column.BARS],
+        bar_width=8,
+        bar_left_blocks=BlockChars.simple("D"),
+        bar_right_blocks=BlockChars.simple("A"),
+    )
+
+    result = render_to_string(
+        make_diff_tree(changes, config=config), width=120, force_terminal=False, color_system=None
+    )
+    file_line = _find_line_with(result.splitlines(), "src/file.py")
+
+    assert file_line.count("A") == config.bar_width
+    assert file_line.count("D") == config.bar_width
+
+
+def test_nested_paths_are_collapsed_and_binary_files_are_labeled():
+    changes = [
+        FileChange(path="src/generated/module.py", additions=3, deletions=1),
+        FileChange(path="assets/image.png", additions=0, deletions=0, is_binary=True),
+        FileChange(path="docs/removed.md", additions=0, deletions=4),
+    ]
+
+    result = render_to_string(make_diff_tree(changes), width=120, force_terminal=False, color_system=None)
+    lines = result.splitlines()
+    binary_line = _find_line_with(lines, "assets/image.png")
+    changed_line = _find_line_with(lines, "src/generated/module.py")
+    deleted_line = _find_line_with(lines, "docs/removed.md")
+
+    assert "src/generated/module.py" in result
+    assert "[Binary]" in binary_line
+    assert not any(block in binary_line for block in "█▏▕▎▍▌▋▊▉")
+    assert "+3" in changed_line
+    assert "-1" in changed_line
+    assert "-4" in deleted_line
+
+
 def test_bar_proportionality():
     """Test that progress bars render proportionally to actual changes."""
     changes = [
