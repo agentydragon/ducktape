@@ -10,9 +10,10 @@ use super::value_model::{
 };
 use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use crate::facts::abstract_domain::builtins::{
-    ArgSel, IntrinsicOp, Invocation, Mutation, NativeBodyEffects, Return, Row, Throws,
+    ArgSel, IntrinsicOp, Invocation, NativeBodyEffects, Return, Row, Throws,
 };
 use crate::facts::abstract_domain::effect::CoerceOp;
+use crate::facts::abstract_domain::heap::Mutation;
 use crate::facts::abstract_domain::integrity::IntrinsicSlot;
 use crate::facts::abstract_domain::primitive;
 use crate::facts::abstract_domain::value::{Kind, Value};
