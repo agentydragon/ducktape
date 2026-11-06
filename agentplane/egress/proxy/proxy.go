@@ -43,10 +43,11 @@ type Options struct {
 	// CA signs the leaf certificates the sandboxes' clients are shown inside a tunnel.
 	CA tls.Certificate
 	// UpstreamRoots verifies the destinations, independently of CA.
-	UpstreamRoots *x509.CertPool
-	Identity      *identity.Verifier
-	Policy        *policy.Index
-	Upstream      *upstream.Resolver
+	UpstreamRoots         *x509.CertPool
+	Identity              *identity.Verifier
+	TLSPassthroughTargets []string
+	Policy                *policy.Index
+	Upstream              *upstream.Resolver
 	// Record receives every decision. It must not block.
 	Record func(decision.Record)
 	// TLSPassthroughTargets are the only authorities carried as opaque TLS after a

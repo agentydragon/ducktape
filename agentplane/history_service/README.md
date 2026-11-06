@@ -1,8 +1,8 @@
 # History Service
 
 Serves retained Session history: the raw runner Event log and its observation metadata, keyed by
-public Session ID. Every normal caller is authenticated by projected ServiceAccount token
-(TokenReview), and can read only Sessions whose retained execution principal has the same
+public Session ID. Readers authenticate with a projected ServiceAccount token (TokenReview),
+and can read only Sessions whose retained execution principal has the same
 ServiceAccount namespace, name and UID. This read authority does not depend on a live Sandbox.
 Configured backend readers retain their explicit Pod-bound, service-wide read path; a ServiceAccount
 token alone does not grant it. A Session UUID by itself grants nothing. Consumers use `client.py`;
@@ -43,13 +43,19 @@ not call it.
 
 `ingress/` serves `SessionJournalIngress.Push`, the
 [runner ingress contract](../docs/runner_control.md#event-ingress): runners push each Session's
-journal here, one call per Session. `main.go` serves it on its own listener (`ingress.listen_address`), apart
-from the read API, since it takes untrusted input: the network fence admits the egress proxy to that
-port alone. Its settings name the token audience and the namespaces whose ServiceAccounts may push.
-A Sandbox reaches it only through the egress proxy under the `runner-ingress` policy
-(`cluster/cdk8s/agentplane/history_service.py`), which substitutes the Pod's token for the
-`agentplane-runner-ingress` audience.
+journal here, one call per Session. Sandbox Runtime opens end-to-end mTLS through the sidecar
+and central proxy's exact-authority CONNECT passthrough to `ingress.workload_listen_address`.
+History presents `spiffe://agentplane/history-ingress`, verifies the client SVID against the
+trust-manager roots with an explicit clientAuth EKU, and resolves its Sandbox UID and accepted
+credential generation from live Sandbox status. The caller remains that Sandbox's controller-owned
+ServiceAccount, including its canonical UID. A deleted Sandbox, stale credential or missing bound
+Pod is refused before the ingress handler. No header selects the caller and the proxy asserts none.
+The runner-ingress projected-token audience is absent from Sandbox templates and proxy audiences.
 
+The separate `ingress.listen_address` retains the central sampler's existing Pod-bound token and
+delegated writer path. With workload TLS configured, only configured sampler accounts enter that
+listener. The read API retains its existing authorization. Network policy admits the central proxy
+to the workload port and the sampler to its backend port.
 The first accepted announcement binds the Session to the pushing ServiceAccount (namespace, name,
 UID) in `session_history`; other accounts get `PERMISSION_DENIED`. Entries commit through
 `Store.Append`, which accepts exact replays and refuses gaps and conflicting entries, and each
