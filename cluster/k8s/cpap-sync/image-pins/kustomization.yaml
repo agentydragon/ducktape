@@ -2,7 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/cpap-sync
-    newTag: devel-20261029052540-ef6282d # {"$imagepolicy": "flux-system:cpap-sync:tag"}
+    newTag: devel-20261106051725-1b91b70 # {"$imagepolicy": "flux-system:cpap-sync:tag"}
   - name: git.allegedly.works/ducktape-ci/cpap-gateway
     newTag: devel-20261029011051-14b3871 # {"$imagepolicy": "flux-system:cpap-gateway:tag"}
   - name: git.allegedly.works/ducktape-ci/vm-image-restart
