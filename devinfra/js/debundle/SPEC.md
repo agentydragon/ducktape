@@ -117,7 +117,8 @@ change the analysis projection or source graph. Retained bindings, imported
 re-exports, destructuring companions and anonymous statements use the same
 normal assignment assembly, gate, translation validation and emission.
 Omitted claims follow the selected residual policy: they return to entry under
-`inline_in_entry`, or move into generated atomic-group modules under
+`inline_in_entry`, move into the configured catchall under `catchall_file`, or
+move into generated atomic-group modules under
 `per_atomic_group`. Under `coarse_atomic_groups`, wholly unclaimed atomic
 groups with equal reachable fixed-owner sets in the strict constraining
 projection share generated modules within intervals between fixed owners in
@@ -132,9 +133,10 @@ or actual eager TDZ rejection is still rejected by the unchanged gate. Generated
 Selected module names and explicit `chunk_renames` remain intact; omitted
 members retain original source names. The authored spec is unchanged.
 
-Ownership subsets require `inline_in_entry`, `per_atomic_group`, or
-`coarse_atomic_groups` for every materialized chunk. `catchall_file` and full
-graph export are unsupported with this option.
+Ownership filtering precedes residual routing for every supported residual
+policy. An omitted explicit claim at the catchall path loses its authored
+renames and annotations; ordinary residual routing can recreate that destination.
+Full graph export remains unsupported with this option.
 Each chunk's graph summary and module report records its retained module paths
 in `ownership_subset`, including an empty list. Acceptance is for that selected
 assignment only; it does not establish acceptance of the full canonical

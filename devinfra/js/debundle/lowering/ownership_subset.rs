@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
-use spec::{LogicalModule, ModulePath, UnassignedMode};
+use spec::{LogicalModule, ModulePath};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -34,7 +34,6 @@ impl OwnershipSubset {
     pub(super) fn validate(
         &self,
         logical_modules: &BTreeMap<String, BTreeMap<String, LogicalModule>>,
-        unassigned_mode: &BTreeMap<String, UnassignedMode>,
         chunk_ids: &[String],
     ) -> Result<()> {
         let known = logical_modules
@@ -69,19 +68,6 @@ impl OwnershipSubset {
                 "ownership subset repeats module {}::{}",
                 entry.chunk,
                 entry.module
-            );
-        }
-        for chunk in chunk_ids {
-            ensure!(
-                matches!(
-                    unassigned_mode.get(chunk),
-                    Some(
-                        UnassignedMode::InlineInEntry
-                            | UnassignedMode::PerAtomicGroup
-                            | UnassignedMode::CoarseAtomicGroups
-                    )
-                ),
-                "ownership subsets require inline_in_entry, per_atomic_group, or coarse_atomic_groups for chunk {chunk:?}"
             );
         }
         Ok(())

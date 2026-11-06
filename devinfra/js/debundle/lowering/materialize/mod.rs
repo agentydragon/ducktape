@@ -218,7 +218,6 @@ pub(super) fn prepare_logical_chunk<'a>(
     let chunk_top_level_mark = runtime_ast.top_level_mark;
     emit_debundle_progress(chunk_id, "materialize_logical_chunk", "start");
     let mut explicit_requests = explicit_requests;
-    let residual_request = requests.iter().find(|request| request.residual).cloned();
 
     let mut builder = ChunkPlanBuilder::new(!keep_going, list_template_identifiers);
     let mut imported_binding_resolver =
@@ -244,12 +243,6 @@ pub(super) fn prepare_logical_chunk<'a>(
     }
     builder.drop_explicit_request_scratch();
     builder.apply_destructuring_group_placement(&ast_analysis.destructuring_groups);
-    builder.add_residual_sweep(
-        residual_request.as_ref(),
-        chunk_unassigned_mode.catchall_file_target(),
-        &ast_analysis.declarations,
-        target_dir,
-    )?;
 
     Ok(PreparedLogicalChunk {
         context,
@@ -458,6 +451,16 @@ pub(super) fn finish_logical_chunk(
     if let Some(selected) = &ownership_subset {
         builder.retain_modules(selected)?;
     }
+    let catchall_request = chunk_unassigned_mode
+        .catchall_file_target()
+        .map(|target| {
+            requests
+                .iter()
+                .find(|request| request.target_path == target)
+                .with_context(|| format!("missing catchall request for {chunk_id}::{target}"))
+        })
+        .transpose()?;
+    builder.add_residual_sweep(catchall_request, &declarations, target_dir)?;
     apply_rebind_folds_from_chunk_analysis(&mut builder, &precomputed);
     if matches!(chunk_unassigned_mode, UnassignedMode::PerAtomicGroup) {
         builder.synthesize_per_atomic_group(&precomputed, &source_unit_layout, target_dir)?;

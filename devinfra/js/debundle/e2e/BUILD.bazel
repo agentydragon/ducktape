@@ -588,6 +588,7 @@ debundle_e2e_test(
 debundle_e2e_test(
     name = "per_atomic_group_test",
     deps = [
+        "//devinfra/js/debundle:spec",
         "@crates//:serde_yaml",
         "@crates//:tempfile",
     ],

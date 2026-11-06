@@ -320,7 +320,7 @@ pub fn materialize_logical_modules(
             !options.graph_reports.enabled(),
             "full graph export for ownership subsets is unsupported"
         );
-        subset.validate(logical_modules, unassigned_mode, &selected_chunk_ids)?;
+        subset.validate(logical_modules, &selected_chunk_ids)?;
         eprintln!(
             "Ownership subset: validating the selected assignment with full spec context; the canonical assignment is not being validated."
         );

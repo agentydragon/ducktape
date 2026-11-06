@@ -1,5 +1,5 @@
 //! `ChunkPlanBuilder` owns the per-chunk mutable state that
-//! `materialize_logical_chunk` threads across its eight phases. Each phase is a
+//! `materialize_logical_chunk` threads across its planning phases. Each phase is a
 //! method on the builder. `bindings_catalogue` is the authoritative binding
 //! destination state; owned-only lookup maps are derived when a downstream
 //! analysis needs that projection.
@@ -159,8 +159,8 @@ impl ChunkPlanBuilder {
 
     /// Restrict ownership to selected explicit modules after the full selector
     /// solve, duplicate checks, analysis-assumption collection, and resolved
-    /// member-site collection have completed, but before rebind folds and
-    /// assignment analysis run.
+    /// member-site collection have completed, but before residual routing,
+    /// rebind folds and assignment analysis run.
     ///
     /// The selector outcomes, unmatched claims, and no-reentry assertions stay
     /// attached to the builder so filtering cannot hide an invalid full spec.
@@ -946,52 +946,40 @@ impl ChunkPlanBuilder {
         }
     }
 
-    /// Residual sweep: route every chunk top-level binding the spec
-    /// did not claim to the chunk's catchall destination.
-    ///
-    /// Two shapes:
-    ///
-    /// 1. A memberless residual request was synthesized (or supplied
-    ///    by the spec) — build a new residual plan, append it, and
-    ///    point `residual_plan_index` at it.
-    /// 2. A `logical_modules` entry already pins itself at the
-    ///    catchall target — repurpose that plan: mark it `Unassigned`
-    ///    and append unclaimed bindings to its members.
-    ///
-    /// `None` for both `residual_request` and `catchall_target`
-    /// leaves `residual_plan_index` unset, which is the
-    /// `InlineInEntry` / `PerAtomicGroup` / `CoarseAtomicGroups` shape.
+    /// Route unclaimed bindings only after all explicit claims and optional
+    /// ownership filtering. A retained explicit catchall plan is reused; when
+    /// omitted, the same request supplies only its residual destination.
     pub(super) fn add_residual_sweep(
         &mut self,
-        residual_request: Option<&LogicalRequest>,
-        catchall_target_for_overflow: Option<&str>,
+        catchall_request: Option<&LogicalRequest>,
         declarations: &[TopLevelDecl],
         target_dir: &str,
     ) -> Result<()> {
-        if let Some(residual) = residual_request {
-            let residual_index = self.module_plans.len();
-            let residual_module_id = ModuleId(residual_index);
-            let mut residual_bindings = HashMap::<String, String>::new();
-            for decl in declarations {
-                for (name, id) in &decl.bindings {
-                    if owned_destination(&self.bindings_catalogue, id).is_none() {
-                        residual_bindings.insert(name.clone(), name.clone());
-                        self.bindings_catalogue.insert(
-                            id.clone(),
-                            BindingKind::Owned {
-                                module: residual_module_id,
-                            },
-                        );
-                    }
+        let Some(request) = catchall_request else {
+            return Ok(());
+        };
+        let unclaimed: Vec<_> = declarations
+            .iter()
+            .flat_map(|declaration| &declaration.bindings)
+            .filter(|(_, binding)| owned_destination(&self.bindings_catalogue, binding).is_none())
+            .collect();
+        let owner_index = match self
+            .module_plans
+            .iter()
+            .position(|plan| plan.target_path == request.target_path)
+        {
+            Some(index) => index,
+            None => {
+                if unclaimed.is_empty() {
+                    return Ok(());
                 }
-            }
-            if !residual_bindings.is_empty() {
+                let index = self.module_plans.len();
                 self.module_plans.push(ModulePlan {
-                    id: residual.id.clone(),
-                    target_file: target_file_for_request(target_dir, &residual.target_path)?,
-                    target_path: residual.target_path.clone(),
+                    id: request.id.clone(),
+                    target_file: target_file_for_request(target_dir, &request.target_path)?,
+                    target_path: request.target_path.clone(),
                     role: ModuleRole::Unassigned,
-                    bindings: residual_bindings,
+                    bindings: HashMap::new(),
                     spec_named_bindings: BTreeSet::new(),
                     anonymous_statements: Vec::new(),
                     anonymous_statement_comments: BTreeMap::new(),
@@ -999,43 +987,24 @@ impl ChunkPlanBuilder {
                     binding_comments: BTreeMap::new(),
                     binding_claim_origins: BTreeMap::new(),
                 });
-                self.residual_plan_index = Some(residual_index);
+                index
             }
-        } else if let Some(catchall_target) = catchall_target_for_overflow {
-            // No memberless residual request was synthesized — an
-            // explicit `logical_modules` entry already pinned itself at
-            // the catchall target. Append unclaimed bindings to that
-            // plan so the residual sweep still has a home, and mark
-            // it Unassigned. The role preserves the legacy residual
-            // report/artifact projection for default-assigned outputs;
-            // it does not select the physical DFS root.
-            let owner_index = self
-                .module_plans
-                .iter()
-                .position(|plan| plan.target_path == catchall_target);
-            if let Some(owner_index) = owner_index {
-                let owner_module_id = ModuleId(owner_index);
-                let owner_plan = &mut self.module_plans[owner_index];
-                owner_plan.role = ModuleRole::Unassigned;
-                for decl in declarations {
-                    for (name, id) in &decl.bindings {
-                        if owned_destination(&self.bindings_catalogue, id).is_none() {
-                            owner_plan
-                                .bindings
-                                .entry(name.clone())
-                                .or_insert_with(|| name.clone());
-                            self.bindings_catalogue.insert(
-                                id.clone(),
-                                BindingKind::Owned {
-                                    module: owner_module_id,
-                                },
-                            );
-                        }
-                    }
-                }
-                self.residual_plan_index = Some(owner_index);
-            }
+        };
+        let owner_plan = &mut self.module_plans[owner_index];
+        owner_plan.role = ModuleRole::Unassigned;
+        for (name, binding) in unclaimed {
+            owner_plan
+                .bindings
+                .entry(name.clone())
+                .or_insert_with(|| name.clone());
+            self.bindings_catalogue.insert(
+                binding.clone(),
+                BindingKind::Owned {
+                    module: ModuleId(owner_index),
+                },
+            );
         }
+        self.residual_plan_index = Some(owner_index);
         Ok(())
     }
 
