@@ -9,10 +9,7 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 py_library(
     name = "egress_credential",
     srcs = ["egress_credential.py"],
-    visibility = [
-        "//agentplane/system_tests/deployment:__pkg__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
+    visibility = ["//cluster/cdk8s:deployment_consumers"],
     deps = [
         "//agentplane/crds:egresscredential",
         "@pypi//cdk8s",
@@ -38,10 +35,7 @@ py_test(
 py_library(
     name = "policy_set",
     srcs = ["policy_set.py"],
-    visibility = [
-        "//agentplane/system_tests/deployment:__pkg__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
+    visibility = ["//cluster/cdk8s:deployment_consumers"],
     deps = [
         "//agentplane/crds:policyset",
         "@pypi//cdk8s",

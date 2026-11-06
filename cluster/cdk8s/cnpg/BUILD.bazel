@@ -5,10 +5,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "cluster",
     srcs = ["cluster.py"],
-    visibility = [
-        "//agentplane/system_tests/deployment:__pkg__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
+    visibility = ["//cluster/cdk8s:deployment_consumers"],
     deps = [
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
