@@ -504,7 +504,12 @@ later source occurrence. Duplicate and deferred sites remain excluded by the
 same consumer; callables, loops and indirect factory results gain no such fact.
 
 For `set_from_primitive_array`, the selected initializer is one direct
-unshadowed `new Set([primitive literals])` with a dense, nonspread array.
+unshadowed `new Set([...])` with a dense, nonspread array of primitive literals
+or earlier stable primitive binding reads. Each admitted identifier resolves
+to a unique direct top-level simple declaration with a primitive-literal
+initializer and no recorded rebind, update or dynamic-scope contamination.
+This source proof establishes primitive type, not an exact value; the ordinary
+eager read and initialization order remain in the graph.
 The premise covers the original global Set constructor, Set adder, Array
 iterator and Array iterator `next` identities needed to construct that Set.
 The source-only typed slot census rejects known writes to the required slots

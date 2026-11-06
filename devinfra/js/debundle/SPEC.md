@@ -2454,7 +2454,7 @@ the facts came from a saved artifact.
 | `symbol`                             | Top-level simple binding initialized by a direct `Symbol(...)` call with zero or one syntactically primitive argument                                                      | `%Symbol%`                                                                  |
 | `symbol_for`                         | The same with `Symbol.for(...)`                                                                                                                                            | `%Symbol%`, `%Symbol.for%`                                                  |
 | `promise_resolve`                    | Top-level simple binding initialized by a zero-argument `Promise.resolve()`                                                                                                | `%Promise%`, `%Promise.resolve%`                                            |
-| `set_from_primitive_array`           | Top-level simple binding initialized by `new Set([primitive literals])` over a dense, nonspread array                                                                      | `%Set%`, `%Set.prototype%`, `%Array.prototype%`, `%ArrayIteratorPrototype%` |
+| `set_from_primitive_array`           | Top-level simple binding initialized by `new Set([primitive literals or earlier stable primitive bindings])` over a dense, nonspread array                                 | `%Set%`, `%Set.prototype%`, `%Array.prototype%`, `%ArrayIteratorPrototype%` |
 | `set_from_set_spread`                | `new Set([...seed, primitive literals])` in the same declaration as a selected `set_from_primitive_array` seed and every declarator between; all stay in one output module | Those slots and `%SetIteratorPrototype%`                                    |
 | `object_own_data_function_read`      | Top-level simple binding initialized by `Object.<name>`, a function-valued data property in the builtin summary table                                                      | `%Object%`, `%Object.<name>%`                                               |
 | `array_spread_from_primitive_arrays` | Last declarator of a `const` whose earlier declarators are dense primitive arrays and whose initializer holds primitives and spreads of them                               | `%Array.prototype%`, `%ArrayIteratorPrototype%`                             |
@@ -2467,6 +2467,15 @@ slot anywhere in the analyzed program (alias, reflective, deferred,
 cross-chunk, restored) reject the input. Opaque receiver or key writes remain
 census witnesses covered by the assertion: a write to an apparently unrelated
 property can still run a setter or Proxy trap.
+
+For `set_from_primitive_array`, an identifier element must resolve to the same
+canonical binding as one earlier direct top-level simple `var`, `let` or
+`const` declarator initialized by a primitive literal. The completed source
+census must find no other declaration, assignment, destructuring rebind or
+update to that binding. This proves primitive type at the selected constructor
+site, not the exact element value; ordinary eager reads, TDZ and source order
+remain in force. Member reads, calls, spreads, holes and unknown values do not
+qualify.
 
 The author asserts that the slots keep their original native identities at
 **every** synchronous initialization execution of the site in every schedule
