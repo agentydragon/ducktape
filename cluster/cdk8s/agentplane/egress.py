@@ -56,14 +56,7 @@ from agentplane.crd_group import GROUP
 from agentplane.egress.settings import PROXY_MTLS_PORT, RULES_WORKLOAD_PORT, RULES_WORKLOAD_URI, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import (
-    actions,
-    database,
-    llm_ingress,
-    runner_gateway,
-    session_dispatcher,
-    workload_tls,
-)
+from cluster.cdk8s.agentplane import actions, database, llm_ingress, runner_gateway, session_dispatcher, workload_tls
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.agentplane.environment import Environment
@@ -691,10 +684,7 @@ class Egress(Construct):
                 f"{account.namespace}/{account.name}"
                 for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
             ],
-            "projected_token_audiences": [
-                KUBERNETES_AUDIENCE,
-                session_dispatcher.TOKEN_AUDIENCE,
-            ],
+            "projected_token_audiences": [KUBERNETES_AUDIENCE, session_dispatcher.TOKEN_AUDIENCE],
             "tls_passthrough_targets": [
                 f"{service.fqdn}:{service.port.number}"
                 for service in (rules_workload_service(env.namespace), *tls_passthrough_services)
