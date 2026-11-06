@@ -1,0 +1,48 @@
+# gazelle:resolve proto google/api/field_behavior.proto @googleapis//google/api:field_behavior_proto
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load(":crd.bzl", "proto_crd", "unsupported_listvalue_probe")
+
+proto_library(
+    name = "policy_proto",
+    srcs = ["policy.proto"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@googleapis//google/api:field_behavior_proto",
+        "@protobuf//:struct_proto",
+    ],
+)
+
+go_proto_library(
+    name = "policy_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/policy/protofirst",
+    proto = ":policy_proto",
+    visibility = ["//agentplane/policy/protofirst:__subpackages__"],
+    deps = [
+        "@org_golang_google_genproto_googleapis_api//annotations",
+        "@org_golang_google_protobuf//types/known/structpb",
+    ],
+)
+
+proto_crd(
+    name = "policy_crd",
+    proto = ":policy_proto",
+    visibility = ["//agentplane/policy/protofirst:__subpackages__"],
+)
+
+proto_library(
+    name = "listvalue_proto",
+    srcs = ["listvalue.proto"],
+    visibility = ["//visibility:public"],
+    deps = ["@protobuf//:struct_proto"],
+)
+
+unsupported_listvalue_probe(
+    name = "listvalue_probe",
+    proto = ":listvalue_proto",
+    visibility = ["//agentplane/policy/protofirst:__subpackages__"],
+)

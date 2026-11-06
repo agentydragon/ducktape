@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package agentplane.policy.protofirst.probe;
+
+import "google/protobuf/struct.proto";
+
+// Existing PolicySets store Action names as a map of string arrays.
+// +cue-gen:ActionListProbe:groupName:protofirst.agentplane.allegedly.works
+// +cue-gen:ActionListProbe:versions:v1alpha1
+// +cue-gen:ActionListProbe:scope:Namespaced
+message ActionListProbe {
+  map<string, google.protobuf.ListValue> actions = 1;
+}
