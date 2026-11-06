@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"slices"
 )
 
 func CloneJSON(value []byte) json.RawMessage {
@@ -41,10 +42,5 @@ func CanonicalJSON(value any) string {
 }
 
 func IsOneOf(value string, options ...string) bool {
-	for _, option := range options {
-		if value == option {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(options, value)
 }
