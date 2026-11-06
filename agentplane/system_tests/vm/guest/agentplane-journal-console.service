@@ -1,0 +1,17 @@
+[Unit]
+Description=Retain the runtime guest journal on the serial console
+DefaultDependencies=no
+After=systemd-journald.service
+IgnoreOnIsolate=yes
+
+[Service]
+Type=exec
+# Persistent files are retained from the host. Opening them here would keep /state busy.
+# Watch /run across the early flush and its recreation when persistent logging ends.
+ExecStart=/usr/bin/journalctl --directory=/run/log/journal --follow --lines=all --all --output=short-monotonic --no-pager
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/ttyS0
+
+[Install]
+WantedBy=sysinit.target

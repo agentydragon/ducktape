@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import threading
+import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager
@@ -94,6 +95,7 @@ def systemd_supervision_passed(incarnation_uid: str) -> bool:
 
 def _copy(
     log_root: Path,
+    pod_root: Path,
     scopes: dict[str, Path],
     storage_root: Path,
     namespace: str,
@@ -104,25 +106,49 @@ def _copy(
     opened: set[tuple[int, int]] = set()
     streams: list[tuple[BinaryIO, BinaryIO]] = []
     journals: list[tuple[BinaryIO, BinaryIO]] = []
+    journal_snapshot_at = 0.0
     with ExitStack() as files:
         while True:
             for pattern, log_destination in scopes.items():
                 for path in log_root.glob(pattern):
-                    _retain(path, log_destination, opened, streams, files)
+                    _retain(path, log_destination / path.parent.parent.name, opened, streams, files)
+            for launcher in log_root.glob(f"{namespace}_virt-launcher-*"):
+                pod_uid = launcher.name.rsplit("_", 1)[-1]
+                # Keep QEMU's regular serial file independently of virt-tail/CRI forwarding.
+                for path in pod_root.glob(f"{pod_uid}/volumes/kubernetes.io~empty-dir/private/*/virt-serial0-log"):
+                    _retain(
+                        path,
+                        destination / "serial" / launcher.name / path.parent.name,
+                        opened,
+                        streams,
+                        files,
+                        suffix=".log",
+                    )
             for reader, writer in streams:
                 shutil.copyfileobj(reader, writer)
                 writer.flush()
             for path in storage_root.glob(f"pvc-*_{namespace}_*-state/systemd-journal/*/*.journal*"):
-                _retain(path, destination / "journals", opened, journals, files, journal=True)
-            if stop.is_set():
-                # Journald updates headers and entry objects in place. Recopy the whole file
-                # after guest teardown, including from unlinked inodes, rather than tailing it.
+                _retain(
+                    path,
+                    destination / "journals" / path.parents[2].name / path.parent.name,
+                    opened,
+                    journals,
+                    files,
+                    journal=True,
+                    suffix="",
+                )
+            finished = stop.is_set()
+            if finished or time.monotonic() >= journal_snapshot_at:
+                # Journal headers and entries change in place. Refresh whole files while the
+                # test runs too, so a killed driver leaves more than its initial snapshot.
                 for reader, writer in journals:
                     reader.seek(0)
                     writer.seek(0)
                     shutil.copyfileobj(reader, writer)
                     writer.truncate()
                     writer.flush()
+                journal_snapshot_at = time.monotonic() + 1
+            if finished:
                 return
             stop.wait(0.1)
 
@@ -135,6 +161,7 @@ def _retain(
     files: ExitStack,
     *,
     journal: bool = False,
+    suffix: str = ".cri.log",
 ) -> None:
     try:
         source = path.open("rb")
@@ -146,10 +173,7 @@ def _retain(
         identity = (stat.st_dev, stat.st_ino)
         if identity in opened:
             return
-        if journal:
-            target = destination / path.parents[2].name / path.parent.name / f"{identity[1]}-{path.name}"
-        else:
-            target = destination / path.parent.parent.name / f"{path.name}-{identity[1]}.cri.log"
+        target = destination / f"{identity[1]}-{path.name}{suffix}"
         target.parent.mkdir(parents=True, exist_ok=True)
         # dup the open descriptor, retaining the inode even if its pathname disappears.
         retained = files.enter_context(os.fdopen(os.dup(source.fileno()), "rb", buffering=0 if journal else -1))
@@ -178,6 +202,7 @@ def _require_shutdown(consoles: Path) -> None:
 def capture(
     *,
     log_root: Path,
+    pod_root: Path,
     storage_root: Path,
     namespace: str,
     kubevirt_namespace: str,
@@ -185,7 +210,7 @@ def capture(
     validate_shutdown: Callable[[], bool],
     require_boot_evidence: bool = False,
 ) -> Iterator[None]:
-    """Retain guest journals, console, launcher relay and virt-handler logs.
+    """Retain native journals, raw serial output and launcher/handler container logs.
 
     A pytest session fixture exits normally even when its tests failed, so its caller supplies a
     teardown-time predicate in addition to the exception-unwind protection here.
@@ -194,11 +219,12 @@ def capture(
         f"{namespace}_virt-launcher-*/guest-console-log/*.log*": destination / "consoles",
         f"{namespace}_virt-launcher-*/compute/*.log*": destination / "launchers",
         f"{namespace}_virt-launcher-*/egress-sidecar/*.log*": destination / "relays",
+        f"{namespace}_virt-launcher-*/virtiofs-*/*.log*": destination / "virtiofs",
         f"{kubevirt_namespace}_virt-handler-*/virt-handler/*.log*": destination / "handlers",
     }
     stop = threading.Event()
     with ThreadPoolExecutor(max_workers=1, thread_name_prefix="vm-guest-logs") as executor:
-        copying = executor.submit(_copy, log_root, scopes, storage_root, namespace, destination, stop)
+        copying = executor.submit(_copy, log_root, pod_root, scopes, storage_root, namespace, destination, stop)
         try:
             yield
         except BaseException:

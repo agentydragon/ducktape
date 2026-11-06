@@ -1,0 +1,17 @@
+#!/usr/bin/busybox sh
+# Observe PID 1 independently of its event loop until final shutdown kills remaining processes.
+set -u
+export PATH=/usr/sbin:/usr/bin
+while :; do
+	echo "AGENTPLANE_SHUTDOWN_SNAPSHOT_BEGIN"
+	/usr/bin/busybox cat /proc/uptime
+	for field in wchan syscall stack; do
+		echo "AGENTPLANE_SHUTDOWN_PID1_$field"
+		/usr/bin/busybox cat "/proc/1/$field"
+		echo
+	done
+	/usr/bin/busybox timeout 1 /usr/bin/systemctl list-jobs --full --no-pager || echo "PID 1 did not report its pending jobs"
+	echo "AGENTPLANE_SHUTDOWN_SNAPSHOT_END"
+	# Periodic diagnostic sampling; this does not gate the poweroff request.
+	/usr/bin/busybox sleep 1
+done

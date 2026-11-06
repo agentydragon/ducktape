@@ -1,0 +1,11 @@
+[Unit]
+Description=Record pending guest shutdown jobs and PID 1 kernel state
+DefaultDependencies=no
+IgnoreOnIsolate=yes
+
+[Service]
+Type=exec
+ExecStart=/usr/sbin/agentplane-shutdown-watchdog
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/ttyS0
