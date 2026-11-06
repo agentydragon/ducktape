@@ -18,7 +18,7 @@ The `CI workflow and job timings` dashboard (`ducktape-ci`) refreshes every minu
 
 The dashboard JSON is maintained in this component at `dashboard.json`. Its PostgreSQL queries use the collector's `cdviz.pipelinerun` and `cdviz.taskrun` views. Pull request numbers come from the `customData.github.workflow_run.pull_requests` array; they are not inferred from a branch or commit SHA.
 
-The upstream `transformers-community` archive is licensed under Apache License 2.0. Bazel includes its `LICENSE` in the generated application artifact alongside the dashboard JSON and transformer configuration.
+The upstream `transformers-community` archive is licensed under Apache License 2.0. Bazel includes its `LICENSE` in the generated application artifact alongside the transformer source embedded in the ConfigMap. The license is an unreferenced artifact file, not a Kubernetes resource or a mounted file.
 
 The `.vrl` scripts use [Vector Remap Language](https://vector.dev/docs/reference/vrl/), which CDviz embeds to transform GitHub JSON into CDEvents. Bazel fetches them unchanged from the SHA256-pinned `cdviz-dev/transformers-community` commit [`754a167ed781f52ba5cab5bf94a9144918ce0afb`](https://github.com/cdviz-dev/transformers-community/commit/754a167ed781f52ba5cab5bf94a9144918ce0afb): `github_events/to_v0_5.vrl` handles signed webhook payloads, and `github_rest_api/workflow_runs_to_v0_5.vrl` converts the REST workflow-runs response. `collector.toml` reads both secrets through the collector's `_file` configuration adapter; values are mounted from Kubernetes secret files and are not interpolated into TOML or the process environment.
 

@@ -306,7 +306,7 @@ async def _capture_dashboard(
         await route.fulfill(response=response)
 
     await page.route("**/api/ds/query*", inspect)
-    params = {"orgId": "1", "from": str(FROZEN_NOW_MS - 31 * 86_400_000), "to": str(FROZEN_NOW_MS)}
+    params = {"orgId": "1", "from": str(FROZEN_NOW_MS - 3 * 3_600_000), "to": str(FROZEN_NOW_MS)}
     if filtered:
         params.update(
             {"var-workflow": "agentydragon/ducktape/CDviz integration success", "var-branch": "main", "var-pr": "123"}
@@ -316,7 +316,7 @@ async def _capture_dashboard(
         wait_until="domcontentloaded",
     )
     await expect(page.get_by_text("Workflow attempts", exact=True).first).to_be_visible(timeout=30000)
-    await capture_dashboard(visual)
+    await capture_dashboard(visual, checkpoint=view_name)
     await expect(page.get_by_text("No data", exact=True)).to_have_count(0, timeout=10000)
 
 
@@ -556,9 +556,9 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
 
             _stage("posting signed success, failure, rerun, and duplicate webhooks")
             scenarios = (
-                (81001, 1, "CDviz integration success", "success", 91001, "success", -25),
-                (81002, 1, "CDviz integration failure", "failure", 91002, "failure", -21),
-                (81003, 1, "CDviz integration rerun", "failure", 91003, "failure", -17),
+                (81001, 1, "CDviz integration success", "success", 91001, "success", -155),
+                (81002, 1, "CDviz integration failure", "failure", 91002, "failure", -125),
+                (81003, 1, "CDviz integration rerun", "failure", 91003, "failure", -85),
                 (81003, 2, "CDviz integration rerun", "success", 91004, "success", -13),
             )
             for run_id, attempt, workflow, outcome, job_id, job_outcome, minute in scenarios:
