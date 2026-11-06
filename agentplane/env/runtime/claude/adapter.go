@@ -990,12 +990,7 @@ func startedSequences(inputs []claudeStartedInput, final uint64) []uint64 {
 }
 
 func containsStarted(inputs []claudeStartedInput, uuid string) bool {
-	for _, input := range inputs {
-		if input.messageUUID == uuid {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(inputs, func(input claudeStartedInput) bool { return input.messageUUID == uuid })
 }
 
 func hasString(inputs map[string]claudePendingInput, key string) bool {
