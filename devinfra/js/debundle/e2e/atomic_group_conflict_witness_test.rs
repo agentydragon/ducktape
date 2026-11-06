@@ -5,11 +5,11 @@ use serde_json::Value;
 use spec::{BindingSelector, Member as SpecMember, RawMemberSelector};
 use std::fmt::Write as _;
 
-fn conflict_witness(rejected: &RejectedFixture) -> Value {
-    assert!(
-        rejected.stderr.contains("atomic-group conflict"),
-        "the split remains a gate refusal: {}",
-        rejected.stderr,
+fn conflict_witness(rejected: &RejectedFixture, expected_candidate_status: &str) -> Value {
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_eq!(
+        assessment["status"], expected_candidate_status,
+        "unexpected candidate relocation assessment: {assessment:#}"
     );
     let conflicts = rejected.atomic_group_conflicts();
     assert_eq!(conflicts.len(), 1, "{conflicts:#?}");
@@ -25,7 +25,7 @@ fn eager_cycle_witness_keeps_directed_initialization_dependencies_forward() {
             logical_module("right", &[Member::new("beta")]),
         ],
     ));
-    let witness = conflict_witness(&rejected);
+    let witness = conflict_witness(&rejected, "blocked_by_effect");
     let claims = witness["claim_pair"].as_array().unwrap();
     assert_eq!(claims.len(), 2, "{witness}");
     assert_ne!(claims[0]["module"], claims[1]["module"], "{witness}");
@@ -57,7 +57,7 @@ fn symmetric_rebind_path_excludes_lazy_and_hoisted_uses() {
             logical_module("right", &[Member::new("beta")]),
         ],
     ));
-    let witness = conflict_witness(&rejected);
+    let witness = conflict_witness(&rejected, "blocked_by_placement");
     let paths = witness["paths"].as_array().unwrap();
     assert_eq!(paths.len(), 2, "{witness}");
     let expected_orientations = ["reverse", "forward"];
@@ -101,7 +101,7 @@ fn long_witness_paths_report_total_length_and_truncate_steps() {
     let rejected = run_rejection_fixture(
         FixtureOpts::new(&source, modules).with_unassigned_mode(unassigned_mode_inline()),
     );
-    let witness = conflict_witness(&rejected);
+    let witness = conflict_witness(&rejected, "blocked_by_effect");
     let claims = witness["claim_pair"].as_array().unwrap();
     assert_eq!(claims[0]["source_unit"], "unit:0", "{witness}");
     assert_eq!(claims[1]["source_unit"], "unit:20", "{witness}");
