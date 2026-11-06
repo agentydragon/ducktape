@@ -2266,8 +2266,8 @@ the conservative path records one typed reason in
 shape with its outermost property, or the checked-proof condition that failed
 (with the constructor check for `constructor_proof`).
 
-For admitted local classes, application construction runs instance fields and
-then the constructor body through the same ordered kernel as provider queries.
+For admitted local classes with represented captures, application construction
+runs instance fields and then the constructor body through the same ordered kernel as provider queries.
 A normal constructed value is separate from operation coverage. Each selected
 `new` retains an exact construction edge, including nested field/body calls;
 constructor parameters, public own writes and class-qualified private slots

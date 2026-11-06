@@ -7213,24 +7213,64 @@ fn local_new_target_keeps_constructor_effects_unsealed() {
 
 #[test]
 fn local_private_field_construction_keeps_deferred_callback_and_brand() {
-    let source = "class Box { #read = () => later; run() { return this.#read(); } } const result = new Box(); const later = 7; console.log(result.run());\n";
+    let source = "class Box { #read = () => 7; run() { return this.#read(); } } const result = new Box(); const readLater = () => later; const later = 1; console.log(result.run(), readLater());\n";
     let (fixture, _) = accepted_primitive_fixture_with_reports(
         FixtureOpts::new(
             source,
             vec![
-                logical_module(
-                    "callbacks/box",
-                    &[Member::new("Box"), Member::new("result")],
-                ),
+                logical_module("types/box", &[Member::new("Box")]),
+                logical_module("work", &[Member::new("result"), Member::new("readLater")]),
                 logical_module("values/later", &[Member::new("later")]),
             ],
         ),
         "local-private-constructor-receipt",
     );
-    assert_preserved_entry_output(&fixture, "7\n");
+    assert_preserved_entry_output(&fixture, "7 1\n");
+    let assessment = fixture.effect_translation_validation();
+    assert_eq!(assessment["swapped_pairs"], 2, "{assessment:#}");
+    assert_eq!(
+        assessment["emitted_order"],
+        serde_json::json!([0, 3, 1, 2, 4]),
+        "{assessment:#}"
+    );
     let receipt = assert_operation_receipt(&fixture, "result", 1);
     assert_eq!(
         receipt["calls"][0]["target"]["kind"], "construction",
         "{receipt:#}"
     );
+    let execution = binding_execution_report(&fixture, "result");
+    let write = &execution["heap_frontier"]["non_assumed_heap_accesses"]["writes"]["sample"][0];
+    assert_eq!(write["kind"], "private_slot", "{execution:#}");
+    assert_eq!(write["name"], "read", "{execution:#}");
+    assert_eq!(
+        write["origin"], receipt["calls"][0]["target"]["class"],
+        "{execution:#}"
+    );
+    assert_eq!(write["class"], write["origin"], "{execution:#}");
+}
+
+#[test]
+fn private_new_receipt_does_not_cover_a_reordered_class_definition() {
+    let source = "class Box { #read = () => later; run() { return this.#read(); } } const result = new Box(); const later = 7; console.log(result.run());\n";
+    let rejected = run_rejection_fixture(FixtureOpts::new(
+        source,
+        vec![
+            logical_module(
+                "callbacks/box",
+                &[Member::new("Box"), Member::new("result")],
+            ),
+            logical_module("values/later", &[Member::new("later")]),
+        ],
+    ));
+    let assessment = rejected.effect_translation_validation();
+    assert_eq!(
+        assessment["decision"]["status"], "incomplete",
+        "{assessment:#}"
+    );
+    assert_eq!(
+        assessment["emitted_order"],
+        serde_json::json!([2, 0, 1, 3]),
+        "{assessment:#}"
+    );
+    assert_eq!(assessment["counts"]["uncovered_pairs"], 1, "{assessment:#}");
 }
