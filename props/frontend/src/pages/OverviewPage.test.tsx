@@ -1,11 +1,10 @@
 // @vitest-environment happy-dom
-import { MantineProvider } from "@mantine/core";
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { deferred } from "../../../../util/frontend/testing/deferred";
+import { cleanupMounted, renderWithMantine } from "../../../../util/frontend/testing/react";
 import type { CoverageResponse, OverviewResponse } from "../lib/schema";
 import { fetchCoverage } from "../lib/api/client";
 import { RunModalContext } from "../lib/runModalContext";
@@ -39,24 +38,16 @@ function coverage(maxRecall: number): CoverageResponse {
 
 const initialOverview = { definitions: [], example_counts: {} } as OverviewResponse;
 
-let root: Root | null = null;
 let container: HTMLDivElement;
 
 async function mount(): Promise<void> {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () => {
-    root?.render(
-      <MantineProvider env="test">
-        <MemoryRouter>
-          <RunModalContext.Provider value={{ open: () => undefined }}>
-            <OverviewPage initialData={initialOverview} />
-          </RunModalContext.Provider>
-        </MemoryRouter>
-      </MantineProvider>
-    );
-  });
+  container = await renderWithMantine(
+    <MemoryRouter>
+      <RunModalContext.Provider value={{ open: () => undefined }}>
+        <OverviewPage initialData={initialOverview} />
+      </RunModalContext.Provider>
+    </MemoryRouter>
+  );
 }
 
 async function selectSplit(split: "valid" | "train"): Promise<void> {
@@ -67,19 +58,11 @@ async function selectSplit(split: "valid" | "train"): Promise<void> {
   await act(async () => tab.click());
 }
 
-async function unmount(): Promise<void> {
-  await act(async () => root?.unmount());
-  root = null;
-}
-
 beforeEach(() => {
   vi.resetAllMocks();
 });
 
-afterEach(async () => {
-  if (root) await unmount();
-  container?.remove();
-});
+afterEach(cleanupMounted);
 
 it("clears valid coverage while train loads and after the train request fails", async () => {
   const train = deferred<CoverageResponse>();
