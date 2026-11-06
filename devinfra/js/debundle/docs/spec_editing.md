@@ -244,11 +244,14 @@ and the destinations each member would land in.
    ```
    `debundle coverage` reports per-atom spec coverage; rows tagged
    "split" by current YAML are not landable until the assignment agrees.
-4. **Either expand the move set or revisit the assignment.** The
-   diagnostic does not auto-compute the minimal completion ("also move
-   `rRe` and `MRe`"); read the printed atom membership and add the
-   missing moves to your batch.
-5. **Re-run** with the expanded batch.
+4. **Diagnose before choosing the repair.** Follow the shared
+   [assignment diagnosis](../skills/shared/workflow.md#diagnose-a-rejected-assignment)
+   to distinguish a genuinely unsafe split from conservative analysis or a tool
+   defect. If the complete atom forms a coherent module, include its missing
+   members in the move batch; the diagnostic does not compute that completion.
+   Otherwise revise the boundary or investigate the blocking proof.
+5. **Re-run** the normal gate on the candidate; co-location alone does not
+   establish acceptance.
 
 The gate refuses; nothing on disk has changed.
 

@@ -109,6 +109,34 @@ Keep private inputs, concrete spec audits and project-specific progress in
 [gaffer-private](https://github.com/agentydragon/gaffer-private). Public engine
 changes and examples use neutral synthetic shapes.
 
+### Complete one useful increment
+
+Use this recipe for a scoped extraction or repair; reuse established evidence
+when its inputs still match.
+
+1. Load the [project adapter](#adapter-contract) and current handoff. Identify the
+   source, spec and engine revisions, captured input and package roots, matching
+   analysis, and authorized gate, emission and runtime commands.
+2. Keep a [verified residual baseline and a useful passing candidate](#start-from-passing-residual-output-and-isolate-failing-assignments).
+   Select one coherent addition or repair by its expected downstream payoff.
+   Reduce a broad rejection before committing to an uncertain semantic project.
+3. Resolve edited selectors with the complete joint context. Use the adapter's
+   [source-only preflight](../../docs/cli.md#running-the-pipeline) when it supports
+   that context; otherwise use full validation and record the missing capability.
+   Reuse matching analysis and keep routine queries bounded.
+4. Run the normal gate on the candidate. If it rejects, follow
+   [assignment diagnosis](#diagnose-a-rejected-assignment). After combining
+   passing edits, check their union too. For a full-spec repair, also run the
+   adapter's canonical target; a subset pass covers only that assignment.
+5. Review accepted emitted names, imports and module boundaries using the
+   [module-shape criteria](module_shape.md). Run the relevant authorized runtime
+   comparisons and confirm they exercise the changed behavior: equal empty
+   results do not establish that a parser or transition ran.
+6. Update the owning project's current-state handoff with the accepted spec,
+   remaining residual coverage, exact revisions, command results and next failing
+   addition. Distinguish partial acceptance, canonical acceptance, runtime
+   observations and unverified behavior. Record tooling friction in Git.
+
 ### Combine forward and repair work
 
 Choose tactics for the current obstacle. An obvious selector or ownership fix
@@ -125,8 +153,7 @@ improves. Retain a passing candidate as coverage grows.
 
 In **repair work**, start with a rejected spec or a regression, including a
 previously accepted layout exposed by stricter validation. Identify what
-changed and classify the failure: invalid spec/selectors, a real unsafe split,
-analysis imprecision, an engine regression, or unsupported reconstruction.
+changed and [diagnose the rejection](#diagnose-a-rejected-assignment).
 Compare matching source/spec/engine revisions and relevant assumptions. A
 historical pass is evidence to investigate; it does not establish correctness
 under the current contract or justify relaxing the validator. Preserve useful
@@ -143,6 +170,28 @@ describe each probe's intended result without imposing an exclusive session
 mode or global phase. Both approaches require correct, readable output and a
 cheap iteration loop.
 
+### Diagnose a rejected assignment
+
+Read the actual candidate's complete structured reports and the
+[rejection kinds](../../docs/cli.md#rejection-diagnostics). Trace the source units,
+both directions of a blocking cycle, and the initialization effects behind each
+edge. A module import cycle alone does not establish a read before initialization.
+`tdz_after_collapsing_pass_one` concerns a hypothetical co-location; first resolve
+the actual mutual/direct blockers and rerun the gate on that assignment.
+
+| Established cause                                                                          | Next action                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Invalid selectors, missing anchors, stale inputs or incomplete probe context               | Repair the probe before drawing semantic conclusions. Ownership reduction must preserve the full selector and assertion context.                                                                                                                                                                    |
+| Concrete initialization reads, writes or ordering make the requested split unsafe          | Repair the spec around the complete indivisible group, including anonymous statements and later mutations. Try one coherent owner or retain initialization in residual, then rerun the gate.                                                                                                        |
+| A constraint represents possible behavior of opaque calls, getters, callbacks or providers | Establish the actual implementation and runtime premises, then choose [inference, sound recognition or an audited annotation](#choose-the-solution-depth). Conservative rejection can be correct under the existing contract. The [contract chooser](initialization_contracts.md) routes the audit. |
+| The analysis or validator contradicts established facts under the current contract         | Follow the [bug reproduction workflow](../../docs/bug_reproductions.md): isolate the stage, minimize a neutral case that fails for the same reason, and verify the repair against the original blocker.                                                                                             |
+| Input admission or reconstruction fails even with the residual-only baseline               | Investigate the input/tool failure before changing extraction boundaries.                                                                                                                                                                                                                           |
+
+If the cause is unresolved, retain that uncertainty. A passing residual repair
+establishes a useful lower bound; it does not prove the original split impossible.
+A proposed co-location still needs architectural review and the normal gate.
+Neither gate acceptance nor a cycle report establishes an annotation's truth.
+
 ### Start from passing residual output and isolate failing assignments
 
 Every configured bundle needs an empty extraction spec that passes the normal
@@ -157,8 +206,8 @@ cannot serve as the passing baseline.
 Use divide-and-conquer when a large spec rejects or the next semantic repair
 has an uncertain payoff. Work in a scratch spec, preserving the authored target:
 
-For ownership-only probes with `inline_in_entry`, `per_atomic_group`, or
-`coarse_atomic_groups`, prefer
+For ownership-only probes with `inline_in_entry`, `catchall_file`,
+`per_atomic_group`, or `coarse_atomic_groups`, prefer
 [`run --ownership-subset`](../../docs/cli.md#ownership-subsets-with-full-selector-context)
 with the complete canonical tree and its matching analysis. This retains joint
 selector anchors and assertions while returning omitted claims to the selected
@@ -169,8 +218,9 @@ heuristic, and the normal gate still decides the selected assignment. An empty
 that full contract;
 the separate empty spec above remains the baseline without optional assertions.
 Record the selected chunk-local module paths and inspect the resulting ordinary
-gate and emission. Full graph export and `catchall_file` residual routing are
-unsupported for this operation. Repair invalid full-spec selectors or claims
+gate and emission. Full graph export is unsupported for this operation.
+Omitting an explicit catchall claim can recreate residual ownership without its
+authored renames. Repair invalid full-spec selectors or claims
 separately; ownership selection does not hide them.
 
 1. Reduce the rejecting spec by returning suspected groups of claims to
@@ -204,12 +254,9 @@ from the actual remaining rejection, rather than treating a cycle-free result
 as acceptance. Use native module catalogs for normalized chunk-local paths;
 module-root prefixes in authored YAML are not necessarily those identities.
 
-Check each cycle's `rejection` kind before choosing a removal set.
-`tdz_after_collapsing_pass_one` describes a hypothetical co-location of Pass-1
-SCCs; its owner union can include modules that pass together once the actual
-mutual/direct cycles are resolved. Try a coarse candidate based on those actual
-blockers first, rerun the normal gate, then bisect remaining failing additions.
-See [rejection diagnostics](../../docs/cli.md#rejection-diagnostics).
+Use the [diagnosed actual blockers](#diagnose-a-rejected-assignment) for the first
+coarse candidate, then bisect remaining failing additions. Removing the owner union
+of hypothetical collapsed-cycle reports can discard otherwise viable modules.
 
 Removal can change module cycles and selector dependencies, so do not assume
 acceptance is monotone or prune untried subsets from one failing result. A
@@ -425,16 +472,11 @@ were not validated.
 
 - Environment failure: find a working adapter command and broadcast it.
 - Stale graph: refresh matching evidence before diagnosing another cause.
-- Gate rejection: read the structured cycle/atom reports and the source-backed
-  [diagnostics](../../docs/cli.md#rejection-diagnostics). Establish initializer,
-  called-binding, provider, and runtime facts, then choose a spec repair or one
-  of the [three solution routes](#choose-the-solution-depth). The
-  [contract guide](initialization_contracts.md) routes assertion audits; a cycle
-  alone supplies none of their premises. Preserve conservative constraints
-  outside the chosen proof or approved contract, and verify the same gate and
-  runtime behavior after justified edits within the task's execution limits.
-- Split atomic group: expand the scoped lane to include the whole group or
-  redispatch coordinated work.
+- Gate rejection or split atomic group: use the
+  [assignment diagnosis procedure](#diagnose-a-rejected-assignment). Expand a
+  lane to the complete group when that yields a coherent task; otherwise return
+  the evidence for a boundary or tool repair. Preserve conservative constraints
+  outside the established proof or audited contract.
 - Unclear destination: route to the architect; broad source discovery: intake.
 - Repeated selector synthesis gaps: route to Ducktape tooling using
   [selector debt](../../docs/selectors.md#selector-debt).

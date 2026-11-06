@@ -168,14 +168,18 @@ without repeating the flags:
 
 ```bash
 export DEBUNDLE_GRAPH=<debundle-output>/reports/tree/<chunk-id>/dependency_graph.json.gz
-export DEBUNDLE_MODULES=<spec-root>/<version>/modules
-export DEBUNDLE_SOURCE_ROOT=<debundle-output>/app
+export DEBUNDLE_MODULES=<matching-chunk-modules-subtree>
+export DEBUNDLE_SOURCE_ROOT=<captured-source-lookup-root>
 export DEBUNDLE_OUT=<debundle-output-root>
 
 debundle describe XOe
 debundle scc --binding XOe
 debundle bindings assign XOe:runtime/plugins
 ```
+
+Use the matching captured input root for source lookup. Obtain its path and the
+chunk's module scope from the project adapter or verified snapshot; emitted
+`app/` is not the captured source root.
 
 ## Resolved invocation records
 
