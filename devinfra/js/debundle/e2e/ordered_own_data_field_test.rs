@@ -115,14 +115,14 @@ fn relocated_array_length_read_receipts_the_length_cell_written_by_push() {
 }
 
 #[test]
-fn forcing_push_before_the_array_length_read_rejects_and_changes_inspection_output() {
+fn array_length_read_write_inversion_is_rejected_with_a_known_cell_conflict() {
     const SOURCE: &str = "const store = [];\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n";
     let baseline = run_fixture(
         FixtureOpts::new(SOURCE, vec![]).with_unassigned_mode(unassigned_mode_inline()),
     );
     assert_preserved_entry_output(&baseline, "0 1\n");
-    // Importing the array forces the module containing its allocation and push
-    // to finish before the reader. No extra lexical anchor creates a cycle.
+    // Group allocation and push so the candidate moves the writer before the
+    // reader. The canonical verdict must identify their exact length cell.
     let fixture = run_inspection_fixture(
         FixtureOpts::new(
             SOURCE,
@@ -158,9 +158,12 @@ fn forcing_push_before_the_array_length_read_rejects_and_changes_inspection_outp
         &fixture.chunk_id,
         "array-length-forced-inversion",
     );
-    // The marked rejection tree can still be inspected under Node: its module
-    // order runs push first, so gamma changes from the source value 0 to 1.
-    assert_node_output(&fixture.entry_path, "1 1\n", "");
+    // The rejected inspection tree retains the legacy ordering cycle. Its
+    // observer sees store in TDZ; the original above completes with "0 1".
+    assert_node_error(
+        &fixture.entry_path,
+        "Cannot access 'store' before initialization",
+    );
 }
 
 #[test]
