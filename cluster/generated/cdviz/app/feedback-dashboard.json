@@ -77,6 +77,74 @@
         "multi": false,
         "includeAll": false,
         "description": "Default to the observed PR head event clock. Choose Workflow creation proxy for fallback-only comparisons; all pools both clocks and is a descriptive mixed-clock view."
+      },
+      {
+        "name": "bucket",
+        "label": "Bucket size",
+        "type": "custom",
+        "query": "1m : 1 minute, 5m : 5 minutes, 15m : 15 minutes, 30m : 30 minutes, 1h : 1 hour, 3h : 3 hours, 6h : 6 hours, 12h : 12 hours, 1d : 1 day, 1w : 1 week",
+        "options": [
+          {
+            "selected": false,
+            "text": "1m",
+            "value": "1 minute"
+          },
+          {
+            "selected": false,
+            "text": "5m",
+            "value": "5 minutes"
+          },
+          {
+            "selected": false,
+            "text": "15m",
+            "value": "15 minutes"
+          },
+          {
+            "selected": false,
+            "text": "30m",
+            "value": "30 minutes"
+          },
+          {
+            "selected": true,
+            "text": "1h",
+            "value": "1 hour"
+          },
+          {
+            "selected": false,
+            "text": "3h",
+            "value": "3 hours"
+          },
+          {
+            "selected": false,
+            "text": "6h",
+            "value": "6 hours"
+          },
+          {
+            "selected": false,
+            "text": "12h",
+            "value": "12 hours"
+          },
+          {
+            "selected": false,
+            "text": "1d",
+            "value": "1 day"
+          },
+          {
+            "selected": false,
+            "text": "1w",
+            "value": "1 week"
+          }
+        ],
+        "current": {
+          "text": "1h",
+          "value": "1 hour"
+        },
+        "hide": 0,
+        "skipUrlSync": false,
+        "multi": false,
+        "includeAll": false,
+        "allowCustomValue": false,
+        "description": "Arrival-cohort size for the latency trend. Other panels use the full selected time range."
       }
     ]
   },
@@ -340,7 +408,7 @@
     },
     {
       "id": 4,
-      "title": "Hourly first-verdict latency",
+      "title": "First-verdict latency (${bucket:text} buckets)",
       "type": "timeseries",
       "gridPos": {
         "x": 0,
@@ -362,7 +430,7 @@
           "editorMode": "code",
           "rawQuery": true,
           "format": "time_series",
-          "rawSql": "WITH feedback AS (\n  SELECT *\n  FROM cdviz.ci_feedback($__timeFrom(), $__timeTo())\n  WHERE (\n    ${scope:sqlstring} = 'all'\n    OR (${scope:sqlstring} = 'PR' AND pr IS NOT NULL)\n    OR (${scope:sqlstring} = 'devel' AND pr IS NULL AND branch IN ('devel', 'main'))\n  )\n    AND (${clock:sqlstring} = 'all' OR clock = ${clock:sqlstring})\n)\nSELECT\n  DATE_TRUNC('hour', arrived_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' AS time,\n  PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'red' AND first_verdict_seconds IS NOT NULL) AS \"Red p50\",\n  PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'red' AND first_verdict_seconds IS NOT NULL) AS \"Red p90\",\n  PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'green' AND first_verdict_seconds IS NOT NULL) AS \"Green p50\",\n  PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'green' AND first_verdict_seconds IS NOT NULL) AS \"Green p90\"\nFROM feedback\nWHERE first_verdict_seconds IS NOT NULL\nGROUP BY 1\nORDER BY 1"
+          "rawSql": "WITH feedback AS (\n  SELECT *\n  FROM cdviz.ci_feedback($__timeFrom(), $__timeTo())\n  WHERE (\n    ${scope:sqlstring} = 'all'\n    OR (${scope:sqlstring} = 'PR' AND pr IS NOT NULL)\n    OR (${scope:sqlstring} = 'devel' AND pr IS NULL AND branch IN ('devel', 'main'))\n  )\n    AND (${clock:sqlstring} = 'all' OR clock = ${clock:sqlstring})\n)\nSELECT\n  DATE_BIN(${bucket:sqlstring}::interval, arrived_at, TIMESTAMPTZ '1970-01-01 00:00:00+00') AS time,\n  PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'red' AND first_verdict_seconds IS NOT NULL) AS \"Red p50\",\n  PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'red' AND first_verdict_seconds IS NOT NULL) AS \"Red p90\",\n  PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'green' AND first_verdict_seconds IS NOT NULL) AS \"Green p50\",\n  PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY first_verdict_seconds)\n    FILTER (WHERE first_verdict = 'green' AND first_verdict_seconds IS NOT NULL) AS \"Green p90\"\nFROM feedback\nWHERE first_verdict_seconds IS NOT NULL\nGROUP BY 1\nORDER BY 1"
         }
       ],
       "fieldConfig": {
@@ -447,7 +515,7 @@
           "mode": "multi"
         }
       },
-      "description": "Hourly arrival cohorts; only observed red/green verdicts contribute. Missing series or hours mean no verdict samples, not zero latency."
+      "description": "Arrival cohorts grouped by Bucket size and aligned to UTC. Only observed red/green verdicts contribute; missing buckets mean no samples, not zero latency."
     },
     {
       "id": 5,

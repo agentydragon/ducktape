@@ -313,6 +313,8 @@ async def _capture_dashboard(
     params = {"orgId": "1", "from": str(FROZEN_NOW_MS - 3 * 3_600_000), "to": str(FROZEN_NOW_MS)}
     if feedback:
         params.update({"var-scope": "PR", "var-clock": "PR head event" if filtered else "all"})
+        if filtered:
+            params["var-bucket"] = "5 minutes"
     elif filtered:
         params.update(
             {"var-workflow": "agentydragon/ducktape/CDviz integration success", "var-branch": "main", "var-pr": "123"}
@@ -325,6 +327,9 @@ async def _capture_dashboard(
     await expect(page.get_by_text(first_panel["title"], exact=True).first).to_be_visible(timeout=30000)
     await capture_dashboard(visual, checkpoint=view_name)
     await expect(page.get_by_text("No data", exact=True)).to_have_count(0, timeout=10000)
+    if feedback:
+        bucket = "5m" if filtered else "1h"
+        await expect(page.get_by_text(f"First-verdict latency ({bucket} buckets)", exact=True)).to_be_visible()
     if feedback and filtered:
         repaired_then_failed = page.get_by_role("row").filter(has=page.get_by_text("207", exact=True))
         await expect(repaired_then_failed.get_by_text("6.0 mins", exact=True)).to_be_visible()
@@ -332,7 +337,7 @@ async def _capture_dashboard(
 
 
 _UNRESOLVED_DASHBOARD_VARIABLE = re.compile(
-    r"\$\{(?:workflow|branch|pr|scope|clock)(?::[^}]+)?\}|\$(?:workflow|branch|pr|scope|clock)\b"
+    r"\$\{(?:workflow|branch|pr|scope|clock|bucket)(?::[^}]+)?\}|\$(?:workflow|branch|pr|scope|clock|bucket)\b"
 )
 
 
@@ -770,6 +775,9 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                                 )
                             await page.close()
                             panels = _panel_results(query_results, view_name, feedback)
+                            bucket_times = sorted({row["Time"] for row in _frame_rows(panels["4"]["result"]["frames"])})
+                            offsets = (160, 130, 40, 30, 20) if filtered else (180, 60)
+                            assert bucket_times == [FROZEN_NOW_MS - minutes * 60_000 for minutes in offsets]
                             if filtered:
                                 _assert_number(panels["2"], "n", 5)
                                 _assert_number(panels["2"], "p50_seconds", 240)
