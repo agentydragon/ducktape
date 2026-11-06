@@ -105,23 +105,17 @@ Each card's `label` is its short display name. For spending accounts that are no
 falls back to the Plaid account name. Card IDs cannot also appear in `account_labels`, so each display name has one
 configured source.
 
-Allowance rules are evaluated in order; the first match determines the classification. A rule whose `scope` is
-`one_off` corrects specific observed transactions and is validated as such — a bounded `date_range` plus a
-name/category/amount condition, an `id`, and a note — but it is the same object matched in the same ordered list, not
-a second tier, and it never addresses a transaction by Plaid transaction ID, which relinking rewrites. See
-[one rule type, ordered](docs/allowance.md#one-rule-type-ordered-patterns-and-one-offs). `review` rules keep positive
-purchases in provisional spending and the unmatched total, while unverified negative credits remain separate from
-spending. Conditions can combine merchant or category matches, account type, merchant category code, counterparty type
-and name, and amount sign. Private analyses use the same ordered matcher and policy file as the app. Required
+Allowance rules are first-match-wins; one-offs are bounded rules in the same list, not Plaid-ID overrides (relinking
+rewrites those IDs). See [one rule type, ordered](docs/allowance.md#one-rule-type-ordered-patterns-and-one-offs) for
+the full rule contract. Review and negative-credit behavior is in the [allowance guide](docs/allowance.md). Conditions
+can combine merchant or category matches, account type, merchant category code, counterparty type and name, and amount
+sign. Private analyses use the same ordered matcher and policy file as the app. Required
 `allowance.analysis_categories` entries map stable analysis-category codes to a display label and color; include
 `unclassified` for purchases without a category. The Configuration API includes the catalog, and the Transactions
 API includes each transaction's resolved category metadata. Display metadata does not affect rule matching or
 allowance accounting.
 
-For a confirmed full posted reversal, `allowance.reversal_pairs` can match the positive debit to its negative credit.
-Both selectors must uniquely identify posted transactions with exactly opposite amounts in the allowance currency and
-the same account; unresolved, ambiguous, pending, or overlapping pairs suppress neither leg. Partial refunds are outside
-this feature. See [full reversal pair configuration](docs/allowance.md#explicit-full-reversal-pairs).
+See [full reversal pair configuration](docs/allowance.md#explicit-full-reversal-pairs) for matching constraints and unresolved-pair behavior.
 
 ## Runtime settings
 
