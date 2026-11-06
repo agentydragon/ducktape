@@ -12707,7 +12707,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             })
             .unwrap_or_else(|| vec![None; call.args.len()]);
         if let Some(operands) = &operands {
-            assert!(call.kind == CallKind::Call && !call.has_spread);
+            assert!(matches!(call.kind, CallKind::Call | CallKind::New) && !call.has_spread);
             assert!(match (&call.callee, &operands.callee) {
                 (_, EvaluatedCallee::Native { selection, .. }) =>
                     selection.owner == call.owner && selection.site == CallSite::from(call.span),
