@@ -163,6 +163,14 @@ def cached_registry_container(
         docker_client: DockerClient = from_env()
         stack.callback(docker_client.close)
         volume_name = _ensure_volume(docker_client, namespace=namespace, recipe=recipe)
+        # A dead fixture process releases flock but can leave Docker containers.
+        # Never reset storage still attached elsewhere, even to a stopped container.
+        consumers = docker_client.containers.list(all=True, filters={"volume": volume_name})
+        if consumers:
+            raise RegistryBlobCacheOwnershipError(
+                f"registry cache volume {volume_name!r} is already attached to containers "
+                f"{[container.short_id for container in consumers]}"
+            )
         registry.with_env("REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY", _REGISTRY_ROOT)
         # Distribution's filesystem Move uses os.Rename from _uploads into blobs, so both
         # paths must share one mount: https://github.com/distribution/distribution/blob/v3.0.0/registry/storage/driver/filesystem/driver.go

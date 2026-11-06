@@ -134,6 +134,22 @@ def test_registry_keeps_only_blobs_and_layer_links_across_container_removal() ->
             assert stale_upload.status_code == 404, stale_upload.text
             assert _put_manifest(base_url, "second-tag", manifest).status_code == 201
 
+        with ExitStack() as attached_cleanup:
+            attached = docker_client.containers.create(
+                image_ref, volumes={first_receipt.volume_names[0]: {"bind": "/var/lib/registry", "mode": "rw"}}
+            )
+            attached_cleanup.callback(attached.remove, force=True)
+            conflict = _new_registry(image_ref)
+            with (
+                closing(conflict.get_docker_client().client),
+                pytest.raises(RegistryBlobCacheOwnershipError, match="already attached"),
+                cached_registry_container(
+                    conflict, image_ref=image_ref, repositories=_REPOSITORIES, namespace=namespace
+                ),
+            ):
+                pytest.fail("cache mounted by another container was reset")
+            assert docker_client.containers.get(attached.id).id == attached.id
+
         deleted = delete_owned_registry_blob_cache_volumes(controller, namespace=namespace)
         assert set(deleted) == set(first_receipt.volume_names)
         assert docker_client.volumes.get(foreign_name).name == foreign_name
