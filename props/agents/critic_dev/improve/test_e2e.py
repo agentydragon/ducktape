@@ -80,6 +80,14 @@ def make_improvement_mock() -> CriticDevMock:
     @CriticDevMock.mock()
     def mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request
+        # The image entrypoint initialized the aspect_rules_py venv. A bare
+        # child `python3` must inherit that venv's first_party.pth so imports
+        # work without PYTHONPATH knowing Bazel's runfiles repository name.
+        result = yield from m.exec_roundtrip(
+            ["python3", "-c", "from props.db.database import Database"], timeout_ms=15000
+        )
+        assert_that(result, exited_successfully())
+
         # Create package directory and write files
         result = yield from m.exec_roundtrip(
             [
