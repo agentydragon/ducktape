@@ -199,8 +199,6 @@ pkg_tar(
         "default.target": "/usr/lib/systemd/system/multi-user.target",
         "getty.target": "/dev/null",
         "sysinit.target.wants/agentplane-boot-device-monitor.service": "../agentplane-boot-device-monitor.service",
-        "sysinit.target.wants/agentplane-journal-console.service": "../agentplane-journal-console.service",
-        "sysinit.target.wants/agentplane-shutdown-watchdog.service": "../agentplane-shutdown-watchdog.service",
         "multi-user.target.wants/agentplane-acpi.service": "../agentplane-acpi.service",
         "multi-user.target.wants/agentplane-environment-runtime.service": "/usr/lib/systemd/system/agentplane-environment-runtime.service",
         "multi-user.target.wants/agentplane-boot-evidence.service": "../agentplane-boot-evidence.service",
