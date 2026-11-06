@@ -240,11 +240,20 @@ pub(super) enum ClassFieldKey {
 #[derive(Debug, Clone)]
 pub(super) struct ClassConstructorBody {
     pub(super) class: u32,
+    pub(super) span: Span,
+    /// Canonical activation sites for instance initializers and the body.
+    pub(super) callables: Arc<[u32]>,
     /// Definition itself cannot reenter an importer before the class binding
     /// initializes. Constructor-body effects are a separate judgment.
     pub(super) noninvoking_definition: bool,
     pub(super) initializers: LocalBody,
     pub(super) constructor: LocalBody,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum ConstructorPhase {
+    Initializers,
+    Body,
 }
 
 #[derive(Debug, Clone)]
@@ -1209,9 +1218,11 @@ impl LocalBody {
         let mut noninvoking_definition = true;
         let mut private_fields = BTreeSet::new();
         let mut field_operations = Vec::new();
+        let mut callables = Vec::new();
         for member in &class.body {
             match member {
                 ClassMember::Constructor(definition) if constructor.is_none() => {
+                    callables.push(definition.span.lo.0);
                     constructor = Some(definition);
                 }
                 ClassMember::Constructor(_) => return None,
@@ -1221,6 +1232,9 @@ impl LocalBody {
                         return None;
                     }
                     if !field.is_static {
+                        if field.value.is_some() {
+                            callables.push(field.span.lo.0);
+                        }
                         let property = field.key.name.to_string();
                         private_fields.insert(property.clone());
                         field_operations.push(LocalOperation::Evaluate(
@@ -1240,6 +1254,9 @@ impl LocalBody {
                         return None;
                     }
                     if !field.is_static {
+                        if field.value.is_some() {
+                            callables.push(field.span.lo.0);
+                        }
                         if !matches!(
                             field.key,
                             PropName::Ident(_) | PropName::Str(_) | PropName::Num(_)
@@ -1318,11 +1335,23 @@ impl LocalBody {
                     }
                     Stmt::Expr(expression) => {
                         let operation = LocalExpression::lower(&expression.expr, true)?;
-                        match &operation {
-                            LocalExpression::AssignPrivateThisField { property, .. }
-                                if private_fields.contains(property) => {}
-                            LocalExpression::AssignPublicThisField { .. } => {}
-                            _ => return None,
+                        fn checked_stores(
+                            expression: &LocalExpression,
+                            private_fields: &BTreeSet<String>,
+                        ) -> bool {
+                            match expression {
+                                LocalExpression::AssignPublicThisField { .. } => true,
+                                LocalExpression::AssignPrivateThisField { property, .. } => {
+                                    private_fields.contains(property)
+                                }
+                                LocalExpression::Sequence(expressions) => expressions
+                                    .iter()
+                                    .all(|expression| checked_stores(expression, private_fields)),
+                                _ => false,
+                            }
+                        }
+                        if !checked_stores(&operation, &private_fields) {
+                            return None;
                         }
                         constructor_operations.push(LocalOperation::Evaluate(operation));
                     }
@@ -1340,6 +1369,8 @@ impl LocalBody {
 
         Some(ClassConstructorBody {
             class: class.span.lo.0,
+            span: class.span,
+            callables: callables.into(),
             noninvoking_definition,
             initializers: Self::from_operations(BTreeMap::new(), Vec::new(), field_operations),
             constructor: Self::from_operations(bindings, local_parameters, constructor_operations),

@@ -485,6 +485,14 @@ pub enum EffectCell {
         origin: u32,
         property: String,
     },
+    /// One private element, keyed independently by receiver allocation source,
+    /// class brand source, and private name. Source origins still aggregate
+    /// runtime generations and supply no strong-update or privacy proof.
+    PrivateSlot {
+        origin: u32,
+        class: u32,
+        name: String,
+    },
 }
 
 impl EffectCell {
@@ -497,7 +505,8 @@ impl EffectCell {
             | Self::GlobalSymbolRegistry
             | Self::ObjectShape(_)
             | Self::DescriptorMapContents(_)
-            | Self::OwnProperty { .. } => true,
+            | Self::OwnProperty { .. }
+            | Self::PrivateSlot { .. } => true,
         }
     }
 }

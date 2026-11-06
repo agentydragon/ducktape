@@ -251,9 +251,14 @@ legacy report's forward-edge and placement diagnostics.
 independently of legacy dataflow opacity, execution incompleteness and heap
 opacity. Unknown domains remain global Havoc; `full_semantic_precision` is
 false. Cell conflicts can include `lexical_cell`, `object_shape` or `descriptor_map_contents`
-with `origin`, and `own_property` with `origin` and `property`;
-the origin includes all runtime generations of its source allocation and
-supplies no strong-update or privacy proof.
+with `origin`, `own_property` with `origin` and `property`, and `private_slot`
+with `origin`, `class` and `name`. For a private slot, `origin` identifies the
+receiver allocation source, `class` identifies the private-brand source, and
+`name` preserves the private name. These source identities can represent
+multiple runtime generations and do not prove a one-shot allocation, strong
+update, or private ownership. An `own_property` origin likewise includes all
+runtime generations of its source allocation and supplies no strong-update or
+privacy proof.
 For `lexical_cell`, `origin` is the canonical binding declaration offset and
 includes every activation of that binding; distinct declarations retain distinct
 origins across saved analysis.

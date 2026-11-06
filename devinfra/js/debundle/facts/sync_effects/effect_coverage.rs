@@ -96,6 +96,10 @@ pub(super) enum LocalBodyIdentity {
         key: u32,
         owner: SourceUnitOrdinal,
     },
+    Construction {
+        class: u32,
+        owner: SourceUnitOrdinal,
+    },
     ImportedCallable(Box<ImportedCallableIdentity>),
     Native {
         intrinsic: NativeIntrinsic,
@@ -558,6 +562,10 @@ impl LocalBodyIdentity {
             },
             Self::Callable { key, owner } => LexicalBindingEffectBody::Callable {
                 key: *key,
+                owner: *owner,
+            },
+            Self::Construction { class, owner } => LexicalBindingEffectBody::Construction {
+                class: *class,
                 owner: *owner,
             },
             Self::ImportedCallable(identity) => LexicalBindingEffectBody::ImportedCallable {
@@ -1187,6 +1195,10 @@ enum LocalBodyKey {
         key: u32,
         owner: usize,
     },
+    Construction {
+        class: u32,
+        owner: usize,
+    },
     ImportedCallable(Box<ImportedCallableIdentity>),
     Native {
         intrinsic: NativeIntrinsic,
@@ -1239,6 +1251,10 @@ fn local_body_key(body: &LocalBodyIdentity) -> LocalBodyKey {
         },
         LocalBodyIdentity::Callable { key, owner } => LocalBodyKey::Callable {
             key: *key,
+            owner: owner.0,
+        },
+        LocalBodyIdentity::Construction { class, owner } => LocalBodyKey::Construction {
+            class: *class,
             owner: owner.0,
         },
         LocalBodyIdentity::ImportedCallable(identity) => {

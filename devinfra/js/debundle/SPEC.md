@@ -2266,6 +2266,18 @@ the conservative path records one typed reason in
 shape with its outermost property, or the checked-proof condition that failed
 (with the constructor check for `constructor_proof`).
 
+For admitted local classes, application construction runs instance fields and
+then the constructor body through the same ordered kernel as provider queries.
+A normal constructed value is separate from operation coverage. Each selected
+`new` retains an exact construction edge, including nested field/body calls;
+constructor parameters, public own writes and class-qualified private slots
+retain their actual effects. Bare public assignments still require the existing
+property-specific prototype-absence proof after their RHS. Complete effects
+alone do not prove an unexposed receiver. Unsupported lexical-`this` captures,
+`new.target`, constructor shapes and partial execution keep conservative reach
+and issue no complete construction receipt. A partially executed kernel is
+never retried through a compatibility interpreter.
+
 An implicit local class constructor can also receive a source-derived
 construction certificate. The class must be a direct declaration in the same
 chunk, without inheritance, decorators, an explicit constructor, computed
@@ -4449,8 +4461,9 @@ escaped-pool, then export order. Typed path edges reuse the callback walk's
 stored-reference carriers; array elements are reported only for canonical
 array-index property keys when the abstract reference has an array allocation
 kind. Object-backed array-literal storage remains a stored-property edge
-because its array shape is not represented on the retained reference. The path
-omits runtime allocation identities and indices into abstract value sets. If a
+because its array shape is not represented on the retained reference. Private
+slot edges preserve the class-brand source and private name. The path omits
+runtime allocation identities and indices into abstract value sets. If a
 path cannot be rooted, it is reported as
 `unknown` with a reason. This is one valid abstract path, not a unique cause of
 publication. The optional `bounded_fallback_callsite` separately locates the
@@ -4603,7 +4616,8 @@ impure initializer appears in `sequenced_source_unit`. The edge's
   `frontier_after_cell` with the `cell` (`binding`, `global_prop`,
   `array_contents`, `set_contents`, `global_symbol_registry`, `lexical_cell`,
   `object_shape`, `descriptor_map_contents`, or `own_property` with `origin`
-  and `property`), or `after_barrier` / `barrier_after_prior`
+  and `property`), `private_slot` with `origin`, `class` and `name`, or
+  `after_barrier` / `barrier_after_prior`
   for the opaque-barrier dependence. `source`, `target` and `observation` are
   the provenance of that endpoint's binding effect (§ Commuting statements):
   `{"kind": "observed"}` or `{"kind": "fallback", "reason": {"path": …}}`

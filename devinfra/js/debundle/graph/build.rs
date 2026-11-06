@@ -1100,8 +1100,8 @@ fn emit_heap_content_order(
     let unique_eager_allocations = OneShotEagerAllocations::from_facts(facts);
 
     // A hoisted or escaped callable can allocate before its lexical statement.
-    // Own-property cells without a matching one-shot allocation likewise have
-    // no birth proof: an earlier opaque barrier must constrain their reads.
+    // Own-property and private-slot cells have no matching one-shot content
+    // allocation proof: an earlier opaque barrier must constrain their reads.
     let mut has_live_heap_contents = facts.iter().any(|stmt| {
         !stmt.deferred_heap_allocations.is_empty()
             || stmt
@@ -1118,6 +1118,7 @@ fn emit_heap_content_order(
                     matches!(
                         cell,
                         EffectCell::OwnProperty { .. }
+                            | EffectCell::PrivateSlot { .. }
                             | EffectCell::LexicalCell(_)
                             | EffectCell::ObjectShape(_)
                             | EffectCell::DescriptorMapContents(_)
