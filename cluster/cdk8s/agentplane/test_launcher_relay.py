@@ -280,6 +280,25 @@ def test_injects_relay_idempotently(tmp_path: Path, policy: dict) -> None:
     assert legacy_update.ok, legacy_update.stdout
 
 
+def test_rejects_a_missing_credential_during_mutation_even_if_validation_reads_it_later(
+    tmp_path: Path, tls_policy: dict
+) -> None:
+    policy = deepcopy(tls_policy)
+    injection = one(rule for rule in policy["spec"]["rules"] if rule["name"] == "inject-relay")
+    sandbox_read = one(entry for entry in injection["context"] if entry["name"] == "sandboxLive")
+    del sandbox_read["apiCall"]
+    sandbox_read["variable"] = {
+        "value": {
+            "metadata": {"uid": "sb-uid", "name": "sandbox-a"},
+            "status": {"runnerCredential": {"id": RUNNER_CREDENTIAL_ID, "kind": "VM", "lastVmiUid": "vmi-uid"}},
+        }
+    }
+    # The mutation and validation webhooks read independently. A later valid
+    # status must not admit a Pod mutated with a nonexistent Secret name.
+    result = apply(tmp_path, policy, launcher())
+    assert not result.ok, result.stdout
+
+
 def test_mtls_relay_gets_status_bound_secret_and_workload_does_not(tmp_path: Path, tls_policy: dict) -> None:
     first = apply(tmp_path, tls_policy, launcher())
     assert first.ok, first.stdout
