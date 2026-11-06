@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -30,8 +31,9 @@ const (
 )
 
 type sidecar struct {
-	config config
-	ready  atomic.Bool
+	config   config
+	proxyTLS *tls.Config
+	ready    atomic.Bool
 
 	readinessServer   *http.Server
 	readinessListener net.Listener
@@ -205,15 +207,20 @@ func (s *sidecar) handle(client net.Conn) {
 			writeRefusal(client, http.StatusBadRequest, "bad-request")
 			return
 		}
-		token, err := readToken(s.config.TokenFile)
-		if err != nil {
-			slog.Error("central proxy token unavailable", "path", s.config.TokenFile, "error", err)
-			writeRefusal(client, http.StatusServiceUnavailable, "token-unavailable")
-			return
+		token := ""
+		if s.config.TokenFile != "" {
+			token, err = readToken(s.config.TokenFile)
+			if err != nil {
+				slog.Warn("destination compatibility bearer unavailable", "path", s.config.TokenFile, "error", err)
+				if s.config.ProxyMode == "token" {
+					writeRefusal(client, http.StatusServiceUnavailable, "token-unavailable")
+					return
+				}
+			}
 		}
 		rewriteRequest(request, token, s.readProjectedTokens())
 		if upstream == nil {
-			upstream, err = (&net.Dialer{Timeout: 10 * time.Second}).Dial("tcp", net.JoinHostPort(s.config.ProxyHost, strconv.Itoa(s.config.ProxyPort)))
+			upstream, err = s.dialProxy()
 			if err != nil {
 				slog.Warn("central proxy unreachable", "host", s.config.ProxyHost, "port", s.config.ProxyPort, "error", err)
 				writeRefusal(client, http.StatusBadGateway, "proxy-unreachable")
@@ -226,6 +233,37 @@ func (s *sidecar) handle(client net.Conn) {
 			return
 		}
 	}
+}
+
+// dialProxy creates one central connection. In mTLS mode, transport reloads the projected client
+// certificate and trust bundle from their atomic-writer paths during each handshake; a TLS error
+// is returned to the workload and never retried as token authentication.
+func (s *sidecar) dialProxy() (net.Conn, error) {
+	address := net.JoinHostPort(s.config.ProxyHost, strconv.Itoa(s.config.ProxyPort))
+	connection, err := (&net.Dialer{Timeout: 10 * time.Second}).Dial("tcp", address)
+	if err != nil {
+		return connection, err
+	}
+	switch s.config.ProxyMode {
+	case "token":
+		return connection, nil
+	case "mtls":
+		if s.proxyTLS == nil {
+			_ = connection.Close()
+			return nil, errors.New("central proxy mTLS was not initialized")
+		}
+	default:
+		_ = connection.Close()
+		return nil, fmt.Errorf("unsupported central proxy mode: %q", s.config.ProxyMode)
+	}
+	tlsConnection := tls.Client(connection, s.proxyTLS.Clone())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := tlsConnection.HandshakeContext(ctx); err != nil {
+		_ = connection.Close()
+		return nil, fmt.Errorf("central proxy mTLS handshake: %w", err)
+	}
+	return tlsConnection, nil
 }
 
 // exchange forwards one request and relays its response. It reports whether the connection pair
@@ -304,7 +342,11 @@ func readFinalResponse(client io.Writer, upstreamReader *bufio.Reader, request *
 func rewriteRequest(request *http.Request, token string, projected map[string]string) {
 	request.Header.Del("Proxy-Connection")
 	request.Header.Del(projectedTokenHeader)
-	request.Header.Set("Proxy-Authorization", "Bearer "+token)
+	if token == "" {
+		request.Header.Del("Proxy-Authorization")
+	} else {
+		request.Header.Set("Proxy-Authorization", "Bearer "+token)
+	}
 	for _, audience := range slices.Sorted(maps.Keys(projected)) {
 		request.Header.Add(projectedTokenHeader, audience+" "+projected[audience])
 	}
