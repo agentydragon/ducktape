@@ -40,6 +40,7 @@ from x.ai_session_archive.database import (
     make_session_factory,
 )
 from x.ai_session_archive.web import create_app
+from x.ai_session_archive.web_main import _frontend_dir
 from x.ai_session_archive.web_settings import WebSettings
 
 pytest_plugins = ("util.testing.frontend_visual.fixtures",)
@@ -82,7 +83,10 @@ def archive_settings() -> WebSettings:
 
 @pytest.fixture
 async def archive_origin(archive: Archive, archive_settings: WebSettings) -> AsyncIterator[str]:
-    async with serve_app(create_app(engine=archive.engine, settings=archive_settings)) as origin:
+    frontend_dir = _frontend_dir(archive_settings)
+    async with serve_app(
+        create_app(engine=archive.engine, settings=archive_settings, frontend_dir=frontend_dir)
+    ) as origin:
         yield origin
 
 
