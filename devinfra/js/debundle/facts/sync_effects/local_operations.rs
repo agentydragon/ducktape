@@ -203,6 +203,7 @@ pub(super) enum LocalExpression {
         span: Span,
     },
     Closure(DeferredCallableCreation),
+    ClassDefinition(ClassDefinition),
     Call(LocalCall),
     ReadField {
         receiver: Id,
@@ -237,15 +238,80 @@ pub(super) enum ClassFieldKey {
     Private(String),
 }
 
+/// Canonical class creation, independent of deferred constructor/field bodies.
+/// Eager heritage, decorators, computed names and static initialization are
+/// excluded before this operation reaches an interpreter.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ClassDefinition {
+    pub(super) class: u32,
+    pub(super) span: Span,
+}
+
+impl ClassDefinition {
+    pub(super) fn lower(class: &Class) -> Option<Self> {
+        if class.super_class.is_some()
+            || !class.decorators.is_empty()
+            || class.is_abstract
+            || class.type_params.is_some()
+            || class.super_type_params.is_some()
+            || !class.implements.is_empty()
+        {
+            return None;
+        }
+        let mut constructor = false;
+        for member in &class.body {
+            let covered = match member {
+                ClassMember::Constructor(body) if !constructor => {
+                    constructor = true;
+                    !matches!(body.key, PropName::Computed(_))
+                        && body.params.iter().all(|parameter| {
+                            matches!(parameter,
+                        ParamOrTsParamProp::Param(parameter) if parameter.decorators.is_empty())
+                        })
+                }
+                ClassMember::Method(method) => {
+                    method.function.decorators.is_empty()
+                        && method
+                            .function
+                            .params
+                            .iter()
+                            .all(|parameter| parameter.decorators.is_empty())
+                        && !matches!(method.key, PropName::Computed(_))
+                }
+                ClassMember::PrivateMethod(method) => {
+                    method.function.decorators.is_empty()
+                        && method
+                            .function
+                            .params
+                            .iter()
+                            .all(|parameter| parameter.decorators.is_empty())
+                }
+                ClassMember::ClassProp(field) => {
+                    !field.is_static
+                        && field.decorators.is_empty()
+                        && !matches!(field.key, PropName::Computed(_))
+                }
+                ClassMember::PrivateProp(field) => !field.is_static && field.decorators.is_empty(),
+                ClassMember::Empty(_) => true,
+                _ => false,
+            };
+            if !covered {
+                return None;
+            }
+        }
+        Some(Self {
+            class: class.span.lo.0,
+            span: class.span,
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct ClassConstructorBody {
     pub(super) class: u32,
     pub(super) span: Span,
     /// Canonical activation sites for instance initializers and the body.
     pub(super) callables: Arc<[u32]>,
-    /// Definition itself cannot reenter an importer before the class binding
-    /// initializes. Constructor-body effects are a separate judgment.
-    pub(super) noninvoking_definition: bool,
     pub(super) initializers: LocalBody,
     pub(super) constructor: LocalBody,
 }
@@ -804,7 +870,7 @@ impl LocalExpression {
             Self::UpdateBinding { binding, .. } => {
                 reads.insert(binding.clone());
             }
-            Self::Closure(_) | Self::This => {}
+            Self::Closure(_) | Self::ClassDefinition(_) | Self::This => {}
             Self::Call(LocalCall {
                 callee, arguments, ..
             }) => {
@@ -931,7 +997,7 @@ impl LocalExpression {
                 (allocation_only, false)
             }
             Self::Value(value) => (true, unconditional_value(value)),
-            Self::PrimitiveLiteral(_) => (true, true),
+            Self::PrimitiveLiteral(_) | Self::ClassDefinition(_) => (true, true),
             Self::This | Self::ReadField { .. } => (true, false),
         }
     }
@@ -969,6 +1035,7 @@ impl LocalExpression {
             Self::PrimitiveLiteral(_)
             | Self::This
             | Self::Closure(_)
+            | Self::ClassDefinition(_)
             | Self::ReadField { .. }
             | Self::UpdateBinding { .. } => false,
         }
@@ -1026,7 +1093,8 @@ impl LocalExpression {
             | Self::PrimitiveLiteral(_)
             | Self::This
             | Self::ReadField { .. }
-            | Self::Closure(_) => {}
+            | Self::Closure(_)
+            | Self::ClassDefinition(_) => {}
         }
     }
 }
@@ -1036,6 +1104,19 @@ impl LocalBody {
         let mut body = Self::lower_expression(std::iter::empty(), expression)?;
         body.root_expression_span = Some(expression.span());
         Some(body)
+    }
+
+    pub(super) fn from_class_declaration(definition: &ClassDefinition) -> Self {
+        let mut body = Self::from_operations(
+            BTreeMap::new(),
+            Vec::new(),
+            vec![LocalOperation::Return(
+                Some(LocalExpression::ClassDefinition(definition.clone())),
+                definition.span,
+            )],
+        );
+        body.root_expression_span = Some(definition.span);
+        body
     }
 
     pub(super) fn from_expression_statement(expression: &Expr) -> Option<Self> {
@@ -1215,7 +1296,6 @@ impl LocalBody {
         }
 
         let mut constructor = None;
-        let mut noninvoking_definition = true;
         let mut private_fields = BTreeSet::new();
         let mut field_operations = Vec::new();
         let mut callables = Vec::new();
@@ -1227,7 +1307,6 @@ impl LocalBody {
                 }
                 ClassMember::Constructor(_) => return None,
                 ClassMember::PrivateProp(field) => {
-                    noninvoking_definition &= !field.is_static;
                     if !field.decorators.is_empty() {
                         return None;
                     }
@@ -1249,7 +1328,6 @@ impl LocalBody {
                     }
                 }
                 ClassMember::ClassProp(field) => {
-                    noninvoking_definition &= !field.is_static;
                     if !field.decorators.is_empty() {
                         return None;
                     }
@@ -1283,14 +1361,6 @@ impl LocalBody {
                 }
                 ClassMember::PrivateMethod(method) if !method.function.decorators.is_empty() => {
                     return None;
-                }
-                ClassMember::Method(method) => {
-                    noninvoking_definition &= !matches!(method.key, PropName::Computed(_));
-                }
-                ClassMember::StaticBlock(_)
-                | ClassMember::AutoAccessor(_)
-                | ClassMember::TsIndexSignature(_) => {
-                    noninvoking_definition = false;
                 }
                 _ => {}
             }
@@ -1371,7 +1441,6 @@ impl LocalBody {
             class: class.span.lo.0,
             span: class.span,
             callables: callables.into(),
-            noninvoking_definition,
             initializers: Self::from_operations(BTreeMap::new(), Vec::new(), field_operations),
             constructor: Self::from_operations(bindings, local_parameters, constructor_operations),
         })

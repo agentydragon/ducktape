@@ -632,17 +632,23 @@ Default examples retain twenty source operations per cell access, with exact
 counts and explicit truncation; full JSONL borrows and streams all retained
 operation provenance.
 
-An original, non-exported direct class declaration may close global-property,
-general-heap and host-effect coverage only for an inert class shape: no
-heritage, class or member decorators, computed names, static fields or blocks,
-accessors, auto-accessors, private members, or ambient declarations. Its
-members are plain methods, an ordinary constructor and public instance fields.
-Method and constructor bodies and instance field values remain lazy. The exact
-class evaluation must finish and initialize its binding before the certificate
-is sealed. The certificate covers class declaration evaluation only; later
-construction and property observations retain their ordinary effects and
-coverage requirements. The existing binding write and allocation facts remain
-projected.
+An original direct class declaration uses a canonical class-creation operation
+through the shared local interpreter. Definition-time admission excludes heritage,
+class or parameter/member decorators, computed names, static fields or blocks,
+auto-accessors and ambient declarations. Statically named public/private methods,
+accessors and instance fields create no eager user-code step. Constructor bodies,
+parameter defaults and instance field values remain deferred; their unsupported
+operations do not prevent class creation from being covered. The same creation
+transfer supplies isolated imported-class initialization evidence independently
+of constructor-body effects. No construction or ordinary-object shape proof is
+implied.
+
+The exact class root must finish and initialize its binding before its
+lexical/global/heap/host operation receipt is sealed. Its root retains a
+`class_declaration` identity and declaration span, separately from variable
+initializer spans. The existing binding write, allocation, exports and later
+callback reachability remain projected. Construction and property observations
+retain their own effects and coverage requirements.
 
 An original simple variable declarator with an unannotated
 binding may close global-property, general-heap and host-effect coverage when
@@ -867,11 +873,11 @@ rebinds. Closing them does not discharge unresolved-call closure or authorize
 skipping its binding-effect fallback.
 
 The ordered root can separately seal lexical read and rebind coverage from
-receipts produced by the shared local-operation interpreter. Binding initializers
-and supported anonymous expression statements retain their exact source owner,
-expression span and root kind in the same canonical root plan and receipt.
+receipts produced by the shared local-operation interpreter. Binding initializers,
+class declarations and supported anonymous expression statements retain their
+exact source owner, span and root kind in the same canonical root plan and receipt.
 Expression statements discard their value after executing their child operations;
-they create no artificial binding. Both root kinds use the same property, call
+they create no artificial binding. These roots use the same property, call
 and operator transfers, completion and dependency checks, and call-edge
 connectivity proof. Supported global-store expressions also use the ordered root
 plan. An unproved global store retains incomplete execution, an uncovered root
