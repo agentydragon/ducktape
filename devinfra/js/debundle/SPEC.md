@@ -4766,6 +4766,10 @@ operations use the conservative path rather than stale pre-push slots.
 The independent descriptor/length witness can admit subsequent primitive pushes
 through the shared ordered transfer described above; it cannot restore element
 snapshots or certify other array methods.
+The ordered root also admits standalone top-level calls through this checked
+transfer. Whole-owner coverage still requires method selection, argument
+evaluation and the post-argument descriptor/prototype checks to compose their
+actual operation receipts.
 
 ## Runtime resource destinations
 
