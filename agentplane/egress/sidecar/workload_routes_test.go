@@ -30,7 +30,7 @@ func TestWorkloadHTTPRoutePresentsSVIDThroughOpaqueConnectAndStreams(t *testing.
 	release := make(chan struct{})
 	defer close(release)
 	var calls atomic.Int32
-	destination := workloadDestination(t, ca, environment_runtime_transport.NotificationsURI, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	destination := workloadDestination(t, ca, environment_runtime_transport.EgressRulesURI, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		identity, err := environment_runtime_transport.PeerIdentityFromTLSState(*r.TLS, x509.ExtKeyUsageClientAuth)
 		if err != nil || identity != uri || r.ProtoMajor != 2 {
 			t.Errorf("destination peer=%q HTTP/%d error=%v", identity, r.ProtoMajor, err)
@@ -50,7 +50,7 @@ func TestWorkloadHTTPRoutePresentsSVIDThroughOpaqueConnectAndStreams(t *testing.
 		}
 	}))
 	central, observed := workloadCentral(t, strings.TrimPrefix(destination.URL, "https://"))
-	address := workloadSidecar(t, central, workloadRouteConfig{Upstream: strings.TrimPrefix(destination.URL, "https://"), ServerURI: environment_runtime_transport.NotificationsURI, TLS: credential})
+	address := workloadSidecar(t, central, workloadRouteConfig{Upstream: strings.TrimPrefix(destination.URL, "https://"), ServerURI: environment_runtime_transport.EgressRulesURI, TLS: credential})
 	proxyURL, err := url.Parse("http://" + address)
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestWorkloadRouteDoesNotRetryWrongServiceIdentityAsPlaintext(t *testing.T) 
 	var calls atomic.Int32
 	destination := workloadDestination(t, ca, environment_runtime_transport.EgressProxyURI, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); w.WriteHeader(200) }))
 	central, observed := workloadCentral(t, strings.TrimPrefix(destination.URL, "https://"))
-	address := workloadSidecar(t, central, workloadRouteConfig{Upstream: strings.TrimPrefix(destination.URL, "https://"), ServerURI: environment_runtime_transport.NotificationsURI, TLS: ca.Issue(t, uri)})
+	address := workloadSidecar(t, central, workloadRouteConfig{Upstream: strings.TrimPrefix(destination.URL, "https://"), ServerURI: environment_runtime_transport.EgressRulesURI, TLS: ca.Issue(t, uri)})
 	proxyURL, err := url.Parse("http://" + address)
 	if err != nil {
 		t.Fatal(err)
