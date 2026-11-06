@@ -563,11 +563,9 @@ export { A, B, Existing };
                 .unwrap_or_else(|| panic!("ab_module.js missing {needle:?}; got:\n{ab_src}"))
         })
         .collect();
-    let mut sorted = positions.clone();
-    sorted.sort();
-    assert_eq!(
-        positions, sorted,
-        "ab_module.js statements not in source order: {positions:?} vs sorted {sorted:?}\n{ab_src}",
+    assert!(
+        positions.is_sorted(),
+        "ab_module.js statements not in source order: {positions:?}\n{ab_src}",
     );
 
     // End-to-end behavior: console.log statements run in source
