@@ -7,12 +7,7 @@ package(default_visibility = ["//cluster/cdk8s:__pkg__"])
 py_library(
     name = "console_config",
     srcs = ["console_config.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/clickhouse:__pkg__",
-        "//cluster/cdk8s/haku:__pkg__",
-        "//cluster/cdk8s/public_coder:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = ["//haku/console/identity:config"],
 )
 
