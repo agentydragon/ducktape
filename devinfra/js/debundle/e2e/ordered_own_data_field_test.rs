@@ -1,8 +1,187 @@
-use analysis::graph::{EffectCellReport, KnownConflict, PremiseVerdict};
-use analysis::{DependencyGraphReport, reports::schema::BindingEffectAuthorityReport};
+use analysis::graph::{
+    CellConflict, EffectCellReport, KnownConflict, PremiseVerdict, SequencedCause,
+};
+use analysis::{
+    DependencyGraphReport,
+    reports::schema::{BindingEffectAuthorityReport, SynchronousExecutionReport},
+};
 use analysis_model::DepKind;
-use debundle_e2e_graph_support::FixtureGraphExt;
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
+
+const ARRAY_LENGTH_SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nconst gamma = read();\nconst anchor = 0;\nconst alpha = write();\nconsole.log(anchor, gamma, alpha);\n";
+
+fn array_length_split(invert_read_and_write: bool) -> FixtureOpts<'static> {
+    let mut provider_members = vec![
+        Member::new("store"),
+        Member::new("read"),
+        Member::new("write"),
+    ];
+    let mutator_members = if invert_read_and_write {
+        vec![Member::new("anchor"), Member::new("alpha")]
+    } else {
+        provider_members.push(Member::new("anchor"));
+        vec![Member::new("alpha")]
+    };
+    let mut modules = vec![logical_module("provider", &provider_members)];
+    if invert_read_and_write {
+        modules.push(logical_module("mutator", &mutator_members));
+        modules.push(logical_module("observer", &[Member::new("gamma")]));
+    } else {
+        modules.push(logical_module("observer", &[Member::new("gamma")]));
+        modules.push(logical_module("mutator", &mutator_members));
+    }
+    FixtureOpts::new(ARRAY_LENGTH_SOURCE, modules)
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_dataflow_aware_s_chain()
+        .with_trusted_dataflow_summaries()
+}
+
+fn execution_for_binding<'a>(
+    graph: &'a DependencyGraphReport,
+    binding: &str,
+) -> &'a SynchronousExecutionReport {
+    graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|declared| declared.binding == binding)
+        })
+        .and_then(|node| node.synchronous_execution.as_ref())
+        .unwrap_or_else(|| panic!("no synchronous execution report for {binding}: {graph:#?}"))
+}
+
+fn assert_length_write_follows_read(graph: &DependencyGraphReport, reader: &str, writer: &str) {
+    let reader = source_unit_for_binding(graph, reader);
+    let writer = source_unit_for_binding(graph, writer);
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.edge_kind == DepKind::Sequenced
+                && edge.source == writer
+                && edge.target == reader
+                && matches!(
+                    &edge.sequenced_cause,
+                    Some(SequencedCause::CellOrder { conflicts, .. })
+                        if conflicts.iter().any(|conflict| matches!(
+                            conflict,
+                            CellConflict::WriteAfterRead {
+                                cell: EffectCellReport::OwnProperty { property, .. }
+                            } if property == "length"
+                        ))
+                )
+        }),
+        "the later push must depend on the array length read: {graph:#?}"
+    );
+}
+
+fn assert_no_operation_receipt(graph: &DependencyGraphReport, binding: &str, case: &str) {
+    let execution = execution_for_binding(graph, binding);
+    assert!(
+        !matches!(
+            execution.binding_effect_authority.as_ref(),
+            Some(BindingEffectAuthorityReport::OperationReceipt { .. })
+        ),
+        "{case} must not seal an operation receipt: {execution:#?}"
+    );
+}
+
+#[test]
+fn relocated_array_length_read_receipts_the_length_cell_written_by_push() {
+    let fixture = run_fixture(array_length_split(false));
+    assert_preserved_entry_output(&fixture, "0 0 undefined\n");
+
+    let assessment = fixture.candidate_relocation_assessment();
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "the independent anchor must cross the read: {assessment:#}"
+    );
+
+    let graph = fixture.dependency_graph();
+    let gamma_id = source_unit_for_binding(&graph, "gamma");
+    let alpha_id = source_unit_for_binding(&graph, "alpha");
+    let gamma = graph.nodes.iter().find(|node| node.id == gamma_id).unwrap();
+    let alpha = graph.nodes.iter().find(|node| node.id == alpha_id).unwrap();
+    assert_ne!(
+        gamma.destination, alpha.destination,
+        "the read and push are relocated into separate modules"
+    );
+
+    let execution = execution_for_binding(&graph, "gamma");
+    assert!(execution.complete, "{execution:#?}");
+    let Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+        execution.binding_effect_authority.as_ref()
+    else {
+        panic!("the relocated array length read needs an operation receipt: {execution:#?}");
+    };
+    assert_eq!(receipt.calls.len(), 1, "{receipt:#?}");
+    assert_length_write_follows_read(&graph, "gamma", "alpha");
+}
+
+#[test]
+fn forcing_push_before_the_array_length_read_rejects_and_changes_inspection_output() {
+    let fixture = run_inspection_fixture(array_length_split(true));
+    let assessment = fixture.candidate_relocation_assessment();
+    assert_eq!(
+        assessment["decision"]["status"], "conflict",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "the candidate must invert the reader and writer: {assessment:#}"
+    );
+
+    let graph = fixture.dependency_graph();
+    let execution = execution_for_binding(&graph, "gamma");
+    assert!(execution.complete, "{execution:#?}");
+    assert!(matches!(
+        execution.binding_effect_authority.as_ref(),
+        Some(BindingEffectAuthorityReport::OperationReceipt { .. })
+    ));
+    assert_length_write_follows_read(&graph, "gamma", "alpha");
+
+    // The marked rejection tree can still be inspected under Node: its module
+    // order runs push first, so gamma changes from the source value 0 to 1.
+    assert_node_output(&fixture.entry_path, "0 1 undefined\n", "");
+}
+
+#[test]
+fn ordinary_length_getters_and_unknown_receivers_do_not_get_array_length_receipts() {
+    let getter = run_fixture(FixtureOpts::new(
+        "const events = [];\nconst record = { get length() { events.push('get'); return 7; } };\nconst observed = record.length;\nconsole.log(observed, events.join(','));\n",
+        vec![logical_module(
+            "all",
+            &[
+                Member::new("events"),
+                Member::new("record"),
+                Member::new("observed"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&getter, "7 get\n");
+    let getter_graph = getter.dependency_graph();
+    assert_no_operation_receipt(&getter_graph, "observed", "ordinary length getter");
+    assert!(
+        !execution_for_binding(&getter_graph, "observed").complete,
+        "getter effects must stay conservative"
+    );
+
+    let unknown = run_fixture(FixtureOpts::new(
+        "globalThis.makeArray = () => [1];\nfunction read(receiver) { return receiver.length; }\nconst observed = read(globalThis.makeArray());\nconsole.log(observed);\n",
+        vec![logical_module(
+            "all",
+            &[Member::new("read"), Member::new("observed")],
+        )],
+    ));
+    assert_preserved_entry_output(&unknown, "1\n");
+    let unknown_graph = unknown.dependency_graph();
+    assert_no_operation_receipt(&unknown_graph, "observed", "unknown receiver");
+    assert!(
+        !execution_for_binding(&unknown_graph, "observed").complete,
+        "unknown receiver effects must stay conservative"
+    );
+}
 
 fn assert_property_frontier(
     graph: &DependencyGraphReport,
