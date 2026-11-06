@@ -296,24 +296,27 @@ async def test_rejects_every_non_rs256_algorithm_before_jwks_lookup(
 @pytest.mark.parametrize(
     ("claim", "value"),
     [
-        ("iss", "https://other-issuer.example/"),
-        ("aud", "other-client"),
-        ("aud", [_CLIENT_ID]),
-        ("azp", "other-client"),
-        ("azp", [_CLIENT_ID]),
-        ("azp", 1),
-        ("sub", ""),
-        ("sub", "   "),
-        ("sub", 1),
-        ("iat", True),
-        ("iat", "1"),
-        ("iat", 1.5),
-        ("exp", True),
-        ("exp", "4102444800"),
-        ("exp", 4102444800.5),
+        pytest.param("iss", "https://other-issuer.example/", id="iss-other-issuer"),
+        pytest.param("aud", "other-client", id="aud-other-client"),
+        pytest.param("aud", [_CLIENT_ID], id="aud-singleton-list"),
+        pytest.param("azp", "other-client", id="azp-other-client"),
+        pytest.param("azp", [_CLIENT_ID], id="azp-singleton-list"),
+        pytest.param("azp", 1, id="azp-integer"),
+        pytest.param("sub", "", id="sub-empty"),
+        pytest.param("sub", "   ", id="sub-whitespace"),
+        pytest.param("sub", 1, id="sub-integer"),
+        pytest.param("iat", True, id="iat-boolean"),
+        pytest.param("iat", "1", id="iat-string"),
+        pytest.param("iat", 1.5, id="iat-fractional"),
+        pytest.param("exp", True, id="exp-boolean"),
+        pytest.param("exp", "4102444800", id="exp-string"),
+        pytest.param("exp", 4102444800.5, id="exp-fractional"),
+        pytest.param("iat", float("inf"), id="iat-positive-infinity"),
+        pytest.param("iat", float("-inf"), id="iat-negative-infinity"),
+        pytest.param("exp", float("inf"), id="exp-positive-infinity"),
     ],
 )
-async def test_rejects_wrong_or_non_strict_claims(
+async def test_rejects_invalid_claim_values(
     jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey], claim: str, value: Any
 ) -> None:
     _state, jwks_uri = jwks_server
@@ -341,15 +344,6 @@ async def test_rejects_nonpositive_token_lifetime(
         await _resolver(jwks_uri).resolve(
             _token_response(_token(signing_keys[0], claims=_claims(iat=timestamp, exp=timestamp)))
         )
-
-
-@pytest.mark.parametrize(("claim", "value"), [("iat", float("inf")), ("iat", float("-inf")), ("exp", float("inf"))])
-async def test_rejects_time_claims_that_overflow_numeric_date_conversion(
-    jwks_server, signing_keys: tuple[_SigningKey, _SigningKey, _SigningKey], claim: str, value: float
-) -> None:
-    _state, jwks_uri = jwks_server
-    with pytest.raises(InvalidOidcPrincipalError):
-        await _resolver(jwks_uri).resolve(_token_response(_token(signing_keys[0], claims=_claims(**{claim: value}))))
 
 
 @pytest.mark.parametrize(
