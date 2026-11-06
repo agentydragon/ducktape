@@ -129,3 +129,42 @@ The decompressed consoles have SHA-256 digests `6175cadfbea61e5e77c782296bf9f218
 matching the BuildBuddy CAS artifacts. Multiple requests are therefore a feature to
 preserve in the reduced experiment, but occurred on both failed and healthy guests and
 are not sufficient evidence of the cause.
+
+## Direct TCG with repeated ACPI requests
+
+On 2026-11-06, the reduced guest script sent four `system_powerdown` commands 50 ms
+apart after the 60-second boot delay, then a fifth command five seconds later. Five
+fresh guests ran sequentially in the same restricted pod on `wyrm2`, using QEMU
+10.1.0 (`qemu-kvm-10.1.0-10.el9`) and the pinned CI guest input hashes. The pod had
+no `/dev/kvm`; each guest-exec log reports `-machine q35,accel=tcg`, and each QEMU
+monitor reports `kvm support: disabled`.
+
+| Run | Guest request markers | Shutdown receipts | Kernel powerdowns | QEMU exit |
+| --- | --------------------: | ----------------: | ----------------: | --------: |
+| 1   |                     4 |                 1 |                 1 |         0 |
+| 2   |                     4 |                 1 |                 1 |         0 |
+| 3   |                     4 |                 1 |                 1 |         0 |
+| 4   |                     2 |                 1 |                 1 |         0 |
+| 5   |                     4 |                 1 |                 1 |         0 |
+
+Every run passed the committed `tcg/check.sh`: its raw serial stream has the ordered
+request, `AGENTPLANE_GUEST_SHUTDOWN_COMPLETE`, and `reboot: Power down`; its QEMU
+monitor shows both disabled KVM and `VM status: paused (shutdown)`. The lower request
+count in run 4 is what the guest actually logged, not a claim that fewer commands were
+sent. This five-run experiment did not reproduce the late CI stall. It shows that
+multiple ACPI requests alone do not invariably prevent this reduced guest from
+shutting down; it does not rule out an interaction with KubeVirt, the Agentplane
+application stack, host devices, or the original CI scheduling conditions.
+
+The unmodified driver output, pod placement/events, per-run guest-exec, serial, QEMU
+monitor and virtiofsd logs, and the exact scratch scripts are in
+[repeated-acpi.tar.gz](tcg/results/repeated-acpi.tar.gz) (SHA-256
+`7a17bd66787a4f3f94772ccb2520814e4a587f63b192ab5c1f547449de1b7a92`).
+[repeated-acpi.patch](tcg/results/repeated-acpi.patch) records all differences from
+the committed `tcg/` scripts: the ACPI command sequence, the `wyrm2` node selector,
+and the earlier driver's lack of transfer/exec timeouts and stricter checker. The
+patch applies with `patch -p1` from this directory. It is an exact record of the
+completed experiment; a future run should carry the ACPI sequence into the current
+bounded driver rather than remove those safeguards. The driver reported deletion of
+namespace `agentplane-tcg-multiacpi-20261106`, and a later `kubectl get namespace`
+returned no object.
