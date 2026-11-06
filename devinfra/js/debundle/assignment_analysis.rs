@@ -1,6 +1,6 @@
 use analysis_model::DepKind;
 use source_identity::ChunkId;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, OnceLock};
 
 use serde::Serialize;
@@ -539,28 +539,11 @@ impl AssignmentAnalysis {
         // simulator share one source of truth — see
         // `graph::chunk_constraining_module_edges` for the invariant doc.
         let canonical_edges = chunk_constraining_module_edges(&dependency_graph, &assignment);
-        // Every output module and the entry destination need a deterministic
-        // source-order slot for emit stability, even singletons that don't
-        // participate in any canonical edge.
-        let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical_edges.pairs().collect();
-        let mut import_order = EsmImportOrder::build(
-            &constraining_pairs,
-            &canonical_edges.i_successors,
+        let import_order = EsmImportOrder::build_for_assignment(
+            &canonical_edges,
+            &dependency_graph,
+            &assignment,
             &emitted_modules(planned_modules.len(), entry_module_id),
-        );
-        let mut first_units = BTreeMap::new();
-        for node in dependency_graph.iter_nodes() {
-            first_units
-                .entry(assignment.of(node.id))
-                .and_modify(|first: &mut source_identity::SourceUnitOrdinal| {
-                    *first = (*first).min(node.statement_ordinal);
-                })
-                .or_insert(node.statement_ordinal);
-        }
-        import_order.preserve_source_order(
-            &canonical_edges.i_successors,
-            &first_units,
-            entry_module_id,
         );
         let inputs = Arc::new(AssignmentInputs::build(
             chunk_id,

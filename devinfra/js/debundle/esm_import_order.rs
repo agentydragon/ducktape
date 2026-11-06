@@ -38,9 +38,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::graph::{
-    chunk_linker_order_from_pairs, chunk_source_import_order_from_adjacency, position_lookup,
+    ChunkConstrainingEdgeSet, DependencyGraph, chunk_linker_order_from_pairs,
+    chunk_source_import_order_from_adjacency, position_lookup,
 };
 use analysis::ids::ModuleId;
+use analysis::module_assignment::ModuleAssignment;
 use petgraph::algo::is_cyclic_directed;
 use petgraph::graphmap::DiGraphMap;
 use source_identity::SourceUnitOrdinal;
@@ -86,6 +88,46 @@ impl EsmImportOrder {
             linker_position,
             source_import_position,
         }
+    }
+
+    /// Build emitted import ordering from the canonical module edges, source
+    /// graph, assignment, and complete emitted-module universe. First source
+    /// ordinals are derived per assigned module once and shared with the
+    /// source-order preference; that preference also accounts for the
+    /// runtime entry fanout over every emitted module.
+    ///
+    /// `canonical` must have been built from `dependency_graph` and
+    /// `assignment`. `emitted_modules` must contain every logical module the
+    /// entry imports, including isolated modules, and the entry destination.
+    pub fn build_for_assignment(
+        canonical: &ChunkConstrainingEdgeSet,
+        dependency_graph: &DependencyGraph,
+        assignment: &ModuleAssignment,
+        emitted_modules: &BTreeSet<ModuleId>,
+    ) -> Self {
+        let entry = assignment.entry_destination().module_id();
+        debug_assert!(emitted_modules.contains(&entry));
+        debug_assert!(
+            assignment
+                .iter()
+                .all(|(_, module)| emitted_modules.contains(&module))
+        );
+
+        let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
+        let mut import_order = Self::build(
+            &constraining_pairs,
+            &canonical.i_successors,
+            emitted_modules,
+        );
+        let mut first_units = BTreeMap::<ModuleId, SourceUnitOrdinal>::new();
+        for node in dependency_graph.iter_nodes() {
+            first_units
+                .entry(assignment.of(node.id))
+                .and_modify(|first| *first = (*first).min(node.statement_ordinal))
+                .or_insert(node.statement_ordinal);
+        }
+        import_order.preserve_source_order(&canonical.i_successors, &first_units, entry);
+        import_order
     }
 
     pub fn linker_order(&self) -> &[ModuleId] {
