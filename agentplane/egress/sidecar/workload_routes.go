@@ -241,6 +241,16 @@ func (s *sidecar) exchangeWorkloadRoute(client net.Conn, reader *bufio.Reader, r
 	response.ProtoMajor = 1
 	response.ProtoMinor = 1
 	response.Proto = "HTTP/1.1"
+	if response.ContentLength < 0 {
+		if request.Method == http.MethodHead || response.StatusCode == http.StatusNoContent || response.StatusCode == http.StatusNotModified {
+			response.Close = true
+		} else {
+			// HTTP/2 has no Transfer-Encoding. Without an explicit HTTP/1 body
+			// boundary, Response.Write chooses close-delimiting on a private copy,
+			// leaving this connection open and clients waiting for EOF.
+			response.TransferEncoding = []string{"chunked"}
+		}
+	}
 	if err := response.Write(client); err != nil {
 		return false
 	}
