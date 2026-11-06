@@ -44,7 +44,9 @@ py_test(
         "//props/agents/critic:image",
         "//props/agents/grader:image",
     ],
-    exec_properties = CONTAINER_E2E_EXEC_PROPERTIES,
+    exec_properties = CONTAINER_E2E_EXEC_PROPERTIES | {
+        "test.runner-recycling-key": CONTAINER_E2E_EXEC_PROPERTIES["test.runner-recycling-key"] + "-registry-control-20261105-v1",
+    },
     requires_docker = True,
     deps = [
         "//:conftest",
