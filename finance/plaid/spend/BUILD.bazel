@@ -2,6 +2,7 @@ load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_b
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 py_library(
     name = "app",
@@ -159,6 +160,7 @@ py_test(
     size = "medium",
     srcs = ["test_service.py"],
     data = ["//finance/plaid/spend/ui:bundle"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":allowance",
@@ -183,6 +185,7 @@ py_test(
     name = "test_portfolio",
     size = "medium",
     srcs = ["test_portfolio.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":conftest",
@@ -359,6 +362,7 @@ py_test(
     name = "test_portfolio_queries",
     size = "medium",
     srcs = ["test_portfolio_queries.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":conftest",

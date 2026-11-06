@@ -7,6 +7,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//agentplane/env/e2e/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 package(default_visibility = [
     "//agentplane/app:__subpackages__",
@@ -21,14 +22,6 @@ _BROWSER_IMAGE_EXEC_PROPERTIES = {
         ELECTRIC_1_8_1_DIGEST,
         RYUK_DIGEST,
         NGINX_UNPRIVILEGED_DIGEST,
-    ]),
-}
-
-# The app bridge fixture starts PostgreSQL 18; `requires_docker` starts the pinned Ryuk image.
-_BRIDGE_IMAGE_EXEC_PROPERTIES = {
-    "test.runner-recycling-key": "app-bridge-images-v1-" + "-".join([
-        POSTGRES_18_DIGEST,
-        RYUK_DIGEST,
     ]),
 }
 
@@ -200,7 +193,7 @@ py_test(
         "DOCKER_HOST": "tcp://127.0.0.1:2375",
         "OTEL_SDK_DISABLED": "true",
     },
-    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES | _BRIDGE_IMAGE_EXEC_PROPERTIES,
+    exec_properties = NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES | POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     shard_count = 4,
     target_compatible_with = [

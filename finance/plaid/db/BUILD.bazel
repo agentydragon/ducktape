@@ -1,5 +1,6 @@
 # gazelle:exclude migrations
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 py_library(
     name = "products",
@@ -96,6 +97,7 @@ py_test(
     name = "test_link_store",
     size = "medium",
     srcs = ["test_link_store.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":conftest",
@@ -113,6 +115,7 @@ py_test(
     name = "test_read_model",
     size = "medium",
     srcs = ["test_read_model.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":conftest",
@@ -233,6 +236,7 @@ py_test(
     name = "test_capture_migration",
     size = "medium",
     srcs = ["test_capture_migration.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":conftest",
