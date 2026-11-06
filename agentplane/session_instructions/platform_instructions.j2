@@ -35,11 +35,11 @@ Agentplane components:
 
 Use the configured proxy and CA trust. Service addresses and authentication are:
 
-| Service | Base URL | Authorization Bearer placeholder |
+| Service | Base URL | Credential presentation |
 | --- | --- | --- |
 | Egress rules | {{ egress_api_url }} | `agentplane-credential-agentplane-workload` |
 | Actions | {{ actions_service_url }} | `agentplane-credential-agentplane-workload` |
-| Sessions and environments | {{ sessions_service_url }} | `agentplane-credential-agentplane-session-dispatcher-workload` |
+| Sessions and environments | {{ sessions_service_url }} | `agentplane-credential-agentplane-session-dispatcher-workload` is an inert CLI value; the Sandbox sidecar presents its workload SVID |
 | Notifications | {{ notifications_service_url }} | Managed by your Sandbox; no Authorization header needed |
 
 The `agentplane` command calls these APIs for you. Its service commands read the base URLs and

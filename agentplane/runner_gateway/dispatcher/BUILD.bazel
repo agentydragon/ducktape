@@ -102,6 +102,27 @@ go_test(
 )
 
 go_test(
+    name = "svid_auth_test",
+    srcs = ["svid_auth_test.go"],
+    embed = [":dispatcher"],
+    deps = [
+        ":session_dispatcher_go_proto",
+        "//agentplane/environment_runtime_transport",
+        "//agentplane/environment_runtime_transport/testing",
+        "//agentplane/testing/kubeapiserver",
+        "//agentplane/workload_auth/auth",
+        "//agentplane/workload_auth/testing",
+        "@io_k8s_api//authentication/v1:authentication",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
     name = "store_integration_test",
     size = "medium",
     srcs = [

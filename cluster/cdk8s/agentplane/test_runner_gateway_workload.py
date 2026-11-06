@@ -15,6 +15,7 @@ from cluster.cdk8s.agentplane import (
     actions,
     app,
     chart as agentplane_chart,
+    egress,
     environment_sandbox,
     history_service,
     notifications,
@@ -68,6 +69,14 @@ def test_environment_provisions_cert_manager_runner_issuer_and_gateway_identity(
     assert set(spec["usages"]) == {"digital signature", "client auth"}
     assert spec["privateKey"]["rotationPolicy"] == "Always"
 
+    workload_certificate = _resource(staging_manifests, "Certificate", f"{runner_gateway.NAME}-workload")
+    workload_spec = workload_certificate["spec"]
+    assert workload_spec["secretName"] == f"{runner_gateway.NAME}-workload-tls"
+    assert workload_spec["issuerRef"] == {"kind": "Issuer", "name": runner_gateway.RUNNER_CERTIFICATE_ISSUER}
+    assert workload_spec["uris"] == [runner_gateway.WORKLOAD_URI]
+    assert set(workload_spec["usages"]) == {"digital signature", "server auth"}
+    assert workload_spec["privateKey"]["rotationPolicy"] == "Always"
+
 
 def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App) -> None:
     docs = _gateway_objects(scratch_app)
@@ -81,10 +90,17 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert container["image"].startswith("git.allegedly.works/ducktape-ci/agentplane-runner-gateway:")
     assert pod["serviceAccountName"] == runner_gateway.NAME
     http = session_dispatcher.http_service(staging.ENV.namespace)
-    assert {p["containerPort"] for p in container["ports"]} == {8080, http.pod_port}
+    workload = runner_gateway.workload_service(staging.ENV.namespace)
+    assert {p["containerPort"] for p in container["ports"]} == {8080, http.pod_port, workload.pod_port}
     settings = _gateway_settings(docs, container)
     assert settings["listen_address"] == "0.0.0.0:8080"
     assert settings["http_listen_address"] == f"0.0.0.0:{http.pod_port}"
+    assert settings["workload_listen_address"] == f"0.0.0.0:{workload.pod_port}"
+    assert settings["workload_tls"] == {
+        "cert_file": "/run/agentplane/workload-tls/tls.crt",
+        "key_file": "/run/agentplane/workload-tls/tls.key",
+        "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt",
+    }
     assert settings["dispatcher_audience"] == session_dispatcher.TOKEN_AUDIENCE
     assert settings["gateway_audience"] == runner_gateway.TOKEN_AUDIENCE
     assert settings["kubernetes_client_qps"] == "-1"
@@ -108,7 +124,8 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert not pod.get("initContainers")
     assert container["startupProbe"]["failureThreshold"] == 60
     assert _resource(root_docs, "Service", runner_gateway.NAME)["spec"]["ports"] == [
-        {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080}
+        {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080},
+        {"name": "workload", "port": workload.port.number, "protocol": "TCP", "targetPort": workload.pod_port},
     ]
     assert _resource(root_docs, "Service", session_dispatcher.NAME)["spec"]["ports"] == [
         {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080},
@@ -129,6 +146,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert (notifications.NAME, "8080") in ingress
     assert (notifications.NAME, str(http.pod_port)) in ingress
     assert (runner_gateway.NAME, "8080") in ingress
+    assert (egress.NAME, str(workload.pod_port)) in ingress
     assert (sandbox_controller.NAME, "8080") in ingress
     runner_label = environment_sandbox.pods(staging.ENV.namespace).selector["app.kubernetes.io/name"]
     assert (runner_label, "8090") not in ingress

@@ -98,7 +98,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     sessions_url = f"http://{session_dispatcher.NAME}.{namespace}.svc.cluster.local:{session_service_port}"
     assert (
         f"| Sessions and environments | {sessions_url} | "
-        "`agentplane-credential-agentplane-session-dispatcher-workload` |"
+        "`agentplane-credential-agentplane-session-dispatcher-workload` is an inert CLI value; the Sandbox sidecar presents its workload SVID |"
     ) in platform_instructions
     props = staging.ENV.central_sampler
     assert props is not None
