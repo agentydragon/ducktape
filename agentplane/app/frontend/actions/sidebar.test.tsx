@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { act, type JSX } from "react";
+import { act, type JSX, type ReactNode } from "react";
 import { Link, MemoryRouter, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -12,6 +12,14 @@ import type { ActionRequestView } from "./types";
 function CurrentPath(): JSX.Element {
   const location = useLocation();
   return <div data-testid="current-path">{location.pathname}</div>;
+}
+
+function ActionsTestApp({ children }: { children: ReactNode }): JSX.Element {
+  return (
+    <MemoryRouter initialEntries={["/threads/test-thread"]}>
+      <ActionRequestsProvider>{children}</ActionRequestsProvider>
+    </MemoryRouter>
+  );
 }
 
 /** The shell's placement: hidden, not unmounted, on the Actions pages. */
@@ -35,12 +43,10 @@ afterEach(async () => {
 
 it("resizes the open Actions area with the keyboard and remembers its height", async () => {
   const container = await mount(
-    <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionRequestsProvider>
-        <CurrentPath />
-        <ActionsSidebarSection />
-      </ActionRequestsProvider>
-    </MemoryRouter>
+    <ActionsTestApp>
+      <CurrentPath />
+      <ActionsSidebarSection />
+    </ActionsTestApp>
   );
   await send([request("decision_pending", 1)]);
 
@@ -57,12 +63,10 @@ it("resizes the open Actions area with the keyboard and remembers its height", a
 
 it("keeps the Actions section available and suppresses auto-open until the pending queue clears", async () => {
   const container = await mount(
-    <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionRequestsProvider>
-        <CurrentPath />
-        <ActionsSidebarSection />
-      </ActionRequestsProvider>
-    </MemoryRouter>
+    <ActionsTestApp>
+      <CurrentPath />
+      <ActionsSidebarSection />
+    </ActionsTestApp>
   );
   const first = request("decision_pending", 1);
   const second = request("decision_pending", 2);
@@ -92,12 +96,10 @@ it("keeps the Actions section available and suppresses auto-open until the pendi
 
 it("expands a compact action preview and only offers a decision on the compact card to eligible actions", async () => {
   const container = await mount(
-    <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionRequestsProvider>
-        <CurrentPath />
-        <ActionsSidebarSection />
-      </ActionRequestsProvider>
-    </MemoryRouter>
+    <ActionsTestApp>
+      <CurrentPath />
+      <ActionsSidebarSection />
+    </ActionsTestApp>
   );
   const pod = {
     ...request("decision_pending", 1),
@@ -148,11 +150,9 @@ it("expands a compact action preview and only offers a decision on the compact c
 
 it("shows approval widgets for Kubernetes resource, pod-list, and log reads", async () => {
   const container = await mount(
-    <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionRequestsProvider>
-        <ActionsSidebarSection />
-      </ActionRequestsProvider>
-    </MemoryRouter>
+    <ActionsTestApp>
+      <ActionsSidebarSection />
+    </ActionsTestApp>
   );
   const reads: { request: ActionRequestView; visible: string[]; expands: boolean }[] = [
     {
@@ -214,12 +214,10 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
 
 it("leaves the disclosure off a card whose opened version would add nothing", async () => {
   const container = await mount(
-    <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionRequestsProvider>
-        <CurrentPath />
-        <ActionsSidebarSection />
-      </ActionRequestsProvider>
-    </MemoryRouter>
+    <ActionsTestApp>
+      <CurrentPath />
+      <ActionsSidebarSection />
+    </ActionsTestApp>
   );
   const read = {
     ...request("decision_pending", 8),
@@ -255,11 +253,9 @@ it("leaves the disclosure off a card whose opened version would add nothing", as
 
 it("offers Approve and Deny on a collapsed card of an opted-in Action, including one from an external caller", async () => {
   const container = await mount(
-    <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionRequestsProvider>
-        <ActionsSidebarSection />
-      </ActionRequestsProvider>
-    </MemoryRouter>
+    <ActionsTestApp>
+      <ActionsSidebarSection />
+    </ActionsTestApp>
   );
   const read = {
     ...request("decision_pending", 6),
@@ -275,11 +271,9 @@ it("offers Approve and Deny on a collapsed card of an opted-in Action, including
 
 it("shows the first two pending requests in the closed-sidebar strip and the rest behind its expansion", async () => {
   const container = await mount(
-    <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionRequestsProvider>
-        <ActionsAttentionBar visible />
-      </ActionRequestsProvider>
-    </MemoryRouter>
+    <ActionsTestApp>
+      <ActionsAttentionBar visible />
+    </ActionsTestApp>
   );
   const [first, second, third] = [1, 2, 3].map((index) => request("decision_pending", index)) as [
     ActionRequestView,
@@ -319,11 +313,9 @@ it("shows the first two pending requests in the closed-sidebar strip and the res
 
 it("keeps the strip's expansion across a visit to a details page that decides one request", async () => {
   const container = await mount(
-    <MemoryRouter initialEntries={["/threads/test-thread"]}>
-      <ActionRequestsProvider>
-        <StripOutsideActionPages />
-      </ActionRequestsProvider>
-    </MemoryRouter>
+    <ActionsTestApp>
+      <StripOutsideActionPages />
+    </ActionsTestApp>
   );
   const pending = [1, 2, 3, 4].map((index) => request("decision_pending", index));
   const decided = pending[2]!;

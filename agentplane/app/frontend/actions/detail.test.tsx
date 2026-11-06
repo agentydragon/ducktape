@@ -59,9 +59,7 @@ beforeEach(() => {
   sessionStorage.clear();
 });
 
-it("opens cached stream details without a reload and Back returns to the original in-app route", async () => {
-  const sent = serve({});
-  const container = await mount(<App initialPath="/threads/example-thread" />);
+async function openPendingActionDetails(container: HTMLDivElement): Promise<void> {
   await send([ROW]);
 
   const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ROW.title}"]`);
@@ -70,6 +68,12 @@ it("opens cached stream details without a reload and Back returns to the origina
   const detailsLink = container.querySelector<HTMLAnchorElement>(`a[aria-label="View details for ${ROW.title}"]`);
   if (!detailsLink) throw new Error("missing action details link");
   await act(async () => detailsLink.click());
+}
+
+it("opens cached stream details without a reload and Back returns to the original in-app route", async () => {
+  const sent = serve({});
+  const container = await mount(<App initialPath="/threads/example-thread" />);
+  await openPendingActionDetails(container);
 
   expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe(`/actions/${ROW.id}`);
   expect(fetched(sent)).toBe(false);
@@ -106,14 +110,7 @@ it.each([
       decided: { ...ROW, ...request(resultState, 21), action: ROW.action, arguments: ROW.arguments, title: ROW.title },
     });
     const container = await mount(<App initialPath="/threads/example-thread" />);
-    await send([ROW]);
-
-    const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ROW.title}"]`);
-    if (!disclosure) throw new Error("missing pending action disclosure");
-    await act(async () => disclosure.click());
-    const detailsLink = container.querySelector<HTMLAnchorElement>(`a[aria-label="View details for ${ROW.title}"]`);
-    if (!detailsLink) throw new Error("missing action details link");
-    await act(async () => detailsLink.click());
+    await openPendingActionDetails(container);
 
     const decisionButton = container.querySelector<HTMLButtonElement>(`button[aria-label="${buttonName}"]`);
     if (!decisionButton) throw new Error(`missing ${buttonName} button`);
@@ -137,14 +134,7 @@ it.each([
 it("stays on action details when a decision fails", async () => {
   serve({ decided: Response.json({ detail: "decision was rejected" }, { status: 409 }) });
   const container = await mount(<App initialPath="/threads/example-thread" />);
-  await send([ROW]);
-
-  const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ROW.title}"]`);
-  if (!disclosure) throw new Error("missing pending action disclosure");
-  await act(async () => disclosure.click());
-  const detailsLink = container.querySelector<HTMLAnchorElement>(`a[aria-label="View details for ${ROW.title}"]`);
-  if (!detailsLink) throw new Error("missing action details link");
-  await act(async () => detailsLink.click());
+  await openPendingActionDetails(container);
   const approve = container.querySelector<HTMLButtonElement>('button[aria-label="Approve"]');
   if (!approve) throw new Error("missing Approve button");
 
@@ -200,14 +190,7 @@ it("refreshes the durable receipt when a watch snapshot removes an action that w
   };
   const sent = serve({ stored: allowed });
   const container = await mount(<App initialPath="/threads/example-thread" />);
-  await send([ROW]);
-
-  const disclosure = container.querySelector<HTMLButtonElement>(`button[aria-label="Expand ${ROW.title}"]`);
-  if (!disclosure) throw new Error("missing pending action disclosure");
-  await act(async () => disclosure.click());
-  const detailsLink = container.querySelector<HTMLAnchorElement>(`a[aria-label="View details for ${ROW.title}"]`);
-  if (!detailsLink) throw new Error("missing action details link");
-  await act(async () => detailsLink.click());
+  await openPendingActionDetails(container);
   expect(fetched(sent)).toBe(false);
 
   await send([]);
