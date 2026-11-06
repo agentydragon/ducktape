@@ -18,10 +18,12 @@
 
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
+package(default_visibility = ["//x/py_detectors:__subpackages__"])
+
 py_library(
     name = "main",
     srcs = ["main.py"],
-    visibility = ["//:__subpackages__"],
+    visibility = ["//visibility:private"],
     deps = [
         ":registry",
         "//x/py_detectors/rules:broad_except_order",
@@ -43,14 +45,12 @@ py_library(
 py_library(
     name = "models",
     srcs = ["models.py"],
-    visibility = ["//:__subpackages__"],
     deps = ["@pypi//pydantic"],
 )
 
 py_library(
     name = "registry",
     srcs = ["registry.py"],
-    visibility = ["//:__subpackages__"],
     deps = [
         ":models",
         ":utils",
@@ -60,18 +60,16 @@ py_library(
 py_library(
     name = "import_graph",
     srcs = ["import_graph.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_library(
     name = "utils",
     srcs = ["utils.py"],
-    visibility = ["//:__subpackages__"],
 )
 
 py_binary(
     name = "py_detectors_cli",
     main_module = "x.py_detectors.main",
-    visibility = ["//:__subpackages__"],
+    visibility = ["//visibility:private"],
     deps = [":main"],
 )

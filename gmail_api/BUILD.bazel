@@ -1,30 +1,32 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
+package(default_visibility = [
+    "//gmail_archiver:__subpackages__",
+    "//x/google_mcp_server:__subpackages__",
+])
+
 py_library(
     name = "labels",
     srcs = ["labels.py"],
-    visibility = ["//:__subpackages__"],
     deps = ["@pypi//pydantic"],
 )
 
 py_library(
     name = "messages",
     srcs = ["messages.py"],
-    visibility = ["//:__subpackages__"],
     deps = ["@pypi//pydantic"],
 )
 
 py_library(
     name = "filters",
     srcs = ["filters.py"],
-    visibility = ["//:__subpackages__"],
     deps = ["@pypi//pydantic"],
 )
 
 py_library(
     name = "service",
     srcs = ["service.py"],
-    visibility = ["//:__subpackages__"],
+    visibility = ["//gmail_archiver:__subpackages__"],
     deps = [
         "@pypi//google_api_python_client",
         "@pypi//google_auth",
