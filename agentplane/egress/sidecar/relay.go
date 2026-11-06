@@ -31,9 +31,11 @@ const (
 )
 
 type sidecar struct {
-	config   config
-	proxyTLS *tls.Config
-	ready    atomic.Bool
+	workloadContext context.Context
+	workloadRoutes  map[string]*workloadRoute
+	config          config
+	proxyTLS        *tls.Config
+	ready           atomic.Bool
 
 	readinessServer   *http.Server
 	readinessListener net.Listener
@@ -45,6 +47,10 @@ type sidecar struct {
 }
 
 func (s *sidecar) run(ctx context.Context) error {
+	if err := s.prepareWorkloadRoutes(); err != nil {
+		return err
+	}
+	defer s.closeWorkloadRoutes()
 	readinessListener, err := netlistener.Open(s.config.ReadinessListenAddress)
 	if err != nil {
 		return fmt.Errorf("start readiness listener: %w", err)
@@ -66,6 +72,7 @@ func (s *sidecar) run(ctx context.Context) error {
 }
 
 func (s *sidecar) serve(ctx context.Context, proxyListener, readinessListener net.Listener, routes []*platformRoute) error {
+	s.workloadContext = ctx
 	s.proxyListener = proxyListener
 	s.routes = routes
 	s.bindReadiness(readinessListener)
@@ -155,10 +162,12 @@ func (s *sidecar) stopProxy() {
 		_ = s.proxyListener.Close()
 	}
 	s.activeMu.Lock()
-	for conn := range s.active {
+	connections := slices.Collect(maps.Keys(s.active))
+	clear(s.active)
+	s.activeMu.Unlock()
+	for _, conn := range connections {
 		_ = conn.Close()
 	}
-	s.activeMu.Unlock()
 }
 
 func (s *sidecar) acceptLoop() error {
@@ -207,6 +216,14 @@ func (s *sidecar) handle(client net.Conn) {
 			writeRefusal(client, http.StatusBadRequest, "bad-request")
 			return
 		}
+		if request.Method != http.MethodConnect && request.URL.Scheme == "http" {
+			if route := s.workloadRoutes[request.URL.Host]; route != nil {
+				if !s.exchangeWorkloadRoute(client, clientReader, request, route) {
+					return
+				}
+				continue
+			}
+		}
 		token := ""
 		if s.config.TokenFile != "" {
 			token, err = readToken(s.config.TokenFile)
@@ -217,6 +234,7 @@ func (s *sidecar) handle(client net.Conn) {
 					return
 				}
 			}
+
 		}
 		rewriteRequest(request, token, s.readProjectedTokens())
 		if upstream == nil {

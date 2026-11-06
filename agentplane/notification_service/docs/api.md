@@ -9,8 +9,11 @@ removed in a cutover.
 
 ## Agent API
 
-Workload calls require a Pod-bound Kubernetes ServiceAccount bearer token with the configured
-audience. Owner authority is the verified ServiceAccount namespace, name and UID, shared by its workloads. Subscription creation
+Sandbox calls use its Runner SVID on the service-owned TLS listener through an opaque proxy tunnel.
+The verified leaf must name the live Sandbox and its current accepted runner credential; the
+principal is that Sandbox's controlled ServiceAccount namespace, name and UID. Backend workloads
+retain Pod-bound ServiceAccount tokens with the configured audience. Owner authority and all
+resource authorization are unchanged. Subscription creation
 addresses a Session by `session_id`. The service reads its existing Dispatcher Session, checks the exact
 Sandbox UID and caller ownership, and confirms current Runtime membership before source authorization.
 It reads the required environment from `environment_hosted` or the fixed `executor_environment` from

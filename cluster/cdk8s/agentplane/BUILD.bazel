@@ -101,7 +101,6 @@ py_library(
         ":egress_policies",
         ":environment",
         ":llm_ingress",
-        ":notifications",
         ":service_workload",
         ":session_dispatcher",
         "//agentplane:crd_group",
@@ -354,7 +353,6 @@ py_library(
     deps = [
         ":egress",
         ":environment",
-        ":notifications",
         ":session_dispatcher",
         ":telemetry",
         "//agentplane/egress:platform_routes",
@@ -429,6 +427,7 @@ py_library(
         ":platform_routes",
         ":sandbox_pod",
         ":telemetry",
+        ":workload_routes",
         "//agentplane:crd_group",
         "//agentplane/egress:resources",
         "//agentplane/env:config",
@@ -1258,6 +1257,7 @@ py_library(
         ":database",
         ":environment",
         ":service_workload",
+        ":workload_tls",
         "//agentplane:crd_group",
         "//agentplane/notification_service:settings",
         "//agentplane/workload_auth:audience",
@@ -1435,6 +1435,7 @@ py_library(
         ":environment_guest",
         ":platform_routes",
         ":sandbox_pod",
+        ":workload_routes",
         "//agentplane:crd_group",
         "//agentplane/env:config",
         "//agentplane/firecracker:config",
@@ -1478,10 +1479,22 @@ py_library(
         ":runner_gateway",
         ":service_workload",
         "//agentplane/environment_runtime_transport:config",
+        "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_certificate",
         "//cluster/cdk8s/providers/cert_manager:certificate",
+        "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "workload_routes",
+    srcs = ["workload_routes.py"],
+    deps = [
+        ":notifications",
+        "//agentplane/egress:sidecar_config",
+        "//agentplane/environment_runtime_transport:config",
     ],
 )

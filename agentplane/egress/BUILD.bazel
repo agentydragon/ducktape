@@ -97,6 +97,7 @@ py_library(
     ],
     deps = [
         ":platform_routes",
+        "//agentplane/environment_runtime_transport:config",
         "@pypi//pydantic",
     ],
 )

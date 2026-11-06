@@ -48,6 +48,15 @@ stored, but no notice reaches a Session: a delivery reads the Session's receipts
 Service first and, failing that, releases its claim to retry later. A delivery also waits while the
 History Service lags the runner's journal, so a retry never precedes an admission it has not seen.
 
+Sandbox callers authenticate with the Runner SVID on the service-owned TLS workload listener.
+The sidecar recognizes the existing HTTP origin and establishes destination TLS inside an opaque
+central-proxy CONNECT. Notification verifies the certificate chain, explicit clientAuth EKU,
+expiry, current Sandbox UID and accepted credential ID, then resolves the Sandbox's controlled
+ServiceAccount UID. Caller headers cannot select another account. The generated HTTP gateway uses
+an in-process channel so unary calls and watch streams retain that verified peer and the existing
+method interceptors; watch revalidation repeats the live lookup. Native gRPC uses the same resolver.
+The backend/operator gRPC and HTTP listeners retain their audience-scoped tokens.
+
 ## Running and deployment
 
 `:service_image` contains `notification-service`, which applies Goose migrations before opening

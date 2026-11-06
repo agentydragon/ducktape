@@ -57,7 +57,7 @@ from agentplane.egress.settings import PROXY_MTLS_PORT, Settings
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications, runner_gateway, session_dispatcher
+from cluster.cdk8s.agentplane import actions, database, llm_ingress, runner_gateway, session_dispatcher
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.agentplane.environment import Environment
@@ -253,21 +253,6 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
     )
     EgressCredential(
         scope,
-        "egresscredential-notifications-workload",
-        metadata=ApiObjectMetadata(name=notifications.WORKLOAD_CREDENTIAL, namespace=namespace),
-        description=(
-            "The calling Sandbox Pod's short-lived, Pod-bound identity minted specifically for the "
-            "Agentplane Notifications API audience."
-        ),
-        source=Source.projected_workload_token(audience=notifications.TOKEN_AUDIENCE),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-            )
-        ],
-    )
-    EgressCredential(
-        scope,
         "egresscredential-session-dispatcher-workload",
         metadata=ApiObjectMetadata(name=session_dispatcher.WORKLOAD_CREDENTIAL, namespace=namespace),
         description=(
@@ -443,11 +428,6 @@ def _egress_policies(scope: Construct, *, namespace: str, litellm_host: str, lit
                 hosts=[llm_ingress.service(namespace).fqdn, actions.service(namespace).fqdn],
                 cluster_internal=True,
                 credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
-            ),
-            Rule.egress(
-                hosts=[notifications.service(namespace).fqdn],
-                cluster_internal=True,
-                credential_ref=PolicySetSpecRulesCredentialRef(name=notifications.WORKLOAD_CREDENTIAL),
             ),
             # Keep each service's RPC paths explicit even though both share this listener and identity.
             Rule.egress(
@@ -706,11 +686,7 @@ class Egress(Construct):
                 for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
             ],
             "tls_passthrough_targets": [f"{service.fqdn}:{service.pod_port}" for service in tls_passthrough_services],
-            "projected_token_audiences": [
-                KUBERNETES_AUDIENCE,
-                notifications.TOKEN_AUDIENCE,
-                session_dispatcher.TOKEN_AUDIENCE,
-            ],
+            "projected_token_audiences": [KUBERNETES_AUDIENCE, session_dispatcher.TOKEN_AUDIENCE],
         }
         if enable_svid_listener:
             content.update(
@@ -993,8 +969,6 @@ class Egress(Construct):
                 llm_ingress.service(namespace).egress(),
                 actions.service(namespace).egress(),
                 session_dispatcher.service(namespace).egress(),
-                # Sandboxes reach Notifications' HTTP facade and documentation, not its gRPC listener.
-                notifications.http_service(namespace).egress(),
                 forgejo.HTTP.egress(),
                 ollama.AUTH_PROXY.egress(),
                 litellm_proxy.service(litellm_spec).egress(),

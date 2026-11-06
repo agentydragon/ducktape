@@ -19,6 +19,11 @@ header. Services need Sandbox get/list and ServiceAccount get in their allowed n
 callers on their existing listener. A TLS peer cannot replace its certificate with a bearer or a
 delegation envelope. Stream revalidation repeats the live lookup and leaf validity checks.
 
+[`facade`](facade/facade.go) runs a service's generated HandlerClient over an in-process gRPC
+channel for its SVID HTTP listener. It carries the service-verified TLS peer in a typed context,
+runs the same method interceptors as native gRPC, and preserves streaming revalidation. No caller
+assertion crosses a socket or header. Backend HTTP gateways keep their existing token path.
+
 `ResolveServiceAccountToken` returns a `ServiceAccountPrincipal` for destinations whose authority
 belongs to the account alone. It requires a ServiceAccount UID and accepts either no Pod binding
 claims or one complete Pod name and UID pair. Partial or repeated claims are rejected. The Action

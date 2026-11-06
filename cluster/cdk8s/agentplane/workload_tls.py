@@ -1,5 +1,7 @@
 """cert-manager serving leaves and trust-manager roots for workload SVID listeners."""
 
+from collections.abc import Sequence
+
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ConfigMap, Secret, Volume
 from cert_manager_crds.io.cert_manager import (
@@ -14,6 +16,8 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.runner_gateway import RUNNER_CERTIFICATE_ISSUER
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
+from cluster.cdk8s.service_ref import Pods, ServiceRef
 
 _CERT_PATH = "/run/agentplane/workload-tls"
 _TRUST_PATH = "/run/agentplane/workload-trust"
@@ -53,3 +57,15 @@ def serving_certificate(scope: Construct, env: Environment, *, workload: Service
         key_file=f"{_CERT_PATH}/tls.key",
         ca_file=f"{_TRUST_PATH}/ca-certificates.crt",
     )
+
+
+def admit_forwarders(scope: Construct, *, name: str, endpoint: ServiceRef, forwarders: Sequence[Pods]) -> None:
+    """Admit only the new workload port from the service's existing forwarders."""
+    for index, pods in enumerate(forwarders):
+        NetworkPolicy(
+            scope,
+            f"workload-forwarder-{index}",
+            metadata=ApiObjectMetadata(name=f"{name}-workload-forwarder-{index}", namespace=pods.namespace),
+            endpoint_selector=pods.selector,
+            egress=[endpoint.egress()],
+        )

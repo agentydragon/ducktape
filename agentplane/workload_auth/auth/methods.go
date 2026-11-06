@@ -173,34 +173,44 @@ func AdmittedReviewedCaller(ctx context.Context) (ReviewedCaller, error) {
 // review; zero leaves it bounded by the call's own deadline.
 func (m Methods) ServerOptions(admissionTimeout time.Duration) []grpc.ServerOption {
 	return []grpc.ServerOption{
-		grpc.ChainUnaryInterceptor(func(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-			admitted, err := m.admit(ctx, info.FullMethod, admissionTimeout)
-			if err != nil {
-				return nil, err
-			}
-			return handler(admitted, request)
-		}),
-		grpc.ChainStreamInterceptor(func(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-			admitted, err := m.admit(stream.Context(), info.FullMethod, admissionTimeout)
-			if err != nil {
-				return err
-			}
-			if original, err := Admitted(admitted); err == nil {
-				revalidate := func(ctx context.Context) error {
-					current, err := m.admit(ctx, info.FullMethod, admissionTimeout)
-					if err != nil {
-						return err
-					}
-					identity, err := Admitted(current)
-					if err != nil || !sameAdmission(original, identity) {
-						return status.Error(codes.Unauthenticated, "stream caller changed")
-					}
-					return nil
+		grpc.ChainUnaryInterceptor(m.UnaryInterceptor(admissionTimeout)),
+		grpc.ChainStreamInterceptor(m.StreamInterceptor(admissionTimeout)),
+	}
+}
+
+// UnaryInterceptor applies the same method admission to native and in-process RPCs.
+func (m Methods) UnaryInterceptor(admissionTimeout time.Duration) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		admitted, err := m.admit(ctx, info.FullMethod, admissionTimeout)
+		if err != nil {
+			return nil, err
+		}
+		return handler(admitted, request)
+	}
+}
+
+// StreamInterceptor admits streams and retains their caller revalidation boundary.
+func (m Methods) StreamInterceptor(admissionTimeout time.Duration) grpc.StreamServerInterceptor {
+	return func(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		admitted, err := m.admit(stream.Context(), info.FullMethod, admissionTimeout)
+		if err != nil {
+			return err
+		}
+		if original, err := Admitted(admitted); err == nil {
+			revalidate := func(ctx context.Context) error {
+				current, err := m.admit(ctx, info.FullMethod, admissionTimeout)
+				if err != nil {
+					return err
 				}
-				admitted = context.WithValue(admitted, revalidateKey{}, revalidate)
+				identity, err := Admitted(current)
+				if err != nil || !sameAdmission(original, identity) {
+					return status.Error(codes.Unauthenticated, "stream caller changed")
+				}
+				return nil
 			}
-			return handler(server, admittedStream{ServerStream: stream, ctx: admitted})
-		}),
+			admitted = context.WithValue(admitted, revalidateKey{}, revalidate)
+		}
+		return handler(server, admittedStream{ServerStream: stream, ctx: admitted})
 	}
 }
 
