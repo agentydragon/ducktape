@@ -664,7 +664,9 @@ func TestNoSecretReachesTheLogsOrTheRecordedDecisions(t *testing.T) {
 	}))
 	port := portOf(upstream)
 
-	if refused := l.send(t, "GET", port, "/public/x", header("Proxy-Authorization", "Bearer "+forgedBearer), nil); refused.StatusCode != 403 {
+	// This path has no allow rule, so the refusal and its record remain attributable to policy.
+	// The forged legacy bearer is stripped and cannot select an identity under SVID auth.
+	if refused := l.send(t, "GET", port, "/not-granted", header("Proxy-Authorization", "Bearer "+forgedBearer), nil); refused.StatusCode != 403 {
 		body, _ := io.ReadAll(refused.Body)
 		t.Fatalf("forged bearer: status %d headers=%v body=%q", refused.StatusCode, refused.Header, body)
 	}
