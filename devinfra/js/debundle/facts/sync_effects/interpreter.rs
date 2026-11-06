@@ -9445,7 +9445,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     .returns
                     .iter()
                     .any(|value| *value != AbstractValue::Value(Value::Unavailable)));
-        outcome.returns.clear();
+        outcome.returns = Values::new();
         if normal {
             outcome.returns.insert(instance);
         }
