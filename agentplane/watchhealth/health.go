@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"path"
@@ -81,9 +82,7 @@ func (h *Health) Status() Status {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	failing := make(map[Kind]Failure, len(h.failing))
-	for kind, failure := range h.failing {
-		failing[kind] = failure
-	}
+	maps.Copy(failing, h.failing)
 	return Status{
 		Available: h.synced && !h.draining && len(h.failing) == 0,
 		Synced:    h.synced, Draining: h.draining, Failing: failing,

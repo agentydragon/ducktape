@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
@@ -182,12 +183,9 @@ func EffectiveCaller(ctx context.Context) (*ServiceAccountPrincipal, error) {
 }
 
 func delegatedAttempt(authorization []string) bool {
-	for _, value := range authorization {
-		if strings.HasPrefix(value, delegatedScheme) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(authorization, func(value string) bool {
+		return strings.HasPrefix(value, delegatedScheme)
+	})
 }
 
 func (p *delegationPolicy) admit(ctx, reviewContext context.Context, authorization, envelopes []string) (context.Context, error) {

@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"errors"
+	"slices"
 	"strconv"
 	"time"
 
@@ -14,12 +15,9 @@ func reviewsSelected(source model.GitHubSource) bool {
 	if _, ok := source.Subject.(model.PullRequestSubject); !ok {
 		return false
 	}
-	for _, filter := range source.Filters() {
-		if filter.Event == model.EventPullRequestReview {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(source.Filters(), func(filter model.EventFilter) bool {
+		return filter.Event == model.EventPullRequestReview
+	})
 }
 
 // Review API failures have their own durable deadline and do not stop ordinary webhook or lifecycle delivery.

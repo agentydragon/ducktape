@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"maps"
 	"time"
 
 	"google.golang.org/grpc"
@@ -69,9 +70,7 @@ func (m Methods) WithDelegation(
 	serviceAccounts ServiceAccountUIDReader,
 ) (Methods, error) {
 	methods := make(Methods, len(m))
-	for method, rule := range m {
-		methods[method] = rule
-	}
+	maps.Copy(methods, m)
 	seen := make(map[string]struct{}, len(methodNames))
 	for _, method := range methodNames {
 		if _, duplicate := seen[method]; duplicate {

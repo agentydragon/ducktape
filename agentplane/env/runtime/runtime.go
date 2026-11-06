@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync"
 
@@ -666,12 +667,9 @@ func (r *Runtime) facts() (*environmentruntimestatepb.EnvironmentRuntimeFacts, e
 }
 
 func hasAutosuspendReason(blockers []*environmentlifecyclepb.AutosuspendBlocker, reason string) bool {
-	for _, blocker := range blockers {
-		if blocker.GetReason() == reason {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(blockers, func(blocker *environmentlifecyclepb.AutosuspendBlocker) bool {
+		return blocker.GetReason() == reason
+	})
 }
 
 func bootstrapIsActive(request bootstrap.Request, requestFound bool, status bootstrap.Status, statusFound bool) bool {

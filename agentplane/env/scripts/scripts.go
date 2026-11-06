@@ -45,9 +45,7 @@ func (r *Runner) Run(ctx context.Context, owner, script, cwd string, output func
 			env[key] = value
 		}
 	}
-	for key, value := range r.harnessEnvironment {
-		env[key] = value
-	}
+	maps.Copy(env, r.harnessEnvironment)
 	process, err := r.launchProcess(ctx, owner, supervision.ProcessConfig{Command: []string{"/bin/sh", "-eu"}, Dir: cwd, Env: env, StopGrace: 5 * time.Second})
 	if err != nil {
 		return 0, err
