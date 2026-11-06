@@ -2357,6 +2357,16 @@ initializer completion, and primitive return kinds alone cannot establish a
 normal imported value. The existing imported type facts remain coercion-only
 when this read capability is absent.
 
+A comma-split plain identifier initializer can enter the ordered scalar root
+through its checked original declarator identity, as a binary initializer can.
+The shared read transfer must cover the actual binding read, including the
+imported capability above or an initialized local cell, and the root must
+finish and initialize that declarator's binding before its exact operation
+receipt seals. Each sibling declarator remains a separate source-order owner;
+an earlier throw or uncovered read cannot be discharged by a later sibling's
+receipt. Unknown imports, globals and possibly uninitialized reads retain
+their conservative fallback.
+
 Guarded native call summaries share one checked projection for call timing
 and successful return values. The summarized operations, the argument counts
 and operand shapes they admit, their allocations, writes and return shapes are

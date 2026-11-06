@@ -9140,11 +9140,13 @@ impl ExecutionIndex {
                 Ok(initializer) => {
                     // Split/exported scalar owners retain their original
                     // initializer through the same checked source identity.
-                    // Other ordered root families keep their existing scope.
+                    // An identifier copy still needs the ordered read transfer:
+                    // purity or a lowered value alone cannot cover its module
+                    // GetBindingValue (or a possible global accessor).
                     if !index.ordered_roots.contains_key(&owner)
                         && matches!(
                             initializer.composed_expression(),
-                            Some(ValueExpr::Binary(..))
+                            Some(ValueExpr::Binding(_) | ValueExpr::Binary(..))
                         )
                         && let Some(expression) = source_expression
                         && let Some(body) = LocalBody::from_initializer(expression)
