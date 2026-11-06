@@ -3951,7 +3951,7 @@ export { table, readLater };\n",
             let members = case
                 .members
                 .iter()
-                .map(|name| Member::new(*name))
+                .map(|name| Member::new(name))
                 .collect::<Vec<_>>();
             let mut opts = FixtureOpts::new(
                 case.source,
@@ -4101,7 +4101,7 @@ fn initializer_source_only_still_rejects_observed_reads_and_rebinds_with_saved_f
     for (source, binding, member_names) in cases {
         let members = member_names
             .iter()
-            .map(|name| Member::new(*name))
+            .map(|name| Member::new(name))
             .collect::<Vec<_>>();
         let (staged, _fixture) = staged(FixtureOpts::new(
             &source,
