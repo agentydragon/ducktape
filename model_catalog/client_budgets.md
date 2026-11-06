@@ -156,7 +156,10 @@ so this two-segment route used the **272000** fallback window (**258400** usable
 These are client-accounting values: `context_window` is not a separate input/output
 pair or evidence of backend capacity. The current per-route catalog supplies full
 Codex `ModelInfo` entries; recognition also selects prompt, reasoning, and tool
-behavior, and is not route authorization. See the
+behavior, and is not route authorization. In 0.157.0, the provider's
+`supports_websockets` flag (default false) gates WebSockets; the catalogue's
+`prefer_websockets` field is ignored by `ModelInfo`. Recognition alone does not
+enable WebSockets. See the
 [ingress contract](../agentplane/llm_ingress/README.md#codex-model-catalog) and
 [versioned source/deployment audit](../agentplane/debug/codex_model_catalog.md).
 
@@ -200,6 +203,7 @@ vocabularies only when both actually need supported overrides.
 Codex `model_catalog_json` is a startup-only local file containing a full
 `ModelsResponse` (`{"models": [ModelInfo, ...]}`), not a sparse limits map or URL.
 In 0.157.0 it replaces the bundled catalogue; per-thread config does not reload it.
+Unreadable, invalid or empty catalogues fail loading.
 The generated entries are parsed by the pinned Codex in
 [`test_codex_models.py`](../cluster/cdk8s/agentplane/test_codex_models.py) through
 this setting. See the [pinned source](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/core/src/config/mod.rs).
@@ -209,16 +213,19 @@ Full `ModelInfo` entries also carry instructions, reasoning/tool behavior, and
 is not route authorization: unknown names can receive fallback metadata, so access
 stays with gateway/ingress policy. `context_window` is client accounting, not separate
 provider input/output limits; a `model_context_window` override is clamped to
-`max_context_window`. Codex uses 95% of the resolved window as usable input, while
-default compaction is 90% of the resolved window. `truncation_policy` limits tool
-output, not generated model output.
+`max_context_window`, which also supplies the window when `context_window` is absent.
+`effective_context_window_percent` defaults to 95% usable input.
+`auto_compact_token_limit` defaults to 90% of the resolved window; an explicit value
+is capped there. Startup window/compaction overrides apply before these clamps.
+`truncation_policy` limits tool output, not generated model output.
 
 The deployed path uses `model_catalog_url`, not the local-file setting. The ingress
 serves generated per-route entries and Codex refetches after a changed `X-Models-Etag`;
 see the [ingress contract](../agentplane/llm_ingress/README.md#codex-model-catalog) and
 [versioned source/deployment audit](../agentplane/debug/codex_model_catalog.md).
-Tools/reasoning, route changes, and process resume have coverage; smaller-window
-compaction, VM Sandbox fetching, and a multi-turn ETag/header mismatch remain open.
+The versioned audit records tools/reasoning, route changes, and restart/resume checks.
+Smaller-window compaction, VM Sandbox fetching, and a multi-turn ETag/header mismatch
+remain open.
 
 ## Subscription-path public evidence, 2026-10-05
 
