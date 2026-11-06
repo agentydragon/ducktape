@@ -76,6 +76,13 @@ func TestWorkloadHTTPDefaultPortRoutePresentsSVIDThroughOpaqueConnectAndStreams(
 	if err != nil || line != "data: first\n" || response.StatusCode != 200 || calls.Load() != 1 {
 		t.Fatalf("first streamed line=%q status=%d calls=%d err=%v", line, response.StatusCode, calls.Load(), err)
 	}
+	// A complete SSE body must reach EOF even while the proxy connection is reusable.
+	release <- struct{}{}
+	remainder, err := io.ReadAll(reader)
+	if err != nil || string(remainder) != "\n" {
+		t.Fatalf("stream completion=%q error=%v", remainder, err)
+	}
+
 	select {
 	case hop := <-observed:
 		if hop.Method != http.MethodConnect || hop.Host != strings.TrimPrefix(destination.URL, "https://") || hop.Header.Get("Proxy-Authorization") != "" || hop.Header.Get(projectedTokenHeader) != "" {
