@@ -149,6 +149,28 @@ fn binding_execution_report(fixture: &Fixture, binding: &str) -> Value {
     .expect("serialize execution report")
 }
 
+fn assert_inline_operation_receipt(
+    fixture: &Fixture,
+    binding: &str,
+    expected_calls: usize,
+    case: &str,
+) {
+    let execution = binding_execution_report(fixture, binding);
+    assert_eq!(execution["complete"], true, "{case}: {execution:#}");
+    let authority = &execution["binding_effect_authority"];
+    assert_eq!(
+        authority["authority"], "operation_receipt",
+        "{case}: {execution:#}"
+    );
+    let receipt = &authority["receipt"];
+    assert_eq!(receipt["binding"], binding, "{case}: {receipt:#}");
+    assert_eq!(
+        receipt["calls"].as_array().unwrap().len(),
+        expected_calls,
+        "{case}: {receipt:#}"
+    );
+}
+
 #[test]
 fn composed_global_cells_keep_sites_dependencies_and_may_provenance() {
     let fixture = run_rejection_fixture_with_args(
@@ -871,6 +893,77 @@ fn single_local_call_seals_real_lexical_read_and_call_receipts() {
             "{report:#}"
         );
     }
+}
+
+#[test]
+fn inline_callee_creation_executes_with_exact_operation_receipts() {
+    for (case, expression) in [
+        ("arrow", "((value) => value)((() => 42)())"),
+        (
+            "anonymous function",
+            "(function(value) { return value; })((function() { return 42; })())",
+        ),
+    ] {
+        let source = format!("const result = {expression};\nconsole.log(result);\n");
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_preserved_entry_output(&fixture, "42\n");
+        assert_inline_operation_receipt(&fixture, "result", 2, case);
+    }
+}
+
+#[test]
+fn inline_callee_invocation_keeps_captured_reads_and_refuses_unsupported_bodies() {
+    let captured = run_fixture(
+        FixtureOpts::new(
+            "const seed = 41;\nconst result = ((value) => value)((() => seed)());\nconsole.log(result);\n",
+            vec![],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&captured, "41\n");
+    assert_inline_operation_receipt(&captured, "result", 2, "captured-read");
+    let graph = captured.dependency_graph();
+    let result = source_unit_for_binding(&graph, "result");
+    let seed = source_unit_for_binding(&graph, "seed");
+    assert!(
+        graph.edges.iter().any(|edge| {
+            edge.source == result
+                && edge.target == seed
+                && edge.binding.as_deref() == Some("seed")
+                && edge.constrains_init_order
+        }),
+        "invoking the inline arrow must retain its captured read: {graph:#?}"
+    );
+
+    let unsupported = run_fixture(
+        FixtureOpts::new(
+            "const result = ((value) => value)((() => { for (let index = 0; index < 1; index++) {} return 42; })());\nconsole.log(result);\n",
+            vec![],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&unsupported, "42\n");
+    let execution = binding_execution_report(&unsupported, "result");
+    assert_ne!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "unsupported callable syntax must keep the root from receiving local-operation authority: {execution:#}"
+    );
+
+    let named = run_fixture(
+        FixtureOpts::new(
+            "const result = (function identity(value) { return value; })((function constant() { return 42; })());\nconsole.log(result);\n",
+            vec![],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&named, "42\n");
+    let execution = binding_execution_report(&named, "result");
+    assert_ne!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "named function self scopes remain outside operation receipts: {execution:#}"
+    );
 }
 
 #[test]

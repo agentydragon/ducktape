@@ -800,6 +800,17 @@ receivers, computed keys, missing native evidence, provider-only queries and
 retained suffixes keep their ordinary read paths. Reading the reference certifies
 no later invocation through it.
 
+Within those existing ordered-root profiles, a direct function or arrow
+expression may be the callee. The local kernel creates that closure before
+evaluating arguments, and the call transfer requires the selected singleton
+closure's source key to match the canonical `Alloc(Function, key)` at that
+call-site. This extends the callee form only; it adds no root-initializer
+profile. Existing callable-body, parameter-prologue, capture, synchronous
+callable, supported-operation, exact-call-site and normal-completion checks
+still govern receipts. Named function-expression self scopes remain unproved
+because this route does not instantiate their `NamedSelf` cell; runtime
+execution alone does not produce an operation receipt.
+
 If that exact single-call root receives an incomplete local child result, it
 retains the child effects and losses, unknown coverage, and unavailable/unknown
 return possibilities without inventing a caller remainder. Only a singleton

@@ -9775,6 +9775,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .filter(|call| call.kind == CallKind::Call)
             .all(|call| {
                 let (targets, member) = match &call.callee {
+                    ValueExpr::Alloc(Kind::Function, key) if !call.has_spread => (
+                        Some(Values::from([AbstractValue::Value(Value::Alloc(
+                            Kind::Function,
+                            *key,
+                        ))])),
+                        false,
+                    ),
                     ValueExpr::Binding(binding) if self.initialized_local_binding(binding) => {
                         (self.state.prefix_values.get(binding).cloned(), false)
                     }
@@ -11325,6 +11332,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             assert!(call.kind == CallKind::Call && !call.has_spread);
             assert!(match (&call.callee, &operands.callee) {
                 (ValueExpr::Binding(_), EvaluatedCallee::Direct(_)) => true,
+                (ValueExpr::Alloc(Kind::Function, source), EvaluatedCallee::Direct(selected)) => {
+                    selected.values.len() == 1
+                        && matches!(selected.values.first(),
+                            Some(AbstractValue::Closure(actual, _)) if actual == source)
+                }
                 (
                     ValueExpr::Member(receiver, Some(_), MemberKey::Static, _),
                     EvaluatedCallee::Member { .. },

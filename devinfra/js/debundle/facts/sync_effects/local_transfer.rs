@@ -736,6 +736,9 @@ fn call_expression(
     // GetValue(callee) precedes every argument. In particular, an
     // argument assignment must not replace this captured callee.
     let callee = match callee {
+        LocalCallee::Creation(callable) => {
+            EvaluatedCallee::Direct(closure_expression(context, callable, frame, judgment)?)
+        }
         LocalCallee::Binding(binding) => {
             EvaluatedCallee::Direct(read_binding_selected(context, binding, frame, judgment)?)
         }
