@@ -380,7 +380,16 @@ async def test_lost_process_read_reply_resumes_same_process_and_cursor(
     assert "resume_session_id" not in proxy.sessions[0][0]
     assert proxy.sessions[1][0]["resume_session_id"] == executor_session_id
     assert proxy.sessions[1][1]["execution_session_id"] == executor_session_id
-    assert all(intent.result is not None for intent in await store.intents())
+    intents = await store.intents()
+    start_intents = [
+        intent
+        for intent in intents
+        if intent.request.get("method") == "process/start"
+        and "fault-marker" in json.dumps(intent.request.get("params", {}).get("argv"))
+    ]
+    assert len(start_intents) == 1
+    assert start_intents[0].result is not None
+    assert all(intent.result is not None for intent in intents)
 
 
 async def test_lost_process_read_after_observed_output_is_catchable_without_replay(
@@ -510,7 +519,9 @@ async def test_lost_process_read_after_observed_output_is_catchable_without_repl
     process = await store.process(int(starts[0]["process_id"].split("-", maxsplit=1)[0]))
     assert process is not None
     assert process.status == "abandoned"
-    assert all(intent.result is not None for intent in await store.intents())
+    intents = await store.intents()
+    assert any(intent.id == failure["intent_id"] and intent.result is not None for intent in intents)
+    assert all(intent.result is not None for intent in intents)
 
 
 async def test_lost_process_start_ack_rejects_tool_and_caught_call_continues(

@@ -179,16 +179,12 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":examples",
-        ":models",
         "//:conftest",
         "//props:conftest",
         "//props/agents/critic_dev/recipes:ground_truth",
         "//props/core:splits",
         "//props/testing/fixtures:db",
-        "//props/testing/fixtures:runs",
         "//util/testing:postgres_fixtures",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
