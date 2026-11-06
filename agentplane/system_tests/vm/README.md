@@ -17,3 +17,11 @@ deployment adapter without importing this runtime. The K3s suite macro remains i
 The [VM Sandboxes guide](../deployment/README.md#vm-sandboxes) describes the image layout, assertions,
 boot evidence and teardown guarantees. Runnable tests stay under [`suites/`](../suites/), and VM
 scenario assertions stay under [`scenarios/`](../scenarios/).
+
+`vm-artifacts/` retains native persistent journals, CRI console logs, QEMU's raw serial files,
+and launcher, relay, virtiofs and handler logs. Open descriptors preserve files after Pod
+removal; native journal snapshots refresh during the test and after teardown. The guest
+follows only its volatile journal to serial, covering early boot and the late switch away
+from `/state`. Runtime already logs to `journal+console`. On ACPI shutdown an independent
+watchdog reports PID 1 kernel state and pending jobs. See the active
+[shutdown investigation](../debug/vm_shutdown_stalls.md) for reproduction evidence.

@@ -74,6 +74,7 @@ def test_retains_unlinked_logs_and_new_incarnations(tmp_path: Path) -> None:
     with (
         capture(
             log_root=logs,
+            pod_root=tmp_path / "kubelet-pods",
             storage_root=tmp_path / "storage",
             namespace="systest",
             kubevirt_namespace="kubevirt",
@@ -118,6 +119,7 @@ def test_requires_shutdown_for_each_launcher(tmp_path: Path) -> None:
         pytest.raises(GuestShutdownError, match="systest_virt-launcher-test_uid-two"),
         capture(
             log_root=logs,
+            pod_root=tmp_path / "kubelet-pods",
             storage_root=tmp_path / "storage",
             namespace="systest",
             kubevirt_namespace="kubevirt",
@@ -126,6 +128,46 @@ def test_requires_shutdown_for_each_launcher(tmp_path: Path) -> None:
         ),
     ):
         pass
+
+
+@pytest.mark.parametrize("raw_serial", [False, True])
+def test_retains_shutdown_sources_after_launcher_removal(tmp_path: Path, raw_serial: bool) -> None:
+    logs, outputs = tmp_path / "pods", tmp_path / "artifacts"
+    launcher = logs / "systest_virt-launcher-test_uid-one"
+    launcher.mkdir(parents=True)
+    if raw_serial:
+        relative = "volumes/kubernetes.io~empty-dir/private/vmi-one/virt-serial0-log"
+        source = tmp_path / "kubelet-pods/uid-one" / relative
+        foreign = tmp_path / "kubelet-pods/uid-other" / relative
+        foreign.parent.mkdir(parents=True)
+        foreign.write_text("FOREIGN_SERIAL\n")
+        retained = outputs / "serial"
+    else:
+        source = launcher / "virtiofs-state" / "0.log"
+        retained = outputs / "virtiofs"
+    source.parent.mkdir(parents=True)
+    with (
+        capture(
+            log_root=logs,
+            pod_root=tmp_path / "kubelet-pods",
+            storage_root=tmp_path / "storage",
+            namespace="systest",
+            kubevirt_namespace="kubevirt",
+            destination=outputs,
+            validate_shutdown=lambda: False,
+        ),
+        source.open("w") as original,
+    ):
+        original.write("FUSE_REQUEST\n")
+        original.flush()
+        for attempt in Retrying(stop=stop_after_delay(5), wait=wait_fixed(0.01), reraise=True):
+            with attempt:
+                assert [p.read_text() for p in retained.rglob("*.log")] == ["FUSE_REQUEST\n"]
+        source.unlink()
+        original.write("FUSE_SHUTDOWN\n")
+        original.flush()
+
+    assert [p.read_text() for p in retained.rglob("*.log")] == ["FUSE_REQUEST\nFUSE_SHUTDOWN\n"]
 
 
 def test_retains_native_journal_header_changes_after_unlink_on_failure(tmp_path: Path) -> None:
@@ -142,6 +184,7 @@ def test_retains_native_journal_header_changes_after_unlink_on_failure(tmp_path:
         with (
             capture(
                 log_root=tmp_path / "pods",
+                pod_root=tmp_path / "kubelet-pods",
                 storage_root=storage,
                 namespace="systest",
                 kubevirt_namespace="kubevirt",
@@ -154,6 +197,12 @@ def test_retains_native_journal_header_changes_after_unlink_on_failure(tmp_path:
                 with attempt:
                     assert [path.read_bytes() for path in outputs.rglob("*.journal")] == [b"initial header\x00entries"]
             source.unlink()
+            journal.seek(0)
+            journal.write(b"updated header\x00entries")
+            journal.flush()
+            for attempt in Retrying(stop=stop_after_delay(5), wait=wait_fixed(0.01), reraise=True):
+                with attempt:
+                    assert [path.read_bytes() for path in outputs.rglob("*.journal")] == [b"updated header\x00entries"]
             journal.seek(0)
             journal.write(b"updated header\x00entries\x00shutdown")
             journal.flush()
@@ -175,6 +224,7 @@ def test_retains_failure_evidence_without_masking_exception(tmp_path: Path) -> N
         pytest.raises(ValueError, match="original scenario failure") as caught,
         capture(
             log_root=logs,
+            pod_root=tmp_path / "kubelet-pods",
             storage_root=tmp_path / "storage",
             namespace="systest",
             kubevirt_namespace="kubevirt",
@@ -196,6 +246,7 @@ def test_session_failures_disable_validation_at_teardown(tmp_path: Path) -> None
     failures = 0
     with capture(
         log_root=logs,
+        pod_root=tmp_path / "kubelet-pods",
         storage_root=tmp_path / "storage",
         namespace="systest",
         kubevirt_namespace="kubevirt",
@@ -223,6 +274,7 @@ def test_successful_teardown_requires_complete_evidence_from_selected_guest(tmp_
 
     with capture(
         log_root=logs,
+        pod_root=tmp_path / "kubelet-pods",
         storage_root=tmp_path / "storage",
         namespace="systest",
         kubevirt_namespace="kubevirt",
@@ -263,6 +315,7 @@ def test_successful_teardown_reports_incomplete_boot_evidence(tmp_path: Path, ev
         pytest.raises(GuestBootEvidenceError, match=message),
         capture(
             log_root=logs,
+            pod_root=tmp_path / "kubelet-pods",
             storage_root=tmp_path / "storage",
             namespace="systest",
             kubevirt_namespace="kubevirt",
@@ -300,6 +353,7 @@ def test_successful_teardown_collects_evidence_split_across_rotated_guest_logs(t
 
     with capture(
         log_root=logs,
+        pod_root=tmp_path / "kubelet-pods",
         storage_root=tmp_path / "storage",
         namespace="systest",
         kubevirt_namespace="kubevirt",
@@ -328,6 +382,7 @@ def test_retains_only_scoped_console_compute_relay_and_handler_logs(tmp_path: Pa
         path.write_text(content)
     with capture(
         log_root=logs,
+        pod_root=tmp_path / "kubelet-pods",
         storage_root=tmp_path / "storage",
         namespace="systest",
         kubevirt_namespace="kubevirt",

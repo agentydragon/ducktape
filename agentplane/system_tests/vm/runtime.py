@@ -79,6 +79,7 @@ class VmRuntime:
     def capture(self, k3s: K3s, namespace: str, validate_shutdown: Callable[[], bool]) -> Iterator[None]:
         with guest_logs.capture(
             log_root=Path("/var/log/pods"),
+            pod_root=Path("/var/lib/kubelet/pods"),
             storage_root=k3s.data_dir / "storage",
             namespace=namespace,
             kubevirt_namespace=vm_infrastructure.KUBEVIRT_NAMESPACE,
