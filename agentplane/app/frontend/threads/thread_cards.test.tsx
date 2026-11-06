@@ -347,6 +347,7 @@ describe("tool call rows", () => {
     expect(container.querySelector(".transcript-step-title")?.textContent).toBe("Bash");
     expect(lineOf(container)).toBe("List every container");
     expect(container.querySelector(".ui-code-block")).toBeNull();
+    expect(container.querySelector(".ui-code-inline")).toBeNull();
     expect(container.textContent).not.toContain("test-output");
   });
 
@@ -356,11 +357,6 @@ describe("tool call rows", () => {
     expect(container.querySelector(".transcript-step-preview .ui-code-inline .ui-tok-keyword")?.textContent).toBe(
       "set"
     );
-  });
-
-  it("does not highlight what the model wrote to say what a command is for", async () => {
-    const container = await renderTool("Bash", { command: COMMAND, description: "List every container" });
-    expect(container.querySelector(".ui-code-inline")).toBeNull();
   });
 
   it("folds Codex's command to the script it ran, without the shell that ran it", async () => {
