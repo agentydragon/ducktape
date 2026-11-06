@@ -1,43 +1,18 @@
-"""Direct tool provider for in-container agents without MCP overhead.
+"""Register sync or async callables as tools without MCP.
 
-Wraps Python callables directly, avoiding MCP protocol overhead.
-
-Usage:
     provider = DirectToolProvider()
 
     @provider.tool
-    async def my_tool(args: MyArgsModel) -> ToolResult:
-        '''Tool description from docstring.'''
+    async def example(args: InputModel) -> ToolResult:
+        '''Description exposed to the model.'''
         return ToolResult.text(f"Result: {args.value}")
 
-    # Sync functions supported; can return str, Pydantic models, lists, or None
-    @provider.tool
-    def sync_tool(args: OtherArgsModel) -> str:
-        '''Returns str (auto-converted to ToolResult.text).'''
-        return "done"
+Callables accept one annotated Pydantic model or no arguments (using EmptyArgs).
+`@provider.tool(name="...")` overrides the Python name; the callable's docstring
+supplies the tool description. Register the provider with Agent.create().
 
-    @provider.tool
-    def structured_tool(args: InputModel) -> OutputModel:
-        '''Returns Pydantic model (auto-converted to ToolResult.json).'''
-        return OutputModel(result=args.value)
-
-    @provider.tool
-    def list_tool(args: QueryArgs) -> list[ItemModel]:
-        '''Returns list of Pydantic models (auto-converted to ToolResult.json).'''
-        return [ItemModel(id=1), ItemModel(id=2)]
-
-    @provider.tool
-    def exit_tool(args: ExitArgs) -> None:
-        '''Returns None (auto-converted to ToolResult.text("OK")).'''
-        do_exit_stuff()
-
-    # Zero-arg tools are supported
-    @provider.tool
-    def list_items() -> str:
-        '''No args needed.'''
-        return "items: ..."
-
-    agent = await Agent.create(tool_provider=provider, ...)
+ToolResult passes through, strings become text, and None becomes text "OK".
+BaseModel/list results become structured content via pydantic-core serialization.
 """
 
 from __future__ import annotations
@@ -76,11 +51,7 @@ class RegisteredTool:
 
 
 class DirectToolProvider:
-    """Tool provider that wraps Python callables directly.
-
-    No MCP overhead - tools are registered via decorator. Tools can return
-    ToolResult or str (auto-converted to ToolResult.text).
-    """
+    """Discover and invoke tools registered with `tool`."""
 
     def __init__(self) -> None:
         self._tools: dict[str, RegisteredTool] = {}
@@ -92,22 +63,12 @@ class DirectToolProvider:
     def tool(self, *, name: str) -> Callable[[ToolFn], ToolFn]: ...
 
     def tool(self, fn: ToolFn | None = None, *, name: str | None = None) -> ToolFn | Callable[[ToolFn], ToolFn]:
-        """Decorator to register a function as a tool.
-
-        The function must:
-        - Take a single Pydantic model argument
-        - Return ToolResult or str (sync or async)
-        - Have a docstring (used as tool description)
-
-        Args:
-            name: Override tool name (defaults to function name)
-        """
+        """Register a callable; its argument annotation supplies the input schema."""
 
         def register(func: ToolFn) -> ToolFn:
             tool_name = name if name is not None else func.__name__
             description = inspect.getdoc(func) or ""
 
-            # Get the parameter type from type hints
             hints = get_type_hints(func)
             sig = inspect.signature(func)
             params = list(sig.parameters.values())
@@ -159,7 +120,6 @@ class DirectToolProvider:
         except ValidationError as e:
             return ToolResult.error(format_validation_error(e))
 
-        # Call tool function, wrapping errors as ToolResult.error
         try:
             result = tool.fn() if tool.parameters is EmptyArgs else tool.fn(validated_args)
             if isinstance(result, Awaitable):
@@ -167,7 +127,6 @@ class DirectToolProvider:
         except Exception as e:
             return ToolResult.error(f"Tool error: {e}")
 
-        # Convert result to ToolResult
         if result is None:
             return ToolResult.text("OK")
         if isinstance(result, str):
