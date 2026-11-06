@@ -101,11 +101,19 @@ impl EsmImportOrder {
         first_units: &BTreeMap<ModuleId, SourceUnitOrdinal>,
         entry: ModuleId,
     ) {
-        let graph = DiGraphMap::<ModuleId, ()>::from_edges(
+        let mut graph = DiGraphMap::<ModuleId, ()>::from_edges(
             i_successors
                 .iter()
                 .flat_map(|(from, targets)| targets.iter().map(move |to| (*from, *to))),
         );
+        // Entry imports every emitted module even without a source-level
+        // dependency edge. A module importing entry therefore forms a runtime
+        // cycle and must retain the existing rescue ordering.
+        for &module in self.source_import_position.keys() {
+            if module != entry {
+                graph.add_edge(entry, module, ());
+            }
+        }
         if !is_cyclic_directed(&graph) {
             let mut order: Vec<_> = self.source_import_position.keys().copied().collect();
             order.sort_by_key(|module| {
