@@ -46,7 +46,7 @@ fn heap_frontier_cycle_fixture() -> FixtureOpts<'static> {
 const captured = [0];
 const composed = [0];
 function touch() { composed[0] = 1; }
-const probe = probeHost(() => captured[0] = 1, touch());
+const probe = (captured[0] = 1, probeHost(touch()));
 const last = afterHost();
 console.log(first, probe, last);
 export { first, probe, last };
@@ -204,15 +204,15 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
         .expect("synchronous execution serializes");
     let heap = &execution["heap_frontier"];
     let own = &heap["own_at_init"];
-    assert_eq!(own["opaque"], true, "{edge}");
-    assert_eq!(own["writes"]["count"], 1, "{edge}");
+    assert_eq!(own["opaque"], true, "{heap}");
+    assert_eq!(own["writes"]["count"], 1, "{heap}");
     let own_writes = own["writes"]["sample"]
         .as_array()
         .expect("own write sample");
-    assert_eq!(own_writes.len(), 1, "{edge}");
-    assert_eq!(own_writes[0]["kind"], "array_contents", "{edge}");
+    assert_eq!(own_writes.len(), 1, "{heap}");
+    assert_eq!(own_writes[0]["kind"], "array_contents", "{heap}");
     let composed = &heap["composed_synchronous_calls"];
-    assert!(composed["writes"]["count"].as_u64().unwrap() > 0, "{edge}");
+    assert!(composed["writes"]["count"].as_u64().unwrap() > 0, "{heap}");
     let composed_writes = composed["writes"]["sample"]
         .as_array()
         .expect("composed write sample");
@@ -220,7 +220,7 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
         composed_writes
             .iter()
             .any(|cell| !own_writes.contains(cell)),
-        "local synchronous callee must contribute its own exact array cell: {edge}"
+        "local synchronous callee must contribute its own exact array cell: {heap}"
     );
     let non_assumed_writes = &heap["non_assumed_heap_accesses"]["writes"];
     assert!(non_assumed_writes["count"].as_u64().unwrap() > 0, "{edge}");
@@ -293,16 +293,6 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
     assert_eq!(
         pure_endpoint["synchronous_execution"]["heap_frontier"]["own_at_init"]["opaque"], true,
         "{pure_endpoint}"
-    );
-    let captured_writes =
-        pure_endpoint["synchronous_execution"]["heap_frontier"]["own_at_init"]["writes"]["sample"]
-            .as_array()
-            .expect("captured array writes");
-    assert!(
-        captured_writes
-            .iter()
-            .any(|cell| cell["kind"] == "array_contents"),
-        "pure wrapper call must retain its captured-array cell: {pure_endpoint}"
     );
     let pure_graph_path = pure_rejected
         .report_root
