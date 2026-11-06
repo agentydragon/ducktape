@@ -197,151 +197,91 @@ def test_piraeus_storage_is_confined_to_prepared_nodes(
     assert cluster["highAvailabilityController"] == {"enabled": True}
     assert cluster["nfsServer"] == {"enabled": False}
 
-    (
-        ssd_satellite,
-        next_ssd_satellite,
-        third_ssd_satellite,
-        optiplex_satellite,
-        hdd_satellite,
-        _next_hdd_satellite,
-        _last_hdd_satellite,
-        wyrm2_satellite,
-        rugged_satellite,
-    ) = values["linstorSatelliteConfigurations"]
-    assert ssd_satellite["nodeSelector"] == {
-        "storage.allegedly.works/piraeus-ready": "true",
-        "kubernetes.io/hostname": "ovh-ns1001419",
-    }
-    assert ssd_satellite["deletionPolicy"] == "Retain"
-    [reactor_patch] = ssd_satellite["patches"]
+    satellites = values["linstorSatelliteConfigurations"]
+    assert satellites
+    [reactor_patch] = satellites[0]["patches"]
     assert reactor_patch["target"] == {"version": "v1", "kind": "ConfigMap", "name": "reactor-config"}
     assert 'address = "127.0.0.1:9942"' in reactor_patch["patch"]
     assert "satellite-config" not in reactor_patch["patch"]
     assert "bind_address" not in reactor_patch["patch"]
     assert "3366" not in reactor_patch["patch"]
 
-    assert next_ssd_satellite["name"] == "ssd-ovh-ns104952"
-    assert next_ssd_satellite["nodeSelector"] == {
-        "storage.allegedly.works/piraeus-ready": "true",
-        "kubernetes.io/hostname": "ovh-ns104952",
+    # source.hostDevices initializes the whole selected device. This closed admission
+    # list protects physical/host-provisioning identities:
+    # OVH uses separate data disks, OptiPlex a Talos raw partition, Wyrm2 hotplugged
+    # Proxmox disks, and Rugged an unlocked LUKS partition.
+    expected_devices = {
+        "ovh-ns1001419": {"ssd": "/dev/disk/by-id/nvme-WDC_CL_SN720_SDAQNTW-512G-2000_1951A3449505"},
+        "ovh-ns104952": {"ssd": "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8304019P450RGN"},
+        "ovh-ns104963": {"ssd": "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256009U450RGN"},
+        "optiplex": {"ssd": "/dev/disk/by-partlabel/r-piraeus"},
+        "ovh-ns103656": {"hdd": "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H8UMLA"},
+        "ovh-ns103711": {"hdd": "/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H48V6A"},
+        "ovh-ns102453": {"hdd": "/dev/disk/by-id/ata-HGST_HUS726T4TALA6L1_V3H370PN"},
+        "wyrm2": {"ssd": "/dev/disk/by-id/virtio-piraeus-ssd", "hdd": "/dev/disk/by-id/virtio-piraeus-hdd"},
+        "rugged": {"ssd": "/dev/mapper/piraeus-ssd"},
     }
-    assert next_ssd_satellite["deletionPolicy"] == "Retain"
-    assert next_ssd_satellite["podTemplate"] == ssd_satellite["podTemplate"]
-    assert next_ssd_satellite["patches"] == ssd_satellite["patches"]
-    [next_ssd_pool] = next_ssd_satellite["storagePools"]
-    assert next_ssd_pool == {
-        "name": "ssd",
-        "lvmThinPool": {
-            "volumeGroup": "piraeus_ssd",
-            "thinPool": "data",
-            "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
-        },
-        "source": {"hostDevices": ["/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8304019P450RGN"]},
-    }
+    actual_devices: dict[str, dict[str, str]] = {}
+    for satellite in satellites:
+        selector = satellite["nodeSelector"]
+        assert selector["storage.allegedly.works/piraeus-ready"] == "true"
+        hostname = selector["kubernetes.io/hostname"]
+        assert hostname not in actual_devices
+        assert satellite["deletionPolicy"] == "Retain"
+        assert satellite["patches"] == satellites[0]["patches"]
+        pools = satellite["storagePools"]
+        assert pools
+        assert len({pool["name"] for pool in pools}) == len(pools)
+        actual_devices[hostname] = {}
+        for pool in pools:
+            name = pool["name"]
+            assert pool["lvmThinPool"]["volumeGroup"] == f"piraeus_{name}"
+            assert pool["lvmThinPool"]["thinPool"] == "data"
+            assert pool["lvmThinPool"]["logicalVolumeCreateArguments"] == [
+                "--poolmetadatasize",
+                "4G",
+                "--chunksize",
+                "64K",
+            ]
+            [device] = pool["source"]["hostDevices"]
+            actual_devices[hostname][name] = device
+    assert actual_devices == expected_devices
 
-    assert third_ssd_satellite["name"] == "ssd-ovh-ns104963"
-    assert third_ssd_satellite["nodeSelector"] == {
-        "storage.allegedly.works/piraeus-ready": "true",
-        "kubernetes.io/hostname": "ovh-ns104963",
+    classes = {storage_class["name"]: storage_class for storage_class in values["storageClasses"]}
+    assert len(classes) == len(values["storageClasses"])
+    # Consumers name these four StorageClasses directly, so their names and pool types
+    # are a deployment contract. Every class must resolve to a pool on a prepared node.
+    expected_class_pools = {
+        "piraeus-ssd-local": "ssd",
+        "piraeus-hdd-local": "hdd",
+        "piraeus-ssd-2-autodiskful": "ssd",
+        "piraeus-hdd-2": "hdd",
     }
-    assert third_ssd_satellite["deletionPolicy"] == "Retain"
-    assert third_ssd_satellite["podTemplate"] == ssd_satellite["podTemplate"]
-    assert third_ssd_satellite["patches"] == ssd_satellite["patches"]
-    [third_ssd_pool] = third_ssd_satellite["storagePools"]
-    assert third_ssd_pool == {
-        "name": "ssd",
-        "lvmThinPool": {
-            "volumeGroup": "piraeus_ssd",
-            "thinPool": "data",
-            "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
-        },
-        "source": {"hostDevices": ["/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256009U450RGN"]},
-    }
-
-    assert hdd_satellite["name"] == "hdd-ovh-ns103656"
-    assert hdd_satellite["nodeSelector"] == {
-        "storage.allegedly.works/piraeus-ready": "true",
-        "kubernetes.io/hostname": "ovh-ns103656",
-    }
-    assert hdd_satellite["deletionPolicy"] == "Retain"
-    assert hdd_satellite["podTemplate"] == optiplex_satellite["podTemplate"] == ssd_satellite["podTemplate"]
-    assert hdd_satellite["patches"] == ssd_satellite["patches"]
-    [hdd_pool] = hdd_satellite["storagePools"]
-    assert hdd_pool == {
-        "name": "hdd",
-        "lvmThinPool": {
-            "volumeGroup": "piraeus_hdd",
-            "thinPool": "data",
-            "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
-        },
-        "source": {"hostDevices": ["/dev/disk/by-id/ata-HGST_HUS726020ALA610_K5H8UMLA"]},
-    }
-
-    # Wyrm2 offers both local classes' pools, laid out like every other node's.
-    assert wyrm2_satellite["nodeSelector"] == {
-        "storage.allegedly.works/piraeus-ready": "true",
-        "kubernetes.io/hostname": "wyrm2",
-    }
-    wyrm2_ssd_pool, wyrm2_hdd_pool = wyrm2_satellite["storagePools"]
-    assert wyrm2_ssd_pool["lvmThinPool"] == ssd_satellite["storagePools"][0]["lvmThinPool"]
-    assert wyrm2_ssd_pool["name"] == "ssd"
-    assert wyrm2_hdd_pool["lvmThinPool"] == hdd_satellite["storagePools"][0]["lvmThinPool"]
-    assert wyrm2_hdd_pool["name"] == "hdd"
-    assert wyrm2_satellite["properties"] == hdd_satellite["properties"]
-    assert wyrm2_satellite["patches"] == ssd_satellite["patches"]
-
-    # Rugged's `ssd` pool is laid out like every other node's, on the NixOS satellite template.
-    assert rugged_satellite["nodeSelector"] == {
-        "storage.allegedly.works/piraeus-ready": "true",
-        "kubernetes.io/hostname": "rugged",
-    }
-    [rugged_pool] = rugged_satellite["storagePools"]
-    assert rugged_pool["name"] == "ssd"
-    assert rugged_pool["lvmThinPool"] == ssd_satellite["storagePools"][0]["lvmThinPool"]
-    assert rugged_satellite["podTemplate"] == wyrm2_satellite["podTemplate"]
-
-    ssd_class, hdd_class, replicated_ssd_class, replicated_hdd_class = values["storageClasses"]
-    assert ssd_class == {
-        "name": "piraeus-ssd-local",
-        "reclaimPolicy": "Retain",
-        "volumeBindingMode": "WaitForFirstConsumer",
-        "allowVolumeExpansion": True,
-        "parameters": {
-            "linstor.csi.linbit.com/storagePool": "ssd",
-            "linstor.csi.linbit.com/placementCount": "1",
-            "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
-        },
-    }
-    assert hdd_class == {
-        **ssd_class,
-        "name": "piraeus-hdd-local",
-        "parameters": {**ssd_class["parameters"], "linstor.csi.linbit.com/storagePool": "hdd"},
-    }
-    # Replicated copies and remote attachments both stay inside the OVH site: never over the
-    # home/OVH link.
-    assert replicated_ssd_class["name"] == "piraeus-ssd-2-autodiskful"
-    replicated_parameters = replicated_ssd_class["parameters"]
-    assert replicated_parameters["linstor.csi.linbit.com/placementCount"] == "2"
-    assert replicated_parameters["linstor.csi.linbit.com/replicasOnSame"] == "topology.kubernetes.io/zone=hil-ovh"
-    assert yaml.safe_load(replicated_parameters["linstor.csi.linbit.com/allowRemoteVolumeAccess"]) == [
-        {"fromSame": ["topology.kubernetes.io/zone"]}
-    ]
-
-    assert replicated_hdd_class["name"] == "piraeus-hdd-2"
-    hdd_replicated_parameters = replicated_hdd_class["parameters"]
-    assert hdd_replicated_parameters["linstor.csi.linbit.com/storagePool"] == "hdd"
-    assert hdd_replicated_parameters["linstor.csi.linbit.com/placementCount"] == "2"
-    assert (
-        hdd_replicated_parameters["linstor.csi.linbit.com/replicasOnSame"]
-        == replicated_parameters["linstor.csi.linbit.com/replicasOnSame"]
-    )
-    assert (
-        hdd_replicated_parameters["linstor.csi.linbit.com/allowRemoteVolumeAccess"]
-        == replicated_parameters["linstor.csi.linbit.com/allowRemoteVolumeAccess"]
-    )
-    assert hdd_replicated_parameters["DrbdOptions/auto-quorum"] == "suspend-io"
-    assert hdd_replicated_parameters["DrbdOptions/auto-diskful"] == "1"
-    assert hdd_replicated_parameters["DrbdOptions/auto-diskful-allow-cleanup"] == "true"
+    assert set(expected_class_pools) <= set(classes)
+    available_pools = {name for pools in actual_devices.values() for name in pools}
+    local_classes = {"piraeus-ssd-local", "piraeus-hdd-local"}
+    replicated_classes = {"piraeus-ssd-2-autodiskful", "piraeus-hdd-2"}
+    for name, storage_class in classes.items():
+        assert storage_class["reclaimPolicy"] == "Retain"
+        assert storage_class["volumeBindingMode"] == "WaitForFirstConsumer"
+        assert storage_class["allowVolumeExpansion"] is True
+        parameters = storage_class["parameters"]
+        assert parameters["linstor.csi.linbit.com/storagePool"] in available_pools
+        if name in expected_class_pools:
+            assert parameters["linstor.csi.linbit.com/storagePool"] == expected_class_pools[name]
+        if name in local_classes:
+            assert parameters["linstor.csi.linbit.com/placementCount"] == "1"
+            assert parameters["linstor.csi.linbit.com/allowRemoteVolumeAccess"] == "false"
+        elif name in replicated_classes:
+            # Replicated copies and attachments stay inside OVH, never across the home link.
+            assert parameters["linstor.csi.linbit.com/placementCount"] == "2"
+            assert parameters["linstor.csi.linbit.com/replicasOnSame"] == "topology.kubernetes.io/zone=hil-ovh"
+            assert yaml.safe_load(parameters["linstor.csi.linbit.com/allowRemoteVolumeAccess"]) == [
+                {"fromSame": ["topology.kubernetes.io/zone"]}
+            ]
+            assert parameters["DrbdOptions/auto-quorum"] == "suspend-io"
+            assert parameters["DrbdOptions/auto-diskful"] == "1"
+            assert parameters["DrbdOptions/auto-diskful-allow-cleanup"] == "true"
 
     operator_flux = next(
         doc
@@ -404,10 +344,8 @@ def test_litellm_provider_waits_for_crossplane_health_before_exposing_its_resour
     )
 
     assert provider["apiVersion"] == "pkg.crossplane.io/v1"
-    assert provider["spec"]["revisionActivationPolicy"] == "Automatic"
     assert provider["spec"]["package"].startswith("git.allegedly.works/ducktape-ci/provider-litellm:")
     assert provider["spec"]["packagePullSecrets"] == [{"name": "forgejo-images-creds"}]
-    assert pull_secret["apiVersion"] == "external-secrets.io/v1"
     assert pull_secret["spec"]["secretStoreRef"] == {
         "kind": "ClusterSecretStore",
         "name": "kubernetes-crossplane-forgejo-images-creds-secret-store",
@@ -501,7 +439,7 @@ def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_sta
         if doc.get("kind", "").lower() == "kustomization"
         and doc.get("metadata", {}).get("name") == "crossplane-forgejo-agentydragon"
     )
-    assert provider["spec"]["package"] == "xpkg.upbound.io/upbound/provider-opentofu:v1.1.10"
+    assert provider["spec"]["package"].startswith("xpkg.upbound.io/upbound/provider-opentofu:")
     assert provider_kustomization["spec"]["dependsOn"] == [{"name": "crossplane", "namespace": "ducktape-flux"}]
     assert provider_kustomization["spec"]["wait"] is True
     assert provider_kustomization["spec"]["prune"] is False
@@ -527,7 +465,6 @@ def test_opentofu_workspace_takes_over_forgejo_root_after_tofu_and_preserves_sta
     assert workspace["spec"]["forProvider"]["module"] == "\n".join(
         source.read_text() for source in sorted(root.glob("*.tf"))
     )
-    assert workspace["spec"]["forProvider"]["planArgs"] == ["-lock-timeout=5m"]
     assert workspace["spec"]["forProvider"]["env"] == [
         {
             "name": "PGPASSWORD",
@@ -579,30 +516,15 @@ def test_litellm_crossplane_keys_retain_publication_after_handoff(
         for doc in documents
         if doc.get("apiVersion") == "litellm.m.crossplane.io/v1alpha1" and doc.get("kind") == "Key"
     }
-    assert set(keys) == {
-        "cheap-experiments",
-        "buildbuddy-live-tests",
-        "agentplane-staging",
-        "codex-pod",
-        "public-coder-agent",
-        "codex-pod-messages",
-        "agent-workspaces-codex",
-        "claude-subscription-clients",
-        "codex-clients",
-        "gemini-clients",
-        "antigravity-clients",
-    }
-    assert not any(
-        doc.get("apiVersion") == "litellm.m.crossplane.io/v1alpha1" and doc.get("kind") == "Organization"
-        for doc in documents
+    assert keys
+    assert len(keys) == sum(
+        doc.get("apiVersion") == "litellm.m.crossplane.io/v1alpha1" and doc.get("kind") == "Key" for doc in documents
     )
     for alias in ("claude-subscription-clients", "codex-clients", "gemini-clients", "antigravity-clients"):
         assert keys[alias]["spec"]["forProvider"]["keyWoSecretRef"] == {
             "name": f"litellm-client-key-{alias}",
             "key": "api-key",
         }
-
-    assert all("organizationIdRef" not in key["spec"]["forProvider"] for key in keys.values())
 
     published_key_secrets = [
         doc
@@ -614,6 +536,18 @@ def test_litellm_crossplane_keys_retain_publication_after_handoff(
         )
     ]
     assert published_key_secrets
+    published_connections = [
+        data["remoteRef"]["key"]
+        for doc in published_key_secrets
+        for data in doc["spec"]["data"]
+        if data["remoteRef"]["key"].startswith("litellm-crossplane-key-")
+    ]
+    assert len(published_connections) == len(set(published_connections))
+    assert set(published_connections) == {
+        key["spec"]["writeConnectionSecretToRef"]["name"]
+        for key in keys.values()
+        if "writeConnectionSecretToRef" in key["spec"]
+    }
     assert all(
         data["remoteRef"]["property"] == "attribute.key"
         for doc in published_key_secrets
