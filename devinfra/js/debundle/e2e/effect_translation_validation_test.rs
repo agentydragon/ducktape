@@ -149,6 +149,28 @@ fn binding_execution_report(fixture: &Fixture, binding: &str) -> Value {
     .expect("serialize execution report")
 }
 
+fn assert_inline_operation_receipt(
+    fixture: &Fixture,
+    binding: &str,
+    expected_calls: usize,
+    case: &str,
+) {
+    let execution = binding_execution_report(fixture, binding);
+    assert_eq!(execution["complete"], true, "{case}: {execution:#}");
+    let authority = &execution["binding_effect_authority"];
+    assert_eq!(
+        authority["authority"], "operation_receipt",
+        "{case}: {execution:#}"
+    );
+    let receipt = &authority["receipt"];
+    assert_eq!(receipt["binding"], binding, "{case}: {receipt:#}");
+    assert_eq!(
+        receipt["calls"].as_array().unwrap().len(),
+        expected_calls,
+        "{case}: {receipt:#}"
+    );
+}
+
 #[test]
 fn composed_global_cells_keep_sites_dependencies_and_may_provenance() {
     let fixture = run_rejection_fixture_with_args(
@@ -891,12 +913,7 @@ fn inline_callee_creation_executes_with_exact_operation_receipts() {
             FixtureOpts::new(&source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
         );
         assert_preserved_entry_output(&fixture, "42\n");
-        let receipt = assert_operation_receipt(&fixture, "result", 2);
-        assert_eq!(
-            receipt["calls"].as_array().unwrap().len(),
-            2,
-            "both immediate calls must be represented for {case}: {receipt:#}"
-        );
+        assert_inline_operation_receipt(&fixture, "result", 2, case);
     }
 }
 
@@ -910,7 +927,7 @@ fn inline_callee_invocation_keeps_captured_reads_and_refuses_unsupported_bodies(
         .with_unassigned_mode(unassigned_mode_inline()),
     );
     assert_preserved_entry_output(&captured, "41\n");
-    assert_operation_receipt(&captured, "result", 2);
+    assert_inline_operation_receipt(&captured, "result", 2, "captured-read");
     let graph = captured.dependency_graph();
     let result = source_unit_for_binding(&graph, "result");
     let seed = source_unit_for_binding(&graph, "seed");
