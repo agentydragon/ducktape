@@ -2,4 +2,4 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/github-api-proxy
-    newTag: devel-20261022093042-b29377e # {"$imagepolicy": "flux-system:github-api-proxy:tag"}
+    newTag: devel-20261106050444-c86ac23 # {"$imagepolicy": "flux-system:github-api-proxy:tag"}
