@@ -23,7 +23,6 @@
 //! heuristic rename.
 
 use debundle_e2e_support::*;
-use std::fs;
 
 /// Chunk source: a top-level function whose return value is an object
 /// literal mapping readable property keys to imports from a sibling
@@ -53,16 +52,13 @@ fn peeled_function_returning_object_literal_keeps_value_position_imports() {
     opts.extra_files = &[("static/app/provider_module.js", PROVIDER_SOURCE)];
     let fixture = run_fixture(opts);
 
-    let target_path = fixture.out_root.join("static/app/modules/target_module.js");
-    let target_src =
-        fs::read_to_string(&target_path).unwrap_or_else(|e| panic!("read target_module.js: {e}"));
-
     // The canonical path-rebase fix from PR #1630 must hold — we want
     // `"../provider_module.js"`, not `".././provider_module.js"`.
-    assert!(
-        target_src.contains(r#"from "../provider_module.js""#),
-        "target_module.js must emit a normalized relative import \
-         path; got:\n{target_src}",
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/target_module.js",
+        &[r#"from "../provider_module.js""#],
+        &[],
     );
 
     // Critical: the runtime must actually load. If the heuristic

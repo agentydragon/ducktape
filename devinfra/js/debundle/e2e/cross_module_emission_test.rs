@@ -746,16 +746,14 @@ export { a, b, c };
             ),
         ],
     ));
-    let consumer = fs::read_to_string(fixture.out_root.join("static/app/modules/consumer.js"))
-        .expect("read consumer module");
-
-    assert!(
-        consumer.contains("sharedReadableName as sharedReadableName$1"),
-        "expected imported readable name to be aliased away from local function decl; got:\n{consumer}",
-    );
-    assert!(
-        consumer.contains("sharedReadableName$1() + \":\" + sharedReadableName()"),
-        "expected provider refs to use import alias and local refs to stay local; got:\n{consumer}",
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/consumer.js",
+        &[
+            "sharedReadableName as sharedReadableName$1",
+            "sharedReadableName$1() + \":\" + sharedReadableName()",
+        ],
+        &[],
     );
     assert_entry_output(&fixture, "provider:local\n");
 }
@@ -820,16 +818,11 @@ export { a };
     )];
     let fixture = run_fixture(opts);
 
-    let mod_x = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_x.js"))
-        .expect("read mod_x.js");
-
-    assert!(
-        mod_x.contains("import {") && mod_x.contains("Readable") && mod_x.contains("vendor"),
-        "mod_x.js must re-import the vendor binding under the readable name; got:\n{mod_x}",
-    );
-    assert!(
-        mod_x.contains("export {") && mod_x.contains("Readable"),
-        "mod_x.js must export Readable; got:\n{mod_x}",
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/mod_x.js",
+        &["import {", "Readable", "vendor", "export {", "Readable"],
+        &[],
     );
 }
 
@@ -915,14 +908,14 @@ export { bridge };
     opts.extra_files = &[("static/app/vendor.js", "export const x = 42;\n")];
     let fixture = run_fixture(opts);
 
-    let mod_b = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_b.js"))
-        .expect("read mod_b.js");
     // mod_b's bridge body references `a`; mod_b must carry a
     // source-chunk re-import for `a` (the vendor binding) so the
     // moved body resolves at link time.
-    assert!(
-        mod_b.contains("import") && mod_b.contains("vendor"),
-        "mod_b.js must re-import the vendor specifier; got:\n{mod_b}",
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &["import", "vendor"],
+        &[],
     );
     // Behaviour preservation: `bridge()` returns the imported
     // vendor value. Without the filter narrowing this would
@@ -970,24 +963,11 @@ export { St as B, Ite };
     )]);
     let fixture = run_fixture(opts);
 
-    let moved = fs::read_to_string(
-        fixture
-            .out_root
-            .join("static/app/modules/feature/consumer.js"),
-    )
-    .expect("read moved consumer module");
-
-    assert!(
-        moved.contains("B as entryHelper"),
-        "entry's public export B must be imported under its entry-local name; got:\n{moved}",
-    );
-    assert!(
-        moved.contains("o as vendorHelper"),
-        "vendor import local B must keep the vendor-helper readable name; got:\n{moved}",
-    );
-    assert!(
-        !moved.contains("B as vendorHelper"),
-        "entry export B must not be mistaken for the vendor binding; got:\n{moved}",
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/feature/consumer.js",
+        &["B as entryHelper", "o as vendorHelper"],
+        &["B as vendorHelper"],
     );
     assert_generated_module_after_entry_script(
         &fixture,
