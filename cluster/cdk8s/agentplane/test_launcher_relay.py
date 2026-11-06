@@ -114,7 +114,7 @@ def test_tls_injection_can_read_only_the_sandbox_in_its_namespace() -> None:
         "name": role["metadata"]["name"],
     }
     assert binding["subjects"] == [
-        {"kind": "ServiceAccount", "name": "kyverno-admission-controller", "namespace": "kyverno"}
+        {"apiGroup": "", "kind": "ServiceAccount", "name": "kyverno-admission-controller", "namespace": "kyverno"}
     ]
 
 
