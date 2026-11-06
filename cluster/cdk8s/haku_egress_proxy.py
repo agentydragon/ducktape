@@ -6,10 +6,13 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
+from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import cilium, egress_fences, node_scheduling
 from cluster.cdk8s.agents import namespaces
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
+from cluster.cdk8s.flux import SOPS_DECRYPTION, Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -244,4 +247,24 @@ def write_manifests(root: Path) -> None:
         egress_fences.haku_cloud_api,
         # CLEANUP(added 2026-10-12): drop each entry once it pins serverNames or is exempt by design.
         unpinned_https_egress={"allow-haku-cloud-api-egress"},
+    )
+
+
+def haku_egress_proxy(
+    chart: Chart,
+    artifact: ArtifactGeneratorSpecArtifacts,
+    cert_manager: Kustomization,
+    cert_manager_trust: Kustomization,
+    external_secrets_operator: Kustomization,
+) -> Kustomization:
+    return flux_kustomization(
+        chart,
+        NAME,
+        artifact,
+        retry_interval=None,
+        wait=None,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        timeout="5m",
+        depends_on=flux_kustomization_depends_on_many(cert_manager, cert_manager_trust, external_secrets_operator),
+        decryption=SOPS_DECRYPTION,
     )

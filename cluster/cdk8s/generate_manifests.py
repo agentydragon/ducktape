@@ -1435,9 +1435,7 @@ def generate_manifests(root: Path) -> None:
         components=[posixpath.relpath(airlock.PINS_DIR, airlock.OUTPUT_DIR)],
         config_map_generator=[airlock.CONFIG_MAP],
     )
-    airlock_kustomization = agents_flux_kustomizations.airlock(
-        flux_chart, airlock_directory, external_secrets_operator_kustomization
-    )
+    airlock_kustomization = airlock.airlock(flux_chart, airlock_directory, external_secrets_operator_kustomization)
     authentik_jwt_rotation_artifact = artifact(
         "authentik-jwt-rotation", authentik_jwt_rotation.OUTPUT_DIR, authentik_jwt_rotation.PINS_DIR
     )
@@ -1474,7 +1472,7 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
     )
     tana_mcp_artifact = artifact("tana-mcp", tana_mcp.OUTPUT_DIR)
-    tana_mcp_kustomization = agents_flux_kustomizations.tana_mcp(
+    tana_mcp_kustomization = tana_mcp.tana_mcp(
         flux_chart,
         tana_mcp_artifact,
         external_secrets_operator_kustomization,
@@ -1819,7 +1817,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     haku_egress_proxy_artifact = artifact("haku-egress-proxy", haku_egress_proxy.OUTPUT_DIR)
-    haku_egress_proxy_kustomization = agents_flux_kustomizations.haku_egress_proxy(
+    haku_egress_proxy_kustomization = haku_egress_proxy.haku_egress_proxy(
         flux_chart,
         haku_egress_proxy_artifact,
         cert_manager_kustomization,
@@ -1919,14 +1917,14 @@ def generate_manifests(root: Path) -> None:
         agentplane_staging_kustomization,
     )
     public_coder_agent_access_artifact = artifact("public-coder-agent-access", public_coder_app.ACCESS_DIR)
-    public_coder_agent_access_kustomization = agents_flux_kustomizations.public_coder_agent_access(
+    public_coder_agent_access_kustomization = public_coder_app.public_coder_agent_access(
         flux_chart,
         write_directory(
             root, public_coder_agent_access_artifact, public_coder_app.namespace_chart, public_coder_app.rbac_chart
         ),
     )
     public_coder_agent_app_artifact = artifact("public-coder-agent-app", public_coder_app.APP_DIR)
-    agents_flux_kustomizations.public_coder_agent_app(
+    public_coder_app.public_coder_agent_app(
         flux_chart,
         public_coder_agent_app_artifact,
         external_secrets_operator_kustomization,
