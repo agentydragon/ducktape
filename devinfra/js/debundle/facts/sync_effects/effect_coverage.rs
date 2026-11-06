@@ -50,16 +50,21 @@ pub(crate) struct RootEffectIdentity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) enum RootEffectSource {
     BindingInitializer { binding: Id, initializer_span: Span },
+    ClassDeclaration { binding: Id, declaration_span: Span },
     ExpressionStatement { expression_span: Span },
 }
 
 impl RootEffectIdentity {
-    pub(super) fn binding_initializer(&self) -> Option<(&Id, Span)> {
+    pub(super) fn binding_initialization(&self) -> Option<(&Id, Span)> {
         match &self.source {
             RootEffectSource::BindingInitializer {
                 binding,
                 initializer_span,
             } => Some((binding, *initializer_span)),
+            RootEffectSource::ClassDeclaration {
+                binding,
+                declaration_span,
+            } => Some((binding, *declaration_span)),
             RootEffectSource::ExpressionStatement { .. } => None,
         }
     }
@@ -71,6 +76,12 @@ impl RootEffectIdentity {
             } => LocalBodyIdentity::RootInitializer {
                 owner: self.owner,
                 initializer_span,
+            },
+            RootEffectSource::ClassDeclaration {
+                declaration_span, ..
+            } => LocalBodyIdentity::RootClassDeclaration {
+                owner: self.owner,
+                declaration_span,
             },
             RootEffectSource::ExpressionStatement { expression_span } => {
                 LocalBodyIdentity::RootExpression {
@@ -87,6 +98,10 @@ pub(super) enum LocalBodyIdentity {
     RootInitializer {
         owner: SourceUnitOrdinal,
         initializer_span: Span,
+    },
+    RootClassDeclaration {
+        owner: SourceUnitOrdinal,
+        declaration_span: Span,
     },
     RootExpression {
         owner: SourceUnitOrdinal,
@@ -331,6 +346,14 @@ impl BindingEffectCoverage {
                         binding: binding.0.to_string(),
                         initializer_span: Some(*initializer_span),
                     },
+                    RootEffectSource::ClassDeclaration {
+                        binding,
+                        declaration_span,
+                    } => BindingEffectAuthorityReport::OrderedRootClassDeclarationUncovered {
+                        owner: identity.owner,
+                        binding: binding.0.to_string(),
+                        declaration_span: *declaration_span,
+                    },
                     RootEffectSource::ExpressionStatement { expression_span } => {
                         BindingEffectAuthorityReport::OrderedRootExpressionUncovered {
                             owner: identity.owner,
@@ -415,6 +438,10 @@ enum SavedRootEffectSource {
         binding: SavedBinding,
         initializer_span: Span,
     },
+    ClassDeclaration {
+        binding: SavedBinding,
+        declaration_span: Span,
+    },
     ExpressionStatement {
         expression_span: Span,
     },
@@ -431,6 +458,13 @@ impl SavedRootEffectIdentity {
                 } => SavedRootEffectSource::BindingInitializer {
                     binding: ordinals.snapshot_binding(binding)?,
                     initializer_span: *initializer_span,
+                },
+                RootEffectSource::ClassDeclaration {
+                    binding,
+                    declaration_span,
+                } => SavedRootEffectSource::ClassDeclaration {
+                    binding: ordinals.snapshot_binding(binding)?,
+                    declaration_span: *declaration_span,
                 },
                 RootEffectSource::ExpressionStatement { expression_span } => {
                     SavedRootEffectSource::ExpressionStatement {
@@ -451,6 +485,13 @@ impl SavedRootEffectIdentity {
                 } => RootEffectSource::BindingInitializer {
                     binding: ordinals.restore_binding(binding)?,
                     initializer_span,
+                },
+                SavedRootEffectSource::ClassDeclaration {
+                    binding,
+                    declaration_span,
+                } => RootEffectSource::ClassDeclaration {
+                    binding: ordinals.restore_binding(binding)?,
+                    declaration_span,
                 },
                 SavedRootEffectSource::ExpressionStatement { expression_span } => {
                     RootEffectSource::ExpressionStatement { expression_span }
@@ -508,6 +549,13 @@ impl LexicalBindingEffectReceipt {
                     binding: binding.0.to_string(),
                     initializer_span: *initializer_span,
                 },
+                RootEffectSource::ClassDeclaration {
+                    binding,
+                    declaration_span,
+                } => LexicalEffectRoot::ClassDeclaration {
+                    binding: binding.0.to_string(),
+                    declaration_span: *declaration_span,
+                },
                 RootEffectSource::ExpressionStatement { expression_span } => {
                     LexicalEffectRoot::ExpressionStatement {
                         expression_span: *expression_span,
@@ -552,6 +600,13 @@ impl LocalBodyIdentity {
             } => LexicalBindingEffectBody::RootInitializer {
                 owner: *owner,
                 initializer_span: *initializer_span,
+            },
+            Self::RootClassDeclaration {
+                owner,
+                declaration_span,
+            } => LexicalBindingEffectBody::RootClassDeclaration {
+                owner: *owner,
+                declaration_span: *declaration_span,
             },
             Self::RootExpression {
                 owner,
@@ -1186,6 +1241,11 @@ enum LocalBodyKey {
         lo: u32,
         hi: u32,
     },
+    RootClassDeclaration {
+        owner: usize,
+        lo: u32,
+        hi: u32,
+    },
     RootExpression {
         owner: usize,
         lo: u32,
@@ -1240,6 +1300,14 @@ fn local_body_key(body: &LocalBodyIdentity) -> LocalBodyKey {
             owner: owner.0,
             lo: initializer_span.lo.0,
             hi: initializer_span.hi.0,
+        },
+        LocalBodyIdentity::RootClassDeclaration {
+            owner,
+            declaration_span,
+        } => LocalBodyKey::RootClassDeclaration {
+            owner: owner.0,
+            lo: declaration_span.lo.0,
+            hi: declaration_span.hi.0,
         },
         LocalBodyIdentity::RootExpression {
             owner,

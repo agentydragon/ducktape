@@ -280,10 +280,12 @@ is a diagnostic projection of the graph's decision to skip the syntactic
 at-init call fallback. Its report DTO is internally tagged by `authority` and
 has `unclassified`, `legacy_execution` (with the existing `complete` value),
 `author_source_only`, `ordered_root_initializer_uncovered`,
-`ordered_root_expression_uncovered`, and `operation_receipt` forms. The receipt
+`ordered_root_class_declaration_uncovered`, `ordered_root_expression_uncovered`,
+and `operation_receipt` forms. The receipt
 reports the exact root owner and a typed `root_kind`: `binding_initializer`
-retains its binding and initializer span; `expression_statement` retains its
-expression span. Both have separate read/rebind prerequisites and flat local call
+retains its binding and initializer span; `class_declaration` retains its binding
+and declaration span; `expression_statement` retains its expression span. Each
+has separate read/rebind prerequisites and flat local call
 edges with caller/target bodies and merged conditions. The analyzer verifies
 that those edges connect to the root body. This DTO is output-only; it cannot
 be loaded as engine authority.
@@ -295,8 +297,8 @@ constructor dependencies; its internal operations are not expanded into
 application call edges. Both paths separately retain the constructor's global
 binding read.
 Staged analysis artifacts instead carry the engine-owned, externally tagged
-saved `BindingEffectCoverage` fact. Its root binding uses the same saved
-symbol and context ordinal as other staged facts. That field is required:
+saved `BindingEffectCoverage` fact. Initializer and class-declaration root
+bindings use the same saved symbol and context ordinal as other staged facts. That field is required:
 artifacts missing it fail to decode, and the normal analysis-engine and source
 provenance checks still apply. `legacy_execution` is a temporary decision for
 owners outside ordered-root execution, not evidence of covered operations.

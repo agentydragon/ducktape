@@ -5812,6 +5812,7 @@ struct ExecutionIndex {
     local_constructors: BTreeMap<u32, LocalConstructor>,
     /// Source-covered constructor operations for exported provider summaries.
     class_provider_bodies: BTreeMap<u32, super::local_operations::ClassConstructorBody>,
+    class_definitions: BTreeMap<u32, super::local_operations::ClassDefinition>,
     local_class_construction_shapes: LocalClassConstructionShapes,
     local_class_construction_proof: LocalClassConstructionProof,
     semantic_facts: Option<Arc<SemanticFacts>>,
@@ -6029,6 +6030,7 @@ impl Default for ExecutionIndex {
             native_guarded_regions: Vec::new(),
             local_constructors: BTreeMap::new(),
             class_provider_bodies: BTreeMap::new(),
+            class_definitions: BTreeMap::new(),
             local_class_construction_shapes: LocalClassConstructionShapes::default(),
             local_class_construction_proof: LocalClassConstructionProof::default(),
             semantic_facts: None,
@@ -9136,7 +9138,7 @@ impl ExecutionIndex {
                     },
                 );
             }
-            match OriginalInitializer::collect(item, owner, source_identity) {
+            match OriginalInitializer::collect(source_identity) {
                 Ok(initializer) => {
                     // Split/exported scalar owners retain their original
                     // initializer through the same checked source identity.
@@ -11256,6 +11258,9 @@ impl Visit for ExecutionIndex {
         }
         self.class_values
             .insert(class.span.lo.0, collect_class_value_facts(class));
+        if let Some(definition) = super::local_operations::ClassDefinition::lower(class) {
+            self.class_definitions.insert(class.span.lo.0, definition);
+        }
         if let Some(body) = LocalBody::lower_class_constructor(class) {
             self.class_provider_bodies.insert(class.span.lo.0, body);
         }
@@ -11776,6 +11781,23 @@ impl Visit for ExecutionIndex {
                 declaration.ident.to_id(),
                 ValueExpr::Alloc(Kind::Class, declaration.class.span.lo.0),
             ));
+            if !declaration.declare
+                && let Some(definition) = self.class_definitions.get(&declaration.class.span.lo.0)
+            {
+                self.ordered_roots.insert(
+                    self.owner,
+                    OrderedRoot {
+                        identity: RootEffectIdentity {
+                            owner: self.owner,
+                            source: RootEffectSource::ClassDeclaration {
+                                binding: declaration.ident.to_id(),
+                                declaration_span: definition.span,
+                            },
+                        },
+                        body: LocalBody::from_class_declaration(definition),
+                    },
+                );
+            }
         } else if let Some(key) = self.current {
             let callable = self.callables.get_mut(&key).unwrap();
             callable
@@ -14441,12 +14463,14 @@ fn foreign_call(
     InferredForeignCall {
         declaration_start,
         initialized_class: (isolated_initializer
-            && derived.invocation == crate::analysis_inputs::ForeignInvocation::Construct
-            && index
-                .class_provider_bodies
-                .get(&declaration_start)
-                .is_some_and(|body| body.noninvoking_definition))
-        .then(|| dependencies.clone()),
+            && derived.invocation == crate::analysis_inputs::ForeignInvocation::Construct)
+            .then(|| index.class_definitions.get(&declaration_start))
+            .flatten()
+            .and_then(|definition| {
+                super::local_transfer::define_class(definition)
+                    .effects
+                    .closed_effect_dependencies()
+            }),
         availability: if hoisted {
             CallableAvailability::Declaration
         } else if isolated_initializer && derived.retained_provider_captures.is_empty() {

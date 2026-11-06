@@ -41,7 +41,6 @@ impl NativeConstructorKind {
 enum Leaf {
     Composed(ValueExpr),
     Function(u32),
-    Class(u32),
     RegExp(u32),
     /// Exact direct source form; only a checked operation receipt may cover it.
     KeyedCollectionOperation {
@@ -158,7 +157,7 @@ impl CompletedInitialization {
     ) -> Option<Self> {
         if source.owner != owner
             || source
-                .binding_initializer()
+                .binding_initialization()
                 .is_some_and(|(binding, _)| !initialized.contains(binding))
         {
             return None;
@@ -358,71 +357,6 @@ fn javascript_parameter(parameter: &Pat) -> bool {
     }
 }
 
-fn plain_class_member(member: &ClassMember) -> bool {
-    match member {
-        ClassMember::Method(method) => {
-            method.kind == MethodKind::Method
-                && !matches!(method.key, PropName::Computed(_))
-                && method.function.decorators.is_empty()
-                && method.function.body.is_some()
-                && method.function.type_params.is_none()
-                && method.function.return_type.is_none()
-                && method.function.params.iter().all(|parameter| {
-                    parameter.decorators.is_empty() && ordinary_parameter(&parameter.pat)
-                })
-                && !method.is_abstract
-                && !method.is_optional
-                && !method.is_override
-        }
-        ClassMember::Constructor(constructor) => {
-            !matches!(constructor.key, PropName::Computed(_))
-                && constructor.body.is_some()
-                && constructor.accessibility.is_none()
-                && !constructor.is_optional
-                && constructor.params.iter().all(|parameter| match parameter {
-                    ParamOrTsParamProp::Param(parameter) => {
-                        parameter.decorators.is_empty() && ordinary_parameter(&parameter.pat)
-                    }
-                    ParamOrTsParamProp::TsParamProp(_) => false,
-                })
-        }
-        ClassMember::ClassProp(property) => {
-            !property.is_static
-                && !matches!(property.key, PropName::Computed(_))
-                && property.decorators.is_empty()
-                && property.type_ann.is_none()
-                && !property.is_abstract
-                && !property.is_optional
-                && !property.is_override
-                && !property.declare
-                && !property.definite
-        }
-        ClassMember::Empty(_) => true,
-        ClassMember::PrivateMethod(_)
-        | ClassMember::PrivateProp(_)
-        | ClassMember::TsIndexSignature(_)
-        | ClassMember::StaticBlock(_)
-        | ClassMember::AutoAccessor(_) => false,
-    }
-}
-
-/// This subset only creates a fresh constructor, prototype, and method
-/// functions, then publishes the class through its lexical binding. With no
-/// heritage, decorators, computed keys, or static initialization, class
-/// evaluation runs no user code and cannot expose those fresh objects before
-/// binding initialization. Method bodies and instance field values stay lazy.
-fn inert_class_declaration(declaration: &ClassDecl) -> bool {
-    let class = &declaration.class;
-    !declaration.declare
-        && class.decorators.is_empty()
-        && class.super_class.is_none()
-        && !class.is_abstract
-        && class.type_params.is_none()
-        && class.super_type_params.is_none()
-        && class.implements.is_empty()
-        && class.body.iter().all(plain_class_member)
-}
-
 fn empty_direct_constructor(expression: &Expr) -> Option<(Id, CallSite)> {
     let Expr::New(construction) = expression.unwrap_parens() else {
         return None;
@@ -500,28 +434,11 @@ fn set_primitive_array_constructor(
 
 impl OriginalInitializer {
     pub(super) fn collect<'source>(
-        item: &TopLevelItemView<'source>,
-        owner: SourceUnitOrdinal,
         source: Result<
             (InitializationSourceIdentity, &'source Expr),
             OwnerInitializationCoverageRefusalReason,
         >,
     ) -> Result<Self, OwnerInitializationCoverageRefusalReason> {
-        if let TopLevelItemView::Borrowed(ModuleItem::Stmt(Stmt::Decl(Decl::Class(declaration)))) =
-            item
-        {
-            if !inert_class_declaration(declaration) {
-                return Err(OwnerInitializationCoverageRefusalReason::UnsupportedOwnerKind);
-            }
-            return Ok(Self {
-                identity: InitializationSourceIdentity::new(
-                    owner,
-                    declaration.ident.to_id(),
-                    declaration.class.span,
-                ),
-                leaf: Leaf::Class(declaration.class.span.lo.0),
-            });
-        }
         let (identity, initializer) = source?;
         let leaf = match initializer.unwrap_parens() {
             Expr::New(_) => {
@@ -701,11 +618,6 @@ impl OriginalInitializer {
                 AbstractValue::Value(Value::Alloc(Kind::RegExp, evaluated)),
             ) => values.len() == 1 && allocation == lowered && allocation == evaluated,
             (
-                Leaf::Class(expected),
-                ValueExpr::Alloc(Kind::Class, lowered),
-                AbstractValue::Value(Value::Alloc(Kind::Class, evaluated)),
-            ) => values.len() == 1 && expected == lowered && expected == evaluated,
-            (
                 Leaf::Function(expected),
                 ValueExpr::Alloc(Kind::Function, lowered),
                 AbstractValue::Closure(evaluated, _),
@@ -798,11 +710,7 @@ mod source_identity_tests {
         ));
 
         assert!(matches!(
-            OriginalInitializer::collect(
-                &views[1],
-                SourceUnitOrdinal(1),
-                Ok((unsupported_identity, unsupported_expression)),
-            ),
+            OriginalInitializer::collect(Ok((unsupported_identity, unsupported_expression))),
             Err(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer)
         ));
     }
@@ -816,11 +724,7 @@ mod source_identity_tests {
                 .expect("export wrapper still identifies the original binding and initializer");
         assert!(identity.matches(SourceUnitOrdinal(0), &id("result"), expression.span()));
         assert!(matches!(
-            OriginalInitializer::collect(
-                &views[0],
-                SourceUnitOrdinal(0),
-                Ok((identity, expression))
-            ),
+            OriginalInitializer::collect(Ok((identity, expression))),
             Err(OwnerInitializationCoverageRefusalReason::UnsupportedInitializer)
         ));
     }

@@ -705,6 +705,11 @@ pub enum BindingEffectAuthorityReport {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         initializer_span: Option<swc_common::Span>,
     },
+    OrderedRootClassDeclarationUncovered {
+        owner: SourceUnitOrdinal,
+        binding: String,
+        declaration_span: swc_common::Span,
+    },
     OrderedRootExpressionUncovered {
         owner: SourceUnitOrdinal,
         expression_span: swc_common::Span,
@@ -738,6 +743,10 @@ pub enum LexicalEffectRoot {
         binding: String,
         initializer_span: swc_common::Span,
     },
+    ClassDeclaration {
+        binding: String,
+        declaration_span: swc_common::Span,
+    },
     ExpressionStatement {
         expression_span: swc_common::Span,
     },
@@ -749,6 +758,10 @@ pub enum LexicalBindingEffectBody {
     RootInitializer {
         owner: SourceUnitOrdinal,
         initializer_span: swc_common::Span,
+    },
+    RootClassDeclaration {
+        owner: SourceUnitOrdinal,
+        declaration_span: swc_common::Span,
     },
     RootExpression {
         owner: SourceUnitOrdinal,

@@ -8,9 +8,9 @@ use super::array_transfer::ArrayPushSelection;
 use super::descriptor_transfer::NativeObjectPostcondition;
 use super::effect_coverage::{EffectCoverageFragment, NativeCalleeSelection};
 use super::local_operations::{
-    ClassConstructorBody, ClassFieldKey, ConstructorPhase, DeferredCallableCreation,
-    LocalArrayElement, LocalBinding, LocalBody, LocalCall, LocalCallee, LocalExpression,
-    LocalInvocation, LocalOperation, LocalRegion,
+    ClassConstructorBody, ClassDefinition, ClassFieldKey, ConstructorPhase,
+    DeferredCallableCreation, LocalArrayElement, LocalBinding, LocalBody, LocalCall, LocalCallee,
+    LocalExpression, LocalInvocation, LocalOperation, LocalRegion,
 };
 use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataSlot};
 use super::property_inference::DescriptorAttributes;
@@ -762,6 +762,12 @@ fn expression(
                 frame,
             ))
         }
+        LocalExpression::ClassDefinition(definition) => {
+            let result = define_class(definition);
+            judgment.compose(&result.allocation.judgment);
+            frame.effect_coverage.compose(&result.effects);
+            Some(SelectedValue::raw(result.allocation.values))
+        }
         LocalExpression::This => {
             frame
                 .effect_coverage
@@ -1392,6 +1398,25 @@ fn assign_field_expression(
             .compose(&EffectCoverageFragment::default());
     }
     Some(selected)
+}
+
+/// Class creation allocates an unpublished constructor/prototype and installs
+/// statically named methods. Field initializers, parameter defaults and bodies
+/// remain deferred; the canonical definition plan excludes eager user steps.
+/// This grants neither ordinary-object shape nor constructor-call coverage.
+pub(super) fn define_class(definition: &ClassDefinition) -> LocalValueResult {
+    LocalValueResult {
+        allocation: AllocationValue {
+            values: Values::from([AbstractValue::Value(Value::Alloc(
+                Kind::Class,
+                definition.class,
+            ))]),
+            judgment: AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default()),
+        },
+        effects: EffectCoverageFragment::no_effects(),
+        selection: None,
+        postcondition: None,
+    }
 }
 
 fn constructor_receiver<'a>(

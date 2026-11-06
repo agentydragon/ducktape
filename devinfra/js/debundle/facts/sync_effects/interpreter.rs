@@ -16082,7 +16082,32 @@ impl Executor<'_, '_> {
                                 .any(|call| call.kind == CallKind::LocalMemberRead))
                         || body.terminal_call_root().is_some())
             });
-        let ordered_root = ordered_initializer.or_else(|| {
+        let ordered_class = (matches!(fact.kind, StatementKind::ClassDecl)
+            && fact.declared.len() == 1
+            && fact.rebinds.eager.is_empty()
+            && fact.global_writes.is_empty()
+            && index.dynamic_scope_owners.is_empty()
+            && !index.opaque_top.contains(&owner)
+            && calls.is_empty()
+            && index.top_property_writes[owner.0].is_empty()
+            && index.top_member_value_writes[owner.0].is_empty()
+            && index.top_callback_result_writes[owner.0].is_empty())
+            .then(|| index.ordered_roots.get(&owner)).flatten()
+            .filter(|root| {
+                let RootEffectSource::ClassDeclaration { binding, declaration_span } = &root.identity.source else { return false; };
+                let [(assigned, ValueExpr::Alloc(Kind::Class, class))] = assignments.as_slice() else { return false; };
+                assigned == binding && fact.declared.contains(binding)
+                    && index.top_definite_initializers[owner.0].contains(binding)
+                    && index.class_bindings.get(class) == Some(binding)
+                    && index.class_owners.get(class) == Some(&owner)
+                    && index.class_definitions.get(class).is_some_and(|definition| definition.span == *declaration_span)
+                    && root.body.root_expression_span() == Some(*declaration_span)
+                    && root.body.free_reads().is_empty() && root.body.captured_writes().is_empty()
+                    && index.top_exported_values[owner.0].iter().all(|value| matches!(value,
+                        ValueExpr::Binding(exported) if exported == binding)
+                        || matches!(value, ValueExpr::Alloc(Kind::Class, exported) if exported == class))
+            });
+        let ordered_root = ordered_initializer.or(ordered_class).or_else(|| {
             (matches!(fact.kind, StatementKind::SideEffect)
                 && fact.declared.is_empty()
                 // This validated whole-expression protocol already has a
@@ -16148,9 +16173,9 @@ impl Executor<'_, '_> {
             });
         let effect_root_identity = ordered_root
             .filter(|root| {
-                matches!(
+                !matches!(
                     root.identity.source,
-                    RootEffectSource::ExpressionStatement { .. }
+                    RootEffectSource::BindingInitializer { .. }
                 )
             })
             .map(|root| root.identity.clone())
@@ -16164,7 +16189,8 @@ impl Executor<'_, '_> {
                 })
             });
         // Operands and calls execute once in the same canonical root plan.
-        // Only a binding initializer publishes its selected result below.
+        // Binding initializers and class declarations publish their selected
+        // result below; expression statements discard it.
         let mut ordered_root_result = if let Some(root) = ordered_root {
             outcome = self.execute_local_body(
                 &root.body,
@@ -16341,7 +16367,7 @@ impl Executor<'_, '_> {
                             .as_ref()
                             .is_some_and(|identity| {
                                 identity.owner == owner
-                                    && identity.binding_initializer().is_some_and(
+                                    && identity.binding_initialization().is_some_and(
                                         |(binding, span)| {
                                             binding == id
                                                 && ordered_root.is_some_and(|root| {
@@ -16605,9 +16631,11 @@ impl Executor<'_, '_> {
             let receipt = effect_root_identity.as_ref().and_then(|source| {
                 (identity.owner == owner
                     && identity == *source
-                    && identity.binding_initializer().is_none_or(|(binding, _)| {
-                        self.state.initialized_bindings.contains(binding)
-                    })
+                    && identity
+                        .binding_initialization()
+                        .is_none_or(|(binding, _)| {
+                            self.state.initialized_bindings.contains(binding)
+                        })
                     && !outcome.unknown_call
                     && outcome.effects.uninitialized_reads.is_empty()
                     && outcome.effects.fallback_only.reads.is_empty()
