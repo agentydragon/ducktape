@@ -50,28 +50,29 @@ fn immediate_source_callables_compose_creation_arguments_and_body() {
 
 #[test]
 fn named_callee_keeps_self_identity_before_defaults_and_through_capture() {
-    for (source, binding, expected) in [
+    for (case, source, expected) in [
         (
+            "named-self-default",
             "const result = (function self(value = self) { return value; })(); console.log(result === result());\n",
-            "result",
             "true\n",
         ),
         (
+            "named-self-shadow",
             "const result = (function self(self) { return self; })(42); console.log(result);\n",
-            "result",
             "42\n",
         ),
         (
+            "named-self-capture",
             "const factory = function self() { return () => self; }; const captured = factory(); const result = captured(); console.log(result === factory);\n",
-            "result",
             "true\n",
         ),
     ] {
-        let fixture = run_fixture(
+        let (fixture, _) = accepted_primitive_fixture_with_reports(
             FixtureOpts::new(source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+            case,
         );
         assert_preserved_entry_output(&fixture, expected);
-        assert_operation_receipt(&fixture, binding, 1);
+        assert_operation_receipt(&fixture, "result", 1);
     }
 }
 
@@ -4495,7 +4496,7 @@ fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
         (
             "const make = function self() { return seed; };",
             "number",
-            2,
+            1,
         ),
         (
             "function make() { return seed; var { unused } = {}; }",
@@ -4539,6 +4540,7 @@ fn deferred_creation_and_full_scope_facts_do_not_invent_effect_receipts() {
                 | "function make() { return { value: seed }; }"
                 | "function make() { return { read() { return seed; }, get value() { return seed; }, set value(next) {} }; }"
                 | "function make() { return () => seed; }"
+                | "const make = function self() { return seed; };"
         ) {
             assert_operation_receipt(&fixture, "result", 2);
         }

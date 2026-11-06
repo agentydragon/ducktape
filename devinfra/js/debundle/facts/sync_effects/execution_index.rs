@@ -12498,6 +12498,14 @@ impl Visit for ExecutionIndex {
 
     fn visit_fn_expr(&mut self, expression: &FnExpr) {
         if let Some(binding) = &expression.ident {
+            // This declaration is an Ident rather than a BindingIdent, so
+            // visit_binding_ident cannot register its captured-cell address.
+            if !binding.span.is_dummy() {
+                self.lexical_cell_origins
+                    .entry(binding.to_id())
+                    .and_modify(|origin| *origin = (*origin).min(binding.span.lo.0))
+                    .or_insert(binding.span.lo.0);
+            }
             self.property_key_declarations.insert(binding.to_id());
             self.property_key_assignments
                 .entry(binding.to_id())
