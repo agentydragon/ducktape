@@ -86,18 +86,9 @@ def _write_messages_jsonl(messages: list[Message], path: Path) -> None:
 
 
 async def _snapshot_final_state(grocy_base_url: str) -> dict[str, Any]:
-    """Dump every REST-visible Grocy entity after the agent finishes.
-
-    The closest thing to a database dump that doesn't require reaching
-    into the container: every table Grocy exposes via `/objects/<entity>`
-    plus the computed stock / volatile views. IDs resolve to names via
-    the reference tables in the same snapshot.
-    """
-    # Every entity Grocy exposes — covers core tables, `_view` / `_resolved`
-    # SQL views, append-only audit tables, and computed aggregates. Kept
-    # hard-coded rather than derived from `ReadableEntityType` so the
-    # dump is self-contained and doesn't shift when the MCP tool surface
-    # narrows.
+    """Snapshot REST entities/views after an eval; include references for ID/name lookup."""
+    # Keep this table/view/audit/computed list independent of `ReadableEntityType`
+    # so eval snapshots don't shift when the MCP read surface narrows.
     entity_types = [
         # Core writeable tables
         "products",

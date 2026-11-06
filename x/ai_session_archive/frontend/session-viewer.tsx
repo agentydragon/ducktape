@@ -70,29 +70,16 @@ function parentLinkLabel(kind: string | null): string | null {
   }
 }
 
-function transcriptStatusLabel(session: SessionSummary): string {
+function transcriptStatus(session: SessionSummary): { label: string; color: string } {
   switch (session.transcript_status) {
     case "captured":
-      return session.latest_version_record_count === 0 ? "Latest capture empty" : "Captured";
+      return { label: session.latest_version_record_count === 0 ? "Latest capture empty" : "Captured", color: "green" };
     case "pending":
-      return "Inventory only";
+      return { label: "Inventory only", color: "yellow" };
     case "failed":
-      return "Import failed";
+      return { label: "Import failed", color: "red" };
     case "unavailable":
-      return "No captured version";
-  }
-}
-
-function transcriptStatusColor(session: SessionSummary): string {
-  switch (session.transcript_status) {
-    case "captured":
-      return "green";
-    case "pending":
-      return "yellow";
-    case "failed":
-      return "red";
-    case "unavailable":
-      return "gray";
+      return { label: "No captured version", color: "gray" };
   }
 }
 
@@ -106,9 +93,10 @@ function TranscriptStatusBadge({
   className?: string;
 }): JSX.Element | null {
   if (session.transcript_status === "captured" && session.latest_version_record_count !== 0) return null;
+  const status = transcriptStatus(session);
   return (
-    <Badge className={className} size={size} color={transcriptStatusColor(session)} variant="light">
-      {transcriptStatusLabel(session)}
+    <Badge className={className} size={size} color={status?.color} variant="light">
+      {status?.label}
     </Badge>
   );
 }
@@ -1136,7 +1124,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                 <Center h={180}>
                   <Stack align="center" gap="xs" maw={480}>
                     <Text size="sm" fw={600}>
-                      {transcriptStatusLabel(selectedSession)}
+                      {transcriptStatus(selectedSession)?.label}
                     </Text>
                     <Text size="sm" c="dimmed" ta="center">
                       {noVersionExplanation(selectedSession.transcript_status)}
