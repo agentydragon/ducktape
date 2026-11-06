@@ -235,6 +235,12 @@ and [spec contract](../../SPEC.md#ownership-subsets) describe the input and
 limits. Keep full selectors, assertions, anchors and matching analysis in
 place, and require the ordinary gate for each actual selected union.
 
+Before publishing coverage totals, reconcile accepted report members with the
+native authored-binding catalogue, including `readable_name` aliases and
+normalized module paths. Retain the baseline identity set and list additions
+and withheld identities. Automatic helper labels in emitted module reports
+are not additional authored claims; report unmatched labels separately.
+
 1. Reduce the rejecting spec by returning suspected groups of claims to
    residual until a useful subset passes. That candidate is a known passing
    lower bound. Alternatively start from an existing passing partial spec or
