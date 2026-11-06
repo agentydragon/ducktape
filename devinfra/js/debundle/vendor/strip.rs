@@ -535,9 +535,10 @@ fn sweep_unreachable_top_level(
             EffectCell::ArrayContents(origin) | EffectCell::SetContents(origin) => {
                 born_in_dropped_item(*origin)
             }
-            // Property origins can be shared by repeated factory allocations;
-            // source containment alone does not prove their results private.
+            // Property, receiver, and brand origins can cover repeated runtime
+            // instances; source containment alone does not prove private state.
             EffectCell::OwnProperty { .. }
+            | EffectCell::PrivateSlot { .. }
             | EffectCell::LexicalCell(_)
             | EffectCell::ObjectShape(_)
             | EffectCell::DescriptorMapContents(_) => false,
@@ -1188,6 +1189,11 @@ fn format_effect_cell(cell: &EffectCell) -> String {
         EffectCell::OwnProperty { origin, property } => {
             format!("own property `{property}` of allocation #{origin}")
         }
+        EffectCell::PrivateSlot {
+            origin,
+            class,
+            name,
+        } => format!("private slot `#{name}` of class #{class} on allocation #{origin}"),
     }
 }
 

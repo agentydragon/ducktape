@@ -845,8 +845,12 @@ globalThis`) marks the bindings it flows into (transitively,
     of them only as the base of static-key member reads, those
     reads are `GlobalProp` cells and the bail is lifted.
 
-  The graph also keeps a heap-content timeline over `ArrayContents(origin)`
-  and `SetContents(origin)` cells (`facts/heap_contents.rs`). Each body's
+  The graph also keeps a heap-content timeline over `ArrayContents(origin)`,
+  `SetContents(origin)`, and `PrivateSlot(origin, class, name)` cells
+  (`facts/heap_contents.rs`). A private-slot cell keeps the receiver
+  allocation source, class-brand source, and private name distinct; the source
+  identities aggregate runtime generations and do not grant strong updates or
+  privacy proofs. Each body's
   cells are syntax over the chunk value-flow identities: a statement's own
   at-init syntax and each callable's first-order pre-await body. A
   statement's cells are its own plus those of every callable its synchronous

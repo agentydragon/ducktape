@@ -304,15 +304,37 @@ pub enum CellConflict {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EffectCellReport {
-    Binding { binding: Atom },
-    LexicalCell { origin: u32 },
-    GlobalProp { key: String },
-    ArrayContents { origin: u32 },
-    SetContents { origin: u32 },
+    Binding {
+        binding: Atom,
+    },
+    LexicalCell {
+        origin: u32,
+    },
+    GlobalProp {
+        key: String,
+    },
+    ArrayContents {
+        origin: u32,
+    },
+    SetContents {
+        origin: u32,
+    },
     GlobalSymbolRegistry,
-    ObjectShape { origin: u32 },
-    DescriptorMapContents { origin: u32 },
-    OwnProperty { origin: u32, property: String },
+    ObjectShape {
+        origin: u32,
+    },
+    DescriptorMapContents {
+        origin: u32,
+    },
+    OwnProperty {
+        origin: u32,
+        property: String,
+    },
+    PrivateSlot {
+        origin: u32,
+        class: u32,
+        name: String,
+    },
 }
 
 impl From<&EffectCell> for EffectCellReport {
@@ -334,6 +356,15 @@ impl From<&EffectCell> for EffectCellReport {
                 origin: *origin,
                 property: property.clone(),
             },
+            EffectCell::PrivateSlot {
+                origin,
+                class,
+                name,
+            } => Self::PrivateSlot {
+                origin: *origin,
+                class: *class,
+                name: name.clone(),
+            },
         }
     }
 }
@@ -354,6 +385,14 @@ impl fmt::Display for EffectCellReport {
             Self::OwnProperty { origin, property } => {
                 write!(f, "own property `{property}` of allocation #{origin}")
             }
+            Self::PrivateSlot {
+                origin,
+                class,
+                name,
+            } => write!(
+                f,
+                "private slot `#{name}` of class #{class} on allocation #{origin}"
+            ),
         }
     }
 }

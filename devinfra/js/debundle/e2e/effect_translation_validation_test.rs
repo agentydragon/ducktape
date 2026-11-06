@@ -7164,3 +7164,73 @@ fn later_foreign_body_receipt_does_not_erase_an_uncovered_wrapper_prefix() {
     assert_preserved_entry_output(&fixture, "prefix\n2\n");
     assert_binary_remains_unsealed(&fixture, "result");
 }
+
+#[test]
+fn local_record_constructor_composes_actual_new_and_factory_receipts() {
+    let source = "class Box { constructor(record, callback) { this.record = record; this.callback = callback; } run() { return this.record.enabled ? this.callback() : 0; } }\nfunction make(record) { return new Box(record, () => later); }\nconst command = make({ enabled: !false });\nconst later = 1;\nconsole.log(command.record.enabled, command.run());\n";
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/wrapped",
+                    &[
+                        Member::new("Box"),
+                        Member::new("make").with_retained_record_factory(),
+                        Member::new("command"),
+                    ],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        ),
+        "local-record-constructor-receipts",
+    );
+    assert_preserved_entry_output(&fixture, "true 1\n");
+    let assessment = fixture.effect_translation_validation();
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
+    let receipt = assert_operation_receipt(&fixture, "command", 2);
+    assert!(
+        receipt["calls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|call| call["target"]["kind"] == "construction"),
+        "{receipt:#}"
+    );
+}
+
+#[test]
+fn local_new_target_keeps_constructor_effects_unsealed() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "class Box { constructor() { this.target = new.target; } } const result = new Box(); console.log(result.target === Box);\n", vec![])
+        .with_unassigned_mode(unassigned_mode_inline()));
+    assert_preserved_entry_output(&fixture, "true\n");
+    assert_binary_remains_unsealed(&fixture, "result");
+}
+
+#[test]
+fn local_private_field_construction_keeps_deferred_callback_and_brand() {
+    let source = "class Box { #read = () => later; run() { return this.#read(); } } const result = new Box(); const later = 7; console.log(result.run());\n";
+    let (fixture, _) = accepted_primitive_fixture_with_reports(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/box",
+                    &[Member::new("Box"), Member::new("result")],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        ),
+        "local-private-constructor-receipt",
+    );
+    assert_preserved_entry_output(&fixture, "7\n");
+    let receipt = assert_operation_receipt(&fixture, "result", 1);
+    assert_eq!(
+        receipt["calls"][0]["target"]["kind"], "construction",
+        "{receipt:#}"
+    );
+}

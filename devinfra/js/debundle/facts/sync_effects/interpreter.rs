@@ -11,7 +11,8 @@ use super::super::effect_coverage::{
     NativeCalleeSelection, RootEffectIdentity, RootEffectSource, SkippedCallReceipt,
 };
 use super::super::local_operations::{
-    LocalBinding, LocalBody, LocalCallee, LocalExpression, LocalOperation,
+    ClassConstructorBody, ConstructorPhase, DeferredCallableCreation, LocalBinding, LocalBody,
+    LocalCallee, LocalExpression, LocalOperation,
 };
 use super::super::local_transfer::{
     self, BindingOperation, CallableSelection, EvaluatedCallee, KnownThrow, LocalContext,
@@ -25,8 +26,8 @@ use super::super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, Ow
 use super::super::value_model::{
     AbstractValue, ArrayIteration, CallSite, CaptureInterner, Captured, CapturedContext, Context,
     DenseArray, DenseArrayIterationTransfer, FrozenNamespaceProof, InstanceOrigin, LexicalCaptures,
-    LexicalCellId, MemberKey, OwnPropertyShape, RetainedResultKind, ValueExpr, Values,
-    canonical_array_index,
+    LexicalCellId, MemberKey, OwnPropertyShape, PrivateFieldId, RetainedResultKind, ValueExpr,
+    Values, canonical_array_index,
 };
 use super::runtime_callbacks::{
     BoundedInvocationFallbackDiagnostics, BoundedInvocationFallbackRequest, CallbackOperation,
@@ -500,6 +501,7 @@ struct CallbackPoolObservation {
     prefix_revision: u64,
     reachability_revision: u64,
     prefix_object_properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
+    prefix_private_properties: OrdMap<u32, BTreeMap<PrivateFieldId, Values>>,
     dense_arrays: OrdMap<u32, DenseArray>,
     primitive_arrays: OrdMap<u32, ProofDependencies>,
     accumulated_values: OrdMap<u32, Values>,
@@ -526,6 +528,10 @@ impl PartialEq for CallbackPoolObservation {
                 &self.prefix_object_properties,
                 &other.prefix_object_properties,
             )
+            && same(
+                &self.prefix_private_properties,
+                &other.prefix_private_properties,
+            )
             && same(&self.dense_arrays, &other.dense_arrays)
             && same(&self.primitive_arrays, &other.primitive_arrays)
             && same(&self.accumulated_values, &other.accumulated_values)
@@ -549,6 +555,7 @@ struct BoundedFallbackPublicationDiagnostic {
 enum StoredReferenceEdge<'a> {
     ObjectProperty(Option<&'a str>),
     ArrayProperty(Option<&'a str>),
+    PrivateSlot(&'a PrivateFieldId),
     AppliedGetter(&'a str),
     AppliedSetter(&'a str),
     ClosureHomeObject,
@@ -635,6 +642,10 @@ fn path_edge_report(edge: StoredReferenceEdge<'_>) -> BoundedInvocationFallbackP
         StoredReferenceEdge::ArrayProperty(None) => {
             BoundedInvocationFallbackPathEdge::UnknownArrayProperty
         }
+        StoredReferenceEdge::PrivateSlot(slot) => BoundedInvocationFallbackPathEdge::PrivateSlot {
+            class: slot.class,
+            name: slot.name.clone(),
+        },
         StoredReferenceEdge::AppliedGetter(property) => {
             BoundedInvocationFallbackPathEdge::AppliedGetter {
                 property: Some(property.to_owned()),
@@ -1045,6 +1056,8 @@ pub(super) struct ExecutionState {
     top_env: Context,
     top_captures: Context,
     prefix_object_properties: OrdMap<u32, BTreeMap<Option<String>, Values>>,
+    prefix_private_properties: OrdMap<u32, BTreeMap<PrivateFieldId, Values>>,
+    active_construction: Option<u32>,
     writable_prefix: OrdMap<u32, super::super::allocation_transfer::WritablePrefixState>,
     own_descriptor_maps: OrdMap<CallSite, OwnDescriptorMapState>,
     applied_accessors: OrdMap<u32, BTreeMap<String, AppliedAccessor>>,
@@ -1280,6 +1293,11 @@ impl ExecutionState {
                 trace.values(values);
             }
         }
+        for slots in self.prefix_private_properties.values() {
+            for values in slots.values() {
+                trace.values(values);
+            }
+        }
         for array in self.dense_arrays.values() {
             for values in &array.slots {
                 trace.values(values);
@@ -1438,6 +1456,7 @@ impl AllocationContext for ApplicationAllocationContext<'_, '_, '_> {
 #[derive(Clone, Copy)]
 enum LocalExecutionScope {
     Callable(u32),
+    Construction(u32),
     Root,
 }
 
@@ -1445,7 +1464,7 @@ impl LocalExecutionScope {
     fn caller(self) -> Option<u32> {
         match self {
             Self::Callable(key) => Some(key),
-            Self::Root => None,
+            Self::Root | Self::Construction(_) => None,
         }
     }
 }
@@ -1614,11 +1633,25 @@ impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
 }
 
 impl<'source> LocalExecutionContext<'_, 'source, '_> {
-    fn calls(&self) -> &'source [Call] {
-        match self.scope {
-            LocalExecutionScope::Callable(key) => &self.executor.inputs.index.callables[&key].calls,
-            LocalExecutionScope::Root => &self.executor.inputs.index.top_calls[self.owner.0],
-        }
+    fn calls(&self) -> impl Iterator<Item = &'source Call> + Clone + use<'source> {
+        let index = self.executor.inputs.index;
+        let ordinary = match self.scope {
+            LocalExecutionScope::Callable(key) => Some(index.callables[&key].calls.as_slice()),
+            LocalExecutionScope::Root => Some(index.top_calls[self.owner.0].as_slice()),
+            LocalExecutionScope::Construction(_) => None,
+        };
+        let construction = match self.scope {
+            LocalExecutionScope::Construction(class) => Some(&index.class_provider_bodies[&class]),
+            _ => None,
+        };
+        ordinary
+            .into_iter()
+            .flatten()
+            .chain(construction.into_iter().flat_map(move |body| {
+                body.callables
+                    .iter()
+                    .flat_map(move |key| index.callables[key].calls.iter())
+            }))
     }
 
     fn missing_activation_binding(&self, binding: &Id, frame: &LocalFrame) -> bool {
@@ -1662,6 +1695,19 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
                     environment.get(binding)
                 }
             };
+            if let LocalExecutionScope::Construction(class) = scope {
+                for key in self.executor.inputs.index.class_provider_bodies[&class]
+                    .callables
+                    .iter()
+                {
+                    pending.push((
+                        LocalExecutionScope::Callable(*key),
+                        truncation,
+                        environment.clone(),
+                    ));
+                }
+                continue;
+            }
             let (owner, calls, writes) = match scope {
                 LocalExecutionScope::Callable(key) => {
                     let callable = &self.executor.inputs.index.callables[&key];
@@ -1670,6 +1716,9 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
                         callable.calls.as_slice(),
                         callable.member_value_writes.as_slice(),
                     )
+                }
+                LocalExecutionScope::Construction(_) => {
+                    unreachable!("construction inventory expanded above")
                 }
                 LocalExecutionScope::Root => (
                     self.owner,
@@ -1839,6 +1888,47 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
 }
 
 impl LocalContext for LocalExecutionContext<'_, '_, '_> {
+    fn constructor_phase(&mut self, phase: ConstructorPhase) {
+        let LocalExecutionScope::Construction(class) = self.scope else {
+            unreachable!("constructor phase requires construction execution")
+        };
+        let body = &self.executor.inputs.index.class_provider_bodies[&class];
+        self.body = match phase {
+            ConstructorPhase::Initializers => &body.initializers,
+            ConstructorPhase::Body => &body.constructor,
+        };
+    }
+    fn constructor_prefix_is_unexposed(&self, class: u32) -> bool {
+        // The existing LocalConstructor source gate excludes receiver reads,
+        // calls, publication and invoking field initializers. Arrow captures
+        // of lexical this are refused separately by closure(). Effects alone
+        // do not establish this independent receiver-locality proof.
+        matches!(self.scope, LocalExecutionScope::Construction(key) if key == class)
+            && self.executor.eligible_local_constructor(class, 0).is_ok()
+    }
+    fn constructor_assignment_absence(
+        &mut self,
+        class: u32,
+        property: &str,
+    ) -> Option<ProofDependencies> {
+        if !matches!(self.scope, LocalExecutionScope::Construction(key) if key == class)
+            || !self
+                .executor
+                .inputs
+                .index
+                .local_constructors
+                .get(&class)?
+                .own_fields
+                .contains(property)
+            || self.executor.eligible_local_constructor(class, 0).is_err()
+            || !self
+                .executor
+                .constructor_field_prototype_absent(class, property)
+        {
+            return None;
+        }
+        Some(self.executor.settled_prefix_dependencies())
+    }
     fn keyed_collection_new(
         &mut self,
         frame: &mut LocalFrame,
@@ -1848,7 +1938,6 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     ) -> Option<super::super::allocation_transfer::KeyedCollectionOperationResult> {
         let call = self
             .calls()
-            .iter()
             .find(|call| call.kind == CallKind::New && CallSite::from(call.span) == site)
             .cloned()?;
         let selection = self
@@ -1964,7 +2053,6 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     ) -> Option<LocalValueResult> {
         let call = self
             .calls()
-            .iter()
             .find(|call| call.kind == CallKind::New && CallSite::from(call.span) == site)?
             .clone();
         let selection = self
@@ -2081,7 +2169,6 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         };
         let call = self
             .calls()
-            .iter()
             .find(|call| call.kind == kind && call.span == span)?
             .clone();
         let selection = match invocation {
@@ -2108,7 +2195,6 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         span: Span,
     ) -> Option<(Values, LocalValueResult)> {
         self.calls()
-            .iter()
             .find(|call| call.kind == CallKind::AccessorCalleeLookup && call.span == span)?;
         let summary = self
             .executor
@@ -2504,6 +2590,24 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             self.refuse_activation_value(frame);
             return None;
         }
+        if matches!(self.scope, LocalExecutionScope::Construction(_))
+            && matches!(creation, DeferredCallableCreation::Arrow(_))
+            && body.implicit_capture
+        {
+            // Application captures do not yet carry the lexical receiver.
+            // Retain it in conservative reach rather than silently dropping it.
+            self.fallback(
+                frame,
+                frame.this_values.clone().unwrap_or_default(),
+                ExecutionPrecisionLossReason::UnsupportedOperation {
+                    operation: ExecutionOperation::OpaqueExecution,
+                    ordered_field_read_refusal: None,
+                    ordered_call_admission_refusal: None,
+                },
+                self.executor.inputs.index.callable_spans[&callable],
+            );
+            return None;
+        }
         let captures = self.executor.closure_captures(callable, &frame.environment);
         let values = Values::from([AbstractValue::Closure(callable, captures)]);
         frame.inputs.extend(values.iter().cloned());
@@ -2764,6 +2868,23 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                     })
                     .flatten()
                 })
+                .or_else(|| {
+                    if values.len() != 1 {
+                        return None;
+                    }
+                    let AbstractValue::Value(Value::Alloc(Kind::Class, class)) = values.first()?
+                    else {
+                        return None;
+                    };
+                    (self.executor.inputs.index.class_bindings.get(class) == Some(binding))
+                        .then(|| {
+                            CallableSelection::observed(
+                                &values,
+                                self.executor.boxed_settled_prefix_dependencies(),
+                            )
+                        })
+                        .flatten()
+                })
         } else if initialized_cell {
             self.executor.state.lexical_cells[captured_cell.expect("checked cell").0]
                 .selection
@@ -2813,7 +2934,6 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 .collect();
             let call = self
                 .calls()
-                .iter()
                 .find(|call| call.kind == kind && call.span == span)
                 .expect("a source-covered call has its canonical call record");
             let caller = self.executor.local_body_identity_for_call(call)?;
@@ -2878,7 +2998,6 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         // transporting the operands selected by the ordered kernel.
         let call = self
             .calls()
-            .iter()
             .find(|call| call.kind == kind && call.span == span)
             .expect("a source-covered call has its canonical call record")
             .clone();
@@ -2961,6 +3080,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                     Some(LocalOperation::Return(Some(LocalExpression::Call(call)), _)) if call.span == span
                 ),
                 LocalExecutionScope::Root => self.body.terminal_call_root() == Some(span),
+                LocalExecutionScope::Construction(_) => false,
             };
             if complete
                 || (retained
@@ -3065,7 +3185,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             self.executor.inputs.flow.is_declared(id)
                 || self.executor.inputs.shadowed.contains(id.0.as_ref())
         })?;
-        self.calls().iter().find(|call| {
+        self.calls().find(|call| {
             call.kind == CallKind::LocalMemberRead
                 && call.span == span
                 && matches!(&call.callee,
@@ -3147,7 +3267,6 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         );
         let lookup = self
             .calls()
-            .iter()
             .find(|call| call.kind == CallKind::AccessorCalleeLookup && call.span == span);
         let call = match lookup {
             Some(lookup)
@@ -3263,6 +3382,10 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 key,
                 owner: self.executor.inputs.index.callables[&key].owner,
             },
+            LocalExecutionScope::Construction(class) => LocalBodyIdentity::Construction {
+                class,
+                owner: self.owner,
+            },
             LocalExecutionScope::Root => match &self.outcome.root_effect_identity {
                 Some(identity) => identity.body_identity(),
                 None => return false,
@@ -3279,7 +3402,6 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         };
         let skipped: Vec<_> = self
             .calls()
-            .iter()
             .filter(|call| {
                 matches!(call.kind, CallKind::Call | CallKind::New)
                     && region.lo <= call.span.lo
@@ -5127,7 +5249,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         let state = &mut *self.state;
         super::super::allocation_transfer::LiteralHeap {
             properties: &mut state.prefix_object_properties,
-            private_properties: None,
+            private_properties: Some(&mut state.prefix_private_properties),
             arrays: &mut state.dense_arrays,
             revision: &mut state.prefix_revision,
             writable_prefix: Some(&mut state.writable_prefix),
@@ -7563,6 +7685,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             }
                         }
                     }
+                    if let Some(slots) = self.state.prefix_private_properties.get(object) {
+                        for (slot, values) in slots {
+                            for value in values {
+                                visit(value, StoredReferenceEdge::PrivateSlot(slot));
+                            }
+                        }
+                    }
                     if let Some(accessors) = self.state.applied_accessors.get(object) {
                         for (property, accessor) in accessors {
                             for getter in &accessor.getter {
@@ -9164,11 +9293,21 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         &mut self,
         key: u32,
         args: &[Values],
-    ) -> Result<(Outcome, AbstractValue), ConstructionRejection> {
+        selections: &[Option<CallableSelection>],
+    ) -> Result<Outcome, ConstructionRejection> {
         let result = self.request(RuntimeOperation::Model(
             super::runtime_models::ModelOperation::ConstructLocalClass {
                 key,
-                arguments: args.to_vec(),
+                arguments: args
+                    .iter()
+                    .cloned()
+                    .enumerate()
+                    .map(|(index, values)| SelectedValue {
+                        values,
+                        selection: selections.get(index).cloned().flatten(),
+                        postcondition: None,
+                    })
+                    .collect(),
             },
         ));
         let RuntimeValue::Model(super::runtime_models::ModelResult::LocalClassConstruction(result)) =
@@ -9182,8 +9321,12 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     pub(super) fn construct_local_class_transfer(
         &mut self,
         key: u32,
-        args: &[Values],
-    ) -> Result<(Outcome, AbstractValue), ConstructionRejection> {
+        arguments: &[SelectedValue],
+    ) -> Result<Outcome, ConstructionRejection> {
+        let args: Vec<_> = arguments
+            .iter()
+            .map(|argument| argument.values.clone())
+            .collect();
         let constructor = self.eligible_local_constructor(key, args.len())?.clone();
         if self.inputs.export_reentry_enabled {
             let exported: Values = self
@@ -9265,21 +9408,193 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 _ => None,
             })
             .collect();
-        let outcome = constructor.key.map_or_else(
-            || Outcome {
-                complete: true,
-                ..Outcome::default()
-            },
-            |constructor_key| self.invoke(constructor_key, args.to_vec(), None, true),
-        );
+        let mut outcome = if let Some(body) = self.inputs.index.class_provider_bodies.get(&key) {
+            self.execute_local_constructor(body, arguments.to_vec())
+        } else {
+            // Unsupported canonical lowering is selected before any operation.
+            // Keep its established conservative route; never replay a partially
+            // executed constructor through the compatibility interpreter.
+            constructor.key.map_or_else(
+                || Outcome {
+                    complete: true,
+                    ..Outcome::default()
+                },
+                |constructor_key| self.invoke(constructor_key, args.clone(), None, true),
+            )
+        };
         self.state.checked_constructor_inputs = previous_inputs;
-        let values: Values = args.iter().flatten().cloned().collect();
+        let mut values: Values = args.iter().flatten().cloned().collect();
+        if let Some(properties) = self.state.prefix_object_properties.get(&key) {
+            values.extend(properties.values().flatten().cloned());
+        }
+        if let Some(slots) = self.state.prefix_private_properties.get(&key) {
+            values.extend(slots.values().flatten().cloned());
+        }
         let instance = AbstractValue::Instance(
             key,
             self.intern_callback_set(values),
             InstanceOrigin::Constructed,
         );
-        Ok((outcome, instance))
+        let abrupt = outcome
+            .returns
+            .contains(&AbstractValue::Value(Value::Unavailable));
+        let normal = outcome.thrown.is_none()
+            && (!outcome.complete
+                || outcome.returns.is_empty()
+                || outcome
+                    .returns
+                    .iter()
+                    .any(|value| *value != AbstractValue::Value(Value::Unavailable)));
+        outcome.returns.clear();
+        if normal {
+            outcome.returns.insert(instance);
+        }
+        if abrupt || !outcome.complete {
+            outcome
+                .returns
+                .insert(AbstractValue::Value(Value::Unavailable));
+        }
+        outcome.return_selection = None;
+        Ok(outcome)
+    }
+
+    fn execute_local_constructor(
+        &mut self,
+        body: &ClassConstructorBody,
+        arguments: Vec<SelectedValue>,
+    ) -> Outcome {
+        let class = body.class;
+        let owner = self.inputs.flow.callable_source_unit[&Value::Alloc(Kind::Class, class)];
+        let active = ActiveInvocation {
+            callable: class,
+            top_owner: self.state.current_top_owner,
+        };
+        if self.state.active.contains(&active)
+            || self.state.invocation_depth >= MAX_SYNCHRONOUS_INVOCATION_DEPTH
+            || self.state.invocation_count >= MAX_SYNCHRONOUS_INVOCATIONS
+        {
+            let reason = if self.state.active.contains(&active) {
+                ExecutionPrecisionLossReason::RecursiveInvocation
+            } else if self.state.invocation_depth >= MAX_SYNCHRONOUS_INVOCATION_DEPTH {
+                ExecutionPrecisionLossReason::InvocationDepthLimit {
+                    limit: MAX_SYNCHRONOUS_INVOCATION_DEPTH,
+                }
+            } else {
+                ExecutionPrecisionLossReason::InvocationExpansionLimit {
+                    limit: MAX_SYNCHRONOUS_INVOCATIONS,
+                }
+            };
+            let args: Vec<_> = arguments
+                .iter()
+                .map(|argument| argument.values.clone())
+                .collect();
+            let mut outcome = self.bounded_invocation_fallback(BoundedInvocationFallbackRequest {
+                owner,
+                reach: self.construction_reach(class, &args),
+                arguments: args,
+                captured: Context::new(),
+                reason,
+                span: body.span,
+                diagnostics: BoundedInvocationFallbackDiagnostics::default(),
+            });
+            self.promote_class_members(class, &mut outcome);
+            return outcome;
+        }
+        self.state.active.insert(active);
+        self.state.invocation_depth += 1;
+        self.state.invocation_count += 1;
+        let previous_construction = self.state.active_construction.replace(class);
+        let previous_cells = std::mem::take(&mut self.state.active_cells);
+        self.record_executed_owner(owner);
+        for key in body.callables.iter() {
+            self.state.statement_invoked_callables.insert(*key);
+            self.activate_native_effects(owner, Some(*key));
+        }
+        let mut frame = LocalFrame::constructor(body);
+        frame.inputs.extend(
+            arguments
+                .iter()
+                .flat_map(|argument| argument.values.iter())
+                .cloned(),
+        );
+        frame.borrowed_records = self.reachable_objects(&frame.inputs);
+        let mut outcome = Outcome {
+            complete: true,
+            body_invoked: true,
+            ..Outcome::default()
+        };
+        outcome.executed_owners.insert(owner);
+        let coverage = local_transfer::execute_constructor(
+            &mut LocalExecutionContext {
+                executor: self,
+                outcome: &mut outcome,
+                owner,
+                scope: LocalExecutionScope::Construction(class),
+                body: &body.initializers,
+                retained_query: None,
+            },
+            body,
+            arguments,
+            &mut frame,
+        );
+        if let Some(coverage) = coverage {
+            outcome.effect_coverage = coverage.effects;
+            let expected = body
+                .callables
+                .iter()
+                .flat_map(|key| self.inputs.index.callables[key].calls.iter())
+                .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
+                .map(|call| (call.span.lo.0, call.span.hi.0))
+                .collect();
+            if !outcome
+                .effect_coverage
+                .has_call_inventory(&LocalBodyIdentity::Construction { class, owner }, &expected)
+            {
+                outcome.effect_coverage.uncertain_completion();
+            }
+        } else {
+            // A failed kernel has already performed its prefix. Preserve its
+            // actual effects and reach the unexecuted fields/body conservatively.
+            // No compatibility retry and no complete-effect receipt follow.
+            let mut context = LocalExecutionContext {
+                executor: self,
+                outcome: &mut outcome,
+                owner,
+                scope: LocalExecutionScope::Construction(class),
+                body: &body.constructor,
+                retained_query: None,
+            };
+            context.fallback(
+                &frame,
+                frame.this_values.clone().unwrap_or_default(),
+                ExecutionPrecisionLossReason::UnsupportedOperation {
+                    operation: ExecutionOperation::OpaqueExecution,
+                    ordered_field_read_refusal: None,
+                    ordered_call_admission_refusal: None,
+                },
+                body.span,
+            );
+            context
+                .executor
+                .promote_class_members(class, context.outcome);
+            outcome.effect_coverage = EffectCoverageFragment::default();
+        }
+        outcome.returns.extend(frame.returns);
+        outcome.thrown = frame.thrown;
+        if outcome.thrown.is_some() {
+            outcome
+                .returns
+                .insert(AbstractValue::Value(Value::Unavailable));
+        }
+        if !outcome.complete || outcome.unknown_call {
+            let cells: Vec<_> = self.state.active_cells.values().copied().collect();
+            self.havoc_cells(cells);
+        }
+        self.state.active_cells = previous_cells;
+        self.state.active_construction = previous_construction;
+        self.state.active.remove(&active);
+        self.state.invocation_depth -= 1;
+        outcome
     }
 
     /// The foreign wrapper can invoke its captured callbacks and any values
@@ -10160,6 +10475,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             prefix_revision: state.prefix_revision,
             reachability_revision: state.reachability.revision,
             prefix_object_properties: state.prefix_object_properties.clone(),
+            prefix_private_properties: state.prefix_private_properties.clone(),
             dense_arrays: state.dense_arrays.clone(),
             primitive_arrays: state.primitive_arrays.clone(),
             accumulated_values: state.accumulated_values.clone(),
@@ -10987,6 +11303,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     }
 
     fn local_body_identity_for_call(&self, call: &Call) -> Option<LocalBodyIdentity> {
+        if let Some(class) = self.state.active_construction
+            && call.caller.is_some_and(|caller| {
+                self.inputs.index.class_provider_bodies[&class]
+                    .callables
+                    .contains(&caller)
+            })
+        {
+            return Some(LocalBodyIdentity::Construction {
+                class,
+                owner: call.owner,
+            });
+        }
         match call.caller {
             Some(key) => {
                 let callable = self.inputs.index.callables.get(&key)?;
@@ -11094,12 +11422,31 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         })
     }
 
+    fn ordered_local_construction(&self, call: &Call) -> bool {
+        if call.kind != CallKind::New || call.has_spread {
+            return false;
+        }
+        let ValueExpr::Binding(binding) = &call.callee else {
+            return false;
+        };
+        self.inputs
+            .index
+            .class_bindings
+            .iter()
+            .any(|(class, actual)| {
+                actual == binding
+                    && self.inputs.index.local_constructors.contains_key(class)
+                    && self.inputs.index.class_provider_bodies.contains_key(class)
+            })
+    }
+
     fn ordered_constructions_have_transfer(&self, calls: &[Call]) -> bool {
         calls
             .iter()
             .filter(|call| call.kind == CallKind::New)
             .all(|call| {
                 self.ordered_native_constructor_selection(call).is_some()
+                    || self.ordered_local_construction(call)
                     || (!call.has_spread && self.ordered_foreign_call(call.kind, &call.callee))
             })
     }
@@ -11118,7 +11465,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     return true;
                 }
                 if call.kind == CallKind::New {
-                    return false;
+                    return self.ordered_local_construction(call);
                 }
                 let (targets, member) = match &call.callee {
                     ValueExpr::Alloc(Kind::Function, key) if !call.has_spread => (
@@ -11352,9 +11699,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             for target in targets {
                 match target {
                     AbstractValue::Value(Value::Alloc(Kind::Class, key)) => {
-                        if let Ok((_, instance)) = self.construct_local_class(key, &evaluated_args)
-                        {
-                            results.insert(instance);
+                        if let Ok(nested) = self.construct_local_class(key, &evaluated_args, &[]) {
+                            results.extend(nested.returns);
                         } else {
                             // Re-evaluation may lose the private instance proof after
                             // constructor execution taints one of its inputs. Keep the
@@ -12036,6 +12382,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 root_effect_identity.expect("root execution carries its exact source identity"),
             ),
             LocalExecutionScope::Callable(_) => None,
+            LocalExecutionScope::Construction(_) => {
+                unreachable!("constructors use execute_constructor")
+            }
         };
         let mut outcome = Outcome {
             complete: true,
@@ -12087,6 +12436,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     },
                     self.inputs.index.callables[&key].calls.as_slice(),
                 ),
+                LocalExecutionScope::Construction(_) => {
+                    unreachable!("constructors use execute_constructor")
+                }
                 LocalExecutionScope::Root => (
                     outcome
                         .root_effect_identity
@@ -13694,7 +14046,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // Publication can change properties and captured state, but cannot
             // replace an ordinary source function's [[Call]]. Invocation reads
             // live capture cells and retains their existing havoc/heap guards.
-            let local_target = self.local_call_target(&targets).is_some();
+            let local_target = if call.kind == CallKind::New {
+                targets.len() == 1
+                    && matches!(
+                        targets.first(),
+                        Some(AbstractValue::Value(Value::Alloc(Kind::Class, _)))
+                    )
+            } else {
+                self.local_call_target(&targets).is_some()
+            };
             let abrupt = !targets.is_empty()
                 && targets.iter().all(|target| {
                     matches!(
@@ -14029,10 +14389,38 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     let constructed = if call.has_spread {
                         Err(ConstructionRejection::SpreadArguments)
                     } else {
-                        self.construct_local_class(key, &args)
+                        self.construct_local_class(key, &args, &argument_selections)
                     };
                     match constructed {
-                        Ok((mut nested, _)) => {
+                        Ok(mut nested) => {
+                            if needs_value {
+                                result_values.extend(nested.returns.iter().cloned());
+                            }
+                            if single_target
+                                && let Some(selection) = &selected_value
+                                && selection.matches(&Values::from([AbstractValue::Value(
+                                    Value::Alloc(Kind::Class, key),
+                                )]))
+                                && !operands_may_throw
+                                && !call.has_spread
+                                && let Some(caller) = self.local_body_identity_for_call(call)
+                            {
+                                let mut prerequisites = self.boxed_settled_prefix_dependencies();
+                                prerequisites.extend(&selection.dependencies);
+                                let mut effects = nested.effect_coverage.clone();
+                                effects.depend_on(&prerequisites);
+                                effects.selected_local_call(LocalCallReceipt {
+                                    caller,
+                                    call_span: call.span,
+                                    target: LocalBodyIdentity::Construction {
+                                        class: key,
+                                        owner: self.inputs.flow.callable_source_unit
+                                            [&Value::Alloc(Kind::Class, key)],
+                                    },
+                                    dependencies: prerequisites,
+                                });
+                                outcome.effect_coverage = effects;
+                            }
                             self.apply_rebind_effects(&nested);
                             outcome.absorb_call_effects(
                                 &mut nested.effects,
@@ -15207,6 +15595,8 @@ pub(crate) fn annotate_synchronous_calls(
         top_env: Context::new(),
         top_captures: Context::new(),
         prefix_object_properties: OrdMap::new(),
+        prefix_private_properties: OrdMap::new(),
+        active_construction: None,
         writable_prefix: OrdMap::new(),
         own_descriptor_maps: OrdMap::new(),
         applied_accessors: OrdMap::new(),

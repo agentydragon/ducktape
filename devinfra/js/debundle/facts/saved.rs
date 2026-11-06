@@ -105,7 +105,15 @@ enum SavedEffectCell {
     GlobalSymbolRegistry,
     ObjectShape(u32),
     DescriptorMapContents(u32),
-    OwnProperty { origin: u32, property: String },
+    OwnProperty {
+        origin: u32,
+        property: String,
+    },
+    PrivateSlot {
+        origin: u32,
+        class: u32,
+        name: String,
+    },
 }
 
 impl SavedEffectCell {
@@ -123,6 +131,15 @@ impl SavedEffectCell {
                 origin: *origin,
                 property: property.clone(),
             },
+            EffectCell::PrivateSlot {
+                origin,
+                class,
+                name,
+            } => Self::PrivateSlot {
+                origin: *origin,
+                class: *class,
+                name: name.clone(),
+            },
         })
     }
 
@@ -137,6 +154,15 @@ impl SavedEffectCell {
             Self::ObjectShape(origin) => EffectCell::ObjectShape(origin),
             Self::DescriptorMapContents(origin) => EffectCell::DescriptorMapContents(origin),
             Self::OwnProperty { origin, property } => EffectCell::OwnProperty { origin, property },
+            Self::PrivateSlot {
+                origin,
+                class,
+                name,
+            } => EffectCell::PrivateSlot {
+                origin,
+                class,
+                name,
+            },
         })
     }
 }

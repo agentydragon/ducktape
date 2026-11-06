@@ -758,6 +758,10 @@ pub enum LexicalBindingEffectBody {
         key: u32,
         owner: SourceUnitOrdinal,
     },
+    Construction {
+        class: u32,
+        owner: SourceUnitOrdinal,
+    },
     ImportedCallable {
         defining_module: String,
         export: String,
@@ -956,6 +960,7 @@ pub enum BoundedInvocationFallbackPathEdge {
     DeferredCallbackRetainedValue,
     AuditedResultRetainedValue,
     DescriptorMapRetainedValue,
+    PrivateSlot { class: u32, name: String },
     EscapedCallbackPoolExpansion,
     ClassMembersCapability,
 }

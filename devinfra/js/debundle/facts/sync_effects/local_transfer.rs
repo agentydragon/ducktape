@@ -8,9 +8,9 @@ use super::array_transfer::ArrayPushSelection;
 use super::descriptor_transfer::NativeObjectPostcondition;
 use super::effect_coverage::{EffectCoverageFragment, NativeCalleeSelection};
 use super::local_operations::{
-    ClassConstructorBody, ClassFieldKey, DeferredCallableCreation, LocalArrayElement, LocalBinding,
-    LocalBody, LocalCall, LocalCallee, LocalExpression, LocalInvocation, LocalOperation,
-    LocalRegion,
+    ClassConstructorBody, ClassFieldKey, ConstructorPhase, DeferredCallableCreation,
+    LocalArrayElement, LocalBinding, LocalBody, LocalCall, LocalCallee, LocalExpression,
+    LocalInvocation, LocalOperation, LocalRegion,
 };
 use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataSlot};
 use super::property_inference::DescriptorAttributes;
@@ -45,7 +45,7 @@ pub(super) struct LocalFrame {
     pub(super) returns: Values,
     /// An actual source throw, separate from unknown abrupt/TDZ alternatives.
     pub(super) thrown: Option<Box<KnownThrow>>,
-    /// Set only by a checked constructor provider query. Other local calls do
+    /// Set only by checked base construction. Other local calls do
     /// not acquire a receiver just because their syntax mentions `this`.
     pub(super) this_values: Option<Values>,
     constructor_receiver: Option<ConstructorReceiver>,
@@ -111,7 +111,8 @@ impl CallableSelection {
         let target = values.first()?.clone();
         matches!(
             &target,
-            AbstractValue::Closure(..) | AbstractValue::Value(Value::Alloc(Kind::Function, _))
+            AbstractValue::Closure(..)
+                | AbstractValue::Value(Value::Alloc(Kind::Function | Kind::Class, _))
         )
         .then_some(Self {
             target,
@@ -207,6 +208,19 @@ pub(super) enum BindingOperation {
 }
 
 pub(super) trait LocalContext: OwnDataContext {
+    fn constructor_phase(&mut self, _phase: ConstructorPhase) {}
+    fn constructor_prefix_is_unexposed(&self, _class: u32) -> bool {
+        false
+    }
+    /// A fresh receiver with no own field still needs its actual prototype
+    /// chain proved absent at this assignment, after evaluating the RHS.
+    fn constructor_assignment_absence(
+        &mut self,
+        _class: u32,
+        _property: &str,
+    ) -> Option<ProofDependencies> {
+        None
+    }
     /// Select an exact intrinsic before arguments run. A missing selection
     /// keeps the ordinary binding/member transfer and conservative fallback.
     fn native_callee(
@@ -1381,10 +1395,17 @@ fn assign_field_expression(
 }
 
 fn constructor_receiver<'a>(
+    context: &impl LocalContext,
     frame: &'a mut LocalFrame,
     judgment: &AllocationJudgment,
 ) -> Option<&'a mut ConstructorReceiver> {
-    if !matches!(judgment, AllocationJudgment::CoveredAllocationOnly(_)) {
+    if !matches!(judgment, AllocationJudgment::CoveredAllocationOnly(_))
+        && !(frame
+            .constructor_receiver
+            .as_ref()
+            .is_some_and(|receiver| context.constructor_prefix_is_unexposed(receiver.class))
+            && frame.effect_coverage.closed_effect_dependencies().is_some())
+    {
         return None;
     }
     let receiver = frame.constructor_receiver.as_mut()?;
@@ -1413,7 +1434,7 @@ fn define_this_field_expression(
     {
         return None;
     }
-    let receiver = constructor_receiver(frame, judgment)?;
+    let receiver = constructor_receiver(context, frame, judgment)?;
     let object = receiver.class;
     match property {
         ClassFieldKey::Public(property) => {
@@ -1434,12 +1455,18 @@ fn define_this_field_expression(
             context
                 .heap()
                 .write_property(object, Some(property.clone()), &selected.values);
+            context.record_property_write(crate::facts::EffectCell::ObjectShape(object));
             context.record_property_write(crate::facts::EffectCell::OwnProperty {
                 origin: object,
                 property: property.clone(),
             });
         }
         ClassFieldKey::Private(property) => {
+            context.record_property_write(crate::facts::EffectCell::PrivateSlot {
+                origin: object,
+                class: object,
+                name: property.clone(),
+            });
             let property = PrivateFieldId {
                 class: object,
                 name: property.clone(),
@@ -1472,7 +1499,7 @@ fn assign_public_this_field_expression(
 ) -> Option<SelectedValue> {
     // Capture the receiver reference before the RHS. Resolve [[Set]]'s own
     // descriptor after the RHS using the same uninterrupted fresh prefix.
-    let object = constructor_receiver(frame, judgment)?.class;
+    let object = constructor_receiver(context, frame, judgment)?.class;
     let selected = expression(context, node, body, frame, judgment)?;
     if selected.values.is_empty() {
         return Some(selected);
@@ -1483,13 +1510,31 @@ fn assign_public_this_field_expression(
     {
         return None;
     }
-    let receiver = constructor_receiver(frame, judgment)?;
-    if receiver.class != object || receiver.public_fields.get(property)?.writable != Some(true) {
+    let receiver = constructor_receiver(context, frame, judgment)?;
+    if receiver.class != object {
         return None;
     }
-    // This descriptor came from an actual own data definition. A missing
-    // field, including a same-named private slot, cannot bypass [[Set]]'s
-    // prototype lookup or inherited setter behavior.
+    let existing = receiver.public_fields.get(property);
+    let absence = if existing.is_none() {
+        Some(context.constructor_assignment_absence(object, property)?)
+    } else {
+        None
+    };
+    if existing.is_some_and(|attributes| attributes.writable != Some(true)) {
+        return None;
+    }
+    if let Some(dependencies) = &absence {
+        receiver
+            .public_fields
+            .insert(property.to_owned(), DescriptorAttributes::literal(true));
+        let mut effects = EffectCoverageFragment::modeled_own_data_access();
+        effects.depend_on(dependencies);
+        frame.effect_coverage.compose(&effects);
+        context.record_property_write(crate::facts::EffectCell::ObjectShape(object));
+    }
+    // Existing fields use their actual own descriptor. A new field requires
+    // the separate whole-prototype absence proof above; a private slot alone
+    // cannot bypass [[Set]] or inherited setters.
     context
         .heap()
         .write_property(object, Some(property.to_owned()), &selected.values);
@@ -1521,7 +1566,7 @@ fn assign_private_this_field_expression(
     {
         return None;
     }
-    let receiver = constructor_receiver(frame, judgment)?;
+    let receiver = constructor_receiver(context, frame, judgment)?;
     let object = receiver.class;
     let property = PrivateFieldId {
         class: object,
@@ -1532,6 +1577,11 @@ fn assign_private_this_field_expression(
     if !receiver.private_fields.contains(&property) {
         return None;
     }
+    context.record_property_write(crate::facts::EffectCell::PrivateSlot {
+        origin: object,
+        class: property.class,
+        name: property.name.clone(),
+    });
     context
         .heap()
         .write_private_property(object, property, &selected.values)?;
@@ -1556,16 +1606,20 @@ pub(super) fn execute_constructor(
     {
         return None;
     }
+    context.constructor_phase(ConstructorPhase::Initializers);
     let initializers = execute(context, &body.initializers, frame)?;
-    if !matches!(
+    if (!matches!(
         initializers.allocation,
         AllocationJudgment::CoveredAllocationOnly(_)
-    ) || frame.returns != Values::from([AbstractValue::UNDEFINED])
+    ) && !(context.constructor_prefix_is_unexposed(body.class)
+        && initializers.effects.closed_effect_dependencies().is_some()))
+        || frame.returns != Values::from([AbstractValue::UNDEFINED])
     {
         return None;
     }
     frame.returns = Values::new();
     frame.parameter_inputs = Some(arguments);
+    context.constructor_phase(ConstructorPhase::Body);
     let mut result = execute(context, &body.constructor, frame)?;
     result.allocation.compose(&initializers.allocation);
     Some(result)
