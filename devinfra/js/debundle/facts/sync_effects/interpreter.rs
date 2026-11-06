@@ -2261,12 +2261,13 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 .get(binding)?;
             // An activation view of the immutable name cell contains the
             // original selected function, never a newly captured self cycle.
+            let selection = CallableSelection::observed(
+                values,
+                self.executor.boxed_settled_prefix_dependencies(),
+            );
             let cell = self.executor.state.lexical_cells.insert(LexicalCell {
                 values: values.clone(),
-                selection: CallableSelection::observed(
-                    values,
-                    self.executor.boxed_settled_prefix_dependencies(),
-                ),
+                selection,
                 kind: LocalBinding::NamedSelf(callable),
                 initialization: CellInitialization::Initialized,
             });
@@ -2281,7 +2282,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
                 .effects
                 .heap_contents
                 .allocations
-                .insert(addressed);
+                .insert(addressed.clone());
             self.outcome
                 .effects
                 .record_heap_write(addressed, self.executor.state.assumption.is_none());
