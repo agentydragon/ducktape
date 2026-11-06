@@ -1496,7 +1496,9 @@ py_library(
     srcs = ["workload_routes.py"],
     deps = [
         ":egress",
+        ":notifications",
         "//agentplane/egress:sidecar_config",
         "//agentplane/environment_runtime_transport:config",
+        "//cluster/cdk8s:service_ref",
     ],
 )
