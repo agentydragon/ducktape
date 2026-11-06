@@ -3084,6 +3084,15 @@ cycle for earlier effects. If the catchall is the only module, it keeps the
 whole statement sequence. Explicit anonymous claims keep their specified
 destination; the realizability gate rejects any remaining invalid order.
 
+Ownership subsets filter explicit plans only after the full joint selector and
+premise solve, duplicate checks, resolved anchors and anonymous claims. Residual
+routing runs afterwards for every omitted source unit under the configured
+inline, catchall, per-atomic or coarse policy. If an explicit module at the
+catchall path is omitted, ordinary catchall routing recreates that destination
+without the omitted claim's names or annotations. Empty selections are valid;
+the resulting ordinary assignment still needs to pass the gate and acceptance
+is not monotone under removing claims.
+
 The dependency graph is the explicit replacement for hidden closure. It
 records the fine-grained "this source unit uses that source unit" relation before
 any module-level quotienting. Diagnostics are projections of that

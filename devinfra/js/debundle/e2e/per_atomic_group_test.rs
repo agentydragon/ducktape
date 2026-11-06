@@ -226,83 +226,236 @@ fn empty_ownership_subset_routes_all_claims_to_generated_atomic_groups() {
 
 #[test]
 fn ownership_subset_keeps_full_spec_selector_duplicate_and_premise_guards() {
-    let subset = write_subset(r#"{"modules":[{"chunk":"static/app","module":"features/public"}]}"#);
-    let subset_path = subset.path().to_str().unwrap();
+    for mode in subset_modes() {
+        let subset =
+            write_subset(r#"{"modules":[{"chunk":"static/app","module":"features/public"}]}"#);
+        let subset_path = subset.path().to_str().unwrap();
 
-    let invalid_selector = FixtureOpts::new(
-        SUBSET_SOURCE,
-        vec![
-            logical_module(
-                "features/public",
-                &[Member::renamed("publicName", "originalName")],
-            ),
-            logical_module(
-                "features/omitted",
-                &[Member::source_alpha("missing", "const missing = 9;")],
-            ),
-        ],
-    )
-    .with_unassigned_mode(unassigned_mode_per_atomic_group());
-    let rejected = run_rejection_fixture_without_graphs_with_args(
-        invalid_selector,
-        &["--ownership-subset", subset_path],
-        1,
-    );
-    assert!(rejected.stderr.contains("selector"), "{}", rejected.stderr);
+        let invalid_selector = FixtureOpts::new(
+            SUBSET_SOURCE,
+            vec![
+                logical_module(
+                    "features/public",
+                    &[Member::renamed("publicName", "originalName")],
+                ),
+                logical_module(
+                    "features/omitted",
+                    &[Member::source_alpha("missing", "const missing = 9;")],
+                ),
+            ],
+        )
+        .with_unassigned_mode(mode.clone());
+        let rejected = run_rejection_fixture_without_graphs_with_args(
+            invalid_selector,
+            &["--ownership-subset", subset_path],
+            1,
+        );
+        assert!(rejected.stderr.contains("selector"), "{}", rejected.stderr);
 
-    let duplicate_claim = FixtureOpts::new(
-        SUBSET_SOURCE,
-        vec![
-            logical_module("features/public", &[Member::new("originalName")]),
-            logical_module("features/duplicate", &[Member::new("originalName")]),
-        ],
-    )
-    .with_unassigned_mode(unassigned_mode_per_atomic_group());
-    let rejected = run_rejection_fixture_without_graphs_with_args(
-        duplicate_claim,
-        &["--ownership-subset", subset_path],
-        1,
-    );
-    assert!(rejected.stderr.contains("duplicate"), "{}", rejected.stderr);
+        let duplicate_claim = FixtureOpts::new(
+            SUBSET_SOURCE,
+            vec![
+                logical_module("features/public", &[Member::new("originalName")]),
+                logical_module("features/duplicate", &[Member::new("originalName")]),
+            ],
+        )
+        .with_unassigned_mode(mode.clone());
+        let rejected = run_rejection_fixture_without_graphs_with_args(
+            duplicate_claim,
+            &["--ownership-subset", subset_path],
+            1,
+        );
+        assert!(rejected.stderr.contains("duplicate"), "{}", rejected.stderr);
 
-    let premise =
-        serde_yaml::from_str("intrinsics_never_written:\n  families: [Map]\n  note: audited\n")
-            .unwrap();
-    let contradiction = FixtureOpts::new(
+        let premise =
+            serde_yaml::from_str("intrinsics_never_written:\n  families: [Map]\n  note: audited\n")
+                .unwrap();
+        let contradiction = FixtureOpts::new(
         "function patch(value) { Map.prototype.extra = value; }\nexport const originalName = 1;\n",
         vec![logical_module(
             "features/public",
             &[Member::renamed("publicName", "originalName")],
         )],
     )
-    .with_unassigned_mode(unassigned_mode_per_atomic_group())
+    .with_unassigned_mode(mode.clone())
     .with_program_premises(premise);
-    let rejected = run_rejection_fixture_without_graphs_with_args(
-        contradiction,
-        &["--ownership-subset", subset_path],
-        1,
-    );
-    assert!(
-        rejected.stderr.contains("intrinsics_never_written")
-            && rejected.stderr.contains("exact objects"),
-        "{}",
-        rejected.stderr
-    );
+        let rejected = run_rejection_fixture_without_graphs_with_args(
+            contradiction,
+            &["--ownership-subset", subset_path],
+            1,
+        );
+        assert!(
+            rejected.stderr.contains("intrinsics_never_written")
+                && rejected.stderr.contains("exact objects"),
+            "{}",
+            rejected.stderr
+        );
+    }
+}
+
+fn subset_modes() -> [spec::UnassignedMode; 4] {
+    [
+        unassigned_mode_inline(),
+        unassigned_mode_catchall_file(None),
+        unassigned_mode_per_atomic_group(),
+        unassigned_mode_coarse_atomic_groups(),
+    ]
 }
 
 #[test]
-fn ownership_subset_still_rejects_catchall_file() {
-    let subset = write_subset(r#"{"modules":[{"chunk":"static/app","module":"features/public"}]}"#);
-    let subset_path = subset.path().to_str().unwrap();
+fn empty_and_retained_subsets_use_every_normal_residual_policy() {
+    for mode in subset_modes() {
+        for selected in [false, true] {
+            let subset = write_subset(if selected {
+                r#"{"modules":[{"chunk":"static/app","module":"features/public"}]}"#
+            } else {
+                r#"{"modules":[]}"#
+            });
+            let fixture = run_fixture_without_graphs_with_args(
+                subset_spec().with_unassigned_mode(mode.clone()),
+                &["--ownership-subset", subset.path().to_str().unwrap()],
+            );
+            assert_preserved_entry_output(&fixture, "before,residual,after\n");
+            assert!(
+                !fixture
+                    .out_root
+                    .join("static/app/modules/features/omitted.js")
+                    .exists()
+            );
+            if selected {
+                assert_module_exports(
+                    &fixture.out_root,
+                    "static/app/modules/features/public.js",
+                    &["publicName"],
+                    &["originalName"],
+                );
+            } else {
+                assert!(
+                    !fixture
+                        .out_root
+                        .join("static/app/modules/features/public.js")
+                        .exists()
+                );
+            }
+            if matches!(mode, spec::UnassignedMode::CatchallFile { .. }) {
+                assert_module_source(
+                    &fixture.out_root,
+                    "static/app/modules/residual/unhandled.js",
+                    &["const omitted", "let carried"],
+                    &[],
+                );
+                assert_module_source(
+                    &fixture.out_root,
+                    "static/app/modules/residual/unhandled.js",
+                    &["let carried", "carried ="],
+                    &[],
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn omitting_an_explicit_catchall_claim_recreates_only_residual_ownership() {
+    for selected in ["features/public", "residual/unhandled", ""] {
+        let subset = write_subset(&if selected.is_empty() {
+            r#"{"modules":[]}"#.to_string()
+        } else {
+            format!(r#"{{"modules":[{{"chunk":"static/app","module":"{selected}"}}]}}"#)
+        });
+        let fixture = run_fixture_without_graphs_with_args(
+            FixtureOpts::new(
+                "export const first = 1;\nexport const omitted = 2;\nconsole.log(first, omitted);\n",
+                vec![logical_module("features/public", &[Member::new("first")]), logical_module("residual/unhandled", &[Member::renamed("renamed", "omitted")])],
+            ).with_unassigned_mode(unassigned_mode_catchall_file(None)),
+            &["--ownership-subset", subset.path().to_str().unwrap()],
+        );
+        assert_preserved_entry_output(&fixture, "1 2\n");
+        let (expected, excluded) = if selected == "residual/unhandled" {
+            ("renamed", "omitted")
+        } else {
+            ("omitted", "renamed")
+        };
+        assert_module_source(
+            &fixture.out_root,
+            "static/app/modules/residual/unhandled.js",
+            &[&format!("const {expected}")],
+            &[&format!("const {excluded}")],
+        );
+    }
+}
+
+#[test]
+fn subset_retains_full_context_cross_claim_anchors_imports_and_anonymous_claims() {
+    for mode in subset_modes() {
+        for retain_import in [false, true] {
+            let subset = write_subset(if retain_import {
+                r#"{"modules":[{"chunk":"static/app","module":"features/run"},{"chunk":"static/app","module":"features/provider"}]}"#
+            } else {
+                r#"{"modules":[{"chunk":"static/app","module":"features/run"}]}"#
+            });
+            let fixture = run_fixture_without_graphs_with_args(
+            FixtureOpts::new(
+                "import { seed } from './peer.js';\nfunction base(value) { return value + seed; }\nfunction wrapper(value) { return base(value); }\nconsole.log(wrapper(1));\nexport { wrapper };\n",
+                vec![
+                    logical_module("features/anchor", &[Member::source_alpha("anchor", "function $fn($value) { return $value + seed; }")]),
+                    logical_module("features/provider", &[Member::renamed_with_kind("providerSeed", "seed", Some("import_specifier"))]),
+                    logical_module_with_anon("features/run", &[Member::cross_ref_references("run", "anchor", Some("function_declaration"))], &["console.log(wrapper(1));"]),
+                ],
+            ).with_extra_chunks(&[("static/peer", "export const seed = 41;\n")]).with_unassigned_mode(mode.clone()),
+            &["--ownership-subset", subset.path().to_str().unwrap()],
+        );
+            assert_preserved_entry_output(&fixture, "42\n");
+            assert_module_source(
+                &fixture.out_root,
+                "static/app/modules/features/run.js",
+                &["function run", "console.log"],
+                &["function wrapper"],
+            );
+            assert!(
+                !fixture
+                    .out_root
+                    .join("static/app/modules/features/anchor.js")
+                    .exists()
+            );
+            if retain_import {
+                assert_module_exports(
+                    &fixture.out_root,
+                    "static/app/modules/features/provider.js",
+                    &["providerSeed"],
+                    &["seed"],
+                );
+            } else {
+                assert!(
+                    !fixture
+                        .out_root
+                        .join("static/app/modules/features/provider.js")
+                        .exists()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn catchall_subset_still_rejects_a_real_nonmonotone_assignment_cycle() {
+    let options = || {
+        FixtureOpts::new(
+        "const first = console.log('first');\nconst middle = console.log('middle');\nconst last = console.log('last');\n",
+        vec![logical_module("first", &[Member::new("first")]), logical_module("middle", &[Member::new("middle")]), logical_module("last", &[Member::new("last")])],
+    ).with_unassigned_mode(unassigned_mode_catchall_file(None))
+    };
+    let full = run_fixture(options());
+    assert_preserved_entry_output(&full, "first\nmiddle\nlast\n");
+    let subset = write_subset(r#"{"modules":[{"chunk":"static/app","module":"middle"}]}"#);
     let rejected = run_rejection_fixture_without_graphs_with_args(
-        subset_spec().with_unassigned_mode(unassigned_mode_catchall_file(None)),
-        &["--ownership-subset", subset_path],
+        options(),
+        &["--ownership-subset", subset.path().to_str().unwrap()],
         1,
     );
     assert!(
-        rejected
-            .stderr
-            .contains("inline_in_entry, per_atomic_group, or coarse_atomic_groups"),
+        rejected.stderr.contains("unrealizable")
+            || rejected.stderr.contains("atomic-group conflict"),
         "{}",
         rejected.stderr
     );
