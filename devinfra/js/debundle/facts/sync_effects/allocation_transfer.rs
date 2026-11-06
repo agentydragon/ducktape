@@ -10,7 +10,7 @@ use super::value_model::{
 };
 use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use crate::facts::abstract_domain::builtins::{
-    ArgSel, IntrinsicOp, Invocation, NativeBodyEffects, Return, Row, Throws,
+    ArgSel, IntrinsicOp, Invocation, Mutation, NativeBodyEffects, Return, Row, Throws,
 };
 use crate::facts::abstract_domain::effect::CoerceOp;
 use crate::facts::abstract_domain::integrity::IntrinsicSlot;
@@ -174,6 +174,52 @@ pub(super) fn primitive_native_call_effects(
             return None;
         }
     }
+    let mut effects = EffectCoverageFragment::no_effects();
+    effects.depend_on(dependencies);
+    Some(effects)
+}
+
+/// The original FinalizationRegistry NewTarget has an immutable own data
+/// prototype. Its constructor writes only fresh internal slots and records a
+/// callback, without invoking it (ECMA-262 26.2.1.1 / 26.2.2.1).
+pub(super) fn retained_callback_constructor_kind(row: &Row) -> Option<Kind> {
+    (row.op == IntrinsicOp::FinalizationRegistry
+        && row.family() == Some(NativeIntrinsic::FinalizationRegistry)
+        && row.invocation == [Invocation::Construct]
+        && row.arity == (1..=1)
+        && row.requires == [IntrinsicSlot::Global(NativeIntrinsic::FinalizationRegistry)]
+        && row.coerces.is_empty()
+        && row.invokes.is_empty()
+        && row.allocates == Some(Kind::Registry)
+        && row.mutates == [Mutation::FreshRetains(ArgSel::Arg(0))]
+        && row.returns == Return::Fresh
+        && row.throws == Throws::UnlessCallable(ArgSel::Arg(0)))
+    .then_some(Kind::Registry)
+}
+
+pub(super) fn retained_callback_constructor_effects(
+    row: &Row,
+    arguments: &[Values],
+    dependencies: &ProofDependencies,
+) -> Option<EffectCoverageFragment> {
+    retained_callback_constructor_kind(row)?;
+    let [callbacks] = arguments else {
+        return None;
+    };
+    if callbacks.len() != 1
+        || !matches!(
+            callbacks.first()?,
+            AbstractValue::Closure(..) | AbstractValue::Value(Value::Alloc(Kind::Function, _))
+        )
+    {
+        return None;
+    }
+    // IsCallable cannot throw for this actual source function. The default
+    // HostMakeJobCallback and HTML's operation only capture execution metadata
+    // in the fresh hidden record. The ordinary callback establishes its own
+    // script context when invoked; builtin eval is not an admitted operand.
+    // This scoped proof neither changes the table's general host-effect flag
+    // nor supplies a result shape or discards the retained callback graph.
     let mut effects = EffectCoverageFragment::no_effects();
     effects.depend_on(dependencies);
     Some(effects)

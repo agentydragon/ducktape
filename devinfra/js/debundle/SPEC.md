@@ -1028,6 +1028,19 @@ separately modeled effect cell; its identity becomes available only at the
 binding write, and later observations remain opaque or need their own existing
 proof. Existing direct-NewTarget and fixed-prototype boundaries still apply.
 
+Ordered native construction also covers the exact original
+`FinalizationRegistry` constructor with one known ordinary source function or
+closure. A checked shared operation proves the row's exact construction,
+callability, fresh internal state and callback retention. Callee selection and
+each operand still supply their own effects. The constructor's immutable own
+prototype data property excludes NewTarget getter dispatch. Host callback
+metadata is captured only in the fresh hidden record; an ordinary source
+callback establishes its own script context on later invocation. The result
+remains opaque and retains callback reachability. This grants no prototype,
+property or method proof and does not certify builtin `eval`, unknown operands,
+spreads, subclass construction or a replaced constructor. The general native
+body-effect flag stays unknown; only this checked operation supplies coverage.
+
 The same root-owner certificate admits a direct zero-argument
 `new TextEncoder()` when its exact Construct/Unknown/Never row is selected with
 no coercions, writes, invocations, or mutations. Identity must come from the

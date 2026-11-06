@@ -10849,7 +10849,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                             .any(|element| element.spread.is_some())
                     })
             );
-        if !empty && !set_array {
+        let retained_callback =
+            super::super::allocation_transfer::retained_callback_constructor_kind(row).is_some();
+        if !empty && !set_array && !retained_callback {
             return None;
         }
         Some(NativeCalleeSelection {
@@ -12573,6 +12575,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 )
             {
                 effects
+            } else if call.kind == CallKind::New
+                && let Some(effects) =
+                    super::super::allocation_transfer::retained_callback_constructor_effects(
+                        resolution.row,
+                        args,
+                        &dependencies,
+                    )
+            {
+                effects
             } else {
                 return CallTransfer::UnsupportedOperands(
                     OrderedCallAdmissionRefusal::UnsupportedNativeOperation,
@@ -12586,12 +12597,20 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             effects.selected_local_call(LocalCallReceipt {
                 caller,
                 call_span: call.span,
-                target: LocalBodyIdentity::Native {
-                    intrinsic: resolution
-                        .row
-                        .family()
-                        .expect("a selected intrinsic belongs to its native census"),
-                    property: resolution.row.op.callee().1.map(str::to_owned),
+                target: match call.kind {
+                    CallKind::New => LocalBodyIdentity::NativeConstruction {
+                        intrinsic: resolution
+                            .row
+                            .family()
+                            .expect("selected native constructor"),
+                    },
+                    _ => LocalBodyIdentity::Native {
+                        intrinsic: resolution
+                            .row
+                            .family()
+                            .expect("a selected intrinsic belongs to its native census"),
+                        property: resolution.row.op.callee().1.map(str::to_owned),
+                    },
                 },
                 dependencies: Box::new(dependencies),
             });
