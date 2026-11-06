@@ -1,14 +1,8 @@
 # BuildBuddy KVM executors
 
-The `buildbuddy-executor` HelmRelease configures pool `wyrm2-kvm`, disabled with
-zero replicas. Helm reconciliation remains enabled so the replica count is applied;
-suspending the HelmRelease alone would leave the executor running. When enabled, OCI actions
-receive `/dev/kvm` through BuildBuddy's OCI device configuration. Its
-`child_cgroups_enabled` setting keeps action processes in a child cgroup of the
-Kubernetes container's resource-limited cgroup. The pinned executor image
-starts under Tini; both releases set `child_cgroups_move_tini` so BuildBuddy
-moves Tini and the executor into the executor child cgroup before delegating
-controllers to the task cgroup.
+KVM checks and Agentplane's accelerated VM scenarios use the VM-isolated `kvm-vm`
+pool. The standard pod executor uses the separate
+[`cluster-oci` pool](../docs/cluster_execution.md) and exposes no KVM device.
 
 The separate `buildbuddy-vm-driver` HelmRelease advertises
 `wyrm2-vm-tests`, requests one KVM device on `wyrm2`, and enables only
@@ -27,16 +21,10 @@ is suspended. Add the driver's HelmRelease to that check when activating it.
 The driver's cache is capped at 8 GB; its 30 GiB ephemeral-storage limit is a
 kubelet eviction threshold, rather than a filesystem quota.
 
-This smoke test checks that the selected executor can open `/dev/kvm`, reports
+The `kvm_vm_test` smoke test checks that the selected executor can open `/dev/kvm`, reports
 KVM API version 12, and creates a VM and vCPU. It logs `CapEff` from
 `/proc/self/status` for executor diagnostics. It does not run guest code or
 verify Firecracker.
-
-From the repository root, run it after enabling the `wyrm2-kvm` executor:
-
-```bash
-bbr test //devinfra/buildbuddy/kvm:kvm_test --nocache_test_results
-```
 
 ## Agentplane VM system-test lane
 

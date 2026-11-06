@@ -1,8 +1,19 @@
 # gazelle:exclude ci
 # gazelle:exclude x
 
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+bool_flag(
+    name = "cluster_tests",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "cluster_tests_enabled",
+    flag_values = {":cluster_tests": "true"},
+)
 
 py_library(
     name = "bbr",
@@ -13,6 +24,17 @@ py_library(
 py_test(
     name = "test_bbr",
     srcs = ["test_bbr.py"],
+    exec_properties = select({
+        ":cluster_tests_enabled": {
+            "test.EstimatedComputeUnits": "1",
+            "test.Pool": "cluster-oci",
+            "test.init-dockerd": "false",
+            "test.recycle-runner": "false",
+            "test.use-self-hosted-executors": "true",
+            "test.workload-isolation-type": "oci",
+        },
+        "//conditions:default": {},
+    }),
     deps = [
         ":bbr",
         "//:conftest",
