@@ -17,7 +17,7 @@ from cnpg_database_crds.io.cnpg.postgresql import (
 from constructs import Construct
 
 from cluster.cdk8s.cnpg import backup, cluster
-from cluster.cdk8s.providers.cluster.database import Database
+from cluster.cdk8s.providers.cnpg.database import Database
 
 NAMESPACE = "haku-console"
 POSTGRES = cluster.PostgresRef.generated(name="haku-console-db", namespace=NAMESPACE)

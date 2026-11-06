@@ -46,7 +46,7 @@ from cluster.cdk8s.flux import (
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cluster.database import Database
+from cluster.cdk8s.providers.cnpg.database import Database
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/mcp-oauth-state"
