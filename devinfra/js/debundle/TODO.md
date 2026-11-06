@@ -332,6 +332,49 @@ Open usability and scripting-safety findings from exercising the documented
 workflows against a real spec; resolved items are deleted. Corpus-specific
 paths and source-unit IDs belong in the consuming repo.
 
+### Workflow and iteration follow-ups
+
+- **W1 — Execute commands from a verified snapshot context.** Reuse the current
+  snapshot manifest to supply the engine, graph, matching spec, selector lookup
+  root, physical input root and package relocations for queries and edits. Avoid
+  rebuilding those flags in each worker. Record argv and cwd before dispatch,
+  then stdout, stderr and terminal status, including setup failures. Preserve
+  provenance refusals and explicit regeneration; add no legacy manifest support.
+  A relocated synthetic snapshot should support a normal query through this
+  entry point, and stale inputs must still fail.
+- **W2 — Make cheap preflight the routine path.** Resolve selectors with their
+  complete chunk context, including joint anchors and non-owning names, before
+  a whole-spec assignment replay. Reuse the source-only validation mode where
+  it supplies that context; close any missing tree/global-context support.
+  Include a deleted-anchor example caught before full analysis. Use bounded
+  `describe` output first; the concise explain mode below covers missing compact
+  diagnostics. Review runtime observations for the intended positive path:
+  equal empty results do not establish that a parser or transition ran.
+- **W3 — Give new agents a short working recipe.** Update the orchestrator skill
+  and shared workflow with a discoverable path from the project adapter and a
+  passing baseline through one useful increment, cheap selector checks, the
+  normal gate, emitted-code review and relevant runtime/canonical validation.
+  Keep detailed mechanics in linked references and retain one current-state
+  handoff. Correct the CLI environment example that points
+  `DEBUNDLE_SOURCE_ROOT` at emitted `app/`: source lookup must use the captured
+  input required by the graph contract. Keep private audits and concrete specs
+  in [gaffer-private](https://github.com/agentydragon/gaffer-private).
+- **W4 — Avoid unrelated rebuilds and unnecessary full graphs.** Investigate
+  chunk-scoped selector/projection reuse and runtime-fixture invalidation so an
+  ownership edit does not regenerate independent whole-program fixtures.
+  Preserve explicit cross-chunk dependencies and source/spec/engine identities.
+  Use ordinary reports for assignment and acceptance probes; request complete
+  graph sidecars when the operation needs them. Check the combined canonical
+  result and relevant runtime behavior after reuse. Coordinate the implementation
+  with the existing incremental/codegen work in <perf/proposer.md>.
+- **W5 — Reduce cached-emission and graph-export memory.** Analysis reuse still
+  leaves large action peaks in these later stages. Identify duplicate retained
+  representations and unnecessary lifetimes, then remove a demonstrated source
+  of retention. Use matching-input RBE per-action peaks to check the change;
+  use a real profiler when needed to choose the implementation. Preserve facts,
+  ordering, emitted behavior and report completeness. Improve the existing
+  stages without adding a parallel artifact format or compatibility path.
+
 ### Planner CLI follow-ups
 
 - **Diagnostics toggle for `modules propose`.** `--limit` now bounds
