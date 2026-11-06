@@ -101,6 +101,43 @@ console.log(later);
 }
 
 #[test]
+fn normal_sequel_reads_the_stored_value_after_an_incomplete_initializer() {
+    let fixture = run_fixture(split_fixture(
+        r#"const prefix = new globalThis.Date();
+const dynamic = ((object) => {
+  object[(object.key = 0)] = "value";
+  return 1;
+})({});
+const later = dynamic;
+console.log(later);
+"#,
+    ));
+    assert_preserved_entry_output(&fixture, "1\n");
+    assert_eq!(
+        binding_execution_report(&fixture, "dynamic")["complete"],
+        false
+    );
+    assert_eq!(
+        binding_execution_report(&fixture, "later")["complete"],
+        true
+    );
+}
+
+#[test]
+fn throw_only_initializer_does_not_supply_a_normal_stored_value() {
+    let fixture = run_fixture(FixtureOpts::new(
+        "const dynamic = (() => { throw new TypeError('stopped'); })(); const later = dynamic; console.log(later);\n",
+        vec![],
+    ));
+    assert_preserved_entry_error(&fixture, "TypeError");
+    let later = binding_execution_report(&fixture, "later");
+    assert_ne!(
+        later["binding_effect_authority"]["authority"], "operation_receipt",
+        "a throw-only initializer cannot certify its sequel: {later:#}"
+    );
+}
+
+#[test]
 fn exported_hoisted_function_is_reachable_before_its_declaration() {
     assert_split_rejected_with_peer(
         r#"import "./peer.js";

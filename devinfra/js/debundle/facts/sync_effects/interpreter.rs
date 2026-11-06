@@ -15695,7 +15695,16 @@ impl Executor<'_, '_> {
                                     )
                             })
                 });
-                (result.values, selection)
+                // This declaration is reached only on the module's normal
+                // continuation. Unavailable denotes an abrupt alternative of
+                // the initializer, not a value that can be stored in its
+                // lexical cell. Keep the initializer's incomplete outcome and
+                // retain Unavailable when it has no normal result at all.
+                let mut values = result.values;
+                if values.len() > 1 {
+                    values.remove(&AbstractValue::Value(Value::Unavailable));
+                }
+                (values, selection)
             } else if let Some(source) = initializer_source {
                 let RuntimeValue::Initializer {
                     values,
