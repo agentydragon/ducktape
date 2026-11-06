@@ -11,11 +11,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use analysis::analysis_inputs::{
-    ArgumentInputEvidence, ArgumentInputRef, CallableSummary, NativeInputKind, NativeIntegrity,
-    NativeOperationInputEvidence, NativeOperationInputRef, NativeOperationSelectorProvenance,
-    NoAccessorInstallRef, ResolvedArgumentInput, ResolvedBindingValueInput,
-    ResolvedNativeOperationInput, ResolvedNoAccessorInstall, SelectedBindingValueInput,
-    SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
+    ArgumentInputEvidence, ArgumentInputRef, CallableSummary, ImportedPrimitiveRead,
+    NativeInputKind, NativeIntegrity, NativeOperationInputEvidence, NativeOperationInputRef,
+    NativeOperationSelectorProvenance, NoAccessorInstallRef, PrimitiveExportCell,
+    ResolvedArgumentInput, ResolvedBindingValueInput, ResolvedNativeOperationInput,
+    ResolvedNoAccessorInstall, SelectedBindingValueInput, SelectedNativeOperationInput,
+    ValueInputEvidence, ValueInputRef,
 };
 use analysis::cross_module_purity::{
     CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedImport,
@@ -25,13 +26,16 @@ use analysis::cross_module_purity::{
     resolve_asserted_no_reentry_callbacks, resolve_asserted_no_reentry_members,
     resolve_asserted_no_reentry_record_members, resolve_asserted_pure_new_bindings,
     resolve_asserted_retained_callback_constructors, resolve_asserted_retained_callback_factories,
-    resolve_asserted_retained_callback_factory_members, resolve_export_values,
+    resolve_asserted_retained_callback_factory_members, resolve_export_primitives,
     resolve_imported_callable_summaries, resolve_imported_purities,
 };
 use analysis::facts::abstract_domain::value::Value;
 use analysis::purity::Purity;
 use anyhow::{Context, Result, bail, ensure};
-use artifact::reports::{ExportAliasRecord, ImportRecord, ImportSpecifierKind};
+use artifact::reports::{
+    ExportAliasRecord, ImportRecord, ImportSpecifierKind, StaticModuleRequest,
+    StaticModuleRequestMode,
+};
 use artifact::{ArtifactIndexes, ChunkBundle};
 use graph_provenance::GraphProvenance;
 use js_ast::ParsedJsModule;
@@ -76,6 +80,7 @@ pub struct ReparsedEntry {
     imports: Vec<ImportRecord>,
     export_aliases: Vec<ExportAliasRecord>,
     stable_export_values: BTreeMap<String, StableExportValue>,
+    static_requests: Vec<StaticModuleRequest>,
 }
 
 /// Program-wide analysis summaries, keyed by source chunk name.
@@ -84,6 +89,9 @@ pub struct ProgramSummary {
     pub bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,
     /// Per-chunk imported-binding values (`AnalysisInputs::imported_values`).
     pub values: BTreeMap<String, BTreeMap<String, Value>>,
+    /// Per-chunk imported primitive read capabilities with source-cell
+    /// provenance and a resolved provider closure excluding the importer.
+    pub primitive_reads: BTreeMap<String, BTreeMap<String, ImportedPrimitiveRead>>,
     /// Per-chunk pure-member sets for imported namespace-like bindings,
     /// merged into `AnalysisAssumptions::declared_pure_members`.
     pub members: BTreeMap<String, BTreeMap<String, BTreeSet<String>>>,
@@ -191,6 +199,102 @@ fn resolved_target_is_entry(
         .is_some_and(|chunk| chunk.analysis.entry_file == target.target_file)
 }
 
+struct ResolvedStaticDependencies {
+    targets: BTreeMap<String, BTreeSet<String>>,
+    ordinary_requests: BTreeMap<String, BTreeSet<(String, String)>>,
+    complete_modules: BTreeSet<String>,
+}
+
+fn resolved_static_dependency_graph(
+    artifact: &ChunkBundle,
+    indexes: &ArtifactIndexes,
+    requests: &BTreeMap<String, (ChunkId, String, Vec<StaticModuleRequest>)>,
+    analyzed_modules: &BTreeSet<String>,
+) -> ResolvedStaticDependencies {
+    let mut dependencies = BTreeMap::new();
+    let mut ordinary_dependencies = BTreeMap::new();
+    let mut complete_modules = BTreeSet::new();
+    for (module, (chunk, entry_file, module_requests)) in requests {
+        let mut module_dependencies = BTreeSet::new();
+        let mut module_ordinary_dependencies = BTreeSet::new();
+        let mut is_complete = true;
+        for request in module_requests {
+            if request.mode != StaticModuleRequestMode::OrdinaryEsm {
+                is_complete = false;
+            }
+            let Some(target) = indexes.resolve_runtime_import_reference(
+                &request.specifier,
+                *chunk,
+                entry_file,
+                &artifact.chunk_table,
+            ) else {
+                is_complete = false;
+                continue;
+            };
+            if !resolved_target_is_entry(artifact, &target) {
+                is_complete = false;
+                continue;
+            }
+            let target_module = artifact
+                .chunk_table
+                .name(target.target_chunk_id)
+                .to_string();
+            module_dependencies.insert(target_module.clone());
+            if request.mode == StaticModuleRequestMode::OrdinaryEsm {
+                module_ordinary_dependencies
+                    .insert((request.specifier.clone(), target_module.clone()));
+            }
+            if artifact.find_chunk(target.target_chunk_id).is_none()
+                || !analyzed_modules.contains(&target_module)
+            {
+                is_complete = false;
+            }
+        }
+        dependencies.insert(module.clone(), module_dependencies);
+        ordinary_dependencies.insert(module.clone(), module_ordinary_dependencies);
+        if is_complete {
+            complete_modules.insert(module.clone());
+        }
+    }
+    ResolvedStaticDependencies {
+        targets: dependencies,
+        ordinary_requests: ordinary_dependencies,
+        complete_modules,
+    }
+}
+
+fn resolved_closure_precedes_importer(
+    importer: &str,
+    provider: &str,
+    source_specifier: &str,
+    dependencies: &ResolvedStaticDependencies,
+) -> Option<BTreeSet<String>> {
+    if !dependencies
+        .ordinary_requests
+        .get(importer)
+        .is_some_and(|requests| {
+            requests.contains(&(source_specifier.to_string(), provider.to_string()))
+        })
+    {
+        return None;
+    }
+    let mut pending = vec![provider.to_string()];
+    let mut visited = BTreeSet::new();
+    while let Some(module) = pending.pop() {
+        if module == importer {
+            return None;
+        }
+        if !visited.insert(module.clone()) {
+            continue;
+        }
+        if !dependencies.complete_modules.contains(&module) {
+            return None;
+        }
+        pending.extend(dependencies.targets.get(&module)?.iter().cloned());
+    }
+    Some(visited)
+}
+
 /// Inputs that affect program-summary construction.
 pub struct ProgramSummaryOptions<'a> {
     pub graph_provenance: Option<&'a GraphProvenance>,
@@ -234,6 +338,7 @@ pub fn reparse_unretained_entries(
                         imports: analysis.imports,
                         export_aliases: analysis.export_aliases,
                         stable_export_values: analysis.runtime_facts.stable_export_values,
+                        static_requests: analysis.runtime_facts.static_requests,
                     },
                 );
             }
@@ -271,6 +376,8 @@ pub fn collect_program_summary(
     let mut local_export_values =
         BTreeMap::<(String, String), (PrimKinds, BTreeSet<String>)>::new();
     let mut export_value_sources = BTreeMap::<(String, String), ExportValueSource>::new();
+    let mut static_requests =
+        BTreeMap::<String, (ChunkId, String, Vec<StaticModuleRequest>)>::new();
     for chunk_artifact in &artifact.chunks {
         if !chunk_allowed(chunk_artifact.chunk_id, chunk_filter) {
             continue;
@@ -299,11 +406,23 @@ pub fn collect_program_summary(
             Some(entry) => &entry.stable_export_values,
             None => &chunk_artifact.analysis.runtime_facts.stable_export_values,
         };
+        let module_static_requests = match reparsed.get(&chunk_artifact.chunk_id) {
+            Some(entry) => &entry.static_requests,
+            None => &chunk_artifact.analysis.runtime_facts.static_requests,
+        };
+        static_requests.insert(
+            chunk_name.to_string(),
+            (
+                chunk_artifact.chunk_id,
+                entry_file.clone(),
+                module_static_requests.clone(),
+            ),
+        );
         for (export, value) in stable_export_values {
             let key = (chunk_name.to_string(), export.clone());
             let (source, imported_export) = match value {
                 StableExportValue::Local { kinds, imports } => {
-                    local_export_values.insert(key, (*kinds, imports.clone()));
+                    local_export_values.insert(key.clone(), (*kinds, imports.clone()));
                     continue;
                 }
                 StableExportValue::ReExport { source, export } => (source, export),
@@ -331,7 +450,9 @@ pub fn collect_program_summary(
                             .name(target.target_chunk_id)
                             .to_string(),
                         export: imported_export.clone(),
+                        source_specifier: source.clone(),
                     }],
+                    cell: None,
                 },
             );
         }
@@ -370,6 +491,7 @@ pub fn collect_program_summary(
                     ResolvedImport {
                         module: target_chunk_name.to_string(),
                         export,
+                        source_specifier: import.source.clone(),
                     },
                 );
             }
@@ -424,10 +546,70 @@ pub fn collect_program_summary(
             .map(|local| module.imports.get(local).cloned())
             .collect();
         if let Some(copies) = copies {
-            export_value_sources.insert((chunk, export), ExportValueSource { kinds, copies });
+            export_value_sources.insert(
+                (chunk.clone(), export.clone()),
+                ExportValueSource {
+                    kinds,
+                    copies,
+                    cell: Some(PrimitiveExportCell {
+                        module: chunk,
+                        export,
+                    }),
+                },
+            );
         }
     }
-    let export_values = resolve_export_values(export_value_sources);
+    let export_primitives = resolve_export_primitives(export_value_sources);
+    let export_values: BTreeMap<_, _> = export_primitives
+        .iter()
+        .map(|(export, primitive)| (export.clone(), Value::Prim(primitive.kinds)))
+        .collect();
+    let static_dependencies = resolved_static_dependency_graph(
+        artifact,
+        indexes,
+        &static_requests,
+        &modules.keys().cloned().collect(),
+    );
+    let primitive_reads = modules
+        .iter()
+        .map(|(importer, module)| {
+            let reads = module
+                .imports
+                .iter()
+                .filter_map(|(local, target)| {
+                    let primitive =
+                        export_primitives.get(&(target.module.clone(), target.export.clone()))?;
+                    if primitive.kinds.is_empty() || primitive.source_cells.is_empty() {
+                        return None;
+                    }
+                    let dependency_closure = resolved_closure_precedes_importer(
+                        importer,
+                        &target.module,
+                        &target.source_specifier,
+                        &static_dependencies,
+                    )?;
+                    if !primitive.source_cells.iter().all(|cell| {
+                        dependency_closure.contains(&cell.module)
+                            && export_primitives
+                                .get(&(cell.module.clone(), cell.export.clone()))
+                                .is_some_and(|source| !source.kinds.is_empty())
+                    }) {
+                        return None;
+                    }
+                    Some((
+                        local.clone(),
+                        ImportedPrimitiveRead {
+                            kinds: primitive.kinds,
+                            provider_module: target.module.clone(),
+                            dependency_closure,
+                            source_cells: primitive.source_cells.clone(),
+                        },
+                    ))
+                })
+                .collect();
+            (importer.clone(), reads)
+        })
+        .collect();
     validate_analysis_source_sites(
         artifact,
         &projection.source_sites,
@@ -643,6 +825,7 @@ pub fn collect_program_summary(
             .iter()
             .map(|(name, module)| (name.clone(), module.imported_values(&export_values)))
             .collect(),
+        primitive_reads,
         bindings: resolve_imported_purities(&modules, &asserted_pure, &mut callable_summaries),
         members: resolve_asserted_member_purities(&modules, &asserted_members),
         fluent: resolve_asserted_fluent_bindings(&modules, &asserted_fluent),
@@ -1344,6 +1527,69 @@ mod tests {
             assert!(facts.has_cjs_interop);
             assert!(facts.has_own_cjs_export_surface);
             assert!(!facts.stable_export_values.contains_key("label"));
+        });
+    }
+
+    #[test]
+    fn imported_read_capability_requires_a_resolved_provider_closure_before_the_importer() {
+        js_ast::with_swc_globals(|| {
+            for (provider, expected_read) in [
+                ("export const limit = 2;", true),
+                ("import '../app/app.js'; export const limit = 2;", false),
+                ("import './missing.js'; export const limit = 2;", false),
+            ] {
+                let artifact = test_bundle(&[
+                    (
+                        "static/app",
+                        "import { limit as bytes } from '../peer/peer.js'; export const copied = bytes;",
+                    ),
+                    ("static/peer", provider),
+                ]);
+                let indexes = ArtifactIndexes::build(&artifact).expect("build indexes");
+                let no_options = BTreeMap::new();
+                let no_export_purity = BTreeMap::new();
+                let host_behavior = spec::HostBehavior::default();
+                let facts = collect_program_summary(
+                    &artifact,
+                    &indexes,
+                    &AnalysisProjection::new(
+                        &no_options,
+                        &no_export_purity,
+                        &host_behavior,
+                        None,
+                        BTreeMap::new(),
+                        analysis_projection::AnalysisSourceSites::default(),
+                        BTreeMap::new(),
+                    )
+                    .expect("empty projection is valid"),
+                    ProgramSummaryOptions {
+                        graph_provenance: None,
+                        replacement_packages: &BTreeMap::new(),
+                    },
+                    None,
+                    &reparse_unretained_entries(&artifact, None),
+                )
+                .expect("program summary analysis succeeds");
+                assert_eq!(
+                    facts.values["static/app"]["bytes"],
+                    Value::Prim(PrimKinds::NUMBER)
+                );
+                let read = facts.primitive_reads["static/app"].get("bytes");
+                assert_eq!(read.is_some(), expected_read, "{provider}");
+                if let Some(read) = read {
+                    assert_eq!(
+                        read.dependency_closure,
+                        BTreeSet::from(["static/peer".to_string()])
+                    );
+                    assert_eq!(
+                        read.source_cells,
+                        BTreeSet::from([PrimitiveExportCell {
+                            module: "static/peer".to_string(),
+                            export: "limit".to_string(),
+                        }])
+                    );
+                }
+            }
         });
     }
 

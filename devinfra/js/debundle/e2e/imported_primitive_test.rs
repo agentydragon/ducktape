@@ -23,7 +23,7 @@ fn split_modules() -> Vec<LogicalModuleEntry> {
     ]
 }
 
-fn assert_primitive(peer: &str, import: &str, expression: &str, expected: &str) {
+fn assert_primitive(peer: &str, import: &str, expression: &str, expected: &str) -> Fixture {
     let source = source(import, expression);
     let peers = [("static/peer", peer)];
     let fixture = run_fixture(FixtureOpts::new(&source, split_modules()).with_extra_chunks(&peers));
@@ -67,6 +67,78 @@ fn assert_primitive(peer: &str, import: &str, expression: &str, expected: &str) 
         "a coercion of non-throwing imported primitives is pure: {:?}",
         node.purity
     );
+    fixture
+}
+
+fn assert_imported_read_receipt(fixture: &Fixture, binding: &str) {
+    let graph = fixture.dependency_graph();
+    let node = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == source_unit_for_binding(&graph, binding))
+        .unwrap();
+    let execution = node
+        .synchronous_execution
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing execution report for {binding}: {node:#?}"));
+    assert!(execution.complete, "{execution:#?}");
+    let Some(analysis::reports::schema::BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+        execution.binding_effect_authority.as_ref()
+    else {
+        panic!("imported primitive read lacks an operation receipt: {execution:#?}");
+    };
+    assert_eq!(
+        receipt.binding.as_str(),
+        binding,
+        "receipt must identify the exact imported-value initializer: {receipt:#?}"
+    );
+}
+
+#[test]
+fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
+    let source = "import { limit as bytes } from './peer.js';\nconst before = 0;\nfunction read() { return bytes; }\nconst computed = read();\nconst after = 1;\nconsole.log(before, computed, after);\n";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("compute", &[Member::new("read"), Member::new("computed")]),
+                logical_module("anchors", &[Member::new("before"), Member::new("after")]),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
+    );
+    assert_preserved_entry_output(&fixture, "0 2 1\n");
+    let assessment = fixture.effect_translation_validation();
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "the primitive read must participate in an actual inversion: {assessment:#}"
+    );
+    let graph = fixture.dependency_graph();
+    let position = |binding| {
+        let unit = source_unit_for_binding(&graph, binding);
+        let ordinal = graph
+            .nodes
+            .iter()
+            .find(|node| node.id == unit)
+            .unwrap()
+            .statement_ordinal
+            .0;
+        assessment["emitted_order"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|row| row.as_u64() == Some(ordinal as u64))
+            .unwrap()
+    };
+    assert!(
+        position("computed") < position("before") || position("after") < position("computed"),
+        "the computed initializer must cross an executable anchor, beyond static linkage: {assessment:#}"
+    );
+    assert_imported_read_receipt(&fixture, "computed");
 }
 
 #[test]
@@ -457,6 +529,18 @@ fn object_branches_rebinding_accessors_and_unseeded_import_cycles_stay_unknown()
          export { result as limit };\n",
         "import { limit } from './bridge.js';\n\
          export const value = limit;\n",
+    );
+}
+
+#[test]
+fn stable_primitive_values_do_not_cover_cyclic_or_unresolved_provider_reads() {
+    assert_imported_chain_conservative(
+        "export { limit } from './provider.js';\n",
+        "import './app.js';\nexport const limit = 2;\n",
+    );
+    assert_imported_chain_conservative(
+        "export { limit } from './provider.js';\n",
+        "import './missing.js';\nexport const limit = 2;\n",
     );
 }
 
