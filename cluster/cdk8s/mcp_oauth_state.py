@@ -33,7 +33,8 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cnpg, cnpg_backup, namespaces
+from cluster.cdk8s import namespaces
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.external_secrets.kubernetes_store import cluster_secret_store
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.flux import (
@@ -50,7 +51,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/mcp-oauth-state"
 NAMESPACE = "mcp-oauth-state"
-DATABASE = cnpg.PostgresRef.generated(name="mcp-oauth-state-db", namespace=NAMESPACE)
+DATABASE = cluster.PostgresRef.generated(name="mcp-oauth-state-db", namespace=NAMESPACE)
 CONSUMER_SECRET = "mcp-oauth-db-credentials"
 
 
@@ -159,15 +160,15 @@ def _db_chart(app: App) -> Chart:
             url_key="uri",
         )
 
-    cnpg.cluster(
+    cluster.cluster(
         chart,
         "cluster",
         ref=DATABASE,
         annotations={"description": "Shared OVH-HA CNPG cluster for MCP OAuth state."},
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="5Gi",
         resize_in_use_volumes=False,
-        initdb=cnpg.same_owner_initdb("app"),
+        initdb=cluster.same_owner_initdb("app"),
         wal_archive=True,
         managed=ClusterSpecManaged(
             roles=[
@@ -182,7 +183,7 @@ def _db_chart(app: App) -> Chart:
             + [ClusterSpecManagedRoles(name=_RETIRED_PLAID_DB.role, ensure=ClusterSpecManagedRolesEnsure.ABSENT)]
         ),
     )
-    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
+    backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
 
     for store in STORES:
         Database(

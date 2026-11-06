@@ -30,7 +30,7 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecInstanceSelector,
 )
 
-from cluster.cdk8s import cnpg, cnpg_backup
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.grafana_dashboards import DashboardFile
@@ -60,7 +60,7 @@ _SERVICE = ServiceRef(
     pods=Pods(namespace=_NAMESPACE, labels=(("app", _NAME),)),
 )
 OUTPUT_DIR = f"{GENERATED_ROOT}/monitoring/grafana-instance"
-DATABASE = cnpg.PostgresRef(
+DATABASE = cluster.PostgresRef(
     name="grafana-db-ovh",
     namespace=_NAMESPACE,
     # The credentials CNPG generated for the retired `grafana-db`, which this cluster was cloned
@@ -83,11 +83,11 @@ DASHBOARDS = [_dashboard_file(name) for name in FILE_DASHBOARDS]
 
 
 def _database(chart: Chart) -> None:
-    cnpg.cluster(
+    cluster.cluster(
         chart,
         "database",
         ref=DATABASE,
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="4Gi",
         resize_in_use_volumes=False,
         # Created by pg_basebackup from the retired grafana-db, so this never initializes
@@ -95,10 +95,10 @@ def _database(chart: Chart) -> None:
         # exporter's default queries run against the database, and CNPG keeps the role's
         # password in sync with the Secret Grafana also authenticates with. Without it CNPG
         # defaults to `app`, which does not exist here.
-        initdb=cnpg.same_owner_initdb(_NAME, secret=DATABASE.app_secret),
+        initdb=cluster.same_owner_initdb(_NAME, secret=DATABASE.app_secret),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
+    backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
 
 
 def _secret_env(name: str, key: SecretKey) -> GrafanaSpecDeploymentSpecTemplateSpecContainersEnv:

@@ -138,11 +138,11 @@ py_library(
     name = "database",
     srcs = ["database.py"],
     deps = [
-        "//cluster/cdk8s:cnpg",
-        "//cluster/cdk8s:cnpg_backup",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s/cnpg:backup",
+        "//cluster/cdk8s/cnpg:cluster",
         "@pypi//cdk8s",
     ],
 )

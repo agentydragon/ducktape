@@ -16,7 +16,8 @@ from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import cilium, cnpg, cnpg_backup, namespaces, node_scheduling, pod_policy
+from cluster.cdk8s import cilium, namespaces, node_scheduling, pod_policy
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.gateway import https_route
@@ -32,7 +33,7 @@ NAME = "claude-session-sync"
 NAMESPACE = "claude-session-sync"
 OUTPUT_DIR = f"{GENERATED_ROOT}/claude-session-sync"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/claude-session-sync-image-pins"
-DATABASE = cnpg.PostgresRef.generated(name="claude-session-sync-db", namespace=NAMESPACE)
+DATABASE = cluster.PostgresRef.generated(name="claude-session-sync-db", namespace=NAMESPACE)
 # The tag comes from the Component in PINS_DIR.
 _IMAGE = "git.allegedly.works/ducktape-ci/claude-session-sync:unset"
 # tf/gitops/sso-providers/provider_claude_session_sync.tf spells the same origin as its redirect URI.
@@ -66,7 +67,7 @@ CONTROL_SERVICE = ServiceRef(
 
 
 def _database(chart: Chart) -> None:
-    cnpg.cluster(
+    cluster.cluster(
         chart,
         "database",
         ref=DATABASE,
@@ -76,16 +77,16 @@ def _database(chart: Chart) -> None:
                 "age out of Anthropic's API this may be the only copy."
             )
         },
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="40Gi",
         resize_in_use_volumes=False,
-        initdb=cnpg.same_owner_initdb("claude_sessions"),
+        initdb=cluster.same_owner_initdb("claude_sessions"),
         wal_archive=True,
         # Most of this Cluster's WAL is full-page images of the append-only events table.
         postgresql=ClusterSpecPostgresql(parameters={"wal_compression": "lz4"}),
     )
     # Every base backup holds the whole session history, so weekly loses nothing; WAL covers the days between.
-    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d", cadence=cnpg_backup.Cadence.WEEKLY)
+    backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d", cadence=backup.Cadence.WEEKLY)
 
 
 def _data_claim(chart: Chart) -> None:
@@ -278,7 +279,7 @@ def _network_policies(chart: Chart) -> None:
             cilium.dns_egress(resolves=["*"]),
             # auth.allegedly.works resolves to the Gateway's node addresses, which an FQDN rule cannot select.
             cilium.egress_via_gateway("auth.allegedly.works"),
-            EgressRule.to_endpoints({"k8s:cnpg.io/cluster": DATABASE.name}, cnpg.PORT.number),
+            EgressRule.to_endpoints({"k8s:cnpg.io/cluster": DATABASE.name}, cluster.PORT.number),
             CONTROL_SERVICE.egress(),
         ],
     )
@@ -297,7 +298,7 @@ def _network_policies(chart: Chart) -> None:
         egress=[
             cilium.dns_egress(resolves=["*"]),
             EgressRule.to_fqdns(*_ANTHROPIC_HOSTS),
-            EgressRule.to_endpoints({"k8s:cnpg.io/cluster": DATABASE.name}, cnpg.PORT.number),
+            EgressRule.to_endpoints({"k8s:cnpg.io/cluster": DATABASE.name}, cluster.PORT.number),
         ],
     )
 

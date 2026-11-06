@@ -23,7 +23,8 @@ from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCr
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCheckExprs, KustomizationSpecHealthChecks
 
 from agentplane.x.indexing.settings import Settings
-from cluster.cdk8s import cnpg, namespaces
+from cluster.cdk8s import namespaces
+from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -43,7 +44,7 @@ from util.settings_contract import env_name
 
 NAME = "agentplane-index"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
-DATABASE = cnpg.PostgresRef.generated(name=f"{NAME}-db", namespace=NAME)
+DATABASE = cluster.PostgresRef.generated(name=f"{NAME}-db", namespace=NAME)
 _DB_OWNER = "indexer"
 _READ_TOKEN = SecretRef(namespace=NAME, name=f"{NAME}-read-token").key("token")
 _HAKU_FORGEJO_GIT = SecretRef(namespace=NAME, name="haku-forgejo-git")
@@ -97,11 +98,11 @@ def _read_token(chart: Chart) -> None:
 
 def _database(chart: Chart) -> None:
     # No CnpgBackup: the index is disposable and rebuilds from the Git remotes and Ollama.
-    cnpg.cluster(
+    cluster.cluster(
         chart,
         "database-cluster",
         ref=DATABASE,
-        profile=cnpg.OVH_PIRAEUS_SSD,
+        profile=cluster.OVH_PIRAEUS_SSD,
         size="20Gi",
         initdb=ClusterSpecBootstrapInitdb(database="ducktape", owner=_DB_OWNER),
         wal_archive=False,

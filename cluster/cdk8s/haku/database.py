@@ -16,11 +16,11 @@ from cnpg_database_crds.io.cnpg.postgresql import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import cnpg, cnpg_backup
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.providers.cnpg.database import Database
 
 NAMESPACE = "haku-console"
-POSTGRES = cnpg.PostgresRef.generated(name="haku-console-db", namespace=NAMESPACE)
+POSTGRES = cluster.PostgresRef.generated(name="haku-console-db", namespace=NAMESPACE)
 DATABASE = "approval_store"
 
 
@@ -29,7 +29,7 @@ class Db(Construct):
 
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
-        cnpg.cluster(
+        cluster.cluster(
             self,
             "cluster",
             ref=POSTGRES,
@@ -39,13 +39,13 @@ class Db(Construct):
             # while ownership moves between them. Removing this Cluster is a deliberate
             # `kubectl delete`, never a manifest edit.
             annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
-            profile=cnpg.OVH_PIRAEUS_SSD,
+            profile=cluster.OVH_PIRAEUS_SSD,
             size="3Gi",
             resize_in_use_volumes=False,
-            initdb=cnpg.same_owner_initdb(DATABASE),
+            initdb=cluster.same_owner_initdb(DATABASE),
             wal_archive=True,
         )
-        cnpg_backup.CnpgBackup(self, "db-backup", ref=POSTGRES, retention="30d")
+        backup.CnpgBackup(self, "db-backup", ref=POSTGRES, retention="30d")
         # `vector`: the console's 0135 migration baseline creates a `halfvec` column on a fresh
         # database (0136 drops it), and the migration role cannot install the extension itself.
         # This Database adopts the one created by `bootstrap.initdb`, hence `retain`: with

@@ -23,14 +23,14 @@ Only these CNPG cluster profiles are permitted:
 **OVH-HA**: For services co-located with the SeaweedFS cluster on the OVH
 nodes. Two instances on separate nodes.
 
-**Placement** (callers choose a `cnpg.ClusterPlacement` preset): pod
+**Placement** (callers choose a `cluster.ClusterPlacement` preset): pod
 anti-affinity is `required` on `kubernetes.io/hostname` for every OVH Cluster,
-and the selected `cnpg.ClusterPlacement` profile carries the node pin, storage
+and the selected `cluster.ClusterPlacement` profile carries the node pin, storage
 class, and control-plane tolerance together. Callers select one of these named
 profiles rather than deriving scheduling eligibility from the storage-class
 string:
 
-- `cnpg.OVH_PIRAEUS_SSD`: `HIL_OVH`, `piraeus-ssd-local`, with a
+- `cluster.OVH_PIRAEUS_SSD`: `HIL_OVH`, `piraeus-ssd-local`, with a
   control-plane toleration.
 
 The Piraeus SSD profile allows scheduling onto the current OVH SSD pool nodes,

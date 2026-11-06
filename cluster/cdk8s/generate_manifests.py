@@ -22,7 +22,6 @@ from cluster.cdk8s import (
     buildbuddy_kvm_worker,
     claude_sandbox_secrets,
     claude_session_sync,
-    cnpg_operator,
     cpap_sync,
     crossplane,
     crossplane_forgejo_agentydragon,
@@ -124,6 +123,7 @@ from cluster.cdk8s.clickhouse import (
     operator as clickhouse_operator,
     schema as clickhouse_schema,
 )
+from cluster.cdk8s.cnpg import operator
 from cluster.cdk8s.dcgm_exporter import exporter as dcgm_exporter_exporter
 from cluster.cdk8s.external_secrets import (
     config as external_secrets_config,
@@ -583,9 +583,9 @@ def generate_manifests(root: Path) -> None:
         cert_manager_kustomization,
         kyverno_kustomization,
     )
-    cnpg_artifact = artifact("cnpg", cnpg_operator.OUTPUT_DIR)
-    cnpg_kustomization = cnpg_operator.cnpg(
-        flux_chart, write_directory(root, cnpg_artifact, cnpg_operator.chart), cert_manager_kustomization
+    cnpg_artifact = artifact("cnpg", operator.OUTPUT_DIR)
+    cnpg_kustomization = operator.cnpg(
+        flux_chart, write_directory(root, cnpg_artifact, operator.chart), cert_manager_kustomization
     )
     external_secrets_operator_artifact = artifact("external-secrets-operator", external_secrets_operator.OUTPUT_DIR)
     external_secrets_operator_kustomization = external_secrets_operator.external_secrets_operator(

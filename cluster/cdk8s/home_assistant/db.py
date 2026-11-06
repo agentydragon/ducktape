@@ -11,28 +11,28 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s import cnpg, cnpg_backup
+from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 _OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/home-assistant"
 # Home Assistant's recorder will read `uri` from this Cluster's generated `-app` Secret.
-DATABASE = cnpg.PostgresRef.generated(name="home-assistant-db", namespace="home-assistant")
+DATABASE = cluster.PostgresRef.generated(name="home-assistant-db", namespace="home-assistant")
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, DATABASE.name, disable_resource_name_hashes=True)
-    cnpg.cluster(
+    cluster.cluster(
         chart,
         "cluster",
         ref=DATABASE,
-        profile=cnpg.OPTIPLEX_PIRAEUS_SSD,
+        profile=cluster.OPTIPLEX_PIRAEUS_SSD,
         instances=1,
         size="10Gi",
-        initdb=cnpg.same_owner_initdb("homeassistant"),
+        initdb=cluster.same_owner_initdb("homeassistant"),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
+    backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
     return chart
 
 

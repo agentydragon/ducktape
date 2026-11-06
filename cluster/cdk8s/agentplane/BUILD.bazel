@@ -14,9 +14,9 @@ py_library(
     deps = [
         ":database",
         ":staging",
-        "//cluster/cdk8s:cnpg_backup",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s/cnpg:backup",
         "@pypi//cdk8s",
     ],
 )
@@ -73,7 +73,7 @@ py_library(
     srcs = ["database.py"],
     deps = [
         ":environment",
-        "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
@@ -821,7 +821,6 @@ py_library(
         "//agentplane/sandboxes/runtimeconfig:model_catalog",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:cilium",
-        "//cluster/cdk8s:cnpg",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:ha_mcp",
@@ -830,6 +829,7 @@ py_library(
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s/agentplane:model_selections",
+        "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",

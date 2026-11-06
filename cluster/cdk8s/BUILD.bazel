@@ -133,13 +133,13 @@ py_library(
     srcs = ["mcp_oauth_state.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        ":cnpg",
-        ":cnpg_backup",
         ":flux",
         ":generation",
         ":manifest_roots",
         ":namespaces",
         ":node_scheduling",
+        "//cluster/cdk8s/cnpg:backup",
+        "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/external_secrets:kubernetes_store",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/cnpg:cluster",
@@ -423,38 +423,6 @@ py_test(
 )
 
 py_library(
-    name = "cnpg",
-    srcs = ["cnpg.py"],
-    visibility = [
-        "//agentplane/system_tests/deployment:__pkg__",
-        "//cluster/cdk8s:__subpackages__",
-    ],
-    deps = [
-        ":node_scheduling",
-        ":secret_ref",
-        ":service_ref",
-        "//cluster/cdk8s/providers/cnpg:cluster",
-        "//cluster/cdk8s/providers/cnpg:cnpg_cluster",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
-    name = "cnpg_backup",
-    srcs = ["cnpg_backup.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        ":cnpg",
-        "//cluster/cdk8s/providers/cnpg:objectstore",
-        "//cluster/cdk8s/providers/cnpg:scheduledbackup",
-        "//cluster/cdk8s/seaweedfs:s3",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
     name = "api_resource",
     srcs = ["api_resource.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -535,8 +503,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":cilium",
-        ":cnpg",
-        ":cnpg_backup",
         ":flux",
         ":gateway",
         ":manifest_roots",
@@ -545,6 +511,8 @@ py_library(
         ":secret_ref",
         ":service_ref",
         ":session_backup",
+        "//cluster/cdk8s/cnpg:backup",
+        "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/flux:kustomization",
@@ -1242,8 +1210,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":artifact_generators",
-        ":cnpg",
-        ":cnpg_backup",
         ":flux",
         ":gateway",
         ":manifest_roots",
@@ -1253,6 +1219,8 @@ py_library(
         ":probes",
         ":secret_ref",
         ":service_ref",
+        "//cluster/cdk8s/cnpg:backup",
+        "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/external_secrets:kubernetes_store",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -1706,7 +1674,6 @@ py_library(
         ":vpa",
         ":website",
         "//agentplane/crds:generate",
-        "//cluster/cdk8s:cnpg_operator",
         "//cluster/cdk8s:ducktape_flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s/activitywatch:app",
@@ -1741,6 +1708,7 @@ py_library(
         "//cluster/cdk8s/clickhouse:installation",
         "//cluster/cdk8s/clickhouse:operator",
         "//cluster/cdk8s/clickhouse:schema",
+        "//cluster/cdk8s/cnpg:operator",
         "//cluster/cdk8s/dcgm_exporter:exporter",
         "//cluster/cdk8s/external_secrets:config",
         "//cluster/cdk8s/external_secrets:flux_kustomizations",
@@ -1874,8 +1842,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":cilium",
-        ":cnpg",
-        ":cnpg_backup",
         ":flux",
         ":gateway",
         ":manifest_roots",
@@ -1884,6 +1850,8 @@ py_library(
         ":pod_policy",
         ":secret_ref",
         ":service_ref",
+        "//cluster/cdk8s/cnpg:backup",
+        "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/cnpg:cluster",
@@ -1984,8 +1952,6 @@ py_library(
         "//cluster/cdk8s/gatus:__pkg__",
     ],
     deps = [
-        ":cnpg",
-        ":cnpg_backup",
         ":flux",
         ":gateway",
         ":helm",
@@ -1996,6 +1962,8 @@ py_library(
         ":service_ref",
         ":valkey",
         "//cluster/cdk8s/clickhouse:client",
+        "//cluster/cdk8s/cnpg:backup",
+        "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/seaweedfs:s3",
@@ -2119,22 +2087,6 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
-    ],
-)
-
-py_library(
-    name = "cnpg_operator",
-    srcs = ["cnpg_operator.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
-    deps = [
-        ":artifact_generators",
-        ":flux",
-        ":helm",
-        ":manifest_roots",
-        ":namespaces",
-        ":node_scheduling",
-        "//cluster/cdk8s/providers/flux:helmrelease",
-        "@pypi//cdk8s",
     ],
 )
 

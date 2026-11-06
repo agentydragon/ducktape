@@ -1,5 +1,5 @@
 """A CNPG Cluster's barman-cloud backups: the SeaweedFS bucket, the `ObjectStore` the Cluster's WAL
-archiver writes to (`cnpg.cluster(wal_archive=True)` names it after the Cluster), and the
+archiver writes to (`cluster.cluster(wal_archive=True)` names it after the Cluster), and the
 `ScheduledBackup` taking its base backups. The Cluster's own chart builds them, beside it."""
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from cnpg_scheduledbackup_crds.io.cnpg.postgresql import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import cnpg
+from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.seaweedfs import s3
 
 _S3_ENDPOINT = "http://seaweedfs-s3.seaweedfs.svc:8333"
@@ -46,7 +46,7 @@ class Cadence(StrEnum):
     WEEKLY = "weekly"
 
 
-def _schedule(ref: cnpg.PostgresRef, cadence: Cadence) -> str:
+def _schedule(ref: cluster.PostgresRef, cadence: Cadence) -> str:
     """A six-field cron (seconds first, UTC) at a minute of the window derived from a hash of `ref`,
     so the Clusters' base backups spread over the window instead of all reading their disks and
     writing to SeaweedFS at once; a weekly one also takes its day of the week from the hash. Stable
@@ -63,7 +63,7 @@ def _schedule(ref: cnpg.PostgresRef, cadence: Cadence) -> str:
 
 class CnpgBackup(Construct):
     """`ref`'s backups into a private SeaweedFS bucket `<namespace>-db-backups`: the ObjectStore
-    named `ref.name`, which `cnpg.cluster(wal_archive=True)` archives WAL to, and a `cadence`
+    named `ref.name`, which `cluster.cluster(wal_archive=True)` archives WAL to, and a `cadence`
     ScheduledBackup (`_schedule`). WAL is archived continuously, so any moment within `retention`
     (the ObjectStore's recovery window, `<n>d`, `<n>w` or `<n>m`) is a recovery point. Every base
     backup is a full copy, so storage grows with (backups in the window) x (DB size); a large DB
@@ -79,7 +79,7 @@ class CnpgBackup(Construct):
         scope: Construct,
         id: str,
         *,
-        ref: cnpg.PostgresRef,
+        ref: cluster.PostgresRef,
         retention: str,
         cadence: Cadence = Cadence.DAILY,
         secret_name: str | None = None,
@@ -133,6 +133,6 @@ class CnpgBackup(Construct):
                 backup_owner_reference=ScheduledBackupSpecBackupOwnerReference.SELF,
                 cluster=ScheduledBackupSpecCluster(name=ref.name),
                 method=ScheduledBackupSpecMethod.PLUGIN,
-                plugin_configuration=ScheduledBackupSpecPluginConfiguration(name=cnpg.BARMAN_PLUGIN),
+                plugin_configuration=ScheduledBackupSpecPluginConfiguration(name=cluster.BARMAN_PLUGIN),
             ),
         )
