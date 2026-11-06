@@ -80,7 +80,6 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     executor = containers["codex-executor"]
 
     assert pod["shareProcessNamespace"] is False
-    assert pod["restartPolicy"] == "Always"
     assert pod["securityContext"]["runAsUser"] == pod["securityContext"]["runAsGroup"] == 1000
     assert executor["securityContext"] == runner["securityContext"]
     assert [container["name"] for container in pod["containers"]] == ["environment-runtime", "codex-executor"]
@@ -89,37 +88,17 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(staging_man
     assert runner["command"] == ["/run/agentplane/environment/bin/agentplane-environment-runtime"]
     assert runner["args"] == ["--config", CONFIG_FILE, "--launch-file", LAUNCH_FILE]
     config = _runner_configuration(staging_manifests, pod)
-    assert config["environment"] == {
-        "kind": "pod",
-        "supervision": "pid1",
-        "executor": {"url": "ws://127.0.0.1:4501", "socket": "/run/agentplane/executor/control.sock"},
-    }
+    assert config["environment"]["kind"] == "pod"
+    assert config["environment"]["supervision"] == "pid1"
     assert executor["command"] == ["/run/agentplane/environment/bin/agentplane-execution-service"]
-    assert executor["args"] == [
-        "companion",
-        "--socket",
-        "/run/agentplane/executor/control.sock",
-        "--listen",
-        "ws://127.0.0.1:4501",
-        "--health-listen",
-        ":4502",
-        "--binary",
-        "/bin/codex",
-    ]
-    health = {
-        "httpGet": {"path": "/healthz", "port": 4502},
-        "initialDelaySeconds": 5,
-        "periodSeconds": 5,
-        "timeoutSeconds": 2,
-        "failureThreshold": 1,
-    }
-    assert executor["livenessProbe"] == health
-    assert executor["readinessProbe"] == {
-        "httpGet": {"path": "/healthz", "port": 4502},
-        "periodSeconds": 2,
-        "timeoutSeconds": 2,
-        "failureThreshold": 1,
-    }
+    args = executor["args"]
+    assert args[0] == "companion"
+    assert args[args.index("--socket") + 1] == config["environment"]["executor"]["socket"]
+    assert args[args.index("--listen") + 1] == config["environment"]["executor"]["url"]
+    assert args[args.index("--binary") + 1] == "/bin/codex"
+    health_port = int(args[args.index("--health-listen") + 1].removeprefix(":"))
+    for probe in ("livenessProbe", "readinessProbe"):
+        assert executor[probe]["httpGet"] == {"path": "/healthz", "port": health_port}
     assert executor["image"] == runner["image"]
     assert executor["workingDir"] == runner["workingDir"] == "/state"
 

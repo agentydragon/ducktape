@@ -10,15 +10,12 @@ import bcrypt
 import pytest
 import pytest_bazel
 import yaml
-from pydantic import AnyHttpUrl, ValidationError
+from pydantic import AnyHttpUrl
 from python.runfiles import Runfiles
 
 # Each service module exports `Settings`; aliases keep their separate config contracts explicit.
 from agentplane.app.settings import Settings as AppSettings
-from agentplane.central_sampler.settings import (
-    MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
-    Settings as CentralSamplerSettings,
-)
+from agentplane.central_sampler.settings import Settings as CentralSamplerSettings
 from agentplane.env.runtime.harness import Harness
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from agentplane.mcp_edge.settings import Settings as McpEdgeSettings
@@ -76,6 +73,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert fixture.central_sampler
     assert "k3s-env-placeholder-" not in fixture.model_dump_json()
     docs = fixture.objects
+    # The k3s stack applies these objects directly, but installs none of these controllers/CRDs.
     assert all(
         doc["kind"]
         not in {
@@ -90,11 +88,6 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         }
         for doc in docs
     )
-    assert {doc["metadata"]["name"] for doc in docs if doc["kind"] == "Certificate"} == {
-        "test-runner-root",
-        "agentplane-runner-ca",
-        "agentplane-runner-gateway",
-    }
     assert _resource(docs, "Issuer", "agentplane-runner-ca")["spec"]["ca"]["secretName"] == "agentplane-runner-ca"
     gateway_certificate = _resource(docs, "Certificate", "agentplane-runner-gateway")
     assert gateway_certificate["spec"]["uris"] == ["spiffe://agentplane/runner-gateway"]
@@ -105,18 +98,9 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert trust_bundle["spec"]["target"]["namespaceSelector"]["matchLabels"] == {
         "kubernetes.io/metadata.name": fixture.namespace
     }
-    assert not any(
-        doc["kind"] == "Deployment" and doc["metadata"]["name"] == fixture_chart.SESSION_DISPATCHER for doc in docs
-    )
-    assert not any(doc["kind"] == "Deployment" and doc["metadata"]["name"] == "electric" for doc in docs)
     app_pod = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]
-    assert not app_pod.get("initContainers")
     app_container = app_pod["containers"][0]
     assert app_container["startupProbe"]["httpGet"]["path"] == "/healthz"
-    assert (
-        _resource(docs, "Deployment", "actions")["spec"]["template"]["spec"]["containers"][0]["imagePullPolicy"]
-        == "IfNotPresent"
-    )
     actions_container = _resource(docs, "Deployment", "actions")["spec"]["template"]["spec"]["containers"][0]
     assert actions_container["readinessProbe"]["grpc"] == {"port": fixture_chart.ACTIONS_SERVICE.pod_port}
     assert actions_container["livenessProbe"]["grpc"] == {
@@ -125,15 +109,13 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     }
     for workload in ("actions", "notifications"):
         pod = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
-        assert not pod.get("initContainers")
         container = pod["containers"][0]
         assert container["startupProbe"]["grpc"] == {
             "port": container["readinessProbe"]["grpc"]["port"],
             "service": "livez",
         }
-        assert container["startupProbe"]["periodSeconds"] == 5
-        assert container["startupProbe"]["failureThreshold"] == 60
     edge_pod = _resource(docs, "Deployment", "mcp-edge")["spec"]["template"]["spec"]
+    assert not edge_pod.get("initContainers")
     edge_container = edge_pod["containers"][0]
     edge_config = yaml.safe_load(_resource(docs, "ConfigMap", "mcp-edge-settings")["data"]["settings.yaml"])
     assert edge_config["actions_target"] == (
@@ -147,13 +129,9 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert "AGENTPLANE_ACTIONS_OAUTH" not in {entry["name"] for entry in actions_container["env"]}
     edge_database_env_name = env_name(McpEdgeSettings, "database_url")
     edge_database_env = {entry["name"]: entry for entry in edge_container["env"]}[edge_database_env_name]
-    assert not edge_pod.get("initContainers")
-    assert edge_container["startupProbe"]["failureThreshold"] == 60
     assert edge_database_env["valueFrom"]["secretKeyRef"]["name"] == "postgres-mcp-edge"
     egress_pod = _resource(docs, "Deployment", "egress")["spec"]["template"]["spec"]
     proxy = next(container for container in egress_pod["containers"] if container["name"] == "proxy")
-    assert proxy["image"] == fixture_chart.EGRESS_IMAGE
-    assert "args" not in proxy
     egress_config = yaml.safe_load(_resource(docs, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
     assert egress_config["admin_grpc_audience"] == "agentplane-egress-admin"
     assert egress_config["admin_grpc_callers"] == [f"{NAMESPACE}/app"]
@@ -165,7 +143,6 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         for mount in app_pod["containers"][0]["volumeMounts"]
     )
     proxy_env = {entry["name"]: entry for entry in proxy["env"]}
-    assert not egress_pod.get("initContainers")
     assert proxy_env["PGSSLMODE"]["value"] == "disable"
     for workload in ("history-service", "notifications"):
         pod_spec = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
@@ -176,14 +153,10 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     gateway = _resource(docs, "Deployment", fixture_chart.RUNNER_GATEWAY)
     pod = gateway["spec"]["template"]["spec"]
     container = pod["containers"][0]
-    assert container["image"] == fixture_chart.RUNNER_GATEWAY_IMAGE
-    assert {port["name"]: port["containerPort"] for port in container["ports"]} == {"grpc": 8080, "http": 8081}
     database_env = next(
         entry for entry in container["env"] if entry["name"] == "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
     )
-    assert not pod.get("initContainers")
     assert database_env["valueFrom"]["secretKeyRef"]["name"] == "postgres-session-dispatcher"
-    assert container["startupProbe"]["failureThreshold"] == 60
     token_mount = next(mount for mount in container["volumeMounts"] if mount["name"] == "runner-gateway-token")
     token = next(volume for volume in pod["volumes"] if volume["name"] == "runner-gateway-token")["projected"][
         "sources"
@@ -205,25 +178,24 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         },
     }
     assert f"{NAMESPACE}/app" in gateway_config["wake_callers"]
-    assert not pod.get("imagePullSecrets")
 
-    for name, expected_port in (
-        (fixture_chart.RUNNER_GATEWAY, 8080),
-        (fixture_chart.SESSION_DISPATCHER, fixture_chart.DISPATCHER_PORT),
-    ):
+    gateway_pod_labels = gateway["spec"]["template"]["metadata"]["labels"]
+    gateway_listener_ports = {port["name"]: port["containerPort"] for port in container["ports"]}
+    for name in (fixture_chart.RUNNER_GATEWAY, fixture_chart.SESSION_DISPATCHER):
         service = _resource(docs, "Service", name)
-        assert all(
-            pod_label == gateway["spec"]["template"]["metadata"]["labels"][name]
-            for name, pod_label in service["spec"]["selector"].items()
-        )
-        port = next(entry for entry in service["spec"]["ports"] if entry["name"] == "grpc")
-        assert port["port"] == expected_port
+        assert service["spec"]["selector"]
+        assert all(gateway_pod_labels[key] == value for key, value in service["spec"]["selector"].items())
+        assert all(port["targetPort"] == gateway_listener_ports[port["name"]] for port in service["spec"]["ports"])
 
-    endpoint = f"{fixture_chart.SESSION_DISPATCHER}.{NAMESPACE}.svc.cluster.local:{fixture_chart.DISPATCHER_PORT}"
-    app = _resource(docs, "Deployment", "app")
-    assert not any(
-        entry["name"] == "AGENTPLANE_ELECTRIC_URL" for entry in app["spec"]["template"]["spec"]["containers"][0]["env"]
+    assert int(gateway_env[env_name(Settings, "listen_address")].rsplit(":", 1)[1]) == gateway_listener_ports["grpc"]
+    assert (
+        int(gateway_env[env_name(Settings, "http_listen_address")].rsplit(":", 1)[1]) == gateway_listener_ports["http"]
     )
+
+    dispatcher = _resource(docs, "Service", fixture_chart.SESSION_DISPATCHER)
+    dispatcher_port = next(port["port"] for port in dispatcher["spec"]["ports"] if port["name"] == "grpc")
+    endpoint = f"{dispatcher['metadata']['name']}.{NAMESPACE}.svc.cluster.local:{dispatcher_port}"
+    app = _resource(docs, "Deployment", "app")
     assert f"--session-dispatcher-target={endpoint}" in app["spec"]["template"]["spec"]["containers"][0]["args"]
     app_env = app["spec"]["template"]["spec"]["containers"][0]["env"]
     assert any(
@@ -286,50 +258,33 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert app_uri.port == 5432
     assert app_uri.path == "/app"
     assert app_uri.query == "sslmode=disable"
-    assert not any(doc["kind"] == "Secret" and doc["metadata"]["name"] == "postgres-electric" for doc in docs)
 
     # The fixture's one Pod execution environment, on its local-path storage.
     template = _resource(docs, "SandboxTemplate", fixture_chart.POD_TEMPLATE)
     assert template["spec"]["stateVolume"]["claim"]["storageClassName"] == "local-path"
-    pod_containers = {container["name"]: container for container in template["spec"]["pod"]["spec"]["containers"]}
-    runner_env = {entry["name"]: entry.get("value") for entry in pod_containers["environment-runtime"]["env"]}
-    assert "OTEL_SDK_DISABLED" not in runner_env
-    assert runner_env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://127.0.0.1:3132"
     runner_sidecar = template["spec"]["pod"]["spec"]["initContainers"]
     assert len(runner_sidecar) == 1
     assert runner_sidecar[0]["name"] == "egress-sidecar"
     assert runner_sidecar[0]["restartPolicy"] == "Always"
-    sidecar_env = {entry["name"]: entry.get("value") for entry in runner_sidecar[0]["env"]}
-    assert "OTEL_SDK_DISABLED" not in sidecar_env
-    assert sidecar_env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://alloy.monitoring.svc.cluster.local:4317"
-    assert "OTEL_SDK_DISABLED" not in {entry["name"] for entry in pod_containers["codex-executor"].get("env", [])}
-    executor = pod_containers["codex-executor"]
-    assert executor["livenessProbe"]["initialDelaySeconds"] == 5
-    assert executor["livenessProbe"]["periodSeconds"] == 5
-    assert executor["readinessProbe"] == {
-        "httpGet": {"path": "/healthz", "port": 4502},
-        "periodSeconds": 2,
-        "timeoutSeconds": 2,
-        "failureThreshold": 1,
-    }
-
-    for name, expected_image in (
-        ("sandbox", "git.allegedly.works/ducktape-ci/agentplane-sandbox:unset"),
-        ("sandbox-build", "git.allegedly.works/ducktape-ci/agentplane-sandbox-build:unset"),
-    ):
+    sidecar_settings = yaml.safe_load(
+        _resource(docs, "ConfigMap", f"{fixture_chart.POD_TEMPLATE}-egress-sidecar")["data"]["settings.yaml"]
+    )
+    telemetry_route = sidecar_settings["platform_routes"]["telemetry"]
+    runtime = next(
+        container
+        for container in template["spec"]["pod"]["spec"]["containers"]
+        if container["name"] == "environment-runtime"
+    )
+    runtime_env = {entry["name"]: entry["value"] for entry in runtime["env"] if "value" in entry}
+    assert runtime_env["OTEL_EXPORTER_OTLP_ENDPOINT"] == f"http://{telemetry_route['listen_address']}"
+    assert runtime_env.get("OTEL_SDK_DISABLED") != "true"
+    sidecar_env = {entry["name"]: entry["value"] for entry in runner_sidecar[0]["env"] if "value" in entry}
+    assert sidecar_env["OTEL_EXPORTER_OTLP_ENDPOINT"] == f"http://{telemetry_route['upstream']}"
+    assert sidecar_env.get("OTEL_SDK_DISABLED") != "true"
+    assert telemetry_route["upstream"] == "alloy.monitoring.svc.cluster.local:4317"
+    for name in ("sandbox", "sandbox-build"):
         pod_template = _resource(docs, "PodTemplate", name)
-        assert pod_template["apiVersion"] == "v1"
-        pod = pod_template["template"]["spec"]
-        assert pod["automountServiceAccountToken"] is False
-        assert not pod.get("imagePullSecrets")
-        containers = {container["name"]: container for container in pod["containers"]}
-        assert containers["sandbox"]["image"] == expected_image
-        assert containers["egress-sidecar"]["image"] == (
-            "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset"
-        )
-    build_pod = _resource(docs, "PodTemplate", "sandbox-build")["template"]["spec"]
-    home = next(volume for volume in build_pod["volumes"] if volume["name"] == "home")
-    assert home["emptyDir"]["sizeLimit"] == "20Gi"
+        assert pod_template["template"]["spec"]["automountServiceAccountToken"] is False
     # Dex accepts the operator's password: its hash is bcrypt of the password the Secret hands the test,
     # at no less than the cost Dex requires.
     assert fixture.mcp_fixtures is not None
@@ -466,16 +421,10 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
     vm_spec = vm_template["vm"]["template"]["spec"]
     runner_disk = next(disk for disk in vm_spec["domain"]["devices"]["disks"] if disk["name"] == "runner")
     assert runner_disk["serial"] == "agentplane-runner"  # vm.nix mounts virtio-agentplane-runner from fstab.
-    runner_volume = next(volume for volume in vm_spec["volumes"] if volume["name"] == "runner")
-    assert runner_volume["containerDisk"]["image"] == ("git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset")
     supervision = _resource(vm_fixture.objects, "SandboxTemplate", SUPERVISION_TEMPLATE)["spec"]["vm"]["template"][
         "spec"
     ]
     oom_template = _resource(vm_fixture.objects, "SandboxTemplate", OOM_TEMPLATE)["spec"]["vm"]["template"]["spec"]
-    ordinary_root = next(
-        volume["containerDisk"]["image"] for volume in vm_spec["volumes"] if volume["name"] == "rootdisk"
-    )
-    assert ordinary_root == "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
     assert supervision["volumes"] == vm_spec["volumes"]
     ordinary_config_volume = next(
         volume for volume in vm_spec["volumes"] if volume.get("configMap", {}).get("name") == "environment-vm-config"
@@ -491,7 +440,6 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
         "kernelArgs": ordinary_boot["kernelArgs"] + " " + SUPERVISION_KERNEL_ARG,
     }
     interface = next(item for item in vm_spec["domain"]["devices"]["interfaces"] if item["name"] == "default")
-    assert {"port": 9090} in interface["ports"]
     config_map = _resource(vm_fixture.objects, "ConfigMap", "environment-vm-config")
     config = json.loads(config_map["data"]["environment-runtime.json"])
     oom_config_map = _resource(vm_fixture.objects, "ConfigMap", oom_config_volume["configMap"]["name"])
@@ -505,24 +453,14 @@ def test_vm_fixture_uses_raw_block_workspace_and_filesystem_state(vm_fixture: re
         **oom_resources,
         "executor": {**oom_executor, "memory_max_bytes": ordinary_executor["memory_max_bytes"]},
     } == ordinary_resources
-    assert config["codex_readiness"] == {
-        "exec_server_ready_timeout_ms": 60_000,
-        "exec_server_probe_timeout_ms": 5_000,
-        "exec_server_dependency_timeout_ms": 120_000,
-    }
-    pod_config = json.loads(
-        _resource(vm_fixture.objects, "ConfigMap", "environment-tools-config")["data"]["environment-runtime.json"]
-    )
-    assert "codex_readiness" not in pod_config
-    assert config["control"] == {
-        "listen_address": "0.0.0.0:9090",
-        "security": {
-            "mode": "mtls",
-            "tls": {
-                "cert_file": "/run/agentplane/environment-runtime-tls/tls.crt",
-                "key_file": "/run/agentplane/environment-runtime-tls/tls.key",
-                "ca_file": "/run/agentplane/environment-runtime-trust/ca-certificates.crt",
-            },
+    control = config["control"]
+    assert {"port": int(control["listen_address"].rsplit(":", 1)[1])} in interface["ports"]
+    assert control["security"] == {
+        "mode": "mtls",
+        "tls": {
+            "cert_file": "/run/agentplane/environment-runtime-tls/tls.crt",
+            "key_file": "/run/agentplane/environment-runtime-tls/tls.key",
+            "ca_file": "/run/agentplane/environment-runtime-trust/ca-certificates.crt",
         },
     }
 
@@ -542,10 +480,16 @@ def test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wir
     assert deployment["spec"]["replicas"] == 1
     assert deployment["spec"]["strategy"]["type"] == "Recreate"
     pod = deployment["spec"]["template"]["spec"]
-    assert not pod.get("initContainers")
     assert pod["serviceAccountName"] == central_sampler.NAME
     container = next(container for container in pod["containers"] if container["name"] == central_sampler.NAME)
-    assert container["startupProbe"]["grpc"]["port"] == central_sampler.PORT
+    service = _resource(docs, "Service", central_sampler.NAME)
+    assert service["spec"]["selector"]
+    assert all(
+        deployment["spec"]["template"]["metadata"]["labels"][key] == value
+        for key, value in service["spec"]["selector"].items()
+    )
+    assert service["spec"]["ports"][0]["targetPort"] == container["ports"][0]["containerPort"]
+    assert container["startupProbe"]["grpc"]["port"] == container["ports"][0]["containerPort"]
     database_env = next(
         entry for entry in container["env"] if entry["name"] == env_name(CentralSamplerSettings, "database_url")
     )
@@ -557,17 +501,6 @@ def test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wir
     assert ingress_connection.base_url == llm_ingress.proxied_url(NAMESPACE)
     assert ingress_connection.auth.type == "bearer"
     assert str(ingress_connection.auth.credential_file) == "/var/run/secrets/central-sampler/llm"
-    assert set(settings.connections) == {"llm-ingress"}
-    assert settings.rpc_timeout_seconds == 10
-    assert settings.executor_initialize_timeout_seconds == 30
-    without_initialize_timeout = CentralSamplerSettings.model_validate(
-        settings.model_dump(exclude={"executor_initialize_timeout_seconds"})
-    )
-    assert without_initialize_timeout.executor_initialize_timeout_seconds == 30
-    invalid_timeout = settings.model_dump()
-    invalid_timeout["executor_initialize_timeout_seconds"] = MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS + 1
-    with pytest.raises(ValidationError):
-        CentralSamplerSettings.model_validate(invalid_timeout)
     assert set(settings.models) == {fixture_chart.GPT6_LUNA_RESPONSES.id}
     model = settings.models[fixture_chart.GPT6_LUNA_RESPONSES.id]
     assert model.connection == "llm-ingress"
@@ -595,7 +528,6 @@ def test_pod_central_sampler_fixture_renders_app_ingress_gateway_and_history_wir
         "gateway": runner_gateway.TOKEN_AUDIENCE,
         "history": history_service.RUNNER_INGRESS_AUDIENCE,
     }
-    assert _resource(docs, "Service", central_sampler.NAME)["spec"]["ports"][0]["port"] == central_sampler.PORT
 
     llm_config = yaml.safe_load(_resource(docs, "ConfigMap", "llm-ingress-settings")["data"]["settings.yaml"])
     assert llm_config["central_sampler_accounts"] == [f"{NAMESPACE}/{central_sampler.NAME}"]

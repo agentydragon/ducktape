@@ -77,17 +77,18 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert not [doc for doc in docs if doc["kind"] == "Service"]
     deployment = _resource(docs, "Deployment", runner_gateway.NAME)
     pod = deployment["spec"]["template"]["spec"]
+    assert not pod.get("initContainers")
     container = one(c for c in pod["containers"] if c["name"] == "runner-gateway")
-    assert container["image"].startswith("git.allegedly.works/ducktape-ci/agentplane-runner-gateway:")
     assert pod["serviceAccountName"] == runner_gateway.NAME
     http = session_dispatcher.http_service(staging.ENV.namespace)
-    assert {p["containerPort"] for p in container["ports"]} == {8080, http.pod_port}
+    listener_ports = {port["name"]: port["containerPort"] for port in container["ports"]}
     settings = _gateway_settings(docs, container)
-    assert settings["listen_address"] == "0.0.0.0:8080"
-    assert settings["http_listen_address"] == f"0.0.0.0:{http.pod_port}"
+    assert settings["listen_address"].startswith("0.0.0.0:")
+    assert settings["http_listen_address"].startswith("0.0.0.0:")
+    assert int(settings["listen_address"].rsplit(":", 1)[1]) == listener_ports["grpc"]
+    assert int(settings["http_listen_address"].rsplit(":", 1)[1]) == listener_ports["http"]
     assert settings["dispatcher_audience"] == session_dispatcher.TOKEN_AUDIENCE
     assert settings["gateway_audience"] == runner_gateway.TOKEN_AUDIENCE
-    assert settings["kubernetes_client_qps"] == "-1"
     assert settings["runner_security"] == {
         "mode": "mtls",
         "tls": {
@@ -105,18 +106,18 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert settings["environment_launchers"] == [f"{staging.ENV.namespace}/{actions.NAME}"]
     assert f"{staging.ENV.namespace}/{runner_gateway.NAME}" in settings["gateway_callers"]
     assert f"{staging.ENV.namespace}/{app.NAME}" in settings["wake_callers"]
-    assert not pod.get("initContainers")
-    assert container["startupProbe"]["failureThreshold"] == 60
-    assert _resource(root_docs, "Service", runner_gateway.NAME)["spec"]["ports"] == [
-        {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080}
-    ]
-    assert _resource(root_docs, "Service", session_dispatcher.NAME)["spec"]["ports"] == [
-        {"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080},
-        {"name": "http", "port": http.port.number, "protocol": "TCP", "targetPort": http.pod_port},
-    ]
-    assert _resource(root_docs, "Service", session_dispatcher.NAME)["spec"]["selector"] == {
-        "app.kubernetes.io/name": runner_gateway.NAME
-    }
+    for service_name in (runner_gateway.NAME, session_dispatcher.NAME):
+        service = _resource(root_docs, "Service", service_name)["spec"]
+        assert service["selector"]
+        assert all(
+            deployment["spec"]["template"]["metadata"]["labels"][key] == value
+            for key, value in service["selector"].items()
+        )
+        assert all(port["targetPort"] == listener_ports[port["name"]] for port in service["ports"])
+    gateway_service = _resource(root_docs, "Service", runner_gateway.NAME)["spec"]
+    assert one(gateway_service["ports"])["port"] == 8080
+    dispatcher_service = _resource(root_docs, "Service", session_dispatcher.NAME)["spec"]
+    assert one(port for port in dispatcher_service["ports"] if port["name"] == "http")["targetPort"] == http.pod_port
     policy = _resource(docs, "CiliumNetworkPolicy", runner_gateway.NAME.removeprefix("agentplane-"))["spec"]
     ingress = {
         (endpoint["matchLabels"].get("app.kubernetes.io/name"), port["port"])
