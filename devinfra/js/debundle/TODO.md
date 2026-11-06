@@ -36,26 +36,137 @@ Safety evidence outranks speculative deletion counts. Source inspection is not
 an end-to-end reproduction; performance candidates require fresh opt profiles.
 The sections below hold details, not competing priority queues.
 
-1. **Single-input spec assistance.** Keep selector synthesis and repair
+1. **Compositional semantic authority.** Start with AR1–AR3 in
+   [Architecture review follow-ups](#architecture-review-follow-ups), using one
+   demonstrated extraction blocker per slice. AR7's soundness-contract
+   investigation can proceed independently of those implementation changes.
+2. **Single-input spec assistance.** Keep selector synthesis and repair
    diagnostics scoped to one configured input program and one exact spec.
    Prioritize correct edits and explicit skipped-candidate reasons. Proposed
    selector edits are proved by the shared structural resolver; diagnostics
    remain suggestions, and the author decides what to apply. Keep
    gate-before-write, atomic writes and dry-run reporting.
-2. **Public browser smoke.** Build <plans/excalidraw_live_smoke.md> and cover
+3. **Public browser smoke.** Build <plans/excalidraw_live_smoke.md> and cover
    bundled vendor singleton/importmap behavior. Node probes already run;
    browser loading is the missing contract, not a missing vendor schema.
-3. **Profile-backed AST and lookup work.** Measure cloning, file-name lookup
+4. **Profile-backed AST and lookup work.** Measure cloning, file-name lookup
    and alpha-binding snapshots before ownership redesign, indexes or undo logs.
    Preserve ordering/hygiene and the independent Node differential oracle.
    Anonymous uniqueness uses coarse semantic-token buckets with exact equality;
    profile real workloads before adding indexes or other machinery.
-4. **Remaining selector authoring gaps.** Follow the selector diagnostics above
+5. **Remaining selector authoring gaps.** Follow the selector diagnostics above
    and minimizer work below. Keep near-miss ranking heuristics distinct from
    boolean backtracking.
-5. **Remaining responsibility seams.** Extract vendor/lowering boundaries only
-   when they simplify real callers. Prefer deleting redundant setup over deleting
+6. **Remaining responsibility seams.** Use AR4–AR5 and AR8 for bounded ownership
+   and identity changes that simplify real callers. AR6 needs a lowering-design
+   decision before implementation. Prefer deleting redundant setup over deleting
    behavioral assertions or adding test frameworks.
+
+### Architecture review follow-ups
+
+These IDs identify remaining work; dispatch order stays above. Existing plans
+retain the detailed semantic designs. Preserve the ordinary realizability gate,
+shared import order, explicit saved DTOs, and validated writer boundary.
+
+- **AR1 — Compose operation effects and proof authority across consumers.**
+  `SynchronousCalls` in <facts/statement_facts.rs> carries timing, lexical
+  receipts, whole-owner completion, heap effects and classifier disagreement
+  separately; <facts/purity_classification.rs> and
+  <realizability/effect_translation_validation.rs> consume different judgments.
+  Extend the shared operation transfers to compose effects, unresolved
+  obligations and proof dependencies through calls and owner finalization;
+  audit purity, graph, heap and imported-summary consumers together. Follow
+  <plans/abstract_interpreter.md> and <plans/synchronous_execution_fallback.md>.
+  Close when a real blocked extraction gains ordinary-gate acceptance and
+  original/emitted runtime parity, with exact dependency and staged-replay
+  controls across every affected consumer. Empty ledgers or timing completion
+  cannot discharge uncovered domains; effect assessment remains report-only
+  until its semantic and placement obligations are proved.
+
+- **AR2 — Bound opaque callback analysis with composable summaries.**
+  `invoke_callback_pool_once` in <facts/sync_effects/interpreter.rs> supplies
+  other callbacks as possible arguments, evaluates against evolving state, and
+  falls back at depth, expansion and pool limits. Reduce repeated cross-product
+  exploration with proved callee/reach summaries and shared effect composition;
+  keep global/unknown behavior explicit. Close with neutral CLI controls around
+  the current limits, recursion, callback order and reentry, plus a real profiler
+  comparison on identical inputs. Exhaustion must retain conservative effects,
+  dependencies and precision-loss evidence. Increasing limits alone is not a
+  resolution; the rejected global-prefix fixpoint in <docs/design.md> needs new
+  evidence before reconsideration.
+
+- **AR3 — Compose callable capabilities and initialization availability.**
+  `CallableSummary` in <analysis_inputs.rs>, <cross_module_purity.rs> and
+  `CallableAvailability` in <facts/sync_effects/execution_index.rs> distribute
+  return, callback, capture and availability proofs across specialized paths.
+  The isolated-initializer recognizer excludes providers with other statements.
+  Reuse the shared interpreter to compose these independent facts through
+  canonical import, alias, namespace and reexport identities; prove availability
+  under emitted initialization order before broadening provider shapes. Close
+  with local/imported equivalent-shape controls, initialized providers beyond
+  isolated leaves, and mutation, capture and early-cycle negatives, preserving
+  exact dependencies through saved analysis. Extend the lifetime obligations in
+  <plans/native_receiver_identity.md>; new recognizers need explicit checked
+  preconditions rather than declaration-form shortcuts.
+
+- **AR4 — Give execution data, runtime state and orchestration separate owners.**
+  <facts/sync_effects/execution_index.rs> collects syntax and capabilities while
+  nesting the interpreter/runtime modules; <lowering/mod.rs> also prepares
+  whole-program summaries and loads analysis. Extract immutable execution
+  program/index interfaces and make the runtime, transfer kernel and provider
+  adapters peers. Put phase orchestration above those services; finish moving
+  semantic records still owned by `reports/schema.rs` to domain owners, retaining
+  <execution_evidence.rs> and report projections. Close when real callers use
+  those interfaces without reverse ownership, with unchanged semantic facts,
+  report/saved fields, proof provenance, gate results and staged replay. File
+  moves alone do not establish that boundary.
+
+- **AR5 — Reuse one prepared source/index across analysis phases.**
+  <frontend_elaboration/elaboration.rs> and <staged_analysis/chunk_facts.rs>
+  recollect structural facts; `reparse_unretained_entries` in
+  <staged_analysis/program_summary.rs> rebuilds released syntax. Extend
+  `SourceProgram`/manifest ownership so selectors, provider analysis and local
+  facts reuse immutable syntax and indexes across the required provider closure.
+  Close when those production paths neither reparse prepared entries nor build
+  duplicate structural censuses, while exact source sites, repeated declarations,
+  hygiene, provenance and staged replay remain stable. Preserve `SourceWithAst`
+  mutation invalidation, its release at the `EmissionFiles` boundary, and actual
+  source-marker/pass-through-byte controls. Profile retention and memory before
+  claiming a performance improvement.
+
+- **AR6 — Make the limits of source-order ESM lowering explicit.**
+  <graph/edge.rs> encodes co-location for shared declarations and rejects writes
+  across destinations because imported bindings are read-only. Distinguish a
+  precision gap, a poor partition and a restriction of the supported lowering
+  in gate explanations and neutral shared-cell examples. Close the design item
+  with a documented choice: retain that strategy and explain its unsupported
+  partitions, or specify another strategy's TDZ, live-binding, initialization,
+  reentry and abrupt-completion obligations before implementing it. Any new
+  strategy needs ordinary-gate and original/emitted differential controls under
+  <docs/design.md>; weakening constraints cannot supply missing emitter behavior.
+
+- **AR7 — Reconcile the documented soundness guarantee with executable behavior.**
+  <docs/design.md> promises observational equivalence, but its "Side effects we
+  can't see locally" section says accepted global-effect reorderings can change
+  behavior. This is a contract inconsistency, not a reproduced new soundness
+  bug. Check the claims against neutral CLI cases for global reads/writes,
+  imported-object mutation and refused dynamic scope, including the relevant
+  admitted host premises. Close by replacing stale claims with the verified
+  scope and regression references, or repairing any reproduced unsafe acceptance
+  conservatively before updating the contract. Expected rarity in bundled code
+  is not a soundness condition.
+
+- **AR8 — Separate qualified module identity from author spelling and output paths.**
+  `ModulePath::parse` in <spec/spec.rs> folds case and accepts chunk-qualified
+  spellings; `logical_module_path` in <selectors/resolution/selector_resolve.rs>
+  and <lowering/materialize/plan_builder.rs> independently split qualified
+  strings. Use a typed chunk-qualified logical reference between services and
+  convert to author/wire spelling or physical output paths only at boundaries.
+  Decide and document whether case folding is an authoring rule before changing
+  accepted input. Close with all callers updated together and CLI/report controls
+  for same-named modules in different chunks, case collisions, normalized paths
+  and supported qualified spellings. Preserve Linux path semantics without
+  introducing transitional identity shims.
 
 ### Automation product flows over the solver
 
