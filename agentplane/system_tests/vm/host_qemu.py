@@ -197,10 +197,117 @@ def _qemu_monitor_query(command: str, cpu_index: int | None) -> str:
     return json.dumps({"execute": command})
 
 
+def _selected_fields(value: object, fields: tuple[str, ...]) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    return {field: value[field] for field in fields if field in value}
+
+
+def _container_state(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        phase: _selected_fields(value[phase], fields)
+        for phase, fields in (
+            ("running", ("startedAt",)),
+            ("terminated", ("exitCode", "signal", "reason", "startedAt", "finishedAt")),
+            ("waiting", ("reason",)),
+        )
+        if phase in value
+    }
+
+
+def _pod_status_snapshot(payload: object, pod: str, pod_uid: str) -> dict[str, object] | None:
+    if not isinstance(payload, dict):
+        return None
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict) or metadata.get("name") != pod or metadata.get("uid") != pod_uid:
+        return None
+    spec = payload.get("spec")
+    status = payload.get("status")
+    if not isinstance(spec, dict) or not isinstance(status, dict):
+        return None
+
+    containers = []
+    for container in spec.get("containers", []):
+        if not isinstance(container, dict) or not isinstance(container.get("name"), str):
+            continue
+        if container["name"] != "compute" and not container["name"].startswith("virtiofs-"):
+            continue
+        resources = container.get("resources")
+        selected = _selected_fields(container, ("name", "image", "imagePullPolicy"))
+        if isinstance(resources, dict):
+            selected["resources"] = {
+                bound: _selected_fields(resources[bound], ("cpu", "memory", "ephemeral-storage"))
+                for bound in ("requests", "limits")
+                if bound in resources
+            }
+        containers.append(selected)
+
+    statuses = []
+    for container in status.get("containerStatuses", []):
+        if not isinstance(container, dict) or not isinstance(container.get("name"), str):
+            continue
+        if container["name"] != "compute" and not container["name"].startswith("virtiofs-"):
+            continue
+        selected = _selected_fields(container, ("name", "ready", "started", "restartCount"))
+        selected["state"] = _container_state(container.get("state"))
+        selected["lastState"] = _container_state(container.get("lastState"))
+        statuses.append(selected)
+
+    selected_metadata = _selected_fields(metadata, ("name", "uid", "creationTimestamp"))
+    selected_metadata["deletionTimestamp"] = metadata.get("deletionTimestamp")
+    return {
+        "metadata": selected_metadata,
+        "spec": {**_selected_fields(spec, ("nodeName", "terminationGracePeriodSeconds")), "containers": containers},
+        "status": {**_selected_fields(status, ("phase", "startTime")), "containerStatuses": statuses},
+    }
+
+
+def _snapshot_pod_status(
+    kubectl: Kubectl, namespace: str, pod: str, pod_uid: str, output: TextIO, stop: threading.Event, deadline: float
+) -> None:
+    remaining = _remaining(deadline, stop)
+    if remaining is None:
+        output.write("POD_STATUS_SKIPPED budget-or-stop\n")
+        return
+    try:
+        raw = kubectl(
+            "-n",
+            namespace,
+            "get",
+            "pod",
+            pod,
+            "-o",
+            "json",
+            timeout=min(COMMAND_TIMEOUT_SECONDS, remaining),
+            stdout_only=True,
+        )
+        payload = json.loads(raw)
+        snapshot = _pod_status_snapshot(payload, pod, pod_uid)
+    except Exception as error:
+        output.write(f"POD_STATUS_ERROR type={type(error).__name__}\n")
+        return
+    if snapshot is None:
+        output.write("POD_STATUS_UID_OR_SHAPE_MISMATCH\n")
+        return
+    output.write(f"POD_STATUS {json.dumps(snapshot, sort_keys=True)}\n")
+    output.flush()
+
+
 def _snapshot_qemu(
-    kubectl: Kubectl, namespace: str, pod: str, pod_uid: str, output: TextIO, stop: threading.Event
+    kubectl: Kubectl,
+    namespace: str,
+    pod: str,
+    pod_uid: str,
+    output: TextIO,
+    stop: threading.Event,
+    *,
+    include_pod_status: bool,
 ) -> None:
     deadline = time.monotonic() + SAMPLE_BUDGET_SECONDS
+    if include_pod_status:
+        _snapshot_pod_status(kubectl, namespace, pod, pod_uid, output, stop, deadline)
     _snapshot_host_qemu(output, pod_uid, stop, deadline)
     if _remaining(deadline, stop) is None:
         output.write("VIRSH_SKIPPED host-process-snapshot-used-budget-or-stop\n")
@@ -262,7 +369,7 @@ def _take_sample(
             output.write(f"request={SHUTDOWN_REQUESTED.decode()} proof_absent_after={REQUEST_GRACE_SECONDS:.1f}s\n")
         output.flush()
         try:
-            _snapshot_qemu(kubectl, namespace, pod, pod_uid, output, stop)
+            _snapshot_qemu(kubectl, namespace, pod, pod_uid, output, stop, include_pod_status=phase == "shutdown")
         except Exception as error:
             output.write(f"SNAPSHOT_ERROR {error!r}\n")
             output.flush()

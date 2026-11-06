@@ -76,14 +76,26 @@ def test_host_qemu_processes_are_matched_by_pod_cgroup_and_keep_nspid(tmp_path: 
 
 
 class _FakeK3s:
-    def __init__(self, *, fail_list: bool = False) -> None:
+    def __init__(self, *, fail_list: bool = False, pod_uid: str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee") -> None:
         self.fail_list = fail_list
+        self.pod_uid = pod_uid
         self.called = threading.Event()
         self.release = threading.Event()
         self.calls: list[tuple[tuple[str, ...], float]] = []
 
     def kubectl(self, *args: str, timeout: float, stdout_only: bool) -> str:
         self.calls.append((args, timeout))
+        if args[2:4] == ("get", "pod"):
+            return json.dumps(
+                {
+                    "metadata": {"name": args[4], "uid": self.pod_uid},
+                    "spec": {"containers": [{"name": "compute", "image": "launcher:test"}]},
+                    "status": {
+                        "phase": "Running",
+                        "containerStatuses": [{"name": "compute", "state": {"running": {}}}],
+                    },
+                }
+            )
         if self.fail_list:
             self.called.set()
             raise RuntimeError("libvirt socket disappeared")
@@ -133,6 +145,14 @@ def test_probe_is_bounded_stoppable_and_does_not_replace_scenario_error(
     samples = list((artifacts / "host-qemu").glob("*/shutdown-0-*.txt"))
     assert len(samples) == 1
     evidence = samples[0].read_text()
+    pod_line = next(
+        line.removeprefix("POD_STATUS ") for line in evidence.splitlines() if line.startswith("POD_STATUS ")
+    )
+    assert json.loads(pod_line)["metadata"] == {
+        "name": "virt-launcher-vm-pod",
+        "uid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "deletionTimestamp": None,
+    }
     if fail_list:
         assert "VIRSH_DOMAIN_LIST_ERROR" in evidence
         assert "libvirt socket disappeared" in evidence
@@ -235,6 +255,119 @@ def test_report_captures_unrequested_guest_without_touching_completed_or_foreign
     assert all(args[3] == "virt-launcher-pending" for args, _ in k3s.calls)
     if fail_list:
         assert "libvirt socket disappeared" in evidence
+
+
+def test_pod_snapshot_retains_only_matching_compute_and_virtiofs_lifecycle() -> None:
+    pod = "virt-launcher-vm-pod"
+    uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    payload = {
+        "metadata": {
+            "name": pod,
+            "uid": uid,
+            "creationTimestamp": "2026-11-06T10:00:00Z",
+            "deletionTimestamp": "2026-11-06T10:01:00Z",
+            "annotations": {"credential": "PRIVATE_ANNOTATION"},
+        },
+        "spec": {
+            "nodeName": "worker-1",
+            "terminationGracePeriodSeconds": 30,
+            "containers": [
+                {"name": "compute", "image": "launcher:test", "env": [{"value": "PRIVATE_ENV"}]},
+                {
+                    "name": "virtiofs-state",
+                    "image": "virtiofs:test",
+                    "resources": {"limits": {"memory": "512Mi", "private": "PRIVATE_RESOURCE"}},
+                    "args": ["PRIVATE_ARG"],
+                },
+                {"name": "unrelated", "image": "PRIVATE_IMAGE"},
+            ],
+        },
+        "status": {
+            "phase": "Running",
+            "startTime": "2026-11-06T10:00:05Z",
+            "containerStatuses": [
+                {
+                    "name": "compute",
+                    "ready": True,
+                    "restartCount": 0,
+                    "state": {"running": {"startedAt": "2026-11-06T10:00:10Z"}},
+                },
+                {
+                    "name": "virtiofs-state",
+                    "ready": False,
+                    "restartCount": 1,
+                    "state": {
+                        "terminated": {
+                            "exitCode": 137,
+                            "reason": "OOMKilled",
+                            "startedAt": "2026-11-06T10:00:11Z",
+                            "finishedAt": "2026-11-06T10:00:55Z",
+                            "message": "PRIVATE_MESSAGE",
+                        }
+                    },
+                },
+                {"name": "unrelated", "state": {"running": {"startedAt": "2026-11-06T10:00:10Z"}}},
+            ],
+        },
+    }
+    calls: list[tuple[tuple[str, ...], float]] = []
+
+    def kubectl(*args: str, timeout: float, stdout_only: bool) -> str:
+        calls.append((args, timeout))
+        return json.dumps(payload)
+
+    output = io.StringIO()
+    host_qemu._snapshot_pod_status(kubectl, "systest", pod, uid, output, threading.Event(), time.monotonic() + 2)
+
+    assert len(calls) == 1
+    assert calls[0][0] == ("-n", "systest", "get", "pod", pod, "-o", "json")
+    assert 0 < calls[0][1] <= host_qemu.COMMAND_TIMEOUT_SECONDS
+    retained = output.getvalue()
+    assert retained.startswith("POD_STATUS ")
+    snapshot = json.loads(retained.removeprefix("POD_STATUS "))
+    assert snapshot["metadata"]["uid"] == uid
+    assert snapshot["metadata"]["deletionTimestamp"] == "2026-11-06T10:01:00Z"
+    assert [container["name"] for container in snapshot["spec"]["containers"]] == ["compute", "virtiofs-state"]
+    assert snapshot["spec"]["containers"][1]["resources"] == {"limits": {"memory": "512Mi"}}
+    assert snapshot["status"]["containerStatuses"][0]["state"]["running"]["startedAt"] == "2026-11-06T10:00:10Z"
+    assert snapshot["status"]["containerStatuses"][1]["state"]["terminated"] == {
+        "exitCode": 137,
+        "reason": "OOMKilled",
+        "startedAt": "2026-11-06T10:00:11Z",
+        "finishedAt": "2026-11-06T10:00:55Z",
+    }
+    assert not any(
+        private in retained
+        for private in (
+            "PRIVATE_ANNOTATION",
+            "PRIVATE_ENV",
+            "PRIVATE_ARG",
+            "PRIVATE_IMAGE",
+            "PRIVATE_RESOURCE",
+            "PRIVATE_MESSAGE",
+        )
+    )
+
+
+def test_pod_snapshot_rejects_replaced_launcher_uid_without_leaking_status() -> None:
+    pod = "virt-launcher-vm-pod"
+    payload = {
+        "metadata": {"name": pod, "uid": "replacement-uid"},
+        "spec": {"containers": [{"name": "compute", "env": [{"value": "PRIVATE_ENV"}]}]},
+        "status": {
+            "containerStatuses": [{"name": "compute", "state": {"running": {"startedAt": "2026-11-06T10:00:10Z"}}}]
+        },
+    }
+
+    def kubectl(*args: str, timeout: float, stdout_only: bool) -> str:
+        return json.dumps(payload)
+
+    output = io.StringIO()
+    host_qemu._snapshot_pod_status(
+        kubectl, "systest", pod, "original-uid", output, threading.Event(), time.monotonic() + 2
+    )
+
+    assert output.getvalue() == "POD_STATUS_UID_OR_SHAPE_MISMATCH\n"
 
 
 if __name__ == "__main__":
