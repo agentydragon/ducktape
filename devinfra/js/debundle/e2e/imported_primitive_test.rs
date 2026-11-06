@@ -88,13 +88,17 @@ fn assert_root_read_receipt(fixture: &Fixture, binding: &str) {
     else {
         panic!("binding read lacks an operation receipt: {execution:#?}");
     };
-    assert_eq!(
-        receipt.binding.as_str(),
-        binding,
+    assert!(
+        matches!(
+            &receipt.root,
+            analysis::reports::schema::LexicalEffectRoot::BindingInitializer {
+                binding: receipt_binding,
+                initializer_span,
+            } if receipt_binding == binding && initializer_span.lo < initializer_span.hi
+        ),
         "receipt must identify the exact binding initializer: {receipt:#?}"
     );
     assert_eq!(receipt.owner, node.statement_ordinal, "{receipt:#?}");
-    assert!(receipt.initializer_span.is_some(), "{receipt:#?}");
 }
 
 fn assert_called_operation_receipt(fixture: &Fixture, binding: &str, callee: &str) {
@@ -148,7 +152,7 @@ fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
         .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
     );
     assert_preserved_entry_output(&fixture, "0 2 1\n");
-    let assessment = fixture.effect_translation_validation();
+    let assessment = fixture.candidate_relocation_assessment();
     assert_eq!(
         assessment["decision"]["status"], "accepted",
         "{assessment:#}"
