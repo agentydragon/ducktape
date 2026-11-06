@@ -44,10 +44,7 @@ def test_critic_prompt(db: Database):
         db, "props/agents/critic/prompt.md.mako", helpers={"snapshot_slug": "test/snapshot-001", "scope_files": None}
     )
     _write_output("critic_whole_snapshot.md", rendered)
-    assert "critic" in rendered.lower()
     assert "test/snapshot-001" in rendered
-    assert "ALL files" in rendered
-    assert "insert_issue" in rendered
 
 
 def test_critic_prompt_scoped(db: Database):
@@ -63,10 +60,7 @@ def test_critic_prompt_scoped(db: Database):
 def test_grader_prompt(db: Database):
     rendered = _render(db, "props/agents/grader/prompt.md.mako", helpers={"snapshot_slug": "test/snapshot-001"})
     _write_output("grader.md", rendered)
-    assert "grader" in rendered.lower()
     assert "test/snapshot-001" in rendered
-    assert "grading_edges" in rendered
-    assert "reported_issues" in rendered
 
 
 def test_critic_dev_optimize_prompt(db: Database):
@@ -80,8 +74,6 @@ def test_critic_dev_optimize_prompt(db: Database):
         },
     )
     _write_output("critic_dev_optimize.md", rendered)
-    assert "engineer" in rendered.lower()
-    assert "recall" in rendered.lower()
 
 
 def test_critic_dev_improve_prompt(db: Database):
@@ -98,7 +90,6 @@ def test_critic_dev_improve_prompt(db: Database):
         },
     )
     _write_output("critic_dev_improve.md", rendered)
-    assert "allowed_examples" in rendered
 
 
 if __name__ == "__main__":

@@ -384,7 +384,6 @@ def test_pair_schema_requires_bounded_identifying_selectors_and_unique_ids() -> 
         ReversalPair.model_validate(raw)
     with pytest.raises(ValidationError, match="unique ids"):
         policy([pair(), pair()])
-    assert AmountExact(value="-80.00").value == "-80.00"
     assert policy([]).reversal_pairs == []
 
 

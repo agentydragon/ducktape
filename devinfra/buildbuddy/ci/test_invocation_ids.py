@@ -28,9 +28,6 @@ def parse_github_outputs(contents: str) -> dict[str, str]:
 def test_the_derivation_is_a_function_of_the_run_alone() -> None:
     """Two processes that never meet — `bazel-ci.yml` naming the invocation and the
     pr-visuals publisher looking for it — must land on the same value from the same run."""
-    assert invocation_id(run_id="33060467222", attempt="1", role="test") == invocation_id(
-        run_id="33060467222", attempt="1", role="test"
-    )
     assert str(invocation_id(run_id="33060467222", attempt="1", role="test")) == (
         "5eeb4c81-4316-5f84-ba47-3de435c5d2ad"
     )
@@ -49,7 +46,6 @@ def test_every_input_separates_the_result() -> None:
 def test_scope_separates_parallel_release_artifact_builds() -> None:
     """Each package and build phase in the release matrix needs its own Bazel invocation."""
     unstamped = invocation_id(run_id="33060467222", attempt="1", role="release-unstamped", scope="gazelle")
-    assert unstamped == invocation_id(run_id="33060467222", attempt="1", role="release-unstamped", scope="gazelle")
     assert invocation_id(run_id="33060467222", attempt="1", role="release-unstamped", scope="gterm-theme") != unstamped
     assert invocation_id(run_id="33060467222", attempt="1", role="release-stamped", scope="gazelle") != unstamped
 
