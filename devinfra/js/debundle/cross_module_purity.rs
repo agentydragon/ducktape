@@ -869,6 +869,7 @@ pub fn resolve_imported_callable_summaries(
                         | spec::NativeOperationKind::PromiseResolve
                         | spec::NativeOperationKind::TextEncoderEmpty
                         | spec::NativeOperationKind::MapEmpty
+                        | spec::NativeOperationKind::WeakMapEmpty
                         | spec::NativeOperationKind::SetEmpty
                 )
             )
@@ -889,6 +890,9 @@ pub fn resolve_imported_callable_summaries(
                     NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty) =>
                         "TextEncoder",
                     NativeInputKind::Operation(spec::NativeOperationKind::MapEmpty) => "Map",
+                    NativeInputKind::Operation(spec::NativeOperationKind::WeakMapEmpty) => {
+                        "WeakMap"
+                    }
                     NativeInputKind::Operation(spec::NativeOperationKind::SetEmpty) => "Set",
                     _ => "Promise",
                 },

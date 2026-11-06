@@ -57,24 +57,14 @@ def test_default_pydantic_generates_oneof():
         validate_openai_strict_mode_schema(schema, "PetWithDiscriminator")
 
 
-def test_custom_schema_generates_anyof():
-    """Verify that OpenAICompatibleSchema converts oneOf to anyOf."""
+def test_custom_schema_generates_anyof_and_passes_strict_mode_validation():
+    """Verify custom anyOf conversion and strict-mode acceptance."""
     schema = PetWithDiscriminator.model_json_schema(schema_generator=OpenAICompatibleSchema)
 
-    # Custom schema generator uses anyOf
     assert "anyOf" in schema["properties"]["animal"]
     assert "oneOf" not in schema["properties"]["animal"]
-
-    # Discriminator metadata is preserved
     assert "discriminator" in schema["properties"]["animal"]
     assert schema["properties"]["animal"]["discriminator"]["propertyName"] == "pet_type"
-
-
-def test_custom_schema_passes_strict_mode_validation():
-    """Verify that anyOf discriminated unions pass OpenAI strict mode validation."""
-    schema = PetWithDiscriminator.model_json_schema(schema_generator=OpenAICompatibleSchema)
-
-    # This should pass validation (no exception)
     validate_openai_strict_mode_schema(schema, "PetWithDiscriminator")
 
 

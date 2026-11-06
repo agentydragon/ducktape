@@ -1,4 +1,5 @@
-# Nested KubeVirt runs privileged node agents; the dedicated VM is the trust boundary.
+# Test actions run nested Kubernetes/KubeVirt with privileged pods. The executor
+# lives inside a VM so those privileges are confined to the guest.
 docker_cap_add: ALL
 executor:
   app_target: grpcs://remote.buildbuddy.io:443

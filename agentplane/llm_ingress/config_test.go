@@ -1,38 +1,14 @@
 package main
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
-func loadTestConfig(t *testing.T, environ []string) (config, error) {
-	t.Helper()
-	for _, entry := range os.Environ() {
-		name, _, _ := strings.Cut(entry, "=")
-		if strings.HasPrefix(name, settingPrefix) {
-			t.Setenv(name, "")
-		}
-	}
-	for _, entry := range environ {
-		name, value, _ := strings.Cut(entry, "=")
-		t.Setenv(name, value)
-	}
-	return loadConfig()
-}
-
-func writeSettings(t *testing.T, contents string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "settings.yaml")
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 func TestLoadConfigPrecedence(t *testing.T) {
-	path := writeSettings(t, `allowed_service_account_namespaces: [yaml-namespace]
+	path := configtest.WriteSettings(t, `allowed_service_account_namespaces: [yaml-namespace]
 token_audience: yaml-audience
 litellm_url: http://127.0.0.1:8100/prefix
 litellm_key: yaml-secret
@@ -43,7 +19,7 @@ models:
   - model: test/model
     total_context_budget_tokens: 8192
 `)
-	c, err := loadTestConfig(t, []string{
+	c, err := configtest.Load(t, settingPrefix, loadConfig, []string{
 		configFileEnv + "=" + path,
 		"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=env-audience",
 		"AGENTPLANE_LLM_INGRESS_LITELLM_KEY=env-secret",
@@ -83,8 +59,8 @@ litellm_key: test-secret
 		{name: "routing header", yaml: "attribution:\n  json_headers:\n    - name: X-Forwarded-For\n      fields:\n        - key: a\n          source: pod_name\n", fails: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			path := writeSettings(t, base+test.yaml)
-			c, err := loadTestConfig(t, []string{configFileEnv + "=" + path})
+			path := configtest.WriteSettings(t, base+test.yaml)
+			c, err := configtest.Load(t, settingPrefix, loadConfig, []string{configFileEnv + "=" + path})
 			if test.fails {
 				if err == nil {
 					t.Fatalf("invalid attribution accepted: %+v", c.Attribution)
@@ -116,12 +92,12 @@ litellm_key: test-secret
 func TestLoadConfigRejectsInvalidModelBudgets(t *testing.T) {
 	for _, value := range []string{`"not-a-budget"`, "null", "0", "-1"} {
 		t.Run(value, func(t *testing.T) {
-			path := writeSettings(t, "allowed_service_account_namespaces: [test-namespace]\n"+
+			path := configtest.WriteSettings(t, "allowed_service_account_namespaces: [test-namespace]\n"+
 				"token_audience: test-audience\n"+
 				"litellm_url: http://127.0.0.1:8100\n"+
 				"litellm_key: never-include-this-secret\n"+
 				"models:\n  - model: test/model\n    total_context_budget_tokens: "+value+"\n")
-			_, err := loadTestConfig(t, []string{configFileEnv + "=" + path})
+			_, err := configtest.Load(t, settingPrefix, loadConfig, []string{configFileEnv + "=" + path})
 			if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
 				t.Fatalf("got unsafe or missing config error: %v", err)
 			}
@@ -136,9 +112,9 @@ litellm_url: http://127.0.0.1:8100
 litellm_key: never-include-this-secret
 models: []
 `
-	path := writeSettings(t, base+`unknown_setting: never-include-this-secret
+	path := configtest.WriteSettings(t, base+`unknown_setting: never-include-this-secret
 `)
-	_, err := loadTestConfig(t, []string{configFileEnv + "=" + path})
+	_, err := configtest.Load(t, settingPrefix, loadConfig, []string{configFileEnv + "=" + path})
 	if err == nil || strings.Contains(err.Error(), "never-include-this-secret") {
 		t.Fatalf("got unsafe or missing config error: %v", err)
 	}

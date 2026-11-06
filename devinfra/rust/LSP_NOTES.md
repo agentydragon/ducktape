@@ -1,149 +1,82 @@
 # Rust LSP in This Monorepo
 
-## Status: Working
+## Status and setup
 
-rust-analyzer resolves the Bazel crate graph via `rust-project.json`. Confirmed
-working in Claude Code: hover shows type info, documentSymbol parses structures,
-workspaceSymbol finds symbols across all crates.
+Investigation observations (2026-05): hover, documentSymbol, workspaceSymbol and
+goToDefinition worked in Claude Code; findReferences did not (suspected
+project-json source-root limitation). These are historical results, not a fresh
+compatibility check.
 
-Working features: hover, documentSymbol, workspaceSymbol, goToDefinition
-Not working: findReferences (likely a project-json source root limitation)
+Two repo-specific settings make the Bazel crate graph available:
 
-## Setup (two changes required)
+- Root [rust-analyzer.toml](../../rust-analyzer.toml) uses `workspace.discoverConfig`
+  to run [discover.sh](discover.sh) at startup and when `BUILD.bazel` files change.
+  This avoids fallback to root `Cargo.toml`, which exists only for
+  `crate_universe` pinning and cannot build the workspace.
+- [nix/home/home.nix](../../nix/home/home.nix) generates an empty
+  `~/.cargo/config.toml`. The previous `rustc-wrapper = "sccache"` made
+  `cargo metadata`'s sysroot discovery invoke `sccache rustc -vV`, failing with
+  EPERM inside Claude Code's sandbox.
 
-1. **`rust-analyzer.toml`** (checked into repo root) — uses
-   `workspace.discoverConfig` to auto-generate `rust-project.json` via Bazel
-   on startup and when `BUILD.bazel` files change. Prevents rust-analyzer from
-   falling back to `Cargo.toml` (which is only for `crate_universe` pinning).
+The script runs Bazel's `gen_rust_project` and emits JSONL progress followed by a
+`finished` message containing the project inline. Its `buildfile` must be
+absolute (`$PWD/WORKSPACE`); rust-analyzer panics on a relative path and uses its
+parent to determine the project root. Native root-TOML loading needs neither
+client `initializationOptions` nor `workspace/configuration` support.
 
-2. **No sccache in `~/.cargo/config.toml`** — the previous `rustc-wrapper =
-"sccache"` setting caused `cargo metadata` (used for sysroot discovery) to
-   invoke `sccache rustc -vV`, which fails with EPERM inside Claude Code's
-   sandbox. Since this repo builds Rust via Bazel (not cargo), sccache in the
-   global cargo config was only harmful. Removed via Nix (`nix/home/home.nix`).
-
-## How it works: discoverConfig
-
-The `workspace.discoverConfig` in `rust-analyzer.toml` configures an external
-command that rust-analyzer invokes to generate `rust-project.json` on demand.
-This replaces the `linkedProjects` approach with automatic regeneration.
-
-**Flow**:
-
-1. rust-analyzer starts, finds no linked projects, invokes the discover command
-2. `devinfra/rust/discover.sh` runs `bazelisk run @rules_rust//tools/rust_analyzer:gen_rust_project`
-3. The script outputs JSONL progress messages, then a `Finished` message with
-   the full `rust-project.json` content embedded inline
-4. rust-analyzer loads the project data and begins indexing
-5. When a `BUILD.bazel` file changes, rust-analyzer re-invokes the discover command
-
-**Advantages over `linkedProjects`**:
-
-- No manual regeneration step — rust-analyzer triggers it automatically
-- Re-generates when `BUILD.bazel` files change
-- No stale `rust-project.json` sitting around after dependency changes
-
-**The discover command JSONL format** (from rust-analyzer's `discover.rs`):
-
-```jsonl
-{"kind":"progress","message":"Generating rust-project.json via Bazel..."}
-{"kind":"finished","buildfile":"WORKSPACE","project":{...full rust-project.json content...}}
-```
-
-## Manual generation (fallback)
-
-If `discoverConfig` isn't working, you can still generate manually:
+Manual fallback:
 
 ```bash
 bazelisk run @rules_rust//tools/rust_analyzer:gen_rust_project -- --config=nolint
 ```
 
-Creates `rust-project.json` at the workspace root (~741KB, 439 crates).
-The file is in `.gitignore` — it contains machine-specific absolute paths
-(Bazel cache dirs under `~/.cache/bazel/`, Nix store paths).
-
-`--config=nolint` after `--` is consumed by `gen_rust_project`'s own `--config` option
-(rules_rust 0.74.0), which passes it to the `bazel build` it runs for crate discovery, not to
-the outer `bazelisk run` that builds `gen_rust_project`.
-
-## Why this works
-
-Claude Code's `rust-analyzer-lsp` plugin starts rust-analyzer with `rootUri`
-pointing at the repo root. Without `rust-analyzer.toml`, rust-analyzer finds
-`Cargo.toml` and runs `cargo check --workspace`, which fails (the Cargo.toml
-isn't a real workspace — it only exists for `rules_rust`'s `crate_universe`
-dependency pinning).
-
-The `discoverConfig` in `rust-analyzer.toml` overrides auto-discovery.
-rust-analyzer loads this file directly from the workspace root regardless of
-client capabilities — it doesn't need `initializationOptions` or
-`workspace/configuration` support from the LSP client.
-
-This only works because rust-analyzer has its own local config file mechanism
-independent of the LSP client. For language servers without such a mechanism,
-there would be no way to configure them per-project in Claude Code.
+The generated root `rust-project.json` is gitignored because it contains
+machine-specific Bazel/Nix paths. The trailing `--config=nolint` is consumed by
+`gen_rust_project` and passed to its inner crate-discovery build; it does not
+configure the outer `bazelisk run`.
 
 ## Claude Code LSP limitations (as of 2026-05)
 
-Investigated via the leaked Claude Code source at
-`~/code/claude-code-sourcemap/restored-src/src/services/lsp/`:
+These findings came from the local restored-source investigation, not current
+upstream validation. Plugin enablement lives in
+[nix/home/claude_code/default.nix](../../nix/home/claude_code/default.nix).
 
-- **No project-local LSP server config.** LSP servers are only configurable
-  through marketplace plugins (global) or `--plugin-dir` CLI flag (session-only).
-  There is no `.claude/lsp.json`, no LSP config in project `settings.json`, and
-  no auto-discovery of plugins from the project directory.
+- Server configuration came only from global marketplace plugins or the
+  session-only `--plugin-dir` CLI flag. No project `.claude/lsp.json`, LSP entries
+  in project settings, or project-directory plugin auto-discovery existed.
+  `--plugin-dir` could not be supplied through settings or environment variables.
+- Marketplace configuration was Nix-managed through read-only store symlinks,
+  with no per-project override. The Rust plugin supplied no
+  `initializationOptions`, `env` or `startupTimeout`.
+- The client declared `workspace.configuration: false`; its fallback handler
+  returned `null` for every item. rust-analyzer requested configuration anyway,
+  then fell through to root `rust-analyzer.toml`.
+- `LSPServerManager` → `config.ts` → `lspPluginIntegration.ts` →
+  `LSPServerInstance.ts` loaded plugin configuration and initialized servers.
+  Instances persisted in a `Map`, started lazily on first matching file access,
+  and retried ContentModified (-32801) three times with exponential backoff.
 
-- **`--plugin-dir` is CLI-only.** Cannot be set from project settings or env vars.
-  Would need to be passed on every `claude` invocation.
+## Investigation source pointers
 
-- **Marketplace plugin config is read-only.** The `claude-plugins-official`
-  marketplace config is Nix-managed (symlinks into `/nix/store`). The
-  `rust-analyzer-lsp` entry has no `initializationOptions`, `env`, or
-  `startupTimeout` — and there's no per-project override mechanism.
+Under `~/code/claude-code-sourcemap/restored-src/src/`:
 
-- **`workspace/configuration` returns null.** Claude Code's LSP client declares
-  `capabilities.workspace.configuration: false` but still registers a fallback
-  handler that returns `null` for every config item. rust-analyzer sends
-  `workspace/configuration` requests anyway (ignoring the capability), receives
-  nulls, and falls through to `rust-analyzer.toml` — which is why our workaround
-  works.
+- `services/lsp/`: server lifecycle and configuration flow above.
+- `utils/plugins/schemas.ts`: `LspServerConfigSchema` supported
+  `initializationOptions`, `env`, `startupTimeout`, `workspaceFolder` and `args`,
+  though the marketplace entry used none.
+- `utils/plugins/pluginLoader.ts`: `loadAllPluginsCacheOnly()` loaded marketplace,
+  `--plugin-dir` and built-in plugins only.
 
-- **LSP plugin architecture**: `LSPServerManager` → `config.ts` (loads plugins)
-  → `lspPluginIntegration.ts` (extracts LSP configs) → `LSPServerInstance.ts`
-  (starts server, sends `initialize`). Servers are persistent (kept in a `Map`),
-  started lazily on first `.rs` file access, and retried on ContentModified
-  errors (code -32801, 3 retries with exponential backoff).
+Under `~/code/rust-analyzer/crates/`:
 
-## Files
-
-- `rust-analyzer.toml` — `workspace.discoverConfig` pointing to discover script
-- `devinfra/rust/discover.sh` — wrapper that runs Bazel gen_rust_project, outputs JSONL
-- `rust-project.json` — generated Bazel crate graph (gitignored, machine-specific)
-- `Cargo.toml` — root manifest for `crate_universe`, NOT for building
-- `~/.cargo/config.toml` — Nix-managed, intentionally empty (no sccache)
-- `nix/home/home.nix` — generates empty `~/.cargo/config.toml`
-- `nix/home/claude_code/default.nix` — enables `rust-analyzer-lsp` plugin
-
-## Investigation history
-
-- Claude Code's LSP plugin source: `~/code/claude-code-sourcemap/restored-src/src/services/lsp/`
-- LSP config schema: `~/code/claude-code-sourcemap/restored-src/src/utils/plugins/schemas.ts`
-  (`LspServerConfigSchema` supports `initializationOptions`, `env`, `startupTimeout`,
-  `workspaceFolder`, `args` — but the marketplace plugin uses none of these)
-- Plugin loader: `~/code/claude-code-sourcemap/restored-src/src/utils/plugins/pluginLoader.ts`
-  (`loadAllPluginsCacheOnly()` loads from marketplace + `--plugin-dir` + builtins only)
-- rust-analyzer project discovery: `~/code/rust-analyzer/crates/project-model/src/lib.rs`
-  (checks `rust-project.json` before `Cargo.toml` for file paths, but workspace
-  root initialization prefers `Cargo.toml` — hence the config override)
-- rust-analyzer config loading: `~/code/rust-analyzer/crates/rust-analyzer/src/config.rs`
-  (reads `rust-analyzer.toml` from workspace root, `linkedProjects` and `discoverConfig`
-  are global configs, `linked_or_discovered_projects()` at line 2260 prefers
-  `linkedProjects` over discovered projects)
-- rust-analyzer discover command: `~/code/rust-analyzer/crates/rust-analyzer/src/discover.rs`
-  (spawns command, parses JSONL output, `DiscoverArgument` supports Path/Buildfile args)
-- rust-analyzer file watching: `~/code/rust-analyzer/crates/rust-analyzer/src/handlers/notification.rs`
-  (`filesToWatch` matches on filename only via `should_refresh_for_change`)
+- `project-model/src/lib.rs`: file discovery checked `rust-project.json` before
+  `Cargo.toml`, but workspace-root initialization preferred `Cargo.toml`.
+- `rust-analyzer/src/config.rs`: root TOML loading;
+  `linked_or_discovered_projects()` preferred `linkedProjects` over discovery.
+- `rust-analyzer/src/discover.rs`: JSONL protocol and Path/Buildfile arguments.
+- `rust-analyzer/src/handlers/notification.rs`: `filesToWatch` matched filenames
+  only through `should_refresh_for_change`.
 
 ## TODO
 
-- [ ] Re-evaluate when Claude Code adds project-local LSP config support
+- [ ] Re-evaluate when Claude Code adds project-local LSP configuration.

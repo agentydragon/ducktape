@@ -120,6 +120,7 @@ py_test(
         "//agent_core/testing/mcp:responses",
         "//openai_utils:model",
         "@pypi//pyhamcrest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

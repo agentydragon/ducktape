@@ -194,6 +194,7 @@ go_test(
     embed = [":main_lib"],
     deps = [
         "//agentplane/testing/agentdocs",
+        "//agentplane/testing/configtest",
     ],
 )
 

@@ -27,6 +27,8 @@ output-base removal use. The default branch is never a candidate.
 from __future__ import annotations
 
 import enum
+import logging
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,6 +38,8 @@ from devinfra.gc import git_repo
 from devinfra.gc.git_repo import content_in_main, patches_landed_in_main
 from devinfra.gc.pull_request import PrInfo, PrState, pr_phrase
 from devinfra.gc.worktree_gc import Classification, PrunableWorktree, RetainedWorktree, ReviewWorktree
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +69,7 @@ class RetainedBranchReason(enum.StrEnum):
 
 
 class ReviewBranchReason(enum.StrEnum):
+    INSPECTION_FAILED = enum.auto()
     PR_HEAD_EXCEEDED = enum.auto()  # commits beyond the head of the branch's merged or closed PR
     UNMERGED = enum.auto()
 
@@ -92,6 +97,7 @@ class ReviewBranch:
     reason: ReviewBranchReason
     main: str  # the ref the verdict was judged against, e.g. `origin/devel`
     pr: PrInfo | None = None  # set for PR_HEAD_EXCEEDED
+    detail: str | None = None
 
 
 type BranchClassification = PrunableBranch | RetainedBranch | ReviewBranch
@@ -99,6 +105,8 @@ type BranchClassification = PrunableBranch | RetainedBranch | ReviewBranch
 
 def describe_reason(item: BranchClassification) -> str:
     match item:
+        case ReviewBranch(reason=ReviewBranchReason.INSPECTION_FAILED, detail=str() as detail):
+            return f"cannot inspect: {detail}"
         case PrunableBranch(reason=PrunableBranchReason.CONTENT_IN_MAIN, main=main, pr=pr):
             return f"changes already in {main}" + (f" ({pr_phrase(pr)})" if pr is not None else "")
         case PrunableBranch(reason=PrunableBranchReason.PR_HEAD_REACHED, pr=PrInfo() as pr):
@@ -149,6 +157,18 @@ def _tip_within_pr_head(pg: pygit2.Repository, branch_oid: pygit2.Oid, pr: PrInf
 
 
 def classify_branch(
+    name: str, *, pg: pygit2.Repository, main: str, default_branch: str, pr: PrInfo | None, holder: Holder
+) -> BranchClassification:
+    """Classify one branch, reporting inspection failures without blocking other branches."""
+    try:
+        return _classify_branch(name, pg=pg, main=main, default_branch=default_branch, pr=pr, holder=holder)
+    except git_repo.INSPECTION_ERRORS as error:
+        detail = f"{type(error).__name__}: {error}"
+        logger.warning("Cannot inspect branch %s in %s: %s", name, pg.path, detail)
+        return ReviewBranch(Branch(name), ReviewBranchReason.INSPECTION_FAILED, main, detail=detail)
+
+
+def _classify_branch(
     name: str, *, pg: pygit2.Repository, main: str, default_branch: str, pr: PrInfo | None, holder: Holder
 ) -> BranchClassification:
     branch = Branch(name)
@@ -206,7 +226,10 @@ def delete_branch(repo: Path, name: str) -> BranchRemovalResult:
     proven to be in main. `git branch` refuses a branch still checked out in any worktree, so
     the caller must remove a holding worktree first.
     """
-    outcome = git_repo.git(repo, "branch", "-D", name, check=False)
+    try:
+        outcome = git_repo.git(repo, "branch", "-D", name, check=False)
+    except (OSError, subprocess.SubprocessError) as error:
+        return FailedBranch(name, str(error))
     if outcome.returncode == 0:
         return RemovedBranch(name)
     return FailedBranch(name, outcome.stderr.strip() or "git branch -D failed")

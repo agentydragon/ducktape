@@ -33,6 +33,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+var ironProxyBinaryRlocation, ironProxyPatchedBinaryRlocation string
+
 const (
 	testAudience = "iron-bridge-test"
 	testToken    = "hop-token-plain-test-value"
@@ -247,7 +249,7 @@ func exchangeInnerGET(t *testing.T, conn net.Conn, reader *bufio.Reader, target,
 }
 
 type ironProxyConfig struct {
-	binary          string
+	binaryRlocation string
 	caCert          string
 	caKey           string
 	upstreamCA      string
@@ -256,16 +258,12 @@ type ironProxyConfig struct {
 
 func startIronProxy(t *testing.T, transformAddress string) string {
 	t.Helper()
-	return startConfiguredIronProxy(t, transformAddress, ironProxyConfig{binary: "binary", sendRequestBody: true})
+	return startConfiguredIronProxy(t, transformAddress, ironProxyConfig{binaryRlocation: ironProxyBinaryRlocation, sendRequestBody: true})
 }
 
 func startConfiguredIronProxy(t *testing.T, transformAddress string, settings ironProxyConfig) string {
 	t.Helper()
-	files, err := runfiles.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	binary, err := files.Rlocation("ducktape_iron_proxy/" + settings.binary + "_/" + settings.binary)
+	binary, err := runfiles.Rlocation(settings.binaryRlocation)
 	if err != nil {
 		t.Fatal(err)
 	}

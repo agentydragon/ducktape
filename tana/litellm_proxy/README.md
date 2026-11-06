@@ -39,31 +39,8 @@ bazelisk run //tana/litellm_proxy:demo_bin -- \
   --prompt 'Reply with exactly: tana-litellm-ok'
 ```
 
-Tool-call smoke:
-
-```bash
-bazelisk run //tana/litellm_proxy:demo_bin -- \
-  --model tana/claude-3-5-sonnet-latest \
-  --tool-demo
-```
-
-Streaming smoke:
-
-```bash
-bazelisk run //tana/litellm_proxy:demo_bin -- \
-  --model tana/claude-3-5-sonnet-latest \
-  --stream \
-  --prompt 'Reply with exactly: tana-stream-ok'
-```
-
-Streaming tool-call smoke:
-
-```bash
-bazelisk run //tana/litellm_proxy:demo_bin -- \
-  --model tana/claude-3-5-sonnet-latest \
-  --stream \
-  --tool-demo
-```
+Add `--tool-demo` to request a function call and `--stream` to stream the response;
+combine them to stream the tool-call demo.
 
 The model prefix before the first slash is LiteLLM's custom provider name. The
 provider strips `tana/` and sends the remainder as Tana's `options.model`.

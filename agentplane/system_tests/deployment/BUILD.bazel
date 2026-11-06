@@ -9,7 +9,6 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/oci:defs.bzl", "oci_image_group")
 
 package(
     default_testonly = True,
@@ -113,48 +112,6 @@ oci_image(
         ":runner_codex_link",
     ],
     user = "1000:1000",
-)
-
-oci_image_group(
-    name = "harnesses/environment_tools_layout",
-    images = {":environment_tools_harnesses_image": "git.allegedly.works/ducktape-ci/environment-tools:unset"},
-    visibility = ["//agentplane/system_tests:__subpackages__"],
-)
-
-oci_image_group(
-    name = "service_images",
-    images = {
-        "//agentplane/action_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
-        "//agentplane/app:image": "git.allegedly.works/ducktape-ci/agentplane-app:unset",
-        "//agentplane/egress/cmd:image": "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset",
-        "//agentplane/egress:sidecar_image": "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset",
-        "//agentplane/history_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-history-service:unset",
-        "//agentplane/llm_ingress:image": "git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset",
-        "//agentplane/mcp_edge:service_image": "git.allegedly.works/ducktape-ci/agentplane-mcp-edge:unset",
-        "//agentplane/notification_service:service_image": "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset",
-        "//agentplane/policy_controller:image": "git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset",
-        "//agentplane/runner_gateway:image": "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset",
-        "//agentplane/sandbox_controller:image": "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
-        "@postgres_18_minimal_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
-    },
-    visibility = ["//agentplane/system_tests:__subpackages__"],
-)
-
-oci_image_group(
-    name = "runner_disk_image",
-    images = {"//agentplane/env/images:disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"},
-    visibility = ["//agentplane/system_tests:__subpackages__"],
-)
-
-oci_image_group(
-    name = "mcp_images",
-    images = {
-        "//agentplane/central_sampler/cmd:service_image": "git.allegedly.works/ducktape-ci/agentplane-central-sampler:unset",
-        "@dex_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-dex:unset",
-        "@mcp_everything_linux_amd64": "git.allegedly.works/ducktape-ci/agentplane-mcp-everything:unset",
-        "//agentplane/action_service/testing:oauth_mcp_server_image": "git.allegedly.works/ducktape-ci/agentplane-oauth-fixture:unset",
-    },
-    visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
 py_test(
@@ -593,12 +550,6 @@ oci_image(
     os = "linux",
     tars = [":deletion_test_disk_bin"],
     user = "107:107",
-)
-
-oci_image_group(
-    name = "deletion_test_disk",
-    images = {":deletion_test_disk_image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset"},
-    visibility = ["//agentplane/system_tests:__subpackages__"],
 )
 
 py_library(

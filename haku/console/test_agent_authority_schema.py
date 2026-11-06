@@ -7,6 +7,7 @@ schema objects, deferred constraints, triggers, and invalid rows rather than dom
 from __future__ import annotations
 
 import datetime
+import re
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
@@ -15,8 +16,11 @@ import pytest_bazel
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from sqlalchemy import Connection, Engine, create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError, ProgrammingError
+from testcontainers.postgres import PostgresContainer
 
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from haku.console.database_migrate import apply_migrations
 from haku.console.database_schema import UNMAPPED_COLUMNS_PENDING_DROP, metadata
 from haku.console.identity.agent import (
@@ -31,6 +35,15 @@ from haku.console.tool_calls import ToolCallStatus
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 
 _UTC = datetime.UTC
+
+
+def _schema(container: PostgresContainer, database: str) -> str:
+    result = container.get_wrapped_container().exec_run(
+        ["pg_dump", "-U", "postgres", "--schema-only", "--no-owner", "--exclude-table=public.alembic_version", database]
+    )
+    assert result.exit_code == 0, result.output.decode()
+    # Random psql restriction keys are transport framing, not schema.
+    return re.sub(r"^\\(?:un)?restrict .*\n", "", result.output.decode(), flags=re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -599,13 +612,20 @@ def test_database_at_head_with_missing_orm_column_fails_validation(db_url: str) 
         engine.dispose()
 
 
-def test_database_already_at_head_is_unchanged(db_url: str) -> None:
+def test_database_already_at_head_is_unchanged(postgres_container: PostgresContainer, db_url: str) -> None:
     apply_migrations(db_url)
+    database = make_url(db_url).database
+    assert database is not None
+    schema_before = _schema(postgres_container, database)
+    (undeclared_outputs_dir() / "haku_console_schema.sql").write_text(schema_before)
     engine = create_engine(db_url)
     operator_id = uuid4()
     try:
         with engine.connect() as conn:
             head_version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+            public_relations = conn.execute(
+                text("SELECT oid, relname FROM pg_class WHERE relnamespace = 'public'::regnamespace ORDER BY oid")
+            ).all()
 
         with engine.begin() as conn:
             conn.execute(
@@ -619,6 +639,7 @@ def test_database_already_at_head_is_unchanged(db_url: str) -> None:
             )
 
         apply_migrations(db_url)
+        assert _schema(postgres_container, database) == schema_before
 
         with engine.connect() as conn:
             # Re-applying when already at head is a no-op: the stamp is unchanged (asserting a
@@ -631,6 +652,12 @@ def test_database_already_at_head_is_unchanged(db_url: str) -> None:
                     {"operator_id": operator_id},
                 ).scalar_one()
                 == 1
+            )
+            assert (
+                conn.execute(
+                    text("SELECT oid, relname FROM pg_class WHERE relnamespace = 'public'::regnamespace ORDER BY oid")
+                ).all()
+                == public_relations
             )
     finally:
         engine.dispose()

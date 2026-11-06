@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"strings"
@@ -13,8 +12,6 @@ import (
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -28,45 +25,11 @@ type environmentConnection struct {
 }
 
 func (a *app) connectEnvironment() (*environmentConnection, error) {
-	const urlVariable, credentialVariable = "AGENTPLANE_SESSIONS_URL", "AGENTPLANE_SESSIONS_CREDENTIAL"
-	base, credential := a.getenv(urlVariable), a.getenv(credentialVariable)
-	if base == "" || credential == "" {
-		missing := urlVariable
-		if base != "" {
-			missing = credentialVariable
-		} else if credential == "" {
-			missing += " and " + credentialVariable
-		}
-		return nil, usageFailure("%s not set", missing)
-	}
-	parsed, err := parseServiceURL(base, urlVariable)
+	connection, err := a.connectGRPC("SESSIONS")
 	if err != nil {
 		return nil, err
 	}
-	if parsed.Path != "" && parsed.Path != "/" {
-		return nil, usageFailure("%s must not include a path", urlVariable)
-	}
-	target, err := grpcTarget(parsed, urlVariable)
-	if err != nil {
-		return nil, err
-	}
-	transportCredentials := credentials.TransportCredentials(insecure.NewCredentials())
-	if parsed.Scheme == "https" {
-		transportCredentials = credentials.NewTLS(&tls.Config{MinVersion: tls.VersionTLS12, ServerName: parsed.Hostname()})
-	}
-	connection, err := grpc.NewClient(
-		target,
-		grpc.WithTransportCredentials(transportCredentials),
-		grpc.WithPerRPCCredentials(bearerCredential(credential)),
-		grpc.WithDisableRetry(),
-	)
-	if err != nil {
-		return nil, usageFailure("%s is not a valid gRPC endpoint", urlVariable)
-	}
-	return &environmentConnection{
-		connection: connection,
-		client:     environmentpb.NewEnvironmentServiceClient(connection),
-	}, nil
+	return &environmentConnection{connection: connection, client: environmentpb.NewEnvironmentServiceClient(connection)}, nil
 }
 
 func (a *app) environmentsCommand() *cobra.Command {

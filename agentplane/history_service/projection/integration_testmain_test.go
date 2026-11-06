@@ -1,27 +1,20 @@
 package projection
 
 import (
-	"context"
 	"database/sql"
 	"net/url"
 	"os"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/history_service/migrations"
+	"github.com/agentydragon/ducktape/agentplane/history_service/testing"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
-	_ "github.com/lib/pq"
 )
 
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
 	os.Exit(postgres.RunIntegrationTests(
-		func(ctx context.Context, db *sql.DB) error {
-			if err := postgres.EnsureElectricRole(ctx, db); err != nil {
-				return err
-			}
-			return migrations.Up(ctx, db)
-		},
+		historytesting.SetupIntegrationDatabase,
 		func(database *postgres.Database) int {
 			integrationDatabase = database
 			return m.Run()
@@ -43,10 +36,6 @@ func openDB(t *testing.T, applicationName string) *sql.DB {
 		query.Set("application_name", applicationName)
 		target.RawQuery = query.Encode()
 	}
-	db, err := sql.Open("postgres", target.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, target.String())
 	return db
 }

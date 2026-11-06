@@ -5,7 +5,6 @@ import (
 	"errors"
 	"math"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -16,6 +15,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
@@ -65,37 +65,13 @@ func required(t *testing.T, extra ...string) []string {
 		settingPrefix + "SANDBOX_NAMESPACE=agentplane", settingPrefix + "RUNNER_TOKEN_FILE=/var/run/token",
 		settingPrefix + "DISPATCHER_AUDIENCE=session-dispatcher", settingPrefix + "GATEWAY_AUDIENCE=runner-gateway",
 		settingPrefix + "POD_IP=10.0.0.5",
-		settingPrefix + "CONFIG_FILE=" + writeSettings(t, requiredFile), databaseURLEnv,
+		settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, requiredFile), databaseURLEnv,
 	}, extra...)
 }
 
-func loadTestConfig(t *testing.T, environ []string) (config, error) {
-	t.Helper()
-	for _, entry := range os.Environ() {
-		name, _, _ := strings.Cut(entry, "=")
-		if strings.HasPrefix(name, settingPrefix) {
-			t.Setenv(name, "")
-		}
-	}
-	for _, entry := range environ {
-		name, value, _ := strings.Cut(entry, "=")
-		t.Setenv(name, value)
-	}
-	return loadConfig()
-}
-
-func writeSettings(t *testing.T, contents string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "settings.yaml")
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
 func TestCallerListsComeFromTheFileAndKeepAuthWakeAndOperatorPoliciesSeparate(t *testing.T) {
-	path := writeSettings(t, requiredFile+"wake_callers: [agentplane/notifications]\noperator_callers: [agentplane/app]\ndelegation:\n  actor: agentplane/actions\n  caller_namespaces: [agentplane]\n  methods:\n    - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput\n    - /agentplane.environments.v1.EnvironmentService/ListEnvironments\n    - /agentplane.environments.v1.EnvironmentService/GetEnvironment\n")
-	c, err := loadTestConfig(t, required(t,
+	path := configtest.WriteSettings(t, requiredFile+"wake_callers: [agentplane/notifications]\noperator_callers: [agentplane/app]\ndelegation:\n  actor: agentplane/actions\n  caller_namespaces: [agentplane]\n  methods:\n    - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput\n    - /agentplane.environments.v1.EnvironmentService/ListEnvironments\n    - /agentplane.environments.v1.EnvironmentService/GetEnvironment\n")
+	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t,
 		settingPrefix+"CONFIG_FILE="+path, settingPrefix+"SANDBOX_CONTROLLER_ACCOUNT=agentplane/sandbox-controller"))
 	if err != nil {
 		t.Fatal(err)
@@ -117,12 +93,12 @@ func TestCallerListsComeFromTheFileAndKeepAuthWakeAndOperatorPoliciesSeparate(t 
 }
 
 func TestOperatorCallersMustAlsoBeAuthenticatedDispatcherCallers(t *testing.T) {
-	path := writeSettings(t, requiredFile+"operator_callers: [agentplane/unknown]\n")
-	if _, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
+	path := configtest.WriteSettings(t, requiredFile+"operator_callers: [agentplane/unknown]\n")
+	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
 		t.Fatal("operator caller not admitted by Dispatcher auth was accepted")
 	}
-	path = writeSettings(t, requiredFile+"operator_callers: []\n")
-	c, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+path))
+	path = configtest.WriteSettings(t, requiredFile+"operator_callers: []\n")
+	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
 	if err != nil {
 		t.Fatalf("empty operator caller list: %v", err)
 	}
@@ -148,7 +124,7 @@ runtime_catalog:
       workspace_root_enforced: false
       creates_missing_cwd: true
 `
-	config, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+writeSettings(t, settings)))
+	config, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, settings)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,15 +190,15 @@ runtime_catalog:
 }
 
 func TestAWakeCallerThatIsNotADispatcherCallerIsRefused(t *testing.T) {
-	path := writeSettings(t, requiredFile+"wake_callers: [agentplane/unknown]\n")
-	if _, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
+	path := configtest.WriteSettings(t, requiredFile+"wake_callers: [agentplane/unknown]\n")
+	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
 		t.Fatal("unauthorized wake caller accepted")
 	}
 }
 
 func TestEmptyWakeCallerListIsAccepted(t *testing.T) {
-	path := writeSettings(t, requiredFile+"wake_callers: []\n")
-	c, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+path))
+	path := configtest.WriteSettings(t, requiredFile+"wake_callers: []\n")
+	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
 	if err != nil {
 		t.Fatalf("empty wake caller list: %v", err)
 	}
@@ -236,18 +212,18 @@ func TestHostProcessTargetsAreAcceptedAndTheAdvertisedPortIsBounded(t *testing.T
 		settingPrefix + "LISTEN_ADDRESS=127.0.0.1:41001", settingPrefix + "PROXY_PORT=42000",
 		settingPrefix + "RUNNER_CONTROL_TARGET_TEMPLATE=127.0.0.1:41001", settingPrefix + "KUBECONFIG=/tmp/fake-kubeconfig",
 	}
-	if _, err := loadTestConfig(t, required(t, host...)); err != nil {
+	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, host...)); err != nil {
 		t.Fatal(err)
 	}
 	for _, port := range []string{"0", "65536"} {
-		if _, err := loadTestConfig(t, required(t, settingPrefix+"PROXY_PORT="+port)); err == nil {
+		if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"PROXY_PORT="+port)); err == nil {
 			t.Fatalf("invalid advertised proxy port %s was accepted", port)
 		}
 	}
 }
 
 func TestKubernetesClientQPSFlowsFromSettingsToRESTConfig(t *testing.T) {
-	kubeconfig := writeSettings(t, `apiVersion: v1
+	kubeconfig := configtest.WriteSettings(t, `apiVersion: v1
 kind: Config
 clusters:
 - name: test
@@ -273,7 +249,7 @@ users:
 			if test.setting != "" {
 				environ = append(environ, settingPrefix+"KUBERNETES_CLIENT_QPS="+test.setting)
 			}
-			c, err := loadTestConfig(t, environ)
+			c, err := configtest.Load(t, settingPrefix, loadConfig, environ)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -286,7 +262,7 @@ users:
 			}
 		})
 	}
-	c, err := loadTestConfig(t, required(t))
+	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,12 +278,12 @@ func TestErrorsNeverCarryTheDatabaseURL(t *testing.T) {
 	for _, bad := range [][]string{
 		{settingPrefix + "PROXY_PORT=not-a-number"},
 		{settingPrefix + "MAX_QUEUED_PER_SESSION=0"},
-		{settingPrefix + "CONFIG_FILE=" + writeSettings(t, requiredFile+"unknown_setting: 1\n")},
-		{settingPrefix + "CONFIG_FILE=" + writeSettings(t, "dispatcher_callers: [not-an-account]\ngateway_callers: [agentplane/a]\n")},
+		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, requiredFile+"unknown_setting: 1\n")},
+		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, "dispatcher_callers: [not-an-account]\ngateway_callers: [agentplane/a]\n")},
 		{settingPrefix + "SANDBOX_CONTROLLER_ACCOUNT=not-an-account"},
-		{settingPrefix + "CONFIG_FILE=" + writeSettings(t, requiredFile+"delegation: {actor: agentplane/actions}\n")},
+		{settingPrefix + "CONFIG_FILE=" + configtest.WriteSettings(t, requiredFile+"delegation: {actor: agentplane/actions}\n")},
 	} {
-		_, err := loadTestConfig(t, required(t, bad...))
+		_, err := configtest.Load(t, settingPrefix, loadConfig, required(t, bad...))
 		if err == nil {
 			t.Fatalf("%v accepted", bad)
 		}
@@ -330,7 +306,7 @@ func TestRunnerSecurityMustBeExplicitAndConsistent(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			contents := "dispatcher_callers: [agentplane/app]\ngateway_callers: [agentplane/runner-gateway]\nrunner_security: " + test.security + "\n"
-			_, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+writeSettings(t, contents)))
+			_, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, contents)))
 			if (err == nil) != test.valid {
 				t.Fatalf("loadConfig error = %v, valid = %t", err, test.valid)
 			}
@@ -339,7 +315,7 @@ func TestRunnerSecurityMustBeExplicitAndConsistent(t *testing.T) {
 }
 
 func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
-	if _, err := loadTestConfig(t, required(t)); err != nil {
+	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t)); err != nil {
 		t.Fatal(err)
 	}
 	for _, missing := range []string{
@@ -349,7 +325,7 @@ func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
 		rest := slices.DeleteFunc(required(t), func(item string) bool {
 			return strings.HasPrefix(item, settingPrefix+missing+"=")
 		})
-		if _, err := loadTestConfig(t, rest); err == nil {
+		if _, err := configtest.Load(t, settingPrefix, loadConfig, rest); err == nil {
 			t.Fatalf("ran without %s", missing)
 		}
 	}
@@ -357,7 +333,7 @@ func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
 		"no Dispatcher callers": "gateway_callers: [agentplane/a]\n",
 		"no Gateway callers":    "dispatcher_callers: [agentplane/a]\n",
 	} {
-		if _, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+writeSettings(t, contents))); err == nil {
+		if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, contents))); err == nil {
 			t.Fatalf("ran with %s", name)
 		}
 	}
@@ -368,14 +344,14 @@ func TestPodNameDefaultsToTheHostname(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := loadTestConfig(t, required(t))
+	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.PodName != hostname {
 		t.Fatalf("pod name %q, hostname %q", c.PodName, hostname)
 	}
-	c, err = loadTestConfig(t, required(t, settingPrefix+"POD_NAME=runner-gateway-0"))
+	c, err = configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"POD_NAME=runner-gateway-0"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,9 +361,9 @@ func TestPodNameDefaultsToTheHostname(t *testing.T) {
 }
 
 func TestOptionalCentralSamplerTarget(t *testing.T) {
-	path := writeSettings(t, requiredFile+`central_sampler: {target: sampler:8080, token_file: /run/token}
+	path := configtest.WriteSettings(t, requiredFile+`central_sampler: {target: sampler:8080, token_file: /run/token}
 `)
-	c, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+path))
+	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
 	if err != nil || c.CentralSampler == nil || c.CentralSampler.Target != "sampler:8080" {
 		t.Fatalf("configured sampler: %v %v", c.CentralSampler, err)
 	}
@@ -443,7 +419,7 @@ func TestDispatcherCredentialProvesTheCurrentWorkloadAtStartup(t *testing.T) {
 		{name: "review unavailable", reviewFails: true, podAccount: "gateway"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			c := config{Namespace: "agentplane", PodName: "gateway-pod", RunnerTokenFile: writeSettings(t, "test-workload-token"), GatewayCallers: []auth.Account{account, {Namespace: "foreign", Name: "gateway"}}}
+			c := config{Namespace: "agentplane", PodName: "gateway-pod", RunnerTokenFile: configtest.WriteSettings(t, "test-workload-token"), GatewayCallers: []auth.Account{account, {Namespace: "foreign", Name: "gateway"}}}
 			resolver, err := auth.NewResolver(dispatcherReviews{t: t, principal: test.principal, fail: test.reviewFails}, "gateway-audience", []string{"agentplane", "foreign"})
 			if err != nil {
 				t.Fatal(err)

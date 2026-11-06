@@ -95,6 +95,7 @@ class ReviewEntryReason(enum.StrEnum):
     MISSING_CONTENTS = enum.auto()  # a recorded-inputs file without its directory
     NESTED_MOUNT = enum.auto()  # `detail` is the mount point
     CANNOT_STAT = enum.auto()  # `detail` is the OS error
+    CANNOT_LIST = enum.auto()
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,7 +186,11 @@ def inventory(contents: Path, *, uid: int, points: set[Path]) -> list[CacheEntry
         if not is_dir:
             items.append(ReviewEntry(hash_dir, ReviewEntryReason.NOT_A_DIRECTORY))
             continue
-        children = sorted(hash_dir.iterdir())
+        try:
+            children = sorted(hash_dir.iterdir())
+        except OSError as error:
+            items.append(ReviewEntry(hash_dir, ReviewEntryReason.CANNOT_LIST, detail=str(error)))
+            continue
         names = {child.name for child in children}
         for child in children:
             if child.name.endswith(RECORDED_INPUTS_SUFFIX):
@@ -391,6 +396,8 @@ def describe_reason(inspection: RetainedEntry | ReviewEntry) -> str:
             return f"contains mount point {detail}"
         case ReviewEntry(reason=ReviewEntryReason.CANNOT_STAT, detail=str() as detail):
             return f"cannot stat entry: {detail}"
+        case ReviewEntry(reason=ReviewEntryReason.CANNOT_LIST, detail=str() as detail):
+            return f"cannot list cache directory: {detail}"
         case _:
             raise ValueError(f"{inspection=} lacks the detail its reason cites")
 

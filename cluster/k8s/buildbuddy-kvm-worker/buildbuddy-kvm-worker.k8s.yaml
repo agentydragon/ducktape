@@ -843,7 +843,8 @@ data:
     [Install]
     WantedBy=multi-user.target
   executor.yaml: |
-    # Nested KubeVirt runs privileged node agents; the dedicated VM is the trust boundary.
+    # Test actions run nested Kubernetes/KubeVirt with privileged pods. The executor
+    # lives inside a VM so those privileges are confined to the guest.
     docker_cap_add: ALL
     executor:
       app_target: grpcs://remote.buildbuddy.io:443
@@ -954,7 +955,7 @@ data:
       --pull=missing \
       --network host \
       --env MY_HOSTNAME=buildbuddy-kvm-worker \
-      --env MY_POOL=wyrm2-kvm-vm \
+      --env MY_POOL=kvm-vm \
       --env-file "$environment_file" \
       --volume /etc/buildbuddy/executor.yaml:/config.yaml:ro \
       --volume /var/run/docker.sock:/var/run/docker.sock \

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +28,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/probes"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -105,11 +105,7 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 	c.PolicyNamespace = policyNamespace
 	cluster := deps{Reviews: kube.TokenReviews(), Kube: kubeConfig}
 	configure(&c, &cluster)
-	db, err := sql.Open("postgres", c.DatabaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, c.DatabaseURL)
 	hub, err := wakeups.Listen(t.Context(), c.DatabaseURL, store.UpdatesChannel)
 	if err != nil {
 		t.Fatal(err)
@@ -417,11 +413,7 @@ func TestTheServiceFinishesALinkAndAnOAuthGroupFollowsItsLinkage(t *testing.T) {
 	awaitMCPHealth(t, groups, "test-linked", unlinked)
 
 	// The replica the operator started the flow on.
-	db, err := sql.Open("postgres", databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, databaseURL)
 	replica, err := linkage.New(db, servers, metadata)
 	if err != nil {
 		t.Fatal(err)

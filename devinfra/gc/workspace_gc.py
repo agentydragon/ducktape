@@ -854,7 +854,11 @@ def _with_default_command(argv: list[str]) -> list[str]:
 
 def main(argv: list[str] | None = None) -> None:
     """Run the CLI through its importable wheel entry point."""
-    app(args=_with_default_command(sys.argv[1:] if argv is None else argv))
+    try:
+        app(args=_with_default_command(sys.argv[1:] if argv is None else argv))
+    except git_repo.INSPECTION_ERRORS as error:
+        print(f"workspace-gc: {type(error).__name__}: {error}", file=sys.stderr)
+        raise SystemExit(1) from error
 
 
 if __name__ == "__main__":

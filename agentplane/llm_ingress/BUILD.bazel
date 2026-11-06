@@ -90,7 +90,9 @@ go_test(
     ],
     data = [":server"],
     embed = [":server_lib"],
+    x_defs = {"github.com/agentydragon/ducktape/agentplane/llm_ingress.ingressServerRlocation": "$(rlocationpath :server)"},
     deps = [
+        "//agentplane/testing/configtest",
         "//agentplane/testing/kubeapiserver",
         "//agentplane/workload_auth/auth",
         "@io_bazel_rules_go//go/runfiles",

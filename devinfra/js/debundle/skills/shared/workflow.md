@@ -334,6 +334,11 @@ or stale assertions without silently expanding the promised scope.
   Unchanged gate verdicts can conceal precision regressions; inspect affected
   execution completeness and constraints, and classify new restrictions.
   Edge counts alone conflate ordering requirements and duplicate provenance.
+  For ownership edits, compare the full authored layout in the same report
+  mode before and after, alongside the passing subset. Returning an excluded
+  initializer's canonical claim to residual can add cycles. When coherent,
+  retain that initializer in its own unselected owner and select the helpers
+  separately.
 - Distinguish public engine checks, private integration, accepted canonical
   output and runtime proof. A merged pin or green synthetic suite establishes
   only its own scope. Track the exact head and live job; let an existing run
@@ -381,6 +386,11 @@ and merge trains to the integrator. The orchestrator owns adapter details,
 broadcasts working commands and retains the canonical outcome across handoffs.
 
 ## Execution evidence
+
+Have the launcher persist argv and cwd before execution, as in the
+[recorded example](examples/isolated_edit.py). CLI invocation output may be
+absent after setup or argument-parsing failures. Keep the actual exit result
+and streams separately; reconstructed commands are not execution evidence.
 
 Workers report the branch/commit, starting manifest and graph/input identity,
 reviewed relative YAML delta, destinations/bindings changed, skipped units and

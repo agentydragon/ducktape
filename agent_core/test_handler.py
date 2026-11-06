@@ -39,25 +39,18 @@ def test_redirect_text_only_injects_reminder(redirect_handler) -> None:
     assert _injected_text(decision) == REMINDER
 
 
-def test_redirect_empty_text_with_tool_call_no_reminder(redirect_handler) -> None:
-    """The glm-4.6 pattern: an empty output_text message alongside a tool call must NOT redirect."""
-    redirect_handler.on_assistant_text_event(AssistantText(text=""))
-    redirect_handler.on_tool_call_event(_tool_call())
-
-    assert isinstance(redirect_handler.on_before_sample(), NoAction)
-
-
-def test_redirect_text_preamble_with_tool_call_no_reminder(redirect_handler) -> None:
-    """A prose preamble emitted in the same turn as a tool call is not 'instead of tools'."""
-    redirect_handler.on_assistant_text_event(AssistantText(text="Let me inspect the workspace."))
-    redirect_handler.on_tool_call_event(_tool_call())
-
-    assert isinstance(redirect_handler.on_before_sample(), NoAction)
-
-
-def test_redirect_empty_text_only_no_reminder(redirect_handler) -> None:
-    """An empty message with no tool call carries no text — nothing to redirect."""
-    redirect_handler.on_assistant_text_event(AssistantText(text="   "))
+@pytest.mark.parametrize(
+    ("text", "has_tool_call"),
+    [
+        pytest.param("", True, id="glm-4.6-empty-output-text-with-tool-call"),
+        pytest.param("Let me inspect the workspace.", True, id="prose-preamble-with-tool-call"),
+        pytest.param("   ", False, id="whitespace-only-without-tool-call"),
+    ],
+)
+def test_redirect_does_not_inject_without_text_only_response(redirect_handler, text: str, has_tool_call: bool) -> None:
+    redirect_handler.on_assistant_text_event(AssistantText(text=text))
+    if has_tool_call:
+        redirect_handler.on_tool_call_event(_tool_call())
 
     assert isinstance(redirect_handler.on_before_sample(), NoAction)
 

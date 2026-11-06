@@ -24,6 +24,15 @@ def _bucket(id: str, kind: BucketKind, direction: TransferDirection, account: st
     return BucketDef(id=id, label=id.replace("_", " ").title(), kind=kind, direction=direction, account=account)
 
 
+def _misc_transactions(rows: list[tuple[str, date, Decimal, str]]) -> list[ClassifiedTxn]:
+    return [
+        ClassifiedTxn(
+            transaction_id=transaction_id, date=txn_date, amount=amount, name=name, account_id="a", bucket_id="misc"
+        )
+        for transaction_id, txn_date, amount, name in rows
+    ]
+
+
 def _load(text: str) -> list[data.Directive]:
     entries, errors, _ = loader.load_string(text)
     assert not errors, [str(e) for e in errors]
@@ -133,32 +142,13 @@ def test_income_signs_are_inverted() -> None:
 def test_entries_ordered_by_date_then_id() -> None:
     buckets = {"misc": _bucket("misc", BucketKind.EXPENSE, TransferDirection.OUTFLOW)}
     funding = {"a": "Assets:BofA:Checking"}
-    txns = [
-        ClassifiedTxn(
-            transaction_id="z",
-            date=date(2026, 5, 2),
-            amount=Decimal("1.0"),
-            name="late",
-            account_id="a",
-            bucket_id="misc",
-        ),
-        ClassifiedTxn(
-            transaction_id="b",
-            date=date(2026, 5, 1),
-            amount=Decimal("1.0"),
-            name="early-b",
-            account_id="a",
-            bucket_id="misc",
-        ),
-        ClassifiedTxn(
-            transaction_id="a",
-            date=date(2026, 5, 1),
-            amount=Decimal("1.0"),
-            name="early-a",
-            account_id="a",
-            bucket_id="misc",
-        ),
-    ]
+    txns = _misc_transactions(
+        [
+            ("z", date(2026, 5, 2), Decimal("1.0"), "late"),
+            ("b", date(2026, 5, 1), Decimal("1.0"), "early-b"),
+            ("a", date(2026, 5, 1), Decimal("1.0"), "early-a"),
+        ]
+    )
     rendered = render_ledger(txns, buckets, funding)
     assert rendered.index("early-a") < rendered.index("early-b") < rendered.index("late")
 
@@ -166,24 +156,9 @@ def test_entries_ordered_by_date_then_id() -> None:
 def test_render_is_deterministic() -> None:
     buckets = {"misc": _bucket("misc", BucketKind.EXPENSE, TransferDirection.OUTFLOW)}
     funding = {"a": "Assets:BofA:Checking"}
-    txns = [
-        ClassifiedTxn(
-            transaction_id="b",
-            date=date(2026, 5, 1),
-            amount=Decimal("2.5"),
-            name="two",
-            account_id="a",
-            bucket_id="misc",
-        ),
-        ClassifiedTxn(
-            transaction_id="a",
-            date=date(2026, 5, 1),
-            amount=Decimal("1.0"),
-            name="one",
-            account_id="a",
-            bucket_id="misc",
-        ),
-    ]
+    txns = _misc_transactions(
+        [("b", date(2026, 5, 1), Decimal("2.5"), "two"), ("a", date(2026, 5, 1), Decimal("1.0"), "one")]
+    )
     assert render_ledger(txns, buckets, funding) == render_ledger(list(reversed(txns)), buckets, funding)
 
 

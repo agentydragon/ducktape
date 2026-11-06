@@ -5,27 +5,16 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 # gazelle:resolve py trust_manager_crds //cluster/cdk8s/providers/cert_manager:bundle
 
 load("//agentplane/system_tests/k3s:defs.bzl", "K3S_BINARY", "K3S_EXEC_PROPERTIES", "K3S_PERSISTENCE_PROPERTIES", "K3S_TAGS", "image_manifest")
-load("//devinfra/oci:defs.bzl", "oci_image_group")
 
 package(default_testonly = True)
 
-oci_image_group(
-    name = "test_manifest_fixture_a",
-    images = {"testdata/manifest_layout_a.txt": "example/fixture-a:1"},
-)
-
-oci_image_group(
-    name = "test_manifest_fixture_b",
-    images = {"testdata/manifest_layout_b.txt": "example/fixture-b:1"},
-)
-
 image_manifest(
     name = "test_image_manifest_data",
-    fixture = [
-        ":test_manifest_fixture_a",
-        ":test_manifest_fixture_b",
-    ],
-    pki = [":test_manifest_fixture_a"],
+    fixture = {
+        "testdata/manifest_layout_a.txt": "example/fixture-a:1",
+        "testdata/manifest_layout_b.txt": "example/fixture-b:1",
+    },
+    pki = {"testdata/manifest_layout_a.txt": "example/fixture-a:1"},
 )
 
 py_test(

@@ -89,6 +89,7 @@ go_test(
     ],
     data = ["//agentplane/env/images:vm_guest_contract.json"],
     embed = [":sandbox_controller"],
+    x_defs = {"github.com/agentydragon/ducktape/agentplane/sandbox_controller.vmGuestContractRlocation": "$(rlocationpath //agentplane/env/images:vm_guest_contract.json)"},
     deps = [
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/sandboxes/api",

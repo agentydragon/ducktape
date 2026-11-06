@@ -34,6 +34,8 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+var ingressServerRlocation string
+
 const (
 	testAudience   = "test-llm-ingress"
 	testNamespace  = "test-sandboxes"
@@ -862,7 +864,7 @@ func TestDependencyOutagesAreSanitizedAndDoNotForwardWorkloadCredentials(t *test
 }
 
 func TestRealBinaryStartsWithYAMLAndEnvironmentConfiguration(t *testing.T) {
-	binary, err := runfiles.Rlocation("ducktape/agentplane/llm_ingress/server_/server")
+	binary, err := runfiles.Rlocation(ingressServerRlocation)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,10 +12,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var stagingConfigRlocation string
+
 // Read the checked-in cdk8s output so added staging keys and CLI flags exercise
 // the same strict loader as the deployed binary, without copying its catalog.
 func TestRenderedStagingConfiguration(t *testing.T) {
-	path, err := runfiles.Rlocation("_main/cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml")
+	path, err := runfiles.Rlocation(stagingConfigRlocation)
 	if err != nil {
 		t.Fatal(err)
 	}

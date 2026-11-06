@@ -82,7 +82,10 @@ go_test(
     name = "config_test",
     srcs = ["config_test.go"],
     embed = [":cmd"],
-    deps = ["//agentplane/workload_auth/auth"],
+    deps = [
+        "//agentplane/testing/configtest",
+        "//agentplane/workload_auth/auth",
+    ],
 )
 
 pkg_tar(
@@ -104,6 +107,9 @@ oci_image(
         "//third_party/debian_slim:cacerts",
     ],
     user = "1000:1000",
-    visibility = ["//agentplane/system_tests/deployment:__pkg__"],
+    visibility = [
+        "//agentplane/system_tests/deployment:__pkg__",
+        "//agentplane/system_tests/suites:__subpackages__",
+    ],
     workdir = "/",
 )

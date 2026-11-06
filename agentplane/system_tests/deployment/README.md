@@ -9,7 +9,7 @@ The disposable stack used by the [CI system test suites](../README.md): the Agen
 bare k3s inside the suite's own RBE action (no Cilium), which PR CI runs like any test.
 [`system_test_target.py`](system_test_target.py) is the pytest plugin that starts it and publishes it as
 the deployment under test, with LLM ingress forwarding to the scenario's scripted model on the node.
-Scripted Pod targets take the `harnesses/environment_tools_layout` image, which carries both pinned harnesses.
+Pod suites include the deployment package's `environment_tools_harnesses_image`, which carries both pinned harnesses.
 
 containerd keeps unpacked image layers (its overlayfs snapshotter's root) on a tmpfs, except on a stack
 with VM Sandboxes ([measurements](../k3s/debug/stack_timings.md#image-layers-in-memory-2026-10-21)).
@@ -80,8 +80,8 @@ The bundled containerd does not register its upstream tracing plugin; imports ha
 and the existing Go CPU/runtime profiles.
 
 A suite using the MCP fixture stack takes the `rendered/local-model-mcp-fixtures.json`
-rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture
-(`:mcp_images`), with test-only Dex clients, operator, MCP server and Action groups. The
+rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture, with
+test-only Dex clients, operator, MCP server and Action groups. The
 standalone MCP edge serves its OAuth and MCP endpoints in this fixture; Actions keeps its separate
 OAuth client for the upstream fixture used by `mcp:test_actions`. Dex
 reads a config Secret holding the bcrypt hash of a fixed test-only operator password.
@@ -154,9 +154,10 @@ bootstrap failures include the last probe result and k3s log tail and stop the s
 The image list includes the serving binaries, which apply their embedded migrations at startup. A fast
 [`test_render`](BUILD.bazel) check validates this fixture composition and its endpoint/Service wiring
 without starting Kubernetes.
-`oci_image_group` declares image references and OCI layouts. Each suite combines its selected groups
-into one JSON manifest, keyed by import group and image reference, and carries the layouts in runfiles.
-The suite owns these artifacts; importing the stack library does not bring in service images or k3s. The importer
+`k3s/defs.bzl` declares each suite's image references directly alongside its image targets. A small
+analysis rule writes the selected fixture, PKI, VM and guest mappings into one JSON manifest and
+carries those layouts in runfiles. The suite owns these artifacts; importing the stack library does
+not bring in service images or k3s. The importer
 combines index descriptors with those references and streams each distinct blob once, without
 materializing Docker-format `oci_load` tarballs.
 

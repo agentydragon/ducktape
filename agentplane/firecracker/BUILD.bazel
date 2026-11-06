@@ -84,7 +84,10 @@ oci_image(
         ":runtime_tool_links",
         ":launcher_layer",
     ],
-    visibility = ["//agentplane/system_tests/firecracker:__pkg__"],
+    visibility = [
+        "//agentplane/system_tests/firecracker:__pkg__",
+        "//agentplane/system_tests/suites:__pkg__",
+    ],
 )
 
 oci_load(

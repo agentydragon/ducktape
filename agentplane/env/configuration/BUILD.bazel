@@ -32,6 +32,7 @@ go_test(
     data = ["//agentplane/env/runtime/cmd:agentplane-environment-runtime"],
     embed = [":configuration"],
     race = "on",
+    x_defs = {"github.com/agentydragon/ducktape/agentplane/env/configuration.environmentRuntimeRlocation": "$(rlocationpath //agentplane/env/runtime/cmd:agentplane-environment-runtime)"},
     deps = [
         "//agentplane/env/runtime/codexappserver",
         "//agentplane/env/runtime/execution/codexexecserver",

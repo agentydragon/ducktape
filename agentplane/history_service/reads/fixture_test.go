@@ -9,6 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/storage"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -30,11 +31,7 @@ type fixture struct {
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, integrationDatabase.URL)
 	history := storage.NewStore(db, false)
 	return fixture{
 		db: db, history: history, reader: &Reader{DB: db, History: history, NativeFrameReadBatchSize: 200},

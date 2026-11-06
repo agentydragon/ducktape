@@ -32,18 +32,11 @@ def test_cli_columns_actually_shows_content(runner, git_repo_with_changes, monke
     """Test that --columns flag actually controls what appears in output."""
     monkeypatch.chdir(git_repo_with_changes)
 
-    # Test with only tree column - should NOT have counts
-    result_tree_only = runner.invoke(main, ["--columns", "tree"], obj={}, catch_exceptions=False)
-    assert result_tree_only.exit_code == 0
-    assert "main.py" in result_tree_only.output
-    # Should not have +/- counts when counts column is disabled
-    assert "+2" not in result_tree_only.output
-
-    # Test with tree and counts - should have counts
-    result_with_counts = runner.invoke(main, ["--columns", "tree,counts"], obj={}, catch_exceptions=False)
-    assert result_with_counts.exit_code == 0
-    assert "main.py" in result_with_counts.output
-    assert "+2" in result_with_counts.output  # Should show addition count
+    for columns, has_counts in [("tree", False), ("tree,counts", True)]:
+        result = runner.invoke(main, ["--columns", columns], obj={}, catch_exceptions=False)
+        assert result.exit_code == 0
+        assert "main.py" in result.output
+        assert ("+2" in result.output) == has_counts
 
 
 def test_cli_sort_actually_changes_order(runner, temp_git_repo, run_git, monkeypatch):

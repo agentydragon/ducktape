@@ -120,7 +120,10 @@ go_test(
     name = "config_test",
     srcs = ["config_test.go"],
     embed = [":main_lib"],
-    deps = ["//agentplane/workload_auth/auth"],
+    deps = [
+        "//agentplane/testing/configtest",
+        "//agentplane/workload_auth/auth",
+    ],
 )
 
 go_test(
@@ -135,8 +138,8 @@ go_test(
     deps = [
         ":history_service_go_proto",
         ":session_ingress_go_proto",
-        "//agentplane/history_service/migrations",
         "//agentplane/history_service/projection",
+        "//agentplane/history_service/testing:integration_migrations",
         "//agentplane/history_service/testing/spans",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",

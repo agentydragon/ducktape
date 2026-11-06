@@ -1,0 +1,6 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+images:
+  # Bootstrap only: Flux selects the first published node image before the cluster is activated.
+  - name: git.allegedly.works/ducktape-ci/agentplane-test-node
+    newTag: unset # {"$imagepolicy": "flux-system:agentplane-test-node:tag"}

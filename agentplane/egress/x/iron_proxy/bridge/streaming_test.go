@@ -200,13 +200,14 @@ func TestIronBridgeStreaming(t *testing.T) {
 	target := net.JoinHostPort("localhost", port)
 
 	for _, scenario := range []struct {
-		name     string
-		binary   string
-		sendBody bool
+		name            string
+		binaryRlocation string
+		sendBody        bool
+		blocked         bool
 	}{
-		{name: "patched headers only", binary: "patched_binary"},
-		{name: "stock headers only stalls after upstream headers", binary: "binary"},
-		{name: "patched body forwarding stalls before admission", binary: "patched_binary", sendBody: true},
+		{name: "patched headers only", binaryRlocation: ironProxyPatchedBinaryRlocation},
+		{name: "stock headers only stalls after upstream headers", binaryRlocation: ironProxyBinaryRlocation, blocked: true},
+		{name: "patched body forwarding stalls before admission", binaryRlocation: ironProxyPatchedBinaryRlocation, sendBody: true, blocked: true},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			lab := newTestBridge(t)
@@ -219,7 +220,7 @@ func TestIronBridgeStreaming(t *testing.T) {
 				}}},
 			})
 			address := startConfiguredIronProxy(t, lab.address, ironProxyConfig{
-				binary: scenario.binary, caCert: interception.certPath, caKey: interception.keyPath,
+				binaryRlocation: scenario.binaryRlocation, caCert: interception.certPath, caKey: interception.keyPath,
 				upstreamCA: upstreamTLS.certPath, sendRequestBody: scenario.sendBody,
 			})
 			connection := streamConnection(t, address, target, interception.roots)
@@ -237,14 +238,14 @@ func TestIronBridgeStreaming(t *testing.T) {
 				return stream
 			}
 			duration := 10 * time.Second
-			if scenario.binary == "binary" || scenario.sendBody {
+			if scenario.blocked {
 				duration = 3 * time.Second
 			}
 			ctx, cancel := context.WithTimeout(t.Context(), duration)
 			defer cancel()
 			stream := newStream(t, ctx)
 			headers, err := stream.Header()
-			if scenario.binary == "binary" || scenario.sendBody {
+			if scenario.blocked {
 				// gRPC can return nil metadata and nil error from Header when a stream
 				// ends before headers arrive; Recv carries the terminal status.
 				if (err != nil && status.Code(err) != codes.DeadlineExceeded) || len(headers) != 0 {

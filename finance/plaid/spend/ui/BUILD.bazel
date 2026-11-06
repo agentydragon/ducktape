@@ -207,6 +207,7 @@ ts_library(
         "//:node_modules/decimal.js",
         "//:node_modules/react",
         "//util/frontend:help_tooltip",
+        "//util/frontend:tooltip_interaction",
     ],
 )
 

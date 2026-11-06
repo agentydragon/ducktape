@@ -22,6 +22,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/github/settings"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 )
 
@@ -45,11 +46,7 @@ func testSettings() settings.Settings {
 
 func openDatabase(t *testing.T, url string) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("postgres", url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, url)
 	return db
 }
 

@@ -11,13 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 @asynccontextmanager
 async def async_timer() -> AsyncGenerator[Callable[[], int]]:
-    """Async context manager for timing operations.
-
-    Usage:
-        async with async_timer() as get_duration_ms:
-            # do work
-            duration_ms = get_duration_ms()
-    """
+    """Yield a callable reporting elapsed milliseconds since entering the context."""
     loop = asyncio.get_running_loop()
     start_time = loop.time()
 
@@ -71,14 +65,11 @@ class TruncatedStream(BaseModel):
     total_bytes: int
 
 
-# Union type for exec output that may or may not be truncated
 ExecStream = str | TruncatedStream
 
 
 @dataclass(frozen=True)
 class ExecOutput:
-    """Raw stdout/stderr produced by an executed process (internal model)."""
-
     stdout: bytes
     stderr: bytes
 
@@ -108,8 +99,6 @@ ExitStatus = Annotated[TimedOut | Exited | Killed, Field(discriminator="kind")]
 
 @dataclass(frozen=True)
 class ExecOutcome:
-    """Complete execution outcome with output and exit status (internal model)."""
-
     output: ExecOutput
     exit: ExitStatus
     duration_ms: int
@@ -145,12 +134,10 @@ def render_stream(data: bytes, limit: int) -> ExecStream:
 
 
 def render_streams(stdout: bytes, stderr: bytes, max_bytes: int) -> tuple[ExecStream, ExecStream]:
-    """Render both stdout and stderr streams under a byte limit."""
     return (render_stream(stdout, max_bytes), render_stream(stderr, max_bytes))
 
 
 def render_outcome_to_result(outcome: ExecOutcome, max_bytes: int) -> BaseExecResult:
-    """Render ExecOutcome directly to BaseExecResult (preserves types)."""
     stdout_render, stderr_render = render_streams(outcome.output.stdout, outcome.output.stderr, max_bytes)
     return BaseExecResult.from_rendered_streams(outcome.exit, stdout_render, stderr_render, outcome.duration_ms)
 
@@ -158,7 +145,6 @@ def render_outcome_to_result(outcome: ExecOutcome, max_bytes: int) -> BaseExecRe
 def render_raw_to_result(
     stdout: bytes, stderr: bytes, exit_code: int | None, timed_out: bool, max_bytes: int, duration_ms: int
 ) -> BaseExecResult:
-    """Render raw streams directly to BaseExecResult (preserves types)."""
     stdout_render, stderr_render = render_streams(stdout, stderr, max_bytes)
 
     # exit_code should be int when not timed out, but handle None defensively

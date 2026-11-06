@@ -65,8 +65,9 @@ def test_a_complete_nonnegative_payout_path_compiles() -> None:
     _compile(_payout_paths())
 
 
-@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
-def test_nonfinite_distribution_is_not_treated_as_a_zero_payout(value: float) -> None:
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf"), -0.1, -1e-15])
+def test_invalid_distribution_is_not_treated_as_a_zero_payout(value: float) -> None:
+    # Even a negative payout that would round to zero must be rejected.
     with pytest.raises(ValueError, match="security_distribution:bnd"):
         _compile(_payout_paths(bad_month_value=value))
 
@@ -77,12 +78,6 @@ def test_missing_distribution_snapshot_is_not_treated_as_a_zero_payout() -> None
     frames[kind] = frames[kind].filter(pl.col("month_index") != 6)
     with pytest.raises(ValueError, match="security_distribution:bnd"):
         _compile(ExternalSeriesContext(levels=LevelFrames.from_partial(frames)))
-
-
-@pytest.mark.parametrize("value", [-0.1, -1e-15])
-def test_negative_distribution_is_rejected_even_if_it_would_round_to_zero(value: float) -> None:
-    with pytest.raises(ValueError, match="security_distribution:bnd"):
-        _compile(_payout_paths(bad_month_value=value))
 
 
 if __name__ == "__main__":

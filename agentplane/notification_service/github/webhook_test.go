@@ -16,6 +16,8 @@ import (
 	"github.com/google/uuid"
 )
 
+var notificationGoldenRlocation string
+
 // The vectors are what the retired Python service stored for the webhook bodies it accepted, and why it refused the
 // others (`store/golden.json`, written by `generate_golden.py` at commit 180ae8a62d).
 type deliveryVectors struct {
@@ -56,7 +58,7 @@ type deliveryVectors struct {
 
 func loadVectors(t *testing.T) deliveryVectors {
 	t.Helper()
-	path, err := runfiles.Rlocation("_main/agentplane/notification_service/store/golden.json")
+	path, err := runfiles.Rlocation(notificationGoldenRlocation)
 	if err != nil {
 		t.Fatal(err)
 	}

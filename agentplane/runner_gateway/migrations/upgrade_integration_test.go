@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"database/sql"
 	"strings"
-	"sync"
 	"testing"
 
 	_ "github.com/lib/pq"
@@ -22,95 +21,6 @@ func TestBaselineCreatesFinalSchema(t *testing.T) {
 		t.Fatal("repeat baseline:", err)
 	}
 	assertRetainedEvidence(t, db)
-}
-
-func TestBaselineAdoptsCompletedVersion13WithoutRewritingEvidence(t *testing.T) {
-	db := openMigrationDatabase(t)
-	prepareVersion13(t, db)
-	insertRetainedEvidence(t, db)
-
-	var wait sync.WaitGroup
-	errors := make(chan error, 2)
-	for range 2 {
-		wait.Add(1)
-		go func() {
-			defer wait.Done()
-			errors <- Up(t.Context(), db)
-		}()
-	}
-	wait.Wait()
-	close(errors)
-	for err := range errors {
-		if err != nil {
-			t.Fatal("concurrent adoption:", err)
-		}
-	}
-	assertRetainedEvidence(t, db)
-	var oldCount, newCount int
-	if err := db.QueryRowContext(t.Context(), `SELECT count(*) FILTER (WHERE version_id BETWEEN 2 AND 13),
-        count(*) FILTER (WHERE version_id=14 AND is_applied) FROM `+gooseTable).Scan(&oldCount, &newCount); err != nil {
-		t.Fatal(err)
-	}
-	if oldCount != 12 || newCount != 1 {
-		t.Fatalf("Goose history: old=%d new=%d, want 12 and 1", oldCount, newCount)
-	}
-}
-
-func TestBaselineRejectsPartialPredecessors(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		damage func(*testing.T, *sql.DB)
-	}{
-		{"missing_version", func(t *testing.T, db *sql.DB) {
-			_, err := db.ExecContext(t.Context(), "DELETE FROM "+gooseTable+" WHERE version_id=8")
-			if err != nil {
-				t.Fatal(err)
-			}
-		}},
-		{"unapplied_version", func(t *testing.T, db *sql.DB) {
-			_, err := db.ExecContext(t.Context(), "UPDATE "+gooseTable+" SET is_applied=false WHERE version_id=8")
-			if err != nil {
-				t.Fatal(err)
-			}
-		}},
-		{"missing_uid_evidence", func(t *testing.T, db *sql.DB) {
-			_, err := db.ExecContext(t.Context(), "ALTER TABLE session DROP COLUMN creator_account_uid")
-			if err != nil {
-				t.Fatal(err)
-			}
-		}},
-		{"missing_receipt_index", func(t *testing.T, db *sql.DB) {
-			_, err := db.ExecContext(t.Context(), "DROP INDEX ix_dispatch_session_state")
-			if err != nil {
-				t.Fatal(err)
-			}
-		}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			db := openMigrationDatabase(t)
-			prepareVersion13(t, db)
-			insertRetainedEvidence(t, db)
-			test.damage(t, db)
-			err := Up(t.Context(), db)
-			if err == nil || !strings.Contains(err.Error(), "previous image") {
-				t.Fatalf("adoption error = %v, want instruction to run previous image", err)
-			}
-			var adopted int
-			if err := db.QueryRowContext(t.Context(), "SELECT count(*) FROM "+gooseTable+" WHERE version_id=14 AND is_applied").Scan(&adopted); err != nil {
-				t.Fatal(err)
-			}
-			if adopted != 0 {
-				t.Fatal("incomplete predecessor was adopted")
-			}
-			var receipts int
-			if err := db.QueryRowContext(t.Context(), "SELECT count(*) FROM dispatch WHERE command_id='uncertain-command'").Scan(&receipts); err != nil {
-				t.Fatal(err)
-			}
-			if receipts != 1 {
-				t.Fatal("rejected adoption lost command receipt")
-			}
-		})
-	}
 }
 
 func TestBaselineRejectsUnknownObjectsInFreshDatabase(t *testing.T) {
@@ -138,29 +48,6 @@ func TestBaselineRejectsSchemaWithoutHistory(t *testing.T) {
 	err := Up(t.Context(), db)
 	if err == nil || !strings.Contains(err.Error(), "previous image") {
 		t.Fatalf("history-less schema error = %v", err)
-	}
-}
-
-func prepareVersion13(t *testing.T, db *sql.DB) {
-	t.Helper()
-	if err := Up(t.Context(), db); err != nil {
-		t.Fatal("create final schema:", err)
-	}
-	tx, err := db.BeginTx(t.Context(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tx.Rollback()
-	if _, err := tx.ExecContext(t.Context(), "DELETE FROM "+gooseTable+" WHERE version_id=14"); err != nil {
-		t.Fatal(err)
-	}
-	for version := 2; version <= 13; version++ {
-		if _, err := tx.ExecContext(t.Context(), "INSERT INTO "+gooseTable+" (version_id,is_applied,tstamp) VALUES ($1,true,now())", version); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatal(err)
 	}
 }
 

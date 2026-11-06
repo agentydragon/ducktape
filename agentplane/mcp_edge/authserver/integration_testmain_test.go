@@ -23,7 +23,6 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
-	_ "github.com/lib/pq"
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/oauth2"
@@ -352,11 +351,7 @@ func start(t *testing.T, configure ...func(*Config)) *harness {
 
 func startWithResource(t *testing.T, resource func(*Server) http.Handler, configure ...func(*Config)) *harness {
 	t.Helper()
-	db, err := sql.Open("postgres", integrationDatabase.Clone(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, integrationDatabase.Clone(t))
 	h := &harness{
 		db: db, callers: &testCallers{accounts: []workloadauth.Account{callerAccount, otherAccount}},
 		upstream: newFakeUpstream(t), documents: newDocumentServer(t),
@@ -380,9 +375,11 @@ func startWithResource(t *testing.T, resource func(*Server) http.Handler, config
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
-	if h.server, err = New(ctx, config, db, store); err != nil {
+	server, err := New(ctx, config, db, store)
+	if err != nil {
 		t.Fatal(err)
 	}
+	h.server = server
 	mux := http.NewServeMux()
 	mux.Handle(resourcePath, resource(h.server))
 	mux.Handle("/", h.server.Handler())

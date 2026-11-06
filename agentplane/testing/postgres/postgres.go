@@ -20,6 +20,9 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
+// The BUILD target supplies runfiles paths for the loader and image descriptors.
+var loaderRlocation, postgresRlocation, ryukRlocation string
+
 const (
 	postgresImage = "postgres:18"
 	postgresUser  = "postgres"
@@ -64,10 +67,10 @@ func RunIntegrationTests(migrate func(context.Context, *sql.DB) error, run func(
 
 // Start ensures the PostgreSQL and Ryuk image tags are available, starts PostgreSQL, and applies migrate.
 func Start(ctx context.Context, migrate func(context.Context, *sql.DB) error) (*Database, error) {
-	if err := loadImage(ctx, postgresImage, "_main/third_party/containers/postgres_18_rloc.rloc"); err != nil {
+	if err := loadImage(ctx, postgresImage, postgresRlocation); err != nil {
 		return nil, err
 	}
-	if err := loadImage(ctx, ryukImage, "_main/third_party/containers/ryuk_rloc.rloc"); err != nil {
+	if err := loadImage(ctx, ryukImage, ryukRlocation); err != nil {
 		return nil, err
 	}
 
@@ -143,6 +146,17 @@ func (db *Database) Clone(t testing.TB) string {
 	return db.databaseURL(name)
 }
 
+// Open returns a PostgreSQL database handle for dsn and closes it when the test completes.
+func Open(t testing.TB, dsn string) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
 // prepareCloneTemplateLocked initializes the clone source while db.mu is held.
 func (db *Database) prepareCloneTemplateLocked(ctx context.Context) error {
 	if db.admin != nil {
@@ -208,7 +222,7 @@ func openDatabase(ctx context.Context, container testcontainers.Container) (stri
 }
 
 func loadImage(ctx context.Context, image, imageRlocation string) error {
-	loader, err := runfiles.Rlocation("ducktape/devinfra/oci/oci_load_bin")
+	loader, err := runfiles.Rlocation(loaderRlocation)
 	if err != nil {
 		return fmt.Errorf("locate shared OCI image loader for %s: %w", image, err)
 	}
@@ -216,7 +230,12 @@ func loadImage(ctx context.Context, image, imageRlocation string) error {
 }
 
 func runImageLoader(ctx context.Context, image, loader string, args ...string) error {
+	runfilesEnv, err := runfiles.Env()
+	if err != nil {
+		return fmt.Errorf("get runfiles environment for OCI image loader: %w", err)
+	}
 	command := exec.CommandContext(ctx, loader, args...)
+	command.Env = append(os.Environ(), runfilesEnv...)
 	// The shared Python loader starts Docker as a child. Keep both in one group so cancelling this
 	// context cannot leave a detached `docker load` holding the daemon busy.
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

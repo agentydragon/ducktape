@@ -350,6 +350,7 @@ go_test(
         "//agentplane/action_service/catalog",
         "//agentplane/action_service/linkage",
         "//agentplane/action_service/push",
+        "//agentplane/testing/configtest",
         "//agentplane/workload_auth/auth",
     ],
 )

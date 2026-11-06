@@ -1037,6 +1037,7 @@ pub enum NativeOperationKind {
     /// Direct zero-argument construction through the original global data binding.
     TextEncoderEmpty,
     MapEmpty,
+    WeakMapEmpty,
     SetEmpty,
     Symbol,
     SymbolFor,

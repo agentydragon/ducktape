@@ -199,7 +199,7 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	if config.CodexExecServer != nil && (config.CodexBinary == "" || config.HarnessEnvironment == nil) {
 		return nil, errors.New("execution service requires Codex binary and resolved harness environment")
 	}
-	if err := ensureDirectory(config.StateDir); err != nil {
+	if err := retained.EnsureDirectory(config.StateDir); err != nil {
 		return nil, err
 	}
 	security, err := config.Control.Security.Open(context.Background())

@@ -35,6 +35,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -279,11 +280,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	for _, configure := range configure {
 		configure(&config)
 	}
-	db, err := sql.Open("postgres", integrationDatabase.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
+	db := postgres.Open(t, integrationDatabase.URL)
 	if _, err := db.ExecContext(t.Context(), `TRUNCATE inbox CASCADE`); err != nil {
 		t.Fatal(err)
 	}

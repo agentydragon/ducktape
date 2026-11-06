@@ -17,6 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/cosistate"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/workspace"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/environment_runtime_transport"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -248,7 +249,7 @@ func newTestRuntime(t *testing.T, config Config, injected state.State, deps runt
 	if injected == nil {
 		return newRuntime(config, nil, deps)
 	}
-	if err := ensureDirectory(config.StateDir); err != nil {
+	if err := retained.EnsureDirectory(config.StateDir); err != nil {
 		return nil, err
 	}
 	_, backing, err := cosistate.Open(config.StateDir, lifecycle.Namespace)

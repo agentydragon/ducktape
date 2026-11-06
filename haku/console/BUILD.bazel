@@ -107,11 +107,13 @@ py_test(
         ":database_migrate",
         ":database_schema",
         "//:conftest",
+        "//devinfra/testing:undeclared_outputs",
         "//util/testing:postgres",
         "@pypi//alembic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
         "//haku/console/identity:agent",
         "//haku/console/identity:operator_identity",
         "@ducktape_haku//haku/console:tool_calls",
@@ -397,21 +399,5 @@ py_test(
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_schema_baseline",
-    size = "medium",
-    srcs = ["test_schema_baseline.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":database_migrate",
-        "//:conftest",
-        "//devinfra/testing:undeclared_outputs",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-        "@pypi//testcontainers",
     ],
 )

@@ -29,6 +29,11 @@ immediately before removing it.
 Scans emit INFO progress to stderr as they inspect each worktree, branch, output base, PR
 batch, or requested size, so a large or slow item is identifiable before the final report.
 
+Git or filesystem failures inspecting a worktree, branch, or foreign clone produce `REVIEW`
+with the error, leaving that item intact while other items continue. This also applies during
+deletion revalidation. An existing directory with unreadable Git metadata is never treated as
+a missing worktree. Failures that block the entire command exit nonzero with a diagnostic.
+
 **The tool automates what's easy to automate; you apply intelligence where the automation
 needs supplementation.** It makes the clear-cut calls — an ancestor merge, a merged PR, a
 missing workspace. You supplement: inspect the dirty KEEP trees the tool can't reason about

@@ -171,15 +171,31 @@ async def test_run_scrape_fails_on_any_miss_without_stale_policy(tmp_path: Path)
     )
 
 
-async def test_run_scrape_skips_source_fetched_within_max_age(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("fetched_hours", "max_age_hours", "http_get", "expected_code", "expected_blob", "expect_skip"),
+    [
+        pytest.param(1, 20, _constant_get(b"new"), 0, None, True, id="fresh-source-skip"),
+        pytest.param(48, 20, _constant_get(b"body"), 0, b"body", False, id="old-source-refetch"),
+        pytest.param(1, None, _boom, 0, None, False, id="failed-fetch-with-fresh-copy"),
+        pytest.param(100, None, _boom, 1, None, False, id="failed-fetch-with-stale-copy"),
+    ],
+)
+async def test_run_scrape_source_freshness(
+    tmp_path: Path,
+    fetched_hours: int,
+    max_age_hours: int | None,
+    http_get: HttpGet,
+    expected_code: int,
+    expected_blob: bytes | None,
+    expect_skip: bool,
+) -> None:
     remote = tmp_path / "remote.git"
-    _seed_with_last_fetched(remote, {SOURCE.provenance_label: NOW - timedelta(hours=1)})
-    fetched = False
+    _seed_with_last_fetched(remote, {SOURCE.provenance_label: NOW - timedelta(hours=fetched_hours)})
+    calls: list[str] = []
 
-    async def get(url: str, user_agent: str) -> bytes:
-        nonlocal fetched
-        fetched = True
-        return b"new"
+    async def track_get(url: str, user_agent: str) -> bytes:
+        calls.append(url)
+        return await http_get(url, user_agent)
 
     code = await run_scrape(
         str(remote),
@@ -187,68 +203,17 @@ async def test_run_scrape_skips_source_fetched_within_max_age(tmp_path: Path) ->
         [SOURCE],
         username="",
         password="",
-        http_get=get,
+        http_get=track_get,
         now=NOW,
         depth=0,
-        max_age=timedelta(hours=20),
-    )
-    assert code == 0
-    assert not fetched  # fetched 1h ago (< 20h) -> skipped
-
-
-async def test_run_scrape_refetches_source_older_than_max_age(tmp_path: Path) -> None:
-    remote = tmp_path / "remote.git"
-    _seed_with_last_fetched(remote, {SOURCE.provenance_label: NOW - timedelta(hours=48)})
-    code = await run_scrape(
-        str(remote),
-        "main",
-        [SOURCE],
-        username="",
-        password="",
-        http_get=_constant_get(b"body"),
-        now=NOW,
-        depth=0,
-        max_age=timedelta(hours=20),
-    )
-    assert code == 0
-    assert _remote_blob(remote, "fred_cpi_us.csv") == b"body"
-
-
-async def test_run_scrape_tolerates_failure_when_committed_copy_is_fresh(tmp_path: Path) -> None:
-    remote = tmp_path / "remote.git"
-    _seed_with_last_fetched(remote, {SOURCE.provenance_label: NOW - timedelta(hours=1)})
-    # max_age=None forces a fetch attempt (which fails); the 1h-old copy is < stale_after, so green.
-    code = await run_scrape(
-        str(remote),
-        "main",
-        [SOURCE],
-        username="",
-        password="",
-        http_get=_boom,
-        now=NOW,
-        depth=0,
-        max_age=None,
+        max_age=timedelta(hours=max_age_hours) if max_age_hours is not None else None,
         stale_after=timedelta(hours=72),
     )
-    assert code == 0
-
-
-async def test_run_scrape_fails_when_failed_source_is_stale(tmp_path: Path) -> None:
-    remote = tmp_path / "remote.git"
-    _seed_with_last_fetched(remote, {SOURCE.provenance_label: NOW - timedelta(hours=100)})
-    code = await run_scrape(
-        str(remote),
-        "main",
-        [SOURCE],
-        username="",
-        password="",
-        http_get=_boom,
-        now=NOW,
-        depth=0,
-        max_age=None,
-        stale_after=timedelta(hours=72),
-    )
-    assert code == 1  # last fetched 100h ago (> 72h) and still failing
+    assert code == expected_code
+    if expect_skip:
+        assert not calls
+    if expected_blob is not None:
+        assert _remote_blob(remote, "fred_cpi_us.csv") == expected_blob
 
 
 # ── market mirror pass ──────────────────────────────────────────────────
@@ -367,19 +332,41 @@ async def test_run_scrape_restamps_manifest_after_refresh_floor(tmp_path: Path) 
     assert manifest.last_fetched[KALSHI_ENTRY.provenance_label] == NOW
 
 
-async def test_run_scrape_market_syncs_while_fresh_source_skips(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("fetched_hours", "market_max_age_hours", "fail", "expected_code", "expected_calls"),
+    [
+        pytest.param((1, 1), None, False, 0, (False, True), id="source-skip-market-refresh"),
+        pytest.param((None, 1), 6, False, 0, (None, False), id="fresh-market-skip"),
+        pytest.param((None, 1), None, True, 0, (None, None), id="failed-fresh-market"),
+        pytest.param((None, 100), None, True, 1, (None, None), id="failed-stale-market"),
+    ],
+)
+async def test_run_scrape_market_freshness(
+    tmp_path: Path,
+    fetched_hours: tuple[int | None, int],
+    market_max_age_hours: int | None,
+    fail: bool,
+    expected_code: int,
+    expected_calls: tuple[bool | None, bool | None],
+) -> None:
     remote = tmp_path / "remote.git"
-    _seed_with_last_fetched(
-        remote,
-        {SOURCE.provenance_label: NOW - timedelta(hours=1), KALSHI_ENTRY.provenance_label: NOW - timedelta(hours=1)},
-    )
-    get, calls = _dispatch_get({SOURCE.upstream_url: b"body", **_MARKET_RESPONSES})
+    source_hours, market_hours = fetched_hours
+    last_fetched = {KALSHI_ENTRY.provenance_label: NOW - timedelta(hours=market_hours)}
+    if source_hours is not None:
+        last_fetched[SOURCE.provenance_label] = NOW - timedelta(hours=source_hours)
+    _seed_with_last_fetched(remote, last_fetched)
+    sources = [] if fail else [SOURCE]
+    get: HttpGet
+    calls: list[str]
+    if fail:
+        get, calls = _boom, []
+    else:
+        get, calls = _dispatch_get({SOURCE.upstream_url: b"body", **_MARKET_RESPONSES})
 
-    # Hourly-run policy: sources keep their long freshness window, markets sync every run.
     code = await run_scrape(
         str(remote),
         "main",
-        [SOURCE],
+        sources,
         username="",
         password="",
         http_get=get,
@@ -387,67 +374,15 @@ async def test_run_scrape_market_syncs_while_fresh_source_skips(tmp_path: Path) 
         depth=0,
         markets=[KALSHI_ENTRY],
         max_age=timedelta(hours=20),
-        market_max_age=None,
-    )
-    assert code == 0
-    assert SOURCE.upstream_url not in calls
-    assert f"{KALSHI_API}/markets/KXT-1" in calls
-
-
-async def test_run_scrape_market_max_age_skips_fresh_market(tmp_path: Path) -> None:
-    remote = tmp_path / "remote.git"
-    _seed_with_last_fetched(remote, {KALSHI_ENTRY.provenance_label: NOW - timedelta(hours=1)})
-    get, calls = _dispatch_get({SOURCE.upstream_url: b"body", **_MARKET_RESPONSES})
-
-    code = await run_scrape(
-        str(remote),
-        "main",
-        [SOURCE],
-        username="",
-        password="",
-        http_get=get,
-        now=NOW,
-        depth=0,
-        markets=[KALSHI_ENTRY],
-        market_max_age=timedelta(hours=6),
-    )
-    assert code == 0
-    assert f"{KALSHI_API}/markets/KXT-1" not in calls
-
-
-async def test_run_scrape_failed_market_is_tolerated_until_stale(tmp_path: Path) -> None:
-    remote = tmp_path / "remote.git"
-    _seed_with_last_fetched(remote, {KALSHI_ENTRY.provenance_label: NOW - timedelta(hours=1)})
-    code = await run_scrape(
-        str(remote),
-        "main",
-        [],
-        username="",
-        password="",
-        http_get=_boom,
-        now=NOW,
-        depth=0,
-        markets=[KALSHI_ENTRY],
+        market_max_age=timedelta(hours=market_max_age_hours) if market_max_age_hours is not None else None,
         stale_after=timedelta(hours=72),
     )
-    assert code == 0  # synced 1h ago (< 72h): the flap is tolerated
-
-    _seed_with_last_fetched(
-        remote := tmp_path / "stale.git", {KALSHI_ENTRY.provenance_label: NOW - timedelta(hours=100)}
-    )
-    code = await run_scrape(
-        str(remote),
-        "main",
-        [],
-        username="",
-        password="",
-        http_get=_boom,
-        now=NOW,
-        depth=0,
-        markets=[KALSHI_ENTRY],
-        stale_after=timedelta(hours=72),
-    )
-    assert code == 1  # last synced 100h ago (> 72h) and still failing
+    assert code == expected_code
+    source_called, market_called = expected_calls
+    if source_called is not None:
+        assert (SOURCE.upstream_url in calls) is source_called
+    if market_called is not None:
+        assert (f"{KALSHI_API}/markets/KXT-1" in calls) is market_called
 
 
 if __name__ == "__main__":
