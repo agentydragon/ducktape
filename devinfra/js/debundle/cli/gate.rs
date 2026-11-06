@@ -1379,7 +1379,7 @@ fn impure_source_unit_cause(node: &SourceUnitReport) -> Option<SequencedSourceUn
         .synchronous_execution
         .as_ref()
         .and_then(|execution| execution.heap_frontier.clone());
-    if matches!(&node.purity, Purity::Pure) && heap_frontier.is_none() {
+    if matches!(&node.purity, Purity::Pure { .. }) && heap_frontier.is_none() {
         return None;
     }
     Some(SequencedSourceUnitCause {
