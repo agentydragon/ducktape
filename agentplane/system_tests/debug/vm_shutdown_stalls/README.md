@@ -1,5 +1,8 @@
 # VM shutdown stalls
 
+For a smaller direct-QEMU software-emulation experiment and its retained logs, see
+[tcg_reproduction.md](tcg_reproduction.md). It does not run the full KubeVirt stack.
+
 ## Observed failure
 
 The VM suite's scenarios passed in [invocation
