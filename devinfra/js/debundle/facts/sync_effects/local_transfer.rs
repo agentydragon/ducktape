@@ -236,6 +236,15 @@ pub(super) trait LocalContext: OwnDataContext {
     }
     fn primitive_array_created(&mut self, _allocation: u32, _dependencies: &ProofDependencies) {}
     fn instantiate_parameter_bindings(&mut self, _frame: &mut LocalFrame) {}
+    /// Establish an immutable name environment from the actual invoked
+    /// function value. A source key or provider prebinding alone is not proof.
+    fn named_self_binding(
+        &mut self,
+        _binding: &Id,
+        _frame: &LocalFrame,
+    ) -> Option<EffectCoverageFragment> {
+        None
+    }
     /// Effects of actual declarative-cell creation, initialization or a checked
     /// mutable local store. Operand evaluation and captured stores are separate.
     fn declarative_binding_operation(
@@ -1596,6 +1605,32 @@ pub(super) fn execute(
 ) -> Option<LocalTransferResult> {
     let mut judgment = AllocationJudgment::CoveredAllocationOnly(ProofDependencies::default());
     frame.return_selection = None;
+    // A named function's immutable self binding exists before parameter
+    // defaults. Preserve the selected callee's original closure identity.
+    for (binding, kind) in &body.bindings {
+        if let LocalBinding::NamedSelf(function) = kind
+            && frame.environment.get(binding).is_some_and(|values| {
+                values.len() == 1
+                    && matches!(values.first(),
+                        Some(AbstractValue::Closure(key, _)
+                        | AbstractValue::Value(Value::Alloc(Kind::Function, key)))
+                            if key == function)
+            })
+            && let Some(effects) = context.named_self_binding(binding, frame)
+        {
+            if let Some(selection) =
+                effects
+                    .lexical_selection_dependencies()
+                    .and_then(|dependencies| {
+                        CallableSelection::observed(&frame.environment[binding], dependencies)
+                    })
+            {
+                frame.binding_selections.insert(binding.clone(), selection);
+            }
+            frame.initialized_bindings.insert(binding.clone());
+            frame.effect_coverage.compose(&effects);
+        }
+    }
     if frame.parameter_inputs.is_some()
         && initialize_parameters(context, body, frame, &mut judgment)?.is_break()
     {
@@ -1645,7 +1680,9 @@ pub(super) fn execute(
     }
     context.instantiate_bindings(frame);
     for (binding, kind) in &body.bindings {
-        if *kind == LocalBinding::Parameter && frame.initialized_bindings.contains(binding) {
+        if matches!(kind, LocalBinding::Parameter | LocalBinding::NamedSelf(_))
+            && frame.initialized_bindings.contains(binding)
+        {
             continue;
         }
         // Let/const cells have actually been created in TDZ above. Hoisted

@@ -49,6 +49,50 @@ fn immediate_source_callables_compose_creation_arguments_and_body() {
 }
 
 #[test]
+fn named_callee_keeps_self_identity_before_defaults_and_through_capture() {
+    for (source, binding, expected) in [
+        (
+            "const result = (function self(value = self) { return value; })(); console.log(result === result());\n",
+            "result",
+            "true\n",
+        ),
+        (
+            "const result = (function self(self) { return self; })(42); console.log(result);\n",
+            "result",
+            "42\n",
+        ),
+        (
+            "const factory = function self() { return () => self; }; const captured = factory(); const result = captured(); console.log(result === factory);\n",
+            "result",
+            "true\n",
+        ),
+    ] {
+        let fixture = run_fixture(
+            FixtureOpts::new(source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
+        );
+        assert_preserved_entry_output(&fixture, expected);
+        assert_operation_receipt(&fixture, binding, 1);
+    }
+}
+
+#[test]
+fn named_callee_self_assignment_remains_abrupt() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "const result = (function self() { self = 42; return 1; })(); console.log(result);\n",
+            vec![],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_error(&fixture, "TypeError");
+    let execution = binding_execution_report(&fixture, "result");
+    assert_ne!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "{execution}"
+    );
+}
+
+#[test]
 fn immediate_source_call_keeps_its_actual_captured_cell_read() {
     let source =
         "let state = 0; const result = (() => state)(); state = 42; console.log(result, state);\n";
@@ -68,7 +112,11 @@ fn immediate_source_call_keeps_its_actual_captured_cell_read() {
         3,
     );
     let report = rejected.candidate_relocation_assessment();
-    assert_eq!(report["status"], "blocked_by_effect", "{report}");
+    assert_eq!(
+        report["status"], "blocked_by_effect_and_placement",
+        "{report}"
+    );
+    assert_eq!(report["decision"]["status"], "conflict", "{report}");
     assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
     assert_node_output(&rejected.entry_path(), "42 42\n", "");
 }
