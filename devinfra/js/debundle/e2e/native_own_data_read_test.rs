@@ -57,6 +57,63 @@ fn node<'a>(graph: &'a Value, name: &str) -> &'a Value {
         .unwrap()
 }
 
+fn assert_opaque_neighbor_rejected(outcome: FixtureRunOutcome, audited_read: bool) {
+    let FixtureRunOutcome::Rejected(rejected) = outcome else {
+        panic!("the opaque neighboring call must keep the candidate rejected");
+    };
+    assert_eq!(rejected.status, Some(1), "{}", rejected.stderr);
+
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_eq!(assessment["emitted_order"], serde_json::json!([0, 2, 1, 3]));
+    assert_eq!(assessment["decision"]["status"], "incomplete");
+    assert_eq!(assessment["decision"]["uncovered_havoc"], true);
+    assert_eq!(assessment["counts"]["uncovered_pairs"], 1);
+
+    let effects = rejected.effect_translation_validation();
+    assert_eq!(effects["swapped_pairs"], 1);
+    let pair = &effects["examples"][0];
+    assert_eq!(pair["runs_first"]["module"], "alias");
+    assert_eq!(pair["runs_later"]["module"], "consumer");
+    assert_eq!(pair["havoc"], true);
+    assert_eq!(pair["disposition"], "uncovered");
+    assert_eq!(
+        pair["later_owner_coverage_refusal"]["reason"],
+        "unsupported_initializer"
+    );
+    assert_eq!(
+        pair["later_owner_coverage_refusal"]["source_location"]["start_line"],
+        2
+    );
+
+    let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
+    let execution = &node(&graph, "alias")["synchronous_execution"];
+    assert_eq!(execution["complete"], true);
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"],
+        "operation_receipt"
+    );
+    assert_eq!(
+        execution["binding_effect_authority"]["receipt"]["root_kind"],
+        "binding_initializer"
+    );
+    assert_eq!(
+        execution["binding_effect_authority"]["receipt"]["binding"],
+        "alias"
+    );
+    if audited_read {
+        assert_eq!(
+            execution["native_operation_input_uses"][0]["evidence"]["operation"],
+            "object_own_data_function_read"
+        );
+    } else {
+        assert!(execution["native_operation_input_uses"].is_null());
+    }
+    assert_eq!(
+        execution["inference_uses"][0]["conclusion"],
+        "native_own_data_read"
+    );
+}
+
 fn decorator_trio(suffix: &str, class: &str, role: &str) -> String {
     format!(
         "var g{suffix} = Object.getOwnPropertyDescriptor;\nvar p{suffix} = Object.defineProperty;\n\
@@ -421,30 +478,105 @@ fn native_input_requires_exactly_one_selector_variant() {
 }
 
 #[test]
-fn selected_original_object_read_removes_the_heap_frontier_cycle() {
-    let fixture = run_fixture(split(SOURCE, true));
-    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let alias = node(&graph, "alias");
-    assert_eq!(
-        alias["synchronous_execution"]["native_operation_input_uses"][0]["evidence"]["operation"],
-        "object_own_data_function_read"
-    );
-    assert_eq!(
-        alias["synchronous_execution"]["inference_uses"][0]["conclusion"],
-        "native_own_data_read"
+fn audited_native_read_does_not_cover_an_external_neighbor_call() {
+    assert_opaque_neighbor_rejected(run_fixture_observing_gate(split(SOURCE, true)), true);
+}
+
+#[test]
+fn inferred_native_read_does_not_cover_a_math_random_neighbor_call() {
+    assert_opaque_neighbor_rejected(
+        run_fixture_observing_gate(split(SOURCE_INFERRED, false)),
+        false,
     );
 }
 
 #[test]
-fn intact_object_read_has_an_independent_source_certificate() {
-    let fixture = run_fixture(split(SOURCE_INFERRED, false));
+fn native_own_data_read_crosses_a_covered_lexical_array_store() {
+    const SOURCE: &str = "const sentinel = [1];\nconst before = [];\nbefore.push(1);\nvar alias = Object.defineProperty;\nconst after = alias;\nconsole.log(before.length, typeof after);\n";
+    let fixture = run_fixture(FixtureOpts::new(
+        SOURCE,
+        vec![
+            logical_module("alias", &[Member::new("sentinel"), Member::new("alias")]),
+            logical_module_with_anon(
+                "consumer",
+                &[Member::new("before"), Member::new("after")],
+                &["before.push(1);"],
+            ),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "1 function\n");
+
+    let assessment = fixture.candidate_relocation_assessment();
+    assert_eq!(assessment["decision"]["status"], "accepted");
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{assessment:#}"
+    );
+
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let alias = node(&graph, "alias");
+    let alias_execution = &alias["synchronous_execution"];
+    assert_eq!(alias_execution["complete"], true);
     assert_eq!(
-        alias["synchronous_execution"]["inference_uses"][0]["conclusion"],
+        alias_execution["binding_effect_authority"]["authority"],
+        "operation_receipt"
+    );
+    let alias_receipt = &alias_execution["binding_effect_authority"]["receipt"];
+    assert_eq!(alias_receipt["root_kind"], "binding_initializer");
+    assert_eq!(alias_receipt["binding"], "alias");
+    assert_eq!(
+        alias_execution["inference_uses"][0]["conclusion"],
         "native_own_data_read"
     );
-    assert!(alias["synchronous_execution"]["native_operation_input_uses"].is_null());
+
+    let push = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|unit| unit["source_location"]["start_line"] == 3)
+        .expect("the source unit for the lexical array store");
+    let push_execution = &push["synchronous_execution"];
+    assert_eq!(push_execution["complete"], true, "{push_execution:#}");
+    assert_eq!(
+        push_execution["binding_effect_authority"]["authority"],
+        "operation_receipt"
+    );
+    let push_receipt = &push_execution["binding_effect_authority"]["receipt"];
+    assert_eq!(push_receipt["root_kind"], "expression_statement");
+    assert_eq!(push_receipt["calls"][0]["target"]["intrinsic"], "array");
+    assert_eq!(
+        push_receipt["calls"][0]["target"]["property"],
+        "prototype.push"
+    );
+    assert!(
+        push_execution["heap_frontier"]["composed_synchronous_calls"]["writes"]["sample"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|write| write["property"] == "length")
+    );
+
+    let emitted_order = assessment["emitted_order"].as_array().unwrap();
+    let unit_index = |unit_id: &str| {
+        unit_id
+            .strip_prefix("unit:")
+            .expect("source-unit ID")
+            .parse::<u64>()
+            .expect("numeric source-unit ID")
+    };
+    let alias_unit = unit_index(alias["id"].as_str().unwrap());
+    let push_unit = unit_index(push["id"].as_str().unwrap());
+    let output_position = |source_unit: u64| {
+        emitted_order
+            .iter()
+            .position(|candidate| candidate.as_u64() == Some(source_unit))
+            .expect("source unit in emitted order")
+    };
+    assert!(alias_unit > push_unit, "the source read follows the store");
+    assert!(
+        output_position(alias_unit) < output_position(push_unit),
+        "the emitted candidate must move the exact native read before the lexical store: {assessment:#}"
+    );
 }
 
 #[test]
