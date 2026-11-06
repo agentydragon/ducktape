@@ -1473,13 +1473,13 @@ data:
     admin_grpc_audience: agentplane-egress-admin
     admin_grpc_callers:
       - agentplane-staging/app
-    tls_passthrough_targets:
-      - egress.agentplane-staging.svc.cluster.local:8443
-      - history-service.agentplane-staging.svc.cluster.local:8082
     projected_token_audiences:
       - https://localhost:7445
       - agentplane-notifications
       - session-dispatcher
+    tls_passthrough_targets:
+      - egress.agentplane-staging.svc.cluster.local:8443
+      - history-service.agentplane-staging.svc.cluster.local:8082
     svid_listen_address: 0.0.0.0:8889
     svid_cert_file: /etc/agentplane-egress/svid/tls.crt
     svid_key_file: /etc/agentplane-egress/svid/tls.key
@@ -2699,7 +2699,7 @@ spec:
               name: runner-ingress
               protocol: TCP
             - containerPort: 8082
-              name: workload-ingress
+              name: workload
               protocol: TCP
           readinessProbe:
             failureThreshold: 3
@@ -2785,7 +2785,7 @@ spec:
       port: 8081
       protocol: TCP
       targetPort: 8081
-    - name: workload-ingress
+    - name: workload
       port: 8082
       protocol: TCP
       targetPort: 8082
