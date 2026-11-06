@@ -80,8 +80,8 @@ fn namespace_import_stays_conservative() {
 }
 
 #[test]
-fn available_provider_does_not_discharge_an_early_callback_use() {
-    run_rejection_fixture(
+fn available_provider_preserves_an_early_callback_tdz() {
+    let fixture = run_fixture(
         FixtureOpts::new(
             "import { factory } from './peer.js'; const wrapped = factory(() => later); const later = wrapped.invoke(); console.log(later);",
             vec![
@@ -92,4 +92,5 @@ fn available_provider_does_not_discharge_an_early_callback_use() {
         .with_extra_chunks(&[("static/peer", "export const factory = callback => ({ invoke: callback });")])
         .with_unassigned_mode(unassigned_mode_inline()),
     );
+    assert_preserved_entry_error(&fixture, "Cannot access 'later' before initialization");
 }
