@@ -183,85 +183,63 @@ chunk's module scope from the project adapter or verified snapshot; emitted
 
 ## Resolved invocation records
 
-Every command accepts the global `--print-invocation` and
-`--invocation-out <path>` options. `--print-invocation` validates the ordinary
-CLI shape, resolves command-line values, documented environment-backed values,
-and meaningful defaults, then prints a JSON `ResolvedInvocation` to stdout and
-exits without dispatching the operation. The record includes an argv array, a
-POSIX-shell-safe command line, the working directory, effective argument
-values and their source, the requested operation/check class, and the planned
-write scope. Environment-backed paths such as `DEBUNDLE_GRAPH` are materialized
-as explicit replay flags; explicit flags retain precedence over environment
-values. Resolution needs only CLI metadata, the current working directory, and
-the executable path; it does not read graph or source file contents. The record
-does not include unrelated ambient environment variables.
+Global options capture a JSON `ResolvedInvocation`:
 
-`--invocation-out <path>` writes the same record as JSON to that file before
-the operation starts. It leaves the command's normal stdout and stderr streams
-alone. If the operation later fails, the record still describes the attempted
-call; it is not evidence that the operation succeeded or that a requested
-check passed. When both options are supplied, the record is written to the
-file and printed to stdout, with the operation skipped.
+| Option                    | Behavior                                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `--print-invocation`      | Validate CLI shape, resolve flags/documented env values/defaults, print the record and exit without dispatch. |
+| `--invocation-out <path>` | Write the record before dispatch, preserving normal stdout/stderr; retain it even if the operation fails.     |
+| Both                      | Write and print the record, then skip the operation.                                                          |
 
-The record distinguishes graph-snapshot reads, diagnostic-snapshot reads,
-source-snapshot reads, fresh pipeline requests, snapshot creation and
-verification, validated edits, unverified edits, conditional comment operations,
-and read-only analysis. A command shape without a specific classification is
-reported as `unclassified`; it is never silently labeled as a validated edit.
-Its `requested_proof` field says which checks the command asks for; it never
-claims that those checks completed. In particular, an edit gate does not imply
-that a fresh pipeline, reconstruction, or runtime check ran. `write_scope`
-describes possible writes for the selected operation (plus the invocation
-file, when requested), not files that were actually changed.
+Resolution reads CLI metadata, cwd and executable path, not graph/source contents
+or unrelated ambient environment. The record contains:
 
-`argv` includes the executable and resolved environment/default options, so it
-can be replayed after changing caller environment. `shell_command` also changes
-to the recorded working directory and quotes each argument. Paths in the argv
-remain relative when they were supplied relatively; the recorded working
-directory preserves their resolution. Replay is repeatable only while its
-spec, source tree, graph, and other file inputs retain the same contents. An
-invocation record does not snapshot or identify those inputs, and it does not
-pin the executable contents. Use graph/input provenance or an archived input
-snapshot when replay must prove it used the same files.
+- `argv`: executable and resolved options; env-backed paths such as `DEBUNDLE_GRAPH`
+  become explicit flags, with CLI-over-env precedence. Relative paths remain relative
+  to the recorded cwd, enabling replay after caller environment changes.
+- `shell_command`: POSIX-quoted arguments plus a change to that cwd.
+- Effective arguments and their value sources, operation class, `requested_proof`
+  and `write_scope`. The latter lists possible writes, including the invocation file,
+  rather than files actually changed.
 
-For example, this plans a graph query without reading the graph or creating
-reports, and records `DEBUNDLE_GRAPH` as an explicit `--graph` argument:
+Classes distinguish graph/diagnostic/source snapshot reads, fresh pipelines,
+snapshot creation/verification, validated/unverified edits, conditional comment
+operations and read-only analysis. Other shapes remain `unclassified`. Requested
+checks are not completed checks: an edit gate establishes neither fresh pipeline,
+reconstruction nor runtime success; saving a record does not prove success.
+
+Records neither fingerprint the spec/source/graph/other file inputs nor pin executable
+contents. Repeatable replay requires unchanged inputs; use graph/input provenance or an archived
+snapshot to prove file identity. For example, this records an explicit `--graph`
+without reading it or creating reports:
 
 ```sh
 DEBUNDLE_GRAPH='reports/tree/main/dependency_graph.json.gz' \
   debundle gate list --print-invocation
 ```
 
-If remote execution downloads only minimal outputs, request full outputs so
-the report side files are local: `--remote_download_outputs=all`.
+With minimal remote downloads, request `--remote_download_outputs=all` to bring
+report side files local.
 
 ## Describe related IDs together
 
-`describe --batch <file>` reads a nonempty JSON array of identifiers using the
-same dispatch rules as `describe <id>`. With `--tree-config`, `--modules` may
-name the full app-level modules tree, and every ID is interpreted against all
-configured roots for the graph's chunk. For example, a file containing
-`["factory", "unit:12", "runtime/setup"]` describes those three selections in
-that order. Duplicate identifiers are retained. `--batch` and a positional ID
-are mutually exclusive; the graph, modules tree, source root, bounds and edge
-filters apply to every item.
+`describe --batch <file>` takes a nonempty JSON identifier array, such as
+`["factory", "unit:12", "runtime/setup"]`, using ordinary `describe <id>` dispatch.
+It preserves order and duplicates; a positional ID is mutually exclusive. Graph,
+modules, source root, bounds and edge filters apply to every item. With `--tree-config`,
+`--modules` may name the full app tree; IDs resolve against all roots for the graph's chunk.
 
-The command loads one graph and verifies its provenance once before querying.
-It reuses binding-home lookups and, when requested, proposal analysis within
-that invocation. Module-path selections still resolve their source-backed
-claims through the ordinary resolver. No analysis is cached between commands.
-Keep the inputs unchanged while the batch runs, as with any single query.
+One invocation loads/verifies the graph once and reuses binding-home and requested
+proposal analysis. Module paths still resolve claims through the ordinary source-backed
+resolver. Keep inputs unchanged; no analysis is cached between commands.
 
-JSON output is `{"results": [...]}`, with the same report objects returned
-by standalone queries. NDJSON emits one report per requested ID. Every item
-must succeed before any reports are emitted: a failed item exits nonzero and
-returns the ordinary structured failure, including its position and ID, without
-partial results. Text output prints each report in request order.
+JSON wraps ordinary standalone reports in `{"results": [...]}`; NDJSON emits one
+report per ID, and text prints in order. **All items must succeed before any result report**,
+even NDJSON: failure exits nonzero with the ordinary structured error, item position
+and ID, without partial results.
 
-`--print-invocation` and `--invocation-out` retain the explicit batch-file path
-along with resolved graph/root options. The record references that file; it
-does not copy or fingerprint its contents. Preserve the batch file alongside
-the input snapshot when handing the command to another worker.
+Invocation records retain the batch path and resolved graph/root options, not the
+batch contents or fingerprint. Preserve the file alongside the worker input snapshot.
 
 ## Output format
 
