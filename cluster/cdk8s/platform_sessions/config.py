@@ -13,6 +13,7 @@ INTEGRATIONS = {
     "integrations": [
         {"id": "openai", "type": "openai", "state_dir": "/data/session/openai"},
         {"id": "anthropic", "type": "anthropic", "state_dir": "/data/session/anthropic"},
+        {"id": "chatgpt", "type": "chatgpt", "state_dir": "/data/session/chatgpt"},
         {"id": "quest", "type": "quest", "state_dir": "/data/session/quest-platform"},
         {"id": "thrive", "type": "thrive", "state_dir": "/data/session/thrive"},
     ]
@@ -20,6 +21,15 @@ INTEGRATIONS = {
 
 BEARERS = {
     "owner": {"role": "owner", "token_file": "/var/run/platform-sessions/owner"},
+    "chatgpt-read": {
+        "role": "routes",
+        "token_file": "/var/run/platform-sessions/chatgpt-read",
+        "allow": [
+            {"instance": "chatgpt", "method": "GET", "path": "/backend-api/conversations"},
+            {"instance": "chatgpt", "method": "GET", "path": "/backend-api/conversations/*"},
+            {"instance": "chatgpt", "method": "GET", "path": "/backend-api/conversations/*/messages"},
+        ],
+    },
     "thrive-scraper": {
         "role": "routes",
         "token_file": "/var/run/platform-sessions/thrive-scraper",
