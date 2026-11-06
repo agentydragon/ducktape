@@ -268,7 +268,7 @@ console.log(globalThis.observed, pattern.test("ok"));
         &[Member::new("argument"), Member::new("pattern")],
         &[],
         "ReferenceError true\n",
-        "undefined true\n",
+        "TypeError true\n",
     );
 }
 
@@ -296,7 +296,7 @@ console.log(globalThis.observed, pattern.test("ok"));
             "host.RegExp = function() { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return new Original('ok'); };",
         ],
         "ReferenceError true\n",
-        "undefined true\n",
+        "TypeError true\n",
     );
 }
 
@@ -345,7 +345,7 @@ console.log(globalThis.observed, typeof marker);
         &[Member::new("argument"), Member::new("marker")],
         &[],
         "ReferenceError symbol\n",
-        "undefined symbol\n",
+        "TypeError symbol\n",
     );
 }
 
@@ -373,6 +373,6 @@ console.log(globalThis.observed, typeof marker);
             "symbols.for = () => { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return original('marker'); };",
         ],
         "ReferenceError symbol\n",
-        "undefined symbol\n",
+        "TypeError symbol\n",
     );
 }
