@@ -9,6 +9,11 @@ This document distinguishes current behavior from the proposed lifecycle for
 additional reusable services. It does not enable a new pool, daemon, preparation
 workflow, or snapshot policy.
 
+Image-family implementation and cold/restored validation are tracked in the
+[audit](../debug/2026_11_05_service_reuse_audit.md#implementation-validation).
+Those changes cache images while preserving the existing service lifetimes;
+the daemon lifecycle below remains a separate proposal.
+
 ## Current configuration and the save-policy change
 
 | Layer                                | Current behavior                                                                                                                | Owner                                                                                                                                        |

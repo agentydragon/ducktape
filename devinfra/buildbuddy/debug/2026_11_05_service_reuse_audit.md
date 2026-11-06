@@ -94,6 +94,47 @@ remote upload counts, all Props coverage or a fleet/gate speedup. The observed
 8.065 s action reduction and 80.360 CPU-second reduction are one pair, not an
 additive forecast for the larger Optimize test.
 
+### Implementation validation
+
+[#14514](https://github.com/agentydragon/ducktape/pull/14514) assigns all ten
+container E2E targets the `props-e2e-images-v1` family, derived from the actual
+PostgreSQL, registry and Ryuk pins. The registry pin moves unchanged into the
+shared pin source. Application images remain action inputs; neither remote
+snapshot permission nor a save-policy override is added.
+
+The following are NEW TestRunner executions at pushed implementation head
+`caa00532162a2f50c1c8bf2d22d13a4d030078c6`, using `--nocache_test_results`:
+
+| Probe                                                                                            | Target | Process time | Image imports | Import time | Result              |
+| ------------------------------------------------------------------------------------------------ | ------ | -----------: | ------------: | ----------: | ------------------- |
+| [Cold](https://app.buildbuddy.io/invocation/367f2a25-63ac-4159-9a51-a12a8e6a1442)                | Critic |    153.832 s |             3 |    26.039 s | 3 cases passed      |
+| [Other configuration](https://app.buildbuddy.io/invocation/3e37e81b-2629-45c2-8773-37499451cca6) | Critic |     83.076 s |             3 |     9.064 s | Same 3 cases passed |
+| [Restored](https://app.buildbuddy.io/invocation/ef6d905c-9cd0-4232-a78b-5f88fcc94400)            | Grader |     50.435 s |             0 |         0 s | 1 case passed       |
+| [Restored](https://app.buildbuddy.io/invocation/85e4e194-d63f-43d8-830b-dd3e026845f8)            | Critic |     64.952 s |             0 |         0 s | Same 3 cases passed |
+
+The three critic probes share Action digest
+`b7ee908c7e5cd56ebab2c9bc1d5250e4903983f2bda88d40a5894d42e95dfdf1`.
+All probes use platform hash
+`27371d75bff5d620993e04382740d4520115d9a70a057d8c48156c366333be2f`.
+The second critic placement had a different worker/configuration from the first
+and remained cold. Both restored probes name snapshots seeded by their own
+respective targets in the successful
+[canonical CI test invocation](https://app.buildbuddy.io/invocation/b8ef7b95-e8a5-584a-8bd9-cebfdc751b06).
+This verifies both consumers attach to the shared platform; it is not a measured
+critic-to-grader snapshot handoff or a cross-host availability guarantee.
+
+Cold and warm critic traces each still contain one registry startup, one
+database recreate/upgrade and three per-test registry manifest deletions.
+PostgreSQL startup remains in the setup log. The real application push/proxy
+path and all three cases still run. Process times include other variable
+work and are not a causal estimate of CI savings; the direct result is that
+restored actions performed no infrastructure image imports.
+
+An initial implementation attempt from a linked worktree included primary-checkout
+state in the runner sync. It is excluded above. Final validation used a standalone
+clone, with the runner fetching the exact pushed head and applying no patches.
+Check the runner's checkout and patch list when validating linked-worktree work.
+
 ## B. Reuse PostgreSQL images before retaining live databases broadly
 
 [`util/testing/postgres_fixtures.py`](../../../util/testing/postgres_fixtures.py)
@@ -127,6 +168,35 @@ do not establish a repo-wide PostgreSQL startup cost or expected saving.
 with cold/warm fallback and normal schema isolation. Only then compare retaining
 an owned daemon, including roles, connections, replication slots, reset cost,
 idle memory and reaper behavior. Keep migration-from-empty tests fresh.
+
+### PostgreSQL profile implementation
+
+[#14516](https://github.com/agentydragon/ducktape/pull/14516) introduces the
+`postgres-images-v1` profile from the stock PostgreSQL 18 and Ryuk pins. It
+enrolls seven finance targets, four session-export targets and the existing app
+bridge target. The bridge retains its nonroot/TCP-Docker properties, so it has a
+separate effective-platform variant despite using the same family key. Browser,
+pgvector and Docker-only non-PostgreSQL tests retain their existing properties.
+Service lifetimes and database cloning do not change.
+
+At pushed head `387ae134dd14289e528fb57156b6b68e01cffaf7`, two NEW executions of
+`//devinfra/claude/session_export:test_store` passed the same 12 cases:
+
+| Probe                                                                                 | Process time |            Setup-log image imports | Result               |
+| ------------------------------------------------------------------------------------- | -----------: | ---------------------------------: | -------------------- |
+| [Cold](https://app.buildbuddy.io/invocation/73e63526-e103-4318-8a60-c1e03d7974f1)     |     37.408 s | Ryuk + PostgreSQL (0.4 s + 19.0 s) | 12 cases passed      |
+| [Restored](https://app.buildbuddy.io/invocation/d7d1aade-90f1-4ffb-836e-77e5345a0198) |     13.889 s |                               None | Same 12 cases passed |
+
+The second VM metadata names the first's exact invocation and execution as its
+snapshot origin; VM identity, platform/configuration hashes and snapshot-key
+version also match. The repeat still starts PostgreSQL, ready in 3.4 seconds.
+This directly proves local image reuse, not a live PostgreSQL server surviving
+the action or cross-profile/fleet savings.
+
+An intermediate cache-only probe is excluded. `--noremote_accept_cached` alone
+did not force a new test execution in an already warm outer runner. Use
+`--nocache_test_results` for these deliberate preparation/reuse probes and keep
+normal caching for routine CI.
 
 ## C. Browser tests: preserve shipped image reuse; measure remaining server cost
 
