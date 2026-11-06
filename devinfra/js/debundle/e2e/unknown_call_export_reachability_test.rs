@@ -4,7 +4,6 @@ use analysis::reports::schema::{BindingEffectAuthorityReport, SynchronousExecuti
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
-use graph_support::{FixtureGraphExt, source_unit_for_binding};
 
 fn binding_execution_report(fixture: &Fixture, binding: &str) -> serde_json::Value {
     let graph = fixture.dependency_graph();

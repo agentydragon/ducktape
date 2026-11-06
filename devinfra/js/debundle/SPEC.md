@@ -927,7 +927,7 @@ retain distinct bindings, and assignment to the name remains abrupt. Source
 identity alone, strict provider queries and retained-only queries do not
 establish this environment or supply a receipt. This models the immutable name
 environment initialized with the closure by
-[named function expression evaluation](https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#sec-function-definitions-runtime-semantics-instantiateordinaryfunctionexpression).
+[named function expression evaluation](https://tc39.es/ecma262/multipage/ecmascript-language-functions-and-classes.html#sec-runtime-semantics-instantiateordinaryfunctionexpression).
 The root checks that its exact root call-site set matches and that the flat
 call edges connect back to its exact body without expanding root-to-leaf paths.
 
