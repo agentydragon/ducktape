@@ -199,6 +199,20 @@ ts_library(
 )
 
 ts_library(
+    name = "deferred_test_utils",
+    testonly = True,
+    srcs = ["testing/deferred.ts"],
+    tsconfig = ":tsconfig",
+    visibility = [
+        "//finance/augur/frontend:__pkg__",
+        "//finance/plaid/spend/ui:__pkg__",
+        "//props/frontend/src/components:__pkg__",
+        "//props/frontend/src/pages:__pkg__",
+        "//x/ai_session_archive/frontend:__pkg__",
+    ],
+)
+
+ts_library(
     name = "react_test_utils",
     testonly = True,
     srcs = ["testing/react.tsx"],

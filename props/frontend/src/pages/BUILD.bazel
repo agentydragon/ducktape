@@ -128,6 +128,7 @@ props_vitest_test(
         "//props/frontend/src/lib:runModalContext",
         "//props/frontend/src/lib:schema",
         "//props/frontend/src/lib:toast",
+        "//util/frontend:deferred_test_utils",
     ],
 )
 

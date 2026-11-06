@@ -4,6 +4,7 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+import { deferred } from "../../../util/frontend/testing/deferred";
 import { productInputDefaults, scenarioSetToSearch } from "./input_helpers";
 import { ProductProjectionWorkspace } from "./product";
 import type { fetchProductPortfolio, fetchProductProjectionSummary, fetchProductRollout } from "./client";
@@ -85,16 +86,6 @@ vi.mock("./fan_chart", () => ({
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
 
 function projection(request: Parameters<typeof fetchProductProjectionSummary>[0]) {
   const seed = Number(request.scenario.monthlySpend) / 100;
