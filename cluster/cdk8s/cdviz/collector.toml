@@ -13,7 +13,8 @@ port = 8080
 [pipeline]
 queue_capacity = 1000
 
-[sinks.database]
+# A separate name avoids the bundled sinks.database.url overriding url_file.
+[sinks.postgres]
 enabled = true
 type = "db"
 url_file = "/var/run/secrets/database/DATABASE_URL"

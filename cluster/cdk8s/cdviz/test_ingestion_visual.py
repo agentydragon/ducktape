@@ -195,10 +195,12 @@ def _stream_logs(container: Container, path: Path) -> Thread:
     return thread
 
 
-def _ready(url: str, timeout: int = 60) -> None:
+def _ready(url: str, *, container: Container, timeout: int = 60) -> None:
     deadline = time.monotonic() + timeout
     last = "no response"
     while time.monotonic() < deadline:
+        container.reload()
+        assert container.status == "running", f"service exited before becoming ready at {url}; see container logs"
         try:
             response = httpx.get(url, timeout=2, trust_env=False)
             if response.status_code == 200:
@@ -479,8 +481,8 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
             collector.reload()
             collector_port = collector.attrs["NetworkSettings"]["Ports"]["8080/tcp"][0]["HostPort"]
             collector_url = f"http://127.0.0.1:{collector_port}"
-            _ready(collector_url + "/healthz")
-            _ready(collector_url + "/readyz")
+            _ready(collector_url + "/healthz", container=collector)
+            _ready(collector_url + "/readyz", container=collector)
 
             _stage("posting signed success, failure, rerun, and duplicate webhooks")
             scenarios = (
@@ -555,7 +557,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                 assert count is not None
                 assert count[0] > 0
                 with pytest.raises(psycopg.errors.InsufficientPrivilege) as denied:
-                    reader.execute("INSERT INTO cdviz.pipelinerun DEFAULT VALUES")
+                    reader.execute("INSERT INTO cdviz.cdevents_lake DEFAULT VALUES")
                 assert denied.value.sqlstate == "42501"
             _diagnostic(f"pipeline attempts={len(pipeline_rows)} jobs={len(task_rows)}; reader INSERT denied")
 
@@ -582,7 +584,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
             grafana.reload()
             grafana_port = grafana.attrs["NetworkSettings"]["Ports"]["3000/tcp"][0]["HostPort"]
             grafana_url = f"http://127.0.0.1:{grafana_port}"
-            _ready(grafana_url + "/api/health")
+            _ready(grafana_url + "/api/health", container=grafana)
             _provision_grafana(grafana_url, root)
 
             _stage("running real datasource queries and capturing both dashboard pages")

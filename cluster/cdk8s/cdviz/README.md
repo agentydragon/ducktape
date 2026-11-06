@@ -8,6 +8,8 @@ This provides workflow and job timings and outcomes. Exact PR-head arrival-to-re
 
 The collector image is `ghcr.io/cdviz-dev/cdviz-collector:0.53.1`; schema setup uses `ghcr.io/cdviz-dev/cdviz-db-migration:1.5.0`. Both are pinned to OCI index digests in `collector.py` so Kubernetes can resolve the node architecture. The migration image entrypoint is `migrate`, so its init container supplies `-database … -path /migrations/ up` as arguments.
 
+The database sink is named `postgres`: the bundled `database` sink in this collector version has a default `url` that takes precedence over `url_file`. A separate name lets the mounted secret supply the connection string.
+
 The two dashboards derive from CDviz repository commit [`44e3250dad1c6aaebaa5f0d02a8bfb885fb3f63f`](https://github.com/cdviz-dev/cdviz/commit/44e3250dad1c6aaebaa5f0d02a8bfb885fb3f63f): `cdviz-grafana/dashboards/pipelinerun_executions.json` and `taskrun_executions.json`. They retain the upstream statistics, trends, and selection variables. The unsigned `cdviz-executiontable-panel` was replaced with Grafana's built-in table panel, dashboard datasource references use UID `cdviz`, and panel IDs are made unique. The table SQL reads the upstream `cdviz.pipelinerun` and `cdviz.taskrun` views. Pipeline PR numbers come from the retained `customData.github.workflow_run.pull_requests` array; no branch/SHA-to-PR inference is performed.
 
 Both upstream repositories license these assets under Apache License 2.0 and contain no `NOTICE` file. The full upstream license texts are preserved in `LICENSE.cdviz` and `LICENSE.transformers-community`; they are byte-identical. Each dashboard's description records its local modification.

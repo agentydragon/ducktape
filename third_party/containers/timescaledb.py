@@ -21,8 +21,8 @@ def timescaledb_postgres(
 ) -> Iterator[str]:
     """Yield an admin URL for a fresh PG18 server with the Timescale module preloaded.
 
-    The Timescale extension is not created in the database. Consumers should run
-    their normal migrations, which must create the extension and any hypertables.
+    The Timescale extension is not created in the database. Create it with the
+    admin connection before running migrations as an unprivileged application role.
     """
     suffix = re.sub(r"[^a-z0-9-]+", "-", tmp_path.name.lower()).strip("-")[:24] or "test"
     container_name = f"tsdb-{suffix}-{uuid.uuid4().hex[:8]}"
@@ -98,6 +98,15 @@ def timescaledb_postgres(
             run(
                 "docker",
                 "exec",
+                container_name,
+                "/bin/sh",
+                "-c",
+                "printf '%s\\n' 'host all postgres all trust' 'host all all all scram-sha-256' "
+                ">> /var/lib/postgresql/data/pg_hba.conf",
+            )
+            run(
+                "docker",
+                "exec",
                 "--detach",
                 container_name,
                 "postgres",
@@ -112,7 +121,7 @@ def timescaledb_postgres(
                 "-c",
                 "extension_control_path=/extensions/timescaledb-oss/share",
                 "-c",
-                "dynamic_library_path=/extensions/timescaledb-oss/lib",
+                "dynamic_library_path=/extensions/timescaledb-oss/lib:$libdir",
                 "-c",
                 "timescaledb.telemetry_level=off",
                 "-c",
