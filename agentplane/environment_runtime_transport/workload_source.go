@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -56,6 +57,10 @@ func newWorkloadAPISource(ctx context.Context, address string) (credentialSource
 	defer startupTimer.Stop()
 	select {
 	case <-source.ready:
+		if err := source.sourceError(); err != nil {
+			_ = source.close()
+			return nil, nil, fmt.Errorf("watch Workload API X.509 context: %w", err)
+		}
 		return source, source.close, nil
 	case <-ctx.Done():
 		_ = source.close()
@@ -64,7 +69,9 @@ func newWorkloadAPISource(ctx context.Context, address string) (credentialSource
 		_ = source.close()
 		return nil, nil, fmt.Errorf("wait for initial Workload API X.509 context: timed out after %s", workloadAPISourceStartupTimeout)
 	case <-source.done:
-		if err := source.sourceError(); err != nil {
+		err := source.sourceError()
+		_ = source.close()
+		if err != nil {
 			return nil, nil, fmt.Errorf("watch Workload API X.509 context: %w", err)
 		}
 		return nil, nil, errors.New("Workload API X.509 context watch stopped before its initial update")
@@ -83,7 +90,11 @@ func (s *workloadAPISource) OnX509ContextUpdate(x509Context *workloadapi.X509Con
 	s.readyOnce.Do(func() { close(s.ready) })
 }
 
-func (s *workloadAPISource) OnX509ContextWatchError(error) {}
+func (s *workloadAPISource) OnX509ContextWatchError(err error) {
+	if err != nil && !errors.Is(err, context.Canceled) {
+		slog.Warn("Workload API X.509 context watch failed; retaining last verified material while retrying", "error", err)
+	}
+}
 
 func (s *workloadAPISource) GetX509SVID() (*x509svid.SVID, error) {
 	s.mu.RLock()
