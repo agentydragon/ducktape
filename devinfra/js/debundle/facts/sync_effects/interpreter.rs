@@ -12066,7 +12066,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 let contains_array = self.contains_dense_array(&values);
                 self.taint_objects(&values);
                 if contains_array {
-                    self.promote_raw_callbacks(&targets, outcome);
+                    // A dense receiver preserves possible callback reach, but
+                    // does not prove that the method invoked those callbacks.
+                    self.promote_escaped_callbacks(&targets, outcome);
                 }
             }
         }
