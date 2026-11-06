@@ -14206,6 +14206,7 @@ pub(crate) struct InferredForeignCall {
     pub derived: crate::facts::abstract_domain::foreign_call::DerivedForeignCall,
     pub declaration_start: u32,
     pub availability: CallableAvailability,
+    pub initialized_class: Option<ProofDependencies>,
     pub dependencies: ProofDependencies,
     pub record: Option<InferredReturnedRecord>,
     /// The returned closure defers its first argument (`deferred_callback_closure`).
@@ -14230,10 +14231,17 @@ impl CallableAvailability {
     }
 }
 
-fn isolated_callable_initializer(body: &[TopLevelItemView<'_>], binding: &Ident) -> bool {
+fn isolated_callable_provider(body: &[TopLevelItemView<'_>], binding: &Ident) -> bool {
     let mut declarations = 0;
     for item in body {
         match item.as_module_item() {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Class(class)))
+            | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                decl: Decl::Class(class), ..
+            })) if class.ident.to_id() == binding.to_id() => {
+                declarations += 1;
+            }
+
             ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration)))
             | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
                 decl: Decl::Var(declaration), ..
@@ -14909,7 +14917,7 @@ fn infer_foreign_calls<'f>(
                     derived,
                     declaration_start,
                     hoisted,
-                    !hoisted && isolated_callable_initializer(body, binding),
+                    (!hoisted || is_class) && isolated_callable_provider(body, binding),
                 ),
             ))
         })
@@ -14974,6 +14982,9 @@ fn foreign_call(
     });
     InferredForeignCall {
         declaration_start,
+        initialized_class: (isolated_initializer
+            && derived.invocation == crate::analysis_inputs::ForeignInvocation::Construct)
+            .then(|| dependencies.clone()),
         availability: if hoisted {
             CallableAvailability::Declaration
         } else if isolated_initializer && derived.retained_provider_captures.is_empty() {

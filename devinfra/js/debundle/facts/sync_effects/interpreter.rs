@@ -46,7 +46,7 @@ use super::{
     object_own_data_read_property,
 };
 use crate::analysis_inputs::{
-    AnalysisInputs, ImportedPrimitiveRead, NativeInputKind, ProofDependencies,
+    AnalysisInputs, ForeignInvocation, ImportedPrimitiveRead, NativeInputKind, ProofDependencies,
 };
 use crate::analysis_provenance::InferenceRule;
 use crate::execution_evidence::{
@@ -2067,18 +2067,28 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     fn native_callee(
         &mut self,
         _frame: &mut LocalFrame,
+        invocation: ForeignInvocation,
         _callee: &LocalCallee,
         span: Span,
     ) -> Option<(NativeCalleeSelection, EffectCoverageFragment)> {
         if self.retained_query.is_some() {
             return None;
         }
+        let kind = match invocation {
+            ForeignInvocation::Call => CallKind::Call,
+            ForeignInvocation::Construct => CallKind::New,
+        };
         let call = self
             .calls()
             .iter()
-            .find(|call| call.kind == CallKind::Call && call.span == span)?
+            .find(|call| call.kind == kind && call.span == span)?
             .clone();
-        let selection = self.executor.ordered_native_callee_selection(&call)?;
+        let selection = match invocation {
+            ForeignInvocation::Call => self.executor.ordered_native_callee_selection(&call),
+            ForeignInvocation::Construct => {
+                self.executor.ordered_native_constructor_selection(&call)
+            }
+        }?;
         let mut effects = EffectCoverageFragment::no_effects();
         effects.depend_on(&selection.premise.dependencies);
         self.executor.evaluation_effects.record(
@@ -2613,7 +2623,19 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         let initialized_foreign_function = self
             .executor
             .ordered_foreign_call(CallKind::Call, &ValueExpr::Binding(binding.clone()));
-        let effects = if normal
+        let initialized_class = self
+            .executor
+            .foreign_call_summary(CallKind::New, &ValueExpr::Binding(binding.clone()))
+            .and_then(|summary| summary.initialized_class);
+        let effects = if normal && initialized_class.is_some() {
+            let mut effects = EffectCoverageFragment::initialized_module_read();
+            effects.depend_on(
+                initialized_class
+                    .as_ref()
+                    .expect("checked independent initialization proof"),
+            );
+            effects
+        } else if normal
             && (self.executor.initialized_local_binding(binding)
                 || initialized_foreign_function
                 || imported_primitive_read)
@@ -2681,12 +2703,19 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
     fn call(
         &mut self,
         frame: &mut LocalFrame,
+        invocation: ForeignInvocation,
         callee: &EvaluatedCallee,
         arguments: &[SelectedValue],
         span: Span,
     ) -> Option<LocalValueResult> {
+        let kind = match invocation {
+            ForeignInvocation::Call => CallKind::Call,
+            ForeignInvocation::Construct => CallKind::New,
+        };
         if self.retained_query.is_some() {
-            return self.retained_call(callee, arguments, span);
+            return (invocation == ForeignInvocation::Call)
+                .then(|| self.retained_call(callee, arguments, span))
+                .flatten();
         }
         if let EvaluatedCallee::Member {
             array_push: Some(selection),
@@ -2701,7 +2730,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             let call = self
                 .calls()
                 .iter()
-                .find(|call| call.kind == CallKind::Call && call.span == span)
+                .find(|call| call.kind == kind && call.span == span)
                 .expect("a source-covered call has its canonical call record");
             let caller = self.executor.local_body_identity_for_call(call)?;
             if let Some(mut result) = array_transfer::push(self.executor, selection, &args) {
@@ -2766,7 +2795,7 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         let call = self
             .calls()
             .iter()
-            .find(|call| call.kind == CallKind::Call && call.span == span)
+            .find(|call| call.kind == kind && call.span == span)
             .expect("a source-covered call has its canonical call record")
             .clone();
         let result = self.executor.request(RuntimeOperation::Call {
@@ -7566,10 +7595,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         kind: CallKind,
         callee: &ValueExpr,
     ) -> Option<crate::analysis_inputs::ForeignCallSummary> {
-        if kind != CallKind::Call {
-            return None;
-        }
         let summary = self.foreign_call_summary(kind, callee).or_else(|| {
+            if kind != CallKind::Call {
+                return None;
+            }
             // A factory's timing and returned capability keep their own
             // consumers. Its independently interpreted source body can still
             // supply effects without replacing either capability.
@@ -7601,6 +7630,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         operands_may_throw: bool,
     ) -> EffectCoverageFragment {
         let body = covered.body_effects.as_ref().expect("checked body receipt");
+        let unproved_initialization = covered.invocation == ForeignInvocation::Construct
+            && covered.initialized_class.is_none();
         self.imported_body_effects(
             call,
             ImportedBodyProof {
@@ -7615,7 +7646,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 dependencies: &covered.dependencies,
                 replacement_package: covered.replacement_package.as_deref(),
             },
-            operands_may_throw,
+            operands_may_throw || unproved_initialization,
         )
     }
 
@@ -7783,6 +7814,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// still execute the ordinary conservative binding/member operations.
     fn ordered_import_binding(&self, binding: &Id) -> bool {
         self.ordered_foreign_call(CallKind::Call, &ValueExpr::Binding(binding.clone()))
+            || self.ordered_foreign_call(CallKind::New, &ValueExpr::Binding(binding.clone()))
             || self
                 .inputs
                 .index
@@ -7849,7 +7881,8 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // A class binding stays in its TDZ until the provider evaluates, which
         // an ESM cycle can delay past this call. A function declaration is
         // initialized at instantiation.
-        if summary.invocation == ForeignInvocation::Construct {
+        if summary.invocation == ForeignInvocation::Construct && summary.initialized_class.is_none()
+        {
             result.insert(AbstractValue::Value(Value::Unavailable));
         }
         result
@@ -10837,7 +10870,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         calls
             .iter()
             .filter(|call| call.kind == CallKind::New)
-            .all(|call| self.ordered_native_constructor_selection(call).is_some())
+            .all(|call| {
+                self.ordered_native_constructor_selection(call).is_some()
+                    || (!call.has_spread && self.ordered_foreign_call(call.kind, &call.callee))
+            })
     }
 
     fn ordered_root_calls_have_transfer(&self, calls: &[Call]) -> bool {
@@ -10845,14 +10881,16 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .iter()
             .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))
             .all(|call| {
-                if call.kind == CallKind::New {
-                    return self.ordered_native_constructor_selection(call).is_some();
-                }
-                if self.ordered_native_callee_selection(call).is_some() {
+                if self.ordered_native_callee_selection(call).is_some()
+                    || self.ordered_native_constructor_selection(call).is_some()
+                {
                     return true;
                 }
                 if !call.has_spread && self.ordered_foreign_call(call.kind, &call.callee) {
                     return true;
+                }
+                if call.kind == CallKind::New {
+                    return false;
                 }
                 let (targets, member) = match &call.callee {
                     ValueExpr::Alloc(Kind::Function, key) if !call.has_spread => (
@@ -15282,7 +15320,7 @@ impl Executor<'_, '_> {
             .iter()
             .all(|call| call.kind == CallKind::ImplicitCoercion);
         let ordered_foreign_initializer = calls.iter().any(|call| {
-            call.kind == CallKind::Call
+            matches!(call.kind, CallKind::Call | CallKind::New)
                 && !call.has_spread
                 && self.ordered_foreign_call(call.kind, &call.callee)
         });

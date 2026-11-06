@@ -4,6 +4,14 @@ load(":defs.bzl", "debundle_e2e_test")
 package(default_testonly = True)
 
 debundle_e2e_test(
+    name = "imported_constructor_effects_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
     name = "ordered_own_data_field_test",
     deps = [
         ":graph_support",

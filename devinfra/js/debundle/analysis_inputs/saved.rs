@@ -28,6 +28,8 @@ pub struct SavedCallableSummary<'a> {
     foreign_call_dependencies: Option<ProofDependencies>,
     #[serde(deserialize_with = "Deserialize::deserialize")]
     foreign_call_body_effects: Option<SavedForeignBodyEffects<'a>>,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    foreign_call_initialized_class: Option<ProofDependencies>,
     foreign_member_evidence: BTreeMap<String, SavedForeignMemberEvidence<'a>>,
     conditional_body_effects: Vec<SavedEffectCoverageFragment<'a>>,
 }
@@ -59,6 +61,8 @@ struct SavedForeignMemberEvidence<'a> {
     dependencies: ProofDependencies,
     #[serde(deserialize_with = "Deserialize::deserialize")]
     body_effects: Option<SavedForeignBodyEffects<'a>>,
+    #[serde(deserialize_with = "Deserialize::deserialize")]
+    initialized_class: Option<ProofDependencies>,
 }
 
 impl<'a> SavedCallableSummary<'a> {
@@ -78,6 +82,10 @@ impl<'a> SavedCallableSummary<'a> {
                 .as_ref()
                 .and_then(|call| call.body_effects.as_deref())
                 .map(SavedForeignBodyEffects::snapshot),
+            foreign_call_initialized_class: summary
+                .foreign_call
+                .as_ref()
+                .and_then(|call| call.initialized_class.clone()),
             foreign_member_evidence: summary
                 .foreign_members
                 .iter()
@@ -86,6 +94,7 @@ impl<'a> SavedCallableSummary<'a> {
                         name.clone(),
                         SavedForeignMemberEvidence {
                             dependencies: call.dependencies.clone(),
+                            initialized_class: call.initialized_class.clone(),
                             body_effects: call
                                 .body_effects
                                 .as_deref()
@@ -113,7 +122,9 @@ impl<'a> SavedCallableSummary<'a> {
             "saved foreign-call dependency does not match its callable summary"
         );
         ensure!(
-            summary.foreign_call.is_some() || self.foreign_call_body_effects.is_none(),
+            summary.foreign_call.is_some()
+                || (self.foreign_call_body_effects.is_none()
+                    && self.foreign_call_initialized_class.is_none()),
             "saved foreign-call body has no callable summary"
         );
         ensure!(
@@ -138,6 +149,7 @@ impl<'a> SavedCallableSummary<'a> {
             self.foreign_call_dependencies,
         ) {
             foreign_call.dependencies = dependencies;
+            foreign_call.initialized_class = self.foreign_call_initialized_class;
             foreign_call.body_effects = self
                 .foreign_call_body_effects
                 .map(|body| Box::new(body.restore()));
@@ -148,6 +160,7 @@ impl<'a> SavedCallableSummary<'a> {
                 .get_mut(&name)
                 .expect("member keys verified");
             member.dependencies = evidence.dependencies;
+            member.initialized_class = evidence.initialized_class;
             member.body_effects = evidence.body_effects.map(|body| Box::new(body.restore()));
         }
         for (body, effects) in summary
@@ -268,19 +281,21 @@ mod tests {
             local: "invoke".to_string(),
             member: None,
             source_location: None,
-            invocation: ForeignInvocation::Call,
-            returns: BTreeSet::from([ForeignReturn::Primitive]),
+            invocation: ForeignInvocation::Construct,
+            returns: BTreeSet::from([ForeignReturn::FreshAllocation]),
             retained_arguments: BTreeSet::new(),
             retained_provider_captures: BTreeSet::new(),
             native_operations: BTreeSet::new(),
             replacement_package: None,
-            dependencies: foreign_dependencies,
+            dependencies: foreign_dependencies.clone(),
+            initialized_class: Some(foreign_dependencies),
             body_effects: None,
         });
 
         let report = serde_json::to_value(&summary).expect("callable report serializes");
         assert!(report["namespace_wrapper"].get("dependencies").is_none());
         assert!(report["foreign_call"].get("dependencies").is_none());
+        assert!(report["foreign_call"].get("initialized_class").is_none());
 
         let bytes = rmp_serde::to_vec_named(&SavedCallableSummary::snapshot(&summary))
             .expect("ordinary saved encode");
@@ -295,6 +310,17 @@ mod tests {
             .expect("saved callable is a map")
             .remove("namespace_wrapper_dependencies");
         assert!(serde_json::from_value::<SavedCallableSummary<'static>>(saved_json).is_err());
+
+        let mut missing_initialization =
+            serde_json::to_value(SavedCallableSummary::snapshot(&summary)).unwrap();
+        missing_initialization
+            .as_object_mut()
+            .unwrap()
+            .remove("foreign_call_initialized_class");
+        assert!(
+            serde_json::from_value::<SavedCallableSummary<'static>>(missing_initialization)
+                .is_err()
+        );
 
         let mut mismatched_json =
             serde_json::to_value(SavedCallableSummary::snapshot(&summary)).unwrap();

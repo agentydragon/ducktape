@@ -803,6 +803,12 @@ static method/getter/setter descriptor definitions when their ordered canonical
 tags match; each callable child still supplies its own creation fragment.
 Defining an accessor does not invoke it. Computed keys, opaque definitions and
 the data-property `__proto__` form remain outside this definition proof.
+Base-class provider queries also retain their actual shared constructor-body
+fragment independently of the fresh-instance and retained-argument proof. Empty
+constructors can close that fragment. Field definitions, including implicit
+`undefined` initializers, retain uncovered heap/descriptor effects; fresh-instance
+retention alone cannot cover them. Instance private methods remain unsupported
+by this provider projection.
 Checked array-literal creation also composes the same operation effects in
 both contexts: creating the fresh array and defining its own indices and length
 executes no user code. Each element's effects compose in source order. Holes
@@ -3492,8 +3498,21 @@ These kinds establish no initializer effects, completion, or execution order.
 A proved primitive capture retains no callback capability; unknown captures keep
 the ordinary opaque retention path. Returned fields remain opaque to importers.
 
-An ordinary call consumes this fragment only after the shared kernel has
-evaluated its operands. Its receipt records a module/export/member/callable edge.
+Ordinary calls and imported class constructions consume this fragment only
+after the same shared kernel has evaluated the selected callee and every
+argument once in source order. The invocation kind remains explicit; a class
+summary never licenses an ordinary call, and a function summary never licenses
+construction. Construction retains its opaque instance/callback projection,
+without granting own-field, prototype or later-method effects.
+
+A class constructor's closed body does not establish its binding's GetValue.
+An independent source proof covers that read only when the provider consists
+of that one stable class declaration and local named exports: every emitted
+consumer then depends on a leaf. Other class providers keep possible TDZ
+completion, including cycles. Saved summaries preserve this initialization
+proof separately from the actual body fragment and its dependencies.
+
+An invocation's receipt records a module/export/member/callable edge.
 A direct function import is initialized at module instantiation, including in an
 ESM cycle; a member's normal selection requires its explicit identity assertion.
 Results retain the existing opaque capability/alias projection, and an abrupt

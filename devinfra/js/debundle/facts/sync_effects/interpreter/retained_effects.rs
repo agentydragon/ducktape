@@ -6,6 +6,7 @@ use super::{
     LocalExpression, LocalOperation, LocalValueResult, MAX_SYNCHRONOUS_INVOCATIONS, Outcome,
     PrimKinds, SelectedValue, Span, Value, ValueExpr, Values,
 };
+use crate::analysis_inputs::ForeignInvocation;
 use crate::facts::sync_effects::local_operations::LocalCallee;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -46,6 +47,7 @@ fn read_only_expression(expression: &LocalExpression) -> bool {
         }
         LocalExpression::Sequence(expressions) => expressions.iter().all(read_only_expression),
         LocalExpression::Call {
+            invocation: ForeignInvocation::Call,
             callee: LocalCallee::Binding(_),
             arguments,
             ..

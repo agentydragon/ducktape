@@ -336,9 +336,13 @@ impl LocalContext for ProviderContext<'_> {
     fn native_callee(
         &mut self,
         _frame: &mut LocalFrame,
+        invocation: ForeignInvocation,
         _callee: &LocalCallee,
         span: Span,
     ) -> Option<(NativeCalleeSelection, EffectCoverageFragment)> {
+        if invocation != ForeignInvocation::Call {
+            return None;
+        }
         let call = self
             .calls
             .iter()
@@ -493,10 +497,14 @@ impl LocalContext for ProviderContext<'_> {
     fn call(
         &mut self,
         _frame: &mut LocalFrame,
+        invocation: ForeignInvocation,
         callee: &EvaluatedCallee,
         arguments: &[local_transfer::SelectedValue],
         span: Span,
     ) -> Option<LocalValueResult> {
+        if invocation != ForeignInvocation::Call {
+            return None;
+        }
         let EvaluatedCallee::Native { selection, .. } = callee else {
             // Forwarding a symbolic callable does not prove its execution.
             return None;
@@ -1282,7 +1290,7 @@ pub(super) fn derive_class(
         Kind::Object,
         class,
     ))]));
-    let judgment = local_transfer::execute(&mut context, body, &mut frame)?.allocation;
+    let transfer = local_transfer::execute(&mut context, body, &mut frame)?;
     if !frame
         .returns
         .iter()
@@ -1290,7 +1298,7 @@ pub(super) fn derive_class(
     {
         return None;
     }
-    let AllocationJudgment::CoveredAllocationOnly(dependencies) = judgment else {
+    let AllocationJudgment::CoveredAllocationOnly(dependencies) = transfer.allocation else {
         return None;
     };
     let mut retained_arguments = BTreeSet::new();
@@ -1338,7 +1346,7 @@ pub(super) fn derive_class(
         native_operations: context.native_operations,
         native_derivation_rules: context.native_derivation_rules,
         dependencies,
-        body_effects: None,
+        body_effects: Some(transfer.effects),
         record: None,
         closure: None,
     })
@@ -1406,6 +1414,7 @@ mod tests {
             .module;
         let key = match &module.body[0] {
             ModuleItem::Stmt(Stmt::Decl(Decl::Fn(function))) => function.function.span.lo.0,
+            ModuleItem::Stmt(Stmt::Decl(Decl::Class(class))) => class.class.span.lo.0,
             ModuleItem::Stmt(Stmt::Decl(Decl::Var(variable))) => {
                 let Expr::Arrow(arrow) = variable.decls[0].init.as_deref().unwrap() else {
                     panic!("arrow fixture");
@@ -1424,7 +1433,94 @@ mod tests {
             Default::default(),
             Default::default(),
         );
-        derive(&prepared.index, key, &BTreeSet::new())
+        if matches!(
+            &module.body[0],
+            ModuleItem::Stmt(Stmt::Decl(Decl::Class(_)))
+        ) {
+            derive_class(&prepared.index, key, &BTreeSet::new())
+        } else {
+            derive(&prepared.index, key, &BTreeSet::new())
+        }
+    }
+
+    #[test]
+    fn empty_constructor_transports_actual_closed_body_effects() {
+        js_ast::with_swc_globals(|| {
+            for source in [
+                "class make {}",
+                "class make { constructor() {} }",
+                "class make { constructor() { return; } }",
+                "class make { constructor() { return 1; } }",
+            ] {
+                let summary = derive_source(source).unwrap_or_else(|| panic!("{source}"));
+                assert!(
+                    summary
+                        .body_effects
+                        .as_ref()
+                        .is_some_and(|effects| effects.has_closed_effects()),
+                    "{source}: {summary:#?}"
+                );
+                assert_eq!(
+                    summary.returns,
+                    BTreeSet::from([ForeignReturn::FreshAllocation]),
+                    "{source}"
+                );
+                assert!(summary.retained_arguments.is_empty(), "{source}");
+            }
+        });
+    }
+
+    #[test]
+    fn constructor_retention_does_not_cover_missing_operation_effects() {
+        js_ast::with_swc_globals(|| {
+            for (source, retained) in [
+                ("class make { field = 1; }", BTreeSet::new()),
+                ("class make { field; }", BTreeSet::new()),
+                ("class make { #field = 1; }", BTreeSet::new()),
+                ("class make { #field; }", BTreeSet::new()),
+                ("class make { constructor(value) {} }", BTreeSet::new()),
+                (
+                    "class make { #field; constructor(value) { this.#field = value; } }",
+                    BTreeSet::from([0]),
+                ),
+                (
+                    "class make { constructor() { const value = 1; return value; } }",
+                    BTreeSet::new(),
+                ),
+            ] {
+                let summary = derive_source(source).unwrap_or_else(|| panic!("{source}"));
+                let effects = summary
+                    .body_effects
+                    .as_ref()
+                    .expect("executed body fragment");
+                assert!(!effects.has_closed_effects(), "{source}: {effects:#?}");
+                assert_eq!(summary.retained_arguments, retained, "{source}");
+                assert_eq!(
+                    summary.returns,
+                    BTreeSet::from([ForeignReturn::FreshAllocation]),
+                    "{source}"
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn unsupported_constructor_inputs_and_results_refuse_provider_projection() {
+        js_ast::with_swc_globals(|| {
+            for source in [
+                "class make extends Base {}",
+                "class make { field = captured; }",
+                "class make { constructor(value) { const field = value.field; } }",
+                "class make { constructor(value = unknown()) {} }",
+                "class make { constructor({ value }) {} }",
+                "class make { constructor() { return {}; } }",
+                "class make { constructor() { return this; } }",
+                "class make { #method() { return captured; } }",
+                "class make { get #field() { return captured; } }",
+            ] {
+                assert!(derive_source(source).is_none(), "{source}");
+            }
+        });
     }
 
     #[test]
