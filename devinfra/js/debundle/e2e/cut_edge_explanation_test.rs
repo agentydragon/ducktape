@@ -312,9 +312,8 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
 /// its allocation (`count → items`), and `back`'s `push` is an opaque
 /// heap barrier over the live frontier, which includes the `marks`
 /// allocation (`back → marks`). Each module pair's retained sequenced
-/// edge therefore targets a pure array allocation that carries no
-/// impure-initializer evidence; the edge still explains itself through
-/// the retained heap-content cause.
+/// edge therefore targets a pure array allocation. Its endpoint context
+/// carries the allocation's heap evidence independently of purity.
 #[test]
 fn heap_content_cut_edges_explain_pure_allocation_targets() {
     let rejected = run_rejection_fixture(FixtureOpts::new(
@@ -365,10 +364,15 @@ export { items, marks, count, back };
         }),
         "{allocation_use}"
     );
-    // An empty array literal is pure: no impure-initializer evidence on
-    // the target side, yet the explanation is present.
+    // Pure allocations retain their heap evidence on the target side.
+    let target_context = &allocation_use["explanation"]["target_source_unit"];
+    assert_eq!(target_context["purity"]["kind"], "pure", "{allocation_use}");
     assert!(
-        allocation_use["explanation"]["target_source_unit"].is_null(),
+        target_context["heap_frontier"]["own_at_init"]["allocations"]["sample"]
+            .as_array()
+            .expect("allocation cell sample")
+            .iter()
+            .any(|cell| cell["kind"] == "array_contents"),
         "{allocation_use}"
     );
     assert!(
