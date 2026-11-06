@@ -174,6 +174,11 @@ pub fn compute_logical_chunk_facts(
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
+        inputs.imported_primitive_reads = program_summary
+            .primitive_reads
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
         // Definition-side `pure_members` assertions projected onto this
         // chunk's local import bindings; merged (not overwritten) so spec
         // member annotations and cross-module assertions coexist.

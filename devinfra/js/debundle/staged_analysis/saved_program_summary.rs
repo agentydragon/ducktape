@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::analysis_inputs::saved::{SavedCallableSummary, SavedNativeIntegrity};
 use analysis::analysis_inputs::{
-    ArgumentInputEvidence, InferredSetConstruction, InferredSetOperation,
+    ArgumentInputEvidence, ImportedPrimitiveRead, InferredSetConstruction, InferredSetOperation,
     NativeOperationInputEvidence, ResolvedArgumentInput, ResolvedBindingValueInput,
     ResolvedNativeOperationInput, StableSetIterableUse, ValueInputEvidence,
 };
@@ -28,6 +28,7 @@ type RetainedCallbackSignatures = BTreeMap<String, Vec<spec::RetainedCallbackSig
 pub(super) struct SavedProgramSummary<'a> {
     bindings: BTreeMap<String, BTreeMap<String, PurityNodeId>>,
     values: Cow<'a, BTreeMap<String, BTreeMap<String, Value>>>,
+    primitive_reads: Cow<'a, BTreeMap<String, BTreeMap<String, ImportedPrimitiveRead>>>,
     members: Cow<'a, BTreeMap<String, BTreeMap<String, BTreeSet<String>>>>,
     fluent: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
     constructors: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
@@ -167,6 +168,7 @@ impl<'a> SavedProgramSummary<'a> {
             bindings,
             value_inputs,
             values: Cow::Borrowed(&summary.values),
+            primitive_reads: Cow::Borrowed(&summary.primitive_reads),
             members: Cow::Borrowed(&summary.members),
             fluent: Cow::Borrowed(&summary.fluent),
             constructors: Cow::Borrowed(&summary.constructors),
@@ -295,6 +297,7 @@ impl<'a> SavedProgramSummary<'a> {
             bindings,
             value_inputs,
             values: self.values.into_owned(),
+            primitive_reads: self.primitive_reads.into_owned(),
             members: self.members.into_owned(),
             fluent: self.fluent.into_owned(),
             constructors: self.constructors.into_owned(),
@@ -535,10 +538,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn native_census_field_requires_explicit_none_in_ordinary_serde() {
+    fn required_saved_summary_fields_cannot_be_omitted() {
+        let primitive_reads = BTreeMap::from([(
+            "app".to_string(),
+            BTreeMap::from([(
+                "limit".to_string(),
+                ImportedPrimitiveRead {
+                    kinds: analysis_model::PrimKinds::NUMBER,
+                    provider_module: "provider".to_string(),
+                    dependency_closure: BTreeSet::from(["provider".to_string()]),
+                    source_cells: BTreeSet::from([
+                        analysis::analysis_inputs::PrimitiveExportCell {
+                            module: "provider".to_string(),
+                            export: "limit".to_string(),
+                        },
+                    ]),
+                },
+            )]),
+        )]);
         let summary = ProgramSummary {
             bindings: BTreeMap::new(),
             values: BTreeMap::new(),
+            primitive_reads: primitive_reads.clone(),
             members: BTreeMap::new(),
             fluent: BTreeMap::new(),
             constructors: BTreeMap::new(),
@@ -568,12 +589,17 @@ mod tests {
         let saved_json = serde_json::to_value(&saved).expect("saved summary serializes");
         assert!(saved_json["native_integrity"].is_null());
 
-        let mut missing_field = saved_json.clone();
-        missing_field
-            .as_object_mut()
-            .expect("saved summary is a map")
-            .remove("native_integrity");
-        assert!(serde_json::from_value::<SavedProgramSummary<'static>>(missing_field).is_err());
+        for field in ["native_integrity", "primitive_reads"] {
+            let mut missing_field = saved_json.clone();
+            missing_field
+                .as_object_mut()
+                .expect("saved summary is a map")
+                .remove(field);
+            assert!(
+                serde_json::from_value::<SavedProgramSummary<'static>>(missing_field).is_err(),
+                "omitted {field} must not restore as empty proof metadata"
+            );
+        }
 
         let decoded: SavedProgramSummary<'static> =
             serde_json::from_value(saved_json).expect("explicit None native census decodes");
@@ -585,5 +611,6 @@ mod tests {
             .restore(&ordinals, &restored_purities)
             .expect("absent native census restores");
         assert!(restored.native_integrity.is_none());
+        assert_eq!(restored.primitive_reads, primitive_reads);
     }
 }

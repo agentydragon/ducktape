@@ -436,6 +436,29 @@ pub struct ProofDependencies {
     pub no_accessor_install_callables: BTreeSet<NoAccessorInstallRef>,
 }
 
+/// A stable source module export cell that contributed to an imported
+/// primitive's value. Re-export aliases are not cells; their source cells are
+/// retained transitively.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct PrimitiveExportCell {
+    pub module: String,
+    pub export: String,
+}
+
+/// Source-derived primitive value evidence used only for an imported binding
+/// read after its provider's exact static dependency closure is shown to be
+/// acyclic with respect to the importer. It carries no provider effect
+/// authority.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportedPrimitiveRead {
+    pub kinds: analysis_model::PrimKinds,
+    pub provider_module: String,
+    /// Every analyzed module in the provider's resolved static dependency
+    /// closure, including the provider and excluding the importer.
+    pub dependency_closure: BTreeSet<String>,
+    pub source_cells: BTreeSet<PrimitiveExportCell>,
+}
+
 /// One `program_premises` assertion consumed by a proof (SPEC.md § Program
 /// premises).
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -962,6 +985,10 @@ pub struct AnalysisInputs {
     /// resolver. Used only to suppress ToPrimitive callback promotion, never
     /// eager reads.
     pub imported_values: BTreeMap<String, crate::facts::abstract_domain::value::Value>,
+    /// Imported stable primitive reads with exact source-cell provenance and
+    /// an acyclic, fully resolved static dependency closure. This is an
+    /// operation-local read capability, not provider effect authority.
+    pub imported_primitive_reads: BTreeMap<String, ImportedPrimitiveRead>,
 }
 
 /// Exact-site native inputs after the canonical execution index validated

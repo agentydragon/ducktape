@@ -39,7 +39,9 @@ use super::{
     RetainedCallbackCall, native_call_identity_key, native_own_data_read_slots,
     object_own_data_read_property,
 };
-use crate::analysis_inputs::{AnalysisInputs, NativeInputKind, ProofDependencies};
+use crate::analysis_inputs::{
+    AnalysisInputs, ImportedPrimitiveRead, NativeInputKind, ProofDependencies,
+};
 use crate::analysis_provenance::InferenceRule;
 use crate::execution_evidence::{
     AssumedEffectReason, ConstructionRejection, ExecutionOperation, ExecutionPrecisionLoss,
@@ -762,6 +764,7 @@ pub(super) struct ExecutionInputs<'source> {
     set_iterable_proof: &'source SetIterableProof,
     shadowed: &'source BTreeSet<&'static str>,
     imported_values: &'source BTreeMap<String, Value>,
+    imported_primitive_reads: &'source BTreeMap<String, ImportedPrimitiveRead>,
     /// First-order pre-await body cells of each callable.
     callable_heap_contents: &'source BTreeMap<u32, HeapContentCells>,
     /// Hashed: effect promotion tests every lazy read of every promoted
@@ -1981,10 +1984,31 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
         }
         // Declarative module GetBindingValue has no property/heap/host
         // operation. This proves its effects independently of the value kind.
-        // Captures, imports, globals and possible abrupt reads have no receipt.
+        // Captures, globals, and possible abrupt reads have no receipt. An
+        // imported binding needs its own source-derived normal-read proof.
         let normal =
             !values.is_empty() && !values.contains(&AbstractValue::Value(Value::Unavailable));
-        let effects = if normal && self.executor.initialized_local_binding(binding) {
+        let imported_primitive_read = normal
+            && self
+                .executor
+                .inputs
+                .index
+                .imported_bindings
+                .contains(binding)
+            && self
+                .executor
+                .inputs
+                .imported_primitive_reads
+                .get(binding.0.as_ref())
+                .is_some_and(|read| {
+                    !read.kinds.is_empty()
+                        && read.dependency_closure.contains(&read.provider_module)
+                        && !read.source_cells.is_empty()
+                        && values == Values::from([AbstractValue::Value(Value::Prim(read.kinds))])
+                });
+        let effects = if normal
+            && (self.executor.initialized_local_binding(binding) || imported_primitive_read)
+        {
             EffectCoverageFragment::initialized_module_read()
         } else if normal
             && frame.initialized_bindings.contains(binding)
@@ -13328,6 +13352,7 @@ pub(crate) fn annotate_synchronous_calls(
         set_iterable_proof: proofs.set_iterable,
         shadowed,
         imported_values: &hints.imported_values,
+        imported_primitive_reads: &hints.imported_primitive_reads,
         callable_heap_contents: proofs.callable_heap_contents,
         top_bindings,
         binding_owner: facts

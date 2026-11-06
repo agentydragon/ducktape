@@ -37,9 +37,10 @@ use swc_ecma_ast::ModuleItem;
 use crate::analysis_inputs::{
     BundleGlobalNames, CallableSummary, CallbackFactoryEvidence, CallbackObjectArguments,
     DeferredRecordMember, DescriptorCopyFactorySummary, ForeignCallSummary,
-    NamespaceWrapperSummary, NativeInputKind, NativeIntegrity, NativeIntrinsic, ProofDependencies,
-    ResolvedBindingValueInput, ResolvedNativeOperationInput, ReturnedRecordSummary,
-    SelectedBindingValueInput, SelectedNativeOperationInput,
+    NamespaceWrapperSummary, NativeInputKind, NativeIntegrity, NativeIntrinsic,
+    PrimitiveExportCell, ProofDependencies, ResolvedBindingValueInput,
+    ResolvedNativeOperationInput, ReturnedRecordSummary, SelectedBindingValueInput,
+    SelectedNativeOperationInput,
 };
 use crate::execution_evidence::SourceLocation;
 
@@ -63,53 +64,96 @@ pub struct ResolvedImport {
     pub module: SourceModuleKey,
     /// The export name read from that module.
     pub export: String,
+    /// Original source specifier for the import binding. Static read
+    /// capabilities match this to the corresponding ordinary ESM request.
+    pub source_specifier: String,
 }
 
 /// A stable export after its imports resolved: its own types and the exports
 /// it copies.
+#[derive(Debug, Clone)]
 pub struct ExportValueSource {
     pub kinds: PrimKinds,
     pub copies: Vec<ResolvedImport>,
+    /// Present only for a local export binding. Re-export aliases have no
+    /// cell of their own and retain the cells from their target instead.
+    pub cell: Option<PrimitiveExportCell>,
 }
 
-/// Close export values over resolved imports and re-exports. An export's
-/// value is known once every export it copies is; unsupported cycles have no
-/// seed and stay unknown. The closure neither interprets values nor certifies
-/// that evaluating an initializer is pure.
-pub fn resolve_export_values(
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportPrimitiveValue {
+    pub kinds: PrimKinds,
+    pub source_cells: BTreeSet<PrimitiveExportCell>,
+}
+
+/// Close stable export values over copied imports while preserving all local
+/// module-cell provenance along re-export and copy chains.
+pub fn resolve_export_primitives(
     sources: BTreeMap<(SourceModuleKey, String), ExportValueSource>,
-) -> BTreeMap<(SourceModuleKey, String), Value> {
-    let rules = ExportValueRules(sources.into_iter().collect());
+) -> BTreeMap<(SourceModuleKey, String), ExportPrimitiveValue> {
+    let rules = ExportPrimitiveRules(sources.into_iter().collect());
     let count = rules.0.len();
     IterativeInference::new(rules)
         .solve_values(0..count)
         .into_iter()
-        .map(|(export, kinds)| (export, Value::Prim(kinds)))
+        .map(|(export, fact)| {
+            (
+                export,
+                ExportPrimitiveValue {
+                    kinds: fact.kinds,
+                    source_cells: fact.source_cells,
+                },
+            )
+        })
         .collect()
 }
 
-struct ExportValueRules(Vec<((SourceModuleKey, String), ExportValueSource)>);
+#[derive(Clone)]
+struct ExportPrimitiveFact {
+    kinds: PrimKinds,
+    source_cells: BTreeSet<PrimitiveExportCell>,
+}
 
-impl IterativeRules for ExportValueRules {
+struct ExportPrimitiveRules(Vec<((SourceModuleKey, String), ExportValueSource)>);
+
+impl IterativeRules for ExportPrimitiveRules {
     type Key = (SourceModuleKey, String);
-    type Fact = PrimKinds;
+    type Fact = ExportPrimitiveFact;
     type Rule = usize;
 
-    fn evaluate(&self, rule: &usize, context: &mut impl FactContext<Self::Key, PrimKinds>) {
+    fn evaluate(&self, rule: &usize, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         let (export, source) = &self.0[*rule];
-        let mut kinds = source.kinds;
+        let mut fact = ExportPrimitiveFact {
+            kinds: source.kinds,
+            source_cells: source.cell.iter().cloned().collect(),
+        };
         for copy in &source.copies {
             let Some(copied) = context.read((copy.module.clone(), copy.export.clone())) else {
                 return;
             };
-            kinds = kinds.union(*copied);
+            fact.kinds = fact.kinds.union(copied.kinds);
+            fact.source_cells
+                .extend(copied.source_cells.iter().cloned());
         }
-        context.propose(export.clone(), kinds);
+        context.propose(
+            export.clone(),
+            ExportPrimitiveFact {
+                kinds: fact.kinds,
+                source_cells: fact.source_cells,
+            },
+        );
     }
 
-    fn merge(_: &Self::Key, current: &mut PrimKinds, contribution: PrimKinds) -> bool {
-        let joined = current.union(contribution);
-        std::mem::replace(current, joined) != joined
+    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        let kinds = current.kinds.union(contribution.kinds);
+        let changed = kinds != current.kinds
+            || contribution
+                .source_cells
+                .iter()
+                .any(|cell| !current.source_cells.contains(cell));
+        current.kinds = kinds;
+        current.source_cells.extend(contribution.source_cells);
+        changed
     }
 }
 
@@ -1771,6 +1815,86 @@ mod tests {
         Parser::new_from(lexer).parse_module().unwrap()
     }
 
+    #[test]
+    fn imported_primitive_value_closure_retains_all_export_cells() {
+        let provider_cell = PrimitiveExportCell {
+            module: "provider".to_string(),
+            export: "limit".to_string(),
+        };
+        let bridge_cell = PrimitiveExportCell {
+            module: "bridge".to_string(),
+            export: "copied".to_string(),
+        };
+        let app_cell = PrimitiveExportCell {
+            module: "app".to_string(),
+            export: "forwarded".to_string(),
+        };
+        let sources = BTreeMap::from([
+            (
+                ("provider".to_string(), "limit".to_string()),
+                ExportValueSource {
+                    kinds: PrimKinds::NUMBER,
+                    copies: Vec::new(),
+                    cell: Some(provider_cell.clone()),
+                },
+            ),
+            (
+                ("bridge".to_string(), "forwarded".to_string()),
+                ExportValueSource {
+                    kinds: PrimKinds::NONE,
+                    copies: vec![ResolvedImport {
+                        module: "provider".to_string(),
+                        export: "limit".to_string(),
+                        source_specifier: "provider".to_string(),
+                    }],
+                    cell: None,
+                },
+            ),
+            (
+                ("bridge".to_string(), "copied".to_string()),
+                ExportValueSource {
+                    kinds: PrimKinds::NONE,
+                    copies: vec![ResolvedImport {
+                        module: "provider".to_string(),
+                        export: "limit".to_string(),
+                        source_specifier: "provider".to_string(),
+                    }],
+                    cell: Some(bridge_cell.clone()),
+                },
+            ),
+            (
+                ("app".to_string(), "forwarded".to_string()),
+                ExportValueSource {
+                    kinds: PrimKinds::NONE,
+                    copies: vec![ResolvedImport {
+                        module: "bridge".to_string(),
+                        export: "copied".to_string(),
+                        source_specifier: "bridge".to_string(),
+                    }],
+                    cell: Some(app_cell.clone()),
+                },
+            ),
+        ]);
+
+        let resolved = resolve_export_primitives(sources.clone());
+        assert_eq!(
+            resolved[&("bridge".to_string(), "forwarded".to_string())].kinds,
+            PrimKinds::NUMBER
+        );
+        assert_eq!(
+            resolved[&("bridge".to_string(), "forwarded".to_string())].source_cells,
+            BTreeSet::from([provider_cell.clone()]),
+        );
+        assert_eq!(
+            resolved[&("bridge".to_string(), "copied".to_string())].source_cells,
+            BTreeSet::from([provider_cell.clone(), bridge_cell.clone()]),
+        );
+        assert_eq!(
+            resolved[&("app".to_string(), "forwarded".to_string())].source_cells,
+            BTreeSet::from([provider_cell, bridge_cell, app_cell]),
+        );
+    }
+
     fn facts<'a>(
         module: &'a Module,
         imports: &[(&str, &str, &str)],
@@ -1786,6 +1910,7 @@ mod tests {
                         ResolvedImport {
                             module: (*source).to_string(),
                             export: (*export).to_string(),
+                            source_specifier: (*source).to_string(),
                         },
                     )
                 })

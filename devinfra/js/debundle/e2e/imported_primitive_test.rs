@@ -23,7 +23,7 @@ fn split_modules() -> Vec<LogicalModuleEntry> {
     ]
 }
 
-fn assert_primitive(peer: &str, import: &str, expression: &str, expected: &str) {
+fn assert_primitive(peer: &str, import: &str, expression: &str, expected: &str) -> Fixture {
     let source = source(import, expression);
     let peers = [("static/peer", peer)];
     let fixture = run_fixture(FixtureOpts::new(&source, split_modules()).with_extra_chunks(&peers));
@@ -67,16 +67,57 @@ fn assert_primitive(peer: &str, import: &str, expression: &str, expected: &str) 
         "a coercion of non-throwing imported primitives is pure: {:?}",
         node.purity
     );
+    fixture
+}
+
+fn assert_imported_read_receipt(fixture: &Fixture, binding: &str) {
+    let assessment = fixture.candidate_relocation_assessment();
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "the primitive read must participate in an actual inversion: {assessment:#}"
+    );
+
+    let graph = fixture.dependency_graph();
+    let node = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == source_unit_for_binding(&graph, binding))
+        .unwrap();
+    let execution = node
+        .synchronous_execution
+        .as_ref()
+        .unwrap_or_else(|| panic!("missing execution report for {binding}: {node:#?}"));
+    assert!(execution.complete, "{execution:#?}");
+    let Some(analysis::reports::schema::BindingEffectAuthorityReport::OperationReceipt { receipt }) =
+        execution.binding_effect_authority.as_ref()
+    else {
+        panic!("imported primitive read lacks an operation receipt: {execution:#?}");
+    };
+    assert!(
+        matches!(
+            &receipt.root,
+            analysis::reports::schema::LexicalEffectRoot::BindingInitializer {
+                binding: receipt_binding,
+                ..
+            } if receipt_binding == binding
+        ),
+        "receipt must identify the exact imported-value initializer: {receipt:#?}"
+    );
 }
 
 #[test]
 fn direct_literal_const_import_does_not_promote_unrelated_callbacks() {
-    assert_primitive(
+    let fixture = assert_primitive(
         "export const limit = 2;\n",
         "import { limit as bytes } from './peer.js';",
         "4 * bytes + 256",
         "264 42\n",
     );
+    assert_imported_read_receipt(&fixture, "computed");
 }
 
 #[test]
@@ -457,6 +498,18 @@ fn object_branches_rebinding_accessors_and_unseeded_import_cycles_stay_unknown()
          export { result as limit };\n",
         "import { limit } from './bridge.js';\n\
          export const value = limit;\n",
+    );
+}
+
+#[test]
+fn stable_primitive_values_do_not_cover_cyclic_or_unresolved_provider_reads() {
+    assert_imported_chain_conservative(
+        "export { limit } from './provider.js';\n",
+        "import './app.js';\nexport const limit = 2;\n",
+    );
+    assert_imported_chain_conservative(
+        "export { limit } from './provider.js';\n",
+        "import './missing.js';\nexport const limit = 2;\n",
     );
 }
 
