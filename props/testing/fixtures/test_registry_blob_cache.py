@@ -232,6 +232,37 @@ def test_registry_cache_discards_oversized_blobs_at_the_safe_boundary(boundary: 
             assert httpx.head(f"{base_url}/v2/critic/blobs/{small_digest}", timeout=10.0).status_code == 200
 
 
+def test_failed_registry_stop_preserves_attached_storage(monkeypatch: pytest.MonkeyPatch) -> None:
+    namespace = f"test-{uuid4().hex}"
+    recipe = RegistryBlobCacheRecipe(key="registry-cache-stop-test-v1", max_bytes=64 * 1024)
+    image_ref = load_oci_image(registry_3.LAYOUT_RLOCATION)
+    load_oci_image(ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
+    registry = _new_registry(image_ref)
+
+    def fail_to_stop() -> None:
+        raise RuntimeError("simulated Docker stop failure")
+
+    with ExitStack() as cleanup:
+        cleanup.enter_context(closing(registry.get_docker_client().client))
+        cleanup.callback(delete_owned_registry_blob_cache_volumes, registry, namespace=namespace)
+        cleanup.callback(registry.stop)
+        with monkeypatch.context() as patcher, ExitStack() as lifetime:
+            patcher.setattr(registry, "stop", fail_to_stop)
+            lifetime.enter_context(
+                cached_registry_container(registry, image_ref=image_ref, recipe=recipe, namespace=namespace)
+            )
+            base_url = f"http://localhost:{registry.get_exposed_port(5000)}"
+            config = json.dumps({"padding": "x" * (256 * 1024)}).encode()
+            blob_digest, manifest = _manifest(config)
+            _push_config(base_url, config, blob_digest)
+            assert _put_manifest(base_url, "preserve-me", manifest).status_code == 201
+            with pytest.raises(RegistryBlobCacheOwnershipError):
+                lifetime.close()
+
+        assert httpx.head(f"{base_url}/v2/critic/blobs/{blob_digest}", timeout=10.0).status_code == 200
+        assert httpx.head(f"{base_url}/v2/critic/manifests/preserve-me", timeout=10.0).status_code == 200
+
+
 def test_registry_cache_lease_fails_without_waiting_for_another_owner() -> None:
     with _registry_blob_cache_lease(), pytest.raises(RegistryBlobCacheLeaseBusyError), _registry_blob_cache_lease():
         pytest.fail("a second registry cache lifecycle acquired the lease")

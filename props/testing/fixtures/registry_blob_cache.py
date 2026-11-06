@@ -124,6 +124,14 @@ def _ensure_volume(docker_client: DockerClient, *, namespace: str, recipe: str) 
 
 
 def _prepare_registry_cache(docker_client: DockerClient, *, image_ref: str, volume_name: str, max_bytes: int) -> None:
+    # Check at release too: ExitStack runs cleanup even if stopping the registry
+    # failed. A dead fixture can also leave a container after releasing flock.
+    consumers = docker_client.containers.list(all=True, filters={"volume": volume_name})
+    if consumers:
+        raise RegistryBlobCacheOwnershipError(
+            f"registry cache volume {volume_name!r} is already attached to containers "
+            f"{[container.short_id for container in consumers]}"
+        )
     # The HTTP API cannot enumerate untagged manifests or abandoned uploads.
     # Scrub all repositories while the registry is stopped, then bound the bytes
     # left for recycling. GC would discard our deliberately unreferenced blobs.
@@ -180,14 +188,6 @@ def cached_registry_container(
         docker_client: DockerClient = from_env()
         stack.callback(docker_client.close)
         volume_name = _ensure_volume(docker_client, namespace=namespace, recipe=recipe_digest)
-        # A dead fixture process releases flock but can leave Docker containers.
-        # Never reset storage still attached elsewhere, even to a stopped container.
-        consumers = docker_client.containers.list(all=True, filters={"volume": volume_name})
-        if consumers:
-            raise RegistryBlobCacheOwnershipError(
-                f"registry cache volume {volume_name!r} is already attached to containers "
-                f"{[container.short_id for container in consumers]}"
-            )
         registry.with_env("REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY", _REGISTRY_ROOT)
         # Distribution's filesystem Move uses os.Rename from _uploads into blobs, so both
         # paths must share one mount: https://github.com/distribution/distribution/blob/v3.0.0/registry/storage/driver/filesystem/driver.go
