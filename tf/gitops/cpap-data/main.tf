@@ -12,7 +12,7 @@
 # laptops, Claude Code web). Mirrors tf/gitops/augur-evidence otherwise.
 #
 # The Secrets land in the `forgejo` namespace. The `cpap-sync` namespace copies
-# both in through ESO (cluster/cdk8s/cpap_sync/app.py), and Reflector mirrors its
+# both in through ESO (cluster/cdk8s/cpap_sync.py), and Reflector mirrors its
 # copy of the read Secret into `claude-sandbox` so Claude Code web sessions can
 # read it through the connected Kubernetes MCP path.
 

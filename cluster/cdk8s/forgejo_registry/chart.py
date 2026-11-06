@@ -23,8 +23,8 @@ from pydantic import BaseModel, ConfigDict
 from cluster.cdk8s import namespaces, opentofu, terraform
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.flux_image_automation_ghcr.image_automation import AUTOMATION_NAME
-from cluster.cdk8s.flux_webhook.chart import WEBHOOK_HOST
+from cluster.cdk8s.flux_image_automation_ghcr import AUTOMATION_NAME
+from cluster.cdk8s.flux_webhook import WEBHOOK_HOST
 from cluster.cdk8s.forgejo_registry import image_automation as forgejo_image_automation
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT

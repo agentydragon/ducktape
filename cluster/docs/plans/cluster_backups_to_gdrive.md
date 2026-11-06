@@ -64,7 +64,7 @@ Why two stages instead of pointing VolSync's restic mover straight at
   fragile Drive/OAuth/rate-limit concerns are isolated in **one dumb CronJob**,
   decoupled from backup integrity.
 - Stage A reuses the SeaweedFS Bucket CR + per-tenant identity + ESO pattern we
-  already run (e.g. <../../cdk8s/langfuse/app.py>,
+  already run (e.g. <../../cdk8s/langfuse.py>,
   <../../cdk8s/seaweedfs/s3_config.py>).
 
 This also **supersedes the ad-hoc rsyncTLS PVC→PVC backups** (Grocy, Tana-MCP):

@@ -21,7 +21,9 @@ from cluster.cdk8s import (
     buildbuddy_executor,
     buildbuddy_kvm_worker,
     claude_sandbox_secrets,
+    claude_session_sync,
     cnpg_operator,
+    cpap_sync,
     crossplane,
     crossplane_forgejo_agentydragon,
     descheduler,
@@ -31,8 +33,11 @@ from cluster.cdk8s import (
     external_creds,
     external_dns,
     flux,
+    flux_image_automation_ghcr,
     flux_monitoring,
     flux_sources,
+    flux_webhook,
+    flux_webhook_token,
     gateway,
     github_branch_protection,
     github_tf,
@@ -47,6 +52,7 @@ from cluster.cdk8s import (
     kube_api_proxy,
     kube_system,
     kubectl_passthrough_mcp,
+    langfuse,
     loki_read_proxy,
     mcp_oauth_state,
     metrics_server,
@@ -61,16 +67,19 @@ from cluster.cdk8s import (
     reflector,
     reloader,
     route53_domain_delegation,
+    seaweedfs_csi,
     session_archive,
     session_backup,
     talos_cloud_controller_manager,
     tana_mcp,
     terraform,
+    tofu_controller_release,
     user_agentydragon,
     valkey,
     vector_talos_logs,
     volsync,
     vpa,
+    website,
 )
 from cluster.cdk8s.activitywatch import (
     app as activitywatch_app,
@@ -109,14 +118,12 @@ from cluster.cdk8s.cert_manager import (
     environment as cert_manager_environment,
     trust as cert_manager_trust,
 )
-from cluster.cdk8s.claude_session_sync import app as claude_session_sync_app
 from cluster.cdk8s.cli_proxy_api import cli_proxy_api
 from cluster.cdk8s.clickhouse import (
     installation as clickhouse_installation,
     operator as clickhouse_operator,
     schema as clickhouse_schema,
 )
-from cluster.cdk8s.cpap_sync import app as cpap_sync_app
 from cluster.cdk8s.dcgm_exporter import exporter as dcgm_exporter_exporter
 from cluster.cdk8s.external_secrets import (
     config as external_secrets_config,
@@ -126,9 +133,6 @@ from cluster.cdk8s.external_secrets import (
 from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import SecretGeneratorArgs
 from cluster.cdk8s.flux_grafana_secrets import flux_grafana_secrets
-from cluster.cdk8s.flux_image_automation_ghcr import image_automation as flux_image_automation_ghcr
-from cluster.cdk8s.flux_webhook import chart as flux_webhook_chart
-from cluster.cdk8s.flux_webhook_token import flux_webhook_token
 from cluster.cdk8s.forgejo import (
     app as forgejo_app,
     budget_namespace as forgejo_budget_namespace,
@@ -196,7 +200,6 @@ from cluster.cdk8s.home_assistant import (
 from cluster.cdk8s.infra_drift import drift_watch
 from cluster.cdk8s.kubevirt import app as kubevirt_app, cdi as kubevirt_cdi, operators as kubevirt_operators
 from cluster.cdk8s.kyverno import app as kyverno_app, policies as kyverno_policies
-from cluster.cdk8s.langfuse import app as langfuse_app
 from cluster.cdk8s.litellm import (
     buildbuddy_sync as litellm_buildbuddy_sync,
     crossplane_keys as litellm_crossplane_keys,
@@ -256,14 +259,11 @@ from cluster.cdk8s.seaweedfs import (
     pr_visuals_bucket as seaweedfs_pr_visuals_bucket,
     public_s3 as seaweedfs_public_s3,
 )
-from cluster.cdk8s.seaweedfs_csi import driver as seaweedfs_csi_driver
 from cluster.cdk8s.snapshot_controller import flux_kustomizations as snapshot_controller_flux_kustomizations
 from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_config, generation as ssh_mcp_generation
 from cluster.cdk8s.sshpiper_crds import flux_kustomizations as sshpiper_crds_flux_kustomizations
 from cluster.cdk8s.study_casino import app as study_casino_app
-from cluster.cdk8s.tofu_controller import release as tofu_controller_release
 from cluster.cdk8s.tofu_state import db as tofu_state_db, namespace as tofu_state_namespace
-from cluster.cdk8s.website import website
 from cluster.scripts import nebula_mesh
 from devinfra.bazel.workspace import get_build_workspace_directory
 
@@ -1140,10 +1140,8 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, seaweedfs_pr_visuals_bucket_artifact, seaweedfs_pr_visuals_bucket.chart),
         seaweedfs_operator_kustomization,
     )
-    seaweedfs_csi_artifact = artifact("seaweedfs-csi", seaweedfs_csi_driver.OUTPUT_DIR)
-    seaweedfs_csi_driver.seaweedfs_csi(
-        flux_chart, write_directory(root, seaweedfs_csi_artifact, seaweedfs_csi_driver.chart)
-    )
+    seaweedfs_csi_artifact = artifact("seaweedfs-csi", seaweedfs_csi.OUTPUT_DIR)
+    seaweedfs_csi.seaweedfs_csi(flux_chart, write_directory(root, seaweedfs_csi_artifact, seaweedfs_csi.chart))
     kubectl_passthrough_mcp_artifact = artifact("kubectl-passthrough-mcp", kubectl_passthrough_mcp.OUTPUT_DIR)
     kubectl_passthrough_mcp.kubectl_passthrough_mcp(
         flux_chart, write_directory(root, kubectl_passthrough_mcp_artifact, kubectl_passthrough_mcp.chart)
@@ -1246,10 +1244,10 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
         seaweedfs_operator_kustomization,
     )
-    langfuse_artifact = artifact("langfuse", langfuse_app.OUTPUT_DIR)
-    langfuse_app.langfuse(
+    langfuse_artifact = artifact("langfuse", langfuse.OUTPUT_DIR)
+    langfuse.langfuse(
         flux_chart,
-        write_directory(root, langfuse_artifact, langfuse_app.chart, siblings=["langfuse-secrets.sops.yaml"]),
+        write_directory(root, langfuse_artifact, langfuse.chart, siblings=["langfuse-secrets.sops.yaml"]),
         cnpg_kustomization,
         valkey_kustomization,
         seaweedfs_operator_kustomization,
@@ -1362,10 +1360,10 @@ def generate_manifests(root: Path) -> None:
             github_secrets_sync_secrets_kustomization,
         ],
     )
-    flux_webhook_artifact = artifact("flux-webhook", flux_webhook_chart.OUTPUT_DIR)
-    flux_webhook_chart.flux_webhook(
+    flux_webhook_artifact = artifact("flux-webhook", flux_webhook.OUTPUT_DIR)
+    flux_webhook.flux_webhook(
         flux_chart,
-        write_directory(root, flux_webhook_artifact, flux_webhook_chart.chart),
+        write_directory(root, flux_webhook_artifact, flux_webhook.chart),
         external_secrets_operator_kustomization,
         kyverno_kustomization,
         flux_webhook_token_kustomization,
@@ -1501,15 +1499,15 @@ def generate_manifests(root: Path) -> None:
         buildbuddy_executor_kustomization,
         kubevirt_kustomization,
     )
-    cpap_sync_artifact = artifact("cpap-sync", cpap_sync_app.OUTPUT_DIR)
-    cpap_sync_app.cpap_sync(
+    cpap_sync_artifact = artifact("cpap-sync", cpap_sync.OUTPUT_DIR)
+    cpap_sync.cpap_sync(
         flux_chart,
         write_directory(
             root,
             cpap_sync_artifact,
-            cpap_sync_app.namespace_chart,
-            cpap_sync_app.chart,
-            siblings=[cpap_sync_app.CARD_SECRET_FILE],
+            cpap_sync.namespace_chart,
+            cpap_sync.chart,
+            siblings=[cpap_sync.CARD_SECRET_FILE],
             components=["./image-pins"],
         ),
         external_secrets_operator_kustomization,
@@ -1517,15 +1515,15 @@ def generate_manifests(root: Path) -> None:
         monitoring_crds_kustomization,
     )
     claude_session_sync_artifact = artifact(
-        "claude-session-sync", claude_session_sync_app.OUTPUT_DIR, claude_session_sync_app.PINS_DIR
+        "claude-session-sync", claude_session_sync.OUTPUT_DIR, claude_session_sync.PINS_DIR
     )
-    claude_session_sync_app.claude_session_sync(
+    claude_session_sync.claude_session_sync(
         flux_chart,
         write_directory(
             root,
             claude_session_sync_artifact,
-            claude_session_sync_app.chart,
-            components=[posixpath.relpath(claude_session_sync_app.PINS_DIR, claude_session_sync_app.OUTPUT_DIR)],
+            claude_session_sync.chart,
+            components=[posixpath.relpath(claude_session_sync.PINS_DIR, claude_session_sync.OUTPUT_DIR)],
         ),
         cnpg_kustomization,
         external_secrets_operator_kustomization,

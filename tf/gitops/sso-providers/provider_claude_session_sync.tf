@@ -2,7 +2,7 @@
 # Authentik login: the app owns the OIDC code exchange and keeps only a signed, short-lived cookie.
 # The page pairs a Claude OAuth grant, so it is scoped to the account owner only, twice: this
 # application's policy binding and the allowed `sub` the app itself checks.
-# cluster/cdk8s/claude_session_sync/app.py consumes the Secret below and spells the same origin.
+# cluster/cdk8s/claude_session_sync.py consumes the Secret below and spells the same origin.
 
 resource "random_password" "claude_session_sync_session_secret" {
   length  = 64
