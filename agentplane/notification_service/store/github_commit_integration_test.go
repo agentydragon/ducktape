@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -91,22 +92,7 @@ func commitObservationEntries(t *testing.T, entries []Entry) []Entry {
 }
 
 func sameUUIDs(got, want []uuid.UUID) bool {
-	if len(got) != len(want) {
-		return false
-	}
-	counts := make(map[uuid.UUID]int, len(got))
-	for _, id := range got {
-		counts[id]++
-	}
-	for _, id := range want {
-		counts[id]--
-	}
-	for _, count := range counts {
-		if count != 0 {
-			return false
-		}
-	}
-	return true
+	return slices.Equal(sortedIDs(slices.Clone(got)...), sortedIDs(slices.Clone(want)...))
 }
 
 func TestGitHubCheckRunPollWebhookDedupAndLateSnapshot(t *testing.T) {
