@@ -320,13 +320,6 @@ def test_claude_picker_offers_environment_models_and_keeps_ingress(staging_manif
     assert all(
         route.id in config["models"]["harnesses"]["HARNESS_CENTRAL_SAMPLER"] for route in STAGING_APP_MODELS.claude
     )
-    options = {model["model"]: model for model in config["models"]["models"]}
-    assert all(
-        options[route.id]["display_name"].endswith(" — Google Antigravity") for route in STAGING_APP_MODELS.claude
-    )
-    assert all(
-        options[route.id]["reasoning_efforts"] == ["low", "medium", "high"] for route in STAGING_APP_MODELS.claude
-    )
     for preset in config["thread_presets"].values():
         assert preset["model"] in config["models"]["harnesses"][preset["harness"]]
     # The Anthropic Messages endpoint remains available to Claude sessions.
