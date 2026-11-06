@@ -1,6 +1,6 @@
 # Gmail Email Archiver
 
-Auto-archive old Gmail emails based on extracted dates from email content. Uses Gmail filters (managed via YAML config) to label emails, then periodically scans and archives old ones.
+Manage Gmail filters from YAML and preview or archive eligible inbox messages with `autoclean-inbox`, which extracts cleanup dates from message content.
 
 **V0 Scope**: Anthropic API receipts, USPS Informed Delivery, and other receipt types.
 
@@ -28,15 +28,10 @@ gmail-archiver filters download             # Export Gmail filters to YAML
 
 Archived emails get `gmail-archiver/inbox-auto-cleaned` label and are removed from inbox.
 
-## Architecture
+## Implementation
 
-- **Planners** (`gmail_archiver/planners/`): category-specific cleanup logic (parser + planning)
-- **Plan** (`gmail_archiver/plan.py`): `Plan`, `PlannedAction`, `Planner` protocol, `LABEL_AUTO_CLEANED`
-- **Plan display** (`gmail_archiver/plan_display.py`): plan rendering / display helpers
-- **Inbox** (`gmail_archiver/inbox.py`): cached Gmail access interface
-- **Gmail Client** (`gmail_archiver/gmail_client.py`): Gmail API wrapper
-- **Filter Models** (`gmail_archiver/gmail_yaml_filters_models.py`): Pydantic V2 models for filter YAML (compatible with [gmail-yaml-filters](https://github.com/mesozoic/gmail-yaml-filters))
-- **Filter Sync** (`gmail_archiver/filter_sync.py`): filter normalization, diffing, CRUD
+Cleanup planners live in `planners/`; filter synchronization uses the YAML format compatible with
+[gmail-yaml-filters](https://github.com/mesozoic/gmail-yaml-filters).
 
 Filter exports retain Gmail's `has_attachment`, `exclude_chats`, `size_bytes`, and
 `size_comparison` criteria. `size_bytes` is distinct from the legacy YAML `size`
@@ -48,4 +43,3 @@ equivalent Gmail search query before changing messages.
 
 - Strip PDFs and anonymize emails for test data
 - Add more parsers (GitHub Sponsors, Stripe, etc.)
-- Add logging, rate limit handling, retry logic
