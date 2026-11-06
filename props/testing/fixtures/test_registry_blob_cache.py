@@ -196,7 +196,8 @@ def test_registry_keeps_only_blobs_and_layer_links_across_container_removal(
                 cached_registry_container(conflict, image_ref=image_ref, recipe=_RECIPE, namespace=namespace),
             ):
                 pytest.fail("cache mounted by another container was reset")
-            assert docker_client.containers.get(attached.id).id == attached.id
+            attached.reload()
+            assert attached.status == "created"
 
         docker_client.volumes.get(first_receipt.volume_name).remove()
         assert docker_client.volumes.get(foreign_name).name == foreign_name
