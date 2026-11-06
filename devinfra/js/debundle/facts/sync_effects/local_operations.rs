@@ -189,6 +189,10 @@ pub(super) enum LocalExpression {
         property: String,
         value: Arc<Self>,
     },
+    AssignPublicThisField {
+        property: String,
+        value: Arc<Self>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -635,14 +639,20 @@ impl LocalExpression {
                         })
                     }
                     AssignTarget::Simple(SimpleAssignTarget::Member(member)) => {
-                        if class_template
-                            && matches!(member.obj.unwrap_parens(), Expr::This(_))
-                            && let MemberProp::PrivateName(private) = &member.prop
-                        {
-                            return Some(Self::AssignPrivateThisField {
-                                property: private.name.to_string(),
-                                value,
-                            });
+                        if class_template && matches!(member.obj.unwrap_parens(), Expr::This(_)) {
+                            return match &member.prop {
+                                MemberProp::PrivateName(private) => {
+                                    Some(Self::AssignPrivateThisField {
+                                        property: private.name.to_string(),
+                                        value,
+                                    })
+                                }
+                                MemberProp::Ident(property) => Some(Self::AssignPublicThisField {
+                                    property: property.sym.to_string(),
+                                    value,
+                                }),
+                                MemberProp::Computed(_) => None,
+                            };
                         }
                         let Expr::Ident(receiver) = member.obj.unwrap_parens() else {
                             return None;
@@ -752,9 +762,9 @@ impl LocalExpression {
                 reads.insert(receiver.clone());
                 value.reads(reads);
             }
-            Self::DefineThisField { value, .. } | Self::AssignPrivateThisField { value, .. } => {
-                value.reads(reads)
-            }
+            Self::DefineThisField { value, .. }
+            | Self::AssignPrivateThisField { value, .. }
+            | Self::AssignPublicThisField { value, .. } => value.reads(reads),
         }
     }
 
@@ -845,7 +855,8 @@ impl LocalExpression {
             }
             Self::AssignField { value, .. }
             | Self::DefineThisField { value, .. }
-            | Self::AssignPrivateThisField { value, .. } => {
+            | Self::AssignPrivateThisField { value, .. }
+            | Self::AssignPublicThisField { value, .. } => {
                 let (allocation_only, _) = value.allocation_syntax(bindings, closure_sites);
                 (allocation_only, false)
             }
@@ -882,7 +893,8 @@ impl LocalExpression {
             Self::Assign { value, .. }
             | Self::AssignField { value, .. }
             | Self::DefineThisField { value, .. }
-            | Self::AssignPrivateThisField { value, .. } => value.requires_keyed_collection_new(),
+            | Self::AssignPrivateThisField { value, .. }
+            | Self::AssignPublicThisField { value, .. } => value.requires_keyed_collection_new(),
             Self::Call(LocalCall { arguments, .. }) => {
                 arguments.iter().any(Self::requires_keyed_collection_new)
             }
@@ -940,7 +952,8 @@ impl LocalExpression {
             }
             Self::AssignField { value, .. }
             | Self::DefineThisField { value, .. }
-            | Self::AssignPrivateThisField { value, .. } => value.writes(writes),
+            | Self::AssignPrivateThisField { value, .. }
+            | Self::AssignPublicThisField { value, .. } => value.writes(writes),
             Self::Value(_)
             | Self::PrimitiveLiteral(_)
             | Self::This
@@ -1177,12 +1190,11 @@ impl LocalBody {
                     }
                     Stmt::Expr(expression) => {
                         let operation = LocalExpression::lower(&expression.expr, true)?;
-                        let LocalExpression::AssignPrivateThisField { property, .. } = &operation
-                        else {
-                            return None;
-                        };
-                        if !private_fields.contains(property) {
-                            return None;
+                        match &operation {
+                            LocalExpression::AssignPrivateThisField { property, .. }
+                                if private_fields.contains(property) => {}
+                            LocalExpression::AssignPublicThisField { .. } => {}
+                            _ => return None,
                         }
                         constructor_operations.push(LocalOperation::Evaluate(operation));
                     }

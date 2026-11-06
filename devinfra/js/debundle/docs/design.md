@@ -1450,6 +1450,10 @@ constructor body. Its fresh ordinary receiver starts extensible with no own
 fields or private slots. Public definitions create configurable writable own data
 properties without consulting the prototype; private definitions install distinct
 class-qualified slots, and private assignments require those slots already present.
+Public `this` assignments require the exact existing own data descriptor to be
+writable at the receiver's current prefix; they never create a missing field or
+consult a prototype setter. Their RHS executes once before the write, with its
+own effects and normal-completion checks.
 Each operation requires a normally completing allocation-only prefix, composes
 its initializer/RHS effects, and weakly stores retained values in the shared heap.
 Neither descriptor/brand state nor weak retained values authorize later field reads,

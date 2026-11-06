@@ -785,8 +785,11 @@ definitions, before the simple parameter prologue and constructor body. A fresh
 ordinary receiver and a normally completing allocation-only prefix prove public
 own data definitions, without consulting inherited setters. Private definitions
 install class-qualified slots; a private assignment requires its exact slot
-already present. Public descriptors and private slots remain disjoint, while
-stored values retain weak pooled-allocation semantics and callback reachability.
+already present. Public `this.field = value` assignment requires the exact public own data field
+already present and writable at that prefix. It evaluates its RHS once and keeps
+its effects; missing own fields and prototype setters remain unsupported.
+Public descriptors and private slots remain disjoint. Stored values retain weak
+pooled-allocation semantics and callback reachability.
 Each initializer/RHS and actual parameter operation composes its own effects.
 These proofs grant no field-read, result-shape or prototype guarantee. Heritage,
 defaults, borrowed access and instance private methods remain unsupported.
