@@ -692,6 +692,25 @@ function menuItem(text: string): HTMLElement {
   return item;
 }
 
+async function openSandboxActionsMenuForTraceSearch(): Promise<HTMLButtonElement> {
+  live.snapshot.threads = [threadView({ metadata: { threadId: "existing-session" } })];
+  await render(async () => Response.json([]));
+  await act(async () => Promise.resolve());
+
+  const button = container.querySelector<HTMLButtonElement>('[aria-label="More Sandbox actions"]');
+  if (!button) throw new Error("Missing Sandbox actions menu");
+  await act(async () => button.click());
+  return button;
+}
+
+async function openThreadActionsMenu(threadId: string): Promise<void> {
+  const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (node) => node.getAttribute("aria-label") === `More actions for ${threadId}`
+  );
+  if (!button) throw new Error(`Missing Thread actions menu for ${threadId}`);
+  await act(async () => button.click());
+}
+
 it("keeps retained History Threads visible through ready to suspended with no runner inventory read", async () => {
   const retained = threadView({
     metadata: { threadId: "retained-session", name: "Previously active thread" },
@@ -1159,13 +1178,7 @@ it("offers Delete in the actions menu only for a suspended Sandbox", async () =>
 });
 
 it("links the Sandbox and its Threads to their scoped Grafana trace searches", async () => {
-  live.snapshot.threads = [threadView({ metadata: { threadId: "existing-session" } })];
-  await render(async () => Response.json([]));
-  await act(async () => Promise.resolve());
-
-  const sandboxMenuButton = container.querySelector<HTMLButtonElement>('[aria-label="More Sandbox actions"]');
-  if (!sandboxMenuButton) throw new Error("Missing Sandbox actions menu");
-  await act(async () => sandboxMenuButton.click());
+  const sandboxMenuButton = await openSandboxActionsMenuForTraceSearch();
   const sandboxLink = menuItem("Find Sandbox traces in Grafana");
   expect(sandboxLink).toBeInstanceOf(HTMLAnchorElement);
   expect(new URL((sandboxLink as HTMLAnchorElement).href).searchParams.get("panes")).toContain("span.sandbox.name");
@@ -1177,11 +1190,7 @@ it("links the Sandbox and its Threads to their scoped Grafana trace searches", a
   );
   await act(async () => sandboxMenuButton.click());
 
-  const sessionMenuButton = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (node) => node.getAttribute("aria-label") === "More actions for existing-session"
-  );
-  if (!sessionMenuButton) throw new Error("Missing Thread actions menu");
-  await act(async () => sessionMenuButton.click());
+  await openThreadActionsMenu("existing-session");
   const sessionLink = menuItem("Find Thread traces in Grafana");
   expect(sessionLink).toBeInstanceOf(HTMLAnchorElement);
   expect((sessionLink as HTMLAnchorElement).target).toBe("_blank");
@@ -1190,13 +1199,7 @@ it("links the Sandbox and its Threads to their scoped Grafana trace searches", a
 
 it("hides trace links when the app leaves trace search unconfigured", async () => {
   traceSearchSettings = null;
-  live.snapshot.threads = [threadView({ metadata: { threadId: "existing-session" } })];
-  await render(async () => Response.json([]));
-  await act(async () => Promise.resolve());
-
-  const sandboxMenuButton = container.querySelector<HTMLButtonElement>('[aria-label="More Sandbox actions"]');
-  if (!sandboxMenuButton) throw new Error("Missing Sandbox actions menu");
-  await act(async () => sandboxMenuButton.click());
+  const sandboxMenuButton = await openSandboxActionsMenuForTraceSearch();
   expect(
     [...document.querySelectorAll('[role="menuitem"]')].some((node) =>
       node.textContent?.includes("Find Sandbox traces in Grafana")
@@ -1204,11 +1207,7 @@ it("hides trace links when the app leaves trace search unconfigured", async () =
   ).toBe(false);
   await act(async () => sandboxMenuButton.click());
 
-  const sessionMenuButton = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (node) => node.getAttribute("aria-label") === "More actions for existing-session"
-  );
-  if (!sessionMenuButton) throw new Error("Missing Thread actions menu");
-  await act(async () => sessionMenuButton.click());
+  await openThreadActionsMenu("existing-session");
   expect(
     [...document.querySelectorAll('[role="menuitem"]')].some((node) =>
       node.textContent?.includes("Find Thread traces in Grafana")
@@ -1218,13 +1217,7 @@ it("hides trace links when the app leaves trace search unconfigured", async () =
 
 it("hides Langfuse links independently when Langfuse search is unconfigured", async () => {
   langfuseSearchSettings = null;
-  live.snapshot.threads = [threadView({ metadata: { threadId: "existing-session" } })];
-  await render(async () => Response.json([]));
-  await act(async () => Promise.resolve());
-
-  const sandboxMenuButton = container.querySelector<HTMLButtonElement>('[aria-label="More Sandbox actions"]');
-  if (!sandboxMenuButton) throw new Error("Missing Sandbox actions menu");
-  await act(async () => sandboxMenuButton.click());
+  const sandboxMenuButton = await openSandboxActionsMenuForTraceSearch();
   expect(
     [...document.querySelectorAll('[role="menuitem"]')].some((node) =>
       node.textContent?.includes("Find Sandbox LLM traces in Langfuse")
