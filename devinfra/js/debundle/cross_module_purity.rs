@@ -1710,7 +1710,19 @@ fn source_foreign_call_summary(
         native_operations: call.derived.native_operations.clone(),
         replacement_package: facts.replacement_packages.get(export).cloned(),
         dependencies: call.dependencies.clone(),
-        initialized_class: call.initialized_class.clone(),
+        initialized_class: call.initialized_class.as_ref().map(|initialization| {
+            let mut dependencies = initialization.clone();
+            if let Some(package) = facts.replacement_packages.get(export) {
+                dependencies.vendor_swap_equivalences.insert(
+                    crate::analysis_inputs::VendorSwapEquivalenceRef {
+                        defining_module: module.to_owned(),
+                        export: export.to_owned(),
+                        replacement_package: package.clone(),
+                    },
+                );
+            }
+            dependencies
+        }),
         body_effects: call.derived.body_effects.clone().map(|effects| {
             Box::new(crate::analysis_inputs::ForeignBodyEffects {
                 callable_key: call.declaration_start,

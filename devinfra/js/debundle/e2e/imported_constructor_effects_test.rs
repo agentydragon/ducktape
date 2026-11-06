@@ -42,6 +42,10 @@ fn isolated_imported_constructor_uses_shared_body_effects_for_real_relocation() 
         "class Box { constructor() {} } export { Box };",
         "export class Box { constructor() { return 1; } }",
         "export class Box { method() { return globalThis.value; } }",
+        "export class Box { value; }",
+        "export class Box { #value; }",
+        "export class Box { value = 1; value = 2; }",
+        "export class Box { value; #value; constructor(callback) { this.#value = callback; } }",
     ] {
         let fixture = run_fixture(
             FixtureOpts::new(SOURCE, modules()).with_extra_chunks(&[("static/peer", provider)]),
@@ -60,12 +64,11 @@ fn isolated_imported_constructor_uses_shared_body_effects_for_real_relocation() 
 }
 
 #[test]
-fn constructor_field_retention_cannot_replace_body_effects() {
+fn unsupported_constructor_operations_keep_conservative_effects() {
     for provider in [
-        "export class Box { value; }",
-        "export class Box { #value; }",
-        "export class Box { value = 1; }",
         "export class Box { #method() {} }",
+        "export class Box { get #value() { return 1; } }",
+        "export class Box { constructor() { var value = 1; return value; } }",
     ] {
         let colocated = run_fixture(
             FixtureOpts::new(SOURCE, vec![]).with_extra_chunks(&[("static/peer", provider)]),

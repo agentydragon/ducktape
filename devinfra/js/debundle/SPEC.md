@@ -3372,8 +3372,9 @@ A class constructor's closed body does not establish its binding's GetValue.
 An independent source proof covers that read only when the provider consists
 of that one stable class declaration and local named exports: every emitted
 consumer then depends on a leaf. Other class providers keep possible TDZ
-completion, including cycles. Saved summaries preserve this initialization
-proof separately from the actual body fragment and its dependencies.
+completion, including cycles. A replaced provider's initialization proof
+retains its vendor-swap equivalence condition. Saved summaries preserve this
+initialization proof separately from the actual body fragment and its dependencies.
 
 An invocation's receipt records a module/export/member/callable edge.
 A direct function import is initialized at module instantiation, including in an
