@@ -13,7 +13,7 @@ use super::local_operations::{
 };
 use super::own_data_transfer::{self, OwnDataContext, OwnDataOwnership, OwnDataSlot};
 use super::value_model::{AbstractValue, CallSite, Context, PropertyDefinition, ValueExpr, Values};
-use crate::analysis_inputs::ProofDependencies;
+use crate::analysis_inputs::{ForeignInvocation, ProofDependencies};
 use crate::execution_evidence::OrderedFieldReadRefusal;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
@@ -168,6 +168,7 @@ pub(super) trait LocalContext: OwnDataContext {
     fn native_callee(
         &mut self,
         _frame: &mut LocalFrame,
+        _invocation: ForeignInvocation,
         _callee: &LocalCallee,
         _span: Span,
     ) -> Option<(NativeCalleeSelection, EffectCoverageFragment)> {
@@ -249,6 +250,7 @@ pub(super) trait LocalContext: OwnDataContext {
     fn call(
         &mut self,
         frame: &mut LocalFrame,
+        invocation: ForeignInvocation,
         callee: &EvaluatedCallee,
         arguments: &[SelectedValue],
         span: Span,
@@ -709,10 +711,20 @@ fn expression(
             update_binding_expression(context, binding, span, body, frame, judgment)
         }
         LocalExpression::Call {
+            invocation,
             callee,
             arguments,
             span,
-        } => call_expression(context, callee, arguments, span, body, frame, judgment),
+        } => call_expression(
+            context,
+            *invocation,
+            callee,
+            arguments,
+            span,
+            body,
+            frame,
+            judgment,
+        ),
         LocalExpression::ReadField {
             receiver,
             property,
@@ -1061,6 +1073,7 @@ fn update_binding_expression(
 
 fn call_expression(
     context: &mut impl LocalContext,
+    invocation: ForeignInvocation,
     callee: &LocalCallee,
     arguments: &[LocalExpression],
     span: &Span,
@@ -1070,7 +1083,9 @@ fn call_expression(
 ) -> Option<SelectedValue> {
     // GetValue(callee) precedes every argument. In particular, an
     // argument assignment must not replace this captured callee.
-    let callee = if let Some((selection, effects)) = context.native_callee(frame, callee, *span) {
+    let callee = if let Some((selection, effects)) =
+        context.native_callee(frame, invocation, callee, *span)
+    {
         frame.effect_coverage.compose(&effects);
         EvaluatedCallee::Native {
             selection: Box::new(selection),
@@ -1102,8 +1117,10 @@ fn call_expression(
                         return Some(SelectedValue::raw(Values::new()));
                     }
                     let module_prefix = context.module_prefix_receiver(receiver, &receivers);
-                    let result = if let Some((selection, effects)) =
-                        context.array_push_callee(&receivers, property)
+                    let result = if let Some((selection, effects)) = (invocation
+                        == ForeignInvocation::Call)
+                        .then(|| context.array_push_callee(&receivers, property))
+                        .flatten()
                     {
                         array_push = Some(Box::new(selection));
                         LocalValueResult {
@@ -1157,7 +1174,7 @@ fn call_expression(
         frame.inputs.extend(selected.values.iter().cloned());
         inputs.push(selected);
     }
-    let result = context.call(frame, &callee, &inputs, *span)?;
+    let result = context.call(frame, invocation, &callee, &inputs, *span)?;
     frame.effect_coverage.compose(&result.effects);
     judgment.compose(&result.allocation.judgment);
     Some(completing_selected(

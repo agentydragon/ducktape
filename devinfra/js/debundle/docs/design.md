@@ -1443,6 +1443,13 @@ graph only after the complete operation sequence has an allocation-only
 judgment. Throws, TDZ/const errors and unproved writes refuse certification
 without retrying the legacy source evaluator. Application execution continues
 to supply its ordinary effect/provenance, publication and fallback adapters.
+Base-class provider queries retain the shared constructor body's actual effect
+fragment independently of its fresh-instance and retention judgments. An empty
+constructor body has no operation effects. Field definitions, including those
+with implicit `undefined` initializers, keep their uncovered descriptor/heap
+effects; recording their retained values does not prove those effects. Instance
+private methods remain outside this constructor projection because their
+installation and retained captures are not represented by the shared plan.
 Retained private captures produce an opaque foreign capability in the returned
 carrier. They may alias actual arguments, so those identities stay retained
 too. Later opaque use conservatively promotes importer reads and rebinds and

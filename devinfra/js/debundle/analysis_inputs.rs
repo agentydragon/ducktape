@@ -187,6 +187,11 @@ pub struct ForeignCallSummary {
     /// Trusted provider judgment; deliberately absent from report JSON.
     #[serde(skip)]
     pub(crate) dependencies: ProofDependencies,
+    /// Independent source proof that provider evaluation precedes this imported
+    /// class binding's GetValue under every assignment (an isolated leaf).
+    /// Constructor-body closure alone never proves binding initialization.
+    #[serde(skip)]
+    pub(crate) initialized_class: Option<ProofDependencies>,
     /// Actual shared-kernel operations, independent of the allocation-only
     /// return judgment. Unknown domains and completion remain unknown.
     #[serde(skip)]

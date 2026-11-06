@@ -5,6 +5,7 @@ use super::value_model::{
     CallSite, LiteralPropertyKind, PropertyDefinition, ValueExpr, object_data_property_name,
     static_property_name,
 };
+use crate::analysis_inputs::ForeignInvocation;
 use crate::facts::abstract_domain::value::Kind;
 use analysis_model::PrimKinds;
 use std::collections::{BTreeMap, BTreeSet};
@@ -159,6 +160,7 @@ pub(super) enum LocalExpression {
     },
     Closure(DeferredCallableCreation),
     Call {
+        invocation: ForeignInvocation,
         callee: LocalCallee,
         arguments: Arc<[Self]>,
         span: Span,
@@ -510,6 +512,31 @@ impl LocalExpression {
                     site: construction.span.into(),
                 })
             }
+            Expr::New(construction)
+                if construction.type_args.is_none()
+                    && !(construction.args.as_deref().unwrap_or_default().is_empty()
+                        && matches!(construction.callee.unwrap_parens(), Expr::Ident(binding)
+                            if matches!(binding.sym.as_ref(), "Map" | "Set" | "WeakMap" | "WeakSet")))
+                    && !construction
+                        .args
+                        .as_deref()
+                        .unwrap_or_default()
+                        .iter()
+                        .any(|argument| argument.spread.is_some()) =>
+            {
+                Some(Self::Call {
+                    invocation: ForeignInvocation::Construct,
+                    callee: LocalCallee::lower(&construction.callee)?,
+                    arguments: construction
+                        .args
+                        .as_deref()
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|argument| Self::lower(&argument.expr, class_template))
+                        .collect::<Option<Arc<[_]>>>()?,
+                    span: construction.span,
+                })
+            }
             Expr::Tpl(template) if template.exprs.is_empty() => Some(Self::Value(
                 ValueExpr::NonCallable(analysis_model::PrimKinds::STRING),
             )),
@@ -550,6 +577,7 @@ impl LocalExpression {
                 };
                 let callee = LocalCallee::lower(callee, class_template)?;
                 Some(Self::Call {
+                    invocation: ForeignInvocation::Call,
                     callee,
                     arguments: call
                         .args
@@ -1026,14 +1054,15 @@ impl LocalBody {
                     if !field.is_static {
                         let property = field.key.name.to_string();
                         private_fields.insert(property.clone());
-                        if let Some(value) = field.value.as_deref() {
-                            field_operations.push(LocalOperation::Evaluate(
-                                LocalExpression::DefineThisField {
-                                    property,
-                                    value: Arc::new(LocalExpression::lower(value, true)?),
-                                },
-                            ));
-                        }
+                        field_operations.push(LocalOperation::Evaluate(
+                            LocalExpression::DefineThisField {
+                                property,
+                                value: Arc::new(match field.value.as_deref() {
+                                    Some(value) => LocalExpression::lower(value, true)?,
+                                    None => LocalExpression::PrimitiveLiteral(PrimKinds::UNDEFINED),
+                                }),
+                            },
+                        ));
                     }
                 }
                 ClassMember::ClassProp(field) => {
@@ -1047,17 +1076,21 @@ impl LocalBody {
                         ) {
                             return None;
                         }
-                        if let Some(value) = field.value.as_deref() {
-                            field_operations.push(LocalOperation::Evaluate(
-                                LocalExpression::DefineThisField {
-                                    property: static_property_name(&field.key)?,
-                                    value: Arc::new(LocalExpression::lower(value, true)?),
-                                },
-                            ));
-                        }
+                        field_operations.push(LocalOperation::Evaluate(
+                            LocalExpression::DefineThisField {
+                                property: static_property_name(&field.key)?,
+                                value: Arc::new(match field.value.as_deref() {
+                                    Some(value) => LocalExpression::lower(value, true)?,
+                                    None => LocalExpression::PrimitiveLiteral(PrimKinds::UNDEFINED),
+                                }),
+                            },
+                        ));
                     }
                 }
                 ClassMember::AutoAccessor(accessor) if !accessor.is_static => return None,
+                // Installation and captures of instance private methods are
+                // absent from this allocation/retention plan.
+                ClassMember::PrivateMethod(method) if !method.is_static => return None,
                 ClassMember::Method(method) if !method.function.decorators.is_empty() => {
                     return None;
                 }

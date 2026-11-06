@@ -1710,6 +1710,7 @@ fn source_foreign_call_summary(
         native_operations: call.derived.native_operations.clone(),
         replacement_package: facts.replacement_packages.get(export).cloned(),
         dependencies: call.dependencies.clone(),
+        initialized_class: call.initialized_class.clone(),
         body_effects: call.derived.body_effects.clone().map(|effects| {
             Box::new(crate::analysis_inputs::ForeignBodyEffects {
                 callable_key: call.declaration_start,
