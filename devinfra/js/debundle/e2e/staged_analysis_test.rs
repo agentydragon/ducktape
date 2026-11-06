@@ -2164,23 +2164,24 @@ fn graph_options_survive_the_source_only_analysis_boundary() {
             "graph-only setting changed analysis identity"
         );
         let reused = staged.run(&["--analysis", path(&staged.artifact), "--emit-on-rejection"]);
-        if enabled {
-            assert_incomplete_relocation(&reused);
-        } else {
-            assert_ok(&reused.result, "run with original sequencing retained");
-            let report: Value = serde_json::from_slice(
-                &fs::read(
-                    reused
-                        .output_root()
-                        .join("reports/tree/static/app/candidate_relocation_assessment.json"),
-                )
-                .unwrap(),
+        assert_ok(&reused.result, "source-order candidate in both graph modes");
+        let report: Value = serde_json::from_slice(
+            &fs::read(
+                reused
+                    .output_root()
+                    .join("reports/tree/static/app/candidate_relocation_assessment.json"),
             )
-            .unwrap();
-            assert_eq!(report["status"], "accepted_within_checked_scope");
-            assert_eq!(report["decision"]["scope"], "no_reordering");
-            assert_eq!(report["swapped_pairs"], 0);
-        }
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(report["status"], "accepted_within_checked_scope");
+        assert_eq!(report["decision"]["scope"], "no_reordering");
+        assert_eq!(report["swapped_pairs"], 0);
+        assert_node_output(
+            &reused.output_root().join("app/static/app/entry.js"),
+            "1 2\n",
+            "",
+        );
         let graph: DependencyGraphReport = read_gzip_json(
             &reused
                 .output_root()
