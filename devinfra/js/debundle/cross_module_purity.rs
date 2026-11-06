@@ -1395,11 +1395,13 @@ pub fn resolve_imported_callable_summaries(
                 module: module.clone(),
                 export: export.clone(),
             };
-            // An initializer may not have run when the importer calls it.
+            // Publish only after proving availability for the resolved import.
+            // Isolated initializer providers stay leaves under every assignment;
+            // general initialized bindings still require a use/order proof.
             let Some(call) = capabilities
                 .foreign_calls
                 .get(local)
-                .filter(|call| call.hoisted)
+                .filter(|call| call.availability.available_to_importer())
             else {
                 continue;
             };

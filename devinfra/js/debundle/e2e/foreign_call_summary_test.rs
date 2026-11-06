@@ -948,25 +948,29 @@ fn a_vendor_marked_provider_keeps_its_summary() {
 }
 
 #[test]
-fn an_initializer_export_gets_no_call_or_record_summary() {
-    // An importer can call it before the provider's statement has run, which
-    // neither consumer models as a possible throw. Its callback-factory
-    // projection is covered by `imported_callback_timing`.
-    let fixture = run_fixture(
-        FixtureOpts::new(
-            "import { make } from './peer.js';\nconst queue = make();\nconsole.log(queue.size);\n",
-            vec![],
-        )
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export const make = function () { const state = new Map(); return { get size() { return state.size; } }; };\n",
-        )]),
-    );
-    assert_preserved_entry_output(&fixture, "0\n");
-    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
-    let summary = &report["imported_callables"]["make"];
-    assert!(summary["foreign_call"].is_null(), "{summary}");
-    assert!(summary["returned_record"].is_null(), "{summary}");
+fn initializer_call_and_record_summary_requires_an_isolated_provider() {
+    for (prefix, available) in [("", true), ("const unrelated = 0;\n", false)] {
+        let provider = format!(
+            "{prefix}export const make = function () {{ const state = new Map(); return {{ get size() {{ return state.size; }} }}; }};\n"
+        );
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                "import { make } from './peer.js';\nconst queue = make();\nconsole.log(queue.size);\n",
+                vec![],
+            )
+            .with_extra_chunks(&[("static/peer", &provider)]),
+        );
+        assert_preserved_entry_output(&fixture, "0\n");
+        let report: serde_json::Value =
+            read_json(&fixture.report_root.join("static/app/modules.json"));
+        let summary = &report["imported_callables"]["make"];
+        assert_eq!(summary["foreign_call"].is_object(), available, "{summary}");
+        assert_eq!(
+            summary["returned_record"].is_object(),
+            available,
+            "{summary}"
+        );
+    }
 }
 
 #[test]
