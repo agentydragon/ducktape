@@ -14,6 +14,41 @@ fn split_opts<'a>(source: &'a str, members: &[Member], anonymous: &[&str]) -> Fi
     )
 }
 
+fn assert_real_reentry_relocation_is_rejected(
+    source: &str,
+    members: &[Member],
+    anonymous: &[&str],
+    original_output: &str,
+    reordered_output: &str,
+) {
+    const PUBLICATION: &str = "globalThis.saved = () => later;";
+    let mut original_anonymous = vec![PUBLICATION];
+    original_anonymous.extend_from_slice(anonymous);
+    let preserved = run_fixture(split_opts(source, members, &original_anonymous));
+    assert_preserved_entry_output(&preserved, original_output);
+    let report = preserved.candidate_relocation_assessment();
+    assert_eq!(report["swapped_pairs"], 0, "{report:#}");
+    assert_eq!(report["decision"]["scope"], "no_reordering", "{report:#}");
+
+    // Publication and initialization now surround the native operation in
+    // source order but share one destination. Neither module order can keep
+    // the callback's original TDZ timing.
+    let rejected = run_rejection_fixture_with_args(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon("native/value", members, anonymous),
+                logical_module_with_anon("native/later", &[Member::new("later")], &[PUBLICATION]),
+            ],
+        ),
+        &["--emit-on-rejection"],
+        1,
+    );
+    let report = rejected.candidate_relocation_assessment();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    assert_node_output(&rejected.entry_path(), reordered_output, "");
+}
+
 #[test]
 fn finalization_registry_retains_cleanup_without_invoking_it() {
     let source = r#"const registry = new globalThis.FinalizationRegistry(() => Later);
@@ -228,17 +263,13 @@ const pattern = new RegExp(argument);
 const later = 42;
 console.log(globalThis.observed, pattern.test("ok"));
 "#;
-    expect_atomic_conflict_rejection(
-        split_opts(
-            source,
-            &[Member::new("argument"), Member::new("pattern")],
-            &["globalThis.saved = () => later;"],
-        ),
-        &["native/value", "native/later"],
+    assert_real_reentry_relocation_is_rejected(
+        source,
+        &[Member::new("argument"), Member::new("pattern")],
         &[],
+        "ReferenceError true\n",
+        "undefined true\n",
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
-    assert_preserved_entry_output(&fixture, "ReferenceError true\n");
 }
 
 #[test]
@@ -254,24 +285,19 @@ const pattern = new RegExp("ok");
 const later = 42;
 console.log(globalThis.observed, pattern.test("ok"));
 "#;
-    expect_atomic_conflict_rejection(
-        split_opts(
-            source,
-            &[
-                Member::new("host"),
-                Member::new("Original"),
-                Member::new("pattern"),
-            ],
-            &[
-                "globalThis.saved = () => later;",
-                "host.RegExp = function() { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return new Original('ok'); };",
-            ],
-        ),
-        &["native/value", "native/later"],
-        &[],
+    assert_real_reentry_relocation_is_rejected(
+        source,
+        &[
+            Member::new("host"),
+            Member::new("Original"),
+            Member::new("pattern"),
+        ],
+        &[
+            "host.RegExp = function() { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return new Original('ok'); };",
+        ],
+        "ReferenceError true\n",
+        "undefined true\n",
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
-    assert_preserved_entry_output(&fixture, "ReferenceError true\n");
 }
 
 #[test]
@@ -314,17 +340,13 @@ const marker = Symbol(argument);
 const later = 42;
 console.log(globalThis.observed, typeof marker);
 "#;
-    expect_atomic_conflict_rejection(
-        split_opts(
-            source,
-            &[Member::new("argument"), Member::new("marker")],
-            &["globalThis.saved = () => later;"],
-        ),
-        &["native/value", "native/later"],
+    assert_real_reentry_relocation_is_rejected(
+        source,
+        &[Member::new("argument"), Member::new("marker")],
         &[],
+        "ReferenceError symbol\n",
+        "undefined symbol\n",
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
-    assert_preserved_entry_output(&fixture, "ReferenceError symbol\n");
 }
 
 #[test]
@@ -340,22 +362,17 @@ const marker = Symbol.for("marker");
 const later = 42;
 console.log(globalThis.observed, typeof marker);
 "#;
-    expect_atomic_conflict_rejection(
-        split_opts(
-            source,
-            &[
-                Member::new("original"),
-                Member::new("symbols"),
-                Member::new("marker"),
-            ],
-            &[
-                "globalThis.saved = () => later;",
-                "symbols.for = () => { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return original('marker'); };",
-            ],
-        ),
-        &["native/value", "native/later"],
-        &[],
+    assert_real_reentry_relocation_is_rejected(
+        source,
+        &[
+            Member::new("original"),
+            Member::new("symbols"),
+            Member::new("marker"),
+        ],
+        &[
+            "symbols.for = () => { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return original('marker'); };",
+        ],
+        "ReferenceError symbol\n",
+        "undefined symbol\n",
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
-    assert_preserved_entry_output(&fixture, "ReferenceError symbol\n");
 }
