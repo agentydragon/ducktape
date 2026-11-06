@@ -169,6 +169,30 @@ fn throw_only_initializer_does_not_supply_a_normal_stored_value() {
 }
 
 #[test]
+fn explicit_empty_return_supplies_a_normal_undefined_value() {
+    for initializer in [
+        "(() => { return; })()",
+        "(function stop() { return; })()",
+        "(() => { return; throw new TypeError('unreachable'); })()",
+        "(function stop() { return; throw new TypeError('unreachable'); })()",
+    ] {
+        let source = format!(
+            "const dynamic = {initializer}; const later = dynamic; console.log(typeof later);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, "undefined\n");
+        let later = binding_execution(&fixture, "later");
+        assert!(
+            matches!(
+                later.binding_effect_authority.as_ref(),
+                Some(BindingEffectAuthorityReport::OperationReceipt { .. })
+            ),
+            "{initializer}: an explicit normal undefined result stays readable: {later:#?}"
+        );
+    }
+}
+
+#[test]
 fn exported_hoisted_function_is_reachable_before_its_declaration() {
     assert_split_rejected_with_peer(
         r#"import "./peer.js";

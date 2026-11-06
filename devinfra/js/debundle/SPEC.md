@@ -941,6 +941,11 @@ A terminal source `throw` contributes no implicit fall-through `undefined` to
 the callable's return projection. Explicit normal return alternatives remain
 separate from throwing outcomes and incomplete body effects. An unavailable
 initializer cannot manufacture a normally stored value for a later alias read.
+At the invocation boundary, an ordinary callable with neither a source return
+nor a fall-through path retains no successful value from an opaque child
+operation. Those values keep conservative throw publication; unknown abrupt
+coverage and existing known-throw payloads remain distinct. Async/generator
+invocation objects and explicit empty returns are outside this refusal.
 Default-bearing bodies with body `var` or function declarations retain the
 compatibility path until separate parameter and body environments are modeled.
 Rest/destructuring, `arguments`, async and generator
