@@ -17,7 +17,7 @@ use super::value_model::{
     AbstractValue, CallSite, Context, PrivateFieldId, PropertyDefinition, ValueExpr, Values,
 };
 use crate::analysis_inputs::{ForeignInvocation, ProofDependencies};
-use crate::execution_evidence::OrderedFieldReadRefusal;
+use crate::execution_evidence::{OrderedFieldReadRefusal, SkippedCallReason};
 use crate::facts::abstract_domain::value::{Kind, Value};
 use analysis_model::PrimKinds;
 use std::collections::{BTreeMap, BTreeSet};
@@ -35,13 +35,15 @@ pub(super) struct LocalFrame {
     /// Bindings initialized by an actual operation in this activation.
     /// Prebound values alone do not establish a declarative-cell receipt.
     pub(super) initialized_bindings: BTreeSet<Id>,
-    effect_coverage: EffectCoverageFragment,
+    pub(super) effect_coverage: EffectCoverageFragment,
     /// Entry arguments/captures and external values read while executing.
     /// Retained for a truncated remainder even after local aliases change.
     pub(super) inputs: Values,
     pub(super) borrowed_records: BTreeSet<u32>,
     pub(super) fresh_records: BTreeSet<u32>,
     pub(super) returns: Values,
+    /// An actual source throw, separate from unknown abrupt/TDZ alternatives.
+    pub(super) thrown: Option<KnownThrow>,
     /// Set only by a checked constructor provider query. Other local calls do
     /// not acquire a receiver just because their syntax mentions `this`.
     pub(super) this_values: Option<Values>,
@@ -71,6 +73,7 @@ impl LocalFrame {
             borrowed_records: BTreeSet::new(),
             fresh_records: BTreeSet::new(),
             returns: Values::new(),
+            thrown: None,
             this_values: None,
             constructor_receiver: None,
         }
@@ -120,11 +123,23 @@ impl CallableSelection {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(super) struct SelectedValue {
     pub(super) values: Values,
     pub(super) selection: Option<CallableSelection>,
     pub(super) postcondition: Option<Box<NativeObjectPostcondition>>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct KnownThrow {
+    pub(super) value: SelectedValue,
+    pub(super) frontier: Span,
+}
+
+enum RegionExit {
+    Return(SelectedValue, Span),
+    Throw(KnownThrow),
+    Unknown,
 }
 
 impl SelectedValue {
@@ -352,6 +367,20 @@ pub(super) trait LocalContext: OwnDataContext {
     /// summarize the remainder without treating the call as unconditional.
     fn unproved_optional_call(&mut self, _frame: &LocalFrame, _callee: &Values, _span: Span) {}
     fn publish_throw(&mut self, values: &Values);
+    /// Called only after a represented linear region has stopped at a known
+    /// completion, or its handler was bypassed. No syntax-order heuristic.
+    fn skipped_region(
+        &mut self,
+        _frame: &mut LocalFrame,
+        _region: Span,
+        _frontier: Span,
+        _reason: SkippedCallReason,
+    ) -> bool {
+        false
+    }
+    fn instantiate_catch_binding(&mut self, _binding: &Id, _frame: &LocalFrame) {}
+    fn leave_catch_binding(&mut self, _binding: &Id) {}
+    fn unproved_control_flow(&mut self, _frame: &LocalFrame, _span: Span) {}
     fn keyed_collection_new(
         &mut self,
         _frame: &mut LocalFrame,
@@ -496,7 +525,7 @@ fn mark_fresh_record(
 }
 
 fn completing(mut values: Values, frame: &mut LocalFrame) -> Values {
-    if values.remove(&AbstractValue::Value(Value::Unavailable)) {
+    if values.remove(&AbstractValue::Value(Value::Unavailable)) && frame.thrown.is_none() {
         frame
             .returns
             .insert(AbstractValue::Value(Value::Unavailable));
@@ -1658,6 +1687,10 @@ pub(super) fn execute(
     for (binding, kind) in &body.bindings {
         match kind {
             LocalBinding::Parameter => {}
+            LocalBinding::CatchParameter => {
+                frame.environment.remove(binding);
+                frame.binding_selections.remove(binding);
+            }
             LocalBinding::NamedSelf(function) | LocalBinding::HoistedFunction(function) => {
                 // A pre-prologue parameter/var value is not the hoisted
                 // function. Preserve only an already-established exact value;
@@ -1699,6 +1732,9 @@ pub(super) fn execute(
     }
     context.instantiate_bindings(frame);
     for (binding, kind) in &body.bindings {
+        if *kind == LocalBinding::CatchParameter {
+            continue;
+        }
         if matches!(kind, LocalBinding::Parameter | LocalBinding::NamedSelf(_))
             && frame.initialized_bindings.contains(binding)
         {
@@ -1713,11 +1749,73 @@ pub(super) fn execute(
         };
         frame.effect_coverage.compose(&effects);
     }
-    for operation in body.operations.iter() {
+    let completion = execute_operations(context, body, &body.operations, frame, &mut judgment)?;
+    // Source throws and structured handlers need the complete callable's call
+    // inventory, including a source suffix omitted by canonical lowering.
+    if body.operations.iter().any(|operation| {
+        matches!(
+            operation,
+            LocalOperation::Throw(..) | LocalOperation::TryCatch { .. }
+        )
+    }) && let Some(region) = body.source_span
+    {
+        let frontier = match &completion {
+            std::ops::ControlFlow::Break(RegionExit::Return(_, span)) => {
+                Some((*span, SkippedCallReason::KnownReturn))
+            }
+            std::ops::ControlFlow::Break(RegionExit::Throw(thrown)) => {
+                Some((thrown.frontier, SkippedCallReason::KnownThrow))
+            }
+            _ => None,
+        };
+        if let Some((frontier, reason)) = frontier
+            && !context.skipped_region(frame, region, frontier, reason)
+        {
+            context.unproved_control_flow(frame, region);
+            return None;
+        }
+    }
+    match completion {
+        std::ops::ControlFlow::Continue(()) => {
+            frame.return_selection = None;
+            frame.returns.insert(AbstractValue::UNDEFINED);
+        }
+        std::ops::ControlFlow::Break(RegionExit::Return(selected, _)) => {
+            frame.returns.extend(selected.values);
+            frame.return_selection = selected
+                .selection
+                .filter(|selection| selection.matches(&frame.returns));
+        }
+        std::ops::ControlFlow::Break(RegionExit::Throw(thrown)) => frame.thrown = Some(thrown),
+        std::ops::ControlFlow::Break(RegionExit::Unknown) => {
+            frame
+                .returns
+                .insert(AbstractValue::Value(Value::Unavailable));
+        }
+    }
+    Some(finish(frame, judgment))
+}
+
+fn abrupt_exit(frame: &mut LocalFrame) -> std::ops::ControlFlow<RegionExit> {
+    std::ops::ControlFlow::Break(match frame.thrown.take() {
+        Some(thrown) if frame.returns.is_empty() => RegionExit::Throw(thrown),
+        _ => RegionExit::Unknown,
+    })
+}
+
+fn execute_operations(
+    context: &mut impl LocalContext,
+    body: &LocalBody,
+    operations: &[LocalOperation],
+    frame: &mut LocalFrame,
+    judgment: &mut AllocationJudgment,
+) -> Option<std::ops::ControlFlow<RegionExit>> {
+    use std::ops::ControlFlow::{Break, Continue};
+    for operation in operations {
         match operation {
             LocalOperation::Initialize(binding, node) => {
                 let selected = match node {
-                    Some(node) => expression(context, node, body, frame, &mut judgment)?,
+                    Some(node) => expression(context, node, body, frame, judgment)?,
                     None if matches!(
                         body.bindings[binding],
                         LocalBinding::Var
@@ -1730,7 +1828,7 @@ pub(super) fn execute(
                     None => SelectedValue::raw(Values::from([AbstractValue::UNDEFINED])),
                 };
                 if selected.values.is_empty() {
-                    return Some(finish(frame, judgment));
+                    return Some(abrupt_exit(frame));
                 }
                 let SelectedValue {
                     values,
@@ -1762,52 +1860,166 @@ pub(super) fn execute(
                     ));
             }
             LocalOperation::Evaluate(node) => {
-                if expression(context, node, body, frame, &mut judgment)?
+                if expression(context, node, body, frame, judgment)?
                     .values
                     .is_empty()
                 {
-                    return Some(finish(frame, judgment));
+                    return Some(abrupt_exit(frame));
                 }
             }
-            LocalOperation::Return(node) => {
+            LocalOperation::Return(node, span) => {
                 let selected = match node {
-                    Some(node) => expression(context, node, body, frame, &mut judgment)?,
+                    Some(node) => expression(context, node, body, frame, judgment)?,
                     None => SelectedValue::raw(Values::from([AbstractValue::UNDEFINED])),
                 };
-                let selection = selected
-                    .selection
-                    .filter(|selection| selection.matches(&selected.values));
-                frame.returns.extend(selected.values);
-                frame.return_selection = selection.filter(|selection| {
-                    !frame
-                        .returns
-                        .contains(&AbstractValue::Value(Value::Unavailable))
-                        && selection.matches(&frame.returns)
-                });
-                return Some(finish(frame, judgment));
+                if selected.values.is_empty() {
+                    return Some(abrupt_exit(frame));
+                }
+                return Some(Break(RegionExit::Return(selected, *span)));
             }
-            LocalOperation::Throw(node) => {
-                frame
-                    .effect_coverage
-                    .compose(&EffectCoverageFragment::default());
+            LocalOperation::Throw(node, span) => {
+                let selected = expression(context, node, body, frame, judgment)?;
+                if selected.values.is_empty() {
+                    return Some(abrupt_exit(frame));
+                }
                 frame.effect_coverage.abrupt();
-                let selected = expression(context, node, body, frame, &mut judgment)?;
-                frame.return_selection = None;
+                // Preserve the conservative escape policy until throw-value
+                // reach is also represented at every nonlocal invocation boundary.
                 context.publish_throw(&selected.values);
-                frame
-                    .returns
-                    .insert(AbstractValue::Value(Value::Unavailable));
-                return Some(finish(frame, judgment));
+                return Some(Break(RegionExit::Throw(KnownThrow {
+                    value: selected,
+                    frontier: *span,
+                })));
+            }
+            LocalOperation::TryCatch {
+                body: region,
+                binding,
+                handler,
+            } => {
+                let completion =
+                    execute_operations(context, body, &region.operations, frame, judgment)?;
+                match completion {
+                    Continue(()) | Break(RegionExit::Return(..)) => {
+                        let frontier = match &completion {
+                            Break(RegionExit::Return(_, frontier)) => *frontier,
+                            _ => region.span,
+                        };
+                        if !context.skipped_region(
+                            frame,
+                            handler.span,
+                            frontier,
+                            SkippedCallReason::HandlerNotEntered,
+                        ) {
+                            context.unproved_control_flow(frame, region.span);
+                            return None;
+                        }
+                        if let Break(RegionExit::Return(_, frontier)) = &completion
+                            && !context.skipped_region(
+                                frame,
+                                region.span,
+                                *frontier,
+                                SkippedCallReason::KnownReturn,
+                            )
+                        {
+                            context.unproved_control_flow(frame, region.span);
+                            return None;
+                        }
+                        if completion.is_break() {
+                            return Some(completion);
+                        }
+                    }
+                    Break(RegionExit::Throw(thrown)) if frame.returns.is_empty() => {
+                        if !context.skipped_region(
+                            frame,
+                            region.span,
+                            thrown.frontier,
+                            SkippedCallReason::KnownThrow,
+                        ) || !frame.effect_coverage.handle_known_throw()
+                        {
+                            context.publish_throw(&thrown.value.values);
+                            context.unproved_control_flow(frame, region.span);
+                            return None;
+                        }
+                        if let Some(binding) = binding {
+                            frame.environment.insert(
+                                binding.clone(),
+                                Values::from([AbstractValue::Value(Value::Unavailable)]),
+                            );
+                            context.instantiate_catch_binding(binding, frame);
+                            frame
+                                .effect_coverage
+                                .compose(&context.declarative_binding_operation(
+                                    binding,
+                                    frame,
+                                    BindingOperation::Create,
+                                ));
+                            frame.inputs.extend(thrown.value.values.iter().cloned());
+                            frame
+                                .environment
+                                .insert(binding.clone(), thrown.value.values.clone());
+                            if let Some(selection) = thrown
+                                .value
+                                .selection
+                                .filter(|selection| selection.matches(&thrown.value.values))
+                            {
+                                frame.binding_selections.insert(binding.clone(), selection);
+                            }
+                            context.local_binding_stored(binding, frame);
+                            frame.initialized_bindings.insert(binding.clone());
+                            frame
+                                .effect_coverage
+                                .compose(&context.declarative_binding_operation(
+                                    binding,
+                                    frame,
+                                    BindingOperation::Initialize,
+                                ));
+                        }
+                        let result =
+                            execute_operations(context, body, &handler.operations, frame, judgment);
+                        if let Some(binding) = binding {
+                            context.leave_catch_binding(binding);
+                            frame.environment.remove(binding);
+                            frame.binding_selections.remove(binding);
+                            frame.binding_postconditions.remove(binding);
+                            frame.initialized_bindings.remove(binding);
+                        }
+                        let result = result?;
+                        let frontier = match &result {
+                            Break(RegionExit::Return(_, span)) => {
+                                Some((*span, SkippedCallReason::KnownReturn))
+                            }
+                            Break(RegionExit::Throw(thrown)) => {
+                                Some((thrown.frontier, SkippedCallReason::KnownThrow))
+                            }
+                            _ => None,
+                        };
+                        if let Some((frontier, reason)) = frontier
+                            && !context.skipped_region(frame, handler.span, frontier, reason)
+                        {
+                            context.unproved_control_flow(frame, handler.span);
+                            return None;
+                        }
+                        if result.is_break() {
+                            return Some(result);
+                        }
+                    }
+                    _ => {
+                        context.unproved_control_flow(frame, region.span);
+                        return None;
+                    }
+                }
             }
         }
     }
-    frame.return_selection = None;
-    frame.returns.insert(AbstractValue::UNDEFINED);
-    Some(finish(frame, judgment))
+    Some(Continue(()))
 }
 
 fn finish(frame: &LocalFrame, mut judgment: AllocationJudgment) -> LocalTransferResult {
     let mut effects = frame.effect_coverage.clone();
+    if frame.thrown.is_some() {
+        judgment = AllocationJudgment::Opaque;
+        effects.abrupt();
+    }
     if frame
         .returns
         .contains(&AbstractValue::Value(Value::Unavailable))

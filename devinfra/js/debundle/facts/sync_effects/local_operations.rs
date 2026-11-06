@@ -19,6 +19,8 @@ pub(super) enum LocalBinding {
     Var,
     Let,
     Const,
+    /// Created on entry to its handler, rather than in the activation prologue.
+    CatchParameter,
     /// These activation values must already be established by the caller.
     /// Source identity alone does not instantiate a function value.
     NamedSelf(u32),
@@ -256,8 +258,19 @@ pub(super) enum LocalArrayElement {
 pub(super) enum LocalOperation {
     Initialize(Id, Option<LocalExpression>),
     Evaluate(LocalExpression),
-    Return(Option<LocalExpression>),
-    Throw(LocalExpression),
+    Return(Option<LocalExpression>, Span),
+    Throw(LocalExpression, Span),
+    TryCatch {
+        body: LocalRegion,
+        binding: Option<Id>,
+        handler: LocalRegion,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct LocalRegion {
+    pub(super) span: Span,
+    pub(super) operations: Arc<[LocalOperation]>,
 }
 
 #[derive(Debug, Clone)]
@@ -277,6 +290,7 @@ pub(super) struct LocalBody {
     pub(super) bindings: BTreeMap<Id, LocalBinding>,
     pub(super) parameters: Arc<[LocalParameter]>,
     pub(super) operations: Arc<[LocalOperation]>,
+    pub(super) source_span: Option<Span>,
     /// Present for a binding initializer or expression-statement root lowered
     /// from its exact source expression. Callable bodies have no root-owner span.
     root_expression_span: Option<Span>,
@@ -1022,7 +1036,7 @@ impl LocalBody {
 
     pub(super) fn from_expression_statement(expression: &Expr) -> Option<Self> {
         let mut body = Self::from_initializer(expression)?;
-        let [LocalOperation::Return(Some(value))] = body.operations.as_ref() else {
+        let [LocalOperation::Return(Some(value), _)] = body.operations.as_ref() else {
             unreachable!("expression lowering produces one value operation");
         };
         body.operations = Arc::from([LocalOperation::Evaluate(value.clone())]);
@@ -1034,7 +1048,7 @@ impl LocalBody {
     pub(super) fn terminal_call_root(&self) -> Option<Span> {
         self.root_expression_span?;
         let value = match self.operations.as_ref() {
-            [LocalOperation::Return(Some(value)) | LocalOperation::Evaluate(value)] => value,
+            [LocalOperation::Return(Some(value), _) | LocalOperation::Evaluate(value)] => value,
             _ => return None,
         };
         match value {
@@ -1053,9 +1067,27 @@ impl LocalBody {
         let has_defaults = parameters
             .iter()
             .any(|parameter| parameter.default.is_some());
+        let operations = Self::lower_region(&body.stmts, &mut bindings, has_defaults, false)?;
+        let mut lowered = Self::from_operations(bindings, parameters, operations);
+        lowered.source_span = Some(body.span);
+        Some(lowered)
+    }
+
+    fn lower_region(
+        statements: &[Stmt],
+        bindings: &mut BTreeMap<Id, LocalBinding>,
+        has_defaults: bool,
+        nested: bool,
+    ) -> Option<Vec<LocalOperation>> {
         let mut operations = Vec::new();
         let mut terminal = false;
-        for statement in &body.stmts {
+        for statement in statements {
+            if nested
+                && matches!(statement, Stmt::Decl(declaration)
+                if !matches!(declaration, Decl::Var(variable) if variable.kind == VarDeclKind::Var))
+            {
+                return None;
+            }
             // Non-simple parameters have a separate body var environment.
             // The shared plan does not yet represent that second scope.
             if has_defaults
@@ -1073,34 +1105,71 @@ impl LocalBody {
             match statement {
                 Stmt::Empty(_) => {}
                 Stmt::Decl(Decl::Var(declaration)) if !declaration.declare => {
-                    lower_simple_var_declaration(
-                        declaration,
-                        false,
-                        &mut bindings,
-                        &mut operations,
-                    )?;
+                    // Block lexical environments have a distinct entry/exit
+                    // protocol. Until represented, retain conservative execution.
+                    if nested && declaration.kind != VarDeclKind::Var {
+                        return None;
+                    }
+                    lower_simple_var_declaration(declaration, false, bindings, &mut operations)?;
                 }
                 Stmt::Expr(expression) => operations.push(LocalOperation::Evaluate(
                     LocalExpression::lower(&expression.expr, false)?,
                 )),
                 Stmt::Return(statement) => {
-                    operations.push(LocalOperation::Return(LocalExpression::optional(
-                        statement.arg.as_deref(),
-                        false,
-                    )?));
+                    operations.push(LocalOperation::Return(
+                        LocalExpression::optional(statement.arg.as_deref(), false)?,
+                        statement.span,
+                    ));
                     terminal = true;
                 }
                 Stmt::Throw(statement) => {
-                    operations.push(LocalOperation::Throw(LocalExpression::lower(
-                        &statement.arg,
-                        false,
-                    )?));
+                    operations.push(LocalOperation::Throw(
+                        LocalExpression::lower(&statement.arg, false)?,
+                        statement.span,
+                    ));
                     terminal = true;
+                }
+                Stmt::Try(statement) if statement.finalizer.is_none() => {
+                    let handler = statement.handler.as_ref()?;
+                    let binding = match &handler.param {
+                        Some(parameter) => Some(simple_binding(parameter)?),
+                        None => None,
+                    };
+                    if let Some(binding) = &binding
+                        && bindings
+                            .insert(binding.clone(), LocalBinding::CatchParameter)
+                            .is_some()
+                    {
+                        return None;
+                    }
+                    operations.push(LocalOperation::TryCatch {
+                        body: LocalRegion {
+                            span: statement.block.span,
+                            operations: Self::lower_region(
+                                &statement.block.stmts,
+                                bindings,
+                                has_defaults,
+                                true,
+                            )?
+                            .into(),
+                        },
+                        binding,
+                        handler: LocalRegion {
+                            span: handler.body.span,
+                            operations: Self::lower_region(
+                                &handler.body.stmts,
+                                bindings,
+                                has_defaults,
+                                true,
+                            )?
+                            .into(),
+                        },
+                    });
                 }
                 _ => return None,
             }
         }
-        Some(Self::from_operations(bindings, parameters, operations))
+        Some(operations)
     }
 
     /// A concise arrow has the same ordered return semantics as a block body.
@@ -1110,13 +1179,16 @@ impl LocalBody {
         expression: &Expr,
     ) -> Option<Self> {
         let (bindings, parameters) = Self::lower_parameters(parameters)?;
-        Some(Self::from_operations(
+        let mut lowered = Self::from_operations(
             bindings,
             parameters,
-            vec![LocalOperation::Return(Some(
-                LocalExpression::lower(expression, false)?,
-            ))],
-        ))
+            vec![LocalOperation::Return(
+                Some(LocalExpression::lower(expression, false)?),
+                expression.span(),
+            )],
+        );
+        lowered.source_span = Some(expression.span());
+        Some(lowered)
     }
 
     /// Canonically lower the allocation effects of a base class constructor.
@@ -1251,6 +1323,7 @@ impl LocalBody {
                     Stmt::Return(statement) => {
                         constructor_operations.push(LocalOperation::Return(
                             LocalExpression::optional(statement.arg.as_deref(), true)?,
+                            statement.span,
                         ));
                         break;
                     }
@@ -1327,9 +1400,12 @@ impl LocalBody {
             allocation_candidate_syntax &= allocation;
             closure_candidate_syntax &= closure;
         }
-        closure_candidate_syntax &= !operations
-            .iter()
-            .any(|operation| matches!(operation, LocalOperation::Throw(_)));
+        closure_candidate_syntax &= !operations.iter().any(|operation| {
+            matches!(
+                operation,
+                LocalOperation::Throw(..) | LocalOperation::TryCatch { .. }
+            )
+        });
         closure_candidate_syntax &= !closure_sites.is_empty();
         let requires_keyed_collection_new =
             expressions().any(LocalExpression::requires_keyed_collection_new);
@@ -1338,6 +1414,7 @@ impl LocalBody {
             bindings,
             parameters: parameters.into(),
             operations: operations.into(),
+            source_span: None,
             root_expression_span: None,
             free_reads: (!reads.is_empty()).then(|| reads.into_iter().collect()),
             captured_writes: (!writes.is_empty()).then(|| writes.into_iter().collect()),
@@ -1390,9 +1467,10 @@ impl LocalBody {
         self.root_expression_span.is_some()
             && matches!(
                 self.operations.as_ref(),
-                [LocalOperation::Return(Some(
-                    LocalExpression::SetConstruction { .. }
-                ))]
+                [LocalOperation::Return(
+                    Some(LocalExpression::SetConstruction { .. }),
+                    _
+                )]
             )
     }
 
@@ -1421,10 +1499,22 @@ impl LocalBody {
         &self.closure_sites
     }
 
-    fn expressions(operations: &[LocalOperation]) -> impl Iterator<Item = &LocalExpression> {
-        operations.iter().filter_map(|operation| match operation {
-            LocalOperation::Initialize(_, value) | LocalOperation::Return(value) => value.as_ref(),
-            LocalOperation::Evaluate(value) | LocalOperation::Throw(value) => Some(value),
-        })
+    fn expressions(operations: &[LocalOperation]) -> std::vec::IntoIter<&LocalExpression> {
+        let mut expressions = Vec::new();
+        for operation in operations {
+            match operation {
+                LocalOperation::Initialize(_, value) | LocalOperation::Return(value, _) => {
+                    expressions.extend(value)
+                }
+                LocalOperation::Evaluate(value) | LocalOperation::Throw(value, _) => {
+                    expressions.push(value)
+                }
+                LocalOperation::TryCatch { body, handler, .. } => {
+                    expressions.extend(Self::expressions(&body.operations));
+                    expressions.extend(Self::expressions(&handler.operations));
+                }
+            }
+        }
+        expressions.into_iter()
     }
 }

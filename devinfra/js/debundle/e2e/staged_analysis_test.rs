@@ -1448,6 +1448,16 @@ fn assert_retained_effect_saved_parity(
 #[test]
 fn lexical_effect_authority_and_fallback_survive_staged_artifact_round_trip() {
     assert_lexical_authority_staged_parity(
+        "const seed = 41;\nfunction stop() { throw seed; }\nfunction unreachable() { return seed; }\nvar result = (() => { try { return (stop(), unreachable()); } catch (error) { return error; } })();\nconsole.log(result);\n",
+        &[
+            Member::new("seed"),
+            Member::new("stop"),
+            Member::new("unreachable"),
+            Member::new("result"),
+        ],
+        "operation_receipt",
+    );
+    assert_lexical_authority_staged_parity(
         "const seed = 41;\nconst values = [];\nfunction readSeed() { values.push(seed); return seed; }\nvar result = readSeed();\nconsole.log(result);\n",
         &[
             Member::new("seed"),

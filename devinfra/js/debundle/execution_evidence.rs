@@ -7,6 +7,15 @@
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 
+/// Why a source call site was proved not to invoke its callee.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkippedCallReason {
+    KnownThrow,
+    KnownReturn,
+    HandlerNotEntered,
+}
+
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceLocation {
     pub source_path: String,

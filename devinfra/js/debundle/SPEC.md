@@ -729,6 +729,23 @@ The source-covered expression is retained from canonical lowering. Dedicated
 initializer execution uses that exact expression and shared child transfers;
 generic values or an empty ledger cannot mint coverage. Composed child judgments
 never propagate a whole-owner certificate, and invocation memos carry none.
+The ordered interpreter carries an explicit source throw separately from
+unknown abrupt results and TDZ reads. A selected local call transports its
+actual thrown value to a represented `try`/`catch` region. The handler creates
+and initializes its catch binding only when reached; normal return bypasses
+it. Calls whose bodies were skipped stay in the canonical inventory with
+distinct evidence naming their caller, region, completion frontier and
+dependencies. An entered throwing callable retains its invocation edge.
+New structured bodies check their complete source call inventory, including
+dead suffixes and handler calls, before granting effect authority. Saved
+analysis preserves the invocation and skipped-call rows.
+
+This bounded path requires a definitely known completion and coverage of all
+effect domains. `finally`, nested block lexical declarations, destructured
+catch parameters and unknown or mixed abrupt paths retain conservative
+execution. Thrown values keep the existing conservative publication policy
+even when caught; catching alone proves no fresh heap ownership.
+
 The owner certificate survives staged analysis. Binding/allocation cells, other opacity
 flags and purity retain their existing rules; the joint relocation assessment
 consumes the resulting effect coverage.

@@ -726,6 +726,9 @@ pub struct LexicalBindingEffectReceipt {
     /// resolved target body, and merged prerequisites, including memo-reused
     /// invocations. The analyzer checks connectivity from the root body.
     pub calls: Vec<LexicalBindingEffectCall>,
+    /// Source call sites proved not to invoke because of a known completion.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skipped_calls: Vec<LexicalBindingEffectSkippedCall>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -778,6 +781,16 @@ pub struct LexicalBindingEffectCall {
     pub caller: LexicalBindingEffectBody,
     pub call_span: swc_common::Span,
     pub target: LexicalBindingEffectBody,
+    pub dependencies: crate::analysis_inputs::ProofDependencies,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LexicalBindingEffectSkippedCall {
+    pub caller: LexicalBindingEffectBody,
+    pub call_span: swc_common::Span,
+    pub region_span: swc_common::Span,
+    pub frontier_span: swc_common::Span,
+    pub reason: crate::execution_evidence::SkippedCallReason,
     pub dependencies: crate::analysis_inputs::ProofDependencies,
 }
 
