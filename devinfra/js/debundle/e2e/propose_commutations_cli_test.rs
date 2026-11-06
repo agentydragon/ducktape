@@ -45,7 +45,7 @@ fn opaque_split(pairs: Vec<CommutingStatementsContract>) -> FixtureOpts<'static>
     .with_commuting_statements("static/app", pairs)
 }
 
-const FRONTIER_SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst gamma = read();\nconst beta = noop?.();\nconst alpha = write();\nconst delta = alpha;\nconsole.log(gamma, beta, alpha, delta, store.length);\n";
+const FRONTIER_SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst gamma = read();\nconst beta = noop?.(...[]);\nconst alpha = write();\nconst delta = alpha;\nconsole.log(gamma, beta, alpha, delta, store.length);\n";
 
 fn preserved_order_frontier_fixture(
     pairs: Vec<CommutingStatementsContract>,
@@ -341,6 +341,8 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
 /// predicts whether a pair cuts an SCC. Removing beta/gamma's original edge
 /// preserves alpha/gamma's order, which leaves the cycle through delta's eager
 /// read of alpha in place.
+/// The empty spread keeps the no-op call's iterator protocol unproved; a bare
+/// known optional invocation no longer supplies an opaque heap frontier.
 #[test]
 fn proposal_cut_prediction_includes_preserved_order_closure() {
     let rejected = run_rejection_fixture(preserved_order_frontier_fixture(vec![]));

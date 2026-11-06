@@ -191,9 +191,11 @@ fn heap_frontier_split(
 
 /// Commuting an observer past a no-op must not move it past the later writer
 /// whose ordering was represented through the no-op's heap frontier.
+/// The spread invocation keeps a real unproved argument-iterator protocol;
+/// a bare known `noop?.()` now has complete effects and creates no frontier.
 #[test]
 fn commuting_a_heap_frontier_preserves_third_statement_order() {
-    const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.();\nconst alpha = write();\nconsole.log(gamma, beta, alpha, store.length);\n";
+    const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.(...[]);\nconst alpha = write();\nconsole.log(gamma, beta, alpha, store.length);\n";
     let fixture = run_fixture(heap_frontier_split(
         SOURCE,
         &["gamma"],
@@ -223,7 +225,7 @@ fn commuting_a_heap_frontier_preserves_third_statement_order() {
 
 #[test]
 fn commuting_a_writer_past_a_frontier_preserves_the_earlier_observer() {
-    const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.();\nconst alpha = write();\nconsole.log(gamma, beta, alpha, store.length);\n";
+    const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.(...[]);\nconst alpha = write();\nconsole.log(gamma, beta, alpha, store.length);\n";
     let fixture = run_fixture(heap_frontier_split(
         SOURCE,
         &["gamma", "beta"],
@@ -238,7 +240,7 @@ fn commuting_a_writer_past_a_frontier_preserves_the_earlier_observer() {
 
 #[test]
 fn overlapping_heap_commutations_preserve_order_independently_of_spec_order() {
-    const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.();\nconst delta = noop?.();\nconst alpha = write();\nconsole.log(gamma, beta, delta, alpha, store.length);\n";
+    const SOURCE: &str = "const store = [];\nfunction read() { return store.length; }\nfunction write() { store.push(1); }\nfunction noop() {}\nconst anchor = 0;\nconst gamma = read();\nconst beta = noop?.(...[]);\nconst delta = noop?.(...[]);\nconst alpha = write();\nconsole.log(gamma, beta, delta, alpha, store.length);\n";
     let pairs = vec![
         commuting_pair(
             member_source_unit("mutator", "beta"),
