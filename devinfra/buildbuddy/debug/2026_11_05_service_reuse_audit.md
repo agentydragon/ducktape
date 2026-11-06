@@ -407,3 +407,14 @@ volume and the 577,041,306-byte pre-release usage match, while registry containe
 IDs differ. This validates cold/warm operation of the bounded recipe, not a new
 controlled performance estimate or snapshot-transfer measurement. Remote-save
 eligibility and save-policy defaults remain unchanged.
+
+The refactor at `d7e0546b71e382be915ff50d5883f68af0732bcc` uses pinned
+`filelock` native locking, exact Docker volume lookup and one-volume receipts
+(`volume_name`). Test cleanup belongs to pytest fixtures. The runtime helper
+shrinks from 255 to 194 lines, preserving ownership checks and the 10 s cleanup
+wait. All five [lifecycle cases and Optimize](https://app.buildbuddy.io/invocation/61adf94b-1965-4ee0-8d1e-abdf0aeb96fe)
+pass, as do the [changed-library lint/build checks](https://app.buildbuddy.io/invocation/5a0f8720-4cf2-4840-ab6a-71a1c4af02ba).
+Cold-volume cases still pass; Optimize restores the same pre-refactor cold seed,
+recipe and volume with a fresh registry and no infrastructure imports, in
+61.5 s. This establishes compatibility with the prior baseline without changing
+the recycling family or snapshot-save policy; it is not a new latency comparison.

@@ -139,7 +139,9 @@ separate mounts for uploads and blobs fail. Reset manifests and unfinished
 uploads before startup and after shutdown, under the same lease; keep only
 content-addressed blobs and repository layer links reusable. Refuse storage
 still attached to another container. A process crash releases a file lock without
-proving that Docker resources are gone. Keep retention off locally by default.
+proving that Docker resources are gone. The nonblocking `filelock` lease disables
+soft-lock fallback to preserve native crash-release behavior. Keep retention off
+locally by default.
 One recipe in `props/testing/exec_properties.bzl` generates the runtime
 configuration and BuildBuddy family; change that version for incompatible
 storage/reset changes. Image repins and budget changes invalidate both. After
