@@ -2,6 +2,12 @@
 
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
+exports_files([
+    "artifacts.MODULE.bazel",
+    "go.MODULE.bazel",
+    "oci.MODULE.bazel",
+])
+
 py_library(
     name = "workspace",
     srcs = ["workspace.py"],
