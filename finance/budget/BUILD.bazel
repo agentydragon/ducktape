@@ -1,4 +1,5 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -32,6 +33,7 @@ py_test(
     name = "test_sql_read_model",
     size = "medium",
     srcs = ["test_sql_read_model.py"],
+    exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,
     requires_docker = True,
     deps = [
         ":conftest",
