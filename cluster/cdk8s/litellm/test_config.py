@@ -19,16 +19,15 @@ from cluster.cdk8s.litellm.upstreams import RUGGED_LOCAL_LLM_API_BASE, RUGGED_LO
 from model_catalog.catalog import (
     RUGGED_LOCAL_CANDIDATE_ROUTES,
     RUGGED_LOCAL_EXPERIMENTAL_ROUTES,
-    RUGGED_LOCAL_GEMMA4_E2B_LONG_CONTEXT_EXPERIMENT,
-    RUGGED_LOCAL_QWEN3_4B,
+    RUGGED_LOCAL_OPENAI,
     TANA_ROUTES,
+    Model,
+    Route,
 )
 
 
-def test_tana_routes_register_the_in_process_provider() -> None:
+def test_tana_routes_project_to_the_in_process_provider() -> None:
     config = main_proxy_config()
-    # Exposure is parked; keep the in-process adapter renderable for re-enablement.
-    assert not any(entry["model_name"].startswith("tana/") for entry in config["model_list"])
     tana_entries = [model_entry(route) for route in TANA_ROUTES]
     assert all(entry["model_name"].startswith("tana/oai-chat/") for entry in tana_entries)
     assert all(entry["model_info"]["mode"] == "chat" for entry in tana_entries)
@@ -52,14 +51,16 @@ def test_rugged_routes_register_and_inject_the_bearer_key() -> None:
     assert RUGGED_LOCAL_LLM_KEY_ENV in {entry.name for entry in spec.env}
 
 
-def test_long_context_route_has_explicit_litellm_timeouts() -> None:
-    long_context = model_entry(RUGGED_LOCAL_GEMMA4_E2B_LONG_CONTEXT_EXPERIMENT)["litellm_params"]
-    standard = model_entry(RUGGED_LOCAL_QWEN3_4B)["litellm_params"]
+def test_route_timeouts_are_projected_independently() -> None:
+    timed_route = Route(Model("synthetic-timeout-route"), RUGGED_LOCAL_OPENAI, timeout=37, stream_timeout=83)
+    untimed_route = Route(Model("synthetic-untimed-route"), RUGGED_LOCAL_OPENAI)
+    timed = model_entry(timed_route)["litellm_params"]
+    untimed = model_entry(untimed_route)["litellm_params"]
 
-    assert long_context["timeout"] == 2_400
-    assert long_context["stream_timeout"] == 2_400
-    assert "timeout" not in standard
-    assert "stream_timeout" not in standard
+    assert timed["timeout"] == 37
+    assert timed["stream_timeout"] == 83
+    assert "timeout" not in untimed
+    assert "stream_timeout" not in untimed
 
 
 def test_langfuse_otel_v2_uses_otlp_when_secret_exists_and_console_without_it() -> None:
