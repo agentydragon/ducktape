@@ -128,19 +128,11 @@ _EXTERNAL_SECRETS = [
 ]
 
 _FLUX = [
-    # Suspending a Flux object does not clear its Ready condition, so anything
-    # deliberately disabled reports Ready=False indefinitely. Before this exclusion
-    # 13 of the 18 firing FluxKustomizationNotReady alerts were suspended services
-    # (harbor/*, openhands/*, tandoor, sdr, ...) -- a permanent floor of ~156 ntfy
-    # messages/day that exhausted the provider's daily quota and took *all* paging
-    # down for 23h on 2026-08-05, criticals included.
-    #
-    # Gotcha: `unless` matches on label sets, NOT values, so the `== 1` inside the
-    # parens is load-bearing. Flux omits spec.suspend when unset (no series, which
-    # excludes nothing -- correct), but an object carrying an explicit
-    # `suspend: false` produces the series with value 0, and a bare
-    # `unless on (...) kube_..._suspended` would silently suppress a genuinely
-    # broken service.
+    # Suspension leaves an existing `Ready=False` condition in place. Before this
+    # exclusion, 13/18 firing `FluxKustomizationNotReady` alerts came from suspended
+    # services, exhausting ntfy's quota in the 2026-08-05 outage.
+    # `unless` matches label sets, not values: require `== 1`. Unset suspend has no
+    # series; explicit `suspend: false` yields 0 and must not suppress a broken service.
     Rule.alert(
         "FluxKustomizationNotReady",
         (_PROMQL_DIR / "flux-kustomization-not-ready-warning.promql").read_text(),
@@ -295,14 +287,8 @@ _IO_PRESSURE = [
 ]
 
 _MCP_AUTH = [
-    # An OIDCProxy-fronted MCP server (oauth facades, grocy-mcp) failed to
-    # refresh a client's token against Authentik or persist refreshed OAuth
-    # state. Before the
-    # RetryableRefreshOIDCProxy fix this instantly killed the claude.ai connector
-    # (invalid_grant is terminal); now transient failures answer 503, but
-    # each one still means claude.ai saw an error and the connector may
-    # need a manual Reconnect. RCA:
-    # cluster/debug/2026_06_claude_ai_connector_deauth.md
+    # Even transient 503 refresh failures may leave the claude.ai connector needing
+    # manual reconnect; see cluster/debug/2026_06_claude_ai_connector_deauth.md.
     Rule.alert(
         "McpUpstreamTokenRefreshFailed",
         "increase(mcp_auth_upstream_refresh_failures_total[1h]) > 0",
@@ -323,34 +309,14 @@ _MCP_AUTH = [
     )
 ]
 
-# Forks of kube-prometheus-stack rules, switched off via `defaultRules.disabled`
-# in cluster/cdk8s/monitoring/stack.py. The only change is excluding roaming nodes;
-# the existing node rules are copied verbatim from chart version 82.3.0, and
-# the workload/kubelet rules below are copied from chart version 91.3.0.
-#
-# Why fork rather than suppress by alertname in the Alertmanager route: the
-# alertname denylist is all-or-nothing, so denying an alert here also silenced
-# it for the *control plane* -- a node going NotReady paged nobody. Excluding
-# by taint keeps the alert for every non-roaming node.
-#
-# Why the taint and not the node names: `iguana` and `rugged` are defined in
-# several places at once and hardcoding a third would be one more thing to
-# forget. All of these describe the same set today:
-#   - node taint `node-role.kubernetes.io/roaming=true:NoSchedule`  <- keyed on here
-#   - node label `topology.kubernetes.io/region=roaming`
-#   - `terraform/main/home-nodes.tf` (the declarations)
-#   - `nebula-mesh.json` at the repo root (mesh roster)
-#   - the Node Types table in <cluster/README.md>
-# The taint wins because it is the *operational* statement -- a node tainted
-# roaming is one the scheduler is told may vanish, which is exactly the
-# property that makes NotReady uninteresting. Taint a new laptop and it is
-# covered here with no edit. (Note README currently says only `rugged` carries
-# the taint; both do, verified 2026-08-06.)
-#
-# CLEANUP(added 2026-08-06): re-diff against the chart on every
-# kube-prometheus-stack bump -- a forked rule silently keeps the old expression
-# when upstream fixes theirs. Sources: `kubernetes-system-kubelet` for
-# KubeNodeNotReady/KubeNodeUnreachable, `general.rules` for TargetDown.
+# Fork only the kube-prometheus-stack rules that need roaming exclusions; they are
+# disabled in `stack.py`. Node rules match chart 82.3.0; workload/kubelet rules match
+# 91.3.0. `kubernetes-system-kubelet` supplies `KubeNodeNotReady`/`KubeNodeUnreachable`;
+# `general.rules` supplies `TargetDown`. Re-diff these expressions on every chart bump.
+# Match the operational `node-role.kubernetes.io/roaming=true:NoSchedule` taint, not
+# host names: it marks nodes expected to disappear and covers any newly tainted laptop.
+# A global Alertmanager denylist would also silence failures on always-on nodes; the
+# region label and mesh roster describe location/membership, not this rule's key.
 _ROAMING_NODE = [
     Rule.alert(
         "KubeNodeNotReady",
@@ -561,23 +527,13 @@ _ROAMING_NODE_WORKLOAD = [
             "runbook_url": "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubeletinstanceunreachable"
         },
     ),
-    # Same exclusion, applied to the scrape-target ratio. The `unless` reaches
-    # only the kubelet job by construction: `up` carries `node` for kubelet but
-    # not for node-exporter or app targets, and a series without `node` matches
-    # on the empty string, which never equals a real node name -- so everything
-    # else passes through with stock behaviour. Verified 2026-08-06: stock fired
-    # for kubelet + node-exporter + seaweedfs-volume-peer, this fires for the
-    # latter two only, and the kubelet down-ratio goes 22.2% -> 0%.
-    #
-    # Excluded from BOTH sides of the ratio on purpose. Filtering only the
-    # numerator would leave roaming targets padding the denominator, diluting
-    # the percentage and making a real outage LESS likely to cross the 10%
-    # threshold -- a silent desensitisation, which is worse than the noise.
-    #
-    # TargetDown stays on the Alertmanager denylist for now: node-exporter has
-    # no `node` label to filter on (it would need an instance->IP->node join via
-    # kube_node_status_addresses) and seaweedfs-volume-peer is genuinely down.
-    # This removes one of the three reasons it cannot be re-enabled.
+    # The `unless` filters targets only when `up` carries `node`; at the 2026-08-06
+    # check only kubelet did. Missing labels cannot match a real taint, so others pass.
+    # Apply it to both sides or roaming targets pad the denominator and dilute outages.
+    # Verified 2026-08-06: kubelet's down-ratio fell 22.2% -> 0%; node-exporter and
+    # seaweedfs-volume-peer still fired. At that check, the remaining causes were
+    # node-exporter's missing `node` label (requiring an instance -> IP -> node join)
+    # and a genuinely down SeaweedFS peer; re-check both before removing the denylist.
     Rule.alert(
         "TargetDown",
         (_PROMQL_DIR / "target-down-warning.promql").read_text(),
