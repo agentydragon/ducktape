@@ -791,6 +791,15 @@ singleton values and normal completion therefore keep syntactic fallback.
 Member, native, imported and constructor single calls
 retain their existing admission paths.
 
+An exact top-level `Object` own-data function-reference read can consume its
+existing native binding-and-slot certificate in the same ordered read transfer.
+The certificate covers the global receiver lookup and property read; its inferred
+or exact-site author dependencies remain on the root receipt and relocation
+decision. The returned value keeps its ordinary opaque projection. Shadowed
+receivers, computed keys, missing native evidence, provider-only queries and
+retained suffixes keep their ordinary read paths. Reading the reference certifies
+no later invocation through it.
+
 If that exact single-call root receives an incomplete local child result, it
 retains the child effects and losses, unknown coverage, and unavailable/unknown
 return possibilities without inventing a caller remainder. Only a singleton

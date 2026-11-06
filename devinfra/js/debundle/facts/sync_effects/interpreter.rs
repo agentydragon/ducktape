@@ -2267,6 +2267,81 @@ impl LocalContext for LocalExecutionContext<'_, '_, '_> {
             .effects
             .record_heap_write(cell, self.executor.state.assumption.is_none());
     }
+    fn native_field_read(
+        &mut self,
+        frame: &mut LocalFrame,
+        receiver: &Id,
+        property: &str,
+        span: Span,
+    ) -> Option<LocalValueResult> {
+        // Only the exact canonical root read has an ordered execution witness.
+        if !matches!(self.scope, LocalExecutionScope::RootInitializer) {
+            return None;
+        }
+        let callee = ValueExpr::Member(
+            Arc::new(ValueExpr::Binding(receiver.clone())),
+            Some(property.to_owned()),
+            MemberKey::Static,
+            span.into(),
+        );
+        object_own_data_read_property(&callee, |id| {
+            self.executor.inputs.flow.is_declared(id)
+                || self.executor.inputs.shadowed.contains(id.0.as_ref())
+        })?;
+        self.calls().iter().find(|call| {
+            call.kind == CallKind::LocalMemberRead
+                && call.span == span
+                && matches!(&call.callee,
+                    ValueExpr::Member(source_receiver, Some(source_property), MemberKey::Static, _)
+                        if source_property == property
+                            && matches!(source_receiver.as_ref(), ValueExpr::Binding(source) if source == receiver))
+        })?;
+        let premise = self
+            .executor
+            .inputs
+            .index
+            .native_own_data_read_premise(span)?;
+        let dependencies = premise.dependencies.clone();
+        self.executor.record_inference_use(
+            NativeIntegrityGuard::NativeCallIdentity,
+            premise.inference_use,
+            &dependencies,
+        );
+        if !premise.census {
+            let evidence = self
+                .executor
+                .inputs
+                .index
+                .native_operation_input_evidence
+                .get(&CallSite::from(span))?
+                .clone();
+            self.executor
+                .state
+                .native_operation_input_uses
+                .borrow_mut()
+                .insert(
+                    (span.lo.0, span.hi.0),
+                    crate::reports::schema::NativeOperationInputUse {
+                        evidence,
+                        source_location: None,
+                        span,
+                    },
+                );
+        }
+        // The source operands are declarative. This preserves the existing
+        // value projection without replaying receiver code or authorizing a
+        // later invocation through the returned reference.
+        let values = self
+            .executor
+            .evaluate(&callee, &frame.environment, &frame.environment);
+        let mut effects = EffectCoverageFragment::no_effects();
+        effects.depend_on(&dependencies);
+        Some(LocalValueResult {
+            allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
+            effects,
+            selection: None,
+        })
+    }
     fn unproved_field_read(
         &mut self,
         frame: &mut LocalFrame,
@@ -13801,7 +13876,19 @@ impl Executor<'_, '_> {
                                 && !call.has_spread
                                 && call.args.is_empty()
                                 && matches!(call.callee, ValueExpr::Binding(_)))
-                        }))
+                        })
+                    || calls.iter().any(|call| {
+                        call.kind == CallKind::LocalMemberRead
+                            && call.owner == owner
+                            && call.caller.is_none()
+                            && body.initializer_span() == Some(call.span)
+                            && object_own_data_read_property(&call.callee, |id| {
+                                inputs.flow.is_declared(id)
+                                    || inputs.shadowed.contains(id.0.as_ref())
+                            })
+                            .is_some()
+                            && index.native_own_data_read_premise(call.span).is_some()
+                    }))
         });
         // Canonical source identity is independent of leaf/value admission.
         // Retain the exact selected body span, not a lowered-value guess.

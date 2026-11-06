@@ -203,6 +203,18 @@ pub(super) trait LocalContext: OwnDataContext {
     fn heap(&mut self) -> LiteralHeap<'_>;
     fn record_property_read(&mut self, cell: crate::facts::EffectCell);
     fn record_property_write(&mut self, cell: crate::facts::EffectCell);
+    /// An exact native binding and own-data slot proof can cover this whole
+    /// lookup, including its global receiver. Other contexts evaluate the
+    /// receiver and retain the ordinary own-data or accessor path.
+    fn native_field_read(
+        &mut self,
+        _frame: &mut LocalFrame,
+        _receiver: &Id,
+        _property: &str,
+        _span: Span,
+    ) -> Option<LocalValueResult> {
+        None
+    }
     /// The receiver cell was read at this operation. A strict query refuses
     /// an unproved field; application execution retains its existing proofs
     /// and summarizes the remainder if getter effects remain unproved.
@@ -810,6 +822,17 @@ fn read_field_expression(
     frame: &mut LocalFrame,
     judgment: &mut AllocationJudgment,
 ) -> Option<SelectedValue> {
+    if let Some(result) = context.native_field_read(frame, receiver, property, *span) {
+        frame.effect_coverage.compose(&result.effects);
+        judgment.compose(&result.allocation.judgment);
+        return Some(completing_selected(
+            SelectedValue {
+                values: result.allocation.values,
+                selection: result.selection,
+            },
+            frame,
+        ));
+    }
     let receivers = value(context, &ValueExpr::Binding(receiver.clone()), frame)?;
     judgment.compose(&receivers.judgment);
     let receivers = completing(receivers.values, frame);
