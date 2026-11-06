@@ -18,7 +18,11 @@ func required(t *testing.T, extra ...string) []string {
 	t.Helper()
 	return append([]string{
 		settingPrefix + "RULES_NAMESPACE=rules", settingPrefix + "CREDENTIALS_NAMESPACE=secrets",
-		settingPrefix + "CA_CERT=/ca.crt", settingPrefix + "CA_KEY=/ca.key", settingPrefix + "TOKEN_AUDIENCE=hop",
+		settingPrefix + "CA_CERT=/ca.crt", settingPrefix + "CA_KEY=/ca.key",
+		settingPrefix + "SVID_LISTEN_ADDRESS=127.0.0.1:8889",
+		settingPrefix + "SVID_CERT_FILE=/svid/tls.crt", settingPrefix + "SVID_KEY_FILE=/svid/tls.key", settingPrefix + "SVID_CA_FILE=/svid/ca.crt",
+		settingPrefix + "RULES_LISTEN_ADDRESS=127.0.0.1:8443",
+		settingPrefix + "RULES_CERT_FILE=/rules/tls.crt", settingPrefix + "RULES_KEY_FILE=/rules/tls.key", settingPrefix + "RULES_CA_FILE=/rules/ca.crt",
 		settingPrefix + "CONFIG_FILE=" + writeSettings(t, "allowed_service_account_namespaces: [ns]\n"), databaseURLEnv,
 	}, extra...)
 }
@@ -52,17 +56,14 @@ func TestCollectionsLoadFromTheFileAndScalarsFromTheEnvironment(t *testing.T) {
 projected_token_audiences: [file-audience]
 exempt_networks: [127.0.0.0/8]
 admin_listen_address: 127.0.0.1:1111
+tls_passthrough_targets: [rules.ns.svc.cluster.local:8443]
 `)
-	c, err := loadTestConfig(t, []string{
-		settingPrefix + "CONFIG_FILE=" + path, settingPrefix + "RULES_NAMESPACE=rules",
-		settingPrefix + "CREDENTIALS_NAMESPACE=secrets", settingPrefix + "CA_CERT=/ca.crt",
-		settingPrefix + "CA_KEY=/ca.key", settingPrefix + "TOKEN_AUDIENCE=hop", databaseURLEnv,
-		settingPrefix + "LISTEN_ADDRESS=127.0.0.1:5555",
-	})
+	c, err := loadTestConfig(t, required(t, settingPrefix+"CONFIG_FILE="+path, settingPrefix+"SVID_LISTEN_ADDRESS=127.0.0.1:5555"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ListenAddress != "127.0.0.1:5555" || c.AdminListenAddress != "127.0.0.1:1111" || c.AgentAPIListenAddress != "0.0.0.0:8082" ||
+	if c.SVIDListenAddress != "127.0.0.1:5555" || c.AdminListenAddress != "127.0.0.1:1111" || c.RulesListenAddress != "127.0.0.1:8443" ||
+		!slices.Equal(c.TLSPassthroughTargets, []string{"rules.ns.svc.cluster.local:8443"}) ||
 		!slices.Equal(c.AllowedServiceAccountNamespaces, []string{"file-namespace"}) ||
 		!slices.Equal(c.ProjectedTokenAudiences, []string{"file-audience"}) ||
 		!slices.Equal(c.ExemptNetworks, []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}) {
@@ -92,7 +93,9 @@ func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, missing := range []string{
-		"RULES_NAMESPACE", "CREDENTIALS_NAMESPACE", "CA_CERT", "CA_KEY", "TOKEN_AUDIENCE", "DATABASE_URL",
+		"RULES_NAMESPACE", "CREDENTIALS_NAMESPACE", "CA_CERT", "CA_KEY", "DATABASE_URL",
+		"SVID_LISTEN_ADDRESS", "SVID_CERT_FILE", "SVID_KEY_FILE", "SVID_CA_FILE",
+		"RULES_LISTEN_ADDRESS", "RULES_CERT_FILE", "RULES_KEY_FILE", "RULES_CA_FILE",
 	} {
 		rest := slices.DeleteFunc(required(t), func(item string) bool {
 			return strings.HasPrefix(item, settingPrefix+missing+"=")
@@ -130,47 +133,13 @@ func TestAdminGRPCIsOffUnlessItsSettingsAreSet(t *testing.T) {
 	}
 }
 
-func TestSVIDListenerIsOffByDefaultAndAllOrNothing(t *testing.T) {
-	c, err := loadTestConfig(t, required(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.SVIDListenAddress != "" || c.SVIDCertFile != "" || c.SVIDKeyFile != "" || c.SVIDCAFile != "" {
-		t.Fatalf("SVID listener unexpectedly enabled by default: %+v", c)
-	}
-	for name, settings := range map[string][]string{
-		"address only": {settingPrefix + "SVID_LISTEN_ADDRESS=127.0.0.1:8889"},
-		"missing CA": {
-			settingPrefix + "SVID_LISTEN_ADDRESS=127.0.0.1:8889",
-			settingPrefix + "SVID_CERT_FILE=/svid/tls.crt",
-			settingPrefix + "SVID_KEY_FILE=/svid/tls.key",
-		},
-		"relative path": {
-			settingPrefix + "SVID_LISTEN_ADDRESS=127.0.0.1:8889",
-			settingPrefix + "SVID_CERT_FILE=etc/tls.crt",
-			settingPrefix + "SVID_KEY_FILE=/svid/tls.key",
-			settingPrefix + "SVID_CA_FILE=/svid/ca.crt",
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := loadTestConfig(t, append(required(t), settings...)); err == nil {
-				t.Fatal("accepted incomplete or invalid SVID listener configuration")
+func TestBothWorkloadTLSListenersRequireAbsoluteCredentialPaths(t *testing.T) {
+	for _, key := range []string{"SVID_CERT_FILE", "SVID_KEY_FILE", "SVID_CA_FILE", "RULES_CERT_FILE", "RULES_KEY_FILE", "RULES_CA_FILE"} {
+		t.Run(key, func(t *testing.T) {
+			if _, err := loadTestConfig(t, required(t, settingPrefix+key+"=relative/tls.pem")); err == nil {
+				t.Fatal("accepted relative TLS credential path")
 			}
 		})
-	}
-	configured, err := loadTestConfig(t, required(
-		t,
-		settingPrefix+"SVID_LISTEN_ADDRESS=127.0.0.1:8889",
-		settingPrefix+"SVID_CERT_FILE=/svid/tls.crt",
-		settingPrefix+"SVID_KEY_FILE=/svid/tls.key",
-		settingPrefix+"SVID_CA_FILE=/svid/ca.crt",
-	))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if configured.SVIDListenAddress != "127.0.0.1:8889" || configured.SVIDCertFile != "/svid/tls.crt" ||
-		configured.SVIDKeyFile != "/svid/tls.key" || configured.SVIDCAFile != "/svid/ca.crt" {
-		t.Fatalf("unexpected SVID listener settings: %+v", configured)
 	}
 }
 

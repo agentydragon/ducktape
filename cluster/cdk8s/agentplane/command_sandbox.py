@@ -16,7 +16,7 @@ from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
 
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import egress, sandbox_pod
+from cluster.cdk8s.agentplane import sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 
@@ -113,7 +113,9 @@ class CommandSandbox(Construct):
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
             endpoint_selector=_LABELS,
             ingress=[CiliumNetworkPolicySpecIngress()],
-            egress=[cilium.dns_egress(), egress.proxy(env.namespace).egress()],
+            # These caller-owned command boxes do not receive Sandbox SVIDs. Their separate
+            # authentication design is unresolved, so they cannot reach the mTLS-only proxy.
+            egress=[cilium.dns_egress()],
         )
 
 

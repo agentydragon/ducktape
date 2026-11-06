@@ -16,6 +16,8 @@ from pydantic_settings import SettingsConfigDict
 from agentplane.log_levels import LogLevels
 
 PROXY_MTLS_PORT = 8889
+RULES_WORKLOAD_PORT = 8443
+RULES_WORKLOAD_URI = "spiffe://agentplane/egress-rules"
 
 
 class Settings(BaseModel):
@@ -31,18 +33,17 @@ class Settings(BaseModel):
     credentials_namespace: str = Field(description="Namespace the rules' Secrets are read from.")
     allowed_service_account_namespaces: frozenset[str] = Field(
         min_length=1,
-        description="Every namespace whose ServiceAccounts may authenticate here, the sandbox namespace included. "
-        "An agent this cluster does not host runs where it runs, so naming its namespace is what lets it present a "
-        "token at all; it grants nothing on its own, since a subject no binding names still reaches no rule.",
+        description="Sandbox namespaces whose SVIDs and destination-scoped projected tokens may authenticate here. "
+        "The live Sandbox selects its own ServiceAccount; namespace admission grants no policy authority.",
     )
-    listen_address: str = Field(default="0.0.0.0:8888", description="Proxy listener address the sidecars relay to.")
-    svid_listen_address: str | None = Field(
-        default=None,
-        description="Optional mTLS forward-proxy listener. Unset disables SVID authentication and the listener.",
-    )
-    svid_cert_file: Path | None = Field(default=None, description="Server certificate for the SVID listener.")
-    svid_key_file: Path | None = Field(default=None, description="Private key for the SVID listener certificate.")
-    svid_ca_file: Path | None = Field(default=None, description="Trust bundle for SVID client certificates.")
+    svid_listen_address: str = Field(description="Required mTLS forward-proxy listener address.")
+    svid_cert_file: Path = Field(description="Server certificate for the SVID listener.")
+    svid_key_file: Path = Field(description="Private key for the SVID listener certificate.")
+    svid_ca_file: Path = Field(description="Trust bundle for SVID client certificates.")
+    rules_listen_address: str = Field(description="Required workload-SVID TLS listener for the Rules API.")
+    rules_cert_file: Path = Field(description="Rules API serving certificate.")
+    rules_key_file: Path = Field(description="Private key for the Rules API serving certificate.")
+    rules_ca_file: Path = Field(description="Trust bundle for Sandbox SVID clients of the Rules API.")
     admin_listen_address: str = Field(
         default="0.0.0.0:8081",
         description="Admin listener address serving gRPC health and, when configured, the EgressAdmin API.",
@@ -57,9 +58,6 @@ class Settings(BaseModel):
         min_length=1,
         description="ServiceAccounts admitted by the admin gRPC API as namespace/name entries; unset disables it.",
     )
-    agent_api_listen_address: str = Field(
-        default="0.0.0.0:8082", description="Agent-facing listener address serving /v1/rules."
-    )
     ca_cert: Path = Field(description="PEM certificate of the interception CA the runner containers trust.")
     ca_key: Path = Field(description="PEM private key of the interception CA.")
     upstream_ca_file: Path | None = Field(
@@ -69,12 +67,16 @@ class Settings(BaseModel):
         "certificate no public root signs. Unset falls back to the image's system roots, which reach "
         "public hosts only.",
     )
-    token_audience: str = Field(min_length=1, description="Audience of the sidecars' projected tokens.")
     projected_token_audiences: frozenset[str] = Field(
         default=frozenset(),
         description="Every audience a rule may substitute a sidecar's projected token for, the API server's "
         "among them. Reviewing the list here is what decides which destinations this proxy will spend a "
         "caller's own identity on; a credential naming an audience absent from it resolves to nothing.",
+    )
+    tls_passthrough_targets: list[str] = Field(
+        default_factory=list,
+        description="Exact host:port authorities tunneled as opaque TLS after SVID hop authentication. "
+        "Each destination verifies the workload certificate and authorizes its own requests.",
     )
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     log_levels: LogLevels
@@ -90,8 +92,17 @@ class Settings(BaseModel):
     )
 
     @model_validator(mode="after")
-    def svid_listener_is_all_or_nothing(self) -> Settings:
-        configured = [self.svid_listen_address, self.svid_cert_file, self.svid_key_file, self.svid_ca_file]
-        if any(value is not None for value in configured) and any(value is None for value in configured):
-            raise ValueError("svid_listen_address, svid_cert_file, svid_key_file and svid_ca_file must be set together")
+    def tls_listeners_are_configured(self) -> Settings:
+        if any(
+            not path.is_absolute()
+            for path in (
+                self.svid_cert_file,
+                self.svid_key_file,
+                self.svid_ca_file,
+                self.rules_cert_file,
+                self.rules_key_file,
+                self.rules_ca_file,
+            )
+        ):
+            raise ValueError("SVID and rules TLS file paths must be absolute")
         return self

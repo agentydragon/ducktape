@@ -4,8 +4,6 @@ Only the relay holds the Pod-bound token. Credential values stay in the gateway'
 isolated namespace; the app receives canonical placeholders under its existing env names.
 """
 
-from pathlib import Path
-
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
@@ -20,7 +18,6 @@ from cdk8s_plus_34 import ServiceAccount, k8s
 from constructs import Construct
 
 from agentplane.egress import sidecar_config
-from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, egress
 from cluster.cdk8s.agentplane.egress_credentials import EXTERNAL_CREDS_STORE, credential_external_secret
@@ -45,8 +42,6 @@ CLICKHOUSE_CREDENTIAL = "public-coder-clickhouse"
 AIQUOTA_CREDENTIAL = "aiquota-read"
 BRAVE_CREDENTIAL = "brave-search"
 MATRIX_CREDENTIAL = "public-coder-matrix"
-TOKEN_VOLUME = "agentplane-egress-token"
-_TOKEN_DIR = "/var/run/agentplane-egress"
 SIDECAR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
 _SETTINGS_CONFIG_MAP = "openclaw-egress-sidecar"
 _SETTINGS_VOLUME = "egress-sidecar-settings"
@@ -55,9 +50,9 @@ _SETTINGS_PATH = "/etc/agentplane-egress-sidecar/settings.yaml"
 
 def add_relay_settings(scope: Construct) -> PodWiring:
     """The relay's settings ConfigMap, and what the Pod needs to mount it."""
-    settings = sidecar_config.Settings(
-        proxy_host=GATEWAY.fqdn, proxy_port=GATEWAY.pod_port, proxy_mode="token", token_file=Path(_TOKEN_DIR) / "token"
-    )
+    # OpenClaw has no Sandbox SVID. Keep the sidecar config parked while its non-Sandbox
+    # authentication design is unresolved; the mTLS-only proxy refuses this token mode.
+    settings = sidecar_config.Settings(proxy_host=GATEWAY.fqdn, proxy_port=GATEWAY.pod_port, proxy_mode="token")
     return SettingsFile(
         scope,
         "egress-sidecar-settings",
@@ -90,23 +85,7 @@ def relay_container(settings: PodWiring) -> k8s.Container:
             timeout_seconds=1,
             failure_threshold=1,
         ),
-        volume_mounts=[k8s.VolumeMount(name=TOKEN_VOLUME, mount_path=_TOKEN_DIR, read_only=True), settings.mount],
-    )
-
-
-def token_volume() -> k8s.Volume:
-    return k8s.Volume(
-        name=TOKEN_VOLUME,
-        projected=k8s.ProjectedVolumeSource(
-            default_mode=0o440,
-            sources=[
-                k8s.VolumeProjection(
-                    service_account_token=k8s.ServiceAccountTokenProjection(
-                        audience=WORKLOAD_TOKEN_AUDIENCE, expiration_seconds=600, path="token"
-                    )
-                )
-            ],
-        ),
+        volume_mounts=[settings.mount],
     )
 
 
@@ -221,23 +200,6 @@ def add_gateway_resources(
         metadata=ApiObjectMetadata(name=POLICY, namespace=namespace),
         subject=PolicyBindingSpecSubject(namespace=NAMESPACE, name=SERVICE_ACCOUNT),
         policy_sets=[POLICY, egress.INFERENCE_EXPERIMENTS_POLICY, egress.PUBLIC_INTERNET_POLICY],
-    )
-    NetworkPolicy(
-        scope,
-        "gateway-network",
-        metadata=ApiObjectMetadata(name=POLICY, namespace=namespace),
-        endpoint_selector=GATEWAY.pods.selector,
-        ingress=[
-            IngressRule.from_endpoints(
-                {
-                    "k8s:io.kubernetes.pod.namespace": NAMESPACE,
-                    **LABELS,
-                    "io.cilium.k8s.policy.serviceaccount": SERVICE_ACCOUNT,
-                },
-                ports=[GATEWAY.pod_port],
-            )
-        ],
-        egress=[client.HTTP.egress()],
     )
     NetworkPolicy(
         scope,

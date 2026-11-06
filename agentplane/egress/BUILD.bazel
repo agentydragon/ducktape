@@ -46,6 +46,7 @@ py_test(
         ":conftest",
         ":resources",
         ":settings",
+        ":sidecar_config",
         "//:conftest",
         "//agentplane:crd_group",
         "//agentplane:policy_sets",

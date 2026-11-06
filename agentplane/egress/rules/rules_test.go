@@ -3,12 +3,10 @@ package rules
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,45 +14,21 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/egress/docs"
 	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/egress_rulespb"
-	"github.com/agentydragon/ducktape/agentplane/egress/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	"github.com/agentydragon/ducktape/agentplane/grpc/facade"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/testing/agentdocs"
-	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
-	hopAudience = "test-egress"
 	namespace   = "test-workloads"
 	description = "a token for the bot account, which can write to its own repositories"
 	secretValue = "the-real-credential"
 )
-
-var (
-	kube *kubeapiserver.Server
-	// sbToken, otherToken and nobodyToken prove the ServiceAccounts sb, other and nobody in namespace.
-	sbToken, otherToken, nobodyToken string
-	unreachable                      = kubeapiserver.UnreachableReviews{Err: errors.New("test API server unreachable")}
-)
-
-func TestMain(m *testing.M) {
-	os.Exit(kubeapiserver.Run(m, func(server *kubeapiserver.Server) (err error) {
-		kube = server
-		for name, token := range map[string]*string{"sb": &sbToken, "other": &otherToken, "nobody": &nobodyToken} {
-			account := auth.Account{Namespace: namespace, Name: name}
-			if *token, err = server.WorkloadToken(context.Background(), account, hopAudience); err != nil {
-				return err
-			}
-		}
-		return nil
-	}))
-}
 
 var (
 	githubCredential = resources.Credential{
@@ -89,26 +63,18 @@ func binding(account, name string, sets ...string) *policyapi.PolicyBinding {
 	}
 }
 
-// serviceOver is the rules service over index, reviewing bearers with reviews.
-func serviceOver(t *testing.T, reviews auth.TokenReviews, index *policy.Index) *Service {
+// api is the rules API over index with a test-only admitted caller. SVID admission is exercised by
+// workload_auth/facade and the real egress binary harness.
+func api(t *testing.T, account string, index *policy.Index) http.Handler {
 	t.Helper()
-	hop, err := auth.NewResolver(reviews, hopAudience, []string{namespace})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return NewService(identity.NewVerifier(hop, nil), index)
-}
-
-// api is the rules API over index, with no documentation: its facade forwards to a gRPC server over
-// loopback, as in the proxy.
-func api(t *testing.T, reviews auth.TokenReviews, index *policy.Index) http.Handler {
-	t.Helper()
-	service := serviceOver(t, reviews, index)
+	service := NewService(index)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer()
+	server := grpc.NewServer(grpc.UnaryInterceptor(func(ctx context.Context, request any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		return handler(auth.WithCaller(ctx, auth.Principal{Account: auth.Account{Namespace: namespace, Name: account}}), request)
+	}))
 	egressrulespb.RegisterEgressRulesServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
@@ -148,8 +114,6 @@ func get(handler http.Handler, path string, headers ...string) *httptest.Respons
 	return recorded
 }
 
-func bearer(token string) []string { return []string{"Authorization", "Bearer " + token} }
-
 // document decodes a response body as the JSON the agent reads.
 func document(t *testing.T, response *httptest.ResponseRecorder) any {
 	t.Helper()
@@ -163,9 +127,9 @@ func document(t *testing.T, response *httptest.ResponseRecorder) any {
 // The names and enum values are what the agent guides tell agents to read, so they are checked
 // against the raw document.
 func TestFacadeAnswersTheRulesAsProtoJSON(t *testing.T) {
-	handler := api(t, kube.TokenReviews(), githubIndex())
+	handler := api(t, "sb", githubIndex())
 
-	response := get(handler, "/v1/rules", bearer(sbToken)...)
+	response := get(handler, "/v1/rules", "Authorization", "Bearer proxy-hop-token")
 
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", response.Code, response.Body)
@@ -195,7 +159,7 @@ func TestFacadeAnswersTheRulesAsProtoJSON(t *testing.T) {
 		}
 	}
 	// The placeholder is present above, so these absences mean something.
-	for _, forbidden := range []string{secretValue, "vault-entry", "credential-key", "secretRef", sbToken} {
+	for _, forbidden := range []string{secretValue, "vault-entry", "credential-key", "secretRef", "proxy-hop-token"} {
 		if strings.Contains(response.Body.String(), forbidden) {
 			t.Errorf("%q reached a sandbox-readable response", forbidden)
 		}
@@ -203,9 +167,9 @@ func TestFacadeAnswersTheRulesAsProtoJSON(t *testing.T) {
 }
 
 func TestFacadeAnswersNoEgressWithAnEmptyList(t *testing.T) {
-	handler := api(t, kube.TokenReviews(), githubIndex())
+	handler := api(t, "nobody", githubIndex())
 
-	response := get(handler, "/v1/rules", bearer(nobodyToken)...)
+	response := get(handler, "/v1/rules", "Proxy-Authorization", "Bearer proxy-hop-token")
 
 	// An empty list, not null: no egress is a normal state, not a missing answer.
 	decoded := document(t, response)
@@ -215,51 +179,11 @@ func TestFacadeAnswersNoEgressWithAnEmptyList(t *testing.T) {
 	}
 }
 
-func TestFacadeFailsClosedWithoutAProvenBearer(t *testing.T) {
-	for name, c := range map[string]struct {
-		headers     []string
-		wantReviews int32
-	}{
-		"no Authorization":   {nil, 0},
-		"not a bearer":       {[]string{"Authorization", "Basic abc"}, 0},
-		"two Authorizations": {[]string{"Authorization", "Bearer " + sbToken, "Authorization", "Bearer " + sbToken}, 0},
-		"a forged bearer":    {bearer("forged"), 1},
-		"only a hop bearer":  {[]string{"Proxy-Authorization", "Bearer " + sbToken}, 0},
-	} {
-		t.Run(name, func(t *testing.T) {
-			reviewed := &kubeapiserver.CountedReviews{TokenReviews: kube.TokenReviews()}
-			handler := api(t, reviewed, githubIndex())
-
-			response := get(handler, "/v1/rules", c.headers...)
-
-			if code := at(t, document(t, response), "code"); response.Code != http.StatusUnauthorized || code != float64(codes.Unauthenticated) {
-				t.Errorf("status %d, code %v; want 401 and Unauthenticated: %s", response.Code, code, response.Body)
-			}
-			if got := reviewed.Calls.Load(); got != c.wantReviews {
-				t.Errorf("%d token reviews, want %d: an unusable header must not reach the API server", got, c.wantReviews)
-			}
-			if strings.Contains(response.Body.String(), "forged") {
-				t.Errorf("the response echoes the rejected token: %s", response.Body)
-			}
-		})
-	}
-}
-
-func TestFacadeIsUnavailableWhenTheBearerCannotBeReviewed(t *testing.T) {
-	handler := api(t, unreachable, githubIndex())
-
-	response := get(handler, "/v1/rules", bearer(sbToken)...)
-
-	if code := at(t, document(t, response), "code"); response.Code != http.StatusServiceUnavailable || code != float64(codes.Unavailable) {
-		t.Errorf("status %d, code %v; want 503 and Unavailable: an unanswered review says nothing about the caller", response.Code, code)
-	}
-}
-
 func TestFacadeCannotBeAimedAtAnotherSubject(t *testing.T) {
-	handler := api(t, kube.TokenReviews(), githubIndex())
+	handler := api(t, "sb", githubIndex())
 	request := httptest.NewRequest(http.MethodGet, "/v1/rules?namespace="+namespace+"&name=other", nil)
-	request.Header.Set("Authorization", "Bearer "+sbToken)
-	request.Header.Set("Proxy-Authorization", "Bearer "+otherToken)
+	request.Header.Set("Authorization", "Bearer proxy-hop-token")
+	request.Header.Set("Proxy-Authorization", "Bearer forged-other-token")
 	request.Header.Set("X-Agentplane-Subject", "other")
 	response := httptest.NewRecorder()
 
@@ -275,10 +199,10 @@ func TestFacadeCannotBeAimedAtAnotherSubject(t *testing.T) {
 }
 
 func TestOnlyTheAgentRoutesAreServed(t *testing.T) {
-	handler := api(t, kube.TokenReviews(), githubIndex())
+	handler := api(t, "sb", githubIndex())
 
 	for _, path := range []string{"/", "/decisions", "/healthz", "/v1/decisions", "/docs/agents/"} {
-		if response := get(handler, path, bearer(sbToken)...); response.Code != http.StatusNotFound {
+		if response := get(handler, path, "Authorization", "Bearer proxy-hop-token"); response.Code != http.StatusNotFound {
 			t.Errorf("GET %s = %d, want 404", path, response.Code)
 		}
 	}

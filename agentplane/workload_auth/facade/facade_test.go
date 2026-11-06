@@ -49,7 +49,7 @@ func TestGeneratedHTTPFacadeVerifiesTheSVIDBeforeUnaryHandlers(t *testing.T) {
 			server.StartTLS()
 			defer server.Close()
 			config := ca.Issue(t, workload.URI)
-			clientTLS, err := config.ClientTLSConfig(environment_runtime_transport.NotificationsURI)
+			clientTLS, err := config.ClientTLSConfig(environment_runtime_transport.EgressRulesURI)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -121,7 +121,7 @@ func TestGeneratedWatchKeepsTLSCallerAndRevalidatesLiveSandbox(t *testing.T) {
 	server.StartTLS()
 	defer server.Close()
 	config := ca.Issue(t, workload.URI)
-	clientTLS, err := config.ClientTLSConfig(environment_runtime_transport.NotificationsURI)
+	clientTLS, err := config.ClientTLSConfig(environment_runtime_transport.EgressRulesURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,8 +176,8 @@ func newHandler(t *testing.T, workload workloadauthtesting.Workload, ca *environ
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := ca.Issue(t, environment_runtime_transport.NotificationsURI)
-	serverTLS, err := config.WorkloadServerTLSConfig(environment_runtime_transport.NotificationsURI)
+	config := ca.Issue(t, environment_runtime_transport.EgressRulesURI)
+	serverTLS, err := config.WorkloadServerTLSConfig(environment_runtime_transport.EgressRulesURI)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -16,8 +16,8 @@ It is deliberately not `claude-ai` itself: that binding auto-approves sandbox cr
 `test_haku_ui_egress` pins it.
 
 What the Pod (haku-state) must carry, as public-coder's OpenClaw does (`public_coder/egress.py`):
-run as this ServiceAccount; an `agentplane-egress-sidecar` container with settings naming `GATEWAY`
-and a projected token (audience `WORKLOAD_TOKEN_AUDIENCE`); the `agentplane-egress-ca` ConfigMap
+run as this ServiceAccount; an `agentplane-egress-sidecar` container with settings naming the
+proxy and a projected destination token; the `agentplane-egress-ca` ConfigMap
 (published into this namespace by the egress Bundle) as its trust store; and
 `forgejo-images-creds` as an imagePullSecret, because the sidecar is a private ducktape-ci image the
 `haku` registry user cannot read. Credentials in the Pod are placeholders.
@@ -37,15 +37,13 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
 
-from cluster.cdk8s.agentplane import actions, egress
+from cluster.cdk8s.agentplane import actions
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.providers.agentplane.policy_set import Rule
-from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 
 NAMESPACE = "haku-sandbox"
 SERVICE_ACCOUNT = "haku-ui"
 POLICY = "haku-ui"
-GATEWAY = egress.proxy("agentplane-staging")
 
 
 def add_gateway_resources(scope: Construct, *, namespace: str) -> None:
@@ -69,15 +67,5 @@ def add_gateway_resources(scope: Construct, *, namespace: str) -> None:
             )
         ],
     )
-    NetworkPolicy(
-        scope,
-        "gateway-network",
-        metadata=ApiObjectMetadata(name=POLICY, namespace=namespace),
-        endpoint_selector=GATEWAY.pods.selector,
-        ingress=[
-            IngressRule.from_endpoints(
-                {"k8s:io.kubernetes.pod.namespace": NAMESPACE, "io.cilium.k8s.policy.serviceaccount": SERVICE_ACCOUNT},
-                ports=[GATEWAY.pod_port],
-            )
-        ],
-    )
+    # haku-ui has no Sandbox SVID. Its previous token-authenticated proxy path is removed; a
+    # separate non-Sandbox authentication design is required before this policy can be reached.

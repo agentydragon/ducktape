@@ -437,9 +437,8 @@ metadata:
 data:
   settings.yaml: |
     proxy_host: egress.agentplane-staging.svc.cluster.local
-    proxy_port: 8888
+    proxy_port: 8889
     proxy_mode: token
-    token_file: /var/run/agentplane-egress/token
 immutable: false
 ---
 apiVersion: apps/v1
@@ -599,9 +598,6 @@ spec:
             runAsNonRoot: true
             runAsUser: 1000
           volumeMounts:
-            - mountPath: /var/run/agentplane-egress
-              name: agentplane-egress-token
-              readOnly: true
             - mountPath: /etc/agentplane-egress-sidecar
               name: egress-sidecar-settings
               readOnly: true
@@ -633,14 +629,6 @@ spec:
           type: RuntimeDefault
       serviceAccountName: openclaw
       volumes:
-        - name: agentplane-egress-token
-          projected:
-            defaultMode: 288
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-egress
-                  expirationSeconds: 600
-                  path: token
         - configMap:
             name: openclaw-egress-sidecar
           name: egress-sidecar-settings
@@ -693,7 +681,7 @@ spec:
             matchLabels:
               k8s-app: kube-dns
     - ports:
-        - port: 8888
+        - port: 8889
           protocol: TCP
       to:
         - namespaceSelector:

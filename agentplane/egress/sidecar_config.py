@@ -50,11 +50,12 @@ class Settings(BaseModel):
     config_file_env: ClassVar[str] = "AGENTPLANE_EGRESS_SIDECAR_CONFIG_FILE"
 
     proxy_host: str = Field(description="Host of the central egress proxy every request is relayed to.")
-    proxy_port: int = Field(default=8888, description="The central proxy's listener port.")
-    proxy_mode: ProxyMode = Field(description="Explicit authentication selected for the sidecar-to-proxy hop.")
+    proxy_port: int = Field(default=8889, description="The central proxy's TLS-only listener port.")
+    proxy_mode: ProxyMode = Field(
+        description="Explicit hop mode. Token mode is retained for parked non-Sandbox callers, whose route is unavailable."
+    )
     token_file: Path | None = Field(
-        default=None,
-        description="Projected egress-audience bearer, re-read per request while the proxy still needs destination identity. Optional in mtls mode; it never authenticates or falls back to the proxy hop.",
+        default=None, description="Token-mode-only credential for parked non-Sandbox sidecars. Never used with mTLS."
     )
     proxy_tls: ProxyTLSFiles | None = Field(
         default=None, description="Projected Runner SVID files, used only in mtls mode."
@@ -62,8 +63,7 @@ class Settings(BaseModel):
     audience_token_files: dict[str, Path] = Field(
         default_factory=dict,
         description="Audience to the projected token file holding this Pod's identity for it, offered to the "
-        "central proxy to substitute where a rule names that audience. The optional proxy-audience bearer "
-        "above is separate; in mtls mode it is downstream identity context, not hop authentication.",
+        "central proxy to substitute where a rule names that audience.",
     )
     workload_routes: dict[str, WorkloadRoute] = Field(
         default_factory=dict, description="Exact HTTP host:port to service-owned SVID TLS via opaque central CONNECT."
@@ -81,8 +81,13 @@ class Settings(BaseModel):
     @model_validator(mode="after")
     def proxy_mode_has_required_credentials(self) -> Self:
         if self.proxy_mode == "token":
-            if self.token_file is None or self.proxy_tls is not None:
-                raise ValueError("token mode requires token_file and forbids proxy_tls")
-        elif self.proxy_tls is None:
-            raise ValueError("mtls mode requires proxy_tls")
+            if self.proxy_tls is not None:
+                raise ValueError("token mode forbids proxy_tls")
+        else:
+            if self.proxy_tls is None:
+                raise ValueError("mtls mode requires proxy_tls")
+            if self.token_file is not None:
+                raise ValueError("mtls mode forbids token_file")
+        if self.token_file is not None and not self.token_file.is_absolute():
+            raise ValueError("token_file must be an absolute path")
         return self

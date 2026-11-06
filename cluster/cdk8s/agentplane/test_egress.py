@@ -83,28 +83,31 @@ def svid_egress_manifests(scratch_app_factory: Callable[[], App]) -> list[dict[s
         admin_grpc_callers=[ServiceAccountRef(namespace=env.namespace, name="app")],
         placement=None,
         registry_secret_name=None,
-        enable_svid_listener=True,
     ).add_platform_resources()
     return cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
 
 
-def test_svid_listener_is_disabled_in_the_staging_default(staging_manifests: list[dict[str, Any]]) -> None:
+def test_staging_requires_the_tls_hop_and_rules_boundary(staging_manifests: list[dict[str, Any]]) -> None:
     deployment = _by_name(staging_manifests, "Deployment", "egress")
     proxy = one(
         container for container in deployment["spec"]["template"]["spec"]["containers"] if container["name"] == "proxy"
     )
-    assert PROXY_MTLS_PORT not in [port["containerPort"] for port in proxy["ports"]]
+    ports = {port["containerPort"] for port in proxy["ports"]}
+    assert PROXY_MTLS_PORT in ports
+    assert 8443 in ports
+    assert 8888 not in ports
     settings = yaml.safe_load(_by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"])
-    assert not {"svid_listen_address", "svid_cert_file", "svid_key_file", "svid_ca_file"} & settings.keys()
-    role = _by_name(staging_manifests, "Role", "egress")
-    assert not any("sandboxes" in rule["resources"] for rule in role["rules"])
-    assert not any(
-        doc["kind"] == "Certificate" and doc["metadata"]["name"] == "agentplane-egress-proxy"
-        for doc in staging_manifests
-    )
+    assert settings["svid_listen_address"] == f"0.0.0.0:{PROXY_MTLS_PORT}"
+    assert settings["rules_listen_address"] == "0.0.0.0:8443"
+    assert f"{agent_api(staging.ENV.namespace).fqdn}:8443" in settings["tls_passthrough_targets"]
+    assert not {"listen_address", "token_audience", "agent_api_listen_address"} & settings.keys()
+    certificate = _by_name(staging_manifests, "Certificate", "egress-rules-workload")
+    assert certificate["spec"]["uris"] == ["spiffe://agentplane/egress-rules"]
 
 
-def test_svid_listener_adds_only_the_sandbox_reader_and_tls_port(svid_egress_manifests: list[dict[str, Any]]) -> None:
+def test_tls_hop_and_rules_add_only_bound_sandbox_readers_and_tls_ports(
+    svid_egress_manifests: list[dict[str, Any]],
+) -> None:
     deployment = _by_name(svid_egress_manifests, "Deployment", "egress")
     proxy = one(
         container for container in deployment["spec"]["template"]["spec"]["containers"] if container["name"] == "proxy"
@@ -124,7 +127,10 @@ def test_svid_listener_adds_only_the_sandbox_reader_and_tls_port(svid_egress_man
     sandbox_rules = [rule for rule in role["rules"] if "sandboxes" in rule["resources"]]
     assert sandbox_rules == [{"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list", "watch"]}]
     all_resources = [resource for rule in role["rules"] for resource in rule["resources"]]
-    assert not any(resource.endswith(("/pods", "/serviceaccounts")) for resource in all_resources)
+    assert "pods" not in all_resources
+    assert [rule for rule in role["rules"] if "serviceaccounts" in rule["resources"]] == [
+        {"apiGroups": [""], "resources": ["serviceaccounts"], "verbs": ["get"]}
+    ]
 
     certificate = _by_name(svid_egress_manifests, "Certificate", "agentplane-egress-proxy")
     assert certificate["spec"]["uris"] == ["spiffe://agentplane/egress-proxy"]
@@ -212,15 +218,13 @@ def test_public_internet_is_available_but_never_implicitly_granted(staging_manif
                 assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policySets"]
 
 
-def test_agent_egress_api_uses_its_canonical_service(staging_manifests: list[dict[str, Any]]) -> None:
-    policy = one(
-        doc for doc in staging_manifests if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == BASIC_POLICY
-    )
+def test_rules_tls_is_authorized_by_its_receiver(staging_manifests: list[dict[str, Any]]) -> None:
+    policy = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
     canonical_host = agent_api(staging.ENV.namespace).fqdn
-    rule = one(rule for rule in policy["spec"]["rules"] if canonical_host in rule.get("hosts", []))
-    assert rule["hosts"] == [canonical_host]
-    assert rule["methods"] == ["GET"]
-    assert rule["paths"] == ["/llms.txt", "/docs/agents/**", "/openapi.json", "/v1/rules"]
+    assert all(canonical_host not in rule.get("hosts", []) for rule in policy["spec"]["rules"])
+    service = _by_name(staging_manifests, "Service", "egress")
+    assert 8443 in {port["port"] for port in service["spec"]["ports"]}
+    assert 80 not in {port["port"] for port in service["spec"]["ports"]}
 
 
 def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_manifests: list[dict[str, Any]]) -> None:

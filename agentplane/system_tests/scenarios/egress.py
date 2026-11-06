@@ -249,11 +249,12 @@ async def _kubectl_create_binding(
         await cluster.kubectl("create", "-f", "-", body=body)
 
 
-async def _granted_request(cluster: Cluster) -> tuple[str, str]:
-    """The host and path the fixture's runtime-grant PolicySet admits."""
+async def _granted_request(cluster: Cluster) -> tuple[str, int, str]:
+    """The intercepted destination the fixture's runtime-grant PolicySet admits."""
     result = await cluster.kubectl("get", "policyset", runtime_grant.POLICY_SET, "-o", "json", timeout_s=20)
-    rule = json.loads(result)["spec"]["rules"][0]
-    return rule["hosts"][0], rule["paths"][0]
+    policy = json.loads(result)
+    rule = policy["spec"]["rules"][0]
+    return rule["hosts"][0], int(policy["metadata"]["annotations"][runtime_grant.PORT_ANNOTATION]), rule["paths"][0]
 
 
 async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
@@ -266,14 +267,14 @@ async def a_policy_granted_after_the_sandbox_is_running_takes_effect(
     scripted: ScriptedUpstream,
 ) -> None:
     """Binding at runtime is a live grant, not a restart: one sandbox, refused and then admitted."""
-    host, path = await _granted_request(cluster)
+    host, port, path = await _granted_request(cluster)
     view = await sandbox(f"systest-bind-{harness}")
     assert view.kubernetes_diagnostics.HasField("pod")
     model = scripted.model(view.kubernetes_diagnostics.pod.name, harness)
     agent = await Agent.create(
         client, dispatcher, sandbox=view.target.name, sandbox_uid=view.target.uid, harness=harness, model=offered_model
     )
-    command = f"curl -sS -o /dev/null -w '%{{http_code}}\\n' http://{host}{path}"
+    command = f"curl -sS -o /dev/null -w '%{{http_code}}\\n' http://{host}:{port}{path}"
 
     await agent.run_shell(model, command)
     refused = await _decision_for(cluster, client, view.target.name, view.target.uid, host)

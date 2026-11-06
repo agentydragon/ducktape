@@ -71,7 +71,7 @@ class EnvironmentFirecrackerTemplate(Construct):
             name=f"{NAME}-relay",
             listen_address=f"[::]:{sandbox_pod.SIDECAR_LISTEN_PORT}",
             platform_routes=platform_routes.sidecar_routes(namespace, listen_host="0.0.0.0"),
-            proxy_mode="mtls" if env.runner_egress_mtls else "token",
+            proxy_mode="mtls",
         )
         launcher_settings = SettingsFile(
             self,

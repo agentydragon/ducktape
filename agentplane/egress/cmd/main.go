@@ -35,6 +35,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	authenticationv1 "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
@@ -121,20 +122,17 @@ func kubernetesConfig(kubeconfig string) (*rest.Config, error) {
 	return base, nil
 }
 
-// workloadIdentity reviews the hop bearer for the proxy's own audience and each projected token for
-// its audience, accepting only ServiceAccounts of the allowed namespaces.
+// workloadIdentity reviews each destination-scoped projected token. The hop identity comes only from
+// the TLS client certificate and live Sandbox status.
 func workloadIdentity(reviews auth.TokenReviews, c config) (*identity.Verifier, error) {
-	hop, err := auth.NewResolver(reviews, c.TokenAudience, c.AllowedServiceAccountNamespaces)
-	if err != nil {
-		return nil, err
-	}
 	projected := make(map[string]*auth.Resolver, len(c.ProjectedTokenAudiences))
+	var err error
 	for _, audience := range c.ProjectedTokenAudiences {
 		if projected[audience], err = auth.NewResolver(reviews, audience, c.AllowedServiceAccountNamespaces); err != nil {
 			return nil, err
 		}
 	}
-	return identity.NewVerifier(hop, projected), nil
+	return identity.NewVerifier(projected), nil
 }
 
 // upstreamRoots is the bundle destinations are verified against: the file when given, else the
@@ -175,40 +173,38 @@ func run(ctx context.Context, c config) error {
 	if err := migrate.Run(ctx, c.DatabaseURL, historymigrations.Up); err != nil {
 		return err
 	}
-	proxyListener, err := openListener("proxy", c.ListenAddress)
+	proxyRaw, err := openListener("proxy mTLS", c.SVIDListenAddress)
 	if err != nil {
 		return err
 	}
-	defer proxyListener.Close()
-	var svidListener net.Listener
-	if c.SVIDListenAddress != "" {
-		listener, err := openListener("proxy SVID", c.SVIDListenAddress)
-		if err != nil {
-			return err
-		}
-		defer listener.Close()
-		tlsConfig, err := (environment_runtime_transport.Config{
-			CertFile: c.SVIDCertFile, KeyFile: c.SVIDKeyFile, CAFile: c.SVIDCAFile,
-		}).WorkloadServerTLSConfig(environment_runtime_transport.EgressProxyURI)
-		if err != nil {
-			return fmt.Errorf("proxy SVID TLS configuration: %w", err)
-		}
-		svidListener = tls.NewListener(listener, tlsConfig)
+	defer proxyRaw.Close()
+	proxyTLS, err := (environment_runtime_transport.Config{
+		CertFile: c.SVIDCertFile, KeyFile: c.SVIDKeyFile, CAFile: c.SVIDCAFile,
+	}).WorkloadServerTLSConfig(environment_runtime_transport.EgressProxyURI)
+	if err != nil {
+		return fmt.Errorf("proxy SVID TLS configuration: %w", err)
 	}
-	agentAPIListener, err := openListener("agent API", c.AgentAPIListenAddress)
+	proxyListener := tls.NewListener(proxyRaw, proxyTLS)
+	rulesRaw, err := openListener("Rules API TLS", c.RulesListenAddress)
 	if err != nil {
 		return err
 	}
-	defer agentAPIListener.Close()
+	defer rulesRaw.Close()
+	rulesTLS, err := (environment_runtime_transport.Config{
+		CertFile: c.RulesCertFile, KeyFile: c.RulesKeyFile, CAFile: c.RulesCAFile,
+	}).WorkloadServerTLSConfig(environment_runtime_transport.EgressRulesURI)
+	if err != nil {
+		return fmt.Errorf("Rules API workload TLS configuration: %w", err)
+	}
 	adminListener, err := openListener("admin", c.AdminListenAddress)
 	if err != nil {
 		return err
 	}
 	defer adminListener.Close()
-	return serve(ctx, c, proxyListener, svidListener, agentAPIListener, adminListener)
+	return serve(ctx, c, proxyListener, rulesRaw, rulesTLS, adminListener)
 }
 
-func serve(ctx context.Context, c config, proxyListener, svidListener, agentAPIListener, adminListener net.Listener) error {
+func serve(ctx context.Context, c config, proxyListener, rulesListener net.Listener, rulesTLS *tls.Config, adminListener net.Listener) error {
 	base, err := kubernetesConfig(c.Kubeconfig)
 	if err != nil {
 		return err
@@ -222,22 +218,23 @@ func serve(ctx context.Context, c config, proxyListener, svidListener, agentAPIL
 		return err
 	}
 	sandboxReaders := map[string]*sandboxreader.Reader{}
-	if svidListener != nil {
-		scheme := runtime.NewScheme()
-		if err := sandboxapi.AddToScheme(scheme); err != nil {
-			return fmt.Errorf("register Sandbox API: %w", err)
-		}
-		objects, err := client.New(base, client.Options{Scheme: scheme})
+	scheme := runtime.NewScheme()
+	if err := sandboxapi.AddToScheme(scheme); err != nil {
+		return fmt.Errorf("register Sandbox API: %w", err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		return fmt.Errorf("register core API: %w", err)
+	}
+	objects, err := client.New(base, client.Options{Scheme: scheme})
+	if err != nil {
+		return fmt.Errorf("create live Sandbox reader: %w", err)
+	}
+	for _, namespace := range c.AllowedServiceAccountNamespaces {
+		reader, err := sandboxreader.New(namespace, objects)
 		if err != nil {
-			return fmt.Errorf("create live Sandbox reader: %w", err)
+			return fmt.Errorf("configure Sandbox reader for %q: %w", namespace, err)
 		}
-		for _, namespace := range c.AllowedServiceAccountNamespaces {
-			reader, err := sandboxreader.New(namespace, objects)
-			if err != nil {
-				return fmt.Errorf("configure Sandbox reader for %q: %w", namespace, err)
-			}
-			sandboxReaders[namespace] = reader
-		}
+		sandboxReaders[namespace] = reader
 	}
 	ca, err := tls.LoadX509KeyPair(c.CACert, c.CAKey)
 	if err != nil {
@@ -280,6 +277,7 @@ func serve(ctx context.Context, c config, proxyListener, svidListener, agentAPIL
 	egress, err := proxy.New(proxy.Options{
 		CA: ca, UpstreamRoots: roots, Identity: verifier, Policy: index,
 		Upstream: upstream.NewResolver(c.ExemptNetworks), Record: decisions.Record, SandboxReaders: sandboxReaders,
+		TLSPassthroughTargets: c.TLSPassthroughTargets,
 	})
 	if err != nil {
 		return err
@@ -292,7 +290,9 @@ func serve(ctx context.Context, c config, proxyListener, svidListener, agentAPIL
 	// The facade outlives the termination signal so that reads admitted before it finish while draining.
 	facadeContext, stopFacade := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopFacade()
-	agentAPIServer, err := newAgentAPI(facadeContext, verifier, index, agentDocs, docs.OpenAPI)
+	rulesServer, err := newRulesWorkloadAPI(
+		facadeContext, objects, c.AllowedServiceAccountNamespaces, index, rulesTLS, agentDocs, docs.OpenAPI,
+	)
 	if err != nil {
 		return err
 	}
@@ -305,17 +305,14 @@ func serve(ctx context.Context, c config, proxyListener, svidListener, agentAPIL
 
 	group, ctx := errgroup.WithContext(ctx)
 	group.Go(func() error { watcher.Run(ctx); return nil })
-	group.Go(func() error { return serving("proxy", egress.Serve(proxyListener)) })
-	if svidListener != nil {
-		group.Go(func() error { return serving("proxy SVID", egress.Serve(svidListener)) })
-	}
-	group.Go(func() error { return agentAPIServer.Serve(agentAPIListener) })
+	group.Go(func() error { return serving("proxy mTLS", egress.Serve(proxyListener)) })
+	group.Go(func() error { return serving("Rules API TLS", rulesServer.ServeTLS(rulesListener, "", "")) })
 	// The admin listener is the readiness probe and readiness gates every Service this Pod backs, so
 	// it starts accepting last: the readiness check answering means the listeners above are serving.
 	group.Go(func() error { return serving("admin", adminServer.Serve(adminListener)) })
 	group.Go(func() error {
 		<-ctx.Done()
-		return drain(egress, index, agentAPIServer, adminServer)
+		return drain(egress, index, rulesServer, adminServer)
 	})
 	return group.Wait()
 }
@@ -327,7 +324,7 @@ type shutdowner interface {
 
 // drain marks the proxy unready, lets admitted requests finish, then stops the other listeners. The
 // admin listener outlives the proxy's drain so the kubelet can see the Pod go unready.
-func drain(egress *proxy.Proxy, index *policy.Index, agentAPIServer, adminServer shutdowner) error {
+func drain(egress *proxy.Proxy, index *policy.Index, rulesServer, adminServer shutdowner) error {
 	slog.Info("draining")
 	index.Health.MarkDraining()
 	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
@@ -335,5 +332,5 @@ func drain(egress *proxy.Proxy, index *policy.Index, agentAPIServer, adminServer
 	if err := egress.Drain(ctx); err != nil {
 		slog.Warn("drain deadline reached; closing remaining connections", "error", err)
 	}
-	return errors.Join(agentAPIServer.Shutdown(ctx), adminServer.Shutdown(ctx))
+	return errors.Join(rulesServer.Shutdown(ctx), adminServer.Shutdown(ctx))
 }

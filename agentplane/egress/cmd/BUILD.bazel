@@ -6,9 +6,9 @@ go_library(
     name = "cmd",
     srcs = [
         "admin_grpc.go",
-        "agent_api.go",
         "config.go",
         "main.go",
+        "rules_workload.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/cmd",
     visibility = ["//agentplane/egress:__subpackages__"],
@@ -34,8 +34,11 @@ go_library(
         "//agentplane/sandboxes/api",
         "//agentplane/sandboxes/sandboxreader",
         "//agentplane/workload_auth/auth",
+        "//agentplane/workload_auth/facade",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
+        "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
         "@com_github_spf13_viper//:viper",
+        "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_client_go//kubernetes/typed/authentication/v1:authentication",
         "@io_k8s_client_go//rest",
@@ -58,7 +61,6 @@ go_test(
     name = "listener_test",
     srcs = [
         "admin_grpc_test.go",
-        "agent_api_test.go",
     ],
     embed = [":cmd"],
     deps = [

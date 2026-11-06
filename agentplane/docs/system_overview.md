@@ -24,6 +24,7 @@ flowchart LR
         actions[Action Service]
         edge[MCP edge]
         egress[Egress proxy]
+        egressRules[Rules API TLS in egress process]
         llm[LLM ingress]
         electric[Electric]
         sampler[Experimental central sampler]
@@ -115,9 +116,9 @@ flowchart LR
     guest -->|starts| guest_agent
     vmexec --> relay
     runner -->|local HTTP CONNECT| sidecar
-    sidecar -->|mTLS SVID on proxy-mtls:8889 when enabled; explicit token mode in staging| egress
+    sidecar -->|mTLS Runtime SVID :8889| egress
     guest -->|HTTP CONNECT through launcher relay| relay
-    relay -->|mTLS SVID on proxy-mtls:8889 when enabled; explicit token mode in staging| egress
+    relay -->|mTLS Runtime SVID :8889| egress
     runner -.->|OTLP/gRPC telemetry route| sidecar
     sidecar -->|OTLP/gRPC| alloy
     guest -.->|OTLP/gRPC telemetry route| relay
@@ -132,7 +133,7 @@ flowchart LR
     guest_agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| relay
     egress -.->|allowlisted gRPC methods, substituted Sandbox bearer| gw
 
-    egress --> llm
+    egress -.->|opaque TLS; Rules verifies SVID :8443| egressRules
 
     click app href "../app/go/server.go" "Integration app API server"
     click gw href "runner_control.md" "Runner gRPC and proxy"
@@ -163,7 +164,7 @@ Firecracker templates the Sandbox Controller projects it to Environment Runtime 
 sidecar only; workload containers have no mount. The KubeVirt launcher relay gets that same Secret
 through the existing Kyverno injection after a live Sandbox status check binds the launcher VM and
 VMI to the accepted credential. The relay holds the files on the host, not in the guest. Staging
-keeps the explicit token hop until the later cutover; TLS mode never falls back to token mode.
+and testing use the SVID hop; TLS mode never falls back to token mode.
 
 A VM guest runs Environment Runtime with Session components and Execution; its relay is in the separate KubeVirt launcher Pod. The Git index is
 standalone, with no dependency on the backend services or the app: it polls a configured Git remote,
@@ -543,28 +544,30 @@ flowchart LR
     edge -->|account scoped gRPC| actions
     actions -->|create + watch Pods| k8s
     actions -->|exec via Kubernetes API| workload
-    workload --> box_sidecar -->|token mode; no Sandbox SVID| egress
-    runner --> sidecar -->|TLS SVID on proxy-mtls:8889 when enabled| egress
-    guest --> relay -->|TLS SVID on proxy-mtls:8889 when enabled| egress
+    workload --> box_sidecar
+    runner --> sidecar -->|mTLS Runtime SVID :8889| egress
+    guest --> relay -->|mTLS Runtime SVID :8889| egress
     app -->|egress admin API| egress
     egress -->|policy and credential watches; live Sandbox lookup for SVID| k8s
-    egress -->|workload Actions gRPC and MCP| actions
     egress -->|policy-approved requests| other
-    egress -->|model requests| llm
+    egress -.->|opaque TLS; Rules verifies SVID :8443| rules[Rules API TLS]
     llm -->|model API + server-held key| litellm
     actions -->|MCP calls| mcp_servers
     actions -->|REST + web push| github
 ```
 
-The optional runner mTLS hop authenticates the Runtime SVID, then resolves its Sandbox UID and
-accepted credential ID through the live API before using that Sandbox's own ServiceAccount as the
-policy subject. Caller headers do not select identity; the HTTP token listener remains available.
-The egress proxy substitutes a configured credential only for the destination covered by its
-policy. LiteLLM is a separate hop behind LLM ingress; only that service holds the LiteLLM virtual key.
-The Sandbox sidecar and KubeVirt launcher relay select their hop mode explicitly. Pod and
-Firecracker system-test fixtures exercise the TLS listener; staging remains in token mode until the
-explicit flip. Plain Action boxes and external workloads still use token
-mode because they have no Sandbox Controller-issued SVID.
+The required runner mTLS hop resolves the SVID's Sandbox UID and accepted credential through
+live status before using that Sandbox's own ServiceAccount as the policy subject. The plaintext
+central token hop is removed. Rules terminates its own SVID TLS through an opaque central tunnel;
+the proxy never asserts the caller. Destination-scoped projected tokens remain for platform routes
+until their separate service migrations. Action/LLM routes depending on the removed hop bearer are
+unavailable in this intermediate draft until those migrations land. Only LLM ingress holds the
+LiteLLM virtual key.
+
+The flip remains draft and blocked on separate authentication for non-Sandbox callers: Action
+boxes, Haku UI and future external OpenClaw instances. Their token-mode sidecars cannot authenticate
+to this central listener. No Identity/account cutover is included. Existing Sandbox processes need
+recreation to read the new mode/route configuration; image updates alone do not replace running Pods.
 The app has independent `action_federation.service_url` and `connection_service_url` settings.
 Both tiers send operator Connection calls and gRPC health probes to the [MCP edge](../mcp_edge/README.md).
 Staging's external MCP/OAuth routes terminate there too, preserving the public issuer/resource URLs.

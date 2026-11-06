@@ -26,9 +26,8 @@ const proxyAuthorization = "Proxy-Authorization"
 // deniedHeader carries the machine-readable reason of a refusal.
 const deniedHeader = "x-agentplane-egress"
 
-// authenticated is a hop bearer a connection proved, and what it may present for substitution.
+// authenticated is the Sandbox identity proved by the transport plus what it may present for substitution.
 type authenticated struct {
-	bearer    string
 	principal auth.Principal
 	// projected holds the tokens the sidecar offered, by audience, that were reviewed as this Pod's.
 	projected map[string]string
@@ -48,10 +47,9 @@ type outcome struct {
 // gate decides one request or CONNECT and records the decision. The hop headers are this proxy's
 // alone: they are removed here, before anything else reads the request, whatever is decided.
 func (p *Proxy) gate(req *http.Request, client *connection, body []byte, host string, port int) (policy.Decision, upstream.Pin) {
-	hop, supplied := req.Header[proxyAuthorization]
 	req.Header.Del(proxyAuthorization)
 	presented := takeProjectedTokens(req.Header)
-	result := p.decide(req, client, hop, supplied, presented, body, host, port)
+	result := p.decide(req, client, presented, body, host, port)
 	p.record(req, client, host, port, result)
 	return result.decision, result.pin
 }
@@ -70,11 +68,11 @@ func takeProjectedTokens(header http.Header) map[string]string {
 }
 
 func (p *Proxy) decide(
-	req *http.Request, client *connection, hop []string, supplied bool, presented map[string]string,
+	req *http.Request, client *connection, presented map[string]string,
 	body []byte, host string, port int,
 ) outcome {
 	ctx := req.Context()
-	who, err := p.authenticate(ctx, client, hop, supplied, presented)
+	who, err := p.authenticate(ctx, client, presented)
 	if err != nil {
 		var rejection *identity.Rejection
 		if errors.As(err, &rejection) {
@@ -98,7 +96,7 @@ func (p *Proxy) decide(
 		request.Path = req.URL.RequestURI()
 	}
 	workload := &policy.WorkloadContext{
-		Bearer: who.bearer, Caller: caller, PodUID: who.principal.PodUID, Projected: who.projected,
+		Caller: caller, PodUID: who.principal.PodUID, Projected: who.projected,
 	}
 	first := p.options.Policy.Evaluate(caller, request, workload)
 	admitted, ok := first.(policy.Allowed)
@@ -126,48 +124,13 @@ func (p *Proxy) decide(
 	return outcome{decision: admitted, pin: pin, caller: who}
 }
 
-// authenticate proves the hop bearer, or the one this connection proved before, and binds the
-// presented projected tokens to the Pod it proved. A bearer presented on a request replaces
-// whatever the connection held before: it stands on its own, so a malformed or rejected one never
-// falls back to the earlier state.
-func (p *Proxy) authenticate(
-	ctx context.Context, client *connection, hop []string, supplied bool, presented map[string]string,
-) (*authenticated, error) {
-	if client.peerState != nil {
-		return p.authenticateSVID(ctx, client, hop, supplied, presented)
+// authenticate accepts only the peer certificate verified on the mTLS proxy listener. Bearer
+// headers are stripped before this boundary and can never authenticate or replace the SVID.
+func (p *Proxy) authenticate(ctx context.Context, client *connection, presented map[string]string) (*authenticated, error) {
+	if client.peerState == nil {
+		return nil, &identity.Rejection{Reason: decision.TokenRejected, Detail: "workload SVID TLS is required"}
 	}
-	client.mu.Lock()
-	defer client.mu.Unlock()
-	var previous *authenticated
-	token := ""
-	if supplied {
-		client.auth = nil
-		var ok bool
-		if token, ok = identity.BearerToken(hop); !ok {
-			return nil, &identity.Rejection{Reason: decision.TokenMissing, Detail: "no bearer token in Proxy-Authorization"}
-		}
-	} else if previous = client.auth; previous != nil {
-		token = previous.bearer
-	} else {
-		return nil, &identity.Rejection{Reason: decision.TokenMissing, Detail: "no bearer token in Proxy-Authorization"}
-	}
-	principal, err := p.options.Identity.Identify(ctx, token)
-	if err != nil {
-		client.auth = nil
-		return nil, err
-	}
-	if previous != nil && previous.principal != principal {
-		client.auth = nil
-		return nil, &identity.Rejection{Reason: decision.PodMismatch, Detail: "authenticated tunnel identity changed"}
-	}
-	var projected map[string]string
-	if presented != nil {
-		projected = p.options.Identity.VerifyProjected(ctx, presented, principal)
-	} else if previous != nil {
-		projected = maps.Clone(previous.projected)
-	}
-	client.auth = &authenticated{bearer: token, principal: principal, projected: projected}
-	return client.auth, nil
+	return p.authenticateSVID(ctx, client, presented)
 }
 
 // authenticateSVID maps the verified transport identity to the Sandbox that
@@ -175,7 +138,7 @@ func (p *Proxy) authenticate(
 // policy subject directly: the live Sandbox provides its owned ServiceAccount
 // name and current runner Pod binding.
 func (p *Proxy) authenticateSVID(
-	ctx context.Context, client *connection, hop []string, supplied bool, presented map[string]string,
+	ctx context.Context, client *connection, presented map[string]string,
 ) (*authenticated, error) {
 	client.mu.Lock()
 	defer client.mu.Unlock()
@@ -214,34 +177,13 @@ func (p *Proxy) authenticateSVID(
 		client.auth = nil
 		return nil, &identity.Rejection{Reason: decision.PodMismatch, Detail: "SVID Sandbox binding changed on this connection"}
 	}
-	token := ""
-	if supplied {
-		client.auth = nil
-		var ok bool
-		if token, ok = identity.BearerToken(hop); !ok {
-			return nil, &identity.Rejection{Reason: decision.TokenMissing, Detail: "invalid optional Proxy-Authorization"}
-		}
-	} else if previous != nil {
-		token = previous.bearer
-	}
-	if token != "" {
-		tokenPrincipal, err := p.options.Identity.Identify(ctx, token)
-		if err != nil {
-			client.auth = nil
-			return nil, err
-		}
-		if tokenPrincipal.Account != principal.Account || tokenPrincipal.PodUID != principal.PodUID {
-			client.auth = nil
-			return nil, &identity.Rejection{Reason: decision.PodMismatch, Detail: "hop bearer does not match the SVID Sandbox"}
-		}
-	}
 	var projected map[string]string
 	if presented != nil {
 		projected = p.options.Identity.VerifyProjectedForSandbox(ctx, presented, principal.Account, principal.PodUID)
 	} else if previous != nil {
 		projected = maps.Clone(previous.projected)
 	}
-	client.auth = &authenticated{bearer: token, principal: principal, projected: projected}
+	client.auth = &authenticated{principal: principal, projected: projected}
 	return client.auth, nil
 }
 
@@ -268,7 +210,16 @@ func (p *Proxy) record(req *http.Request, client *connection, host string, port 
 	switch d := result.decision.(type) {
 	case policy.Allowed:
 		address := result.pin.Address.String()
-		record.Outcome, record.Binding, record.Policy, record.Rule = decision.Allow, &d.Binding, &d.Policy, &d.Rule
+		record.Outcome = decision.Allow
+		// Opaque service TLS is admitted by an exact deployment allowlist and delegates
+		// authorization to the destination; it has no per-Sandbox PolicySet binding.
+		if d.Binding != "" {
+			record.Binding = &d.Binding
+		}
+		if d.Policy != "" {
+			record.Policy = &d.Policy
+			record.Rule = &d.Rule
+		}
 		record.Substituted = len(d.Rewrites) > 0 || d.BodyRewrite != nil
 		record.Address = &address
 	case policy.Denied:
