@@ -20,20 +20,8 @@ copy_file(
 )
 
 copy_file(
-    name = "pipelines",
-    src = "@cdviz_dashboards//:cdviz-grafana/dashboards/pipelinerun_executions.json",
-    out = "pipelines.json",
-)
-
-copy_file(
-    name = "tasks",
-    src = "@cdviz_dashboards//:cdviz-grafana/dashboards/taskrun_executions.json",
-    out = "tasks.json",
-)
-
-copy_file(
     name = "license",
-    src = "@cdviz_dashboards//:LICENSE",
+    src = "@cdviz_transformers//:LICENSE",
     out = "LICENSE",
 )
 
@@ -96,9 +84,8 @@ py_library(
     name = "dashboards",
     srcs = ["dashboards.py"],
     data = [
+        "dashboard.json",
         ":license",
-        ":pipelines",
-        ":tasks",
     ],
     deps = [
         ":config",
@@ -148,11 +135,11 @@ py_test(
     srcs = ["test_ingestion_visual.py"],
     data = [
         "collector.toml",
+        "dashboard.json",
+        "github_api_server.py",
         "grants.sql",
         ":github_webhook_vrl",
         ":github_workflow_runs_vrl",
-        ":pipelines",
-        ":tasks",
         "@nodejs_linux_amd64//:bin/node",
     ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
@@ -164,10 +151,12 @@ py_test(
         "//devinfra/oci",
         "//devinfra/testing:output_writer",
         "//devinfra/testing:undeclared_outputs",
+        "//grafana/visual_tests:visual_browser",
+        "//grafana/visual_tests:visual_harness",
         "//third_party/containers:cdviz_collector",
         "//third_party/containers:cdviz_db_migration",
-        "//third_party/containers:grafana_visual",
         "//third_party/containers:python_3_14_slim",
+        "//third_party/containers:ryuk",
         "//third_party/containers:timescaledb",
         "//util/testing/frontend_visual:capture",
         "//util/testing/frontend_visual:context",
@@ -177,6 +166,13 @@ py_test(
         "@pypi//psycopg",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//testcontainers",
         "@rules_python//python/runfiles",
     ],
+)
+
+py_library(
+    name = "github_api_server",
+    testonly = True,
+    srcs = ["github_api_server.py"],
 )

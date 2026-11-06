@@ -1395,7 +1395,7 @@ def generate_manifests(root: Path) -> None:
             cdviz_collector.chart,
             cdviz_dashboards.chart,
             config_map_generator=grafana_dashboards.config_map_generator(
-                root, cdviz_collector.OUTPUT_DIR, cdviz_dashboards.DASHBOARDS
+                root, cdviz_collector.OUTPUT_DIR, [cdviz_dashboards.DASHBOARD]
             ),
             configurations=[grafana_dashboards.write_kustomize_config(root, cdviz_collector.OUTPUT_DIR)],
         ),

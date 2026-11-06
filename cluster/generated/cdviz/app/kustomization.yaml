@@ -3,13 +3,9 @@ kind: Kustomization
 resources:
   - app.k8s.yaml
 configMapGenerator:
-  - name: cdviz-pipelines
+  - name: cdviz-ci
     namespace: monitoring
     files:
-      - pipelines.json
-  - name: cdviz-tasks
-    namespace: monitoring
-    files:
-      - tasks.json
+      - dashboard.json
 configurations:
   - kustomizeconfig

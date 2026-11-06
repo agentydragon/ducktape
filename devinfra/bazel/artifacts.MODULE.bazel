@@ -3,27 +3,13 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
-# CDviz's GitHub-to-CDEvents transformers and dashboard templates. Local dashboard
-# adaptations stay in a patch; unchanged upstream source and licenses are fetched.
+# CDviz's GitHub-to-CDEvents transformers.
 http_archive(
     name = "cdviz_transformers",
     build_file_content = 'exports_files(["github_events/to_v0_5.vrl", "github_rest_api/workflow_runs_to_v0_5.vrl", "LICENSE"], visibility = ["//visibility:public"])',
     sha256 = "c1750714da968ca25aec425c0ce3cfb0828a8f8ed9c4ef68cf502c0f66ff05ac",
     strip_prefix = "transformers-community-754a167ed781f52ba5cab5bf94a9144918ce0afb",
     urls = ["https://github.com/cdviz-dev/transformers-community/archive/754a167ed781f52ba5cab5bf94a9144918ce0afb.tar.gz"],
-)
-
-http_archive(
-    name = "cdviz_dashboards",
-    build_file_content = 'exports_files(["cdviz-grafana/dashboards/pipelinerun_executions.json", "cdviz-grafana/dashboards/taskrun_executions.json", "LICENSE"], visibility = ["//visibility:public"])',
-    patch_strip = 1,
-    patches = [
-        "//third_party/cdviz:pipelines.patch",
-        "//third_party/cdviz:tasks.patch",
-    ],
-    sha256 = "e5acc98de2bafc4dcef8b8b7b89da2a56114771d54d65702dede94f3bae48449",
-    strip_prefix = "cdviz-44e3250dad1c6aaebaa5f0d02a8bfb885fb3f63f",
-    urls = ["https://github.com/cdviz-dev/cdviz/archive/44e3250dad1c6aaebaa5f0d02a8bfb885fb3f63f.tar.gz"],
 )
 
 artifact_pins = use_extension("//devinfra:artifact_pins.bzl", "artifact_pins")

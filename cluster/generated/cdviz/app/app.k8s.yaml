@@ -1153,26 +1153,12 @@ spec:
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
-  name: cdviz-pipelines
+  name: cdviz-ci
   namespace: monitoring
 spec:
   configMapRef:
-    key: pipelines.json
-    name: cdviz-pipelines
-  folder: CI
-  instanceSelector:
-    matchLabels:
-      dashboards: grafana
----
-apiVersion: grafana.integreatly.org/v1beta1
-kind: GrafanaDashboard
-metadata:
-  name: cdviz-tasks
-  namespace: monitoring
-spec:
-  configMapRef:
-    key: tasks.json
-    name: cdviz-tasks
+    key: dashboard.json
+    name: cdviz-ci
   folder: CI
   instanceSelector:
     matchLabels:

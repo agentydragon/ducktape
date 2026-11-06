@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import hmac
 import json
+import math
+import re
+import shutil
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -13,7 +15,7 @@ from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Thread
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 import docker
 import httpx
@@ -25,11 +27,15 @@ from playwright.async_api import Route, async_playwright, expect
 from psycopg import sql
 from psycopg.rows import dict_row
 from python.runfiles import Runfiles
+from testcontainers.core import testcontainers_config
+from testcontainers.core.network import Network
 
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.output_writer import BoundTestOutputs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from third_party.containers import cdviz_collector, cdviz_db_migration, grafana_visual, python_3_14_slim
+from grafana.visual_tests.visual_browser import capture_dashboard
+from grafana.visual_tests.visual_harness import TEST_PASSWORD, grafana_server
+from third_party.containers import cdviz_collector, cdviz_db_migration, python_3_14_slim, ryuk
 from third_party.containers.timescaledb import timescaledb_postgres
 from util.testing.frontend_visual.capture import VisualPage
 from util.testing.frontend_visual.context import FROZEN_NOW_MS, deterministic_browser_context
@@ -38,7 +44,6 @@ pytest_plugins = ("devinfra.testing.pytest_outputs",)
 
 _REPO = "agentydragon/ducktape"
 _TOKEN = "isolated-cdviz-webhook-signing-key"
-_GRAFANA_PASSWORD = "isolated-cdviz-grafana-admin"
 _OWNER_PASSWORD = "isolated-cdviz-database-owner"
 _COLLECTOR_PASSWORD = "isolated-cdviz-collector"
 _READER_PASSWORD = "isolated-cdviz-reader"
@@ -129,6 +134,7 @@ def _workflow_run(action: str, run_id: int, attempt: int, name: str, conclusion:
             "run_started_at": _timestamp(minute, -15) if action != "requested" else None,
             "updated_at": _timestamp(minute, {"requested": -20, "in_progress": -15, "completed": 0}[action]),
             "conclusion": conclusion,
+            "pull_requests": [{"number": 123 if run_id == 81001 else 456}],
         },
     }
 
@@ -243,116 +249,173 @@ def _wait_for_rows(reader_url: str, pipeline_ids: set[str], task_ids: set[str]) 
     raise AssertionError("collector did not persist all expected workflow run and job subjects")
 
 
-def _provision_grafana(base_url: str, root: Path) -> None:
-    with httpx.Client(base_url=base_url, timeout=20, auth=("admin", _GRAFANA_PASSWORD), trust_env=False) as client:
-        response = client.post(
-            "/api/datasources",
-            json={
-                "name": "CI Analytics",
-                "uid": "cdviz",
-                "type": "grafana-postgresql-datasource",
-                "access": "proxy",
-                "url": "cdviz-db:5432",
-                "user": "cdviz_reader",
-                "database": "cdviz",
-                "jsonData": {"database": "cdviz", "sslmode": "disable", "postgresVersion": 1800, "timescaledb": True},
-                "secureJsonData": {"password": _READER_PASSWORD},
-            },
-        )
+def _provision_grafana(base_url: str, dashboard_path: Path) -> dict:
+    with httpx.Client(base_url=base_url, timeout=20, auth=("admin", TEST_PASSWORD), trust_env=False) as client:
+        dashboard: dict = json.loads(dashboard_path.read_text())
+        dashboard["id"] = None
+        dashboard["version"] = 0
+        response = client.post("/api/dashboards/db", json={"dashboard": dashboard, "overwrite": True, "folderId": 0})
         response.raise_for_status()
-        for name in ("pipelines", "tasks"):
-            dashboard = json.loads((root / f"ducktape/cluster/cdk8s/cdviz/{name}.json").read_text())
-            dashboard["id"] = None
-            dashboard["version"] = 0
-            response = client.post(
-                "/api/dashboards/db", json={"dashboard": dashboard, "overwrite": True, "folderId": 0}
-            )
-            response.raise_for_status()
+        return dashboard
 
 
-async def _capture(
+async def _capture_dashboard(
     visual: VisualPage,
-    name: str,
-    uid: str,
+    *,
     base_url: str,
-    expected_duration: int,
-    table_value: str,
-    errors: list[str],
+    dashboard: dict,
+    view_name: str,
     query_results: list[dict],
+    errors: list[str],
+    filtered: bool,
 ) -> None:
     page = visual.page
-    pending: set[int] = set()
-    duration_values: list[float] = []
-
-    def track_request(request) -> None:
-        if "/api/ds/query" in request.url:
-            pending.add(id(request))
-
-    def finish_request(request) -> None:
-        pending.discard(id(request))
 
     async def inspect(route: Route) -> None:
-        # Forward the browser's real request and retain its response before Grafana
-        # can cancel an obsolete query while initializing dashboard variables.
+        request_body = route.request.post_data_json
+        assert request_body is not None
         response = await route.fetch()
         if response.status >= 400:
-            errors.append(f"datasource HTTP {response.status}: {response.url}")
+            detail = await response.text()
+            errors.append(f"{view_name} datasource HTTP {response.status}: {detail}")
+            query_results.append(
+                {"view": view_name, "request": request_body, "status": response.status, "error": detail}
+            )
             await route.fulfill(response=response)
             return
         body = await response.json()
-        request_body = route.request.post_data_json or {}
-        query_by_ref = {query.get("refId"): query.get("rawSql", "") for query in request_body.get("queries", [])}
-        for ref_id, value in body.get("results", {}).items():
-            if value.get("error"):
-                errors.append(f"{name} query {ref_id}: {value['error']}")
-            raw_sql = query_by_ref.get(ref_id, "")
-            query_results.append({"dashboard": name, "refId": ref_id, "rawSql": raw_sql, **value})
-            if "total_duration" in raw_sql:
-                for frame in value.get("frames", []):
-                    fields = frame.get("schema", {}).get("fields", [])
-                    columns = frame.get("data", {}).get("values", [])
-                    for field, column in zip(fields, columns, strict=False):
-                        if field.get("name") == "total_duration":
-                            duration_values.extend(float(item) for item in column if item is not None)
+        request_by_ref = {query["refId"]: query for query in request_body.get("queries", [])}
+        for ref_id, result in body.get("results", {}).items():
+            query = request_by_ref.get(ref_id, {})
+            raw_sql = query.get("rawSql", "")
+            if result.get("error"):
+                errors.append(f"{view_name} query {ref_id}: {result['error']}")
+            if _UNRESOLVED_DASHBOARD_VARIABLE.search(raw_sql):
+                errors.append(f"{view_name} query {ref_id} contains an unresolved dashboard variable")
+            request_id = query.get("requestId", "")
+            query_results.append(
+                {
+                    "view": view_name,
+                    "panel_id": request_id.removesuffix(ref_id),
+                    "ref_id": ref_id,
+                    "raw_sql": raw_sql,
+                    "request": query,
+                    "result": result,
+                }
+            )
         await route.fulfill(response=response)
 
-    page.on("request", track_request)
-    page.on("requestfinished", finish_request)
-    page.on("requestfailed", finish_request)
     await page.route("**/api/ds/query*", inspect)
+    params = {"orgId": "1", "from": str(FROZEN_NOW_MS - 31 * 86_400_000), "to": str(FROZEN_NOW_MS)}
+    if filtered:
+        params.update(
+            {"var-workflow": "agentydragon/ducktape/CDviz integration success", "var-branch": "main", "var-pr": "123"}
+        )
     await page.goto(
-        f"{base_url}/d/{uid}/{name}?orgId=1&from={FROZEN_NOW_MS - 31 * 86_400_000}&to={FROZEN_NOW_MS}",
+        f"{base_url}/d/{dashboard['uid']}/ci-workflow-and-job-timings?{urlencode(params)}",
         wait_until="domcontentloaded",
     )
-    title = "Pipeline: Executions" if name == "pipelines" else "Task: Executions"
-    await expect(page.get_by_text(title, exact=True)).to_be_visible(timeout=30000)
-    await expect(page.get_by_text("Total Duration", exact=True).first).to_be_visible(timeout=30000)
-    await page.evaluate(
-        """async () => {
-            const count = Math.floor(document.body.scrollHeight / window.innerHeight);
-            for (let i = 0; i < count; i++) {
-                window.scrollBy(0, window.innerHeight);
-                await new Promise(resolve => setTimeout(resolve, 50));
-            }
-            window.scrollTo(0, 0);
-        }"""
-    )
-    panel_title = "Pipeline: Latest 20 Executions" if name == "pipelines" else "Task: Latest 20 Executions"
-    await expect(page.get_by_text(panel_title, exact=True)).to_be_visible(timeout=30000)
-    await page.get_by_text(panel_title, exact=True).click()
-    await expect(page.get_by_text(table_value, exact=False).first).to_be_visible(timeout=30000)
-
-    deadline = asyncio.get_running_loop().time() + 45
-    while asyncio.get_running_loop().time() < deadline:
-        if not pending and any(abs(value - expected_duration) < 0.01 for value in duration_values):
-            break
-        await page.wait_for_timeout(100)
-    assert not pending, f"{name} dashboard still has pending datasource requests"
-    assert any(abs(value - expected_duration) < 0.01 for value in duration_values), (
-        f"{name} datasource returned total_duration values {duration_values}, expected {expected_duration} seconds"
-    )
+    await expect(page.get_by_text("Workflow attempts", exact=True).first).to_be_visible(timeout=30000)
+    await capture_dashboard(visual)
     await expect(page.get_by_text("No data", exact=True)).to_have_count(0, timeout=10000)
-    await visual.capture(name, full_page=True, animations="disabled")
+
+
+_UNRESOLVED_DASHBOARD_VARIABLE = re.compile(r"\$\{(?:workflow|branch|pr)(?::[^}]+)?\}|\$(?:workflow|branch|pr)\b")
+
+
+def _panel_results(query_results: list[dict], view_name: str, dashboard: dict) -> dict[str, dict]:
+    results = {
+        result["panel_id"]: result for result in query_results if result["view"] == view_name and result.get("panel_id")
+    }
+    expected_panel_ids = {str(panel["id"]) for panel in dashboard["panels"]}
+    assert expected_panel_ids.issubset(results), (
+        f"{view_name} missing datasource responses for panels {sorted(expected_panel_ids - results.keys())}; "
+        f"received {sorted(results)}"
+    )
+    for panel_id in expected_panel_ids:
+        frames = results[panel_id]["result"].get("frames", [])
+        assert _frame_rows(frames), f"{view_name} panel {panel_id} returned no nonempty frames"
+    return results
+
+
+def _frame_rows(frames: list[dict]) -> list[dict]:
+    rows: list[dict] = []
+    for frame in frames:
+        fields = frame.get("schema", {}).get("fields", [])
+        columns = frame.get("data", {}).get("values", [])
+        if not fields or len(fields) != len(columns):
+            continue
+        rows.extend(
+            {field["name"]: value for field, value in zip(fields, values, strict=True)}
+            for values in zip(*columns, strict=True)
+        )
+    return rows
+
+
+def _field_values(panel_result: dict, name: str) -> list:
+    for frame in panel_result["result"].get("frames", []):
+        fields = frame.get("schema", {}).get("fields", [])
+        columns = frame.get("data", {}).get("values", [])
+        for field, values in zip(fields, columns, strict=True):
+            if field.get("name") == name:
+                return list(values)
+    raise AssertionError(f"datasource response has no field {name!r}")
+
+
+def _assert_number(panel_result: dict, name: str, expected: float) -> None:
+    values = _field_values(panel_result, name)
+    assert len(values) == 1
+    assert math.isclose(float(values[0]), expected, rel_tol=0, abs_tol=0.01), (
+        f"expected {name}={expected}, got {values}"
+    )
+
+
+def _assert_dashboard_responses(query_results: list[dict], dashboard: dict, view_name: str, *, filtered: bool) -> None:
+    panels = _panel_results(query_results, view_name, dashboard)
+    _assert_number(panels["1"], "attempts", 1 if filtered else 5)
+    _assert_number(panels["2"], "failure_rate", 0 if filtered else 40)
+    for panel_id, field in (("3", "p50_runtime"), ("4", "p95_runtime")):
+        _assert_number(panels[panel_id], field, 900)
+
+    runtime_rows = _frame_rows(panels["5"]["result"]["frames"])
+    assert all(math.isclose(float(row["P50"]), 900, abs_tol=0.01) for row in runtime_rows)
+    assert all(math.isclose(float(row["P95"]), 900, abs_tol=0.01) for row in runtime_rows)
+    outcome_rows = _frame_rows(panels["6"]["result"]["frames"])
+    assert outcome_rows
+    expected_success, expected_failure = (1, 0) if filtered else (3, 2)
+    assert sum(int(row["Success"]) for row in outcome_rows) == expected_success
+    assert sum(int(row["Failure"]) for row in outcome_rows) == expected_failure
+
+    workflow_rows = _frame_rows(panels["7"]["result"]["frames"])
+    job_rows = _frame_rows(panels["8"]["result"]["frames"])
+    success_runs = [row for row in workflow_rows if row["Workflow"] == "CDviz integration success"]
+    success_jobs = [
+        row
+        for row in job_rows
+        if row["Workflow"] == "CDviz integration success"
+        and row["Job"] == "Linux / test"
+        and row["Outcome"] == "success"
+    ]
+    if filtered:
+        assert len(workflow_rows) == len(success_runs) == 1
+        assert workflow_rows[0]["PR"] == "123"
+        assert workflow_rows[0]["Branch"] == "main"
+        assert workflow_rows[0]["Attempt"] == "1"
+        assert workflow_rows[0]["Outcome"] == "success"
+        assert math.isclose(float(workflow_rows[0]["Runtime"]), 900, abs_tol=0.01)
+        assert len(job_rows) == len(success_jobs) == 1
+        assert job_rows[0]["Branch"] == "main"
+        assert math.isclose(float(job_rows[0]["Runtime"]), 600, abs_tol=0.01)
+    else:
+        assert len(workflow_rows) == 5
+        assert len(job_rows) == 4
+        assert len(success_runs) == 1
+        assert success_runs[0]["PR"] == "123"
+        assert success_runs[0]["Branch"] == "main"
+        assert success_runs[0]["Outcome"] == "success"
+        assert math.isclose(float(success_runs[0]["Runtime"]), 900, abs_tol=0.01)
+        assert len(success_jobs) == 1
+        assert all(math.isclose(float(row["Runtime"]), 600, abs_tol=0.01) for row in job_rows)
 
 
 @pytest.mark.asyncio
@@ -361,8 +424,8 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
     runtime = tmp_path / "runtime"
     runtime.mkdir()
     client = docker.from_env()
-    network_name = f"cdviz-it-{uuid.uuid4().hex[:10]}"
-    network = client.networks.create(network_name, driver="bridge")
+    network = Network()
+    network_created = False
     containers: list[Container] = []
     log_threads: list[Thread] = []
     try:
@@ -370,8 +433,12 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
         with ThreadPoolExecutor(max_workers=4) as pool:
             collector_future = pool.submit(load_oci_image, cdviz_collector.LAYOUT_RLOCATION)
             migration_future = pool.submit(load_oci_image, cdviz_db_migration.LAYOUT_RLOCATION)
-            grafana_future = pool.submit(load_oci_image, grafana_visual.LAYOUT_RLOCATION)
             python_future = pool.submit(load_oci_image, python_3_14_slim.LAYOUT_RLOCATION)
+            ryuk_future = pool.submit(load_oci_image, ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
+        ryuk_future.result()
+        network.create()
+        network_created = True
+        network_name = network.name
         with timescaledb_postgres(tmp_path, network=network_name, network_alias="cdviz-db") as admin_url:
             _stage("creating roles, database, and Timescale extension")
             owner_url, _, reader_url = _setup_database(admin_url)
@@ -426,35 +493,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                 for run_id in range(90000, 90100)
             ]
             (fixture_dir / "recent.json").write_text(json.dumps({"total_count": 101, "workflow_runs": recent_runs}))
-            (fixture_dir / "server.py").write_text(
-                "from http.server import BaseHTTPRequestHandler, HTTPServer\n"
-                "from pathlib import Path\n"
-                "from urllib.parse import parse_qs, urlsplit\n"
-                "import json\n"
-                "pages = []\n"
-                "class Handler(BaseHTTPRequestHandler):\n"
-                "    def do_GET(self):\n"
-                "        path = urlsplit(self.path)\n"
-                "        if path.path == '/requests':\n"
-                "            body = json.dumps(pages).encode()\n"
-                "            page = None\n"
-                "        else:\n"
-                "            query = parse_qs(path.query)\n"
-                "            assert query['per_page'] == ['100']\n"
-                "            page = int(query.get('page', ['1'])[0])\n"
-                "            pages.append(page)\n"
-                "            name = 'recent.json' if page == 1 else 'payload.json'\n"
-                "            body = Path('/fixture', name).read_bytes()\n"
-                "        self.send_response(200)\n"
-                "        self.send_header('Content-Type', 'application/json')\n"
-                "        self.send_header('Content-Length', str(len(body)))\n"
-                "        if page is not None:\n"
-                "            url = f'http://{self.headers[\"Host\"]}{path.path}?per_page=100&page={page + 1}'\n"
-                "            self.send_header('Link', f'<{url}>; rel=\"next\"')\n"
-                "        self.end_headers()\n"
-                "        self.wfile.write(body)\n"
-                "HTTPServer(('0.0.0.0', 8081), Handler).serve_forever()\n"
-            )
+            shutil.copyfile(root / "ducktape/cluster/cdk8s/cdviz/github_api_server.py", fixture_dir / "server.py")
             poll_server = client.containers.run(
                 python_future.result(),
                 command=["python3", "/fixture/server.py"],
@@ -603,57 +642,65 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                 assert denied.value.sqlstate == "42501"
             _diagnostic(f"pipeline attempts={len(pipeline_rows)} jobs={len(task_rows)}; reader INSERT denied")
 
-            _stage("starting disposable Grafana and provisioning the real datasource and dashboards")
-            grafana = client.containers.run(
-                grafana_future.result(),
-                name=f"cdviz-grafana-{uuid.uuid4().hex[:8]}",
-                network=network_name,
-                ports={"3000/tcp": ("127.0.0.1", 0)},
-                environment={
-                    "GF_ANALYTICS_REPORTING_ENABLED": "false",
-                    "GF_ANALYTICS_CHECK_FOR_UPDATES": "false",
-                    "GF_AUTH_ANONYMOUS_ENABLED": "true",
-                    "GF_AUTH_ANONYMOUS_ORG_ROLE": "Viewer",
-                    "GF_AUTH_BASIC_ENABLED": "true",
-                    "GF_PLUGINS_PREINSTALL_DISABLED": "true",
-                    "GF_SECURITY_ADMIN_PASSWORD": _GRAFANA_PASSWORD,
-                    "GF_USERS_DEFAULT_THEME": "dark",
-                },
-                detach=True,
-            )
-            containers.append(grafana)
-            log_threads.append(_stream_logs(grafana, undeclared_outputs_dir() / "cdviz-grafana.log"))
-            grafana.reload()
-            grafana_port = grafana.attrs["NetworkSettings"]["Ports"]["3000/tcp"][0]["HostPort"]
-            grafana_url = f"http://127.0.0.1:{grafana_port}"
-            _ready(grafana_url + "/api/health", container=grafana)
-            _provision_grafana(grafana_url, root)
-
-            _stage("running real datasource queries and capturing both dashboard pages")
+            dashboard_path = root / "ducktape/cluster/cdk8s/cdviz/dashboard.json"
             errors: list[str] = []
             query_results: list[dict] = []
-            async with (
-                async_playwright() as playwright,
-                deterministic_browser_context(
-                    playwright,
-                    viewport={"width": 1440, "height": 900},
-                    frozen_now_ms=FROZEN_NOW_MS,
-                    color_scheme="dark",
-                ) as context,
-            ):
-                for name, uid in (("pipelines", "pipelinerun_executions"), ("tasks", "taskrun_executions")):
-                    page = await context.new_page()
-                    expected_duration = 4500 if name == "pipelines" else 2400
-                    table_value = "CDviz integration success" if name == "pipelines" else "Linux / test"
-                    with VisualPage(page, outputs=test_outputs, title=f"CDviz {name} dashboard") as visual:
-                        await _capture(
-                            visual, name, uid, grafana_url, expected_duration, table_value, errors, query_results
-                        )
-                    await page.close()
-            assert not errors, "; ".join(errors)
-            assert query_results, "Grafana did not issue PostgreSQL datasource queries"
-            assert any(value.get("frames") for value in query_results), "Grafana returned no query frames"
-            _diagnostic(f"Grafana rendered pipelines and tasks dashboards; query frames={len(query_results)}")
+            diagnostics_path = undeclared_outputs_dir() / "cdviz-grafana-queries.json"
+            with grafana_server(
+                network,
+                [
+                    {
+                        "name": "CI Analytics",
+                        "uid": "cdviz",
+                        "type": "grafana-postgresql-datasource",
+                        "access": "proxy",
+                        "url": "cdviz-db:5432",
+                        "user": "cdviz_reader",
+                        "database": "cdviz",
+                        "jsonData": {
+                            "database": "cdviz",
+                            "sslmode": "disable",
+                            "postgresVersion": 1800,
+                            "timescaledb": True,
+                        },
+                        "secureJsonData": {"password": _READER_PASSWORD},
+                    }
+                ],
+            ) as grafana_url:
+                dashboard = _provision_grafana(grafana_url, dashboard_path)
+                _stage("querying and capturing all-runs and filtered dashboard views")
+                try:
+                    async with (
+                        async_playwright() as playwright,
+                        deterministic_browser_context(
+                            playwright,
+                            viewport={"width": 1440, "height": 1200},
+                            frozen_now_ms=FROZEN_NOW_MS,
+                            color_scheme="dark",
+                        ) as context,
+                    ):
+                        for view_name, filtered in (("all-runs", False), ("filtered", True)):
+                            page = await context.new_page()
+                            with VisualPage(
+                                page, outputs=test_outputs, title=f"CDviz CI dashboard ({view_name})"
+                            ) as visual:
+                                await _capture_dashboard(
+                                    visual,
+                                    base_url=grafana_url,
+                                    dashboard=dashboard,
+                                    view_name=view_name,
+                                    query_results=query_results,
+                                    errors=errors,
+                                    filtered=filtered,
+                                )
+                            await page.close()
+                    assert not errors, "; ".join(errors)
+                    _assert_dashboard_responses(query_results, dashboard, "all-runs", filtered=False)
+                    _assert_dashboard_responses(query_results, dashboard, "filtered", filtered=True)
+                    _diagnostic(f"Grafana rendered all 8 panels in both views; captured {len(query_results)} responses")
+                finally:
+                    diagnostics_path.parent.mkdir(parents=True, exist_ok=True)
+                    diagnostics_path.write_text(json.dumps({"errors": errors, "queries": query_results}, indent=2))
     finally:
         for container in reversed(containers):
             with suppress(docker.errors.DockerException):
@@ -662,7 +709,8 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                 container.remove(force=True)
         for thread in log_threads:
             thread.join(timeout=3)
-        network.remove()
+        if network_created:
+            network.remove()
         client.close()
 
 

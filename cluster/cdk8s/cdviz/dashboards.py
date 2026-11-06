@@ -1,4 +1,4 @@
-"""CDviz's PostgreSQL datasource and upstream execution dashboards in Grafana."""
+"""CDviz's PostgreSQL datasource and CI workflow dashboard in Grafana."""
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ServiceAccount
@@ -22,14 +22,11 @@ from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaD
 
 _NAMESPACE = grafana_instance.SERVICE.pods.namespace
 _PASSWORD = "cdviz-database"
-DASHBOARDS = [
-    DashboardFile(source=f"cluster/cdk8s/cdviz/{name}.json", config_map=f"cdviz-{name}", namespace=_NAMESPACE)
-    for name in ("pipelines", "tasks")
-]
+DASHBOARD = DashboardFile(source="cluster/cdk8s/cdviz/dashboard.json", config_map="cdviz-ci", namespace=_NAMESPACE)
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, "cdviz-dashboards", disable_resource_name_hashes=True)
+    chart = Chart(app, "cdviz-dashboard", disable_resource_name_hashes=True)
     reader = ServiceAccount(
         chart, "reader", metadata=ApiObjectMetadata(name="cdviz-database-reader", namespace=_NAMESPACE)
     )
@@ -81,13 +78,12 @@ def chart(app: App) -> Chart:
             )
         ],
     )
-    for dashboard in DASHBOARDS:
-        GrafanaDashboard(
-            chart,
-            dashboard.config_map,
-            metadata=ApiObjectMetadata(name=dashboard.config_map, namespace=_NAMESPACE),
-            instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
-            folder="CI",
-            config_map_ref=dashboard.config_map_ref(),
-        )
+    GrafanaDashboard(
+        chart,
+        DASHBOARD.config_map,
+        metadata=ApiObjectMetadata(name=DASHBOARD.config_map, namespace=_NAMESPACE),
+        instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
+        folder="CI",
+        config_map_ref=DASHBOARD.config_map_ref(),
+    )
     return chart

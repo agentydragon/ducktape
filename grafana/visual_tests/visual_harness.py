@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
@@ -38,6 +38,57 @@ def _wait_ready(url: str) -> None:
             pass
         time.sleep(0.2)
     raise AssertionError(f"service did not become ready: {url}")
+
+
+@contextmanager
+def _grafana_server(network: Network, grafana_image: str, datasources: Sequence[dict]) -> Iterator[str]:
+    """Run isolated Grafana on a caller-owned network and provision its datasources."""
+    grafana = (
+        LoggedContainer(grafana_image, test_name="synthetic-grafana")
+        .with_network(network)
+        .with_envs(
+            GF_AUTH_ANONYMOUS_ENABLED="true",
+            GF_AUTH_ANONYMOUS_ORG_ROLE="Viewer",
+            GF_ANALYTICS_REPORTING_ENABLED="false",
+            GF_ANALYTICS_CHECK_FOR_UPDATES="false",
+            # An empty preinstall list still installs Grafana's default plugins.
+            GF_PLUGINS_PREINSTALL_DISABLED="true",
+            GF_SECURITY_ADMIN_PASSWORD=TEST_PASSWORD,
+            GF_USERS_DEFAULT_THEME="dark",
+        )
+    )
+    with grafana:
+        wrapped = grafana.get_wrapped_container()
+        deadline = time.monotonic() + 20
+        address = None
+        while time.monotonic() < deadline:
+            wrapped.reload()
+            if wrapped.status in ("exited", "dead"):
+                raise AssertionError(f"Grafana exited before joining the network: {wrapped.attrs['State']}")
+            address = wrapped.attrs["NetworkSettings"].get("Networks", {}).get(network.name, {}).get("IPAddress")
+            if address:
+                break
+            time.sleep(0.1)
+        if not address:
+            raise AssertionError(f"Grafana did not join its network: {wrapped.attrs['State']}")
+        url = f"http://{address}:3000"
+        record_stage("waiting for Grafana health")
+        _wait_ready(f"{url}/api/health")
+        record_stage("provisioning isolated Grafana datasources")
+        with httpx.Client(base_url=url, timeout=15, auth=("admin", TEST_PASSWORD), trust_env=False) as http:
+            for datasource in datasources:
+                response = http.post("/api/datasources", json=datasource)
+                response.raise_for_status()
+        yield url
+
+
+@contextmanager
+def grafana_server(network: Network, datasources: Sequence[dict]) -> Iterator[str]:
+    """Start isolated Grafana on an existing network with caller-provided datasources."""
+    record_stage("loading isolated Grafana image")
+    grafana_image = load_oci_image(grafana_visual.LAYOUT_RLOCATION)
+    with _grafana_server(network, grafana_image, datasources) as url:
+        yield url
 
 
 @contextmanager
@@ -76,70 +127,37 @@ def grafana_dashboard(
         )
     record_stage("starting Grafana" if render_fixture else "starting Prometheus and Grafana")
     try:
-        with Network(docker_network_kw={"internal": True}) as network:
-            grafana = (
-                LoggedContainer(grafana_ref, test_name="synthetic-grafana")
-                .with_network(network)
-                .with_envs(
-                    GF_AUTH_ANONYMOUS_ENABLED="true",
-                    GF_AUTH_ANONYMOUS_ORG_ROLE="Viewer",
-                    GF_ANALYTICS_REPORTING_ENABLED="false",
-                    GF_ANALYTICS_CHECK_FOR_UPDATES="false",
-                    # An empty preinstall list still installs Grafana's default plugins.
-                    GF_PLUGINS_PREINSTALL_DISABLED="true",
-                    GF_SECURITY_ADMIN_PASSWORD=TEST_PASSWORD,
-                    GF_USERS_DEFAULT_THEME="dark",
+        with Network(docker_network_kw={"internal": True}) as network, ExitStack() as services:
+            if prometheus_ref is not None:
+                prometheus = (
+                    LoggedContainer(prometheus_ref, test_name="synthetic-prometheus", user="0")
+                    .with_network(network)
+                    .with_network_aliases("prometheus")
+                    .with_volume_mapping(data, "/fixture", "rw")
+                    .with_command(
+                        [
+                            "--config.file=/etc/prometheus/prometheus.yml",
+                            "--storage.tsdb.path=/fixture/tsdb",
+                            "--storage.tsdb.retention.time=87600h",
+                        ]
+                    )
                 )
-            )
-            with ExitStack() as services:
-                if prometheus_ref is not None:
-                    prometheus = (
-                        LoggedContainer(prometheus_ref, test_name="synthetic-prometheus", user="0")
-                        .with_network(network)
-                        .with_network_aliases("prometheus")
-                        .with_volume_mapping(data, "/fixture", "rw")
-                        .with_command(
-                            [
-                                "--config.file=/etc/prometheus/prometheus.yml",
-                                "--storage.tsdb.path=/fixture/tsdb",
-                                "--storage.tsdb.retention.time=87600h",
-                            ]
-                        )
-                    )
-                    services.enter_context(prometheus)
-                services.enter_context(grafana)
-                wrapped = grafana.get_wrapped_container()
-                deadline = time.monotonic() + 20
-                address = None
-                while time.monotonic() < deadline:
-                    wrapped.reload()
-                    if wrapped.status in ("exited", "dead"):
-                        raise AssertionError(f"Grafana exited before joining the network: {wrapped.attrs['State']}")
-                    address = (
-                        wrapped.attrs["NetworkSettings"].get("Networks", {}).get(network.name, {}).get("IPAddress")
-                    )
-                    if address:
-                        break
-                    time.sleep(0.1)
-                if not address:
-                    raise AssertionError(f"Grafana did not join its network: {wrapped.attrs['State']}")
-
-                url = f"http://{address}:3000"
-                record_stage("waiting for Grafana health")
-                _wait_ready(f"{url}/api/health")
-                record_stage("provisioning datasource and dashboard")
+                services.enter_context(prometheus)
+            with _grafana_server(
+                network,
+                grafana_ref,
+                [
+                    {
+                        "name": "Mimir",
+                        "uid": "mimir",
+                        "type": "prometheus",
+                        "access": "proxy",
+                        "url": "http://prometheus:9090",
+                    }
+                ],
+            ) as url:
                 with httpx.Client(base_url=url, timeout=15, auth=("admin", TEST_PASSWORD), trust_env=False) as http:
-                    response = http.post(
-                        "/api/datasources",
-                        json={
-                            "name": "Mimir",
-                            "uid": "mimir",
-                            "type": "prometheus",
-                            "access": "proxy",
-                            "url": "http://prometheus:9090",
-                        },
-                    )
-                    response.raise_for_status()
+                    record_stage("provisioning dashboard")
                     dashboard = json.loads(dashboard_path.read_text())
                     dashboard["id"] = None
                     dashboard["version"] = 0
