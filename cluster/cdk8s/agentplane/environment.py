@@ -208,6 +208,9 @@ class Environment:
     # Whether this environment has VM Sandboxes: the runner VM template (environment_vm.py) and the egress
     # relay for their KubeVirt launchers (launcher_relay.py).
     vm_sandboxes: bool
+    # Use the controller-issued Runner SVID for the sidecar's hop to the central egress proxy.
+    # Staging stays on the existing token hop until the following service-migration PR.
+    runner_egress_mtls: bool = False
     # Deployment-published runtime facts shared with the co-hosted discovery service.
     runtime_catalog: Catalog | None = None
     # PolicySets applied by EnvironmentService to every new Sandbox.

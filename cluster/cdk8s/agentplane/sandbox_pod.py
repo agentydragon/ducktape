@@ -20,7 +20,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, Role, RolePolicyRule, k8s
 from constructs import Construct
 
-from agentplane.egress import sidecar_config
+from agentplane.egress import settings as egress_settings, sidecar_config
 from agentplane.egress.platform_routes import PlatformRoute
 from agentplane.egress.resources import placeholder_of
 from agentplane.env.config import CA_BUNDLE, JAVA_TRUST_STORE, KUBECONFIG
@@ -39,8 +39,8 @@ _EGRESS_SIDECAR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-sidec
 _EGRESS_TOKEN_DIR = "/var/run/agentplane-egress"
 # Audiences the central proxy may substitute this Pod's identity for, and the file each is projected
 # to under `_EGRESS_TOKEN_DIR`. The volume and the sidecar's mapping are both rendered from this, so
-# neither can name a file the other does not project. The hop token is deliberately absent: it
-# carries the proxy's own audience, so it is not substitutable anywhere.
+# neither can name a file the other does not project. The hop bearer remains temporarily for
+# destination identity context; in mTLS mode it never authenticates the hop or acts as a fallback.
 _SUBSTITUTABLE_AUDIENCE_FILES = {
     egress.KUBERNETES_AUDIENCE: "kubernetes-token",
     notifications.TOKEN_AUDIENCE: "notifications-token",
@@ -225,15 +225,26 @@ def add_sidecar_settings(
     *,
     name: str,
     platform_routes: Mapping[str, PlatformRoute],
+    proxy_mode: sidecar_config.ProxyMode,
     listen_address: str | None = None,
 ) -> SettingsFile:
     """The ConfigMap `name` holding the settings of the egress sidecar of one Pod template, which
     `pod_spec` mounts. Every Pod of a template gets the same file; nothing in it is per Pod."""
     settings = sidecar_config.Settings(
         proxy_host=egress.proxy(env.namespace).fqdn,
-        proxy_port=egress.PROXY_PORT,
+        proxy_port=egress_settings.PROXY_MTLS_PORT if proxy_mode == "mtls" else egress.PROXY_PORT,
+        proxy_mode=proxy_mode,
         readiness_listen_address=sidecar_config.READINESS_LISTEN_ADDRESS,
         token_file=Path(_EGRESS_TOKEN_DIR) / "token",
+        proxy_tls=(
+            sidecar_config.ProxyTLSFiles(
+                cert_file=Path(sidecar_config.RUNNER_TLS_MOUNT_PATH) / "tls.crt",
+                key_file=Path(sidecar_config.RUNNER_TLS_MOUNT_PATH) / "tls.key",
+                ca_file=Path(sidecar_config.RUNNER_TLS_MOUNT_PATH) / "ca.crt",
+            )
+            if proxy_mode == "mtls"
+            else None
+        ),
         audience_token_files={
             audience: Path(audience_token_file(audience)) for audience in _SUBSTITUTABLE_AUDIENCE_FILES
         },
@@ -306,10 +317,10 @@ def _egress_volumes(env: Environment) -> list[k8s.Volume]:
         k8s.Volume(name=_TOOL_CONFIG_VOLUME_NAME, config_map=k8s.ConfigMapVolumeSource(name=TOOL_CONFIG_MAP_NAME)),
         # The Pod's identity, and to nobody else: this volume is mounted by the egress sidecar
         # alone, so no token here is readable from the container an agent runs commands in.
-        # `token` proves the Pod to the central proxy; each of the rest is the same account minted
-        # for a destination's own audience, which the proxy substitutes where a rule names that
-        # audience and which is useless at the proxy itself. All are bound to this Pod and rotated
-        # by kubelet.
+        # The first token remains temporarily for the old proxy's destination identity context;
+        # mTLS is the only hop authentication in mtls mode and failure never falls back to it. Each
+        # other token is for a destination's audience and may be substituted where policy names it.
+        # All are bound to this Pod and rotated by kubelet.
         k8s.Volume(
             name=EGRESS_TOKEN_VOLUME_NAME,
             projected=k8s.ProjectedVolumeSource(

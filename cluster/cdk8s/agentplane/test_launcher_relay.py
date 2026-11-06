@@ -11,13 +11,22 @@ from cdk8s import App, Chart, Testing as Cdk8sTesting  # Testing aliased so pyte
 from more_itertools import one
 
 from agentplane.crd_group import GROUP, VERSION
-from cluster.cdk8s.agentplane.launcher_relay import CONTROLLER_USERNAME, LAUNCHER_LABELS, LauncherRelayPolicy
+from cluster.cdk8s.agentplane.launcher_relay import (
+    CONTROLLER_USERNAME,
+    LAUNCHER_LABELS,
+    RUNNER_CREDENTIAL_ID_ANNOTATION,
+    RUNNER_CREDENTIAL_LABEL,
+    RUNNER_CREDENTIAL_VMI_UID_ANNOTATION,
+    RUNNER_TLS_VOLUME_NAME,
+    LauncherRelayPolicy,
+)
 from cluster.cdk8s.agentplane.sandbox_pod import EGRESS_TOKEN_VOLUME_NAME, SIDECAR_SETTINGS_VOLUME_NAME
 from cluster.cdk8s.kyverno.apply import KyvernoApplyResult, apply_policy
 
 NAMESPACE = "launcher-relay-test"
 TOKEN_VOLUME = EGRESS_TOKEN_VOLUME_NAME
 RELAY_SETTINGS = "relay-test-relay-settings"
+RUNNER_CREDENTIAL_ID = "0123456789abcdef0123456789abcdef"
 RUNNER_POD = {
     "metadata": {"labels": {"app": "relay-test-runner"}},
     "spec": {
@@ -67,17 +76,69 @@ def policy() -> dict:
     return rendered
 
 
+@pytest.fixture(scope="module")
+def tls_policy() -> dict:
+    chart = Chart(App(), "test-tls")
+    LauncherRelayPolicy(
+        chart,
+        "policy",
+        namespace=NAMESPACE,
+        runner_pod=deepcopy(RUNNER_POD),
+        settings_config_map=RELAY_SETTINGS,
+        runner_tls_enabled=True,
+    )
+    rendered: dict = Cdk8sTesting.synth(chart)[0]
+    del rendered["spec"]["webhookConfiguration"]
+    return rendered
+
+
 def policy_file(
-    tmp_path: Path, policy: dict, *, vm_uid: str, vm_owner_kind: str, account_owner_uid: str, vmi_volumes: list[dict]
+    tmp_path: Path,
+    policy: dict,
+    *,
+    vm_uid: str,
+    vm_owner_kind: str,
+    account_owner_uid: str,
+    vmi_volumes: list[dict],
+    credential_kind: str = "VM",
+    sandbox_credential_id: str = RUNNER_CREDENTIAL_ID,
+    accepted_credential_id: str = RUNNER_CREDENTIAL_ID,
+    last_vmi_uid: str = "vmi-uid",
+    vm_credential_id: str = RUNNER_CREDENTIAL_ID,
+    vm_vmi_uid: str = "vmi-uid",
+    vmi_credential_id: str = RUNNER_CREDENTIAL_ID,
+    sandbox_uid: str = "sb-uid",
 ) -> Path:
     policy = deepcopy(policy)
     reads = {
         "vmi": {
-            "metadata": {"uid": "vmi-uid", "ownerReferences": [owner("kubevirt.io/v1", "VirtualMachine", vm_uid)]},
+            "metadata": {
+                "uid": "vmi-uid",
+                "labels": {RUNNER_CREDENTIAL_LABEL: vmi_credential_id},
+                "ownerReferences": [owner("kubevirt.io/v1", "VirtualMachine", vm_uid)],
+            },
             "spec": {"volumes": vmi_volumes},
         },
         "vm": {
-            "metadata": {"uid": "vm-uid", "ownerReferences": [owner(f"{GROUP}/{VERSION}", vm_owner_kind, "sb-uid")]}
+            "metadata": {
+                "uid": "vm-uid",
+                "annotations": {
+                    RUNNER_CREDENTIAL_ID_ANNOTATION: vm_credential_id,
+                    RUNNER_CREDENTIAL_VMI_UID_ANNOTATION: vm_vmi_uid,
+                },
+                "ownerReferences": [owner(f"{GROUP}/{VERSION}", vm_owner_kind, sandbox_uid)],
+            }
+        },
+        "sandboxLive": {
+            "metadata": {"uid": sandbox_uid, "name": "sandbox-a"},
+            "status": {
+                "runnerCredential": {
+                    "id": sandbox_credential_id,
+                    "kind": credential_kind,
+                    "acceptedId": accepted_credential_id,
+                    "lastVmiUid": last_vmi_uid,
+                }
+            },
         },
         "account": {
             "metadata": {
@@ -121,6 +182,14 @@ def apply(
     vm_owner_kind: str = "Sandbox",
     account_owner_uid: str = "sb-uid",
     vmi_volumes: tuple[dict, ...] = (),
+    credential_kind: str = "VM",
+    sandbox_credential_id: str = RUNNER_CREDENTIAL_ID,
+    accepted_credential_id: str = RUNNER_CREDENTIAL_ID,
+    last_vmi_uid: str = "vmi-uid",
+    vm_credential_id: str = RUNNER_CREDENTIAL_ID,
+    vm_vmi_uid: str = "vmi-uid",
+    vmi_credential_id: str = RUNNER_CREDENTIAL_ID,
+    sandbox_uid: str = "sb-uid",
 ) -> KyvernoApplyResult:
     path = tmp_path / "pod.yaml"
     path.write_text(yaml.safe_dump(resource))
@@ -132,6 +201,14 @@ def apply(
             vm_owner_kind=vm_owner_kind,
             account_owner_uid=account_owner_uid,
             vmi_volumes=list(vmi_volumes),
+            credential_kind=credential_kind,
+            sandbox_credential_id=sandbox_credential_id,
+            accepted_credential_id=accepted_credential_id,
+            last_vmi_uid=last_vmi_uid,
+            vm_credential_id=vm_credential_id,
+            vm_vmi_uid=vm_vmi_uid,
+            vmi_credential_id=vmi_credential_id,
+            sandbox_uid=sandbox_uid,
         ),
         path,
         {"request.userInfo.username": username, "request.operation": operation},
@@ -175,6 +252,53 @@ def test_injects_relay_idempotently(tmp_path: Path, policy: dict) -> None:
     legacy["spec"]["containers"].append(legacy_relay)
     legacy_update = apply(tmp_path, policy, legacy, operation="UPDATE")
     assert legacy_update.ok, legacy_update.stdout
+
+
+def test_mtls_relay_gets_status_bound_secret_and_workload_does_not(tmp_path: Path, tls_policy: dict) -> None:
+    first = apply(tmp_path, tls_policy, launcher())
+    assert first.ok, first.stdout
+    mutated = one(r for r in first.mutated_resources if r["kind"] == "Pod")
+    spec = mutated["spec"]
+    tls_volume = one(v for v in spec["volumes"] if v["name"] == RUNNER_TLS_VOLUME_NAME)
+    assert tls_volume["projected"]["defaultMode"] == 292
+    assert tls_volume["projected"]["sources"][0]["secret"]["name"] == f"runner-{RUNNER_CREDENTIAL_ID}"
+    assert tls_volume["projected"]["sources"][1]["configMap"] == {
+        "name": "cluster-internal-ca-bundle",
+        "items": [{"key": "ca-certificates.crt", "path": "ca.crt"}],
+    }
+    relay = one(c for c in spec["initContainers"] if c["name"] == "egress-sidecar")
+    assert {
+        "name": RUNNER_TLS_VOLUME_NAME,
+        "mountPath": "/run/agentplane/environment-runtime-tls",
+        "readOnly": True,
+    } in relay["volumeMounts"]
+    assert not any(
+        mount["name"] == RUNNER_TLS_VOLUME_NAME for c in spec["containers"] for mount in c.get("volumeMounts", [])
+    )
+    assert not any(
+        mount["name"] == RUNNER_TLS_VOLUME_NAME
+        for c in spec["initContainers"]
+        if c is not relay
+        for mount in c.get("volumeMounts", [])
+    )
+
+    second = apply(tmp_path, tls_policy, deepcopy(mutated))
+    assert second.ok, second.stdout
+    assert second.mutated_resources == first.mutated_resources
+
+    workload_mount = deepcopy(mutated)
+    workload_mount["spec"]["containers"][0].setdefault("volumeMounts", []).append(
+        {"name": RUNNER_TLS_VOLUME_NAME, "mountPath": "/runner-tls", "readOnly": True}
+    )
+    update = apply(tmp_path, tls_policy, workload_mount, operation="UPDATE")
+    assert update.failed > 0
+
+    create_with_workload_mount = launcher()
+    create_with_workload_mount["spec"]["containers"][0]["volumeMounts"] = [
+        {"name": RUNNER_TLS_VOLUME_NAME, "mountPath": "/runner-tls", "readOnly": True}
+    ]
+    create = apply(tmp_path, tls_policy, create_with_workload_mount)
+    assert create.failed > 0
 
 
 @pytest.mark.parametrize("with_existing_init", [False, True])
@@ -254,6 +378,24 @@ def test_keeps_filesystem_daemons_until_compute_exits(tmp_path: Path, policy: di
 )
 def test_rejects_unproven_launcher(tmp_path: Path, policy: dict, forgery: dict) -> None:
     assert apply(tmp_path, policy, launcher(), **forgery).failed > 0
+
+
+@pytest.mark.parametrize(
+    "binding",
+    [
+        pytest.param({"credential_kind": "Pod"}, id="not-a-vm-binding"),
+        pytest.param({"sandbox_credential_id": "fedcba9876543210fedcba9876543210"}, id="status-id-mismatch"),
+        pytest.param({"accepted_credential_id": "fedcba9876543210fedcba9876543210"}, id="not-accepted"),
+        pytest.param({"last_vmi_uid": "stale-vmi"}, id="status-vmi-mismatch"),
+        pytest.param({"vm_vmi_uid": "stale-vmi"}, id="vm-annotation-vmi-mismatch"),
+        pytest.param({"vmi_credential_id": "fedcba9876543210fedcba9876543210"}, id="vmi-label-mismatch"),
+        pytest.param({"sandbox_uid": "replacement-sandbox"}, id="sandbox-owner-mismatch"),
+    ],
+)
+def test_mtls_rejects_launcher_without_current_sandbox_status_binding(
+    tmp_path: Path, tls_policy: dict, binding: dict
+) -> None:
+    assert apply(tmp_path, tls_policy, launcher(), **binding).failed > 0
 
 
 def test_rejects_stale_vmi(tmp_path: Path, policy: dict) -> None:

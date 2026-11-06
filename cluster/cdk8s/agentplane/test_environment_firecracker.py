@@ -22,7 +22,7 @@ def test_firecracker_mounts_and_tokens_stay_on_the_correct_side(scratch_app: App
     template = environment_firecracker.EnvironmentFirecrackerTemplate(
         chart,
         "template",
-        replace(staging.ENV, firecracker_sandboxes=True),
+        replace(staging.ENV, firecracker_sandboxes=True, runner_egress_mtls=True),
         labels={"app.kubernetes.io/name": "agentplane-environment-runtime"},
         state_volume=state,
         workspace_volume=environment_sandbox.workspace_volume_spec(state, layout_type="RawDiskImage"),
@@ -41,6 +41,7 @@ def test_firecracker_mounts_and_tokens_stay_on_the_correct_side(scratch_app: App
     assert relay["securityContext"]["runAsNonRoot"] is True
     assert relay["securityContext"]["runAsUser"] == 1000
     assert pod["automountServiceAccountToken"] is False
+    assert pod["securityContext"]["fsGroup"] == 1000
     host_mounts = {m["name"] for m in host["volumeMounts"]}
     token_volumes = {v["name"] for v in pod["volumes"] if "projected" in v}
     assert token_volumes
@@ -59,7 +60,12 @@ def test_firecracker_mounts_and_tokens_stay_on_the_correct_side(scratch_app: App
     relay_config = one(
         doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "environment-firecracker-relay"
     )
-    assert "[::]:3128" in next(iter(relay_config["data"].values()))
+    relay_settings = next(iter(relay_config["data"].values()))
+    assert "[::]:3128" in relay_settings
+    assert "proxy_mode: mtls" in relay_settings
+    assert "proxy_port: 8889" in relay_settings
+    assert "token_file: /var/run/agentplane-egress/token" in relay_settings
+    assert "/run/agentplane/environment-runtime-tls/tls.crt" in relay_settings
     status_policy = one(doc for doc in docs if doc["kind"] == "CiliumNetworkPolicy")
     assert status_policy["spec"]["ingress"][0]["fromEntities"] == ["kube-apiserver", "host"]
     assert rendered["spec"]["firecracker"]["runnerImage"] == "registry.test/runner@sha256:123"
