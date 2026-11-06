@@ -940,7 +940,7 @@
           "editorMode": "code",
           "rawQuery": true,
           "format": "table",
-          "rawSql": "WITH feedback AS (\n  SELECT *\n  FROM cdviz.ci_feedback($__timeFrom(), $__timeTo())\n  WHERE (\n    ${scope:sqlstring} = 'all'\n    OR (${scope:sqlstring} = 'PR' AND pr IS NOT NULL)\n    OR (${scope:sqlstring} = 'devel' AND pr IS NULL AND branch IN ('devel', 'main'))\n  )\n    AND (${clock:sqlstring} = 'all' OR clock = ${clock:sqlstring})\n)\nSELECT\n  arrived_at AS \"Arrived\",\n  pr AS \"PR\",\n  LEFT(head_sha, 10) AS \"Head SHA\",\n  state AS \"State\",\n  first_verdict AS \"First verdict\",\n  ROUND(first_verdict_seconds::numeric, 1) AS \"Verdict seconds\",\n  ROUND(red_seconds::numeric, 1) AS \"Red seconds\",\n  ROUND(green_seconds::numeric, 1) AS \"Green seconds\",\n  observed_gates::text || '/' || required_gates::text AS \"Gates\",\n  clock AS \"Arrival clock\",\n  missing_gates AS \"Missing gates\",\n  repository AS \"Repository\",\n  branch AS \"Branch\",\n  first_red_at AS \"First red\",\n  first_green_at AS \"First green\",\n  policy_observed_at AS \"Policy observed\",\n  url AS \"URL\"\nFROM feedback\nORDER BY arrived_at DESC\nLIMIT 50"
+          "rawSql": "WITH feedback AS (\n  SELECT *\n  FROM cdviz.ci_feedback($__timeFrom(), $__timeTo())\n  WHERE (\n    ${scope:sqlstring} = 'all'\n    OR (${scope:sqlstring} = 'PR' AND pr IS NOT NULL)\n    OR (${scope:sqlstring} = 'devel' AND pr IS NULL AND branch IN ('devel', 'main'))\n  )\n    AND (${clock:sqlstring} = 'all' OR clock = ${clock:sqlstring})\n)\nSELECT\n  arrived_at AS \"Arrived\",\n  pr AS \"PR\",\n  LEFT(head_sha, 10) AS \"Head SHA\",\n  state AS \"State\",\n  first_verdict AS \"First verdict\",\n  ROUND(first_verdict_seconds::numeric, 1) AS \"Verdict seconds\",\n  ROUND(red_seconds::numeric, 1) AS \"Red seconds\",\n  ROUND(green_seconds::numeric, 1) AS \"Green seconds\",\n  observed_gates::text || '/' || required_gates::text AS \"Gates\",\n  clock AS \"Arrival clock\",\n  missing_gates AS \"Missing gates\",\n  repository AS \"Repository\",\n  url AS \"URL\"\nFROM feedback\nORDER BY arrived_at DESC\nLIMIT 50"
         }
       ],
       "fieldConfig": {
@@ -1028,54 +1028,6 @@
             "matcher": {
               "id": "byName",
               "options": "Repository"
-            },
-            "properties": [
-              {
-                "id": "custom.hidden",
-                "value": true
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Branch"
-            },
-            "properties": [
-              {
-                "id": "custom.hidden",
-                "value": true
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "First red"
-            },
-            "properties": [
-              {
-                "id": "custom.hidden",
-                "value": true
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "First green"
-            },
-            "properties": [
-              {
-                "id": "custom.hidden",
-                "value": true
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Policy observed"
             },
             "properties": [
               {
@@ -1234,7 +1186,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "First red"
+                "value": "Red latency"
               },
               {
                 "id": "custom.width",
@@ -1258,7 +1210,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "First green"
+                "value": "Green latency"
               },
               {
                 "id": "custom.width",
