@@ -31,6 +31,7 @@ from aiquota.models import (
     RawUpstreamResponse,
 )
 from aiquota.render.view_model import AllQuotasView
+from aiquota.server_main import _frontend_dir
 from aiquota.settings import Settings
 from util.testing.asgi import serve_app_in_loop
 
@@ -82,6 +83,17 @@ async def client() -> AsyncGenerator[httpx.AsyncClient]:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as result:
         yield result
+
+
+async def test_declared_frontend_bundle_is_served() -> None:
+    app = create_app(bearer_token="test-bearer", fetcher=FakeFetcher(), frontend_dir=_frontend_dir())
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as browser:
+        page = await browser.get("/")
+        script = await browser.get("/main.js")
+    assert page.status_code == 200
+    assert 'src="/main.js"' in page.text
+    assert script.status_code == 200
+    assert script.headers["content-type"].startswith("text/javascript")
 
 
 def test_settings_are_loaded_and_validated_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:

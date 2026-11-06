@@ -356,11 +356,14 @@ py_test(
 py_test(
     name = "test_api",
     srcs = ["test_api.py"],
+    data = ["//aiquota/frontend:bundle"],
+    env = {"AIQUOTA_FRONTEND_RLOCATION": "$(rlocationpath //aiquota/frontend:bundle)"},
     imports = [".."],
     deps = [
         ":api",
         ":config",
         ":models",
+        ":server_main",
         ":settings",
         "//:conftest",
         "//aiquota/render:view_model_lib",

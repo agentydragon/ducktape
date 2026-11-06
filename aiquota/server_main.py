@@ -21,11 +21,14 @@ from aiquota.config import load as load_config
 from aiquota.settings import Settings
 
 
-def main() -> None:
+def _frontend_dir() -> Path:
     frontend_dir = Path(str(Runfiles.CreateOrRaise().root() / os.environ["AIQUOTA_FRONTEND_RLOCATION"]))
     if not (frontend_dir / "index.html").is_file():
         raise FileNotFoundError(frontend_dir / "index.html")
+    return frontend_dir
 
+
+def main() -> None:
     settings = Settings()
     service = QuotaAPIService(
         load_config(settings.config_path),
@@ -61,7 +64,7 @@ def main() -> None:
             collector=collector,
             history_collector=history_collector,
             metrics=metrics,
-            frontend_dir=frontend_dir,
+            frontend_dir=_frontend_dir(),
             prepare_storage=None if sink is None else sink.apply_schema,
             browser_oauth=BrowserOAuth(
                 issuer=settings.oauth_issuer,
