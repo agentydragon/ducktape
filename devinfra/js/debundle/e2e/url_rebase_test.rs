@@ -16,7 +16,7 @@ export { a };
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/x.js",
-        &[r#"new Worker(new URL("../../b.js", import.meta.url))"#],
+        &[r#"new Worker(new URL("../b.js", import.meta.url))"#],
         &[],
     );
     assert_entry_output(&fixture, "function\n");

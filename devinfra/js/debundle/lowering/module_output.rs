@@ -338,7 +338,16 @@ pub(super) fn emit_module(inputs: ModuleEmissionInputs<'_>) -> Result<LoweredMod
         body.extend(vendor_external_imports);
         body.extend(tail);
     }
-    rewrite_runtime_sources_for_target(&mut body, chunk_id, entry_file, &plan.target_file);
+    let resource_destinations = source_import_cache
+        .lock()
+        .expect("source import cache")
+        .runtime_resource_destinations(chunk_id, entry_file, source_path)?;
+    rewrite_runtime_sources_for_target(
+        &mut body,
+        chunk_id,
+        &resource_destinations,
+        &plan.target_file,
+    );
     // Plan-driven vendor body replacements (member accesses off the
     // package / facade namespace, named-kind auto-renames). Not a
     // RenameLedger entry — ident→member-expression replacement is an

@@ -8,7 +8,8 @@ fn closure_distinguishes_emitted_captured_missing_external_and_unknown() {
             r#"function resources(path) {
   return [import("./lazy.js"), import("./missing.js"), import("./unlisted.js"),
     import("https://example.invalid/external.js"),
-    new URL("./theme.css", import.meta.url), new URL(path, import.meta.url)];
+    new URL("./theme.css", import.meta.url), new URL(path, import.meta.url),
+    new URL("./theme.css?cache=1", import.meta.url), new URL("theme.css", import.meta.url), import("theme.css"), new Worker("./worker.js")];
 }
 console.log(typeof resources);
 "#,
@@ -36,6 +37,11 @@ console.log(typeof resources);
     assert!(
         destinations
             .iter()
+            .any(|row| row["unresolved"]["reason"] == "document_relative_worker")
+    );
+    assert!(
+        destinations
+            .iter()
             .any(|row| row["emitted"]["path"] == "static/lazy/entry.js")
     );
     assert!(
@@ -60,6 +66,23 @@ console.log(typeof resources);
         destinations
             .iter()
             .any(|row| row["unresolved"]["reason"] == "non_literal")
+    );
+    assert!(
+        destinations
+            .iter()
+            .any(|row| row["unresolved"]["reason"] == "unresolved_url_identity")
+    );
+    assert!(
+        resources
+            .iter()
+            .any(|row| row["resource"]["specifier"] == "theme.css"
+                && row["destination"]["external"]["url"] == "theme.css")
+    );
+    assert!(
+        resources
+            .iter()
+            .any(|row| row["resource"]["specifier"] == "theme.css"
+                && row["destination"]["captured"]["path"] == "static/theme.css")
     );
 }
 

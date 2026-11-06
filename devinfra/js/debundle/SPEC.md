@@ -4093,3 +4093,30 @@ After a proved push, the array's precise surface is invalidated and cached
 invocations observe a new prefix revision. Its existing contained callbacks
 remain reachable by later reads or opaque consumers. Subsequent array
 operations use the conservative path rather than stale pre-push slots.
+
+## Runtime resource destinations
+
+The browser harness `reports/runtime.json` lists statically recognized dynamic
+imports, worker constructors and `new URL(..., import.meta.url)` uses from the
+original shallow source analysis. Destinations distinguish emitted JavaScript,
+captured non-JavaScript assets, planned package replacements, external URLs and
+unresolved resources. An absent capture is distinct from a captured JavaScript
+file that has no emitted destination. Nonliteral uses remain explicit.
+
+This inventory is separate from semantic gate acceptance. It does not certify
+network availability, execute conditional loaders, enumerate CSS dependencies,
+or prove that a planned package replacement redirects every dynamic consumer.
+External HTML module entries and preloads are preserved. They do not require a
+local capture merely to construct a harness.
+
+Lowered dynamic-import and import-meta URL literals consume destinations resolved from the same source
+facts. Captured JavaScript targets point at their emitted entries; other local
+resource paths are rebased from their original source file. Rebasing an
+unverified path does not claim that a corresponding file exists. The inventory
+currently reports URL query/fragment and encoded path spellings conservatively rather than
+certifying their captured identity.
+
+Bare Worker-string URLs use the document base in browsers. Their closure remains
+unresolved (`document_relative_worker`); the existing worker rewrite is outside
+this source-file URL guarantee. Worker constructors using `new URL` have a
+separate URL record, without certifying worker execution.

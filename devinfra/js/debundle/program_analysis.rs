@@ -1,3 +1,4 @@
+use artifact::runtime_resources::{RuntimeResourceKind, RuntimeResourceUse};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use analysis::facts::abstract_domain::primitive::{NoBindings, evaluate};
@@ -464,6 +465,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         has_cjs_interop: visitor_has_cjs_interop,
         has_own_cjs_export_surface: visitor_has_own_cjs_export_surface,
         mut interop_uses,
+        resources,
         binding_declarations,
         binding_writes,
         dynamic_scope,
@@ -565,6 +567,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         })
         .collect();
     let mut runtime_facts = ChunkRuntimeFacts {
+        resources,
         module_kind: if parsed.module.body.is_empty() {
             ChunkModuleKind::EmptySource
         } else if parsed.module.body.iter().any(
@@ -892,6 +895,7 @@ fn item_line(line_index: &SourceLineIndex, item: &ModuleItem) -> Option<usize> {
 /// short-circuit each other.
 #[derive(Default)]
 struct ModuleScanVisitor {
+    resources: Vec<RuntimeResourceUse>,
     dynamic_import_count: usize,
     observable_module_effect: bool,
     has_rewritable_specifier: bool,
@@ -1059,6 +1063,10 @@ impl Visit for ModuleScanVisitor {
                 },
                 _ => None,
             };
+            self.resources.push(RuntimeResourceUse {
+                kind: RuntimeResourceKind::DynamicImport,
+                specifier: literal.clone(),
+            });
             self.interop_uses.push((
                 self.item_index,
                 node.span,
@@ -1074,6 +1082,25 @@ impl Visit for ModuleScanVisitor {
 
     fn visit_new_expr(&mut self, node: &NewExpr) {
         self.observable_module_effect = true;
+        if let Expr::Ident(callee) = &*node.callee {
+            let args = node.args.as_deref().unwrap_or_default();
+            let kind = if callee.sym == *"Worker" || callee.sym == *"SharedWorker" {
+                Some(RuntimeResourceKind::Worker)
+            } else if callee.sym == *"URL" && args.get(1).is_some_and(|arg| {
+                matches!(&*arg.expr, Expr::Member(member)
+                    if matches!(&*member.obj, Expr::MetaProp(meta) if meta.kind == MetaPropKind::ImportMeta)
+                    && matches!(&member.prop, MemberProp::Ident(property) if property.sym == *"url"))
+            }) {
+                Some(RuntimeResourceKind::Url)
+            } else { None };
+            if let Some(kind) = kind {
+                let specifier = args.first().and_then(|arg| match &*arg.expr {
+                    Expr::Lit(Lit::Str(value)) if arg.spread.is_none() => Some(str_value(value)),
+                    _ => None,
+                });
+                self.resources.push(RuntimeResourceUse { kind, specifier });
+            }
+        }
         if !self.has_rewritable_specifier && worker_relative_specifier(node).is_some() {
             self.has_rewritable_specifier = true;
         }
