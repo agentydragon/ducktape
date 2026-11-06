@@ -11,28 +11,10 @@ from openai_utils.model import ReasoningItem, UserMessage
 
 
 class BaseHandler:
-    """Base class for agent event handlers with no-op default implementations.
-
-    Subclasses override specific methods to react to agent loop events. All methods
-    have sensible defaults so handlers only implement what they need.
-
-    **Contract**:
-    - Implementations MUST be fast and non-blocking (use async/await for I/O)
-    - Exceptions propagate to the agent loop (fail-fast by default)
-    - Return values from hooks influence loop control (e.g., on_before_sample)
-
-    **Common use cases**:
-    - Display progress/events to UI (on_user_text_event, on_assistant_text_event)
-    - Log transcripts (on_tool_call_event, on_tool_result_event)
-    - Control sampling behavior (on_before_sample returns LoopDecision)
-    - Persist agent state (on_response)
-    """
+    """No-op event hooks; keep overrides fast and nonblocking; exceptions propagate."""
 
     def on_error(self, exc: Exception) -> None:
-        """Called when the agent encounters a fatal error.
-
-        Default: re-raise exception (fail-fast). Override to log or suppress errors.
-        """
+        """Called on fatal agent errors; re-raises by default."""
         raise exc
 
     def on_response(self, evt: Response) -> None:
@@ -44,13 +26,7 @@ class BaseHandler:
         return
 
     def on_before_sample(self) -> LoopDecision:
-        """Called before each model sampling step to control loop behavior.
-
-        Default: no decision (let other handlers or agent decide).
-
-        Returns:
-            LoopDecision: NoAction | InjectItems | Abort | Compact
-        """
+        """Before each sample: default NoAction, or return InjectItems, Abort, Compact."""
         return NoAction()
 
     def on_system_text_event(self, evt: SystemText) -> None:
@@ -78,11 +54,7 @@ class BaseHandler:
         return
 
     def on_compaction_complete(self, compacted: bool) -> None:
-        """Called after compaction attempt completes.
-
-        Args:
-            compacted: True if compaction succeeded, False if skipped
-        """
+        """Called after an attempt; compacted is true on success and false if skipped."""
         return
 
 
