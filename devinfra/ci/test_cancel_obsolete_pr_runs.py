@@ -7,7 +7,7 @@ from urllib.error import HTTPError, URLError
 import pytest
 import pytest_bazel
 
-from devinfra.ci.cancel_obsolete_pr_runs import CancellationApi, cancel_obsolete
+from devinfra.ci.cancel_obsolete_pr_runs import CancellationApi, cancel_closed_pr_runs, cancel_obsolete
 
 REPOSITORY = "owner/repo"
 NEW_HEAD = "a" * 40
@@ -44,10 +44,15 @@ def pull(**changes: Any) -> dict[str, Any]:
 
 class FakeApi(CancellationApi):
     def __init__(
-        self, *, trigger: dict[str, Any] | None = None, candidates: list[dict[str, Any]] | None = None
+        self,
+        *,
+        trigger: dict[str, Any] | None = None,
+        candidates: list[dict[str, Any]] | None = None,
+        workflow: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(repository=REPOSITORY, token="unused")
         self.trigger = trigger or run()
+        self.workflow = workflow or {"id": 7, "path": ".github/workflows/ci.yml"}
         self.pages = [candidates if candidates is not None else [run(10, number=10, head=OLD_HEAD)]]
         self.fresh: dict[int, dict[str, Any]] = {}
         self.pulls = [pull()]
@@ -59,6 +64,8 @@ class FakeApi(CancellationApi):
         self.requests.append(path)
         if path == "actions/workflows/7":
             return {"id": 7, "path": ".github/workflows/ci.yml"}
+        if path == "actions/workflows/ci.yml":
+            return self.workflow
         if path == "pulls/42":
             result = self.pulls[0]
             if len(self.pulls) > 1:
@@ -81,6 +88,18 @@ class FakeApi(CancellationApi):
 
     def event(self) -> dict[str, Any]:
         return {"action": "requested", "repository": {"id": 1, "full_name": REPOSITORY}, "workflow_run": run()}
+
+    def closed_event(self) -> dict[str, Any]:
+        return {
+            "action": "closed",
+            "repository": {"id": 1, "full_name": REPOSITORY},
+            "pull_request": {
+                "id": 99,
+                "number": 42,
+                "base": {"repo": {"id": 1}},
+                "head": {"repo": {"id": 1}, "ref": "feature", "sha": NEW_HEAD},
+            },
+        }
 
 
 def test_cancel_old_run_without_waiting_for_terminal() -> None:
@@ -109,7 +128,7 @@ def test_cancel_old_run_without_waiting_for_terminal() -> None:
         {"id": 20},
         {"run_number": 20},
         {"run_number": 21},
-        {"status": "completed"},
+        {"status": "completed", "conclusion": "success"},
         {"run_attempt": 2},
     ],
 )
@@ -135,10 +154,8 @@ def test_paginates_and_deduplicates_before_cancellation() -> None:
     assert any("page=2" in path for path in api.requests)
 
 
-@pytest.mark.parametrize(
-    "current", [pull(state="closed"), pull(head={"repo": {"id": 1}, "sha": OLD_HEAD, "ref": "feature"})]
-)
-def test_stale_or_closed_trigger_does_nothing(current: dict[str, Any]) -> None:
+@pytest.mark.parametrize("current", [pull(head={"repo": {"id": 1}, "sha": OLD_HEAD, "ref": "feature"})])
+def test_stale_open_trigger_does_nothing(current: dict[str, Any]) -> None:
     api = FakeApi()
     api.pulls = [current]
     cancel_obsolete(api, api.event())
@@ -170,6 +187,85 @@ def test_unknown_post_outcome_is_not_retried_or_followed_by_more_writes() -> Non
 def test_late_old_controller_cannot_cancel_newer_run() -> None:
     api = FakeApi(candidates=[run(21, number=21, head=OLD_HEAD)])
     cancel_obsolete(api, api.event())
+    assert not api.canceled
+
+
+def test_closed_pr_cancels_active_ci_run_from_an_older_head() -> None:
+    api = FakeApi(candidates=[run(10, number=10, head=OLD_HEAD)])
+    api.pulls = [pull(state="closed"), pull(state="closed")]
+    cancel_closed_pr_runs(api, api.closed_event())
+    assert api.canceled == [10]
+    assert api.requests.count("actions/runs/10") == 1
+    assert api.requests[-1] == "pulls/42"
+
+
+def test_run_requested_after_close_catches_a_run_created_after_the_close_sweep() -> None:
+    api = FakeApi(candidates=[])
+    api.pulls = [pull(state="closed")]
+    cancel_closed_pr_runs(api, api.closed_event())
+    assert not api.canceled
+
+    api.pages = [[run()]]
+    api.pulls = [pull(state="closed"), pull(state="closed"), pull(state="closed")]
+    cancel_obsolete(api, api.event())
+    assert api.canceled == [20]
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"status": "completed"},
+        {"event": "push"},
+        {"path": ".github/workflows/container-images.yml"},
+        {"workflow_id": 8},
+        {"run_attempt": 2},
+        {"pull_requests": [{"number": 43, "id": 100, "base": {"repo": {"id": 1}}, "head": {"repo": {"id": 1}}}]},
+    ],
+)
+def test_closed_pr_only_cancels_active_first_attempt_of_exact_ci_run(changes: dict[str, Any]) -> None:
+    api = FakeApi(candidates=[run(10, number=10, head=OLD_HEAD, **changes)])
+    api.pulls = [pull(state="closed")]
+    cancel_closed_pr_runs(api, api.closed_event())
+    assert not api.canceled
+
+
+def test_closed_pr_rejects_event_with_a_stale_or_wrong_head_sha() -> None:
+    api = FakeApi()
+    api.pulls = [pull(state="closed")]
+    event = api.closed_event()
+    event["pull_request"]["head"]["sha"] = OLD_HEAD
+    cancel_closed_pr_runs(api, event)
+    assert not api.canceled
+    assert not any("runs?" in path for path in api.requests)
+
+
+def test_closed_pr_rechecks_run_sha_before_cancellation() -> None:
+    api = FakeApi()
+    api.pulls = [pull(state="closed"), pull(state="closed")]
+    api.fresh[10] = run(10, number=10, head=NEW_HEAD)
+    cancel_closed_pr_runs(api, api.closed_event())
+    assert not api.canceled
+
+
+def test_closed_pr_stops_if_reopened_before_cancellation() -> None:
+    api = FakeApi()
+    api.pulls = [pull(state="closed"), pull(state="open")]
+    cancel_closed_pr_runs(api, api.closed_event())
+    assert not api.canceled
+
+
+def test_closed_pr_rejects_foreign_repository_or_wrong_workflow() -> None:
+    api = FakeApi()
+    api.pulls = [pull(state="closed")]
+    event = api.closed_event()
+    event["repository"] = {"id": 2, "full_name": REPOSITORY}
+    cancel_closed_pr_runs(api, event)
+    assert not api.canceled
+    assert "actions/workflows/ci.yml" not in api.requests
+
+    api = FakeApi(workflow={"id": 7, "path": ".github/workflows/container-images.yml"})
+    api.pulls = [pull(state="closed")]
+    cancel_closed_pr_runs(api, api.closed_event())
     assert not api.canceled
 
 
