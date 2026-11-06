@@ -527,8 +527,8 @@ class EnvironmentSandboxTemplate(Construct):
             self.env,
             name=name,
             platform_routes=platform_routes.sidecar_routes(self.env.namespace, listen_host=bind_host),
-            workload_routes=workload_routes.rules_route(
-                self.env.namespace, origin=self.egress_api_service or egress.agent_api(self.env.namespace)
+            workload_routes=workload_routes.sidecar_routes(
+                self.env.namespace, rules_origin=self.egress_api_service or egress.agent_api(self.env.namespace)
             ),
             listen_address=(f"{bind_host}:{sandbox_pod.SIDECAR_LISTEN_PORT}" if listen_host is not None else None),
             proxy_mode="mtls",

@@ -262,23 +262,27 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(staging_mani
     assert BASIC_POLICY in defaults, defaults
 
 
-def test_notifications_use_their_own_projected_audience(staging_manifests: list[dict[str, Any]]) -> None:
+def test_notifications_verify_svids_behind_an_opaque_tunnel(staging_manifests: list[dict[str, Any]]) -> None:
     policy = _by_name(staging_manifests, "PolicySet", BASIC_POLICY)
-    notification_rule = one(
-        rule
+    assert all(
+        notifications.service(staging.ENV.namespace).fqdn not in rule.get("hosts", [])
         for rule in policy["spec"]["rules"]
-        if notifications.service(staging.ENV.namespace).fqdn in rule.get("hosts", [])
     )
-    assert notification_rule["credentialRef"] == {"name": notifications.WORKLOAD_CREDENTIAL}
-    credential = _by_name(staging_manifests, "EgressCredential", notifications.WORKLOAD_CREDENTIAL)
-    assert credential["spec"]["source"]["projectedWorkloadToken"]["audience"] == notifications.TOKEN_AUDIENCE
-    settings = _by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
-    proxy_settings = yaml.safe_load(settings)
-    assert notifications.TOKEN_AUDIENCE in proxy_settings["projected_token_audiences"]
+    assert not any(
+        item["kind"] == "EgressCredential" and item["metadata"]["name"] == "agentplane-notifications-workload"
+        for item in staging_manifests
+    )
+    proxy_settings = yaml.safe_load(
+        _by_name(staging_manifests, "ConfigMap", "egress-go-settings")["data"]["settings.yaml"]
+    )
+    assert notifications.TOKEN_AUDIENCE not in proxy_settings["projected_token_audiences"]
+    endpoint = notifications.workload_service(staging.ENV.namespace)
+    assert f"{endpoint.fqdn}:{endpoint.pod_port}" in proxy_settings["tls_passthrough_targets"]
     notification_settings = yaml.safe_load(
         _by_name(staging_manifests, "ConfigMap", f"{notifications.NAME}-settings")["data"]["settings.yaml"]
     )
-    assert notification_settings["token_audience"] == notifications.TOKEN_AUDIENCE
+    assert notification_settings["workload_port"] == endpoint.pod_port
+    assert notification_settings["workload_tls"]["cert_file"].endswith("/tls.crt")
 
 
 def test_session_dispatcher_egress_is_limited_to_the_delegation_rpc_surfaces(

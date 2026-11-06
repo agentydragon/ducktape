@@ -135,6 +135,12 @@ flowchart LR
     egress -.->|allowlisted gRPC methods, substituted Sandbox bearer| gw
 
     egress -.->|opaque TLS; Rules verifies SVID :8443| egressRules
+    agent -.->|Notification HTTP| sidecar
+    guest_agent -.->|Notification HTTP| relay
+    sidecar -.->|Notification SVID TLS through CONNECT| egress
+    relay -.->|Notification SVID TLS through CONNECT| egress
+    egress -.->|opaque Notification TLS| notif
+
 
     click app href "../app/go/server.go" "Integration app API server"
     click gw href "runner_control.md" "Runner gRPC and proxy"
@@ -492,7 +498,11 @@ flowchart LR
     dispatcher[Runner Gateway Dispatcher API]
     history[History Service]
 
-    agent -->|subscriptions, inboxes, messages| notifications
+    sidecar[Egress sidecar or launcher relay]
+    proxy[Central egress proxy]
+    agent -.->|HTTP subscriptions, inboxes, messages| sidecar
+    sidecar -.->|Sandbox SVID to destination inside CONNECT| proxy
+    proxy -.->|opaque TLS| notifications
     app -->|gRPC operator watches + health| notifications
     github --> notifications
     notifications --> github
@@ -502,6 +512,11 @@ flowchart LR
     notifications -->|SubmitInput| dispatcher
     notifications -->|command receipts, Session's Sandbox| history
 ```
+
+Sandboxes keep their existing HTTP service URL. Their sidecar or relay recognizes the exact origin,
+opens CONNECT through the central proxy, and presents the Runner SVID to Notification's own TLS
+listener. Notification resolves the current Sandbox and its ServiceAccount; inbox ownership and
+send grants are unchanged. Backend and operator callers retain their separate bearer listeners.
 
 The Notification service does not call the integration app, which watches subscription and notice
 state over the operator-only `NotificationsOperator` gRPC service. GitHub sends it signed webhooks; it

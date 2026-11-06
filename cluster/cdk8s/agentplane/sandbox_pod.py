@@ -25,7 +25,7 @@ from agentplane.egress.platform_routes import PlatformRoute
 from agentplane.egress.resources import placeholder_of
 from agentplane.env.config import CA_BUNDLE, JAVA_TRUST_STORE, KUBECONFIG
 from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant, RoleRef
-from cluster.cdk8s.agentplane import egress, notifications, session_dispatcher, telemetry
+from cluster.cdk8s.agentplane import egress, session_dispatcher, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
@@ -41,7 +41,6 @@ _EGRESS_TOKEN_DIR = "/var/run/agentplane-egress"
 # hop itself always uses the Runner SVID for Sandbox Pods.
 _SUBSTITUTABLE_AUDIENCE_FILES = {
     egress.KUBERNETES_AUDIENCE: "kubernetes-token",
-    notifications.TOKEN_AUDIENCE: "notifications-token",
     session_dispatcher.TOKEN_AUDIENCE: "session-dispatcher-token",
 }
 SIDECAR_LISTEN_PORT = 3128
@@ -246,12 +245,12 @@ def add_sidecar_settings(
             audience: Path(audience_token_file(audience)) for audience in _SUBSTITUTABLE_AUDIENCE_FILES
         },
     )
+    if workload_routes is not None:
+        settings.workload_routes = dict(workload_routes)
     if listen_address is not None:
         settings.listen_address = listen_address
     if platform_routes:
         settings.platform_routes = dict(platform_routes)
-    if workload_routes:
-        settings.workload_routes = dict(workload_routes)
     return SettingsFile(
         scope,
         f"{name}-settings",

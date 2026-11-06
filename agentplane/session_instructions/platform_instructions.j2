@@ -40,7 +40,7 @@ Use the configured proxy and CA trust. Service addresses and authentication are:
 | Egress rules | {{ egress_api_url }} | `agentplane-credential-agentplane-workload` |
 | Actions | {{ actions_service_url }} | `agentplane-credential-agentplane-workload` |
 | Sessions and environments | {{ sessions_service_url }} | `agentplane-credential-agentplane-session-dispatcher-workload` |
-| Notifications | {{ notifications_service_url }} | `agentplane-credential-agentplane-notifications-workload` |
+| Notifications | {{ notifications_service_url }} | Managed by your Sandbox; no Authorization header needed |
 
 The `agentplane` command calls these APIs for you. Its service commands read the base URLs and
 placeholders above from your `AGENTPLANE_*` environment variables, so a command needs no URL, header
