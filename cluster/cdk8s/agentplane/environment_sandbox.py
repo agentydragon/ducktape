@@ -37,6 +37,7 @@ from agentplane.env.config import (
     EnvironmentRuntimeControl,
     Harness,
     PodEnvironment,
+    SVIDEndpoint,
 )
 from agentplane.environment_runtime_transport.config import MTLS, TLS
 from agentplane.sandboxes.runtimeconfig.model_catalog import WORKSPACE_ROOT
@@ -46,6 +47,7 @@ from cluster.cdk8s.agentplane import (
     egress,
     environment_firecracker,
     environment_vm,
+    history_service,
     launcher_relay,
     llm_ingress,
     platform_routes,
@@ -417,7 +419,6 @@ class EnvironmentSandboxTemplate(Construct):
                 ]
             )
         )
-        ingress = platform_routes.ingress(self.env.namespace)
         llm_url = llm_ingress.proxied_url(self.env.namespace)
         config = Configuration(
             version=2,
@@ -436,7 +437,13 @@ class EnvironmentSandboxTemplate(Construct):
                     ),
                 ),
             ),
-            ingress=Endpoint(target=ingress.local_target, bearer=platform_routes.ROUTE_BEARER),
+            ingress=Endpoint(
+                target=f"{history_service.workload_service(self.env.namespace).fqdn}:{history_service.workload_service(self.env.namespace).pod_port}",
+                svid=SVIDEndpoint(
+                    server_uri=history_service.WORKLOAD_URI,
+                    proxy_address=f"127.0.0.1:{sandbox_pod.SIDECAR_LISTEN_PORT}",
+                ),
+            ),
             platform_instructions=platform_instructions(
                 self.env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_api_service=self.egress_api_service
             ),

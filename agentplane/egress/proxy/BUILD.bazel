@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "gate.go",
         "lifecycle.go",
+        "passthrough.go",
         "proxy.go",
         "tunnel.go",
     ],
@@ -30,6 +31,7 @@ go_test(
     name = "proxy_test",
     srcs = [
         "gate_test.go",
+        "passthrough_test.go",
         "proxy_test.go",
     ],
     embed = [":proxy"],
@@ -39,6 +41,8 @@ go_test(
         "//agentplane/egress/policy",
         "//agentplane/egress/resources",
         "//agentplane/egress/upstream",
+        "//agentplane/environment_runtime_transport",
+        "//agentplane/environment_runtime_transport/testing",
         "//agentplane/policy/api/v1alpha1",
         "//agentplane/policy/reader",
         "//agentplane/testing/kubeapiserver",

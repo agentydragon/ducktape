@@ -54,7 +54,6 @@ from trust_manager_crds.io.cert_manager.trust import (
 
 from agentplane.crd_group import GROUP
 from agentplane.egress.settings import PROXY_MTLS_PORT, Settings
-from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium, node_scheduling
@@ -681,6 +680,7 @@ class Egress(Construct):
         registry_secret_name: str | None = "forgejo-images-creds",
         container_env: Mapping[str, EnvValue] | None = None,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
+        tls_passthrough_services: Sequence[ServiceRef] = (),
         enable_svid_listener: bool = False,
     ) -> None:
         """`runners` are the runner Pods, which the proxy admits."""
@@ -705,10 +705,10 @@ class Egress(Construct):
                 f"{account.namespace}/{account.name}"
                 for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
             ],
+            "tls_passthrough_targets": [f"{service.fqdn}:{service.pod_port}" for service in tls_passthrough_services],
             "projected_token_audiences": [
                 KUBERNETES_AUDIENCE,
                 notifications.TOKEN_AUDIENCE,
-                RUNNER_INGRESS_AUDIENCE,
                 session_dispatcher.TOKEN_AUDIENCE,
             ],
         }
