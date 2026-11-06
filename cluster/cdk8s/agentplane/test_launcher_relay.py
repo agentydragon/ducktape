@@ -80,12 +80,7 @@ def policy() -> dict:
 def tls_policy() -> dict:
     chart = Chart(App(), "test-tls")
     LauncherRelayPolicy(
-        chart,
-        "policy",
-        namespace=NAMESPACE,
-        runner_pod=deepcopy(RUNNER_POD),
-        settings_config_map=RELAY_SETTINGS,
-        runner_tls_enabled=True,
+        chart, "policy", namespace=NAMESPACE, runner_pod=deepcopy(RUNNER_POD), settings_config_map=RELAY_SETTINGS
     )
     rendered: dict = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "ClusterPolicy")
     del rendered["spec"]["webhookConfiguration"]

@@ -6,49 +6,32 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 
 ## Identity
 
-- The existing HTTP forward-proxy listener on port 8888 authenticates every CONNECT and request
-  with `Proxy-Authorization: Bearer <token>`, the Pod's projected ServiceAccount token for the
-  proxy audience. A tunnel's inner requests inherit the tunnel's authenticated context. The proxy
-  strips the hop header and retains its bearer only after successful verification; malformed or
-  rejected replacement headers clear earlier connection context rather than falling back to it.
-- An optional TLS forward-proxy listener on port 8889 authenticates the transport with a runner
-  Runtime SVID. It is off by default and enabled together with its Service port, certificate,
-  trust bundle, Sandbox RBAC and runner ingress rule. The proxy presents
-  `spiffe://agentplane/egress-proxy`, issued by the environment's Runner Gateway issuer with the
-  server-auth EKU; the trust-manager cluster-internal CA bundle verifies runner clients. The TLS
-  verifier requires the client's explicit client-auth EKU and the canonical URI
+- The forward listener on port 8889 requires mTLS with a runner Runtime SVID. The proxy presents
+  `spiffe://agentplane/egress-proxy`, issued by the environment's Runner Gateway issuer with
+  serverAuth. The trust-manager cluster-internal roots verify the client chain; the client must
+  explicitly carry clientAuth and the canonical URI
   `spiffe://agentplane/environment-runtime/<namespace>/<sandbox-uid>/<credential-id>`.
-- Each SVID-authenticated request, including requests inherited through a CONNECT tunnel, checks
-  the leaf's validity and EKU again and reads the named Sandbox through an uncached API client.
-  The live object must still have the URI's UID, a current runner credential whose `id` and
-  `acceptedId` both match the URI, and a usable non-deleting runner binding. For Pod and
-  Firecracker runners, `runnerCredential.podUid` must match `status.incarnation.uid`; for KubeVirt,
-  the current `status.incarnation.uid` is the projected-token Pod binding and the accepted VM
-  credential must still carry its VMI UID. Deleted, deleting, stopped, replaced or stale
-  credentials fail before policy evaluation. There is no indefinitely cached Sandbox identity.
-- The resulting policy subject is exactly the Sandbox-owned ServiceAccount at
-  `Sandbox.namespace/Sandbox.name`. Neither a certificate subject DN nor a caller-supplied header
-  selects the subject, and the proxy does not read Pods or ServiceAccounts. The optional Sandbox
-  reader permission in the proxy's own namespace grants only `get`, `list` and `watch` on Sandboxes.
-  A Sandbox name no binding names reaches no rule.
-- A request on the SVID listener does not need a hop bearer. If it carries `Proxy-Authorization`,
-  the proxy still TokenReviews it and requires its ServiceAccount and Pod UID to match the live
-  Sandbox binding. Projected audience tokens are also kept only when TokenReview proves the same
-  ServiceAccount and Pod UID; a mismatched token is dropped and a rule needing it refuses with
-  `credential-unavailable`.
-- The token on the existing HTTP listener is proven by TokenReview against its audience, which
-  names the Pod the API server bound it to; a deleted or replaced Pod fails there once the proxy's
-  reuse of an acceptance (30 s, <../workload_auth/README.md>) lapses. The subject is the
-  ServiceAccount the Pod runs as, whatever else owns the Pod. Authenticating a workload is not
-  admitting it: a subject no binding names reaches no rule.
-- The connection's source address is not checked. A token copied out of its Pod and presented from
-  elsewhere in the cluster is accepted for as long as it is valid, and is refused the same rules as
-  the Pod it was taken from. An SVID copied from a runner is likewise only the transport proof for
-  the live Sandbox and current runner binding named by that SVID.
-- Every request on the token listener reviews its hop bearer with the API server, including
-  requests inside an existing tunnel; an earlier successful review does not authorize a later
-  request. The SVID listener repeats the certificate validity and live Sandbox checks for each
-  request, including those inside a tunnel.
+- Every CONNECT and request, including requests inside intercepted tunnels, rechecks the leaf's
+  validity/EKU and reads live Sandbox status through an uncached API client. The UID and credential
+  `id`/`acceptedId` must match, and the Sandbox must have a current non-deleting runner binding.
+  Pod and Firecracker credentials bind `runnerCredential.podUid` to `status.incarnation.uid`;
+  KubeVirt binds the launcher Pod through `status.incarnation.uid` and the accepted credential's
+  VMI UID. Deleted, replaced, stopped or stale credentials fail before any policy is read.
+- The policy subject remains exactly `Sandbox.namespace/Sandbox.name`, the Sandbox's own
+  ServiceAccount. Headers and certificate subject DNs cannot select it. The proxy reads no Pods;
+  its Rules service additionally reads the owned ServiceAccount to preserve its canonical UID.
+- There is no plaintext token-hop listener or proxy-audience projected token. A bearer cannot
+  authenticate the TLS hop. The generic sidecar retains an explicit token client mode for separate
+  non-Sandbox deployments, but this central listener does not accept it and TLS never falls back.
+- Destination-scoped projected tokens remain on `X-Agentplane-Workload-Token`. TokenReview must
+  prove the same ServiceAccount and Pod UID recorded by the live Sandbox; a mismatch is discarded
+  and a rule needing it fails with `credential-unavailable`. Client copies of this header are
+  stripped by the sidecar. A copied SVID proves only the still-live Sandbox/credential it names;
+  source addresses grant no authority.
+- Exact deployment-configured first-party TLS authorities use opaque CONNECT passthrough after
+  hop SVID authentication, policy-index health and pinned destination resolution. The proxy cannot
+  read or assert the service caller. The destination terminates TLS, resolves the SVID itself and
+  applies its own authorization. Intercepted external destinations retain ordinary egress rules.
 
 ## Decision
 
@@ -74,22 +57,17 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   object's own name and written nowhere, so one placeholder means one credential by construction.
   A rule names a credential; the credential names the targets. Its source is exactly one of
   `secretRef`, preserving the central-held Secret behavior; `authenticatedWorkloadToken`, the
-  bearer retained from successful authentication of this request or CONNECT tunnel; or
+  legacy hop bearer, unavailable after the TLS-only flip and removed with the last service migration; or
   `projectedWorkloadToken`, naming the audience of a token the sidecar presented on the hop. The
   latter two are resolved per request and must still be bound to the caller being decided; absent,
   stale, or mismatched context refuses with `credential-unavailable`.
-- **A projected token is the caller's own identity minted for somewhere else.** The hop bearer
-  carries this proxy's audience, so a destination validating its own — the API server against
-  `--api-audiences` — refuses it; the sidecar projects a second token per configured audience,
-  presents each as `X-Agentplane-Workload-Token: <audience> <token>`, and the proxy consumes that
-  header rather than forwarding it. A presented token is kept only when a TokenReview for that
-  audience resolves it to the same Pod the hop authenticated, and only for an audience this
-  deployment configured; one that fails either is dropped, so the rule naming it refuses with
-  `credential-unavailable` rather than substituting something else. The sidecar drops a client's own
-  copy of the header, and the workload can read neither token: both are projected into the sidecar
-  alone. A tunnel's inner requests inherit what its CONNECT presented, as they inherit its identity.
-  On the SVID listener the reviewed account namespace/name and Pod UID are compared to the live
-  Sandbox-owned account and runner binding; no ServiceAccount UID is inferred from the certificate.
+- **A projected token is the Sandbox account's identity minted for a destination.** The sidecar
+  reads one projected token per configured audience and presents it as
+  `X-Agentplane-Workload-Token: <audience> <token>`. Central consumes this header, TokenReviews
+  only configured audiences and compares account namespace/name and Pod UID to live Sandbox status.
+  An intercepted tunnel inherits its CONNECT's token set, revalidated per request. The workload
+  container holds neither projected tokens nor the runner TLS Secret. The Kubernetes audience stays
+  until the separate account/impersonation cutover; service audiences leave with their SVID boundary.
 - A **target** is a header and a parse of that header's value: `wholeValue` (the value entire),
   `schemeToken` (`<scheme> <credential>`, the scheme declared and compared case-insensitively),
   `basicUsername` and `basicPassword` (the halves of a `Basic base64(username:password)` payload),
@@ -154,21 +132,14 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   the Secret, its key,
   or its value — the projection is built from its own field list, so a field added to a resource
   does not appear here until someone writes it in.
-  The caller sends the published inert `agentplane-credential-agentplane-workload` placeholder
-  in ordinary `Authorization: Bearer` through the configured proxy. An active ordinary
-  `basic` egress policy/binding authorizes exact substitution using `agentplane-workload`.
-  Missing or forged destination auth and unbound placeholders fail closed.
-  The destination independently authenticates its Authorization bearer with TokenReview and live
-  Pod resolution, without relying on proxy-hop identity or the caller's source address. The answer
-  is of the subject that bearer proves, projected from the answering replica's enforcement index;
-  this informational snapshot need not come from the replica that admitted the API request.
-  Other request headers and bodies cannot select identity. Service port 80 reaches the distinct
-  API listener, not proxy port 8888; there is no local proxy dispatch or recursive forwarding.
-  Operator admin endpoints are not available through this route.
-  `GET /v1/rules` is the generated HTTP/JSON form of the gRPC `EgressRules.GetRules`
-  (<egress_rules.proto>), served in-process on a loopback listener only: proto-JSON answers, and a
-  bearer that proves no workload fails `401` as a `google.rpc.Status` body (`503` when it could not
-  be reviewed), with the same subject and redaction either way.
+  The sidecar maps the existing HTTP origin to the TLS-only Rules listener on port 8443 and
+  presents its runner SVID through central's opaque CONNECT tunnel. The Rules service independently
+  resolves the verified leaf to the Sandbox's ServiceAccount and canonical UID before the generated
+  `EgressRules.GetRules` handler runs. Bearers and subject headers cannot replace that identity.
+  The generated HTTP facade preserves the TLS peer only through an in-process typed context and
+  runs the same method admission interceptors as native gRPC. No proxy identity assertion is used.
+  The view comes from the answering replica's enforcement index; a different replica may have
+  admitted the tunnel. Operator admin endpoints remain on their separate authenticated listener.
 - The admitted host is resolved by the proxy, never by the sandbox. A host with any address that
   is not globally reachable unicast — loopback, private, link-local, carrier-grade NAT, multicast,
   reserved, and the IPv4-mapped IPv6 forms of those — is refused whole with `address-forbidden`;
@@ -280,7 +251,7 @@ GitOps gates and live rollout acceptance remain separate operational requirement
   stream through the built proxy: several messages, upstream trailers, a client deadline and a
   client cancel, each reaching the upstream. The client trusts the interception CA, the proxy
   verifies the upstream TLS certificate, and those destination TLS legs do not use mTLS. The
-  optional client-to-proxy SVID listener is a separate mTLS hop.
+  client-to-proxy SVID listener is a separate required mTLS hop.
 - **Only a JSON request body is held for the decision.** A request whose headers declare anything
   but an uncompressed `application/json` body is decided from its headers and its body streams to
   the upstream as it arrives, so an interactive stream such as plaintext gRPC inside a tunnel works

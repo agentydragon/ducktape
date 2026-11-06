@@ -22,7 +22,7 @@ def test_firecracker_mounts_and_tokens_stay_on_the_correct_side(scratch_app: App
     template = environment_firecracker.EnvironmentFirecrackerTemplate(
         chart,
         "template",
-        replace(staging.ENV, firecracker_sandboxes=True, runner_egress_mtls=True),
+        replace(staging.ENV, firecracker_sandboxes=True),
         labels={"app.kubernetes.io/name": "agentplane-environment-runtime"},
         state_volume=state,
         workspace_volume=environment_sandbox.workspace_volume_spec(state, layout_type="RawDiskImage"),
@@ -64,7 +64,7 @@ def test_firecracker_mounts_and_tokens_stay_on_the_correct_side(scratch_app: App
     assert "[::]:3128" in relay_settings
     assert "proxy_mode: mtls" in relay_settings
     assert "proxy_port: 8889" in relay_settings
-    assert "token_file: /var/run/agentplane-egress/token" in relay_settings
+    assert "token_file:" not in relay_settings
     assert "/run/agentplane/environment-runtime-tls/tls.crt" in relay_settings
     status_policy = one(doc for doc in docs if doc["kind"] == "CiliumNetworkPolicy")
     assert status_policy["spec"]["ingress"][0]["fromEntities"] == ["kube-apiserver", "host"]

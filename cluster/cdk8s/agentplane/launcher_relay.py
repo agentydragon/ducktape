@@ -77,7 +77,7 @@ def _controller(kind: str, api_version: str) -> str:
     return f"metadata.ownerReferences[?kind=='{kind}' && apiVersion=='{api_version}' && controller==`true`] | [0]"
 
 
-def _context(*, runner_tls_enabled: bool = False) -> list[ClusterPolicySpecRulesContext]:
+def _context() -> list[ClusterPolicySpecRulesContext]:
     """Launcher Pod -> VMI -> VirtualMachine -> Sandbox, and the Sandbox's ServiceAccount, each read live."""
     return [
         ClusterPolicySpecRulesContext(
@@ -110,20 +110,14 @@ def _context(*, runner_tls_enabled: bool = False) -> list[ClusterPolicySpecRules
                 jmes_path=f"vm.{_controller('Sandbox', _SANDBOX_API_VERSION)}", default={}
             ),
         ),
-        *(
-            [
-                ClusterPolicySpecRulesContext(
-                    name="sandboxLive",
-                    api_call=ClusterPolicySpecRulesContextApiCall(
-                        url_path=(
-                            f"/apis/{_SANDBOX_API_VERSION}/namespaces/{{{{request.namespace}}}}/sandboxes/"
-                            "{{sandbox.name || 'missing'}}"
-                        )
-                    ),
+        ClusterPolicySpecRulesContext(
+            name="sandboxLive",
+            api_call=ClusterPolicySpecRulesContextApiCall(
+                url_path=(
+                    f"/apis/{_SANDBOX_API_VERSION}/namespaces/{{{{request.namespace}}}}/sandboxes/"
+                    "{{sandbox.name || 'missing'}}"
                 )
-            ]
-            if runner_tls_enabled
-            else []
+            ),
         ),
         ClusterPolicySpecRulesContext(
             name="account",
@@ -153,46 +147,35 @@ class LauncherRelayPolicy(ClusterPolicy):
     those ports."""
 
     def __init__(
-        self,
-        scope: Construct,
-        id: str,
-        *,
-        namespace: str,
-        runner_pod: dict[str, Any],
-        settings_config_map: str,
-        runner_tls_enabled: bool = False,
+        self, scope: Construct, id: str, *, namespace: str, runner_pod: dict[str, Any], settings_config_map: str
     ) -> None:
         pod_spec = runner_pod["spec"]
         relay = dict(one(c for c in pod_spec["initContainers"] if c["name"] == sidecar_config.CONTAINER_NAME))
         token_volume = sandbox_pod.EGRESS_TOKEN_VOLUME_NAME
         # A deployment that pulls without credentials (the k3s fixture) has none to copy.
         pull_secrets = {"imagePullSecrets": pod_spec["imagePullSecrets"]} if "imagePullSecrets" in pod_spec else {}
-        runner_tls_checks = (
-            [
-                _mismatch("sandboxLive.metadata.uid || ''", "{{sandbox.uid || 'none'}}"),
-                _mismatch("sandboxLive.metadata.name || ''", "{{sandbox.name || 'none'}}"),
-                _mismatch("sandboxLive.status.runnerCredential.kind || ''", "VM"),
-                _mismatch(
-                    "sandboxLive.status.runnerCredential.id || ''",
-                    f"{{{{vm.metadata.annotations.\"{RUNNER_CREDENTIAL_ID_ANNOTATION}\" || 'none'}}}}",
-                ),
-                _mismatch(
-                    "sandboxLive.status.runnerCredential.acceptedId || ''",
-                    f"{{{{vm.metadata.annotations.\"{RUNNER_CREDENTIAL_ID_ANNOTATION}\" || 'none'}}}}",
-                ),
-                _mismatch("sandboxLive.status.runnerCredential.lastVmiUid || ''", "{{vmi.metadata.uid || 'none'}}"),
-                _mismatch(
-                    f"vm.metadata.annotations.\"{RUNNER_CREDENTIAL_VMI_UID_ANNOTATION}\" || ''",
-                    "{{vmi.metadata.uid || 'none'}}",
-                ),
-                _mismatch(
-                    f"vmi.metadata.labels.\"{RUNNER_CREDENTIAL_LABEL}\" || ''",
-                    "{{sandboxLive.status.runnerCredential.acceptedId || 'none'}}",
-                ),
-            ]
-            if runner_tls_enabled
-            else []
-        )
+        runner_tls_checks = [
+            _mismatch("sandboxLive.metadata.uid || ''", "{{sandbox.uid || 'none'}}"),
+            _mismatch("sandboxLive.metadata.name || ''", "{{sandbox.name || 'none'}}"),
+            _mismatch("sandboxLive.status.runnerCredential.kind || ''", "VM"),
+            _mismatch(
+                "sandboxLive.status.runnerCredential.id || ''",
+                f"{{{{vm.metadata.annotations.\"{RUNNER_CREDENTIAL_ID_ANNOTATION}\" || 'none'}}}}",
+            ),
+            _mismatch(
+                "sandboxLive.status.runnerCredential.acceptedId || ''",
+                f"{{{{vm.metadata.annotations.\"{RUNNER_CREDENTIAL_ID_ANNOTATION}\" || 'none'}}}}",
+            ),
+            _mismatch("sandboxLive.status.runnerCredential.lastVmiUid || ''", "{{vmi.metadata.uid || 'none'}}"),
+            _mismatch(
+                f"vm.metadata.annotations.\"{RUNNER_CREDENTIAL_VMI_UID_ANNOTATION}\" || ''",
+                "{{vmi.metadata.uid || 'none'}}",
+            ),
+            _mismatch(
+                f"vmi.metadata.labels.\"{RUNNER_CREDENTIAL_LABEL}\" || ''",
+                "{{sandboxLive.status.runnerCredential.acceptedId || 'none'}}",
+            ),
+        ]
         # A runner Pod sets these Pod-wide; the launcher's own Pod security context is KubeVirt's.
         relay["securityContext"] = {
             **relay["securityContext"],
@@ -200,38 +183,33 @@ class LauncherRelayPolicy(ClusterPolicy):
             "runAsGroup": 1000,
             "runAsNonRoot": True,
         }
-        tls_volumes: list[dict[str, Any]] = []
         protected_volumes = [token_volume]
-        if runner_tls_enabled:
-            relay["volumeMounts"].append(
-                {"name": RUNNER_TLS_VOLUME_NAME, "mountPath": sidecar_config.RUNNER_TLS_MOUNT_PATH, "readOnly": True}
-            )
-            protected_volumes.append(RUNNER_TLS_VOLUME_NAME)
-            tls_volumes.append(
-                {
-                    "name": RUNNER_TLS_VOLUME_NAME,
-                    "projected": {
-                        "defaultMode": 292,
-                        "sources": [
-                            {
-                                "secret": {
-                                    "name": "runner-{{ sandboxLive.status.runnerCredential.acceptedId }}",
-                                    "items": [
-                                        {"key": "tls.crt", "path": "tls.crt"},
-                                        {"key": "tls.key", "path": "tls.key"},
-                                    ],
-                                }
-                            },
-                            {
-                                "configMap": {
-                                    "name": "cluster-internal-ca-bundle",
-                                    "items": [{"key": "ca-certificates.crt", "path": "ca.crt"}],
-                                }
-                            },
-                        ],
-                    },
-                }
-            )
+        relay["volumeMounts"].append(
+            {"name": RUNNER_TLS_VOLUME_NAME, "mountPath": sidecar_config.RUNNER_TLS_MOUNT_PATH, "readOnly": True}
+        )
+        protected_volumes.append(RUNNER_TLS_VOLUME_NAME)
+        tls_volumes = [
+            {
+                "name": RUNNER_TLS_VOLUME_NAME,
+                "projected": {
+                    "defaultMode": 292,
+                    "sources": [
+                        {
+                            "secret": {
+                                "name": "runner-{{ sandboxLive.status.runnerCredential.acceptedId }}",
+                                "items": [{"key": "tls.crt", "path": "tls.crt"}, {"key": "tls.key", "path": "tls.key"}],
+                            }
+                        },
+                        {
+                            "configMap": {
+                                "name": "cluster-internal-ca-bundle",
+                                "items": [{"key": "ca-certificates.crt", "path": "ca.crt"}],
+                            }
+                        },
+                    ],
+                },
+            }
+        ]
         launchers = match_resources(
             ClusterPolicySpecRulesMatchAnyResources(
                 kinds=["Pod"],
@@ -297,7 +275,7 @@ class LauncherRelayPolicy(ClusterPolicy):
                 ClusterPolicySpecRules(
                     name="authenticate-launcher",
                     match=launchers,
-                    context=_context(runner_tls_enabled=runner_tls_enabled),
+                    context=_context(),
                     validate=Validate.deny(
                         message=(
                             "A launcher must be created by KubeVirt for a live VirtualMachine controlled by a "
@@ -323,7 +301,7 @@ class LauncherRelayPolicy(ClusterPolicy):
                 ClusterPolicySpecRules(
                     name="inject-relay",
                     match=launchers,
-                    context=_context(runner_tls_enabled=runner_tls_enabled),
+                    context=_context(),
                     mutate=ClusterPolicySpecRulesMutate(
                         patch_strategic_merge={
                             "spec": {

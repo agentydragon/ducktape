@@ -1,7 +1,8 @@
 // Package proxy is the central egress proxy: CONNECT tunnels, intercepted with a forged leaf, and
-// plain HTTP proxying, on net/http and httputil.ReverseProxy. Every request, inside a tunnel or
-// not, passes identity, policy, credential and address checks before anything is dialed; a failure
-// anywhere is a refusal, never a forward.
+// plain HTTP proxying, on net/http and httputil.ReverseProxy. Every ordinary request passes identity,
+// policy, credential and address checks before anything is dialed. A small deployment-configured
+// list of opaque TLS targets instead authenticates the SVID and delegates authorization to its
+// destination after pinning the destination address.
 //
 // The checks see the authority a request names (the CONNECT target for the CONNECT itself, the
 // request's own authority for what runs inside), and the dial goes to exactly the address the check
@@ -21,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,9 +49,11 @@ type Options struct {
 	Upstream      *upstream.Resolver
 	// Record receives every decision. It must not block.
 	Record func(decision.Record)
-	// SandboxReaders performs live credential-to-Sandbox lookups for the
-	// optional SVID listener, keyed by namespace. Every reader must use an
-	// uncached API reader. The map is empty when the listener is disabled.
+	// TLSPassthroughTargets are the only authorities carried as opaque TLS after a
+	// workload-authenticated CONNECT. Every target is an exact DNS authority.
+	TLSPassthroughTargets []string
+	// SandboxReaders performs live credential-to-Sandbox lookups, keyed by namespace.
+	// Every reader must use an uncached API reader.
 	SandboxReaders map[string]*sandboxreader.Reader
 }
 
@@ -68,6 +72,9 @@ func New(options Options) (*Proxy, error) {
 	if len(options.CA.Certificate) == 0 || options.CA.PrivateKey == nil || options.UpstreamRoots == nil ||
 		options.Identity == nil || options.Policy == nil || options.Upstream == nil || options.Record == nil {
 		return nil, errors.New("interception CA, upstream roots, identity, policy, upstream resolver and record are required")
+	}
+	if err := validatePassthroughTargets(options.TLSPassthroughTargets); err != nil {
+		return nil, err
 	}
 	for namespace, reader := range options.SandboxReaders {
 		if namespace == "" || reader == nil {
@@ -148,6 +155,10 @@ func (p *Proxy) connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	client := newConnection(r)
+	if slices.Contains(p.options.TLSPassthroughTargets, r.Host) {
+		p.connectPassthrough(w, r, client, host, int(portNumber))
+		return
+	}
 	verdict, _ := p.gate(r, client, nil, host, int(portNumber))
 	if denied, ok := verdict.(policy.Denied); ok {
 		deny(w, denied.Reason)

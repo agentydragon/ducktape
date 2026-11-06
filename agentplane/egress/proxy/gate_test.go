@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"io"
 	"log"
@@ -14,7 +15,6 @@ import (
 	"net/netip"
 	"net/url"
 	"runtime"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,7 +27,6 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"golang.org/x/net/http2"
-	corev1 "k8s.io/api/core/v1"
 )
 
 var (
@@ -104,12 +103,6 @@ func TestRefusalsCarryTheirReasonAndAreRecorded(t *testing.T) {
 		// authenticated is whether the record names a subject.
 		authenticated bool
 	}{
-		"no bearer":        {nil, "/allowed", nil, 403, decision.TokenMissing, false},
-		"unreviewed token": {header("Proxy-Authorization", "Bearer forged"), "/allowed", nil, 403, decision.TokenRejected, false},
-		"two bearers": {
-			header("Proxy-Authorization", "Bearer "+hopToken, "Proxy-Authorization", "Bearer "+hopToken), "/allowed", nil,
-			403, decision.TokenMissing, false,
-		},
 		"no rule for the path": {bearerHeader, "/elsewhere", nil, 403, decision.NoRule, true},
 		"no binding": {
 			bearerHeader, "/allowed", func(l *lab) { l.index.Rules.DeleteBinding("runner") }, 403, decision.NoBinding, true,
@@ -162,6 +155,18 @@ func TestRefusalsCarryTheirReasonAndAreRecorded(t *testing.T) {
 	}
 }
 
+func TestProxyAuthorizationCannotAuthenticateWithoutAnSVID(t *testing.T) {
+	l := newLab(t)
+	upstream := plainUpstream(t, func(http.ResponseWriter, *http.Request) { t.Error("request without an SVID reached upstream") })
+	response := l.sendOn(t, l.clientWithoutSVID(), "GET", portOf(upstream), "/allowed", bearerHeader, nil)
+	if response.StatusCode != http.StatusForbidden || response.Header.Get("x-agentplane-egress") != "denied; reason=token-rejected" {
+		t.Fatalf("response %d %q; a hop bearer must not replace the missing SVID", response.StatusCode, response.Header.Get("x-agentplane-egress"))
+	}
+	if record := l.records.all()[0]; record.Subject != nil || valueOf(record.Reason) != decision.TokenRejected {
+		t.Fatalf("missing SVID was recorded as an authenticated caller: %+v", record)
+	}
+}
+
 func TestAdmittedRequestIsSubstitutedAndLosesItsHopHeaders(t *testing.T) {
 	l := newLab(t)
 	upstream := plainUpstream(t, func(w http.ResponseWriter, r *http.Request) {
@@ -184,7 +189,7 @@ func TestAdmittedRequestIsSubstitutedAndLosesItsHopHeaders(t *testing.T) {
 func TestPlainRequestsOnOneClientConnectionShareAConnectionID(t *testing.T) {
 	l := newLab(t)
 	upstream := plainUpstream(t, func(http.ResponseWriter, *http.Request) {})
-	proxyURL, err := url.Parse("http://" + l.address)
+	proxyURL, err := url.Parse("https://" + l.address)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,8 +206,8 @@ func TestPlainRequestsOnOneClientConnectionShareAConnectionID(t *testing.T) {
 		}
 		response.Body.Close()
 	}
-	first := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
-	second := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)}}
+	first := l.client()
+	second := l.client()
 	get(first, "/allowed")
 	get(first, "/refused")
 	get(second, "/allowed")
@@ -400,18 +405,7 @@ func TestDrainGivesUpOnARequestThatNeverFinishes(t *testing.T) {
 func TestConnectNeedsAHostAndPort(t *testing.T) {
 	l := newLab(t)
 	for _, authority := range []string{fixtureHost, ":443", fixtureHost + ":https"} {
-		connection, err := net.Dial("tcp", l.address)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer connection.Close()
-		if _, err := io.WriteString(connection, "CONNECT "+authority+" HTTP/1.1\r\nHost: "+authority+"\r\n\r\n"); err != nil {
-			t.Fatal(err)
-		}
-		response, err := http.ReadResponse(bufio.NewReader(connection), &http.Request{Method: "CONNECT"})
-		if err != nil {
-			t.Fatal(err)
-		}
+		_, response := l.connect(t, authority, "")
 		if response.StatusCode != http.StatusBadRequest {
 			t.Errorf("CONNECT %s: %s", authority, response.Status)
 		}
@@ -435,11 +429,7 @@ func TestConnectRefusalsCarryTheirReasonAndAreRecorded(t *testing.T) {
 		// authenticated is whether the record names a subject.
 		authenticated bool
 	}{
-		"no bearer":            {"", "", nil, 403, decision.TokenMissing, false},
-		"unreviewed token":     {"Proxy-Authorization: Bearer forged\r\n", "", nil, 403, decision.TokenRejected, false},
-		"two bearers":          {validBearer + validBearer, "", nil, 403, decision.TokenMissing, false},
-		"review that fails":    {validBearer, "", func(l *lab) { l.hop.unreachable.Store(true) }, 502, decision.Unavailable, false},
-		"no binding":           {validBearer, "", func(l *lab) { l.index.Rules.DeleteBinding("runner") }, 403, decision.NoBinding, true},
+		"no binding":           {"", "", func(l *lab) { l.index.Rules.DeleteBinding("runner") }, 403, decision.NoBinding, true},
 		"no rule for the host": {validBearer, "other.test", nil, 403, decision.NoRule, true},
 		"failing policy watch": {
 			validBearer, "", func(l *lab) { failWatch(l, reader.PolicyBindings) },
@@ -532,151 +522,77 @@ func TestClusterInternalRuleLetsTheGateAdmitAPrivateAddress(t *testing.T) {
 	}
 }
 
-func TestARejectedOrRevokedBearerLeavesATunnelWithoutAnIdentity(t *testing.T) {
-	for name, c := range map[string]struct {
-		// change happens after the tunnel, opened on token bound to pod, has carried a request.
-		change func(t *testing.T, pod *corev1.Pod, token string)
-		hop    string
-	}{
-		"replacement the reviewer rejects": {nil, "Bearer forged"},
-		"bearer revoked mid-tunnel": {func(t *testing.T, pod *corev1.Pod, token string) {
-			if err := kube.Revoke(t.Context(), pod, token, hopAudience); err != nil {
-				t.Fatal(err)
-			}
-		}, ""},
-	} {
-		t.Run(name, func(t *testing.T) {
-			l := newLab(t)
-			pod, token := runnerToken(t, hopAudience)
-			upstream, counted := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-			port := portOf(upstream)
-			_, client := l.tunnelAs(t, token, port, true, "")
-			if got := tunnelStatus(t, client, port, ""); got != 200 {
-				t.Fatalf("initial request=%d", got)
-			}
-			if c.change != nil {
-				c.change(t, pod, token)
-			}
-
-			// The refused request leaves the tunnel nothing to fall back on, neither the CONNECT's bearer
-			// nor the one a replacement displaced.
-			if first, later := tunnelStatus(t, client, port, c.hop), tunnelStatus(t, client, port, ""); first != 403 || later != 403 {
-				t.Errorf("refused request=%d, later request=%d, want 403 for both", first, later)
-			}
-
-			refusals := l.records.all()[2:]
-			if len(refusals) != 2 || valueOf(refusals[0].Reason) != decision.TokenRejected ||
-				valueOf(refusals[1].Reason) != decision.TokenMissing || refusals[0].Subject != nil || refusals[1].Subject != nil {
-				t.Errorf("refusals %+v, want token-rejected then token-missing, neither naming a subject", refusals)
-			}
-			if counted.accepts.Load() != 1 {
-				t.Errorf("a refusal opened upstream TCP: %d", counted.accepts.Load())
-			}
-		})
+func TestProxyAuthorizationCannotReplaceAMissingSVIDOnCONNECT(t *testing.T) {
+	l := newLab(t)
+	upstream, counted := l.upstream(t, fixtureHost, true, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("request without SVID reached upstream") }))
+	tlsConfig := l.proxyClientTLS.Clone()
+	tlsConfig.Certificates = nil
+	tlsConfig.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return nil, nil }
+	_, response := l.connectWithTLS(t, tlsConfig, fixtureHost+":"+portOf(upstream), validBearer)
+	if response.StatusCode != http.StatusForbidden || response.Header.Get("x-agentplane-egress") != "denied; reason=token-rejected" {
+		t.Fatalf("CONNECT response %d %q; a hop bearer must not replace the missing SVID", response.StatusCode, response.Header.Get("x-agentplane-egress"))
+	}
+	if len(l.records.all()) != 1 || l.records.all()[0].Subject != nil || counted.accepts.Load() != 0 {
+		t.Fatalf("missing SVID acquired identity or dialed upstream: records=%+v TCP=%d", l.records.all(), counted.accepts.Load())
 	}
 }
 
-func TestABearerlessRequestInheritsNothingFromAnAuthenticatedConnection(t *testing.T) {
+func TestSVIDAuthenticatesProxyRequestsWithoutHopBearerHeaders(t *testing.T) {
 	l := newLab(t)
 	var reached atomic.Int64
 	upstream := plainUpstream(t, func(http.ResponseWriter, *http.Request) { reached.Add(1) })
 	port := portOf(upstream)
-	if _, response := l.connect(t, fixtureHost+":"+port, validBearer); response.StatusCode != 200 {
-		t.Fatalf("CONNECT: %s", response.Status)
+	if _, response := l.connect(t, fixtureHost+":"+port, ""); response.StatusCode != http.StatusOK {
+		t.Fatalf("CONNECT without a hop bearer: %s", response.Status)
 	}
 	plain := l.client()
-	if admitted := l.sendOn(t, plain, "GET", port, "/allowed", bearerHeader, nil); admitted.StatusCode != 200 {
-		t.Fatalf("authenticated request: %s", admitted.Status)
+	if response := l.sendOn(t, plain, "GET", port, "/allowed", nil, nil); response.StatusCode != http.StatusOK {
+		t.Fatalf("SVID-authenticated request without a hop bearer: %s", response.Status)
 	}
-
-	for _, c := range []struct {
-		name string
-		send func() *http.Response
-	}{
-		{"next request on the authenticated plain connection", func() *http.Response {
-			return l.sendOn(t, plain, "GET", port, "/allowed", nil, nil)
-		}},
-		{"another plain connection", func() *http.Response { return l.send(t, "GET", port, "/allowed", nil, nil) }},
-		{"another CONNECT", func() *http.Response {
+	for _, send := range []func() *http.Response{
+		func() *http.Response { return l.sendOn(t, plain, "GET", port, "/allowed", nil, nil) },
+		func() *http.Response { return l.send(t, "GET", port, "/allowed", nil, nil) },
+		func() *http.Response {
 			_, response := l.connect(t, fixtureHost+":"+port, "")
 			return response
-		}},
+		},
 	} {
-		if response := c.send(); response.StatusCode != 403 || response.Header.Get("x-agentplane-egress") != "denied; reason=token-missing" {
-			t.Errorf("%s: %d %q", c.name, response.StatusCode, response.Header.Get("x-agentplane-egress"))
+		if response := send(); response.StatusCode != http.StatusOK {
+			t.Errorf("SVID-authenticated request without a hop bearer: %d %q", response.StatusCode, response.Header.Get("x-agentplane-egress"))
 		}
 	}
 	records := l.records.all()
 	if len(records) != 5 {
-		t.Fatalf("%d decisions, want 5", len(records))
+		t.Fatalf("%d decisions, want one CONNECT and four requests", len(records))
 	}
 	connections := map[string]bool{}
 	for _, record := range records {
 		connections[record.ConnectionID] = true
-	}
-	// The premise: the plain connection's second request ran on the connection of its first, and every
-	// other decision on a connection of its own.
-	if records[1].ConnectionID != records[2].ConnectionID || len(connections) != 4 {
-		t.Errorf("connection IDs %v do not describe one reused plain connection and three others", connections)
-	}
-	for _, refusal := range records[2:] {
-		if refusal.Outcome != decision.Deny || valueOf(refusal.Reason) != decision.TokenMissing || refusal.Subject != nil {
-			t.Errorf("record %+v", refusal)
+		if record.Outcome != decision.Allow || record.Subject == nil || record.Subject.Name != runner.Name {
+			t.Errorf("record %+v", record)
 		}
 	}
-	if reached.Load() != 1 {
-		t.Errorf("%d requests reached upstream, want only the authenticated one", reached.Load())
+	if records[1].ConnectionID != records[2].ConnectionID || len(connections) != 4 {
+		t.Errorf("connection IDs %v do not describe one reused proxy connection and three others", connections)
+	}
+	if reached.Load() != 3 {
+		t.Errorf("%d requests reached upstream, want three HTTP requests", reached.Load())
 	}
 }
 
-func TestEachConnectionSubstitutesItsOwnWorkloadBearerAndNeverForwardsTheHopHeader(t *testing.T) {
+func TestAuthenticatedWorkloadTokenHasNoBearerUnderSVIDAuthentication(t *testing.T) {
 	l := newLab(t)
 	l.index.PutCredential(workloadCredential)
 	l.allow(rule("/workload", workloadCredential.Name))
-	_, tokenB := runnerToken(t, hopAudience)
-	_, tokenC := runnerToken(t, hopAudience)
-	var authorization, hop seen
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authorization.set(r.Header.Get("Authorization"))
-		hop.set(r.Header.Get("Proxy-Authorization"))
-	})
-	tlsUpstream, _ := l.upstream(t, fixtureHost, true, handler)
-	plain := plainUpstream(t, handler)
-	_, tunnelA := l.tunnelAs(t, hopToken, portOf(tlsUpstream), true, "")
-	_, tunnelB := l.tunnelAs(t, tokenB, portOf(tlsUpstream), true, "")
-	placeholder := "Bearer " + workloadCredential.Placeholder()
-	through := func(client *http2.ClientConn) int {
-		req := request(bounded(t), portOf(tlsUpstream), "/workload", true, nil)
-		req.Header.Del("x-api-key")
-		req.Header.Set("Authorization", placeholder)
-		response, err := client.RoundTrip(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		response.Body.Close()
-		return response.StatusCode
+	var reached atomic.Int64
+	upstream := plainUpstream(t, func(http.ResponseWriter, *http.Request) { reached.Add(1) })
+	response := l.send(t, "GET", portOf(upstream), "/workload",
+		header("Proxy-Authorization", "Bearer "+hopToken, "Authorization", "Bearer "+workloadCredential.Placeholder()), nil)
+	if response.StatusCode != http.StatusForbidden || response.Header.Get("x-agentplane-egress") != "denied; reason=credential-unavailable" {
+		t.Fatalf("authenticatedWorkloadToken without a bearer: %d %q", response.StatusCode, response.Header.Get("x-agentplane-egress"))
 	}
-
-	var got []string
-	for _, send := range []func() int{
-		func() int { return through(tunnelA) },
-		func() int { return through(tunnelB) },
-		func() int {
-			return l.send(t, "GET", portOf(plain), "/workload", header("Proxy-Authorization", "Bearer "+tokenC, "Authorization", placeholder), nil).StatusCode
-		},
-		func() int { return through(tunnelA) },
-	} {
-		if status := send(); status != 200 {
-			t.Fatalf("request %d: status %d", len(got), status)
-		}
-		got = append(got, authorization.take())
-		if forwarded := hop.take(); forwarded != "" {
-			t.Errorf("request %d forwarded Proxy-Authorization %q", len(got)-1, forwarded)
-		}
-	}
-
-	if want := []string{"Bearer " + hopToken, "Bearer " + tokenB, "Bearer " + tokenC, "Bearer " + hopToken}; !slices.Equal(got, want) {
-		t.Errorf("upstream saw Authorization %q, want each request's own hop bearer %q", got, want)
+	if reached.Load() != 0 {
+		t.Fatalf("request with unresolved authenticatedWorkloadToken reached upstream %d times", reached.Load())
 	}
 }
 
@@ -803,7 +719,7 @@ func TestAnOutOfRangePortIsRefusedUnrecorded(t *testing.T) {
 			t.Errorf("CONNECT to port %s: %s", port, response.Status)
 		}
 	}
-	connection, err := net.Dial("tcp", l.address)
+	connection, err := tls.Dial("tcp", l.address, l.proxyClientTLS)
 	if err != nil {
 		t.Fatal(err)
 	}

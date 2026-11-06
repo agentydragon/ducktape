@@ -226,16 +226,13 @@ func (s *sidecar) handle(client net.Conn) {
 			}
 		}
 		token := ""
-		if s.config.TokenFile != "" {
+		if s.config.ProxyMode == "token" && s.config.TokenFile != "" {
 			token, err = readToken(s.config.TokenFile)
 			if err != nil {
-				slog.Warn("destination compatibility bearer unavailable", "path", s.config.TokenFile, "error", err)
-				if s.config.ProxyMode == "token" {
-					writeRefusal(client, http.StatusServiceUnavailable, "token-unavailable")
-					return
-				}
+				slog.Warn("parked token-mode credential unavailable", "path", s.config.TokenFile, "error", err)
+				writeRefusal(client, http.StatusServiceUnavailable, "token-unavailable")
+				return
 			}
-
 		}
 		rewriteRequest(request, token, s.readProjectedTokens())
 		if upstream == nil {
@@ -265,6 +262,8 @@ func (s *sidecar) dialProxy() (net.Conn, error) {
 	}
 	switch s.config.ProxyMode {
 	case "token":
+		// This mode remains only for parked non-Sandbox callers. The central
+		// service has no plaintext listener, so it cannot authenticate here.
 		return connection, nil
 	case "mtls":
 		if s.proxyTLS == nil {
@@ -355,15 +354,14 @@ func readFinalResponse(client io.Writer, upstreamReader *bufio.Reader, request *
 	}
 }
 
-// rewriteRequest replaces the workload's proxy credentials with the sidecar's own. http.ReadRequest
-// canonicalizes header keys and joins obs-folded lines into the value they continue, so each Del
-// removes every value of that header however the workload spelled, repeated or folded it.
+// rewriteRequest removes caller-supplied hop credentials and carries only audience-scoped
+// destination tokens. http.ReadRequest canonicalizes and joins repeated/folded headers, so Del
+// removes every value regardless of how the workload spelled them.
 func rewriteRequest(request *http.Request, token string, projected map[string]string) {
 	request.Header.Del("Proxy-Connection")
+	request.Header.Del("Proxy-Authorization")
 	request.Header.Del(projectedTokenHeader)
-	if token == "" {
-		request.Header.Del("Proxy-Authorization")
-	} else {
+	if token != "" {
 		request.Header.Set("Proxy-Authorization", "Bearer "+token)
 	}
 	for _, audience := range slices.Sorted(maps.Keys(projected)) {

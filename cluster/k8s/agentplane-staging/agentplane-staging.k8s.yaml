@@ -1439,6 +1439,28 @@ spec:
             - port: "8080"
               protocol: TCP
 ---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: agentplane-egress-proxy
+  namespace: agentplane-staging
+spec:
+  duration: 24h
+  issuerRef:
+    kind: Issuer
+    name: agentplane-runner-ca
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Always
+    size: 256
+  renewBefore: 8h
+  secretName: agentplane-egress-proxy-tls
+  uris:
+    - spiffe://agentplane/egress-proxy
+  usages:
+    - digital signature
+    - server auth
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -1448,8 +1470,6 @@ data:
   settings.yaml: |
     allowed_service_account_namespaces:
       - agentplane-staging
-      - public-coder-agent
-      - haku-sandbox
     admin_grpc_audience: agentplane-egress-admin
     admin_grpc_callers:
       - agentplane-staging/app
@@ -1458,6 +1478,16 @@ data:
       - agentplane-notifications
       - agentplane-runner-ingress
       - session-dispatcher
+    tls_passthrough_targets:
+      - egress.agentplane-staging.svc.cluster.local:8443
+    svid_listen_address: 0.0.0.0:8889
+    svid_cert_file: /etc/agentplane-egress/svid/tls.crt
+    svid_key_file: /etc/agentplane-egress/svid/tls.key
+    svid_ca_file: /etc/agentplane-egress/svid-ca/ca-certificates.crt
+    rules_listen_address: 0.0.0.0:8443
+    rules_cert_file: /run/agentplane/workload-tls/tls.crt
+    rules_key_file: /run/agentplane/workload-tls/tls.key
+    rules_ca_file: /run/agentplane/workload-trust/ca-certificates.crt
 immutable: false
 ---
 apiVersion: v1
@@ -1513,20 +1543,30 @@ spec:
               value: agentplane-staging
             - name: AGENTPLANE_EGRESS_CREDENTIALS_NAMESPACE
               value: agentplane-staging-egress-credentials
-            - name: AGENTPLANE_EGRESS_LISTEN_ADDRESS
-              value: 0.0.0.0:8888
             - name: AGENTPLANE_EGRESS_ADMIN_LISTEN_ADDRESS
               value: 0.0.0.0:8081
-            - name: AGENTPLANE_EGRESS_AGENT_API_LISTEN_ADDRESS
-              value: 0.0.0.0:8082
+            - name: AGENTPLANE_EGRESS_SVID_LISTEN_ADDRESS
+              value: 0.0.0.0:8889
+            - name: AGENTPLANE_EGRESS_SVID_CERT_FILE
+              value: /etc/agentplane-egress/svid/tls.crt
+            - name: AGENTPLANE_EGRESS_SVID_KEY_FILE
+              value: /etc/agentplane-egress/svid/tls.key
+            - name: AGENTPLANE_EGRESS_SVID_CA_FILE
+              value: /etc/agentplane-egress/svid-ca/ca-certificates.crt
+            - name: AGENTPLANE_EGRESS_RULES_LISTEN_ADDRESS
+              value: 0.0.0.0:8443
+            - name: AGENTPLANE_EGRESS_RULES_CERT_FILE
+              value: /run/agentplane/workload-tls/tls.crt
+            - name: AGENTPLANE_EGRESS_RULES_KEY_FILE
+              value: /run/agentplane/workload-tls/tls.key
+            - name: AGENTPLANE_EGRESS_RULES_CA_FILE
+              value: /run/agentplane/workload-trust/ca-certificates.crt
             - name: AGENTPLANE_EGRESS_CA_CERT
               value: /etc/agentplane-egress/ca/tls.crt
             - name: AGENTPLANE_EGRESS_CA_KEY
               value: /etc/agentplane-egress/ca/tls.key
             - name: AGENTPLANE_EGRESS_UPSTREAM_CA_FILE
               value: /etc/agentplane-egress/upstream-ca/ca-certificates.crt
-            - name: AGENTPLANE_EGRESS_TOKEN_AUDIENCE
-              value: agentplane-egress
             - name: AGENTPLANE_EGRESS_DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -1557,11 +1597,11 @@ spec:
             periodSeconds: 30
           name: proxy
           ports:
-            - containerPort: 8082
-              name: http
-              protocol: TCP
-            - containerPort: 8888
+            - containerPort: 8889
               name: proxy
+              protocol: TCP
+            - containerPort: 8443
+              name: rules-workload
               protocol: TCP
             - containerPort: 8081
               name: admin
@@ -1600,8 +1640,20 @@ spec:
             - mountPath: /etc/agentplane-egress/upstream-ca
               name: upstream-ca
               readOnly: true
+            - mountPath: /etc/agentplane-egress/svid
+              name: svid
+              readOnly: true
+            - mountPath: /etc/agentplane-egress/svid-ca
+              name: svid-ca
+              readOnly: true
             - mountPath: /etc/agentplane-egress/settings
               name: configmap-egress-go-settings
+              readOnly: true
+            - mountPath: /run/agentplane/workload-tls
+              name: workload-tls
+              readOnly: true
+            - mountPath: /run/agentplane/workload-trust
+              name: workload-trust
               readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
@@ -1641,9 +1693,21 @@ spec:
         - configMap:
             name: agentplane-staging-egress-upstream-ca
           name: upstream-ca
+        - name: svid
+          secret:
+            secretName: agentplane-egress-proxy-tls
+        - configMap:
+            name: cluster-internal-ca-bundle
+          name: svid-ca
         - configMap:
             name: egress-go-settings
           name: configmap-egress-go-settings
+        - name: workload-tls
+          secret:
+            secretName: egress-rules-workload-tls
+        - configMap:
+            name: cluster-internal-ca-bundle
+          name: workload-trust
 ---
 apiVersion: v1
 kind: Service
@@ -1655,14 +1719,14 @@ metadata:
 spec:
   externalIPs: []
   ports:
-    - name: http
-      port: 80
-      protocol: TCP
-      targetPort: 8082
     - name: proxy
-      port: 8888
+      port: 8889
       protocol: TCP
-      targetPort: 8888
+      targetPort: 8889
+    - name: rules-workload
+      port: 8443
+      protocol: TCP
+      targetPort: 8443
   selector:
     cdk8s.io/metadata.addr: agentplane-egress-deployment-c84e690f
   trafficDistribution: PreferClose
@@ -1678,6 +1742,28 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: egress
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: egress-rules-workload
+  namespace: agentplane-staging
+spec:
+  duration: 24h
+  issuerRef:
+    kind: Issuer
+    name: agentplane-runner-ca
+  privateKey:
+    algorithm: ECDSA
+    rotationPolicy: Always
+    size: 256
+  renewBefore: 8h
+  secretName: egress-rules-workload-tls
+  uris:
+    - spiffe://agentplane/egress-rules
+  usages:
+    - digital signature
+    - server auth
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -1741,6 +1827,20 @@ rules:
       - policybindings/status
     verbs:
       - patch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -2042,19 +2142,6 @@ spec:
       type: action_auto_approve
     - clusterInternal: true
       credentialRef:
-        name: agentplane-workload
-      hosts:
-        - egress.agentplane-staging.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /llms.txt
-        - /docs/agents/**
-        - /openapi.json
-        - /v1/rules
-      type: egress
-    - clusterInternal: true
-      credentialRef:
         name: kubernetes-workload
       hosts:
         - kubernetes.default.svc.cluster.local
@@ -2278,7 +2365,7 @@ spec:
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
-            - port: "8082"
+            - port: "8443"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
@@ -2378,7 +2465,7 @@ spec:
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
-            - port: "8888"
+            - port: "8889"
               protocol: TCP
     - fromEndpoints:
         - matchLabels:
@@ -2394,7 +2481,7 @@ spec:
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
-            - port: "8082"
+            - port: "8443"
               protocol: TCP
 ---
 apiVersion: v1
@@ -4788,14 +4875,25 @@ metadata:
 data:
   settings.yaml: |
     proxy_host: egress.agentplane-staging.svc.cluster.local
-    proxy_port: 8888
-    proxy_mode: token
-    token_file: /var/run/agentplane-egress/token
+    proxy_port: 8889
+    proxy_mode: mtls
+    proxy_tls:
+      cert_file: /run/agentplane/environment-runtime-tls/tls.crt
+      key_file: /run/agentplane/environment-runtime-tls/tls.key
+      ca_file: /run/agentplane/environment-runtime-tls/ca.crt
     audience_token_files:
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
       agentplane-notifications: /var/run/agentplane-egress/notifications-token
       session-dispatcher: /var/run/agentplane-egress/session-dispatcher-token
       agentplane-runner-ingress: /var/run/agentplane-egress/runner-ingress-token
+    workload_routes:
+      egress.agentplane-staging.svc.cluster.local:80:
+        upstream: egress.agentplane-staging.svc.cluster.local:8443
+        server_uri: spiffe://agentplane/egress-rules
+        tls:
+          cert_file: /run/agentplane/environment-runtime-tls/tls.crt
+          key_file: /run/agentplane/environment-runtime-tls/tls.key
+          ca_file: /run/agentplane/environment-runtime-tls/ca.crt
     platform_routes:
       ingress:
         listen_address: 127.0.0.1:3131
@@ -5129,10 +5227,6 @@ spec:
           projected:
             sources:
               - serviceAccountToken:
-                  audience: agentplane-egress
-                  expirationSeconds: 600
-                  path: token
-              - serviceAccountToken:
                   audience: https://localhost:7445
                   expirationSeconds: 600
                   path: kubernetes-token
@@ -5200,14 +5294,25 @@ metadata:
 data:
   settings.yaml: |
     proxy_host: egress.agentplane-staging.svc.cluster.local
-    proxy_port: 8888
-    proxy_mode: token
-    token_file: /var/run/agentplane-egress/token
+    proxy_port: 8889
+    proxy_mode: mtls
+    proxy_tls:
+      cert_file: /run/agentplane/environment-runtime-tls/tls.crt
+      key_file: /run/agentplane/environment-runtime-tls/tls.key
+      ca_file: /run/agentplane/environment-runtime-tls/ca.crt
     audience_token_files:
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
       agentplane-notifications: /var/run/agentplane-egress/notifications-token
       session-dispatcher: /var/run/agentplane-egress/session-dispatcher-token
       agentplane-runner-ingress: /var/run/agentplane-egress/runner-ingress-token
+    workload_routes:
+      egress.agentplane-staging.svc.cluster.local:80:
+        upstream: egress.agentplane-staging.svc.cluster.local:8443
+        server_uri: spiffe://agentplane/egress-rules
+        tls:
+          cert_file: /run/agentplane/environment-runtime-tls/tls.crt
+          key_file: /run/agentplane/environment-runtime-tls/tls.key
+          ca_file: /run/agentplane/environment-runtime-tls/ca.crt
     platform_routes:
       ingress:
         listen_address: 0.0.0.0:3131
@@ -5248,10 +5353,19 @@ spec:
               - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
                 operator: NotEquals
                 value: 0
+              - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
+                operator: NotEquals
+                value: 0
               - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
                 operator: NotEquals
                 value: 0
+              - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
+                operator: NotEquals
+                value: 0
               - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+                operator: NotEquals
+                value: 0
+              - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
                 operator: NotEquals
                 value: 0
         message: Only the launcher relay may mount projected tokens or runner credentials.
@@ -5274,6 +5388,9 @@ spec:
           variable:
             default: {}
             jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/sandboxes/{{sandbox.name || 'missing'}}
+          name: sandboxLive
         - apiCall:
             urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
           name: account
@@ -5309,12 +5426,45 @@ spec:
               - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
                 operator: NotEquals
                 value: 0
+              - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
+                operator: NotEquals
+                value: 0
               - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+                operator: NotEquals
+                value: 0
+              - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
                 operator: NotEquals
                 value: 0
               - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
                 operator: NotEquals
                 value: 0
+              - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
+                operator: NotEquals
+                value: 0
+              - key: "{{ sandboxLive.metadata.uid || '' }}"
+                operator: NotEquals
+                value: "{{sandbox.uid || 'none'}}"
+              - key: "{{ sandboxLive.metadata.name || '' }}"
+                operator: NotEquals
+                value: "{{sandbox.name || 'none'}}"
+              - key: "{{ sandboxLive.status.runnerCredential.kind || '' }}"
+                operator: NotEquals
+                value: VM
+              - key: "{{ sandboxLive.status.runnerCredential.id || '' }}"
+                operator: NotEquals
+                value: "{{vm.metadata.annotations.\"agentplane.allegedly.works/environment-runtime-credential\" || 'none'}}"
+              - key: "{{ sandboxLive.status.runnerCredential.acceptedId || '' }}"
+                operator: NotEquals
+                value: "{{vm.metadata.annotations.\"agentplane.allegedly.works/environment-runtime-credential\" || 'none'}}"
+              - key: "{{ sandboxLive.status.runnerCredential.lastVmiUid || '' }}"
+                operator: NotEquals
+                value: "{{vmi.metadata.uid || 'none'}}"
+              - key: "{{ vm.metadata.annotations.\"agentplane.allegedly.works/environment-runtime-credential-vmi-uid\" || '' }}"
+                operator: NotEquals
+                value: "{{vmi.metadata.uid || 'none'}}"
+              - key: "{{ vmi.metadata.labels.\"agentplane.allegedly.works/environment-runtime-credential\" || '' }}"
+                operator: NotEquals
+                value: "{{sandboxLive.status.runnerCredential.acceptedId || 'none'}}"
               - key: "{{ length(vmi.spec.volumes[?serviceAccount] || `[]`) }}"
                 operator: NotEquals
                 value: 0
@@ -5338,6 +5488,9 @@ spec:
           variable:
             default: {}
             jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/sandboxes/{{sandbox.name || 'missing'}}
+          name: sandboxLive
         - apiCall:
             urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
           name: account
@@ -5366,10 +5519,6 @@ spec:
                 projected:
                   sources:
                     - serviceAccountToken:
-                        audience: agentplane-egress
-                        expirationSeconds: 600
-                        path: token
-                    - serviceAccountToken:
                         audience: https://localhost:7445
                         expirationSeconds: 600
                         path: kubernetes-token
@@ -5388,6 +5537,22 @@ spec:
               - configMap:
                   name: launcher-relay-egress-sidecar
                 name: egress-sidecar-settings
+              - name: agentplane-runner-relay-tls
+                projected:
+                  defaultMode: 292
+                  sources:
+                    - secret:
+                        items:
+                          - key: tls.crt
+                            path: tls.crt
+                          - key: tls.key
+                            path: tls.key
+                        name: runner-{{ sandboxLive.status.runnerCredential.acceptedId || 'missing' }}
+                    - configMap:
+                        items:
+                          - key: ca-certificates.crt
+                            path: ca.crt
+                        name: cluster-internal-ca-bundle
       name: inject-relay
     - context:
         - name: relay
@@ -5440,6 +5605,9 @@ spec:
                 - mountPath: /etc/agentplane-egress-sidecar
                   name: egress-sidecar-settings
                   readOnly: true
+                - mountPath: /run/agentplane/environment-runtime-tls
+                  name: agentplane-runner-relay-tls
+                  readOnly: true
       match:
         any:
           - resources:
@@ -5482,6 +5650,9 @@ spec:
           variable:
             default: {}
             jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/sandboxes/{{sandbox.name || 'missing'}}
+          name: sandboxLive
         - apiCall:
             urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
           name: account
@@ -5536,6 +5707,9 @@ spec:
             default: {}
             jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
         - apiCall:
+            urlPath: /apis/agentplane.allegedly.works/v1alpha1/namespaces/{{request.namespace}}/sandboxes/{{sandbox.name || 'missing'}}
+          name: sandboxLive
+        - apiCall:
             urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
           name: account
       match:
@@ -5573,17 +5747,26 @@ spec:
               - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
                 operator: NotEquals
                 value: 0
+              - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
+                operator: NotEquals
+                value: 0
               - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
                 operator: NotEquals
                 value: 0
+              - key: "{{ length((request.object.spec.initContainers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
+                operator: NotEquals
+                value: 0
               - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+                operator: NotEquals
+                value: 0
+              - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='agentplane-runner-relay-tls']) }}"
                 operator: NotEquals
                 value: 0
         message: The launcher must have exactly one native relay init sidecar.
   validationFailureAction: enforce
   webhookConfiguration:
     matchConditions:
-      - expression: "request.namespace == 'agentplane-staging' && (request.operation == 'CREATE' ? (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher') : (has(object.spec.volumes) && (object.spec.volumes.exists(v, v.name == 'egress-token'))))"
+      - expression: "request.namespace == 'agentplane-staging' && (request.operation == 'CREATE' ? (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher') : (has(object.spec.volumes) && (object.spec.volumes.exists(v, v.name == 'egress-token') || object.spec.volumes.exists(v, v.name == 'agentplane-runner-relay-tls'))))"
         name: launcher-or-relay-credential-volume
 ---
 apiVersion: v1
@@ -5740,7 +5923,7 @@ spec:
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
-            - port: "8888"
+            - port: "8889"
               protocol: TCP
   endpointSelector:
     matchLabels:
@@ -8381,9 +8564,8 @@ metadata:
 data:
   settings.yaml: |
     proxy_host: egress.agentplane-staging.svc.cluster.local
-    proxy_port: 8888
+    proxy_port: 8889
     proxy_mode: token
-    token_file: /var/run/agentplane-egress/token
     audience_token_files:
       https://localhost:7445: /var/run/agentplane-egress/kubernetes-token
       agentplane-notifications: /var/run/agentplane-egress/notifications-token
@@ -8528,10 +8710,6 @@ template:
       - name: egress-token
         projected:
           sources:
-            - serviceAccountToken:
-                audience: agentplane-egress
-                expirationSeconds: 600
-                path: token
             - serviceAccountToken:
                 audience: https://localhost:7445
                 expirationSeconds: 600
@@ -8691,10 +8869,6 @@ template:
         projected:
           sources:
             - serviceAccountToken:
-                audience: agentplane-egress
-                expirationSeconds: 600
-                path: token
-            - serviceAccountToken:
                 audience: https://localhost:7445
                 expirationSeconds: 600
                 path: kubernetes-token
@@ -8733,14 +8907,6 @@ spec:
             - port: "53"
               protocol: UDP
             - port: "53"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: egress
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8888"
               protocol: TCP
   endpointSelector:
     matchLabels:
@@ -10470,25 +10636,6 @@ spec:
         - /v1/action-requests
         - /v1/action-requests/**
       type: egress
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: haku-ui
-  namespace: agentplane-staging
-spec:
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: egress
-  ingress:
-    - fromEndpoints:
-        - matchLabels:
-            io.cilium.k8s.policy.serviceaccount: haku-ui
-            k8s:io.kubernetes.pod.namespace: haku-sandbox
-      toPorts:
-        - ports:
-            - port: "8888"
-              protocol: TCP
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -12326,38 +12473,6 @@ spec:
   subject:
     name: openclaw
     namespace: public-coder-agent
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: public-coder-openclaw
-  namespace: agentplane-staging
-spec:
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            clickhouse.altinity.com/app: chop
-            clickhouse.altinity.com/chi: clickhouse
-            clickhouse.altinity.com/namespace: clickhouse
-            clickhouse.altinity.com/ready: "yes"
-            k8s:io.kubernetes.pod.namespace: clickhouse
-      toPorts:
-        - ports:
-            - port: "8123"
-              protocol: TCP
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: egress
-  ingress:
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: public-coder-agent
-            io.cilium.k8s.policy.serviceaccount: openclaw
-            k8s:io.kubernetes.pod.namespace: public-coder-agent
-      toPorts:
-        - ports:
-            - port: "8888"
-              protocol: TCP
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

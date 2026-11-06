@@ -216,7 +216,7 @@ func (i *Index) credentialValue(
 		token, ok := workload.Projected[source.Audience]
 		return token, ok
 	case resources.AuthenticatedWorkloadToken:
-		if !bound {
+		if !bound || workload.Bearer == "" {
 			return "", false
 		}
 		return workload.Bearer, true

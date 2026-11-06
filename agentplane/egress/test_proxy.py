@@ -33,7 +33,8 @@ from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
-from agentplane.egress.settings import Settings
+from agentplane.egress.settings import RULES_WORKLOAD_URI, Settings
+from agentplane.egress.sidecar_config import ProxyTLSFiles
 from agentplane.egress.testing.go_replica import GoReplica, go_replica
 from agentplane.egress.testing.sidecar_process import SidecarProcess
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
@@ -56,7 +57,6 @@ from util.net import Listener
 NAMESPACE = "agentplane-egress-test"
 SANDBOX_NAMESPACE = "agentplane-egress-test-sandboxes"
 CREDENTIALS_NAMESPACE = "agentplane-egress-test-credentials"
-AUDIENCE = "agentplane-egress-test"
 UPSTREAM_HOST = "localhost"
 SANDBOX_A = "sb-a"
 SANDBOX_B = "sb-b"
@@ -111,7 +111,6 @@ async def recording_upstream(cert_path: Path, key_path: Path) -> AsyncIterator[R
 
 @dataclass(frozen=True)
 class SeededSandbox:
-    hop_token: str
     projected_token: str
     sandbox_uid: str
     pod_uid: str
@@ -123,9 +122,10 @@ def replica_settings(
     api_config: Path,
     ca: tuple[Path, Path],
     database_url: str,
+    svid_cert: tuple[Path, Path],
+    rules_cert: tuple[Path, Path],
+    svid_ca_file: Path,
     upstream_ca_file: Path | None = None,
-    svid_cert: tuple[Path, Path] | None = None,
-    svid_ca_file: Path | None = None,
 ) -> Settings:
     cert, key = ca
     return Settings(
@@ -136,13 +136,16 @@ def replica_settings(
         log_levels={},
         ca_cert=cert,
         ca_key=key,
-        token_audience=AUDIENCE,
         projected_token_audiences=frozenset({PROJECTED_AUDIENCE}),
         upstream_ca_file=upstream_ca_file,
-        svid_listen_address="0.0.0.0:8889" if svid_cert is not None else None,
-        svid_cert_file=svid_cert[0] if svid_cert is not None else None,
-        svid_key_file=svid_cert[1] if svid_cert is not None else None,
+        svid_listen_address="0.0.0.0:8889",
+        svid_cert_file=svid_cert[0],
+        svid_key_file=svid_cert[1],
         svid_ca_file=svid_ca_file,
+        rules_listen_address="0.0.0.0:8443",
+        rules_cert_file=rules_cert[0],
+        rules_key_file=rules_cert[1],
+        rules_ca_file=svid_ca_file,
         database_url=database_url,
         exempt_networks=[ip_network("127.0.0.0/8"), ip_network("::1/128")],
     )
@@ -155,7 +158,7 @@ _API_VERSION = f"{GROUP}/{VERSION}"
 
 
 async def seed(server: KubernetesApiServer) -> SeededSandbox:
-    """Workload A's Pod and a token of it for the proxy's audience. A is bound to a policy that
+    """Workload A's bound Sandbox and destination tokens. A is bound to a policy that
     substitutes the contract credential on the contract paths and admits `/public/**` as is."""
     core = k8s_client.CoreV1Api(server.api)
     for namespace in (NAMESPACE, SANDBOX_NAMESPACE, CREDENTIALS_NAMESPACE):
@@ -285,6 +288,23 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
         },
     )
     sandbox = await custom.get_namespaced_custom_object(GROUP, VERSION, SANDBOX_NAMESPACE, "sandboxes", SANDBOX_A)
+    await core.patch_namespaced_service_account(
+        SANDBOX_A,
+        SANDBOX_NAMESPACE,
+        k8s_client.V1ServiceAccount(
+            metadata=k8s_client.V1ObjectMeta(
+                owner_references=[
+                    k8s_client.V1OwnerReference(
+                        api_version=_API_VERSION,
+                        kind="Sandbox",
+                        name=SANDBOX_A,
+                        uid=sandbox["metadata"]["uid"],
+                        controller=True,
+                    )
+                ]
+            )
+        ),
+    )
     await custom.patch_namespaced_custom_object_status(
         GROUP,
         VERSION,
@@ -305,7 +325,6 @@ async def seed(server: KubernetesApiServer) -> SeededSandbox:
         _content_type="application/merge-patch+json",
     )
     return SeededSandbox(
-        hop_token=await server.pod_token(SANDBOX_NAMESPACE, SANDBOX_A, [AUDIENCE]),
         projected_token=await server.pod_token(SANDBOX_NAMESPACE, SANDBOX_A, [PROJECTED_AUDIENCE]),
         sandbox_uid=sandbox["metadata"]["uid"],
         pod_uid=pod.metadata.uid,
@@ -324,7 +343,8 @@ class Egress:
     """The running proxy and the scripted world around it."""
 
     replica: GoReplica
-    token: str
+    client_tls: ssl.SSLContext
+    client_certificate: tuple[Path, Path]
     projected_token: str
     api: KubernetesApiServer
     interception_ca: CertificateAuthority
@@ -342,8 +362,7 @@ class Egress:
 
     @property
     def svid_url(self) -> str:
-        assert self.replica.svid_listener is not None
-        return f"https://localhost:{self.replica.svid_listener.port}"
+        return f"https://localhost:{self.proxy_listener.port}"
 
     def url(self, path: str) -> str:
         return f"https://{UPSTREAM_HOST}:{self.upstream.port}{path}"
@@ -362,18 +381,32 @@ async def egress(tmp_path: Path, history_db_url: str) -> AsyncIterator[Egress]:
         svid_server_directory = tmp_path / "svid-server"
         svid_server_directory.mkdir()
         svid_server = issue_workload_leaf(runtime_ca, EGRESS_PROXY_URI, svid_server_directory, dns_name="localhost")
+        rules_directory = tmp_path / "rules-server"
+        rules_directory.mkdir()
+        rules_server = issue_workload_leaf(runtime_ca, RULES_WORKLOAD_URI, rules_directory, dns_name="localhost")
+        client_directory = tmp_path / "runner-client"
+        client_directory.mkdir()
+        client_certificate = issue_workload_leaf(
+            runtime_ca,
+            environment_runtime_identity_uri(SANDBOX_NAMESPACE, seeded.sandbox_uid, RUNNER_CREDENTIAL_ID),
+            client_directory,
+        )
+        client_tls = ssl.create_default_context(cadata=(runtime_ca.cert_pem + interception_ca.cert_pem).decode())
+        client_tls.load_cert_chain(*(str(path) for path in client_certificate))
         settings = replica_settings(
             api_config=api.kubeconfig,
             ca=write_ca(interception_ca, tmp_path, "interception"),
             database_url=history_db_url,
             upstream_ca_file=write_ca(upstream_ca, tmp_path, "upstream")[0],
             svid_cert=svid_server,
+            rules_cert=rules_server,
             svid_ca_file=write_ca(runtime_ca, tmp_path, "runtime")[0],
         )
         async with go_replica(settings, directory=tmp_path) as running:
             yield Egress(
                 replica=running,
-                token=seeded.hop_token,
+                client_tls=client_tls,
+                client_certificate=client_certificate,
                 projected_token=seeded.projected_token,
                 api=api,
                 interception_ca=interception_ca,
@@ -424,6 +457,64 @@ async def svid_request(
     async with client.get(url, **request_options) as response:
         await response.read()
         return response.status, {name.lower(): value for name, value in response.headers.items()}
+
+
+async def test_rules_tls_resolves_its_own_svid_and_returns_the_credential_description(egress: Egress) -> None:
+    url = f"https://localhost:{egress.replica.rules_listener.port}/v1/rules"
+    async with (
+        aiohttp.ClientSession() as client,
+        client.get(
+            url,
+            ssl=egress.client_tls,
+            headers={"Authorization": "Bearer forged", "X-Agentplane-Subject": f"{SANDBOX_NAMESPACE}/{SANDBOX_B}"},
+        ) as response,
+    ):
+        assert response.status == 200
+        body = await response.json()
+    assert body["subject"] == SUBJECT_A.model_dump()
+    credentials = [
+        rule["credential"] for policy in body["policies"] for rule in policy["rules"] if rule["credential"] is not None
+    ]
+    contract = one(credential for credential in credentials if credential["name"] == _CONTRACT_CREDENTIAL)
+    assert contract["description"] == "a test credential"
+    assert contract["placeholder"] == placeholder_of(_CONTRACT_CREDENTIAL)
+    assert not egress.upstream.requests
+
+
+async def test_rules_tls_refuses_forged_and_expired_clients(egress: Egress) -> None:
+    uri = environment_runtime_identity_uri(SANDBOX_NAMESPACE, egress.sandbox_uid, RUNNER_CREDENTIAL_ID)
+    forged_directory = egress.tmp_path / "forged-rules-client"
+    forged_directory.mkdir()
+    forged = issue_workload_leaf(make_ca("untrusted-runner-ca"), uri, forged_directory)
+    expired = issue_runner_svid(
+        egress, egress.tmp_path / "expired-rules-client", valid_for=datetime.timedelta(seconds=2)
+    )
+    await asyncio.sleep(2.1)
+    async with aiohttp.ClientSession() as client:
+        for certificate in (forged, expired):
+            context = proxy_svid_client_context(egress, certificate)
+            with pytest.raises(aiohttp.ClientError):
+                async with client.get(
+                    f"https://localhost:{egress.replica.rules_listener.port}/v1/rules",
+                    ssl=context,
+                    headers={"Authorization": "Bearer forged"},
+                ):
+                    pytest.fail("an untrusted or expired leaf reached the Rules HTTP handler")
+    assert not egress.upstream.requests
+
+
+async def test_bearer_alone_cannot_authenticate_to_the_tls_hop(egress: Egress) -> None:
+    token = await egress.api.pod_token(SANDBOX_NAMESPACE, SANDBOX_A, ["removed-egress-hop"])
+    async with aiohttp.ClientSession() as client:
+        with pytest.raises(aiohttp.ClientError):
+            await svid_request(
+                client,
+                egress,
+                client_tls_context(egress.runtime_ca),
+                "/public/needs-svid",
+                headers={"Proxy-Authorization": f"Bearer {token}"},
+            )
+    assert not egress.upstream.requests
 
 
 async def test_svid_listener_maps_live_sandbox_and_ignores_forged_subject_header(egress: Egress) -> None:
@@ -639,7 +730,7 @@ def read_keypair(cert_path: Path, key_path: Path) -> tuple[bytes, bytes]:
 
 async def test_health_reports_ready_only_once_the_tunnel_accepts(egress: Egress) -> None:
     """Readiness gates every Service this Pod backs, and the tunnel is the one that carries traffic."""
-    _, writer = await asyncio.open_connection(egress.proxy_listener.host, egress.proxy_listener.port)
+    _, writer = await asyncio.open_connection("localhost", egress.proxy_listener.port, ssl=egress.client_tls)
     writer.close()
     await writer.wait_closed()
 
@@ -738,9 +829,10 @@ async def revocable_kubeconfig(server: KubernetesApiServer, path: Path, via: Sev
             metadata=k8s_client.V1ObjectMeta(name=_REPLICA_USER),
             rules=[
                 k8s_client.V1PolicyRule(api_groups=[""], resources=["secrets"], verbs=["get", "list", "watch"]),
+                k8s_client.V1PolicyRule(api_groups=[""], resources=["serviceaccounts"], verbs=["get"]),
                 k8s_client.V1PolicyRule(
                     api_groups=[GROUP],
-                    resources=[CREDENTIALS_PLURAL, POLICY_SETS_PLURAL, POLICY_BINDINGS_PLURAL],
+                    resources=[CREDENTIALS_PLURAL, POLICY_SETS_PLURAL, POLICY_BINDINGS_PLURAL, "sandboxes"],
                     verbs=["get", "list", "watch"],
                 ),
                 k8s_client.V1PolicyRule(
@@ -756,7 +848,7 @@ async def revocable_kubeconfig(server: KubernetesApiServer, path: Path, via: Sev
             subjects=[k8s_client.RbacV1Subject(api_group=_RBAC, kind="User", name=_REPLICA_USER)],
         )
     )
-    for namespace in (NAMESPACE, CREDENTIALS_NAMESPACE):
+    for namespace in (NAMESPACE, CREDENTIALS_NAMESPACE, SANDBOX_NAMESPACE):
         await grant_replica(server, namespace)
     config = yaml.safe_load(await asyncio.to_thread(server.kubeconfig.read_text))
     for entry in config["users"]:
@@ -777,11 +869,36 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
         severable_proxy(second_api.kubeconfig) as second_path,
         recording_upstream(*issue_leaf(ca, UPSTREAM_HOST, tmp_path)) as upstream,
     ):
-        # Each replica reviews tokens with its own API server, so each is sent one that server issued.
-        first_token = (await seed(first_api)).hop_token
-        second_token = (await seed(second_api)).hop_token
+        # The replicas have independent live Sandbox objects and client SVIDs, under the same test root.
+        seeded = [await seed(first_api), await seed(second_api)]
+        server_directory = tmp_path / "replica-proxy-server"
+        server_directory.mkdir()
+        server_certificate = issue_workload_leaf(ca, EGRESS_PROXY_URI, server_directory, dns_name="localhost")
+        rules_directory = tmp_path / "replica-rules-server"
+        rules_directory.mkdir()
+        rules_certificate = issue_workload_leaf(ca, RULES_WORKLOAD_URI, rules_directory, dns_name="localhost")
+        client_contexts = []
+        for index, workload in enumerate(seeded):
+            directory = tmp_path / f"replica-client-{index}"
+            directory.mkdir()
+            certificate = issue_workload_leaf(
+                ca,
+                environment_runtime_identity_uri(SANDBOX_NAMESPACE, workload.sandbox_uid, RUNNER_CREDENTIAL_ID),
+                directory,
+            )
+            context = client_tls_context(ca)
+            context.load_cert_chain(*(str(path) for path in certificate))
+            client_contexts.append(context)
+        first_tls, second_tls = client_contexts
         settings = [
-            replica_settings(api_config=api_config, ca=(cert, key), database_url=history_db_url)
+            replica_settings(
+                api_config=api_config,
+                ca=(cert, key),
+                database_url=history_db_url,
+                svid_cert=server_certificate,
+                rules_cert=rules_certificate,
+                svid_ca_file=cert,
+            )
             for api_config in (
                 first_api.kubeconfig,
                 await revocable_kubeconfig(second_api, tmp_path / "second-replica-kubeconfig.yaml", via=second_path),
@@ -793,23 +910,23 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             aiohttp.ClientSession() as client,
         ):
 
-            async def get(replica: GoReplica, token: str, path: str, expected: int) -> None:
+            async def get(replica: GoReplica, context: ssl.SSLContext, path: str, expected: int) -> None:
                 async with client.get(
                     f"http://{UPSTREAM_HOST}:{upstream.http_port}/public/{path}",
-                    proxy=f"http://{replica.proxy_listener.host}:{replica.proxy_listener.port}",
-                    headers={"Proxy-Authorization": f"Bearer {token}"},
+                    proxy=f"https://localhost:{replica.proxy_listener.port}",
+                    ssl=context,
                 ) as response:
                     await response.read()
                     assert response.status == expected, dict(response.headers)
 
-            await get(first, first_token, "first", 200)
-            await get(second, second_token, "second", 200)
+            await get(first, first_tls, "first", 200)
+            await get(second, second_tls, "second", 200)
             # Only one watch source observes revocation. No replica can acknowledge the other.
             await revoke_binding(first_api)
             async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
                 with attempt:
-                    await get(first, first_token, "revoked", 403)
-            await get(second, second_token, "still-current", 200)
+                    await get(first, first_tls, "revoked", 403)
+            await get(second, second_tls, "still-current", 200)
             # Its API server now refuses the second replica's lists and watches of the rules namespace. RBAC
             # is checked only when a request starts, so cut the watches already open to make them restart.
             await k8s_client.RbacAuthorizationV1Api(second_api.api).delete_namespaced_role_binding(
@@ -818,12 +935,12 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             second_path.sever()
             await second.health(serving=False)
             before = len(upstream.requests)
-            await get(second, second_token, "stale-existing-connection", 502)
+            await get(second, second_tls, "stale-existing-connection", 502)
             assert len(upstream.requests) == before
             await revoke_binding(second_api)
             await grant_replica(second_api, NAMESPACE)
             await second.health(serving=True)
-            await get(second, second_token, "recovered-revocation", 403)
+            await get(second, second_tls, "recovered-revocation", 403)
             async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
                 with attempt:
                     rows = await asyncio.to_thread(_decisions_of, history_db_url, SUBJECT_A)
@@ -843,9 +960,7 @@ async def test_go_proxy_finishes_an_admitted_request_after_sigterm(egress: Egres
 
         async def slow_status() -> int:
             async with client.get(
-                f"http://{UPSTREAM_HOST}:{upstream.http_port}/public/slow",
-                proxy=f"http://{egress.proxy_listener.host}:{egress.proxy_listener.port}",
-                headers={"Proxy-Authorization": f"Bearer {egress.token}"},
+                f"http://{UPSTREAM_HOST}:{upstream.http_port}/public/slow", proxy=egress.svid_url, ssl=egress.client_tls
             ) as response:
                 await response.read()
                 return response.status
@@ -875,9 +990,8 @@ async def test_header_substitution(egress: Egress) -> None:
         aiohttp.ClientSession() as client,
         client.get(
             egress.url("/contract"),
-            proxy=f"http://{egress.proxy_listener.host}:{egress.proxy_listener.port}",
-            proxy_headers={"Proxy-Authorization": f"Bearer {egress.token}"},
-            ssl=client_tls_context(egress.interception_ca),
+            proxy=egress.svid_url,
+            ssl=egress.client_tls,
             headers={"x-buildbuddy-api-key": placeholder_of(_CONTRACT_CREDENTIAL)},
         ) as response,
     ):
@@ -894,9 +1008,8 @@ async def test_real_binding_revocation_denies_the_next_connection(egress: Egress
             try:
                 async with client.get(
                     egress.url("/contract"),
-                    proxy=f"http://{egress.proxy_listener.host}:{egress.proxy_listener.port}",
-                    proxy_headers={"Proxy-Authorization": f"Bearer {egress.token}"},
-                    ssl=client_tls_context(egress.interception_ca),
+                    proxy=egress.svid_url,
+                    ssl=egress.client_tls,
                     headers={"x-buildbuddy-api-key": placeholder_of(_CONTRACT_CREDENTIAL)},
                 ) as response:
                     await response.read()
@@ -949,10 +1062,7 @@ async def test_incremental_sse_and_websocket(egress: Egress) -> None:
     try:
         async with aiohttp.ClientSession() as client:
             async with client.get(
-                f"https://{UPSTREAM_HOST}:{port}/contract-sse",
-                proxy=f"http://{egress.proxy_listener.host}:{egress.proxy_listener.port}",
-                proxy_headers={"Proxy-Authorization": f"Bearer {egress.token}"},
-                ssl=client_tls_context(egress.interception_ca),
+                f"https://{UPSTREAM_HOST}:{port}/contract-sse", proxy=egress.svid_url, ssl=egress.client_tls
             ) as response:
                 assert response.status == 200
                 async with asyncio.timeout(5):
@@ -962,10 +1072,7 @@ async def test_incremental_sse_and_websocket(egress: Egress) -> None:
                 finish.set()
                 await response.read()
             async with client.ws_connect(
-                f"https://{UPSTREAM_HOST}:{port}/contract-ws",
-                proxy=f"http://{egress.proxy_listener.host}:{egress.proxy_listener.port}",
-                proxy_headers={"Proxy-Authorization": f"Bearer {egress.token}"},
-                ssl=client_tls_context(egress.interception_ca),
+                f"https://{UPSTREAM_HOST}:{port}/contract-ws", proxy=egress.svid_url, ssl=egress.client_tls
             ) as websocket_client:
                 await websocket_client.send_str("first")
                 async with asyncio.timeout(5):
@@ -995,10 +1102,7 @@ async def test_denial_has_zero_upstream_tcp_accepts(egress: Egress) -> None:
         async with (
             aiohttp.ClientSession() as client,
             client.get(
-                f"https://{UPSTREAM_HOST}:{port}/not-admitted",
-                proxy=f"http://{egress.proxy_listener.host}:{egress.proxy_listener.port}",
-                proxy_headers={"Proxy-Authorization": f"Bearer {egress.token}"},
-                ssl=client_tls_context(egress.interception_ca),
+                f"https://{UPSTREAM_HOST}:{port}/not-admitted", proxy=egress.svid_url, ssl=egress.client_tls
             ) as response,
         ):
             assert response.status == 403
@@ -1016,13 +1120,18 @@ async def test_denial_has_zero_upstream_tcp_accepts(egress: Egress) -> None:
 @pytest.mark.parametrize("tls", [True, False], ids=["tls-h2", "h2c"])
 async def test_interactive_grpc_before_eof(egress: Egress, monkeypatch: pytest.MonkeyPatch, tls: bool) -> None:
     keypair = read_keypair(*issue_leaf(egress.upstream_ca, UPSTREAM_HOST, egress.tmp_path)) if tls else None
-    token_file = egress.tmp_path / "contract-hop-token"
-    token_file.write_text(egress.token)
     finished = asyncio.Event()
     async with (
         recording_grpc_upstream(keypair, finished=finished) as (port, requests),
         SidecarProcess(
-            proxy_host=egress.proxy_listener.host, proxy_port=egress.proxy_listener.port, token_file=token_file
+            proxy_host="localhost",
+            proxy_port=egress.proxy_listener.port,
+            proxy_mode="mtls",
+            proxy_tls=ProxyTLSFiles(
+                cert_file=egress.client_certificate[0],
+                key_file=egress.client_certificate[1],
+                ca_file=egress.tmp_path / "runtime-cert.pem",
+            ),
         ) as sidecar,
     ):
         monkeypatch.setenv(

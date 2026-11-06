@@ -28,9 +28,12 @@ import (
 // control mutual-TLS trust domain.
 const GatewayURI = "spiffe://agentplane/runner-gateway"
 
-// EgressProxyURI is the fixed identity of the optional workload-authenticated
+// EgressProxyURI is the fixed identity of the workload-authenticated
 // forward-proxy listener.
 const EgressProxyURI = "spiffe://agentplane/egress-proxy"
+
+// EgressRulesURI is the fixed identity of the Sandbox-facing rules API.
+const EgressRulesURI = "spiffe://agentplane/egress-rules"
 
 var trustDomain = spiffeid.RequireTrustDomainFromString("agentplane")
 
@@ -172,8 +175,8 @@ func (c Config) WorkloadServerCredentials(localURI string) (credentials.Transpor
 // fixed SPIFFE identity. The file source reloads projected certificate, key,
 // and CA bundle replacements while keeping the client identity pinned.
 func (c Config) ClientTLSConfig(expectedPeerURI string) (*tls.Config, error) {
-	if expectedPeerURI != EgressProxyURI {
-		return nil, fmt.Errorf("expected peer URI must be %q", EgressProxyURI)
+	if expectedPeerURI != EgressProxyURI && expectedPeerURI != EgressRulesURI {
+		return nil, errors.New("expected peer URI must name a supported egress service")
 	}
 	if c.WorkloadAPISocket != "" {
 		return nil, errors.New("file-backed TLS configuration is required for the egress proxy")
@@ -196,8 +199,8 @@ func (c Config) ClientTLSConfig(expectedPeerURI string) (*tls.Config, error) {
 // listener. It accepts only a current EnvironmentRuntime identity with an
 // explicit clientAuth EKU; callers resolve the URI to live Sandbox state.
 func (c Config) WorkloadServerTLSConfig(localURI string) (*tls.Config, error) {
-	if localURI != EgressProxyURI {
-		return nil, fmt.Errorf("local URI must be %q", EgressProxyURI)
+	if localURI != EgressProxyURI && localURI != EgressRulesURI {
+		return nil, errors.New("local URI must name a supported egress service")
 	}
 	if c.WorkloadAPISocket != "" {
 		return nil, errors.New("file-backed TLS configuration is required for the egress proxy")
@@ -287,7 +290,7 @@ func peerIdentityFromTLSState(state tls.ConnectionState, usage *x509.ExtKeyUsage
 		return "", fmt.Errorf("TLS peer identity: %w", err)
 	}
 	if _, err := parseIdentity(id.String()); err != nil {
-		if id.String() != EgressProxyURI {
+		if id.String() != EgressProxyURI && id.String() != EgressRulesURI {
 			return "", fmt.Errorf("TLS peer has an unsupported identity: %w", err)
 		}
 	}
@@ -448,9 +451,9 @@ func requireEKU(certificate *x509.Certificate, usage x509.ExtKeyUsage) error {
 	return fmt.Errorf("certificate must explicitly allow extended key usage %s", usage)
 }
 
-// parseIdentity accepts only GatewayURI or a canonical EnvironmentRuntimeURI.
+// parseIdentity accepts fixed first-party egress service identities or a canonical EnvironmentRuntimeURI.
 func parseIdentity(identity string) (spiffeid.ID, error) {
-	if identity != GatewayURI && identity != EgressProxyURI {
+	if identity != GatewayURI && identity != EgressProxyURI && identity != EgressRulesURI {
 		if _, _, _, err := ParseEnvironmentRuntimeURI(identity); err != nil {
 			return spiffeid.ID{}, fmt.Errorf("identity must be GatewayURI or a valid EnvironmentRuntimeURI: %w", err)
 		}

@@ -23,7 +23,7 @@ _GRACE_SECONDS = 55
 class GoReplica:
     proxy_listener: Listener
     process: GoProcess
-    svid_listener: Listener | None = None
+    rules_listener: Listener
 
     def terminate(self) -> None:
         self.process.terminate()
@@ -42,35 +42,27 @@ async def go_replica(settings: Settings, *, directory: Path) -> AsyncIterator[Go
     database_url = render_postgresql_url(settings.database_url, "postgresql", query={"sslmode": "disable"})
     with ExitStack() as listeners:
         proxy_listener = listeners.enter_context(listen_tcp())
-        svid_listener = listeners.enter_context(listen_tcp()) if settings.svid_listen_address is not None else None
+        rules_listener = listeners.enter_context(listen_tcp())
         admin_listener = listeners.enter_context(listen_tcp())
-        agent_api_listener = listeners.enter_context(listen_tcp())
         config = directory / f"go-replica-{proxy_listener.port}.yaml"
         config.touch(mode=0o600)
         values = {
             **settings.model_dump(mode="json", exclude_none=True),
             "database_url": database_url,
-            "listen_address": f"fd:{proxy_listener.socket.fileno()}",
+            "svid_listen_address": f"fd:{proxy_listener.socket.fileno()}",
             "admin_listen_address": f"fd:{admin_listener.socket.fileno()}",
-            "agent_api_listen_address": f"fd:{agent_api_listener.socket.fileno()}",
+            "rules_listen_address": f"fd:{rules_listener.socket.fileno()}",
         }
-        if svid_listener is not None:
-            values["svid_listen_address"] = f"fd:{svid_listener.socket.fileno()}"
         config.write_text(json.dumps(values))
         async with go_process(
             _PROXY,
             env={"AGENTPLANE_EGRESS_CONFIG_FILE": str(config)},
             stderr=config.with_suffix(".stderr"),
             health_port=admin_listener.port,
-            pass_fds=(
-                proxy_listener.socket.fileno(),
-                *((svid_listener.socket.fileno(),) if svid_listener is not None else ()),
-                admin_listener.socket.fileno(),
-                agent_api_listener.socket.fileno(),
-            ),
+            pass_fds=(proxy_listener.socket.fileno(), rules_listener.socket.fileno(), admin_listener.socket.fileno()),
             grace_s=_GRACE_SECONDS,
         ) as process:
             # The child inherited the listeners and has reported ready. Release the parent copies
             # before yielding so a later replica can safely reuse the descriptor numbers.
             listeners.close()
-            yield GoReplica(proxy_listener, process, svid_listener)
+            yield GoReplica(proxy_listener, process, rules_listener)

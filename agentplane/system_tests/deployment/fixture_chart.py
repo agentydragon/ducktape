@@ -304,7 +304,6 @@ def environment(
         # Exercise the new sidecar hop in the ordinary Pod and Firecracker fixtures. KubeVirt's
         # launcher relay remains token-mode in this suite until its workload flow is explicitly
         # selected for mTLS.
-        runner_egress_mtls=not vm_sandboxes,
         firecracker_sandboxes=firecracker_sandboxes,
         vm_resources=vm_configuration.RESOURCES if vm_sandboxes or firecracker_sandboxes else None,
         vm_console_autologin=True,
@@ -453,11 +452,9 @@ def build_chart(
         chart,
         "egress",
         env,
-        enable_svid_listener=env.runner_egress_mtls,
         database_url=egress_database_url,
         runners=environment_sandbox.pods(env.namespace),
         admin_grpc_callers=[ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)],
-        agent_api_service=agent_api,
         litellm_host="litellm.allegedly.works" if isinstance(models, PublicLiteLLM) else None,
         litellm_cluster_internal=not isinstance(models, PublicLiteLLM),
         placement=None,
@@ -674,14 +671,19 @@ def build_chart(
         metadata=ApiObjectMetadata(name=sandbox_pod.TOOL_CONFIG_GRANT, namespace=NAMESPACE),
         rules=access.rules_for_grants([tool_config_grant]),
     )
-    # A request `basic` refuses: GET on a path it does not name, on a host it does.
+    # Keep this policy probe off service-owned SVID routes, whose receivers authorize their
+    # requests after opaque CONNECT. The app origin is an ordinary intercepted destination.
     PolicySet(
         chart,
         f"policy-set-{runtime_grant.POLICY_SET}",
-        metadata=ApiObjectMetadata(name=runtime_grant.POLICY_SET, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(
+            name=runtime_grant.POLICY_SET,
+            namespace=NAMESPACE,
+            annotations={runtime_grant.PORT_ANNOTATION: str(APP_SERVICE.port.number)},
+        ),
         rules=[
             Rule.egress(
-                hosts=[egress.agent_api(NAMESPACE).fqdn],
+                hosts=[APP_SERVICE.fqdn],
                 cluster_internal=True,
                 methods=[PolicySetSpecRulesMethods.GET],
                 paths=["/test-runtime-grant"],

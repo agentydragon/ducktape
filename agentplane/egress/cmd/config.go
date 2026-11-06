@@ -26,7 +26,6 @@ type config struct {
 	RulesNamespace                  string            `mapstructure:"rules_namespace"`
 	CredentialsNamespace            string            `mapstructure:"credentials_namespace"`
 	AllowedServiceAccountNamespaces []string          `mapstructure:"allowed_service_account_namespaces"`
-	ListenAddress                   string            `mapstructure:"listen_address"`
 	SVIDListenAddress               string            `mapstructure:"svid_listen_address"`
 	SVIDCertFile                    string            `mapstructure:"svid_cert_file"`
 	SVIDKeyFile                     string            `mapstructure:"svid_key_file"`
@@ -34,12 +33,15 @@ type config struct {
 	AdminListenAddress              string            `mapstructure:"admin_listen_address"`
 	AdminGRPCAudience               string            `mapstructure:"admin_grpc_audience"`
 	AdminGRPCCallers                []string          `mapstructure:"admin_grpc_callers"`
-	AgentAPIListenAddress           string            `mapstructure:"agent_api_listen_address"`
+	RulesListenAddress              string            `mapstructure:"rules_listen_address"`
+	RulesCertFile                   string            `mapstructure:"rules_cert_file"`
+	RulesKeyFile                    string            `mapstructure:"rules_key_file"`
+	RulesCAFile                     string            `mapstructure:"rules_ca_file"`
 	CACert                          string            `mapstructure:"ca_cert"`
 	CAKey                           string            `mapstructure:"ca_key"`
 	UpstreamCAFile                  string            `mapstructure:"upstream_ca_file"`
-	TokenAudience                   string            `mapstructure:"token_audience"`
 	ProjectedTokenAudiences         []string          `mapstructure:"projected_token_audiences"`
+	TLSPassthroughTargets           []string          `mapstructure:"tls_passthrough_targets"`
 	Kubeconfig                      string            `mapstructure:"kubeconfig"`
 	LogLevels                       map[string]string `mapstructure:"log_levels"`
 	DatabaseURL                     string            `mapstructure:"database_url"`
@@ -52,8 +54,7 @@ type config struct {
 
 func defaultConfig() config {
 	return config{
-		ListenAddress: "0.0.0.0:8888", AdminListenAddress: "0.0.0.0:8081",
-		AgentAPIListenAddress: "0.0.0.0:8082", DecisionHistorySize: 200,
+		AdminListenAddress: "0.0.0.0:8081", DecisionHistorySize: 200,
 		DecisionRetentionDays: 7, DecisionQueueSize: 2000, DecisionBatchSize: 100,
 	}
 }
@@ -65,18 +66,19 @@ func loadConfig() (config, error) {
 	for _, key := range []string{
 		"rules_namespace",
 		"credentials_namespace",
-		"listen_address",
 		"svid_listen_address",
 		"svid_cert_file",
 		"svid_key_file",
 		"svid_ca_file",
 		"admin_listen_address",
 		"admin_grpc_audience",
-		"agent_api_listen_address",
+		"rules_listen_address",
+		"rules_cert_file",
+		"rules_key_file",
+		"rules_ca_file",
 		"ca_cert",
 		"ca_key",
 		"upstream_ca_file",
-		"token_audience",
 		"kubeconfig",
 		"database_url",
 		"decision_history_size",
@@ -114,7 +116,6 @@ func (c *config) validate() error {
 		{"credentials_namespace", c.CredentialsNamespace},
 		{"ca_cert", c.CACert},
 		{"ca_key", c.CAKey},
-		{"token_audience", c.TokenAudience},
 		{"database_url", c.DatabaseURL},
 	} {
 		if required.value == "" {
@@ -133,20 +134,20 @@ func (c *config) validate() error {
 		{"svid_key_file", c.SVIDKeyFile},
 		{"svid_ca_file", c.SVIDCAFile},
 	}
-	configuredSVIDSettings := 0
-	for _, setting := range svidSettings {
-		if setting.value != "" {
-			configuredSVIDSettings++
+	rulesSettings := []struct{ name, value string }{
+		{"rules_listen_address", c.RulesListenAddress},
+		{"rules_cert_file", c.RulesCertFile},
+		{"rules_key_file", c.RulesKeyFile},
+		{"rules_ca_file", c.RulesCAFile},
+	}
+	for _, setting := range append(svidSettings, rulesSettings...) {
+		if setting.value == "" {
+			return fmt.Errorf("%s is required", setting.name)
 		}
 	}
-	if configuredSVIDSettings != 0 && configuredSVIDSettings != len(svidSettings) {
-		return errors.New("svid_listen_address, svid_cert_file, svid_key_file and svid_ca_file must be configured together")
-	}
-	if configuredSVIDSettings == len(svidSettings) {
-		for _, setting := range svidSettings[1:] {
-			if !filepath.IsAbs(setting.value) {
-				return fmt.Errorf("%s must be an absolute path", setting.name)
-			}
+	for _, setting := range append(svidSettings[1:], rulesSettings[1:]...) {
+		if !filepath.IsAbs(setting.value) {
+			return fmt.Errorf("%s must be an absolute path", setting.name)
 		}
 	}
 	for _, limit := range []bounded{

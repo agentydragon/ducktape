@@ -102,6 +102,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         "agentplane-runner-ca",
         "agentplane-runner-gateway",
         "agentplane-egress-proxy",
+        "egress-rules-workload",
     }
     assert _resource(docs, "Issuer", "agentplane-runner-ca")["spec"]["ca"]["secretName"] == "agentplane-runner-ca"
     gateway_certificate = _resource(docs, "Certificate", "agentplane-runner-gateway")
@@ -319,16 +320,14 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     runner_pod_spec = template["spec"]["pod"]["spec"]
     runner_egress_volume = next(v for v in runner_pod_spec["volumes"] if v["name"] == "egress-token")
     runner_token_sources = runner_egress_volume["projected"]["sources"]
-    assert any(
-        source.get("serviceAccountToken", {}).get("audience") == "agentplane-egress"
-        and source["serviceAccountToken"]["path"] == "token"
-        for source in runner_token_sources
+    assert not any(
+        source.get("serviceAccountToken", {}).get("audience") == "agentplane-egress" for source in runner_token_sources
     )
     runner_sidecar_config = _resource(docs, "ConfigMap", "environment-tools-egress-sidecar")["data"]
     runner_settings = yaml.safe_load(next(iter(runner_sidecar_config.values())))
     assert runner_settings["proxy_mode"] == "mtls"
     assert runner_settings["proxy_port"] == 8889
-    assert runner_settings["token_file"] == "/var/run/agentplane-egress/token"
+    assert "token_file" not in runner_settings
     assert runner_settings["proxy_tls"] == {
         "cert_file": "/run/agentplane/environment-runtime-tls/tls.crt",
         "key_file": "/run/agentplane/environment-runtime-tls/tls.key",

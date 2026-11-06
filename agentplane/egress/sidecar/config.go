@@ -45,7 +45,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 	c := config{
 		AudienceTokenFiles:     map[string]string{},
 		PlatformRoutes:         map[string]platformRouteConfig{},
-		ProxyPort:              8888,
+		ProxyPort:              8889,
 		ListenAddress:          "127.0.0.1:3128",
 		ReadinessListenAddress: "0.0.0.0:3129",
 	}
@@ -71,10 +71,13 @@ func (c config) validate() error {
 	}
 	switch c.ProxyMode {
 	case "token":
-		if c.TokenFile == "" || c.ProxyTLS != nil {
-			return errors.New("token mode requires token_file and forbids proxy_tls")
+		if c.ProxyTLS != nil {
+			return errors.New("token mode forbids proxy_tls")
 		}
 	case "mtls":
+		if c.TokenFile != "" {
+			return errors.New("mtls mode forbids token_file")
+		}
 		if c.ProxyTLS == nil {
 			return errors.New("mtls mode requires proxy_tls")
 		}
