@@ -15,10 +15,6 @@ provider "github" {
 resource "random_password" "github_webhook" {
   length  = 40
   special = false
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 resource "kubernetes_secret" "github_webhook" {
@@ -29,11 +25,6 @@ resource "kubernetes_secret" "github_webhook" {
 
   data = {
     token = random_password.github_webhook.result
-  }
-
-  lifecycle {
-    # This signing key is persistent authentication material for the receiver.
-    prevent_destroy = true
   }
 }
 

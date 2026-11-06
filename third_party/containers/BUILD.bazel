@@ -9,7 +9,7 @@
 #     deps = ["//third_party/containers:postgres_18"]
 #     from third_party.containers import postgres_18
 
-load("@rules_oci//oci:defs.bzl", "oci_load")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/oci:defs.bzl", "oci_layout_py", "oci_layout_rloc")
 load("//devinfra/python:defs.bzl", "RYUK_TAG", "py_binary", "py_library", "py_test")
 
