@@ -557,7 +557,11 @@ impl AssignmentAnalysis {
                 })
                 .or_insert(node.statement_ordinal);
         }
-        import_order.preserve_isolated_source_order(&canonical_edges.i_successors, &first_units);
+        import_order.preserve_isolated_source_order(
+            &canonical_edges.i_successors,
+            &first_units,
+            entry_module_id,
+        );
         let inputs = Arc::new(AssignmentInputs::build(
             chunk_id,
             dependency_graph,

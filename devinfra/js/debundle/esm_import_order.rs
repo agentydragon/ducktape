@@ -16,7 +16,7 @@
 //!   SCC dep rank ascending, intra-SCC linker position descending),
 //!   `ModuleId` ascending on ties. Assignment analysis interleaves isolated
 //!   entry-only leaves by their earliest source unit; the relative order of
-//!   every I-graph participant stays unchanged.
+//!   every other I-graph participant stays unchanged.
 //! - **Module imports** (every emitted logical module's intra-chunk
 //!   `import` directives: cross-module binding imports, phantom
 //!   side-effect imports, and the residual-entry import, merged into
@@ -86,18 +86,21 @@ impl EsmImportOrder {
         &self.linker_order
     }
 
-    /// Modules outside the full I-graph are entry-only DFS leaves. Interleave
-    /// them by their first source unit without changing the relative order of
-    /// any I-graph participant, including members of a rescued lazy cycle.
+    /// Modules with no imports and only entry as an importer are DFS leaves.
+    /// Interleave them by their first source unit without changing the relative
+    /// order of other I-graph participants, including rescued lazy cycles.
     pub(crate) fn preserve_isolated_source_order(
         &mut self,
         i_successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
         first_units: &BTreeMap<ModuleId, SourceUnitOrdinal>,
+        entry: ModuleId,
     ) {
-        let connected: BTreeSet<_> = i_successors
+        let mut connected: BTreeSet<_> = i_successors
             .iter()
+            .filter(|(from, _)| **from != entry)
             .flat_map(|(from, targets)| std::iter::once(*from).chain(targets.iter().copied()))
             .collect();
+        connected.insert(entry);
         let mut order: Vec<_> = self.source_import_position.keys().copied().collect();
         order.sort_by_key(|module| self.source_import_position[module]);
         let (mut isolated, scheduled): (Vec<_>, Vec<_>) = order

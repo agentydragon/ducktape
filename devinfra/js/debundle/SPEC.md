@@ -3978,7 +3978,7 @@ empty.
 
 ## Realizability cut explanations
 
-Modules with no incoming or outgoing intra-chunk import edges are entry-only
+Modules imported only by entry, with no imports of their own, are entry-only
 leaves. Entry imports interleave these leaves by their earliest source unit,
 preserving the relative import order of every module participating in the
 intra-chunk graph. The candidate's exact emitted order still requires the
