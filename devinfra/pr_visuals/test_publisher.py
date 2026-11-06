@@ -1782,6 +1782,7 @@ def test_success_comment_body_reports_counts_and_previews() -> None:
     assert "tests/ex-visuals-abcdef/a.png" in body
     assert "tests/ex-visuals-abcdef/diff/a.png" in body
     assert "tests/ex-visuals-abcdef/diff/b.png" in body
+    assert "tests/ex-visuals-abcdef/c.png" in body
     assert "50.0% changed" in body
 
 
@@ -2036,36 +2037,6 @@ def test_success_comment_body_groups_changed_tests_and_folds_unchanged_targets()
     assert lines.index(summary) < lines.index("<summary>22 unchanged targets</summary>")
     assert '<a href="https://v/commits/sha/tests/untouched-0/index.html"><code>//untouched0:visuals</code></a>' in body
     assert len(body) <= COMMENT_BUDGET
-
-
-def test_success_comment_body_shows_both_modified_and_new_previews() -> None:
-    review_tests = [
-        ReviewTest(
-            target_label="//ex:visuals",
-            slug="s",
-            title="Ex",
-            summary=ClassificationCounts(modified=1, new=1),
-            assets=[
-                _comment_asset(
-                    path="changed.png",
-                    label="changed",
-                    classification="modified",
-                    changed_fraction=0.3,
-                    changed_pixels=1,
-                ),
-                _comment_asset(path="added.png", label="added", classification="new"),
-            ],
-        )
-    ]
-    body = success_comment_body(
-        repository="r",
-        commit_sha="0123456789abcdef0123456789abcdef01234567",
-        url="https://v/commits/sha/",
-        review_tests=review_tests,
-        base_sha="f" * 40,
-    )
-    assert "tests/s/diff/changed.png" in body
-    assert "tests/s/added.png" in body
 
 
 def test_success_comment_body_dimension_change_degrades_diff_cell() -> None:
