@@ -25,3 +25,13 @@ follows only its volatile journal to serial, covering early boot and the late sw
 from `/state`. Runtime already logs to `journal+console`. An observer starts at boot and waits
 on a FIFO; ACPI wakes it to report PID 1 kernel state, descriptors, processes and pending jobs. See the active
 [shutdown investigation](../debug/vm_shutdown_stalls.md) for reproduction evidence.
+
+If a retained raw serial log records the exact guest shutdown request and no exact completion
+proof follows within five seconds, `vm-artifacts/host-qemu/` retains at most two timestamped host
+QEMU and read-only libvirt/QMP snapshots for that launcher. Each sample has a ten-second budget;
+the second starts at least two seconds after the first completes. QMP queries can wake QEMU's main
+loop or vCPUs and may change what a later sample observes. The monitor stops with the VM artifact
+capture.
+
+The end-of-case VM report also samples launchers without proof, including cleanup blocked
+at runner quiescence before ACPI. A `report` sample does not imply a shutdown request occurred.
