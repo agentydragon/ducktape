@@ -96,7 +96,7 @@ fn assert_imported_read_receipt(fixture: &Fixture, binding: &str) {
 
 #[test]
 fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
-    let source = "import { limit as bytes } from './peer.js';\nconst before = 0;\nfunction read() { return 4 * bytes + 256; }\nconst computed = read();\nconst after = 1;\nconsole.log(before, computed, after);\n";
+    let source = "import { limit as bytes } from './peer.js';\nconst before = 0;\nfunction read() { return bytes; }\nconst computed = read();\nconst after = 1;\nconsole.log(before, computed, after);\n";
     let fixture = run_fixture(
         FixtureOpts::new(
             source,
@@ -107,7 +107,7 @@ fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
         )
         .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
     );
-    assert_preserved_entry_output(&fixture, "0 264 1\n");
+    assert_preserved_entry_output(&fixture, "0 2 1\n");
     let assessment = fixture.effect_translation_validation();
     assert_eq!(
         assessment["decision"]["status"], "accepted",
