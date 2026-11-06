@@ -10,6 +10,7 @@ import sys
 from collections.abc import AsyncIterator, Callable, Coroutine
 from datetime import UTC, datetime, timedelta
 from importlib import resources
+from itertools import chain
 from typing import Annotated, Any, Literal, cast
 from uuid import UUID
 
@@ -762,12 +763,7 @@ def _requested_products_for_update(link: StoredLink, body: LinkUpdateTokenReques
 
 
 def _merge_products(*groups: list[str]) -> list[str]:
-    merged: list[str] = []
-    for group in groups:
-        for product in group:
-            if product not in merged:
-                merged.append(product)
-    return merged
+    return list(dict.fromkeys(chain.from_iterable(groups)))
 
 
 async def _finish_before_cancellation[T](state: AppState, operation: Coroutine[Any, Any, T]) -> T:
