@@ -358,9 +358,12 @@ py_test(
     name = "test_web",
     size = "medium",
     srcs = ["test_web.py"],
+    data = ["//devinfra/claude/session_export/frontend:bundle"],
+    env = {"SESSION_SYNC_FRONTEND_RLOCATION": "$(rlocationpath //devinfra/claude/session_export/frontend:bundle)"},
     requires_docker = True,
     deps = [
         ":conftest",
+        ":export_sessions",
         ":models",
         ":oauth",
         ":settings",
