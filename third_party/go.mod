@@ -222,7 +222,7 @@ require (
 	k8s.io/gengo/v2 v2.0.0-20260408192533-25e2208e0dc3 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
-	k8s.io/utils v0.0.0-20260626114624-be93311217bd // indirect
+	k8s.io/utils v0.0.0-20260626114624-be93311217bd
 	mvdan.cc/garble v0.16.0 // indirect
 	// controller-gen is a build-time tool for the controller deepcopy actions.
 	sigs.k8s.io/controller-tools v0.20.0 // indirect

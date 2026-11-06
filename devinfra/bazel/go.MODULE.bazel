@@ -558,6 +558,7 @@ use_repo(
     "io_k8s_kube_openapi",
     "io_k8s_sigs_controller_runtime",
     "io_k8s_sigs_controller_tools",
+    "io_k8s_utils",
     "io_kubevirt_api",
     "io_kubevirt_client_go",
     "io_opentelemetry_go_auto_sdk",

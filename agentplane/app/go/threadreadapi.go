@@ -29,6 +29,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -437,14 +438,7 @@ func encodeThreadPageToken(listing threadListing, created time.Time, id uuid.UUI
 }
 
 func sameThreadListing(left, right threadListing) bool {
-	return equalOptionalString(left.SandboxUID, right.SandboxUID) && left.IncludeArchived == right.IncludeArchived
-}
-
-func equalOptionalString(left, right *string) bool {
-	if left == nil || right == nil {
-		return left == nil && right == nil
-	}
-	return *left == *right
+	return ptr.Equal(left.SandboxUID, right.SandboxUID) && left.IncludeArchived == right.IncludeArchived
 }
 
 func stringPointer(value string) *string { return &value }

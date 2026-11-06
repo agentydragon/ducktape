@@ -21,6 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/workload_auth/auth"
 	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -808,7 +809,7 @@ func (o *Session) matchRequest(sandboxName, sandboxUID string, placement Session
 	if err != nil {
 		return err
 	}
-	if o.SandboxName != sandboxName || o.SandboxUID != sandboxUID || o.Placement != placement || !bytes.Equal(oldBytes, data) || !equalOptional(o.SetupScript, setupScript) {
+	if o.SandboxName != sandboxName || o.SandboxUID != sandboxUID || o.Placement != placement || !bytes.Equal(oldBytes, data) || !ptr.Equal(o.SetupScript, setupScript) {
 		return ErrSessionConflict
 	}
 	return nil
@@ -891,13 +892,6 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 		return notify(ctx, tx)
 	})
 	return result, err
-}
-
-func equalOptional(a, b *string) bool {
-	if a == nil || b == nil {
-		return a == nil && b == nil
-	}
-	return *a == *b
 }
 
 func (s *Store) GetSession(ctx context.Context, id string) (*Session, error) {
