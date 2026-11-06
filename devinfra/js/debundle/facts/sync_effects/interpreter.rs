@@ -1678,7 +1678,11 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
                             return None;
                         }
                         let key = index.hoisted_bindings.get(binding)?;
-                        self.executor.inputs.callable_heap_contents.get(key)
+                        self.executor
+                            .inputs
+                            .callable_heap_contents
+                            .get(key)
+                            .cloned()
                     })
                     .collect()
             } else {
@@ -1697,7 +1701,7 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
         for cells in direct_suffix_heap_contents {
             self.outcome
                 .effects
-                .record_heap_contents(cells, self.executor.state.assumption.is_none());
+                .record_heap_contents(&cells, self.executor.state.assumption.is_none());
         }
         // The opaque operation can complete and reach later calls. Retain
         // their unknown direct-callee alternatives at their lexical sites,
