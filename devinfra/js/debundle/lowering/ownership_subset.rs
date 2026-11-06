@@ -3,6 +3,7 @@
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use spec::{LogicalModule, ModulePath};
+use spec_resolution::build_members;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -12,6 +13,17 @@ use std::path::Path;
 pub struct RetainedModule {
     pub chunk: String,
     pub module: ModulePath,
+    /// Final readable member names. Omission keeps every member claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bindings: Option<Vec<String>>,
+}
+
+/// Per-chunk ownership choice recorded in ordinary reports.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct SelectedModule {
+    pub module: ModulePath,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bindings: Option<BTreeSet<String>>,
 }
 
 /// A normal run's retained ownership claims, independent of analysis inputs.
@@ -36,18 +48,24 @@ impl OwnershipSubset {
         logical_modules: &BTreeMap<String, BTreeMap<String, LogicalModule>>,
         chunk_ids: &[String],
     ) -> Result<()> {
-        let known = logical_modules
-            .iter()
-            .map(|(chunk, modules)| {
-                Ok((
-                    chunk.as_str(),
-                    modules
-                        .keys()
-                        .map(|path| ModulePath::parse(path, ""))
-                        .collect::<std::result::Result<BTreeSet<_>, _>>()?,
-                ))
-            })
-            .collect::<Result<BTreeMap<_, _>>>()?;
+        let mut known = BTreeMap::new();
+        for (chunk, modules) in logical_modules {
+            let mut by_path = BTreeMap::new();
+            for (raw_path, module) in modules {
+                let path = ModulePath::parse(raw_path, "")?;
+                if let Some((previous, _)) = by_path.insert(path.clone(), (raw_path, module)) {
+                    anyhow::bail!(
+                        "logical modules {}::{} and {}::{} normalize to the same path {}",
+                        chunk,
+                        previous,
+                        chunk,
+                        raw_path,
+                        path
+                    );
+                }
+            }
+            known.insert(chunk.as_str(), by_path);
+        }
         let mut selected = BTreeSet::new();
         for entry in &self.modules {
             ensure!(
@@ -55,29 +73,64 @@ impl OwnershipSubset {
                 "ownership subset names unknown materialized chunk {:?}",
                 entry.chunk
             );
-            ensure!(
-                known
-                    .get(entry.chunk.as_str())
-                    .is_some_and(|modules| modules.contains(&entry.module)),
-                "ownership subset names unknown module {}::{}",
-                entry.chunk,
-                entry.module.as_str()
-            );
+            let module = known
+                .get(entry.chunk.as_str())
+                .and_then(|modules| modules.get(&entry.module))
+                .map(|(_, module)| *module)
+                .with_context(|| {
+                    format!(
+                        "ownership subset names unknown module {}::{}",
+                        entry.chunk, entry.module
+                    )
+                })?;
             ensure!(
                 selected.insert((&entry.chunk, &entry.module)),
                 "ownership subset repeats module {}::{}",
                 entry.chunk,
                 entry.module
             );
+            if let Some(bindings) = &entry.bindings {
+                let request_id = format!("{}::{}", entry.chunk, entry.module);
+                let known_names = build_members(
+                    &module.members,
+                    &module.source_matches,
+                    &module.annotations,
+                    &request_id,
+                )?
+                .into_iter()
+                .map(|member| member.export_name)
+                .collect::<BTreeSet<_>>();
+                let mut selected_names = BTreeSet::new();
+                for name in bindings {
+                    ensure!(
+                        selected_names.insert(name),
+                        "ownership subset repeats binding {name:?} in {}::{}",
+                        entry.chunk,
+                        entry.module
+                    );
+                    ensure!(
+                        known_names.contains(name),
+                        "ownership subset names unknown binding {name:?} in {}::{}",
+                        entry.chunk,
+                        entry.module
+                    );
+                }
+            }
         }
         Ok(())
     }
 
-    pub(super) fn module_paths(&self, chunk: &str) -> BTreeSet<ModulePath> {
+    pub(super) fn modules_for_chunk(&self, chunk: &str) -> BTreeSet<SelectedModule> {
         self.modules
             .iter()
             .filter(|entry| entry.chunk == chunk)
-            .map(|entry| entry.module.clone())
+            .map(|entry| SelectedModule {
+                module: entry.module.clone(),
+                bindings: entry
+                    .bindings
+                    .as_ref()
+                    .map(|names| names.iter().cloned().collect()),
+            })
             .collect()
     }
 }

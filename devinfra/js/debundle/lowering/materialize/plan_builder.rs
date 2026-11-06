@@ -7,6 +7,7 @@
 use super::outcome_sink::OutcomeSink;
 use crate::anonymous::ResolvedAnonymousStatement;
 use crate::imports::{ArtifactSourceImportResolutionCache, resolve_imported_binding};
+use crate::ownership_subset::SelectedModule;
 use crate::plans::ModulePlan;
 use crate::rebind_fold::RebindFold;
 use crate::util::target_file_for_request;
@@ -164,9 +165,9 @@ impl ChunkPlanBuilder {
     ///
     /// The selector outcomes, unmatched claims, and no-reentry assertions stay
     /// attached to the builder so filtering cannot hide an invalid full spec.
-    /// Claims inferred for destructuring siblings and anonymous statements are
-    /// filtered through the same authoritative ownership maps as direct claims.
-    pub(super) fn retain_modules(&mut self, selected: &BTreeSet<spec::ModulePath>) -> Result<()> {
+    /// Partial selections remove derived sibling/anonymous binding owners;
+    /// the caller reapplies the existing placement rules after filtering.
+    pub(super) fn retain_modules(&mut self, selected: &BTreeSet<SelectedModule>) -> Result<()> {
         ensure!(
             self.residual_plan_index.is_none(),
             "cannot retain an ownership subset while a residual plan exists"
@@ -182,13 +183,17 @@ impl ChunkPlanBuilder {
             );
         }
 
+        let choices = selected
+            .iter()
+            .map(|entry| (&entry.module, &entry.bindings))
+            .collect::<BTreeMap<_, _>>();
         let mut remapped_indices = vec![None; self.module_plans.len()];
         let mut matched_selected = BTreeSet::new();
         let mut next_index = 0;
         for (old_index, plan) in self.module_plans.iter().enumerate() {
             let path = spec::ModulePath::parse(&plan.target_path, "")
                 .with_context(|| format!("module plan {:?} has an invalid target path", plan.id))?;
-            if selected.contains(&path) {
+            if choices.contains_key(&path) {
                 ensure!(
                     matched_selected.insert(path.clone()),
                     "multiple module plans have selected target path {path}"
@@ -199,7 +204,9 @@ impl ChunkPlanBuilder {
         }
 
         let missing_selected = selected
-            .difference(&matched_selected)
+            .iter()
+            .map(|entry| &entry.module)
+            .filter(|path| !matched_selected.contains(*path))
             .map(ToString::to_string)
             .collect::<Vec<_>>();
         ensure!(
@@ -215,14 +222,41 @@ impl ChunkPlanBuilder {
         };
 
         let mut bindings_catalogue = HashMap::new();
+        // Metadata is keyed by source name for both owned bindings and imported
+        // re-exports, even though imports have no entry in plan.bindings.
+        let mut retained_claim_names = vec![BTreeSet::<String>::new(); self.module_plans.len()];
         for (binding, kind) in &self.bindings_catalogue {
             let mut retained_kind = kind.clone();
             let referenced_module = match &mut retained_kind {
                 BindingKind::Owned { module } => module,
                 BindingKind::Imported { re_exporter, .. } => re_exporter,
             };
-            if let Some(new_index) = remap_index(referenced_module.0)? {
+            let old_index = referenced_module.0;
+            let Some(new_index) = remap_index(old_index)? else {
+                continue;
+            };
+            let path = spec::ModulePath::parse(&self.module_plans[old_index].target_path, "")?;
+            let keep = match choices[&path] {
+                None => true,
+                Some(names) => match kind {
+                    BindingKind::Owned { .. } => {
+                        let source_name = binding.0.as_ref();
+                        self.module_plans[old_index]
+                            .binding_claim_origins
+                            .contains_key(source_name)
+                            && self.module_plans[old_index]
+                                .bindings
+                                .get(source_name)
+                                .is_some_and(|name| names.contains(name))
+                    }
+                    BindingKind::Imported { public_name, .. } => {
+                        names.contains(public_name.as_ref())
+                    }
+                },
+            };
+            if keep {
                 referenced_module.0 = new_index;
+                retained_claim_names[old_index].insert(binding.0.to_string());
                 bindings_catalogue.insert(binding.clone(), retained_kind);
             }
         }
@@ -238,7 +272,19 @@ impl ChunkPlanBuilder {
         self.module_plans = old_module_plans
             .into_iter()
             .enumerate()
-            .filter_map(|(old_index, plan)| remapped_indices[old_index].map(|_| plan))
+            .filter_map(|(old_index, mut plan)| {
+                remapped_indices[old_index].map(|_| {
+                    let retained = &retained_claim_names[old_index];
+                    plan.bindings.retain(|name, _| retained.contains(name));
+                    plan.spec_named_bindings
+                        .retain(|name| retained.contains(name));
+                    plan.binding_comments
+                        .retain(|name, _| retained.contains(name));
+                    plan.binding_claim_origins
+                        .retain(|name, _| retained.contains(name));
+                    plan
+                })
+            })
             .collect();
         self.bindings_catalogue = bindings_catalogue;
         self.whole_statement_assignment = whole_statement_assignment;

@@ -111,6 +111,16 @@ The JSON is `{"modules":[{"chunk":"app","module":"features/view"}]}`;
 paths must name existing materialized chunks and explicit modules. Duplicate
 entries and unknown JSON fields are errors.
 
+Each module entry may include `"bindings":["parseView"]`, an include list of
+the module's authored readable member names (the final `name:` or default
+export name). Omitting `bindings` keeps all its member claims. An empty list
+keeps its anonymous-statement claims but no named member claims; bindings
+declared by a retained anonymous statement still move with that whole
+statement. Unknown or repeated binding names are errors. The list is an
+ownership selection, not an initializer-expression or source-unit selector.
+Indivisible declarations and rebind units remain subject to the normal
+placement and realizability checks.
+
 Full selector outcomes, relational anchors, duplicate/unmatched claims and
 annotations are checked before ownership is reduced. The selection does not
 change the analysis projection or source graph. Retained bindings, imported
@@ -138,7 +148,8 @@ policy. An omitted explicit claim at the catchall path loses its authored
 renames and annotations; ordinary residual routing can recreate that destination.
 Full graph export remains unsupported with this option.
 Each chunk's graph summary and module report records its retained module paths
-in `ownership_subset`, including an empty list. Acceptance is for that selected
+and optional binding lists in `ownership_subset`, including empty lists.
+Acceptance is for that selected
 assignment only; it does not establish acceptance of the full canonical
 assignment or complete effect coverage. Reusing analysis still requires the
 normal matching engine, source and full-projection checks.

@@ -631,6 +631,27 @@ Each entry names an exact chunk ID and a chunk-local module path, as recorded
 in `modules.json`'s `requested_logical_modules[].target_path`. Paths are not
 physical YAML filenames or chunk-prefixed IDs. `{"modules": []}` retains no
 named modules. Unknown chunks/modules, duplicates and unknown fields fail.
+Add an optional `bindings` include list to retain only named claims from a
+selected module, using the module's authored readable member/export names:
+
+```json
+{ "modules": [{ "chunk": "app", "module": "features/view", "bindings": ["parseView"] }] }
+```
+
+Omitting `bindings` retains all claims in that module. An empty list retains
+its anonymous-statement claims only, including any bindings those whole
+statements declare. Unknown or repeated names fail. This option selects
+ownership claims; the ordinary source-unit placement and gate still decide
+whether a partial selection is realizable.
+
+Build allowlists from the authored member names: the `readable_name` in
+`bindings list` or the member's effective `name:`/default export name. In
+`modules.json`, `final_module_contents[].member_names` shows emitted names and
+`binding_names` shows input binding spellings; do not use `binding_names` as
+allowlist names. Final module rows can also contain bindings pulled in by
+whole-statement placement, so check a candidate name against the authored
+claims before counting it. When combining source-unit rows from multiple
+chunk reports, identify a unit by both `chunk_id` and its `unit:N` ID.
 
 ```sh
 debundle run <full tree args> --analysis analysis.dba \
@@ -653,7 +674,8 @@ fail even when their modules are omitted.
 
 Normal gates, translation validation, reconstruction and emission run on the
 selected assignment. `graph_summary.json` and `modules.json` carry its
-`ownership_subset` paths, including empty selections. This is partial output;
+`ownership_subset` module paths and optional binding lists, including empty
+selections. This is partial output;
 it does not validate the full canonical assignment. Full graph export remains
 unsupported with this option. An omitted explicit catchall claim can be recreated
 as ordinary residual ownership without its authored renames. Use the same

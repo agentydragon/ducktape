@@ -223,6 +223,24 @@ Omitting an explicit catchall claim can recreate residual ownership without its
 authored renames. Repair invalid full-spec selectors or claims
 separately; ownership selection does not hide them.
 
+Before splitting a module into temporary YAML siblings to withhold a few
+members, try its optional `bindings` include list. Use authored readable
+member/export names from the native `bindings list` catalogue or the YAML
+claims, not minified `binding_names` or names adopted only by the emitted
+report. An omitted list keeps every claim; `"bindings": []` keeps anonymous
+statement claims, including the bindings those statements declare. Identify
+source units by `(chunk_id, unit:N)` when combining chunk reports. The
+[CLI contract](../../docs/cli.md#ownership-subsets-with-full-selector-context)
+and [spec contract](../../SPEC.md#ownership-subsets) describe the input and
+limits. Keep full selectors, assertions, anchors and matching analysis in
+place, and require the ordinary gate for each actual selected union.
+
+Before publishing coverage totals, reconcile accepted report members with the
+native authored-binding catalogue, including `readable_name` aliases and
+normalized module paths. Retain the baseline identity set and list additions
+and withheld identities. Automatic helper labels in emitted module reports
+are not additional authored claims; report unmatched labels separately.
+
 1. Reduce the rejecting spec by returning suspected groups of claims to
    residual until a useful subset passes. That candidate is a known passing
    lower bound. Alternatively start from an existing passing partial spec or
@@ -257,6 +275,10 @@ module-root prefixes in authored YAML are not necessarily those identities.
 Use the [diagnosed actual blockers](#diagnose-a-rejected-assignment) for the first
 coarse candidate, then bisect remaining failing additions. Removing the owner union
 of hypothetical collapsed-cycle reports can discard otherwise viable modules.
+For a large **actual** cyclic SCC, compare coarse omission of new SCC owner
+groups with pruning or bisection at the cut endpoints. If repeated frontier
+cuts recover little ownership, switch tactics. A hypothetical pass-one owner
+union is not an exclusion set; check each actual union with the normal gate.
 
 Removal can change module cycles and selector dependencies, so do not assume
 acceptance is monotone or prune untried subsets from one failing result. A
@@ -336,6 +358,14 @@ retention, result and identity obligations; assert only the facts the audit
 supports. Document a new annotation's contract in `SPEC.md` and retain existing
 approved contracts unless a changed assertion is explicitly justified.
 
+Before reusing an older audit, compare its premises with the current spec and
+both original and replacement providers. Fresh allocation alone does not
+establish absence of inherited getters or integrity of the intrinsic operations
+used on the value. Check the relevant property slots and effects;
+an excluded intrinsic family does not supply an integrity promise. If that
+evidence is missing, preserve the passing checkpoint and try another coherent
+ownership boundary before extending a chain of ordering annotations.
+
 Use standing user authorization for scoped model and annotation decisions;
 do not request fresh approval for each choice already within that authority.
 
@@ -374,6 +404,9 @@ or stale assertions without silently expanding the promised scope.
   from its analysis inputs. Refresh expensive analysis when those inputs or
   the engine change. Request full graphs and evidence streams when the
   investigation needs them; keep routine output bounded.
+- Before repeating a rejected addition, name the changed input or causal
+  mechanism expected to change its witness. An unrelated chunk's coverage gain
+  alone does not justify rerunning the same failing assignment.
 - Read the complete gate inventory, structured reports and their truncation
   metadata. The first console rejection is not the inventory, and a selected
   cycle cut is not its reciprocal path. Absence of a secondary report does
@@ -396,6 +429,9 @@ or stale assertions without silently expanding the promised scope.
   for their recorded engine; refresh matching analysis and configured-target
   checks when the new revision changes analysis semantics. Keep patch URLs and
   integrity values consistent with the chosen source pin.
+  For routine BuildBuddy polling, prefer `bbapi invocation status` and selected
+  metadata fields. Full invocation records can contain serialized command lines;
+  do not print or commit those payloads wholesale.
 - Prefer direct storage/lifetime improvements when their mechanism is clear.
   Use a real profiler for an unanswered allocation or CPU question when it
   would change the decision. Bound that investigation; do not make every

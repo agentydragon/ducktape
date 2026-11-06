@@ -364,6 +364,24 @@ paths and source-unit IDs belong in the consuming repo.
   use a real profiler when needed to choose the implementation. Preserve facts,
   ordering, emitted behavior and report completeness. Improve the existing
   stages without adding a parallel artifact format or compatibility path.
+- **W6 — Explain reciprocal cycle paths in ownership-subset reports.** Subset
+  runs reject full graph export; their ordinary cycle reports can identify an
+  actual SCC and one cut without exposing the return path. This leaves an
+  author unable to inspect the entire dependency behind a proposed co-location
+  or ordering annotation. Emit a bounded closed-walk witness from the actual
+  constraining graph, with source-unit identities, edge causes and residual
+  endpoint names. Preserve truncation counts and distinguish actual cycles
+  from hypothetical collapsed assignments. Verify that every reported step is
+  an active edge for that exact subset; do not require a complete graph dump.
+- **W7 — Query integrity evidence without exporting complete graphs.**
+  `explain-integrity` currently requires a dependency graph and its program
+  graph. A cached-analysis ownership round may have neither, even when the
+  saved analysis already contains the native mutation census needed to audit
+  specific property slots. Expose that existing typed evidence through a
+  source-matched native inspection path. Preserve engine/source/projection
+  guards and the distinction between a known exact-slot mutation and a
+  conservative unknown receiver. An older audit or an intact unrelated
+  intrinsic family must not silently certify the queried slot.
 
 ### Planner CLI follow-ups
 
