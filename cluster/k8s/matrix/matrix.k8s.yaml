@@ -27,6 +27,7 @@ spec:
       localeCType: C
       localeCollate: C
       owner: synapse
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-minimal-trixie
   instances: 2
   monitoring:
     enablePodMonitor: true

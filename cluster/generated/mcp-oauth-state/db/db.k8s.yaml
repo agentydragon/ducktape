@@ -139,7 +139,7 @@ spec:
     initdb:
       database: app
       owner: app
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-minimal-trixie
   instances: 2
   managed:
     roles:

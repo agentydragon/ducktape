@@ -29,6 +29,7 @@ spec:
     initdb:
       database: studycasino
       owner: studycasino
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-minimal-trixie
   instances: 3
   managed:
     roles:
@@ -235,7 +236,7 @@ spec:
               value: study-casino-db-rw.study-casino.svc
             - name: PGDATABASE
               value: studycasino
-          image: ghcr.io/cloudnative-pg/postgresql:18.6
+          image: ghcr.io/cloudnative-pg/postgresql:18.6-minimal-trixie
           name: psql
           resources:
             limits:

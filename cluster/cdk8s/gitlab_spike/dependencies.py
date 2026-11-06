@@ -61,7 +61,7 @@ def _databases(chart: Chart) -> None:
         size="25Gi",
         resize_in_use_volumes=False,
         instances=3,
-        image_name="ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie",
+        image_name="ghcr.io/cloudnative-pg/postgresql:18.6-minimal-trixie",
         initdb=cluster.same_owner_initdb(app.GITLAB_DATABASE),
         managed=ClusterSpecManaged(
             roles=[

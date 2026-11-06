@@ -102,7 +102,6 @@ def _database(scope: Construct) -> None:
         annotations={"description": "CNPG Postgres for study-casino state."},
         # Preserve the existing mixed-class 1Gi PVCs; Piraeus applies to the new claim only.
         instances=3,
-        image_name=None,
         profile=cluster.OVH_PIRAEUS_SSD,
         size="1Gi",
         resize_in_use_volumes=False,
@@ -189,7 +188,7 @@ def _readonly_provisioner(scope: Construct) -> None:
                     containers=[
                         k8s.Container(
                             name="psql",
-                            image="ghcr.io/cloudnative-pg/postgresql:18.6",
+                            image="ghcr.io/cloudnative-pg/postgresql:18.6-minimal-trixie",
                             resources=k8s.ResourceRequirements(
                                 requests={
                                     "cpu": k8s.Quantity.from_string("10m"),

@@ -41,6 +41,7 @@ class Db(Construct):
             annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
             profile=cluster.OVH_PIRAEUS_SSD,
             size="3Gi",
+            image_name=cluster.POSTGRES_STANDARD_IMAGE,
             resize_in_use_volumes=False,
             initdb=cluster.same_owner_initdb(DATABASE),
             wal_archive=True,

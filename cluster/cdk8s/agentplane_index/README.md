@@ -64,8 +64,9 @@ gets a standard `postgresql://` URI assembled from the shared credential and its
 name: the generated CNPG URI targets the bootstrap `ducktape` database, while the Haku worker
 must connect to `haku_state`. The service selects `asyncpg` for SQLAlchemy itself.
 
-CNPG installs `vector`, which the Postgres image ships, before the workers start: pgvector
-needs a superuser, while the workers only own their databases and create their own schema.
+The CNPG Cluster uses the `standard` Postgres image because `minimal` omits the `vector`
+extension. CNPG installs it before the workers start: pgvector needs a superuser, while the
+workers only own their databases and create their own schema.
 The Flux Kustomization's `Database` health expression requires the extension applied.
 Removing a `Database` resource retains its database; that does not protect the Cluster or
 its PVCs.

@@ -157,7 +157,8 @@ def _database(scope: Construct) -> None:
         scope,
         "db",
         ref=DATABASE,
-        image_name=None,
+        # This existing cluster is on 18.4; change only its image variant.
+        image_name="ghcr.io/cloudnative-pg/postgresql:18.4-minimal-trixie",
         profile=cluster.OVH_PIRAEUS_SSD,
         # Leave room for the old and replacement cache databases to coexist during migration.
         size="16Gi",

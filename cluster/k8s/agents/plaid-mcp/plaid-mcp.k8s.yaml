@@ -644,7 +644,7 @@ spec:
     initdb:
       database: plaidmcp
       owner: plaidmcp
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-minimal-trixie
   instances: 2
   managed:
     roles:
@@ -841,7 +841,7 @@ spec:
               value: plaid-mcp-db-rw.plaid-mcp.svc
             - name: PGDATABASE
               value: plaidmcp
-          image: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
+          image: ghcr.io/cloudnative-pg/postgresql:18.6-minimal-trixie
           name: psql
           resources:
             limits:

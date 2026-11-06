@@ -10,11 +10,13 @@ Uses CNPG's **Standalone Replica Cluster** pattern: target bootstrapped via `pg_
 - Source and target storage classes exist and are region-pinned (see `cluster/docs/cnpg_conventions.md` for the current profiles and region names)
 - Both regions' nodes can reach each other over pod network (Nebula mesh)
 - `kubectl` access to the namespace
-- Same PostgreSQL image version on both clusters (required for physical replication)
+- Target uses the source Cluster's exact `spec.imageName` and PostgreSQL extension configuration (required for physical replication)
 
 ## Migration procedure
 
 Set `<SOURCE_STORAGECLASS>` / `<TARGET_STORAGECLASS>` to the region-pinned storage classes for the source and target regions. The procedure is identical in either direction — just swap which region is source vs. target.
+
+Copy the source Cluster's exact `spec.imageName` and PostgreSQL extension configuration to the target. Physical replication requires matching PostgreSQL versions, and the source image may include extensions absent from another image variant.
 
 ### Step 1: Create source cluster (if not existing)
 
@@ -28,7 +30,7 @@ metadata:
   namespace: <NAMESPACE>
 spec:
   instances: 1
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  imageName: <SOURCE_IMAGE>
   probes:
     liveness:
       isolationCheck:
@@ -64,7 +66,7 @@ metadata:
     description: "Streaming replica of <SOURCE_NAME>, to be promoted"
 spec:
   instances: 1
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  imageName: <SOURCE_IMAGE>
   probes:
     liveness:
       isolationCheck:

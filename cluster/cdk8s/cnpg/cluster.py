@@ -30,7 +30,9 @@ from cluster.cdk8s.providers.cnpg.cluster import Cluster
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
-POSTGRES_IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie"
+POSTGRES_IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.1-minimal-trixie"
+# pgvector is present in `standard`, but not `minimal`.
+POSTGRES_STANDARD_IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.1-standard-trixie"
 # The CNPG-I plugin that archives a Cluster's WAL and takes its base backups into an ObjectStore.
 BARMAN_PLUGIN = "barman-cloud.cloudnative-pg.io"
 # The port of every Service CNPG creates for a Cluster.

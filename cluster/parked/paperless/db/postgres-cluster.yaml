@@ -5,7 +5,7 @@ metadata:
   namespace: paperless
 spec:
   instances: 2
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-minimal-trixie
 
   # CNPG 1.27+ kills isolated primaries by default (liveness probe).
   # Disable to prevent false positives from transient network blips.

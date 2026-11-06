@@ -17,7 +17,7 @@ spec:
     initdb:
       database: litellm
       owner: litellm
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-minimal-trixie
   instances: 2
   monitoring:
     enablePodMonitor: true

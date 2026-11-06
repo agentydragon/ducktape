@@ -13,7 +13,7 @@ spec:
         key: node-role.kubernetes.io/control-plane
         operator: Exists
     topologyKey: kubernetes.io/hostname
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-minimal-trixie
   instances: 2
   managed:
     roles:

@@ -105,7 +105,6 @@ def _database(scope: Construct) -> None:
         scope,
         "database",
         ref=DATABASE,
-        image_name=None,
         # OVH-HA profile (docs/cnpg_conventions.md R2/R3), replacing the Proxmox-single
         # shape this had before the namespace was parked: Synapse's media store is on
         # an OVH-only Piraeus class, so the app runs there and R5 requires the database

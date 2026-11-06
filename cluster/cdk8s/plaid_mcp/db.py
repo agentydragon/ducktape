@@ -193,7 +193,7 @@ def _readonly_provisioner(chart: Chart) -> None:
                     containers=[
                         k8s.Container(
                             name="psql",
-                            image="ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie",
+                            image="ghcr.io/cloudnative-pg/postgresql:18.6-minimal-trixie",
                             resources=k8s.ResourceRequirements(
                                 requests={
                                     "cpu": k8s.Quantity.from_string("10m"),

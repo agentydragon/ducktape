@@ -103,6 +103,7 @@ def _database(chart: Chart) -> None:
         "database-cluster",
         ref=DATABASE,
         profile=cluster.OVH_PIRAEUS_SSD,
+        image_name=cluster.POSTGRES_STANDARD_IMAGE,
         size="20Gi",
         initdb=ClusterSpecBootstrapInitdb(database="ducktape", owner=_DB_OWNER),
         wal_archive=False,

@@ -25,7 +25,7 @@ spec:
     initdb:
       database: atuin
       owner: atuin
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.1-minimal-trixie
   instances: 2
   monitoring:
     enablePodMonitor: true
