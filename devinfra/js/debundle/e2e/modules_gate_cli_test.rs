@@ -86,6 +86,7 @@ fn graph_only_clean_force_delete_still_needs_full_assessment() {
 fn claim_check_resolves_decorator_statement_claims_from_real_source() {
     // A leading export is not an unit: source statement ordinals must not be
     // confused with positions in the source_unit table when resolving the decorator.
+    // Co-own the prefix so this claim-resolution fixture preserves source order.
     let fixture = GraphFixture::new(
         r#"export { Co };
 const ignored = 0;
@@ -99,6 +100,7 @@ console.log(new Co().visible);
             (
                 "state.yaml",
                 r#"members:
+  - selector: {binding: {name: ignored}}
   - selector: {binding: {name: Co}}
   - selector: {binding: {name: Ro}}
   - selector: {binding: {name: Z}}
