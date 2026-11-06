@@ -5547,7 +5547,7 @@ spec:
                             path: tls.crt
                           - key: tls.key
                             path: tls.key
-                        name: runner-{{ sandboxLive.status.runnerCredential.acceptedId || 'missing' }}
+                        name: runner-{{ sandboxLive.status.runnerCredential.acceptedId }}
                     - configMap:
                         items:
                           - key: ca-certificates.crt
