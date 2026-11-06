@@ -3,7 +3,7 @@ set -eu
 echo "AGENTPLANE_GUEST_SHUTDOWN_REQUESTED"
 # Keep PID 1's pending-job diagnostics observable after journald leaves /state.
 # Diagnostic RPCs must not prevent the existing poweroff request if the manager is wedged.
-/usr/bin/busybox timeout 1 /usr/bin/systemctl start agentplane-shutdown-watchdog.service || echo "Could not start shutdown watchdog" >&2
+/usr/bin/busybox timeout 1 /usr/bin/busybox sh -c 'echo requested > /run/agentplane-shutdown-watchdog/request' || echo "Could not notify shutdown watchdog" >&2
 /usr/bin/busybox timeout 1 /usr/bin/systemctl log-level debug || echo "Could not enable shutdown debug logging" >&2
 /usr/bin/busybox timeout 1 /usr/bin/systemctl log-target console || echo "Could not direct shutdown logging to console" >&2
 exec /usr/bin/systemctl --no-block start poweroff.target

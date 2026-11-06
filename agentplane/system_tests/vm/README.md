@@ -22,6 +22,6 @@ scenario assertions stay under [`scenarios/`](../scenarios/).
 and launcher, relay, virtiofs and handler logs. Open descriptors preserve files after Pod
 removal; native journal snapshots refresh during the test and after teardown. The guest
 follows only its volatile journal to serial, covering early boot and the late switch away
-from `/state`. Runtime already logs to `journal+console`. On ACPI shutdown an independent
-watchdog reports PID 1 kernel state and pending jobs. See the active
+from `/state`. Runtime already logs to `journal+console`. An observer starts at boot and waits
+on a FIFO; ACPI wakes it to report PID 1 kernel state, descriptors, processes and pending jobs. See the active
 [shutdown investigation](../debug/vm_shutdown_stalls.md) for reproduction evidence.
