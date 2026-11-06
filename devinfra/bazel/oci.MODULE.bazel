@@ -406,7 +406,7 @@ oci.pull(
 oci.pull(
     name = "timescaledb_pg18",
     digest = "sha256:cc00b0ede968b0c6e55212bd55a9a195726afe5a9e19dcf8af49a13334e92ff3",
-    image = "timescale/timescaledb",
+    image = "mirror.gcr.io/timescale/timescaledb",
     platforms = ["linux/amd64"],
     tag = "2.31.0-pg18-oss",
 )
