@@ -361,7 +361,8 @@ continues to deliver the Runtime's control identity. For KubeVirt, the guest Run
 Secret from its existing root-only virtiofs mount, while the launcher relay gets a projection of that
 Secret into its own sidecar mount.
 Kyverno checks the live Sandbox status binding against the VM annotation, current VMI UID and
-credential label before injection. The sidecar verifies the proxy's fixed SPIFFE identity; the proxy
+credential label before injection. Its admission controller has a namespace-scoped Role granting
+only `get` on Sandboxes for that lookup; it does not read the Secret. The sidecar verifies the proxy's fixed SPIFFE identity; the proxy
 checks the Runner client identity against current Sandbox/incarnation state.
 
 The sidecar's `proxy_mode` is required and selects either the legacy token listener or mTLS listener.

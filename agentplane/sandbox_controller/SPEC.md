@@ -130,7 +130,9 @@ exactly one of `pod`, `vm`, or `firecracker`.
   same Secret only after its admission policy checks the live Sandbox's `status.runnerCredential`
   against the VM annotation, current VMI UID and credential label, plus the existing Sandbox owner
   chain. The egress-sidecar alone mounts that projection; the guest Runtime uses the existing
-  virtiofs mount. The trust-manager CA bundle is mounted separately as public trust data.
+  virtiofs mount. Kyverno's admission controller gets only namespace-scoped Sandbox `get` for
+  the status lookup; the kubelet projects the Secret without Kyverno reading its value.
+  The trust-manager CA bundle is mounted separately as public trust data.
 - The guest's executable erofs disk keeps serial `agentplane-runner` and mounts at
   `/run/agentplane/environment`. Runtime configuration and the launch file arrive as separate
   disks at `/run/agentplane/config` and `/run/agentplane/sandbox`. Their filenames, device serials

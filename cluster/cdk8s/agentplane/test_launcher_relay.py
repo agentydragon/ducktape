@@ -69,7 +69,7 @@ def policy() -> dict:
     LauncherRelayPolicy(
         chart, "policy", namespace=NAMESPACE, runner_pod=deepcopy(RUNNER_POD), settings_config_map=RELAY_SETTINGS
     )
-    rendered: dict = Cdk8sTesting.synth(chart)[0]
+    rendered = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "ClusterPolicy")
     # The CLI's policy validation needs a cluster to check match conditions against and panics
     # without one; they narrow which requests reach the policy, not what it decides.
     del rendered["spec"]["webhookConfiguration"]
@@ -87,9 +87,35 @@ def tls_policy() -> dict:
         settings_config_map=RELAY_SETTINGS,
         runner_tls_enabled=True,
     )
-    rendered: dict = Cdk8sTesting.synth(chart)[0]
+    rendered = one(doc for doc in Cdk8sTesting.synth(chart) if doc["kind"] == "ClusterPolicy")
     del rendered["spec"]["webhookConfiguration"]
     return rendered
+
+
+def test_tls_injection_can_read_only_the_sandbox_in_its_namespace() -> None:
+    chart = Chart(App(), "test-tls-reader")
+    LauncherRelayPolicy(
+        chart,
+        "policy",
+        namespace=NAMESPACE,
+        runner_pod=deepcopy(RUNNER_POD),
+        settings_config_map=RELAY_SETTINGS,
+        runner_tls_enabled=True,
+    )
+    documents = Cdk8sTesting.synth(chart)
+    role = one(doc for doc in documents if doc["kind"] == "Role")
+    assert role["metadata"]["namespace"] == NAMESPACE
+    assert role["rules"] == [{"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get"]}]
+    binding = one(doc for doc in documents if doc["kind"] == "RoleBinding")
+    assert binding["metadata"]["namespace"] == NAMESPACE
+    assert binding["roleRef"] == {
+        "apiGroup": "rbac.authorization.k8s.io",
+        "kind": "Role",
+        "name": role["metadata"]["name"],
+    }
+    assert binding["subjects"] == [
+        {"kind": "ServiceAccount", "name": "kyverno-admission-controller", "namespace": "kyverno"}
+    ]
 
 
 def policy_file(
