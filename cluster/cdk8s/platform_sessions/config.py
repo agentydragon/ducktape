@@ -9,11 +9,37 @@ THRIVE_READ_PATHS = (
     "/autoship/schedule/first",
 )
 
+BLUE_SHIELD_GATEWAY = "/memberwebapp/reverseproxy-secured/v10/bsc/aip/api/bsc/gateway/"
+BLUE_SHIELD_READ_PATHS = (
+    "member/message/center/read/v2",
+    "es/documents/download",
+    "member/coverages/pcp/goi/delegation/rules/preference/v4",
+    "member/benefits/claims/accumulation/v2",
+    "facets/claims/summary/v4",
+    "facets/claims/details/v4",
+    "member/claims/online/fetch/all/v1",
+    "product/benefits/mhprovider/v5",
+    "member/idcard/download/v4",
+    "member/mhr/lookup/v2",
+    "member/mhr/visits/v2",
+    "member/mhr/medication/v2",
+    "member/mhr/allergies/v2",
+    "member/mhr/immunization/v2",
+    "member/mhr/conditions/v2",
+    "member/mhr/labresults/v2",
+)
+
 INTEGRATIONS = {
     "integrations": [
         {"id": "openai", "type": "openai", "state_dir": "/data/session/openai"},
         {"id": "anthropic", "type": "anthropic", "state_dir": "/data/session/anthropic"},
         {"id": "chatgpt", "type": "chatgpt", "state_dir": "/data/session/chatgpt"},
+        {
+            "id": "blueshield",
+            "type": "blueshield",
+            "state_dir": "/data/session/blueshield",
+            "poll_interval_seconds": 300,
+        },
         {"id": "quest", "type": "quest", "state_dir": "/data/session/quest-platform"},
         {"id": "thrive", "type": "thrive", "state_dir": "/data/session/thrive"},
     ]
@@ -21,6 +47,17 @@ INTEGRATIONS = {
 
 BEARERS = {
     "owner": {"role": "owner", "token_file": "/var/run/platform-sessions/owner"},
+    "blueshield-read": {
+        "role": "routes",
+        "token_file": "/var/run/platform-sessions/blueshield-read",
+        "allow": [
+            {"instance": "blueshield", "method": "GET", "path": BLUE_SHIELD_GATEWAY + "retrieve/globalprofile/info/v2"},
+            *[
+                {"instance": "blueshield", "method": "POST", "path": BLUE_SHIELD_GATEWAY + path}
+                for path in BLUE_SHIELD_READ_PATHS
+            ],
+        ],
+    },
     "chatgpt-read": {
         "role": "routes",
         "token_file": "/var/run/platform-sessions/chatgpt-read",
