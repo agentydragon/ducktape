@@ -66,11 +66,11 @@ def _settings(resources: list[dict[str, Any]], config_map: str) -> dict[str, Any
     return cast(dict[str, Any], yaml.safe_load(one(data.values())))
 
 
-def test_haku_sandbox_is_an_egress_and_action_caller_namespace(resources: list[dict[str, Any]]) -> None:
+def test_haku_sandbox_needs_separate_proxy_authentication(resources: list[dict[str, Any]]) -> None:
     egress = _settings(resources, "egress-go-settings")
     actions = _settings(resources, "actions-settings")
 
-    assert ui_egress.NAMESPACE in egress["allowed_service_account_namespaces"]
+    assert ui_egress.NAMESPACE not in egress["allowed_service_account_namespaces"]
     assert ui_egress.NAMESPACE in actions["caller_service_account_namespaces"]
     # Callers are watched in every allowed namespace, but policies and bindings only in the staging one.
     assert actions["policy_namespace"] == "agentplane-staging"

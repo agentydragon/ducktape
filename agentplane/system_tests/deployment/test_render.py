@@ -105,6 +105,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         "egress-rules-workload",
         "runner-gateway-workload",
         "history-service-workload",
+        "llm-ingress-workload",
         "notifications-workload",
         "actions-workload",
     }
