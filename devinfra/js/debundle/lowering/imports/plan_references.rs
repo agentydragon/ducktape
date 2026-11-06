@@ -114,7 +114,12 @@ impl<'a> ArtifactSourceImportResolutionCache<'a> {
                     .map(|specifier| (resource.kind, specifier))
             })
             .map(|(kind, source)| {
-                let destination = if kind == RuntimeResourceKind::Worker {
+                let destination = if kind == RuntimeResourceKind::Worker && !source.starts_with('.')
+                {
+                    RuntimeResourceDestination::External {
+                        url: source.clone(),
+                    }
+                } else if kind == RuntimeResourceKind::Worker {
                     // Preserve the existing bare-Worker transform. Its browser
                     // document base is outside this module-URL proof.
                     match local_resource_path(
