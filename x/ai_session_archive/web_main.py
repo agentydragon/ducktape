@@ -1,10 +1,9 @@
 """Run the owner-authenticated session archive browser."""
 
-import os
+from importlib import resources
 from pathlib import Path
 
 import uvicorn
-from python.runfiles import Runfiles
 
 from x.ai_session_archive.database import make_engine
 from x.ai_session_archive.web import create_app
@@ -14,7 +13,7 @@ from x.ai_session_archive.web_settings import WebSettings
 def _frontend_dir(settings: WebSettings) -> Path:
     frontend_dir = settings.frontend_dir
     if frontend_dir is None:
-        frontend_dir = Path(str(Runfiles.CreateOrRaise().root() / os.environ["AI_SESSION_ARCHIVE_FRONTEND_RLOCATION"]))
+        frontend_dir = Path(str(resources.files("x.ai_session_archive") / "frontend" / "dist"))
     if not (frontend_dir / "index.html").is_file():
         raise FileNotFoundError(frontend_dir / "index.html")
     return frontend_dir
