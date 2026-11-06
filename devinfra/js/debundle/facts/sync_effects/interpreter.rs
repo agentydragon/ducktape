@@ -10864,7 +10864,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                         if !self.initialized_local_binding(receiver) {
                             return false;
                         }
-                        let targets = self.state.prefix_values.get(receiver).and_then(|values| {
+                        let receivers = self.state.prefix_values.get(receiver);
+                        if !call.has_spread
+                            && receivers.is_some_and(|values| {
+                                array_transfer::select_push(self, values, property).is_some()
+                            })
+                        {
+                            return true;
+                        }
+                        let targets = receivers.and_then(|values| {
                             self.present_own_data_read(values, property)
                                 .map(|read| read.values)
                         });

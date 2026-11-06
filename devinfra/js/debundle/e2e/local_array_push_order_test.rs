@@ -753,6 +753,60 @@ fn pooled_array_allocations_do_not_restore_descriptor_proofs() {
 }
 
 #[test]
+fn standalone_push_receipts_require_native_selection_and_primitive_arguments() {
+    use analysis::reports::schema::{BindingEffectAuthorityReport, LexicalBindingEffectBody};
+
+    for (setup, argument, native, output) in [
+        ("", "1", true, "1\n"),
+        (
+            "values.push = function () { return 0; };",
+            "1",
+            false,
+            "0\n",
+        ),
+        (
+            "Array.prototype.push = function () { return 0; };",
+            "1",
+            false,
+            "0\n",
+        ),
+        ("", "{}", false, "1\n"),
+    ] {
+        let source = format!(
+            "const values = [];\n{setup}\nvalues.push({argument});\nconsole.log(values.length);\n"
+        );
+        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        assert_preserved_entry_output(&fixture, output);
+        let graph = fixture.dependency_graph();
+        let execution = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.source_location
+                    .as_ref()
+                    .is_some_and(|location| location.start_line == 3)
+            })
+            .expect("standalone push owner")
+            .synchronous_execution
+            .as_ref()
+            .expect("execution report");
+        let native_receipt = match &execution.binding_effect_authority {
+            Some(BindingEffectAuthorityReport::OperationReceipt { receipt }) => {
+                receipt.calls.iter().any(|call| {
+                    matches!(
+                        &call.target,
+                        LexicalBindingEffectBody::Native { property: Some(property), .. }
+                            if property == "prototype.push"
+                    )
+                })
+            }
+            _ => false,
+        };
+        assert_eq!(native_receipt, native, "{source}: {execution:#?}");
+    }
+}
+
+#[test]
 fn dense_array_push_retains_mutation_argument_and_escape_guards() {
     for operation in [
         "Array.prototype.push = function () { return Later; };\nvalues.push(1);",
