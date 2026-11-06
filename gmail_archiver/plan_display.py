@@ -25,22 +25,11 @@ class Displayable(Protocol):
         """Return list of (key, header_label) for table columns."""
         ...
 
-    def format_column(self, key: str) -> str:
-        """Format the value for a given column key."""
-        ...
+    def format_column(self, key: str) -> str: ...
 
     @classmethod
     def hide_subject(cls) -> bool:
-        """Return True to hide Subject column.
-
-        Only return True when display_columns() fully captures all information
-        from the email subject. The Subject column should be hidden ONLY when
-        the custom columns provide complete structured representation of what
-        the subject contained - hiding it must not lose information.
-
-        Example: AliExpress subject "Order 12345: delivered" is fully captured
-        by Order ID + Status columns, so hide_subject() returns True.
-        """
+        """Request hiding Subject only when custom columns preserve all its information."""
         return False
 
 
@@ -51,10 +40,7 @@ def gmail_link(message_id: str) -> str:
 
 
 def _collect_display_columns(actions: Iterable[PlannedAction]) -> tuple[list[tuple[str, str]], bool]:
-    """Collect display columns and determine if Subject should be hidden.
-
-    Returns (columns, hide_subject). Subject is hidden only if ALL Displayable items request it.
-    """
+    """Collect custom columns; hide Subject only when every Displayable opts in."""
     seen_keys: set[str] = set()
     columns: list[tuple[str, str]] = []
     hide_subject_votes: list[bool] = []

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"math"
 	"net/url"
 	"os"
@@ -272,9 +273,7 @@ func loadConfigWithArgs(args []string) (Config, error) {
 		if rawSettings == nil {
 			rawSettings = map[string]any{}
 		}
-		for key, value := range cliSettings {
-			rawSettings[key] = value
-		}
+		maps.Copy(rawSettings, cliSettings)
 		if err := c.decodeCaseSensitiveSettings(rawSettings); err != nil {
 			return Config{}, err
 		}

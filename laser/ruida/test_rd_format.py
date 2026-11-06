@@ -1,3 +1,4 @@
+import pytest
 import pytest_bazel
 
 from laser.ruida.rd_format import (
@@ -38,25 +39,14 @@ def test_encode_number_zero():
     assert encode_number(0.0) == bytes([0, 0, 0, 0, 0])
 
 
-def test_encode_percent_100():
-    """100% should encode to 0x3FFF split into 7-bit halves."""
-    result = encode_percent(100.0)
-    # 100 * 0x3FFF * 0.01 = 0x3FFF = 16383
-    # High 7 bits: 16383 >> 7 = 127 = 0x7F
-    # Low 7 bits: 16383 & 0x7F = 127 = 0x7F
-    assert result == bytes([0x7F, 0x7F])
-
-
-def test_encode_percent_0():
-    assert encode_percent(0.0) == bytes([0, 0])
-
-
-def test_encode_percent_50():
-    result = encode_percent(50.0)
-    # 50 * 16383 * 0.01 = 8191.5 -> int = 8191
-    # 8191 >> 7 = 63 = 0x3F
-    # 8191 & 0x7F = 127 = 0x7F
-    assert result == bytes([0x3F, 0x7F])
+@pytest.mark.parametrize(
+    ("percentage", "expected"),
+    [(100.0, bytes([0x7F, 0x7F])), (0.0, bytes([0, 0])), (50.0, bytes([0x3F, 0x7F]))],
+    ids=["100-percent", "0-percent", "50-percent"],
+)
+def test_encode_percent(percentage: float, expected: bytes) -> None:
+    # The 14-bit wire value truncates 8191.5 to 8191 at 50%, then splits into 7-bit halves.
+    assert encode_percent(percentage) == expected
 
 
 def test_encode_hex():

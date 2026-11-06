@@ -12,6 +12,7 @@ py_test(
     deps = [
         ":rd_format",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

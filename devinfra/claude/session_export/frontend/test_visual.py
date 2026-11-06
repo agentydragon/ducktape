@@ -336,35 +336,24 @@ async def test_session_viewer(open_fixture: OpenFixture) -> None:
 
 
 @pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
-async def test_session_tool_result(open_fixture: OpenFixture) -> None:
-    async with open_fixture("tool-result") as view:
+@pytest.mark.parametrize(
+    ("fixture_id", "detail_selector", "result_selector"),
+    [
+        ("tool-result", '[data-tool-name="Read"]', "[data-tool-output-image]"),
+        ("file-result", '[data-tool-file-path="src/session-viewer.ts"]', "[data-tool-file-preview]"),
+        ("subagent", '[data-subagent-activity][data-subagent-tool-count="2"]', '[data-subagent-latest-tool="Grep"]'),
+    ],
+    ids=["tool-result", "file-result", "subagent"],
+)
+async def test_session_tool_results(
+    open_fixture: OpenFixture, fixture_id: str, detail_selector: str, result_selector: str
+) -> None:
+    async with open_fixture(fixture_id) as view:
         await view.page.locator("[data-tool-run-toggle]").first.click()
         await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
         await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
-        await expect(view.page.locator('[data-tool-name="Read"]')).to_be_attached()
-        await expect(view.page.locator("[data-tool-output-image]")).to_be_attached()
-        await _capture(view)
-
-
-@pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
-async def test_session_read_file_result(open_fixture: OpenFixture) -> None:
-    async with open_fixture("file-result") as view:
-        await view.page.locator("[data-tool-run-toggle]").first.click()
-        await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
-        await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
-        await expect(view.page.locator('[data-tool-file-path="src/session-viewer.ts"]')).to_be_attached()
-        await expect(view.page.locator("[data-tool-file-preview]")).to_be_attached()
-        await _capture(view)
-
-
-@pytest.mark.parametrize("viewport", [_DESKTOP, _PHONE], ids=["desktop", "mobile"])
-async def test_session_subagent(open_fixture: OpenFixture) -> None:
-    async with open_fixture("subagent") as view:
-        await view.page.locator("[data-tool-run-toggle]").first.click()
-        await _scroll_into_view(view.page.locator('[data-fold-kind="tool-run"]').first)
-        await expect(view.page.locator('[aria-label="Session history"]')).to_be_attached()
-        await expect(view.page.locator('[data-subagent-activity][data-subagent-tool-count="2"]')).to_be_attached()
-        await expect(view.page.locator('[data-subagent-latest-tool="Grep"]')).to_be_attached()
+        await expect(view.page.locator(detail_selector)).to_be_attached()
+        await expect(view.page.locator(result_selector)).to_be_attached()
         await _capture(view)
 
 

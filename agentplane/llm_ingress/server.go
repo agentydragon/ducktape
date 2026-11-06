@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -236,9 +237,7 @@ func (h *ingressHandler) forward(writer http.ResponseWriter, incoming *http.Requ
 		Rewrite: func(out *httputil.ProxyRequest) {
 			out.SetURL(h.baseURL)
 			dropUntrustedRequestHeaders(out.Out.Header, h.attribution)
-			for name, values := range verified {
-				out.Out.Header[name] = values
-			}
+			maps.Copy(out.Out.Header, verified)
 			if h.logBody {
 				requestBody = &boundedCapture{ReadCloser: out.Out.Body, limit: maxLoggedRequestBody}
 				out.Out.Body = requestBody
@@ -449,12 +448,9 @@ func agentplaneIdentityBaggage(fields []attributionField, claims map[verifiedCla
 }
 
 func hasIdentityHeaderPrefix(name string) bool {
-	for _, prefix := range identityHeaderPrefixes {
-		if strings.HasPrefix(name, prefix) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(identityHeaderPrefixes, func(prefix string) bool {
+		return strings.HasPrefix(name, prefix)
+	})
 }
 
 func writeJSONError(writer http.ResponseWriter, status int, detail, authenticate string) {

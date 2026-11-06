@@ -96,7 +96,6 @@ class ViewFormatter:
         return str(pr_state.value).lower()
 
     def format_status_row(self, name: str, status: StatusResult, pr_info: PRInfo | None, name_width: int = 22) -> str:
-        """Format a status row with nice alignment."""
         # Commit hash - vertically aligned column
         commit_short = status.commit_info.short_hash if status.commit_info else "ERROR"
 
@@ -140,7 +139,6 @@ class ViewFormatter:
             click.echo("No worktrees found")
 
     def _work_status_text(self, status: StatusResult) -> str:
-        """Human-readable working directory status (shared)."""
         dirty_present = status.has_dirty_files
         untracked_present = status.has_untracked_files
         if not status.is_cached:
@@ -156,14 +154,12 @@ class ViewFormatter:
         return "clean (stale)" if status.is_stale else "clean"
 
     def _get_pr_link_column(self, status: StatusResult) -> str:
-        """Get PR link column."""
         if not isinstance(status.pr_info, PRInfoOk):
             return ""
         pr_number = status.pr_info.pr_data.pr_number
         return self._pr_reference(pr_number)
 
     def _get_pr_status_column(self, status: StatusResult) -> str:
-        """Get PR status text column."""
         if isinstance(status.pr_info, PRInfoError):
             return f"github error: {status.pr_info.error}"
         if not isinstance(status.pr_info, PRInfoOk):
@@ -174,7 +170,6 @@ class ViewFormatter:
         )
 
     def _get_pr_changes_column(self, status: StatusResult) -> str:
-        """Get PR changes (+lines/-lines) column."""
         if not isinstance(status.pr_info, PRInfoOk):
             return ""
         d = status.pr_info.pr_data
