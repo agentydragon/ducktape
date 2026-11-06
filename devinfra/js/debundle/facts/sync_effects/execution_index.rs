@@ -10454,19 +10454,17 @@ impl ExecutionIndex {
                 self.default_export_owners.insert(self.owner);
                 self.top_exported_values[self.owner.0].push(ValueExpr::from_expr(&export.expr));
             }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) => {
-                if export.src.is_none() {
-                    for specifier in &export.specifiers {
-                        if let ExportSpecifier::Named(named) = specifier
-                            && let ModuleExportName::Ident(local) = &named.orig
-                        {
-                            let exported = match named.exported.as_ref().unwrap_or(&named.orig) {
-                                ModuleExportName::Ident(ident) => ident.sym.to_string(),
-                                ModuleExportName::Str(value) => js_ast::str_value(value),
-                            };
-                            self.exported_names.insert(exported, local.to_id());
-                            self.exported_bindings.insert(local.to_id());
-                        }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) if export.src.is_none() => {
+                for specifier in &export.specifiers {
+                    if let ExportSpecifier::Named(named) = specifier
+                        && let ModuleExportName::Ident(local) = &named.orig
+                    {
+                        let exported = match named.exported.as_ref().unwrap_or(&named.orig) {
+                            ModuleExportName::Ident(ident) => ident.sym.to_string(),
+                            ModuleExportName::Str(value) => js_ast::str_value(value),
+                        };
+                        self.exported_names.insert(exported, local.to_id());
+                        self.exported_bindings.insert(local.to_id());
                     }
                 }
             }
