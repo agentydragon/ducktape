@@ -2,6 +2,7 @@ use analysis_model::DepKind;
 use serde::{Deserialize, Serialize};
 use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::fmt;
 use swc_atoms::Atom;
 
 use crate::analysis_inputs::{
@@ -13,7 +14,7 @@ use crate::atomic_groups::{
 };
 use crate::execution_evidence::SourceLocation;
 use crate::execution_evidence::{ConstructionRejection, ExecutionPrecisionLoss};
-use crate::graph::{DependencyEdge, DependencyEdgeId, EdgeRole};
+use crate::graph::{DependencyEdge, DependencyEdgeId, EdgeRole, EffectCellReport};
 use crate::ids::ModuleId;
 use crate::purity::Purity;
 use crate::{SourceUnitClass, StatementKind};
@@ -559,6 +560,81 @@ pub struct PurityCompletionDisagreement {
     pub completed: Purity,
 }
 
+/// Count and stable bounded sample of unique canonical effect cells.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct HeapCellSetReport {
+    pub count: usize,
+    pub sample: Vec<EffectCellReport>,
+}
+
+/// Heap effects in one summary. `opaque` is the summary's existing coarse
+/// unknown-frontier bit; it does not identify the operation that set it.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct HeapContentSummaryReport {
+    pub opaque: bool,
+    pub allocations: HeapCellSetReport,
+    pub reads: HeapCellSetReport,
+    pub writes: HeapCellSetReport,
+}
+
+/// Heap accesses recorded outside an active `AssumedEffectReason` path at the
+/// recording or merge point. Other premises, including program and native-input
+/// premises, may still have been consumed.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NonAssumedHeapAccessReport {
+    pub reads: HeapCellSetReport,
+    pub writes: HeapCellSetReport,
+}
+
+/// Existing own and composed heap summaries projected for bounded diagnosis.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct HeapFrontierEvidence {
+    pub own_at_init: HeapContentSummaryReport,
+    pub composed_synchronous_calls: HeapContentSummaryReport,
+    pub non_assumed_heap_accesses: NonAssumedHeapAccessReport,
+}
+
+impl fmt::Display for HeapCellSetReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} [", self.count)?;
+        for (index, cell) in self.sample.iter().enumerate() {
+            if index > 0 {
+                f.write_str(", ")?;
+            }
+            write!(f, "{cell}")?;
+        }
+        let omitted = self.count.saturating_sub(self.sample.len());
+        if omitted > 0 {
+            if !self.sample.is_empty() {
+                f.write_str(", ")?;
+            }
+            write!(f, "{omitted} omitted")?;
+        }
+        f.write_str("]")
+    }
+}
+
+impl fmt::Display for HeapFrontierEvidence {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "own-at-init opaque={} allocations={} reads={} writes={}; \
+             composed synchronous calls opaque={} allocations={} reads={} writes={}; \
+             non-assumed reads={} writes={}",
+            self.own_at_init.opaque,
+            self.own_at_init.allocations,
+            self.own_at_init.reads,
+            self.own_at_init.writes,
+            self.composed_synchronous_calls.opaque,
+            self.composed_synchronous_calls.allocations,
+            self.composed_synchronous_calls.reads,
+            self.composed_synchronous_calls.writes,
+            self.non_assumed_heap_accesses.reads,
+            self.non_assumed_heap_accesses.writes,
+        )
+    }
+}
+
 /// Completeness of the existing synchronous-effect inference, independent of purity.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SynchronousExecutionReport {
@@ -598,6 +674,9 @@ pub struct SynchronousExecutionReport {
     pub returned_record_uses: Vec<ReturnedRecordUseReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub author_host_contract_uses: Vec<ReentryFreeOperationUse>,
+    /// Bounded attribution of the existing own and composed heap summaries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heap_frontier: Option<HeapFrontierEvidence>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -1119,6 +1198,11 @@ pub struct SequencedSourceUnitCause {
     /// known ordering fact.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub synchronous_execution_complete: Option<bool>,
+    /// Existing own/composed heap evidence when non-empty. Pure source units
+    /// can have endpoint context when this evidence is available; its absence
+    /// does not prove that the source unit has no heap effects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heap_frontier: Option<HeapFrontierEvidence>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1383,17 +1467,21 @@ pub fn sequenced_edge_cause(
     impure_source_unit_cause(dependency_graph, edge.from)
 }
 
-/// The impure-initializer evidence of one source unit; `None` when the
-/// source unit is classified pure (a pure endpoint of a sequencing edge,
-/// e.g. an array allocation or a pure content reader).
+/// Context for one sequencing endpoint: every impure source unit, or a pure
+/// source unit with available non-empty heap evidence. Pure endpoints with no
+/// such evidence are omitted; that absence does not prove zero heap effects.
 pub fn impure_source_unit_cause(
     dependency_graph: &crate::DependencyGraph,
     source_unit: SourceUnitId,
 ) -> Option<SequencedSourceUnitCause> {
     let node = dependency_graph.node(source_unit)?;
-    let Purity::NotPure { .. } = &node.purity else {
+    let heap_frontier = node
+        .synchronous_execution
+        .as_ref()
+        .and_then(|execution| execution.heap_frontier.clone());
+    if matches!(&node.purity, Purity::Pure { .. }) && heap_frontier.is_none() {
         return None;
-    };
+    }
     Some(SequencedSourceUnitCause {
         source_unit_id: crate::reports::source_unit_key(source_unit),
         binding_names: node.declared.iter().map(|id| id.0.clone()).collect(),
@@ -1403,6 +1491,7 @@ pub fn impure_source_unit_cause(
             .synchronous_execution
             .as_ref()
             .map(|execution| execution.complete),
+        heap_frontier,
     })
 }
 

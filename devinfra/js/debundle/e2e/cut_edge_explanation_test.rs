@@ -40,6 +40,64 @@ export { alpha, beta, probe, gamma };
     .with_dataflow_aware_s_chain()
 }
 
+fn heap_frontier_cycle_fixture() -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        r#"const first = beforeHost();
+const captured = [0];
+const composed = [0];
+function touch() { composed[0] = 1; }
+const probe = (captured[0] = 1, probeHost(touch()));
+const last = afterHost();
+console.log(first, probe, last);
+export { first, probe, last };
+"#,
+        vec![
+            logical_module("mod_a", &[Member::new("first"), Member::new("last")]),
+            logical_module(
+                "mod_b",
+                &[
+                    Member::new("captured"),
+                    Member::new("composed"),
+                    Member::new("touch"),
+                    Member::new("probe"),
+                ],
+            ),
+        ],
+    )
+    .with_dataflow_aware_s_chain()
+}
+
+fn pure_wrapper_heap_frontier_fixture() -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        r#"import { observe } from './peer.js';
+const alpha = (globalThis.tag = "first", "a");
+const beta = (globalThis.tag = "second", "b");
+const captured = [0];
+const observed = observe(() => captured[0] = 1);
+const gamma = (globalThis.tag = "third", "g");
+console.log(alpha, beta, observed, gamma, globalThis.tag);
+export { alpha, beta, observed, gamma };
+"#,
+        vec![
+            logical_module("mod_a", &[Member::new("alpha"), Member::new("gamma")]),
+            logical_module("mod_b", &[Member::new("beta")]),
+            logical_module(
+                "mod_c",
+                &[
+                    Member::new("captured"),
+                    Member::new("observe").with_purity(MemberPurity::Pure),
+                    Member::new("observed"),
+                ],
+            ),
+        ],
+    )
+    .with_extra_chunks(&[(
+        "static/peer",
+        "export function observe(callback) { return foreignObserver(callback); }\n",
+    )])
+    .with_dataflow_aware_s_chain()
+}
+
 fn cut_edges(cycles: &[Value]) -> Vec<&Value> {
     cycles
         .iter()
@@ -132,6 +190,132 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
     let reason = &barrier_cause["purity"]["reasons"][0];
     assert_eq!(reason["rule"], "unknown_call", "{edge}");
     assert_eq!(reason["detail"], "probeHost", "{edge}");
+
+    // Keep the original cut fixture stable: adding captured arrays changes
+    // its binding timelines and therefore which edges the feedback cut picks.
+    let heap_rejected = run_rejection_fixture(heap_frontier_cycle_fixture());
+    let heap_graph = heap_rejected.dependency_graph();
+    let probe_node = heap_graph
+        .nodes
+        .iter()
+        .find(|node| node.declared_bindings.iter().any(|b| b.binding == "probe"))
+        .expect("probe source unit");
+    let execution = serde_json::to_value(&probe_node.synchronous_execution)
+        .expect("synchronous execution serializes");
+    let heap = &execution["heap_frontier"];
+    let own = &heap["own_at_init"];
+    assert_eq!(own["opaque"], true, "{heap}");
+    assert_eq!(own["writes"]["count"], 1, "{heap}");
+    let own_writes = own["writes"]["sample"]
+        .as_array()
+        .expect("own write sample");
+    assert_eq!(own_writes.len(), 1, "{heap}");
+    assert_eq!(own_writes[0]["kind"], "array_contents", "{heap}");
+    let composed = &heap["composed_synchronous_calls"];
+    assert!(composed["writes"]["count"].as_u64().unwrap() > 0, "{heap}");
+    let composed_writes = composed["writes"]["sample"]
+        .as_array()
+        .expect("composed write sample");
+    assert!(
+        composed_writes
+            .iter()
+            .any(|cell| !own_writes.contains(cell)),
+        "local synchronous callee must contribute its own exact array cell: {heap}"
+    );
+    let non_assumed_writes = &heap["non_assumed_heap_accesses"]["writes"];
+    assert!(non_assumed_writes["count"].as_u64().unwrap() > 0, "{edge}");
+    assert!(
+        non_assumed_writes["sample"]
+            .as_array()
+            .expect("non-assumed write sample")
+            .iter()
+            .all(|cell| composed_writes.contains(cell)),
+        "non-assumed writes must be retained in the composed summary: {edge}"
+    );
+    for cells in [
+        &own["allocations"],
+        &own["reads"],
+        &own["writes"],
+        &composed["allocations"],
+        &composed["reads"],
+        &composed["writes"],
+        &heap["non_assumed_heap_accesses"]["reads"],
+        non_assumed_writes,
+    ] {
+        assert!(
+            cells["sample"].as_array().unwrap().len() <= 8,
+            "heap cell samples are bounded: {edge}"
+        );
+    }
+
+    let graph_path = heap_rejected
+        .report_root
+        .join("static/app/dependency_graph.json.gz");
+    let described = run_debundle(&[
+        "gate",
+        "describe",
+        "0",
+        "--graph",
+        graph_path.to_str().unwrap(),
+        "--format",
+        "text",
+    ]);
+    assert!(
+        described.status.success(),
+        "{}",
+        String::from_utf8_lossy(&described.stderr)
+    );
+    let described = String::from_utf8_lossy(&described.stdout);
+    assert!(
+        described.contains("heap frontier: own-at-init opaque=true"),
+        "{described}"
+    );
+    assert!(described.contains("array contents #"), "{described}");
+
+    let pure_rejected = run_rejection_fixture(pure_wrapper_heap_frontier_fixture());
+    let pure_cycles = pure_rejected.cycles();
+    assert_eq!(
+        pure_cycles[0]["rejection"], "mutual_constraining_cycle",
+        "adding heap endpoint context must not change the gate verdict: {pure_cycles:#?}"
+    );
+    let pure_graph = pure_rejected.dependency_graph();
+    let pure_node = pure_graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|b| b.binding == "observed")
+        })
+        .expect("declared-pure wrapper source unit");
+    let pure_endpoint = serde_json::to_value(pure_node).expect("source unit serializes");
+    assert_eq!(pure_endpoint["purity"]["kind"], "pure", "{pure_endpoint}");
+    assert_eq!(
+        pure_endpoint["synchronous_execution"]["heap_frontier"]["own_at_init"]["opaque"], true,
+        "{pure_endpoint}"
+    );
+    let pure_graph_path = pure_rejected
+        .report_root
+        .join("static/app/dependency_graph.json.gz");
+    let pure_described = run_debundle(&[
+        "gate",
+        "describe",
+        "0",
+        "--graph",
+        pure_graph_path.to_str().unwrap(),
+        "--format",
+        "text",
+    ]);
+    assert!(
+        pure_described.status.success(),
+        "{}",
+        String::from_utf8_lossy(&pure_described.stderr)
+    );
+    let pure_described = String::from_utf8_lossy(&pure_described.stdout);
+    assert!(
+        pure_described.contains("heap frontier: own-at-init opaque=true"),
+        "{pure_described}"
+    );
 }
 
 /// Array-content order (emitted in both S-chain modes; this fixture uses
@@ -139,9 +323,8 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
 /// its allocation (`count → items`), and `back`'s `push` is an opaque
 /// heap barrier over the live frontier, which includes the `marks`
 /// allocation (`back → marks`). Each module pair's retained sequenced
-/// edge therefore targets a pure array allocation that carries no
-/// impure-initializer evidence; the edge still explains itself through
-/// the retained heap-content cause.
+/// edge therefore targets a pure array allocation. Its endpoint context
+/// carries the allocation's heap evidence independently of purity.
 #[test]
 fn heap_content_cut_edges_explain_pure_allocation_targets() {
     let rejected = run_rejection_fixture(FixtureOpts::new(
@@ -192,10 +375,15 @@ export { items, marks, count, back };
         }),
         "{allocation_use}"
     );
-    // An empty array literal is pure: no impure-initializer evidence on
-    // the target side, yet the explanation is present.
+    // Pure allocations retain their heap evidence on the target side.
+    let target_context = &allocation_use["explanation"]["target_source_unit"];
+    assert_eq!(target_context["purity"]["kind"], "pure", "{allocation_use}");
     assert!(
-        allocation_use["explanation"]["target_source_unit"].is_null(),
+        target_context["heap_frontier"]["own_at_init"]["allocations"]["sample"]
+            .as_array()
+            .expect("allocation cell sample")
+            .iter()
+            .any(|cell| cell["kind"] == "array_contents"),
         "{allocation_use}"
     );
     assert!(

@@ -1163,6 +1163,9 @@ fn render_edge(edge: &CycleEdge, out: &mut String) {
         _ => None,
     };
     for cause in edge.sequenced_source_unit.iter().chain(target_cause) {
+        if let Some(heap_frontier) = &cause.heap_frontier {
+            out.push_str(&format!("      heap frontier: {heap_frontier}\n"));
+        }
         let Purity::NotPure { reasons } = &cause.purity else {
             continue;
         };
@@ -1369,9 +1372,17 @@ fn incomplete_execution_suffix(cause: &SequencedSourceUnitCause) -> &'static str
 }
 
 /// Report-side twin of `analysis::reports::schema::impure_source_unit_cause`
-/// over a `dependency_graph.json.gz` node.
+/// over a `dependency_graph.json.gz` node. Pure nodes are included when their
+/// report carries non-empty heap evidence.
 fn impure_source_unit_cause(node: &SourceUnitReport) -> Option<SequencedSourceUnitCause> {
-    matches!(&node.purity, Purity::NotPure { .. }).then(|| SequencedSourceUnitCause {
+    let heap_frontier = node
+        .synchronous_execution
+        .as_ref()
+        .and_then(|execution| execution.heap_frontier.clone());
+    if matches!(&node.purity, Purity::Pure { .. }) && heap_frontier.is_none() {
+        return None;
+    }
+    Some(SequencedSourceUnitCause {
         source_unit_id: node.id.clone(),
         binding_names: node
             .declared_bindings
@@ -1384,6 +1395,7 @@ fn impure_source_unit_cause(node: &SourceUnitReport) -> Option<SequencedSourceUn
             .synchronous_execution
             .as_ref()
             .map(|execution| execution.complete),
+        heap_frontier,
     })
 }
 

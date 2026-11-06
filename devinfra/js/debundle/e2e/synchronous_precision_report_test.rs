@@ -62,13 +62,13 @@ console.log(selected[0]);
         vec![],
     ));
     assert_preserved_entry_output(&fixture, "ready\n");
+    let selected = execution(&fixture, "selected");
+    assert_eq!(selected["complete"], true, "{selected}");
+    assert_eq!(selected["precision_losses"], serde_json::json!([]));
     assert_eq!(
-        execution(&fixture, "selected"),
+        selected["binding_effect_authority"],
         serde_json::json!({
-            "binding_effect_authority": {
-                "authority": "legacy_execution", "complete": true
-            },
-            "complete": true, "precision_losses": []
+            "authority": "legacy_execution", "complete": true
         })
     );
 }
@@ -84,13 +84,13 @@ console.log(selected[0]);
     ));
 
     assert_preserved_entry_output(&fixture, "ready\n");
+    let selected = execution(&fixture, "selected");
+    assert_eq!(selected["complete"], true, "{selected}");
+    assert_eq!(selected["precision_losses"], serde_json::json!([]));
     assert_eq!(
-        execution(&fixture, "selected"),
+        selected["binding_effect_authority"],
         serde_json::json!({
-            "binding_effect_authority": {
-                "authority": "legacy_execution", "complete": true
-            },
-            "complete": true, "precision_losses": []
+            "authority": "legacy_execution", "complete": true
         })
     );
 

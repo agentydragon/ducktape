@@ -10,7 +10,7 @@ use swc_ecma_ast::Id;
 
 use crate::analysis_inputs::ResolvedCommutingStatements;
 use crate::execution_evidence::SourceLocation;
-use crate::facts::{EffectCell, SourceUnitReadClosure};
+use crate::facts::{EffectCell, HeapContentCells, SourceUnitReadClosure};
 use crate::{StatementEffectSummary, StatementFacts, StatementKind};
 
 /// The per-chunk options dependency-graph construction reads.
@@ -27,6 +27,58 @@ use super::edge::{
 };
 use crate::execution_evidence::AssumedEffectReason;
 use crate::facts::DataflowOpacityCause;
+
+const HEAP_CELL_SAMPLE_LIMIT: usize = 8;
+
+fn report_heap_frontier(
+    own_at_init: &HeapContentCells,
+    composed_synchronous_calls: &HeapContentCells,
+    non_assumed_reads: &BTreeSet<EffectCell>,
+    non_assumed_writes: &BTreeSet<EffectCell>,
+) -> Option<crate::reports::schema::HeapFrontierEvidence> {
+    use crate::reports::schema::{
+        HeapCellSetReport, HeapContentSummaryReport, HeapFrontierEvidence,
+        NonAssumedHeapAccessReport,
+    };
+
+    let has_content = |cells: &HeapContentCells| {
+        cells.opaque
+            || !cells.allocations.is_empty()
+            || !cells.reads.is_empty()
+            || !cells.writes.is_empty()
+    };
+    if !has_content(own_at_init)
+        && !has_content(composed_synchronous_calls)
+        && non_assumed_reads.is_empty()
+        && non_assumed_writes.is_empty()
+    {
+        return None;
+    }
+
+    let report_cells = |cells: &BTreeSet<EffectCell>| HeapCellSetReport {
+        count: cells.len(),
+        sample: cells
+            .iter()
+            .take(HEAP_CELL_SAMPLE_LIMIT)
+            .map(EffectCellReport::from)
+            .collect(),
+    };
+    let report_content = |cells: &HeapContentCells| HeapContentSummaryReport {
+        opaque: cells.opaque,
+        allocations: report_cells(&cells.allocations),
+        reads: report_cells(&cells.reads),
+        writes: report_cells(&cells.writes),
+    };
+
+    Some(HeapFrontierEvidence {
+        own_at_init: report_content(own_at_init),
+        composed_synchronous_calls: report_content(composed_synchronous_calls),
+        non_assumed_heap_accesses: NonAssumedHeapAccessReport {
+            reads: report_cells(non_assumed_reads),
+            writes: report_cells(non_assumed_writes),
+        },
+    })
+}
 
 /// Multiple declarations of one binding are supported only when every site
 /// declares `var`. Other duplicate declaration shapes remain rejected.
@@ -367,6 +419,12 @@ pub fn build_dependency_graph_with(
                     callback_factory_uses: Vec::new(),
                     returned_record_uses: Vec::new(),
                     author_host_contract_uses: calls.author_host_contract_uses.clone(),
+                    heap_frontier: report_heap_frontier(
+                        &stmt.heap_contents,
+                        &calls.heap_contents,
+                        &calls.non_assumed_heap_accesses.reads,
+                        &calls.non_assumed_heap_accesses.writes,
+                    ),
                 }
             }),
             callback_factory_uses: stmt
