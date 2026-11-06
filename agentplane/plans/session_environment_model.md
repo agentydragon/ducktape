@@ -99,9 +99,14 @@ tracks these prerequisites and the later data-preserving migration.
 Decisions still needed include the Session/environment principal and privilege relationship;
 attachment authorization, revision and History publication; inbox and History behavior after
 Environment deletion; explicit Session-deletion and command-receipt retention; and which component
-wakes a suspended environment under which authorization. Since 2026-11-05 an Agentplane-owned identity with SPIFFE
-workload authentication is the selected direction ([log](#discussion)); provisioning details and
-any identity-provider choice remain open, and nothing selects sharing a Kubernetes ServiceAccount. The related
+wakes a suspended environment under which authorization. Since 2026-11-05,
+Agentplane-owned identities with SPIFFE workload authentication are the selected
+direction ([log](#discussion)). Independent identities may share one Kubernetes
+account, and no account is auto-provisioned per identity. The discussion proposed a
+shared low-privilege default account plus separate or temporary accounts on request;
+exact account and binding/grant shapes, provisioning and identity-provider choices
+remain proposed or open. The existing ServiceAccount-first Session direction stands
+until cutover. The related
 [Agentplane principal decision](task_dag.md#agent_principal_model_design--agentplane-principals-and-external-identities)
 covers identity provisioning and trust boundaries.
 
@@ -1204,271 +1209,106 @@ records and service boundaries.
 
 ## Discussion log
 
-A concise record of how this proposal is evolving. Entries distinguish the operator's direction, working proposals and unresolved questions; inclusion here does not by itself approve an implementation.
-
-**2026-11-02 · One model for two relationships**
-
-The operator asked for a model covering central Sessions with zero, one or potentially many attached environments, and native harness Sessions inherently bound to the environment in which the harness runs. The proposal separates the Session's home and continuation from its environment bindings; a native home has a required local relationship. It must remain honest about which harnesses can actually support remote execution or relocation.
-
-**2026-11-02 · Where does native continuation live?**
-
-The operator asked whether addressing should include the harness state location and native Session ID, such as an environment, Codex store and native thread ID. For a central sampler, they suggested the sampler might simply use the public Session ID as its own key. The assistant initially recommended a home-scoped public address with a private mapping to store and native identity. The location of the actual continuation state remains a necessary durable fact even if it is not part of the public identifier.
-
-**2026-11-02 · Global Session identity and placement lookup**
-
-The operator challenged why the environment UID was in the public home address while the store was not, and proposed globally unique, unscoped Session UUIDs resolved to the responsible environment or sampler. The assistant agreed that both environment and store are placement/continuation facts, and revised the working proposal: resolve a UUID through an authoritative Session-to-home directory; the selected home resolves its harness store and native ID. The operator's suggestion is the current direction for discussion, not a finalized directory implementation or migration approval.
-
-**2026-11-02 · “Home” meant too many things**
-
-The operator asked whether “Session home” meant an environment or central harness, or a particular harness in an environment. The assistant acknowledged that the draft conflated responsibility, harness placement, a running process and continuation storage. The updated working terminology distinguishes a Session owner (the responsible component scope), a harness backend and placement, its durable continuation reference, and any replaceable running harness process. This is a clarification for discussion, not a decision to add a separate owner service.
-
-**2026-11-02 · Native placement versus central attachments**
-
-The operator noted that native harnesses currently have broad command execution within their own environment, and is not currently planning more than one environment for those Sessions. Multiple central-sampler attachments are somewhat higher priority. The assistant recommends a placement variant with exactly one required, fixed native environment and a separate central variant with zero or more optional attachments. The operator's last example said “central sampler” where the surrounding description implies the native harness; this interpretation is recorded as an assumption. Future harness sandboxing, command filtering, approvals and monitoring remain a note, not a design selected here.
-
-**2026-11-02 · Which specific native harness state?**
-
-The operator asked whether environment-hosted placement must also name the specific Codex or Claude state store and its native Session ID. The assistant agrees that environment plus harness kind is insufficient: the placement identifies the harness kind and particular durable store, while the Session owner retains the native conversation ID once known. The process is replaceable. Codex supplies its thread ID during `thread/start`; the current Claude adapter generates an ID and passes it to the CLI. A public Session can be reserved before a native ID exists, and a lost creation response must remain unresolved until evidence proves the mapping. The exact store identity, concurrency rules and native-ID exposure remain design questions.
-
-**2026-11-02 · Can the client choose a Codex ID?**
-
-The operator asked whether Codex supports client-chosen IDs. For the app-server interface Agentplane uses, the upstream [`thread/start` schema](https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/schema/json/v2/ThreadStartParams.json) has no caller-selected thread ID; the response supplies it. A client supplies a known thread ID to resume a thread; the JSON-RPC request ID is a separate correlation identifier. Thus a public Session UUID needs a durable mapping to the Codex thread ID, and a lost creation result must be reconciled without blindly starting another thread. This finding is scoped to the app-server API, not every possible Codex interface.
-
-**2026-11-02 · Our ID and the harness’s ID**
-
-The operator agreed that Agentplane must retain a distinction between its own public Session ID and the harness’s native ID, and noted that this separation is healthy in any case. The proposal treats them as identities with different ownership and scope, even when a particular harness permits equal values. The Session owner records their mapping together with the harness store; a native ID may be unknown until creation completes.
-
-**2026-11-02 · Where does the information live, and when is a Session historical?**
-
-The operator raised PostgreSQL-backed Gateway state versus Kubernetes objects for Session attachments, and asked that Kubernetes not accumulate objects for Sessions users have finished with. Keeping usable native Session objects while an environment and its PVC exist may be reasonable. They described the frontend as a History viewer plus a command sender for live Sessions, and suggested retaining a useful environment/Session-spec description alongside historical records after Sandbox deletion. The assistant added storage options, initially proposed an archive handoff, and documented what History already retains. The later correction below separates app archive from backend cleanup.
-
-**2026-11-02 · Dispatcher database, separate from History**
-
-The operator favors a Session database connected to the Dispatcher. They noted the attraction of eventually merging the Dispatcher and History Session tables, but prefer the conservative boundary of keeping their databases separate for now. The proposal now puts live Session directory and desired attachment records in Dispatcher PostgreSQL, keeps History authoritative for retained records in its own database, and initially proposed an asynchronous archive handoff. The subsequent discussion corrects that handoff: app archive is separate from backend Session cleanup. This does not foreclose future consolidation.
-
-**2026-11-02 · App archive is not Session cleanup**
-
-The operator clarified that archive is currently an operation in the app database, and suggested that Dispatcher mostly delete native Session records when their hosting environment disappears; the Gateway also serves Environment Service. The assistant checked the app and Sandbox controller contracts and withdrew its proposed backend archiving state and app-archive handoff. The plan now separates app archive, Dispatcher cleanup, and the existing managed-environment seal and History acknowledgement. Cleanup on direct Kubernetes deletion, create races, retained receipts, and central Sessions need explicit treatment.
-
-**2026-11-02 · Converging OpenSession**
-
-The operator asked whether opening Sessions should have a common shape across central and environment-hosted harnesses, noting that opening can involve bringing up a harness and creating a Session on it. The assistant recommends one logical Dispatcher reservation API with typed placements and explicit admission stages; process startup, shared-host reuse and native creation remain backend responsibilities. The current native Runtime already reserves lazily, while the central sampler currently requires a Sandbox and incarnation, persists its own conversation and can schedule setup. Setup timing, wake and central Sessions without executors remain design decisions.
-
-**2026-11-02 · What do pending and admitted mean?**
-
-The operator asked whether these opening states are about auto-wake. The assistant clarified that they track delivery of a stored opening to its backend owner; waking a suspended environment is only one possible blocker or action. The existing Dispatcher reports queue, delivery and admitted states separately from blocker and wake assessment. The proposal now also asks whether a Dispatcher-owned Session record can be sufficient until work arrives, rather than assuming owner-side opening is always required.
-
-**2026-11-02 · No databaseless Dispatcher mode**
-
-The operator concluded that, with a mandatory Dispatcher Session database, there is no reason to support a databaseless / queueless mode. The assistant verified that the current combined Gateway already requires PostgreSQL at configuration and startup; the optional queue was an unimplemented task-DAG proposal, not an existing supported mode to remove. The plan now retires that proposal, keeps the existing queue-backed contract, and leaves an immediate-or-fail option and any narrower database-independent integration tests as separate questions.
-
-**2026-11-02 · Automatic wake versus explicit resume**
-
-The operator questioned whether Environment Service / Dispatcher should automatically wake an environment for Session work, or instead reject work targeting a suspended Sandbox and ask the caller to resume it first. The assistant favors explicit, independently authorized resume and a typed pre-admission rejection for known suspension, while treating the details of accepted-work races, transient disconnects, inbox notices and higher-level resume-and-send as open. Existing wake-on-send and its consumers remain current behavior until a reviewed change.
-
-**2026-11-02 · App-owned resume and send**
-
-The operator proposed retaining human-facing auto-resume-and-send by implementing the queue and orchestration in the integration app. The assistant agreed: an app-owned durable queue can persist a user request, request authorized resume, wait for readiness and submit a stable command ID to Dispatcher. The two databases require a recoverable handoff; app acceptance and Dispatcher acceptance remain distinct. A browser-only flow is an option if survival across disconnects is not required, and non-app callers need their own policy.
-
-**2026-11-02 · Unattended inbox wake is wanted**
-
-The operator clarified that unattended inbox notices should be capable of triggering wake. The assistant revised its earlier explicit-resume recommendation: retaining Dispatcher wake is a credible, potentially simpler option because Notification already persists the notice identity and submits it to the Dispatcher, which can queue and wake under current policy. Notification-owned wake orchestration is an alternative. The app-only solution does not cover this requirement; wake policy and human-send behavior remain open.
-
-**2026-11-02 · Remaining decisions before implementation**
-
-The operator asked what else needs clarification. The assistant prioritized a central Session principal independent of an environment, the Dispatcher/backend reservation boundary, History provenance and authorization for zero or multiple environments, central Session end and cleanup, and the policy and ownership of unattended wake. The assistant recommends keeping the first implementation narrow and treating migration, identity collision, lost responses and no-replay as concrete contract cases rather than inventing additional services or Session state machines.
-
-**2026-11-02 · Reservation, History and central lifetime**
-
-The operator agreed that the Dispatcher Session row establishes logical existence, wants all attachment transitions recorded in History eventually as a correctness improvement but not high priority, and wants central Sessions to persist indefinitely for now. A possible explicit delete operation is a low-priority future TODO, not an implementation prerequisite.
-
-**2026-11-02 · Session, environment and ServiceAccount identity**
-
-The operator proposed associating each Session with one ServiceAccount and permitting attachment only to environments belonging to that account. They noted the coupling to Kubernetes identity but also that two agents with different privilege levels should arguably not share an unrestricted environment: they could communicate through it and use its credentials outside explicit Agentplane channels. The assistant agrees this is a sound trust-domain starting point, while leaving the identity model undecided. Current Sandbox-owned ServiceAccounts have environment-scoped lifetimes and cannot directly provide a long-lived shared principal without changing ownership and provisioning. The plan compares direct shared ServiceAccounts with an explicitly mapped logical principal and records separate authorization and central-delegation questions.
-
-**2026-11-02 · Why each Sandbox gets its own ServiceAccount**
-
-The operator clarified that the per-Sandbox SA provides an individual agent-level subject for attaching and detaching permission-set CRs. They floated allowing the Sandbox or Session SA association to change over time while keeping at most one at a time, and noted that changing a Pod’s mounted identity may be inconvenient. The assistant verified that PolicyBinding changes already work without Pod replacement, while Kubernetes does not allow changing an existing Pod’s ServiceAccount. It also identified that shared SAs combine current additive grants, potentially losing the per-Sandbox permission handle. SA reassignment and the identity model remain open.
-
-**2026-11-02 · Treat Kubernetes as an external identity provider**
-
-The operator suggested that Agentplane could own its identity model independently of Kubernetes: environment access to the Kubernetes API goes through egress substitution, and a PolicySet adapter could provision a Kubernetes SA and RoleBindings much like an external Moodle account and role. The assistant agreed the model is plausible and recorded the present coupling: the API token is currently the same Pod’s projected SA token, PolicyBinding subjects are SAs, and multiple Agentplane services authenticate and authorize by SA. A principal-to-workload mapping and a new external credential source or broker need explicit verification; decoupling can be staged and does not automatically require a new identity service.
-
-**2026-11-02 · Standard identity provisioning patterns**
-
-The operator asked whether reconciling desired agent identities, accounts and roles across systems has an established name or implementation, noting examples of identity providers and downstream services. They clarified that the named products were incidental, not selected targets. The assistant identified identity lifecycle / governance and provisioning, SCIM for supported identity resources, OIDC/OAuth for authentication and authorization, and connector or Kubernetes-controller patterns as separate building blocks. The plan keeps product choice and the authority for identity and entitlement facts open.
-
-**2026-11-02 · Opening while the Session owner is unavailable**
-
-The operator asked what “backend” meant in the proposed opening contract. The assistant clarified that it means the responsible environment Runtime or central sampler, not necessarily a running harness process, and proposed acknowledging logical Session creation once the Dispatcher commits it even if that owner is unavailable. The operator agreed. Owner materialization and its errors remain observable separately, and work can wait for an authorized wake, including wake for unattended inbox notices. The discussion leaves error correction, wake ownership, uncertain-effect recovery, exact deletion cleanup and central Session authority open; it does not claim the proposed directory is implemented.
-
-**2026-11-02 · Rejected Session materialization**
-
-The assistant proposed retaining a logically accepted Session when its owner later rejects materialization, showing the error, and retrying temporary failures or reconciling unknown admission outcomes without replaying uncertain native effects. For the first implementation, the creation request stays immutable; a corrected configuration uses a new Session UUID. The operator agreed, including the tradeoff that rejected records can remain visible, potentially indefinitely for central Sessions. Error classification, queued-work outcomes and native-ID recovery still need a concrete contract.
-
-**2026-11-03 · Session-address audit and plan burn-down**
-
-The operator confirmed the chosen public address is the Session UUID and the live Session database
-belongs with Dispatcher, then requested an inventory of Sandbox-plus-Session consumers with linked
-follow-up tasks. The inventory distinguishes public Session addressing from native placement,
-execution fences, authorization and provenance. The plan removes the older compound-address
-recommendation and records completed prerequisites; the detailed central principal and attachment
-contracts remain open.
-
-**2026-11-03 · Deleting Dispatcher state means forgetting**
-
-The operator clarified that deleting a Session's Dispatcher record was conceived as forgetting that
-it existed there, and asked to discuss the options without selecting a retention or UUID-reuse
-policy. The proposal now compares complete forgetting, a minimal UUID marker and consulting
-History. It distinguishes today's environment-UID fence from a Session-UUID marker, and records
-the effects on retained History, exact retries, globally unique UUIDs, concurrent admission and
-availability. No marker, retention lifetime or UUID-reuse policy is agreed by this clarification.
-
-**2026-11-03 · Commands require a Dispatcher Session record**
-
-The operator said that with a required Dispatcher database, commands should always have a
-Dispatcher record. In the context of the command-authority discussion, this selects an existing
-Dispatcher Session record as a prerequisite for Session-targeted commands, including privileged
-callers. It does not select Session deletion or UUID retention semantics, send/wake grants, or a
-requirement to queue every operation. Dispatcher and the Gateway now enforce the Session-record and
-proxy boundaries; deletion fencing and Session-ID-only command addressing remain open.
-
-**2026-11-03 · Deletion races and initial send authority**
-
-The operator agreed to fail commands known not to have left Dispatcher when the environment is
-deleted, report an in-flight outcome as unknown when Runtime admission or effects cannot be
-established, and never redirect accepted work to a replacement. They also agreed that the first
-environment-hosted cutover should preserve current direct and delegated caller checks, scoped
-App/Notification/orchestration trust, and separate wake checks including unattended notices.
-The concrete deletion fence, where outcomes remain observable, queued-grant revocation and central
-Session identity remain open.
-
-**2026-11-03 · Native Session authority and forgetting**
-
-The operator agreed that a Dispatcher commit establishes logical Session existence and selects its
-placement. For native Sessions the existing opening record is the authority; materialization at its
-owner can occur eagerly or on demand. The central placement remains a separate future implementation.
-Dispatcher forgets a Session after deletion; callers must not deliberately reuse its globally unique
-UUID. Dispatcher cannot recognize an old retry after its record is removed, and retained History may
-still reject a conflicting writer. No permanent UUID marker or cross-database uniqueness check is added.
-The operator also wants central agents eventually to learn about zero or more environments and may
-later let them request authorized attach/detach operations. Their tool and authority contracts remain open.
-
-**2026-11-03 · Session and inbox lifetimes after environment deletion**
-
-The operator observed that Notification retiring an inbox when its Sandbox disappears is analogous
-to the question of how long Dispatcher keeps Session records after environment deletion, and asked
-to record the relationship as an unresolved decision. The existing implementation removes the
-Dispatcher opening and independently retires a stale inbox after confirmation. Review the lifetime
-and coordination of both records together, distinguishing native placement from central attachment.
-The selected indefinite lifetime of central Sessions and complete forgetting on Session deletion
-remain unchanged. Command-receipt retention is a separate deferred topic; no retention period was chosen.
-
-**2026-11-04 · Session data ownership and independent lifetimes**
-
-The operator suggested revisiting the boundaries among Session-keyed data and services, including
-Dispatcher commands/openings, History ingress, Notification inboxes and Runtime-local state. A
-single database with linked tables and moving some Runtime data into Dispatcher are possibilities,
-not decisions. They also proposed for consideration that Sessions have their own create/delete
-lifecycle: removing a native Session's environment could leave the Session and associated inbox and
-History present but unable to run, while an explicit Session delete could coordinate cleanup. The
-retention policy, deletion scope, authorization and data/service placement remain to be reviewed.
-
-**2026-11-04 · Access after the Sandbox-owned ServiceAccount disappears**
-
-The operator's direction is that retained Sessions and inboxes become accessible for human
-inspection and administration through privileged service credentials, as in other operator paths.
-At the time, the proposed policy did not transfer authority to a replacement. The later named-SA
-direction allows an authorized same-name replacement to act as the same principal while it remains
-configured; this does not authorize other workload callers or settle Session deletion or retention.
-
-**2026-11-04 · Agent identity ownership across Environment attachments**
-
-The operator asked whether agent ServiceAccounts should always be Sandbox-owned or could have an
-independent lifetime. A central-sampler agent may have no attached Environment yet still need to
-keep its identity and permissions. Compare independently managed SAs, Sandbox-owned SAs and a
-separate principal with mapped workload accounts; ownership, cardinality, authority and credential
-delivery are not selected. The privileged human fallback above applies when the relevant SA is
-actually gone, not to every Session without an attached Environment.
-
-**2026-11-04 · Identity in the Session spec**
-
-The operator suggested making the ServiceAccount part of a Session's spec. This is a candidate for
-an explicit, stable Session identity, including for a central Session with no Environment. Account
-ownership, exact identity form, selection and change authority, and credential delivery remain to be
-designed; a Session spec does not itself authenticate its caller or create an account.
-
-**2026-11-04 · Shared-Environment identity boundary**
-
-The operator requires Sessions using the same Environment to have the same verified identity:
-co-resident agents have shared ambient access, including to the egress proxy and placeholder tokens.
-Enforce this for native placement and central attachment, including concurrent admission, rather than
-treating Session IDs or directories as isolation. The account representation and lifecycle remain
-open; placing an account reference in the Session spec is a candidate, not authorization by itself.
-
-**2026-11-04 · Fixed Sandbox ServiceAccount**
-
-The operator favors the simpler initial model: a Sandbox keeps one ServiceAccount throughout its
-lifetime. The later named-SA direction treats a same-name replacement as the same principal with a
-new UID, while fencing old work and credentials. This narrows changing the named SA; it does not
-settle account ownership or freeze permissions or credentials.
-
-**2026-11-04 · Session-facing APIs and service topology**
-
-The operator reiterated that callers interacting with a Session should not be bound to an
-environment. Placement and environment attachment remain separate concerns. They also asked to
-reconsider process and deployment grouping as those responsibilities diverge: separate Session and
-Environment binaries and deployments, merging some Environment responsibilities with Sandbox
-Controller, and other arrangements are possibilities. No topology was selected.
-
-**2026-11-04 · Typed placement and Environment-deletion retention landed**
-
-[#14248](https://github.com/agentydragon/ducktape/pull/14248) completed the coordinated
-`SessionPlacement` and Session-resource cutover: `CreateSession`, `GetSession` and `ListSessions`
-replace the former logical opening API, with no old wire/API compatibility path. Its data migrations
-preserve Dispatcher and central sampler records and History identity/order; History migration 8
-labels old harness provenance `historical_harness` when exact placement cannot be recovered, and
-migration 9 renames the recording ordinal without changing its values or ordering.
-
-[#14314](https://github.com/agentydragon/ducktape/pull/14314) then retained Dispatcher Session
-rows and exact placement after required-Environment deletion for native and current central V1
-Sessions. `required_environment=DELETED` is separate from materialization; pending owner delivery is
-settled to failed or unknown according to its prior state, while accepted and terminal evidence is
-preserved. A same-name replacement cannot inherit work. The change does not make central V1
-environment-independent or retain Notification inboxes and command receipts after cleanup; those
-lifetimes and explicit Session deletion remain open.
-
-**2026-11-05 · SPIFFE authentication and no default ServiceAccount**
-
-The operator is confident that agent workloads should present SPIFFE certificates to the Gateway
-and the central egress proxy rather than Kubernetes ServiceAccount tokens, and that an agent should
-not automatically be provisioned a ServiceAccount: Agentplane owns the identity, and a Kubernetes
-account exists only while a binding grants that identity Kubernetes access. Policy objects stay in
-Kubernetes. The operator then rejected a ServiceAccount derived per identity: two identities must be able to
-act as one shared account, a default low-privilege account for every agent with separate, possibly
-temporary accounts on request, and grants must attach by binding objects rather than fields on the
-account so Flux and runtime writers can share one. On the walkthrough's comment threads the
-operator then chose separate kinds for the Agentplane binding and the Kubernetes grant, since no
-rule type is meaningful on both subjects, and asked whether a dedicated account object is needed at
-all; the plan keeps it only for accounts Agentplane creates. The resulting proposal, `Identity` as
-the `PolicyBinding` subject, `KubernetesAccountGrant` for ServiceAccounts, SVIDs on the egress hop,
-impersonation or TokenRequest at the proxy, lifetimes, cutover and open questions, is in
-[identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md).
-Recorded in `NETWORK_WORKLOAD_IDENTITY` and `AGENT_PRINCIPAL_MODEL_DESIGN`; the object shapes are a
-proposal, not a decision, and the SA-first direction of 2026-11-04 stands until the cutover. The
-operator later accepted a single incompatible cutover with downtime until images converge, so the
-plan has no staged migration and no `serviceAccount` binding subject.
-
-**Still open**
-
-Specify Dispatcher directory availability and stale-route fencing, the ownership split with harness
-owners, remaining inbox and command-receipt cleanup, missing History provenance and cross-store
-recovery, and how existing non-UUID native IDs transition. Decide whether and when a Session may
-move, whether store/native references are exposed to callers, and central Session authorization
-without an attached environment. Required-Environment Session-row retention is implemented; the
-remaining cleanup must preserve exact UID fencing and retained evidence.
-
-**Maintenance rule:** append or amend this log whenever the discussion changes the model. Record the gist, any reversals, and remaining decisions; update the main proposal too. Keep proposed ideas separate from operator-approved decisions and implemented behavior.
+This chronology preserves operator choices, reversals and unresolved questions. Current
+contracts and implementation status are above; detailed proposals and acceptance gates
+remain in the linked plans.
+
+**2026-11-02 · Session identity, placement and continuation.** The operator challenged a
+Sandbox-scoped public address and suggested globally unique Session UUIDs, resolved to a
+responsible owner and private harness store/native ID. The assistant's earlier
+home-scoped recommendation was withdrawn. This is a selected address direction, not
+approval of a directory migration or a new owner service. The Codex app-server assigns
+the native thread ID in `thread/start` (the upstream
+[schema](https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/schema/json/v2/ThreadStartParams.json)
+cannot select one), so a lost create response needs durable mapping and evidence-based
+recovery. Native Sessions require one environment; central Sessions may eventually have
+zero or more optional attachments. Remote native execution and store concurrency remain
+unproven.
+
+**2026-11-02 · Live control, retained history and owner availability.** The operator
+preferred Dispatcher PostgreSQL for live Session state and a separate History database.
+App archive is not backend Session cleanup; the assistant withdrew its proposed archive
+handoff. Central Sessions should persist indefinitely for now, with explicit deletion a
+low-priority option. Recording attachment transitions in History was desired eventually,
+but was a lower-priority correctness improvement. A Dispatcher commit establishes
+logical existence even when its Runtime or sampler owner is unavailable; owner
+materialization and errors remain separate. A rejected
+immutable create can remain visible; corrected configuration needs a new UUID, and
+uncertain native effects must not be replayed.
+
+**2026-11-02 · Queue, admission and wake.** With required Dispatcher PostgreSQL, there
+is no supported databaseless/queueless mode; immediate-or-fail remains a separate
+option. Queue acceptance, owner admission, harness readiness and effects are distinct.
+The operator challenged an explicit-resume-only policy, then required that
+authorized unattended inbox notices be able to wake an environment. App-owned
+resume-and-send was discussed; moving wake orchestration into
+Notification was another option. Neither settled wake ownership, caller authorization,
+ordinary human-send behavior or cross-database recovery. Existing behavior remains until
+a reviewed replacement.
+
+**2026-11-02 · Identity risk; ownership undecided.** Co-resident Sessions share ambient
+environment access, so Session IDs or directories alone do not isolate privilege. The
+operator said per-Sandbox ServiceAccounts provide individual PolicyBinding subjects;
+changing policy bindings can avoid replacing a Pod, but changing its ServiceAccount
+cannot. Shared ServiceAccounts combine additive grants, so they change per-Sandbox
+permission granularity. External identity, SCIM/OIDC and controller-provisioning
+patterns were explored as building blocks, not selected providers or an identity
+service.
+
+**2026-11-03 · Address, deletion and authority.** The operator confirmed Session UUID as
+the public address and Dispatcher as the live Session database. Session-targeted
+commands require a Dispatcher record, including for privileged callers. Explicit Session
+deletion means Dispatcher forgets the row; callers must not reuse its globally unique
+UUID. No permanent marker, retention period or cross-database uniqueness check was
+selected, so an old retry cannot be recognized after forgetting and retained History may
+still reject a conflicting writer. On Environment deletion, known-unforwarded work
+fails, uncertain in-flight work remains unknown, and accepted work never redirects to a
+replacement. The first cutover preserves direct/delegated caller checks, scoped
+App/Notification/orchestration trust and separately authorized wake, including unattended
+notices. Inbox, receipt, History cleanup and queued-grant revocation remain open.
+
+**2026-11-04 · Environment identity and service ownership.** Sessions sharing an
+Environment must use one verified identity because they share ambient access. The
+operator favored one fixed ServiceAccount name per Sandbox; an authorized same-name
+replacement may act as that named principal while the account remains configured, but its
+new UID must fence old work and credentials. Privileged human inspection after account
+disappearance does not transfer workload authority. Putting identity in `SessionSpec` was
+only a candidate and grants no authority by itself. Environment-independent Session APIs
+were reaffirmed; process and
+deployment grouping and moving Runtime data between services remained options, not
+decisions.
+
+**2026-11-04 · Implemented cutover evidence.**
+[#14248](https://github.com/agentydragon/ducktape/pull/14248) landed typed
+`SessionPlacement` and the `CreateSession`/`GetSession`/`ListSessions` resource APIs.
+Its migrations preserve records, History identity/order and legacy provenance.
+[#14314](https://github.com/agentydragon/ducktape/pull/14314) retains Session rows and
+exact placement after required-Environment deletion, preserving materialization/effect
+evidence and fencing same-name Environment replacements. These changes do not provide
+environment-free central Sessions or retain inboxes and command receipts after cleanup.
+
+**2026-11-05 · Workload identity direction; object shapes remain proposed.** The
+operator selected SPIFFE workload certificates for Gateway and egress authentication and
+Agentplane-owned identities, with no auto-provisioned ServiceAccount per identity. The
+operator proposed a shared low-privilege default account available to agents, plus
+separate, possibly temporary accounts on request. Two identities may use one account.
+Grants attach through separate objects, not account fields, so Flux and runtime writers
+can share it. The operator chose separate Agentplane-binding and Kubernetes-grant kinds;
+the plan proposes a managed-account object only for accounts Agentplane creates. The
+2026-11-04 SA-first direction remains until cutover. Provisioning details,
+impersonation versus TokenRequest and rollout implementation remain open in the
+[identity plan](identity_and_kubernetes_accounts.md). The operator accepted one
+incompatible cutover with downtime, not a staged migration.
+
+**Still open:** directory availability and stale-route fencing; the boundary with
+harness owners; command-receipt, inbox and History cleanup/provenance; cross-store
+recovery and transition from existing non-UUID native IDs; whether Sessions move or
+expose native/store references; and authority for central Sessions without an
+Environment. Preserve exact UID fences and retained evidence.
+
+**Maintenance rule:** amend this log when discussion changes the model. Keep approved
+decisions, working proposals, reversals and unresolved questions distinct, and update
+the main proposal too.
 
 <a id="sources"></a>
 
